@@ -34,11 +34,12 @@ Four defects fall straight out of this shape:
 
 ```ts
 export type GuideAccessTier =
-  | "public"      // free, ungated, indexed — overdraft, nsf, atm, maintenance
-  | "registered"  // free account required — alerts, saved comparisons
-  | "pro";        // subscriber — peer-set, revenue-impact framing
+  | "public"      // free, ungated, indexed — every consumer fee guide, permanently
+  | "registered"  // free account — additive personalisation only, never gates prose
+  | "pro";        // paying tier: bank/CU employees AND consultants, one tier
 
-export type GuideAudience = "consumer" | "institution" | "consultant";
+/** Bank/CU employees and consultants are the same paying reader; they are not split. */
+export type GuideAudience = "consumer" | "professional";
 
 /** Inline block types — the minimum needed to satisfy the consumer-guide skill. */
 export type GuideBlock =

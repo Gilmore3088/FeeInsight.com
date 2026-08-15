@@ -42,8 +42,9 @@ CREATE TABLE consumer_guides (
 
   access_tier       TEXT NOT NULL DEFAULT 'public'
                       CHECK (access_tier IN ('public','registered','pro')),
+  -- Bank/CU employees and consultants are one paying reader, not two.
   audience          TEXT NOT NULL DEFAULT 'consumer'
-                      CHECK (audience IN ('consumer','institution','consultant')),
+                      CHECK (audience IN ('consumer','professional')),
   featured          BOOLEAN NOT NULL DEFAULT FALSE,
 
   status            TEXT NOT NULL DEFAULT 'draft'

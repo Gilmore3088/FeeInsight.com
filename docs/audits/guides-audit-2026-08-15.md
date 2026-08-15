@@ -264,14 +264,20 @@ behind `UpgradeGate`. The tile's own subtitle promises exactly those breakdowns
 (`[slug]/page.tsx:281`: "Distribution, breakdowns by charter, state, tier"). The guide
 advertises gated content as though it were open.
 
-The audience segmentation the product needs, and the content model cannot currently express:
+The audience segmentation the product needs, and the content model cannot currently express.
+Bank and credit-union employees are a **paying** audience on the same tier as consultants —
+there is no separate institution tier:
 
-| Audience | Should get | Today |
-| --- | --- | --- |
-| Consumer (anon) | Overdraft, NSF, ATM, maintenance — free, complete, no gate | free but thin |
-| Consumer (registered) | + fee alerts, saved institution, personalised "your bank vs median" | nothing |
-| Bank / CU employee | "how our fee compares to peers", disclosure-language guidance | nothing in guides |
-| Consultant (paid) | methodology, peer-set construction, revenue-impact framing | nothing in guides |
+| Tier | Who | Should get | Today |
+| --- | --- | --- | --- |
+| `public` | Consumer, signed out | Overdraft, NSF, ATM, maintenance — free, complete, no gate | free but thin |
+| `registered` | Consumer, free account | + fee alerts, saved institution, personalised "your bank vs median" | nothing |
+| `pro` | Bank/CU employees **and** consultants — one paying tier | Peer positioning, disclosure-language guidance, methodology, peer-set construction, revenue-impact framing | nothing in guides |
+
+Two rules follow: a guide's tier gates the whole guide, never a section of it — half-gated
+consumer education reads as bait; and every consumer fee guide stays `public` forever. The
+paid tier is served by *different guides written for a different reader*, not by locking
+part of a consumer guide.
 
 ---
 
