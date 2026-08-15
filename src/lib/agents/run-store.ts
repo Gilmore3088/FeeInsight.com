@@ -3,6 +3,7 @@ import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
+import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -484,6 +485,52 @@ async function executeAgenticStep(
           total_knox_decisions: decisions.total,
           dry_run: run.runKind === "dry_run",
         },
+      };
+    }
+    case "guide-draft": {
+      const category = stringRunParam(params, [
+        "fee_category",
+        "primary_category",
+        "category",
+      ]);
+      if (!category) {
+        return {
+          status: "skipped",
+          summary: "Guide draft skipped: no fee category supplied.",
+          detail: { reason: "missing_fee_category" },
+        };
+      }
+      const drafted = await runGuideDraft({
+        runId: run.id,
+        primaryCategory: category,
+        slug: stringRunParam(params, ["guide_slug", "slug"]) ?? undefined,
+        dryRun: run.runKind === "dry_run",
+        db: tx,
+      });
+      const detail = {
+        guide_slug: drafted.slug,
+        primary_category: drafted.primaryCategory,
+        draft_status: drafted.status,
+        word_count: drafted.wordCount,
+        issue_count: drafted.issues.length,
+        issues: drafted.issues.slice(0, 10),
+        published_guide_preserved: drafted.publishedGuidePreserved,
+        dry_run: drafted.dryRun,
+      };
+      if (drafted.status === "drafted") {
+        return {
+          status: "completed",
+          summary: `Guide draft for ${drafted.primaryCategory} saved for human review (${drafted.wordCount.toLocaleString()} words). Publishing requires a recorded approval.`,
+          detail,
+        };
+      }
+      return {
+        status: "skipped",
+        summary:
+          drafted.status === "skipped"
+            ? `Guide draft skipped: ${drafted.primaryCategory} has no published benchmark to write about.`
+            : `Guide draft rejected on ${drafted.issues.length.toLocaleString()} validation issue(s); the published guide was left untouched.`,
+        detail,
       };
     }
     case "publish":

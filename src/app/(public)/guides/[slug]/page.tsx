@@ -17,6 +17,7 @@ import {
   getStats,
 } from "@/lib/data-store";
 import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { getSavedInstitutionFees } from "@/lib/data-store/alerts";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -106,13 +107,18 @@ export default async function GuidePage({ params }: PageProps) {
   }
   const isPro = canAccessPremium(user);
 
-  const [allSummaries, freshness, stats, primaryDetail, extremes] = await Promise.all([
-    getCachedFeeCategorySummaries(),
-    getDataFreshness(),
-    getStats(),
-    getFeeCategoryDetail(guide.primaryCategory),
-    getCheapestAndMostExpensive(guide.primaryCategory, 5),
-  ]);
+  const [allSummaries, freshness, stats, primaryDetail, extremes, savedInstitutions] =
+    await Promise.all([
+      getCachedFeeCategorySummaries(),
+      getDataFreshness(),
+      getStats(),
+      getFeeCategoryDetail(guide.primaryCategory),
+      getCheapestAndMostExpensive(guide.primaryCategory, 5),
+      // Registered-consumer tier: additive personalisation, never a gate.
+      user
+        ? getSavedInstitutionFees(user.id, guide.primaryCategory).catch(() => [])
+        : Promise.resolve([]),
+    ]);
 
   // Editorial order — never the global sort by institution count.
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
@@ -296,6 +302,82 @@ export default async function GuidePage({ params }: PageProps) {
                 </Link>
               ))}
             </div>
+          )}
+
+          {/* ── YOUR SAVED INSTITUTIONS — registered tier, additive only ── */}
+          {savedInstitutions.length > 0 && (
+            <section
+              aria-labelledby="your-institutions-heading"
+              className="mt-8 rounded-xl border border-[#1A1815]/15 bg-white/80 px-6 py-5"
+            >
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#1A1815]/50">
+                Your institutions
+              </p>
+              <h2
+                id="your-institutions-heading"
+                className="mt-2 text-[17px] font-medium text-[#1A1815]"
+                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              >
+                What you pay for {primaryName.toLowerCase()}
+              </h2>
+              <ul className="mt-4 space-y-2.5">
+                {savedInstitutions.map((inst) => {
+                  const median = primarySummary?.median_amount ?? null;
+                  const delta =
+                    inst.amount !== null && median !== null ? inst.amount - median : null;
+                  return (
+                    <li
+                      key={inst.institution_id}
+                      className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#E8DFD1]/60 pb-2.5 last:border-0 last:pb-0"
+                    >
+                      <Link
+                        href={`/institution/${inst.institution_id}?fee=${guide.primaryCategory}#fee-${guide.primaryCategory}`}
+                        className="text-[14px] font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
+                      >
+                        {inst.institution_name}
+                        {inst.state_code && (
+                          <span className="ml-1.5 text-[11px] font-normal text-[#8A8073]">
+                            {inst.state_code}
+                          </span>
+                        )}
+                      </Link>
+                      {inst.amount === null ? (
+                        <span className="text-[12px] text-[#8A8073]">
+                          No published {primaryName.toLowerCase()}
+                        </span>
+                      ) : (
+                        <span className="text-[15px] font-semibold tabular-nums text-[#1A1815]">
+                          {formatAmount(inst.amount)}
+                          {delta !== null && (
+                            <span
+                              className={`ml-2 text-[11px] font-normal tabular-nums ${
+                                delta > 0
+                                  ? "text-red-700"
+                                  : delta < 0
+                                    ? "text-emerald-700"
+                                    : "text-[#8A8073]"
+                              }`}
+                            >
+                              {delta > 0
+                                ? `${formatAmount(delta)} above median`
+                                : delta < 0
+                                  ? `${formatAmount(Math.abs(delta))} below median`
+                                  : "at the median"}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-3 text-[11px] text-[#8A8073]">
+                We&rsquo;ll email you when one of these changes.{" "}
+                <Link href="/account" className="text-[#C44B2E]/80 hover:text-[#C44B2E]">
+                  Manage your alerts
+                </Link>
+              </p>
+            </section>
           )}
 
           {/* ── CHECK YOUR OWN BANK ── */}
