@@ -1,9 +1,25 @@
+/**
+ * Rendered per request, deliberately.
+ *
+ * The page reads the session to decide the professional-tier gate and to render a
+ * signed-in reader's saved institutions against the median. Reading cookies makes a
+ * route dynamic, so `generateStaticParams` cannot apply here — it was previously
+ * declared alongside `force-dynamic` and never generated anything.
+ *
+ * The cost that made per-request rendering expensive is fixed instead: national fee
+ * summaries are cached and invalidated on Hamilton publish, the sidebar's extremes are
+ * bounded in Postgres, and the remaining reads run in parallel.
+ *
+ * Making the shell static would need either a static shell with client-fetched islands
+ * for the gate and the personalisation, or Partial Prerendering enabled site-wide. Both
+ * are platform decisions wider than this route — see D-5 in
+ * docs/plans/guides-remediation-plan-2026-08-15.md.
+ */
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  GUIDES,
   getGuide,
   guideCategories,
   relatedGuides,
@@ -34,10 +50,6 @@ import { SITE_URL } from "@/lib/constants";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
-}
-
-export function generateStaticParams() {
-  return GUIDES.map((g) => ({ slug: g.slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

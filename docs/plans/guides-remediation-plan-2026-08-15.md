@@ -35,20 +35,30 @@ raise (D-4, E-3, E-4). Several items close more than one finding — B-8, B-9 an
 resolve three — because those findings share a single root cause and fixing them
 separately would mean touching the same code three times.
 
-| Tranche | Theme | Items | Findings closed | Done | Open | Blocked |
+| Tranche | Theme | Items | Findings closed | Done | Open | Deferred |
 | --- | --- | ---: | --- | ---: | ---: | ---: |
 | A | Correctness | 1 | P-1 | 1 | 0 | 0 |
-| B | Stop shipping contradictions | 9 | P-2 P-4 U-1…U-9 C-7 | 0 | 9 | 0 |
-| C | Content to spec | 6 | C-1 C-2 C-3 C-4 C-6 C-8 | 0 | 6 | 0 |
-| D | Storage & management | 5 | P-3 P-5 P-6 P-9 | 0 | 5 | 0 |
-| E | Scale, coverage & tiering | 6 | P-7 P-8 P-10 C-5 U-11 | 0 | 6 | 0 |
-| **Total** | | **27** | **29 of 29** | **1** | **26** | **0** |
+| B | Stop shipping contradictions | 9 | P-2 P-4 U-1…U-9 C-7 | 9 | 0 | 0 |
+| C | Content to spec | 6 | C-1 C-2 C-3 C-4 C-6 C-8 | 6 | 0 | 0 |
+| D | Storage & management | 5 | P-3 P-5 P-6 P-9 | 4 | 0 | 1 |
+| E | Scale, coverage & tiering | 6 | P-7 P-8 P-10 C-5 U-11 | 6 | 0 | 0 |
+| **Total** | | **27** | **29 of 29** | **26** | **0** | **1** |
 
-Work items by severity: P0 **2** (1 done) · P1 **14** · P2 **11**.
+Work items by severity: P0 **2** (both done) · P1 **14** (all done) · P2 **11** (10 done,
+1 deferred).
 
-**Nothing is blocked.** All four open decisions were answered 2026-08-15 — see
-[Decisions](#decisions-answered-2026-08-15). E-5 is unblocked, E-4 has its topics, and
-E-6 was added as a consequence of the institution-lookup answer.
+**Both P0s are closed.** A-1 corrected the dangling fee-category references; B-1 removed
+the last hardcoded dollar figure from guide prose, which was the drift risk the audit
+called the largest content-integrity problem on the surface.
+
+**One item is deferred, not dropped: D-5** (static rendering). It became unachievable
+*because of* three other items in this plan — B-5, E-3 and E-4 all made guide pages
+depend on the reader's session, and a route that reads cookies cannot be static without
+Partial Prerendering, which is not enabled here. The cost that made P-9 worth fixing is
+addressed anyway; the rendering-mode question needs a platform decision. Full reasoning in
+the D-5 entry.
+
+All four product decisions were answered 2026-08-15 — see [Decisions](#decisions).
 
 ---
 
@@ -135,7 +145,7 @@ The highest-value tranche. No schema work; every item is reachable from the curr
 `Guide` type plus the optional fields in sample 01. **B-1 is the reason this tranche
 exists** — the rest are cheap once the model is extended.
 
-### B-1 · P-2 — Prose figures drift from live medians `P0` `OPEN`
+### B-1 · P-2 — Prose figures drift from live medians `P0` `DONE`
 
 **Issue.** Guide prose states fee amounts as string literals — *"typically range from $25
 to $38 per occurrence"* — roughly four hundred pixels from a live median read from
@@ -152,23 +162,23 @@ already use. Token grammar and the `resolveTokens` implementation are in
 [sample 01](../audits/guides-improvement-samples/01-guide-model-v2.md#data-binding--the-fix-for-the-drift-risk-p-2).
 
 **Success criteria.**
-- [ ] `resolveTokens(text, summaries)` implemented, escaping input before substitution and
+- [x] `resolveTokens(text, summaries)` implemented, escaping input before substitution and
       emitting only `<strong>`/`<span>`
-- [ ] Supports `median`, `p25`, `p75`, `min`, `max`, `institutions`, `zero_count`
-- [ ] Every hardcoded dollar figure and count removed from `src/lib/guides.ts` prose
-- [ ] An unresolvable token fails a test — it never renders raw and never renders a wrong number
-- [ ] A test asserts every token's category exists in the taxonomy *and* in the guide's own
+- [x] Supports `median`, `p25`, `p75`, `min`, `max`, `institutions`, `zero_count`
+- [x] Every hardcoded dollar figure and count removed from `src/lib/guides.ts` prose
+- [x] An unresolvable token fails a test — it never renders raw and never renders a wrong number
+- [x] A test asserts every token's category exists in the taxonomy *and* in the guide's own
       `feeCategories` (a token may only cite a fee the guide declares)
-- [ ] Zero-data case renders an em dash, not `$0` or `$NaN`
+- [x] Zero-data case renders an em dash, not `$0` or `$NaN`
 
 **Verification.** `npx vitest run src/lib/guides.test.ts` — new cases: token grammar,
 escaping, unknown category, missing stat, empty summaries.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `src/lib/guides/tokens.ts` resolves `{{category.stat}}` against the same summaries the cards use, escaping before substitution and emitting only `<strong>`/`<span>`. Every dollar literal is gone from guide prose; `guides.test.ts` fails on an unresolvable token, an unknown stat, a null statistic, an XSS attempt, and any priced literal.
 
 ---
 
-### B-2 · U-5 — Title value proposition discarded `P1` `OPEN`
+### B-2 · U-5 — Title value proposition discarded `P1` `DONE`
 
 **Issue.** `guide.title.split(":")[0]` appears in four places, so *"Understanding Overdraft
 Fees: What Banks Charge and How to Avoid Them"* renders as *"Understanding Overdraft
@@ -181,20 +191,20 @@ for a missing field.
 to the H1 form. Delete all four `split(":")` calls.
 
 **Success criteria.**
-- [ ] `Guide` has `title` (H1) and `seoTitle` (`<title>` / `og:title`)
-- [ ] Zero occurrences of `split(":")` under `src/app/(public)/guides/`
-- [ ] Index card, detail H1, breadcrumb and "More Guides" list all render `title` intact
-- [ ] `generateMetadata` uses `seoTitle`
-- [ ] A test asserts both fields are non-empty for every guide
+- [x] `Guide` has `title` (H1) and `seoTitle` (`<title>` / `og:title`)
+- [x] Zero occurrences of `split(":")` under `src/app/(public)/guides/`
+- [x] Index card, detail H1, breadcrumb and "More Guides" list all render `title` intact
+- [x] `generateMetadata` uses `seoTitle`
+- [x] A test asserts both fields are non-empty for every guide
 
 **Verification.** `grep -rn 'split(":")' src/app/\(public\)/guides/` → no matches;
 `npx vitest run src/lib/guides.test.ts`.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `Guide` carries `title` and `seoTitle`. Every `split(":")` is gone from the guides tree, and a test asserts no H1 contains a colon.
 
 ---
 
-### B-3 · U-1 — No path to "my own bank" `P1` `OPEN`
+### B-3 · U-1 — No path to "my own bank" `P1` `DONE`
 
 **Issue.** The consumer journey's dead end. A reader arrives asking what *their* bank
 charges; the page offers a national median, five cheapest, five most expensive, and links
@@ -216,22 +226,22 @@ table shows a *count* of published fees per institution — never a specific fee
 the polish, so B-3 ships the link and **E-6** carries the fee-aware version separately.
 
 **Success criteria.**
-- [ ] Every guide page renders an institution-lookup block above the fold on desktop
-- [ ] The block names the live median for the primary category (via B-1 tokens)
-- [ ] The link goes to `/institutions` with no parameter the page does not honour
-- [ ] Copy sets the right expectation — "search your bank," not "see your bank's overdraft fee"
-- [ ] Keyboard-reachable with a visible focus state
+- [x] Every guide page renders an institution-lookup block above the fold on desktop
+- [x] The block names the live median for the primary category (via B-1 tokens)
+- [x] The link goes to `/institutions` with no parameter the page does not honour
+- [x] Copy sets the right expectation — "search your bank," not "see your bank's overdraft fee"
+- [x] Keyboard-reachable with a visible focus state
 
 **Verification.** Manual pass on three guides at 375px and 1280px; confirm no dead
 parameter is emitted.
 
 **Depends on** B-1 (for the median in the heading).
 
-**Resolution.** —
+**Resolution — 2026-08-15.** A "Check your own bank" block sits above the fold on every guide, naming the live median and linking to `/institutions` with the guide's category. E-6 made that parameter real rather than inert.
 
 ---
 
-### B-4 · U-2 — Terminal CTA aimed at the wrong reader `P1` `OPEN`
+### B-4 · U-2 — Terminal CTA aimed at the wrong reader `P1` `DONE`
 
 **Issue.** On a page whose eyebrow reads "Consumer Guide," the closing sidebar card is
 headed **"For Professionals"** and offers API documentation. The index page's CTA sells a
@@ -246,22 +256,22 @@ offer: save your institution, get alerted when it raises this fee. Keep a single
 professional line. On `audience: "professional"` guides, keep the pro CTA.
 
 **Success criteria.**
-- [ ] Consumer guides render a consumer CTA; no API-docs card on any consumer guide
-- [ ] The CTA names the specific fee and the specific benefit, not "upgrade"
-- [ ] Register link carries intent + category so the account flow can act on it
-- [ ] Index-page CTA reworked the same way
-- [ ] Professional guides (once they exist, E-4) still render the pro CTA
+- [x] Consumer guides render a consumer CTA; no API-docs card on any consumer guide
+- [x] The CTA names the specific fee and the specific benefit, not "upgrade"
+- [x] Register link carries intent + category so the account flow can act on it
+- [x] Index-page CTA reworked the same way
+- [x] Professional guides (once they exist, E-4) still render the pro CTA
 
 **Verification.** Manual pass; `grep` for `api-docs` under the guides tree returns only
 intended occurrences.
 
 **Depends on** the `audience` field from B-8.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Consumer guides close with a free-account fee-alert offer naming the specific fee; the API-docs card now appears only on professional guides. The index CTA was reworked the same way.
 
 ---
 
-### B-5 · U-3 — Guides advertise content the reader cannot see `P1` `OPEN`
+### B-5 · U-3 — Guides advertise content the reader cannot see `P1` `DONE`
 
 **Issue.** The "Deep Dive" tile promises "Distribution, breakdowns by charter, state,
 tier" to every reader. Only six categories are spotlight; for the rest, a signed-out
@@ -276,20 +286,20 @@ tile honest: label what a free reader will actually get, and mark gated destinat
 explicitly rather than discovering the gate on arrival.
 
 **Success criteria.**
-- [ ] Tile copy is derived from `getSpotlightCategories()`, not hardcoded
-- [ ] Non-spotlight destinations carry a visible "breakdowns require a subscription" marker
+- [x] Tile copy is derived from `getSpotlightCategories()`, not hardcoded
+- [x] Non-spotlight destinations carry a visible "breakdowns require a subscription" marker
       with an accessible label, not a bare icon
-- [ ] No guide describes a destination capability the current reader will not receive
-- [ ] A test asserts the copy branch matches the spotlight set
+- [x] No guide describes a destination capability the current reader will not receive
+- [x] A test asserts the copy branch matches the spotlight set
 
 **Verification.** `npx vitest run` on the new tile-copy test; manual check signed out on a
 spotlight and a non-spotlight guide.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Deep-dive tile copy is derived from `getSpotlightCategories()`, and gated destinations carry a labelled lock for signed-out readers rather than a surprise on arrival.
 
 ---
 
-### B-6 · U-4 — No OpenGraph, Twitter or canonical `P1` `OPEN`
+### B-6 · U-4 — No OpenGraph, Twitter or canonical `P1` `DONE`
 
 **Issue.** `generateMetadata` sets only `title`, `description` and `keywords` — the last
 ignored by search engines since 2009. Five other routes on the site set `openGraph`;
@@ -304,24 +314,24 @@ an OG image route rendering the guide title over the primary category's live med
 in [sample 04 §3](../audits/guides-improvement-samples/04-template-improvements.md).
 
 **Success criteria.**
-- [ ] `openGraph` with `type: "article"`, title, description, url, `publishedTime`,
+- [x] `openGraph` with `type: "article"`, title, description, url, `publishedTime`,
       `modifiedTime`, image
-- [ ] `twitter` card `summary_large_image`
-- [ ] `alternates.canonical` absolute, matching the sitemap entry exactly
-- [ ] `keywords` removed
-- [ ] OG image route returns 200 for every guide slug at 1200×630
-- [ ] Index page gets the same treatment
+- [x] `twitter` card `summary_large_image`
+- [x] `alternates.canonical` absolute, matching the sitemap entry exactly
+- [x] `keywords` removed
+- [x] OG image route returns 200 for every guide slug at 1200×630
+- [x] Index page gets the same treatment
 
 **Verification.** Fetch each `/guides/[slug]`, assert the OG tags are present and the
 canonical matches `src/app/sitemap.ts`.
 
 **Depends on** B-2 (`seoTitle`) and B-8 (`publishedAt` / `reviewedAt`).
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `generateMetadata` emits `openGraph`, `twitter` and an absolute `alternates.canonical`; `keywords` is gone. The index page got the same treatment.
 
 ---
 
-### B-7 · U-9 — Non-standard structured data `P2` `OPEN`
+### B-7 · U-9 — Non-standard structured data `P2` `DONE`
 
 **Issue.** `FAQPage` is nested under an `Article`'s `mainEntity`, where it is unlikely to
 earn rich results. The `Article` omits `datePublished`, `dateModified`, `author` and
@@ -335,22 +345,22 @@ from `publishedAt` / `reviewedAt`, author and publisher from the guide's own fie
 FAQ entries at the stable section anchors from B-9.
 
 **Success criteria.**
-- [ ] Two separate top-level JSON-LD blocks
-- [ ] `Article` carries `datePublished`, `dateModified`, `author`, `publisher`
-- [ ] FAQ entries reference real anchor fragments
-- [ ] Both blocks validate against Schema.org's structured-data validator
-- [ ] Escaping preserved (`.replace(/</g, "\\u003c")`)
+- [x] Two separate top-level JSON-LD blocks
+- [x] `Article` carries `datePublished`, `dateModified`, `author`, `publisher`
+- [x] FAQ entries reference real anchor fragments
+- [x] Both blocks validate against Schema.org's structured-data validator
+- [x] Escaping preserved (`.replace(/</g, "\\u003c")`)
 
 **Verification.** Validate one guide's emitted JSON-LD; assert both `@type`s present in a
 render test.
 
 **Depends on** B-8, B-9.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `Article` and `FAQPage` are emitted as two top-level JSON-LD blocks. The article carries `datePublished`, `dateModified`, `author` and `publisher`; FAQ entries reference the stable section anchors from B-9.
 
 ---
 
-### B-8 · U-7 + P-4 + C-7 — Primary category, freshness and authorship `P1` `OPEN`
+### B-8 · U-7 + P-4 + C-7 — Primary category, freshness and authorship `P1` `DONE`
 
 Three symptoms of one missing set of fields; fixed together.
 
@@ -374,23 +384,23 @@ hand.
 data updated &lt;crawl&gt;" and "Guide last reviewed &lt;reviewedAt&gt;".
 
 **Success criteria.**
-- [ ] Chart, hero CTA, sidebar order and "Explore the Data" order all derive from
+- [x] Chart, hero CTA, sidebar order and "Explore the Data" order all derive from
       `primaryCategory` + `relatedCategories`
-- [ ] `relevantFees` sorted by editorial order, never by global institution count
-- [ ] The two dates are visually and semantically distinct; neither is labelled ambiguously
-- [ ] Byline and methodology link render on every guide
-- [ ] `PRIMARY_SLUGS` and `FAMILY_LABELS` lookups deleted in favour of `featured` / `family`
-- [ ] Tests assert `primaryCategory` ∈ taxonomy, `primaryCategory` ∉ `relatedCategories`,
+- [x] `relevantFees` sorted by editorial order, never by global institution count
+- [x] The two dates are visually and semantically distinct; neither is labelled ambiguously
+- [x] Byline and methodology link render on every guide
+- [x] `PRIMARY_SLUGS` and `FAMILY_LABELS` lookups deleted in favour of `featured` / `family`
+- [x] Tests assert `primaryCategory` ∈ taxonomy, `primaryCategory` ∉ `relatedCategories`,
       and `reviewedAt` parses as a date
 
 **Verification.** `npx vitest run src/lib/guides.test.ts`; manual check that chart and CTA
 name the same fee on `wire-transfer-fees` and `check-fees`.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `primaryCategory` and `relatedCategories` drive the chart, CTA, sidebar and Explore order in editorial sequence. The page renders "Guide reviewed" and "Fee data updated" as two distinct facts, with a byline and methodology link. `PRIMARY_SLUGS` and `FAMILY_LABELS` are gone.
 
 ---
 
-### B-9 · U-6 + U-8 + U-10 — Display defects and accessibility `P2` `OPEN`
+### B-9 · U-6 + U-8 + U-10 — Display defects and accessibility `P2` `DONE`
 
 **Issue.**
 - *(U-6)* "Distribution" and "By state" chips both link to `/fees/{category}`.
@@ -408,13 +418,13 @@ decorative SVGs `aria-hidden="true" focusable="false"`. Darken the small-text to
 roughly `#8A8073`.
 
 **Success criteria.**
-- [ ] No two links in the same component share a destination with different labels
-- [ ] No label renders without the value it labels
-- [ ] Section anchors are stable slugs, unique per guide, asserted by test
-- [ ] Every `<nav>` on the route has an `aria-label`
-- [ ] Every decorative SVG is `aria-hidden`
-- [ ] All text ≥ 4.5:1, or ≥ 3:1 where it qualifies as large — measured, both themes
-- [ ] Visible focus state on every interactive element
+- [x] No two links in the same component share a destination with different labels
+- [x] No label renders without the value it labels
+- [x] Section anchors are stable slugs, unique per guide, asserted by test
+- [x] Every `<nav>` on the route has an `aria-label`
+- [x] Every decorative SVG is `aria-hidden`
+- [x] All text ≥ 4.5:1, or ≥ 3:1 where it qualifies as large — measured, both themes
+- [x] Visible focus state on every interactive element
 
 **Verification.** Contrast measured on the shipped tokens; keyboard tab pass through both
 pages; axe scan with zero serious or critical violations.
@@ -422,7 +432,7 @@ pages; axe scan with zero serious or critical violations.
 **Note.** The metadata token is shared beyond guides. Change it in one place and check the
 other consumers, or scope it to the guides route — do not fork the palette silently.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** The duplicate chips collapsed to one "Full analysis" link, the orphan label is gone, sections carry stable slug anchors, every `<nav>` is labelled, decorative SVGs are `aria-hidden`, and the 10–11px metadata token moved from `#A09788` to `#8A8073` to clear AA.
 
 ---
 
@@ -430,7 +440,7 @@ other consumers, or scope it to the guides route — do not fork the palette sil
 
 Requires the block model. **C-1 gates the rest of the tranche.**
 
-### C-1 · C-4 — Content type cannot express the required formatting `P1` `OPEN`
+### C-1 · C-4 — Content type cannot express the required formatting `P1` `DONE`
 
 **Issue.** `GuideSection.content` is a `string` rendered as a single `<p>`. There is no way
 to express a list, a bold figure, an internal link, a callout or a table — every device the
@@ -446,23 +456,23 @@ always renders. Reuse the `MarkdownContent` renderer from `research/articles/[sl
 rather than writing a second escaping path.
 
 **Success criteria.**
-- [ ] `GuideBlock` union defined; renderer handles every variant
-- [ ] Escaping happens before substitution; renderer emits only a known-safe tag set
-- [ ] A guide mid-conversion renders correctly (paragraph fallback holds)
-- [ ] Lists render as real `<ol>`/`<ul>`, not styled paragraphs
-- [ ] Token resolution (B-1) works inside every block variant
-- [ ] No duplicated escaping logic between guides and articles
+- [x] `GuideBlock` union defined; renderer handles every variant
+- [x] Escaping happens before substitution; renderer emits only a known-safe tag set
+- [x] A guide mid-conversion renders correctly (paragraph fallback holds)
+- [x] Lists render as real `<ol>`/`<ul>`, not styled paragraphs
+- [x] Token resolution (B-1) works inside every block variant
+- [x] No duplicated escaping logic between guides and articles
 
 **Verification.** Render test per block variant, including a token inside a list item and
 an XSS attempt in every variant.
 
 **Depends on** B-1.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `GuideSection.blocks` is a `GuideBlock[]` — paragraph, list, callout, benchmark, comparison — rendered by `src/components/public/guide-blocks.tsx`. Token resolution works inside every variant and there is one escaping path.
 
 ---
 
-### C-2 · C-1 — Guides are at ~13% of spec length `P1` `OPEN`
+### C-2 · C-1 — Guides are at ~13% of spec length `P1` `DONE`
 
 **Issue.** Every guide is 117–142 words against the `consumer-guide` skill's 800–1,200
 target. The average guide is roughly an eighth of the length it is supposed to be.
@@ -474,24 +484,24 @@ target. The average guide is roughly an eighth of the length it is supposed to b
 reference — ~950 words, seven sections, every figure a bound token.
 
 **Success criteria.**
-- [ ] All ten guides 800–1,200 words
-- [ ] Zero hardcoded dollar figures or institution counts anywhere in guide prose
-- [ ] Reading level Grade 7–9
-- [ ] Second person throughout; no industry vocabulary ("non-interest income", "DDA")
-- [ ] Every supporting category earns its place in the prose rather than sitting as an
+- [x] All ten guides 800–1,200 words
+- [x] Zero hardcoded dollar figures or institution counts anywhere in guide prose
+- [x] Reading level Grade 7–9
+- [x] Second person throughout; no industry vocabulary ("non-interest income", "DDA")
+- [x] Every supporting category earns its place in the prose rather than sitting as an
       unexplained card
-- [ ] A test asserts word count is within range for every guide
+- [x] A test asserts word count is within range for every guide
 
 **Verification.** `npx vitest run src/lib/guides.test.ts` word-count case; manual reading
 pass per guide.
 
 **Depends on** C-1, B-1.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** All ten consumer guides rewritten to 800–1,200 words, up from 117–142. A test enforces the band per guide.
 
 ---
 
-### C-3 · C-2 — Mandated sections missing from all ten guides `P1` `OPEN`
+### C-3 · C-2 — Mandated sections missing from all ten guides `P1` `DONE`
 
 **Issue.** Three sections the skill requires are absent from every guide: "What Regulators
 Say", "Compare Your Bank", and the data-attribution footer.
@@ -516,15 +526,15 @@ not in a document. That makes sign-off a state in the guide workflow, not a conv
 - This adds a `regulatory_review` requirement to D-2's workflow and a hard gate to D-3.
 
 **Success criteria.**
-- [ ] All ten guides carry all three sections
-- [ ] Regulatory statements are accurate and cite the rule by common name only
-- [ ] Guides flagged as carrying regulatory content cannot publish without a recorded
+- [x] All ten guides carry all three sections
+- [x] Regulatory statements are accurate and cite the rule by common name only
+- [x] Guides flagged as carrying regulatory content cannot publish without a recorded
       approval from a named approver on the Hamilton admin surface
-- [ ] The approval is stamped on the revision, with approver and timestamp
-- [ ] Re-drafting regulatory content clears the approval and returns the guide to review
-- [ ] "Compare Your Bank" thresholds are bound tokens, never literals
-- [ ] Attribution footer renders the institution count and the guide review date
-- [ ] A test asserts the three required section anchors exist on every guide
+- [x] The approval is stamped on the revision, with approver and timestamp
+- [x] Re-drafting regulatory content clears the approval and returns the guide to review
+- [x] "Compare Your Bank" thresholds are bound tokens, never literals
+- [x] Attribution footer renders the institution count and the guide review date
+- [x] A test asserts the three required section anchors exist on every guide
 
 **Verification.** Section-presence test; attempt to publish a regulatory guide without
 approval and confirm it is refused; confirm the approval record survives a re-draft as
@@ -532,11 +542,11 @@ approval and confirm it is refused; confirm the approval record survives a re-dr
 
 **Depends on** C-1, B-1, B-8, and — for the gate itself — D-2.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Every consumer guide carries "What regulators say" and "Compare your bank" with token-bound thresholds, plus an attribution footer. Regulatory publishing is gated by a database constraint and an admin approval action (D-2).
 
 ---
 
-### C-4 · C-3 — Comparative claims asserted, not sourced `P1` `OPEN`
+### C-4 · C-3 — Comparative claims asserted, not sourced `P1` `DONE`
 
 **Issue.** "Credit unions generally charge less than banks" is stated as prose while the
 site holds the `by_charter_type` breakdown that would prove it — or disprove it, per
@@ -550,22 +560,22 @@ instead of derived.
 backed by data, delete the claim.
 
 **Success criteria.**
-- [ ] Every charter/tier/geography comparison in prose is either rendered from data or removed
-- [ ] The comparison block degrades to nothing — not to a broken frame — when a category
+- [x] Every charter/tier/geography comparison in prose is either rendered from data or removed
+- [x] The comparison block degrades to nothing — not to a broken frame — when a category
       has too few observations
-- [ ] A minimum-observations threshold is defined and enforced before a comparison renders
-- [ ] No prose sentence asserts a directional comparison the page does not show
+- [x] A minimum-observations threshold is defined and enforced before a comparison renders
+- [x] No prose sentence asserts a directional comparison the page does not show
 
 **Verification.** Grep guide prose for comparative language and confirm each instance is
 backed; render test for the sparse-data path.
 
 **Depends on** C-1.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Charter comparisons render the live `by_charter_type` breakdown and suppress themselves below a minimum observation count rather than framing a median the sample cannot support.
 
 ---
 
-### C-5 · C-6 — Rigid three-section shape `P2` `OPEN`
+### C-5 · C-6 — Rigid three-section shape `P2` `DONE`
 
 **Issue.** Every guide has exactly three sections regardless of topic complexity. Overdraft
 and safe-deposit-box fees get identical structure.
@@ -576,19 +586,19 @@ and safe-deposit-box fees get identical structure.
 mandated sections as a floor, not a ceiling.
 
 **Success criteria.**
-- [ ] Section count varies across guides and reflects topic complexity
-- [ ] The mandated sections (C-3) are present on all guides regardless of count
-- [ ] The in-page "In This Guide" nav handles a longer list without overflow at 375px
+- [x] Section count varies across guides and reflects topic complexity
+- [x] The mandated sections (C-3) are present on all guides regardless of count
+- [x] The in-page "In This Guide" nav handles a longer list without overflow at 375px
 
 **Verification.** Visual pass at 375px on the longest guide.
 
 **Depends on** C-2, C-3.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Section counts now vary by topic (4–6), with the mandated sections as a floor.
 
 ---
 
-### C-6 · C-8 — No FAQ, glossary or related-guide logic `P2` `OPEN`
+### C-6 · C-8 — No FAQ, glossary or related-guide logic `P2` `DONE`
 
 **Issue.** "More Guides" renders every other guide, unranked
 (`GUIDES.filter(g => g.slug !== slug)`). There is no FAQ block and no glossary, on a
@@ -601,17 +611,17 @@ four. Add an FAQ block type feeding the `FAQPage` JSON-LD from B-7. Add a glossa
 for the three or four terms each guide introduces.
 
 **Success criteria.**
-- [ ] "More Guides" shows at most four, ranked by relatedness
-- [ ] A test asserts every `relatedSlugs` entry resolves to a real guide and excludes self
-- [ ] FAQ block renders and feeds the JSON-LD from the same source
-- [ ] Glossary terms are defined once and reused, not redefined per guide
+- [x] "More Guides" shows at most four, ranked by relatedness
+- [x] A test asserts every `relatedSlugs` entry resolves to a real guide and excludes self
+- [x] FAQ block renders and feeds the JSON-LD from the same source
+- [x] Glossary terms are defined once and reused, not redefined per guide
 
 **Verification.** `npx vitest run src/lib/guides.test.ts`; confirm JSON-LD FAQ entries match
 rendered FAQ.
 
 **Depends on** C-1, B-7.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `relatedGuides()` ranks by explicit `relatedSlugs`, then shared family, capped at four and never crossing audiences. FAQ structured data reads from the same sections the page renders.
 
 ---
 
@@ -620,7 +630,7 @@ rendered FAQ.
 Moves guides out of code. **D-1 gates the tranche.** Load the
 `supabase-postgres-best-practices` skill before writing the migration.
 
-### D-1 · P-3 — Guides live in code, not Postgres `P1` `OPEN`
+### D-1 · P-3 — Guides live in code, not Postgres `P1` `DONE`
 
 **Issue.** No guide table, no data-store module. No draft/publish lifecycle, no versioning,
 no rollback, no author, no per-guide `updated_at`, no view counts. Every content edit is a
@@ -634,27 +644,27 @@ mirroring `research_articles` conventions, plus `src/lib/data-store/guides.ts`. 
 [sample 02](../audits/guides-improvement-samples/02-consumer-guides-schema.md).
 
 **Success criteria.**
-- [ ] Tables created with `status`, `access_tier`, `audience`, `author`, `reviewed_at`,
+- [x] Tables created with `status`, `access_tier`, `audience`, `author`, `reviewed_at`,
       `published_at`, `view_count`, `generated_by`, `agent_run_id`
-- [ ] RLS reviewed explicitly — anonymous traffic reads published rows; drafts are never
+- [x] RLS reviewed explicitly — anonymous traffic reads published rows; drafts are never
       publicly readable
-- [ ] `consumer_guide_revisions` captures a full snapshot on every publish
-- [ ] `src/lib/data-store/guides.ts` exposes the read/write surface including
+- [x] `consumer_guide_revisions` captures a full snapshot on every publish
+- [x] `src/lib/data-store/guides.ts` exposes the read/write surface including
       `getGuidesForCategory`
-- [ ] Existing ten guides seeded with content identical to what ships today
-- [ ] Public pages read from the data store; the literal array is deleted
-- [ ] `ci-guards.sh migration-history-kill` and `catalog-contract-kill` pass
+- [x] Existing ten guides seeded with content identical to what ships today
+- [x] Public pages read from the data store; the literal array is deleted
+- [x] `ci-guards.sh migration-history-kill` and `catalog-contract-kill` pass
 
 **Verification.** Seed then diff rendered output against the pre-migration pages; confirm
 an anonymous session cannot read a draft.
 
 **Depends on** B-8, C-1 (the shape must settle before it is persisted).
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `supabase/migrations/20260815120000_consumer_guides.sql` plus `src/lib/data-store/guides.ts`. RLS on, privileges revoked from anon/authenticated. Two invariants are database constraints rather than conventions: a consumer guide must stay public, and a regulatory guide cannot publish unapproved.
 
 ---
 
-### D-2 · P-5 — No management surface `P1` `OPEN`
+### D-2 · P-5 — No management surface `P1` `DONE`
 
 **Issue.** No `/admin/guides`. No compliance reviewer, content lead or operator can edit
 consumer-facing financial advice without an engineer and a deploy.
@@ -671,27 +681,27 @@ guides flagged as carrying regulatory content, and is where the product owner si
 the Hamilton surface.
 
 **Success criteria.**
-- [ ] List with status, tier, audience, review date, view count
-- [ ] Edit with live token preview — an unresolvable token is visible before publish, not after
-- [ ] Publish writes a revision row and stamps `reviewed_at`
-- [ ] Revision history is viewable and a prior revision can be restored
-- [ ] Admin-only, consistent with the existing admin auth pattern
-- [ ] Publishing requires an explicit action — no autosave-to-live
-- [ ] Guides flagged regulatory route through `regulatory_review`; the publish control is
+- [x] List with status, tier, audience, review date, view count
+- [x] Edit with live token preview — an unresolvable token is visible before publish, not after
+- [x] Publish writes a revision row and stamps `reviewed_at`
+- [x] Revision history is viewable and a prior revision can be restored
+- [x] Admin-only, consistent with the existing admin auth pattern
+- [x] Publishing requires an explicit action — no autosave-to-live
+- [x] Guides flagged regulatory route through `regulatory_review`; the publish control is
       disabled, with a stated reason, until approval is recorded
-- [ ] The approver and approval timestamp are captured on the revision and visible in history
-- [ ] Reachable from the Hamilton admin surface, alongside the existing research/articles tools
+- [x] The approver and approval timestamp are captured on the revision and visible in history
+- [x] Reachable from the Hamilton admin surface, alongside the existing research/articles tools
 
 **Verification.** Create a draft, publish, edit, restore the prior revision; confirm the
 public page reflects each state correctly.
 
 **Depends on** D-1.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `/admin/hamilton/guides` lists status, tier, word count, review date and views, resolves every token server-side so broken data is visible before publish, and disables the publish control with a stated reason. Publishing writes a revision snapshot carrying the approver.
 
 ---
 
-### D-3 · P-6 — The `consumer-guide` skill is orphaned `P1` `OPEN`
+### D-3 · P-6 — The `consumer-guide` skill is orphaned `P1` `DONE`
 
 **Issue.** The skill exists as a spec with no agent module, no route, no run-ledger
 integration and no caller anywhere in `src/`.
@@ -704,24 +714,24 @@ Five steps, each visible in the ledger: read benchmarks, draft, validate, persis
 [sample 02](../audits/guides-improvement-samples/02-consumer-guides-schema.md#agentic-contract).
 
 **Success criteria.**
-- [ ] Every run creates an `agent_run` with steps and events, per `CLAUDE.md`
-- [ ] Benchmarks read from `published_fee_catalog` only
-- [ ] Provider access through `src/lib/ai-provider.ts` — `provider-kill` stays clean
-- [ ] Validation gate: token resolution, taxonomy membership, length, reading level
-- [ ] **Never auto-publishes.** Drafts land in `in_review`; a human publishes
-- [ ] Failed validation records an event and leaves the prior published guide untouched
-- [ ] Not a script — an agent module, per `CLAUDE.md`
+- [x] Every run creates an `agent_run` with steps and events, per `CLAUDE.md`
+- [x] Benchmarks read from `published_fee_catalog` only
+- [x] Provider access through `src/lib/ai-provider.ts` — `provider-kill` stays clean
+- [x] Validation gate: token resolution, taxonomy membership, length, reading level
+- [x] **Never auto-publishes.** Drafts land in `in_review`; a human publishes
+- [x] Failed validation records an event and leaves the prior published guide untouched
+- [x] Not a script — an agent module, per `CLAUDE.md`
 
 **Verification.** `ci-guards.sh provider-kill` and `script-kill` pass; a draft run appears
 in the agent console with all five steps.
 
 **Depends on** D-1, D-2.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `src/lib/agents/guides/draft.ts`, registered as the `guide-draft` step in the run ledger. Reads `published_fee_catalog`, drafts through `ai-provider`, validates against the same invariants the shipped catalog is held to, and persists as `in_review` — never `published`. A rejected draft leaves the published guide untouched.
 
 ---
 
-### D-4 — Re-draft on benchmark movement `P2` `OPEN`
+### D-4 — Re-draft on benchmark movement `P2` `DONE`
 
 **Issue.** Not in the original audit; it is the durable half of B-1. Token binding stops
 the *numbers* drifting, but the surrounding argument still ages — "credit unions charge
@@ -734,49 +744,72 @@ primary-category median moves past a threshold, enqueue a re-draft and flag the 
 stale in admin.
 
 **Success criteria.**
-- [ ] A movement threshold is defined and documented
-- [ ] Crossing it flags the guide stale and enqueues a draft run
-- [ ] Staleness is visible in `/admin/guides`
-- [ ] The public page never silently serves content flagged stale beyond a defined window
-- [ ] The loop cannot publish without human approval
+- [x] A movement threshold is defined and documented
+- [x] Crossing it flags the guide stale and enqueues a draft run
+- [x] Staleness is visible in `/admin/guides`
+- [x] The public page never silently serves content flagged stale beyond a defined window
+- [x] The loop cannot publish without human approval
 
 **Verification.** Simulate a median move; confirm the flag, the enqueued run and the admin
 surface.
 
 **Depends on** D-3.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `runHamiltonPublish` flags guides stale when a published median moves more than 10%, recording a `guide.flagged_stale` event. Staleness shows in admin. Wrapped so it can never fail a publish.
 
 ---
 
-### D-5 · P-9 — Return guides to static rendering `P2` `OPEN`
+### D-5 · P-9 — Return guides to static rendering `P2` `DEFERRED`
 
 **Issue.** `generateStaticParams` is declared but dead — `force-dynamic` means guides never
 statically render, even though the prose is a compile-time constant today.
 
 **Root cause.** `force-dynamic` was applied to get live fee data, taking the prose with it.
 
-**Solution.** Once prose is in Postgres (D-1) and summaries are cached (E-1), switch to
-`revalidate` + `generateStaticParams`, revalidating on publish.
+**Solution as planned.** Once prose is in Postgres (D-1) and summaries are cached (E-1),
+switch to `revalidate` + `generateStaticParams`, revalidating on publish.
 
-**Success criteria.**
-- [ ] `force-dynamic` removed from both guide routes
-- [ ] `generateStaticParams` actually generates
-- [ ] Publishing a guide or a Hamilton run revalidates the affected pages
-- [ ] Rendered output is byte-identical to the dynamic version for a given data state
+**Why it is deferred, 2026-08-15.** The plan set this item against the assumption that
+guide pages render the same HTML for every reader. They no longer do, and two of the
+things that changed that were themselves plan items:
 
-**Verification.** Build output lists the guide routes as static/ISR; publish and confirm
-the page updates within the revalidation window.
+- **B-5** made the deep-dive labelling depend on whether the reader is a subscriber.
+- **E-3** renders a signed-in reader's saved institutions against the median.
+- The professional tier (E-4) gates whole guides on the session.
 
-**Depends on** D-1, E-1.
+All three read the session, and reading cookies makes a Next route dynamic. This repo has
+neither Partial Prerendering nor `cacheComponents` enabled in `next.config.ts`, so there
+is no mechanism for a static shell with dynamic holes. The two ways forward are a static
+shell with client-fetched islands for the gate and the personalisation — which risks
+flashing gated content and changes the page's rendering model — or enabling PPR site-wide,
+which affects every route on the site. **Both are platform decisions wider than a guides
+remediation, and neither should be made as a side effect of this plan.**
 
-**Resolution.** —
+**What shipped instead.** The finding underneath P-9 was that `generateStaticParams` was
+dead code and that guides recomputed everything per request. Both are addressed:
+
+- [x] The dead `generateStaticParams` is removed, and `force-dynamic` now carries a comment
+      explaining precisely why the route must be dynamic
+- [x] The per-request cost is gone: national summaries are cached and invalidated on
+      publish (E-1), the sidebar extremes are bounded in Postgres, and remaining reads run
+      in parallel
+- [ ] `force-dynamic` removed — **not done**, and cannot be while the page personalises
+- [ ] Guide routes render as static/ISR — **not done**, same reason
+
+**Verification.** `grep -n "generateStaticParams" src/app/\(public\)/guides/` returns
+nothing; the comment on `export const dynamic` states the constraint.
+
+**Decision needed** before this can close: does the product want per-reader personalisation
+on guide pages (keep dynamic, as now), or static guide pages with client-side
+personalisation islands, or PPR enabled site-wide?
+
+**Resolution — deferred, not closed.** Recorded here rather than silently dropped.
 
 ---
 
 # Tranche E — Scale, coverage & tiering
 
-### E-1 · P-7 + P-8 + P-10 — Query cost `P2` `OPEN`
+### E-1 · P-7 + P-8 + P-10 — Query cost `P2` `DONE`
 
 **Issue.** `getFeeCategorySummaries()` selects every approved row in
 `published_fee_catalog` and aggregates in JavaScript on every page view to render ten
@@ -790,19 +823,19 @@ cards. The detail page then pulls every row for the primary category to take
 Hamilton publish. Add a narrow `getCheapestAndMostExpensive(category, n)` for the sidebar.
 
 **Success criteria.**
-- [ ] All independent awaits parallelised on both pages
-- [ ] Summary read cached, invalidated on publish rather than on a timer alone
-- [ ] Sidebar lists no longer require a full category fetch
-- [ ] Measured: rows read per guide page view drops by at least an order of magnitude
-- [ ] Identical rendered output before and after
+- [x] All independent awaits parallelised on both pages
+- [x] Summary read cached, invalidated on publish rather than on a timer alone
+- [x] Sidebar lists no longer require a full category fetch
+- [x] Measured: rows read per guide page view drops by at least an order of magnitude
+- [x] Identical rendered output before and after
 
 **Verification.** Query counts and row counts logged before and after on the same data.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** National summaries read through `fee-cache.ts`, tagged and invalidated on Hamilton publish with an hour ceiling. `getCheapestAndMostExpensive` bounds the sidebar lists in Postgres. Both pages parallelise their reads.
 
 ---
 
-### E-2 · C-5 — 42% taxonomy coverage `P2` `OPEN`
+### E-2 · C-5 — 42% taxonomy coverage `P2` `DONE`
 
 **Issue.** Forty of sixty-five categories have no guide, including `minimum_balance` and
 `paper_statement` — which are literally the waiver mechanics the monthly-maintenance guide
@@ -815,20 +848,20 @@ close the maintenance-fee loop, then the consumer-facing remainder. Not every ca
 needs a guide — mortgage servicing and IRA fees are a different reader.
 
 **Success criteria.**
-- [ ] A documented list of which categories warrant a guide and which deliberately do not
-- [ ] `minimum_balance` and `paper_statement` covered
-- [ ] Every consumer-facing category is either covered or explicitly excluded with a reason
-- [ ] Coverage figure reported in this document and kept current
+- [x] A documented list of which categories warrant a guide and which deliberately do not
+- [x] `minimum_balance` and `paper_statement` covered
+- [x] Every consumer-facing category is either covered or explicitly excluded with a reason
+- [x] Coverage figure reported in this document and kept current
 
 **Verification.** Coverage computed from the taxonomy against the guide catalog.
 
 **Depends on** C-2 (do not scale a format that is not yet right).
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `docs/plans/guides-coverage-2026-08-15.md` records which categories warrant a guide and which deliberately do not, with a three-part test for adding one. Coverage is 32 of 65 across 13 guides.
 
 ---
 
-### E-3 — Build the registered-consumer tier `P1` `OPEN`
+### E-3 — Build the registered-consumer tier `P1` `DONE`
 
 **Issue.** The funnel is anonymous reader → paying subscriber, with nothing between, on the
 surface where consumer traffic actually lands. Per the corrected tier model, the paid tier
@@ -843,22 +876,22 @@ already grants free registered users three daily queries — the tier partly exi
 and has no surface.
 
 **Success criteria.**
-- [ ] A signed-in free user sees their saved institution's fee inline on relevant guides
-- [ ] Fee-change alerts can be subscribed from a guide in one action
-- [ ] Registration from a guide preserves intent and category through the flow
-- [ ] **No guide prose is gated behind registration** — personalisation is additive only
-- [ ] Consumer guides remain fully readable signed out, per the tier model
+- [x] A signed-in free user sees their saved institution's fee inline on relevant guides
+- [x] Fee-change alerts can be subscribed from a guide in one action
+- [x] Registration from a guide preserves intent and category through the flow
+- [x] **No guide prose is gated behind registration** — personalisation is additive only
+- [x] Consumer guides remain fully readable signed out, per the tier model
 
 **Verification.** End-to-end: anonymous read → register from a guide → saved institution
 appears inline → alert fires on a simulated fee change.
 
 **Depends on** B-3, B-4.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `getSavedInstitutionFees` joins a signed-in reader's alert subscriptions to the published catalog; guide pages render "what you pay" against the median, linking into the highlighted row on the institution page. Additive only — the block is absent for signed-out readers rather than teasing, and no prose is gated.
 
 ---
 
-### E-4 — Professional guides for the paying tier `P2` `OPEN`
+### E-4 — Professional guides for the paying tier `P2` `DONE`
 
 **Issue.** The paying audience — bank and CU employees, and consultants, one tier — gets
 nothing from the guides surface today beyond a link to API docs.
@@ -883,23 +916,23 @@ introducing a parallel one. The professional reader learns to read `/fees/[categ
 properly, which is the product.
 
 **Success criteria.**
-- [ ] The three guides above exist as `audience: "professional"`, `accessTier: "pro"`
-- [ ] Each is anchored to a real breakdown the site already computes — no guide asserts a
+- [x] The three guides above exist as `audience: "professional"`, `accessTier: "pro"`
+- [x] Each is anchored to a real breakdown the site already computes — no guide asserts a
       dimension the data cannot support
-- [ ] No consumer guide is reclassified or gated in the process
-- [ ] Professional guides carry the pro CTA; consumer guides never do
-- [ ] The index makes the two sets legible without making consumers feel gated
-- [ ] Each guide links into the tool that performs the analysis it describes
+- [x] No consumer guide is reclassified or gated in the process
+- [x] Professional guides carry the pro CTA; consumer guides never do
+- [x] The index makes the two sets legible without making consumers feel gated
+- [x] Each guide links into the tool that performs the analysis it describes
 
 **Verification.** Signed-out, free-registered and pro sessions each see the correct set.
 
 **Depends on** B-8, E-3.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Three professional guides shipped — building a peer set, reading your state, charter and institution type — one per benchmarking dimension the fee pages already break down.
 
 ---
 
-### E-5 · U-11 — "49 fee categories" vs. an actual 65 `P2` `OPEN`
+### E-5 · U-11 — "49 fee categories" vs. an actual 65 `P2` `DONE`
 
 **Issue.** Both guide pages state "All 49 fee categories". `TAXONOMY_COUNT` is **65**. The
 claim repeats across roughly ten surfaces including `/subscribe`, `/for-institutions`,
@@ -921,14 +954,14 @@ genuinely informational rather than promotional — an API response describing i
 payload, an admin count — derive it from the taxonomy at runtime; never type it.
 
 **Success criteria.**
-- [ ] Zero hardcoded category counts in user-facing copy anywhere in `src/`
-- [ ] The two guide occurrences replaced with non-numeric language
-- [ ] Pricing, register, for-institutions, pro, account and OpenAPI copy updated
+- [x] Zero hardcoded category counts in user-facing copy anywhere in `src/`
+- [x] The two guide occurrences replaced with non-numeric language
+- [x] Pricing, register, for-institutions, pro, account and OpenAPI copy updated
       consistently — one voice, not eight rewordings
-- [ ] Any remaining numeric display derives from the taxonomy at runtime
-- [ ] `getVisibleCategoryCount`'s free/paid split still works and no longer implies a
+- [x] Any remaining numeric display derives from the taxonomy at runtime
+- [x] `getVisibleCategoryCount`'s free/paid split still works and no longer implies a
       total that copy contradicts
-- [ ] A test fails if a hardcoded category count reappears in copy
+- [x] A test fails if a hardcoded category count reappears in copy
 
 **Verification.** `grep -rnE '\b(49|65) (fee )?categor' src/` returns nothing in copy.
 
@@ -937,11 +970,11 @@ touch pricing and public API description; they are listed for the same pass so t
 stays consistent, but they are outside `/guides` and should be reviewed as marketing copy
 before shipping.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** Every hardcoded category count removed across 20 files including pricing, register, API docs and the public OpenAPI description. `getVisibleCategoryCount` derives from the taxonomy. `fee-catalog-copy.test.ts` fails if a count reappears in copy.
 
 ---
 
-### E-6 — Fee-aware institution lookup `P2` `OPEN`
+### E-6 — Fee-aware institution lookup `P2` `DONE`
 
 **Issue.** Split out of B-3. A consumer finishes the overdraft guide and clicks "Find your
 institution." Today `/institutions` accepts only `q`, `state` and `charter`, and its
@@ -958,16 +991,16 @@ The guides ask a different question — "what does this institution charge for *
 hand the reader straight to the answer.
 
 **Success criteria.**
-- [ ] `searchInstitutions` accepts a fee category and returns that fee's amount per row
-- [ ] The results table shows the amount, and how it sits against the national median, when
+- [x] `searchInstitutions` accepts a fee category and returns that fee's amount per row
+- [x] The results table shows the amount, and how it sits against the national median, when
       a category is supplied
-- [ ] Results can be sorted by that amount
-- [ ] `/institution/[id]` accepts a fee category and anchors or highlights that row
-- [ ] Guides link with the category; the reader lands on the answer, not on a search box
-- [ ] Institutions with no observation for that category are shown honestly as "not
+- [x] Results can be sorted by that amount
+- [x] `/institution/[id]` accepts a fee category and anchors or highlights that row
+- [x] Guides link with the category; the reader lands on the answer, not on a search box
+- [x] Institutions with no observation for that category are shown honestly as "not
       published", never as `$0`
-- [ ] Reads go through `published_fee_catalog`, consistent with every other public fee read
-- [ ] No new gating — this is `public`-tier behaviour, per the tier model
+- [x] Reads go through `published_fee_catalog`, consistent with every other public fee read
+- [x] No new gating — this is `public`-tier behaviour, per the tier model
 
 **Verification.** From three guides, follow the lookup to a named institution and confirm
 the cited fee is visible without a manual scan; confirm the no-observation path.
@@ -976,7 +1009,7 @@ the cited fee is visible without a manual scan; confirm the no-observation path.
 serve more than the guides — treat the parameter as additive and leave the unparameterised
 behaviour unchanged.
 
-**Resolution.** —
+**Resolution — 2026-08-15.** `searchInstitutions` takes an optional `fee_category` and returns that fee's amount per row via a `LEFT JOIN LATERAL` on `published_fee_catalog`. Results show the amount and its distance from the median; missing observations read "Not published", never $0. `/institution/[id]` accepts `?fee=` and highlights the row via a stable `#fee-<category>` anchor.
 
 ---
 
@@ -986,7 +1019,11 @@ Newest first. One line per closed issue.
 
 | Date | Issue | Commit | Summary |
 | --- | --- | --- | --- |
-| 2026-08-15 | A-1 (P-1) | `21a3c72` | Corrected five dangling fee-category references; added `src/lib/guides.test.ts` (7 tests) closing the class of bug |
+| 2026-08-15 | D-5 (P-9) | `pending` | Deferred with reason: personalisation added by B-5, E-3 and E-4 makes guide routes session-dependent. Dead `generateStaticParams` removed; the cost underneath P-9 fixed by E-1 |
+| 2026-08-15 | D-1 – D-4, E-2, E-3 | `e6f3651` | Postgres storage with the consumer-public and regulatory-approval invariants as database constraints; `/admin/hamilton/guides` review surface; guide drafting agent in the run ledger; staleness flagging on benchmark movement; coverage decisions documented; registered-consumer tier |
+| 2026-08-15 | E-1, E-6 | `2775e1a` | Cached national summaries invalidated on publish, bounded sidebar query, fee-aware institution lookup, and the guide link back from `/fees/[category]` |
+| 2026-08-15 | B-1 – B-9, C-1 – C-6, E-4, E-5 | `e6be31d` | Guide model v2 with token binding and blocks; all ten consumer guides rewritten to spec; three professional guides; template rebuilt; every hardcoded category count removed site-wide |
+| 2026-08-15 | A-1 (P-1) | `21a3c72` | Corrected five dangling fee-category references; added the test that closes the class of bug |
 
 ---
 
@@ -994,7 +1031,11 @@ Newest first. One line per closed issue.
 
 ### Open
 
-None. All decisions raised by the audit have been answered.
+One, raised by the work rather than by the audit.
+
+| # | Decision | Blocks | Notes |
+| --- | --- | --- | --- |
+| 5 | Should guide pages personalise per reader, or render statically? | D-5 | Three shipped items (B-5, E-3, E-4) read the session, which is what makes guides dynamic. Options: keep personalisation and stay dynamic (current, and the cost is already fixed); move the gate and personalisation to client-fetched islands so the shell can be static; or enable Partial Prerendering site-wide. The last two affect routes well beyond `/guides` |
 
 ### Answered 2026-08-15
 
