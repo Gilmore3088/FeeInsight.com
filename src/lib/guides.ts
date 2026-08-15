@@ -41,7 +41,7 @@ export const GUIDES: Guide[] = [
     title: "NSF Fees Explained: Non-Sufficient Funds Charges at US Banks",
     description:
       "What are NSF fees, how much do banks charge, and how do they differ from overdraft fees? National data and tips for consumers.",
-    feeCategories: ["nsf", "nsf_daily_cap", "returned_item"],
+    feeCategories: ["nsf", "nsf_daily_cap", "deposited_item_return"],
     sections: [
       {
         heading: "What is an NSF fee?",
@@ -65,7 +65,7 @@ export const GUIDES: Guide[] = [
     title: "ATM Fees by Bank: How Much You Pay for Out-of-Network Withdrawals",
     description:
       "Compare ATM fees at US banks and credit unions. Foreign ATM surcharges, network access, and how to minimize ATM costs.",
-    feeCategories: ["atm_non_network", "atm_international", "atm_balance_inquiry"],
+    feeCategories: ["atm_non_network", "atm_international", "balance_inquiry"],
     sections: [
       {
         heading: "Understanding ATM fees",
@@ -92,8 +92,8 @@ export const GUIDES: Guide[] = [
     feeCategories: [
       "wire_domestic_outgoing",
       "wire_domestic_incoming",
-      "wire_international_outgoing",
-      "wire_international_incoming",
+      "wire_intl_outgoing",
+      "wire_intl_incoming",
     ],
     sections: [
       {
@@ -118,7 +118,7 @@ export const GUIDES: Guide[] = [
     title: "Monthly Maintenance Fees: Which Banks Charge Them and How to Avoid Them",
     description:
       "Guide to monthly account maintenance fees at US banks and credit unions. How much they cost, who charges them, and how to get them waived.",
-    feeCategories: ["monthly_maintenance", "account_closure", "dormant_account"],
+    feeCategories: ["monthly_maintenance", "early_closure", "dormant_account"],
     sections: [
       {
         heading: "What are monthly maintenance fees?",
