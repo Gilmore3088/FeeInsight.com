@@ -30,16 +30,21 @@ dependency.
 
 ## Progress
 
-| Tranche | Theme | Issues | Done | Open | Blocked |
-| --- | --- | ---: | ---: | ---: | ---: |
-| A | Correctness | 1 | 1 | 0 | 0 |
-| B | Stop shipping contradictions | 9 | 0 | 9 | 0 |
-| C | Content to spec | 6 | 0 | 6 | 0 |
-| D | Storage & management | 5 | 0 | 5 | 0 |
-| E | Scale, coverage & tiering | 8 | 0 | 7 | 1 |
-| **Total** | | **29** | **1** | **27** | **1** |
+**26 work items** covering all **29 audit findings**, plus three items the audit did not
+raise (D-4, E-3, E-4). Several items close more than one finding — B-8, B-9 and E-1 each
+resolve three — because those findings share a single root cause and fixing them
+separately would mean touching the same code three times.
 
-By severity: P0 **2** (1 done) · P1 **13** · P2 **14**.
+| Tranche | Theme | Items | Findings closed | Done | Open | Blocked |
+| --- | --- | ---: | --- | ---: | ---: | ---: |
+| A | Correctness | 1 | P-1 | 1 | 0 | 0 |
+| B | Stop shipping contradictions | 9 | P-2 P-4 U-1…U-9 C-7 | 0 | 9 | 0 |
+| C | Content to spec | 6 | C-1 C-2 C-3 C-4 C-6 C-8 | 0 | 6 | 0 |
+| D | Storage & management | 5 | P-3 P-5 P-6 P-9 | 0 | 5 | 0 |
+| E | Scale, coverage & tiering | 5 | P-7 P-8 P-10 C-5 U-11 | 0 | 4 | 1 |
+| **Total** | | **26** | **29 of 29** | **1** | **24** | **1** |
+
+Work items by severity: P0 **2** (1 done) · P1 **14** · P2 **10**.
 
 ---
 
