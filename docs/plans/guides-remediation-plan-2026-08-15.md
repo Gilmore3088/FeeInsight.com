@@ -41,10 +41,14 @@ separately would mean touching the same code three times.
 | B | Stop shipping contradictions | 9 | P-2 P-4 U-1…U-9 C-7 | 0 | 9 | 0 |
 | C | Content to spec | 6 | C-1 C-2 C-3 C-4 C-6 C-8 | 0 | 6 | 0 |
 | D | Storage & management | 5 | P-3 P-5 P-6 P-9 | 0 | 5 | 0 |
-| E | Scale, coverage & tiering | 5 | P-7 P-8 P-10 C-5 U-11 | 0 | 4 | 1 |
-| **Total** | | **26** | **29 of 29** | **1** | **24** | **1** |
+| E | Scale, coverage & tiering | 6 | P-7 P-8 P-10 C-5 U-11 | 0 | 6 | 0 |
+| **Total** | | **27** | **29 of 29** | **1** | **26** | **0** |
 
-Work items by severity: P0 **2** (1 done) · P1 **14** · P2 **10**.
+Work items by severity: P0 **2** (1 done) · P1 **14** · P2 **11**.
+
+**Nothing is blocked.** All four open decisions were answered 2026-08-15 — see
+[Decisions](#decisions-answered-2026-08-15). E-5 is unblocked, E-4 has its topics, and
+E-6 was added as a consequence of the institution-lookup answer.
 
 ---
 
@@ -202,19 +206,24 @@ Institution" being the first item in the consumer nav.
 journey. Nothing routes outward to the site's own primary consumer action.
 
 **Solution.** Add a "Check your own bank" block below the benchmark cards, linking to
-`/institutions` pre-filtered by the guide's primary category. Markup in
+`/institutions`. Markup in
 [sample 04 §2](../audits/guides-improvement-samples/04-template-improvements.md).
+
+**Scope decided 2026-08-15.** Ship the plain link now; do not block on a fee-aware
+directory. `/institutions` today takes `q`, `state` and `charter` only, and its results
+table shows a *count* of published fees per institution — never a specific fee amount. A
+`?fee=` parameter would therefore be inert. Closing the dead end is worth far more than
+the polish, so B-3 ships the link and **E-6** carries the fee-aware version separately.
 
 **Success criteria.**
 - [ ] Every guide page renders an institution-lookup block above the fold on desktop
 - [ ] The block names the live median for the primary category (via B-1 tokens)
-- [ ] The link carries the primary category so `/institutions` can pre-filter
-- [ ] `/institutions` honours the category param, or the param is dropped rather than
-      linking to a filter that does not exist
+- [ ] The link goes to `/institutions` with no parameter the page does not honour
+- [ ] Copy sets the right expectation — "search your bank," not "see your bank's overdraft fee"
 - [ ] Keyboard-reachable with a visible focus state
 
-**Verification.** Manual pass on three guides at 375px and 1280px; confirm the
-`/institutions` param round-trips.
+**Verification.** Manual pass on three guides at 375px and 1280px; confirm no dead
+parameter is emitted.
 
 **Depends on** B-1 (for the median in the heading).
 
@@ -494,19 +503,34 @@ opt-in, Reg DD statement totals, CFPB complaint routes) with no CFR citations. "
 Your Bank" as a benchmarking table keyed to P25/median/P75. Attribution footer naming the
 institution count, the review date and the methodology link.
 
+**Regulatory sign-off decided 2026-08-15.** The product owner signs off regulatory
+content, **through admin functionality on the Hamilton surface** — not in a code review and
+not in a document. That makes sign-off a state in the guide workflow, not a convention:
+
+- A guide carrying regulatory content cannot reach `published` without an explicit
+  approval action recorded against a named approver.
+- The approval is captured on the guide revision, so "who approved this Reg E statement,
+  and when" is answerable from the record.
+- Re-drafting regulatory content (D-4) **invalidates the prior approval** and returns the
+  guide to review. An agent may never inherit a human's sign-off.
+- This adds a `regulatory_review` requirement to D-2's workflow and a hard gate to D-3.
+
 **Success criteria.**
 - [ ] All ten guides carry all three sections
 - [ ] Regulatory statements are accurate and cite the rule by common name only
-- [ ] Regulatory claims are reviewed by a human before publish — this is the one content
-      area where a wrong statement is a compliance problem, not a quality problem
+- [ ] Guides flagged as carrying regulatory content cannot publish without a recorded
+      approval from a named approver on the Hamilton admin surface
+- [ ] The approval is stamped on the revision, with approver and timestamp
+- [ ] Re-drafting regulatory content clears the approval and returns the guide to review
 - [ ] "Compare Your Bank" thresholds are bound tokens, never literals
 - [ ] Attribution footer renders the institution count and the guide review date
 - [ ] A test asserts the three required section anchors exist on every guide
 
-**Verification.** Section-presence test; human review sign-off recorded in this entry on
-resolution.
+**Verification.** Section-presence test; attempt to publish a regulatory guide without
+approval and confirm it is refused; confirm the approval record survives a re-draft as
+*cleared*, not as *inherited*.
 
-**Depends on** C-1, B-1, B-8.
+**Depends on** C-1, B-1, B-8, and — for the gate itself — D-2.
 
 **Resolution.** —
 
@@ -641,6 +665,11 @@ consumer-facing financial advice without an engineer and a deploy.
 preview, publish, revision history, and a token-resolution preview showing what the reader
 will actually see.
 
+**Regulatory review is part of this surface** (per the C-3 decision). The status machine is
+`draft → in_review → regulatory_review → published`, where the third state applies only to
+guides flagged as carrying regulatory content, and is where the product owner signs off on
+the Hamilton surface.
+
 **Success criteria.**
 - [ ] List with status, tier, audience, review date, view count
 - [ ] Edit with live token preview — an unresolvable token is visible before publish, not after
@@ -648,6 +677,10 @@ will actually see.
 - [ ] Revision history is viewable and a prior revision can be restored
 - [ ] Admin-only, consistent with the existing admin auth pattern
 - [ ] Publishing requires an explicit action — no autosave-to-live
+- [ ] Guides flagged regulatory route through `regulatory_review`; the publish control is
+      disabled, with a stated reason, until approval is recorded
+- [ ] The approver and approval timestamp are captured on the revision and visible in history
+- [ ] Reachable from the Hamilton admin surface, alongside the existing research/articles tools
 
 **Verification.** Create a draft, publish, edit, restore the prior revision; confirm the
 public page reflects each state correctly.
@@ -833,25 +866,40 @@ nothing from the guides surface today beyond a link to API docs.
 **Root cause.** Guides were scoped as consumer-only; the professional reader was assumed to
 live in `/pro` and `/research`.
 
-**Solution.** A `pro`-tier guide set written for the other reader: peer-set construction,
-disclosure-language guidance, "how your fee reads against your asset tier and district",
-revenue-impact framing. Separate guides, not gated sections of consumer ones.
+**Solution.** A `pro`-tier guide set written for the other reader. Separate guides, not
+gated sections of consumer ones.
+
+**Opening topics decided 2026-08-15 — three guides, one per benchmarking dimension:**
+
+| Guide | Question it answers | Data it stands on |
+| --- | --- | --- |
+| Building a peer set | "Who should we actually be compared against, and why is the national median the wrong yardstick?" | `by_asset_tier`, charter, district; the peer tooling under `/pro/peers` |
+| Reading your state | "How does our state's fee landscape differ from national, and what does that mean for our pricing?" | `by_state`, the state reports under `/research/state/[code]` |
+| Charter and institution type | "How much of the bank-versus-credit-union gap is charter, and how much is size?" | `by_charter_type` crossed with `by_asset_tier` |
+
+These three are deliberately the same three dimensions the fee detail pages already
+break down — so the guides explain the site's own analytical instrument rather than
+introducing a parallel one. The professional reader learns to read `/fees/[category]`
+properly, which is the product.
 
 **Success criteria.**
-- [ ] `audience: "professional"`, `accessTier: "pro"` guides exist and are listed separately
+- [ ] The three guides above exist as `audience: "professional"`, `accessTier: "pro"`
+- [ ] Each is anchored to a real breakdown the site already computes — no guide asserts a
+      dimension the data cannot support
 - [ ] No consumer guide is reclassified or gated in the process
 - [ ] Professional guides carry the pro CTA; consumer guides never do
 - [ ] The index makes the two sets legible without making consumers feel gated
+- [ ] Each guide links into the tool that performs the analysis it describes
 
 **Verification.** Signed-out, free-registered and pro sessions each see the correct set.
 
-**Depends on** B-8, E-3, and a product decision on which professional topics ship first.
+**Depends on** B-8, E-3.
 
 **Resolution.** —
 
 ---
 
-### E-5 · U-11 — "49 fee categories" vs. an actual 65 `P2` `BLOCKED`
+### E-5 · U-11 — "49 fee categories" vs. an actual 65 `P2` `OPEN`
 
 **Issue.** Both guide pages state "All 49 fee categories". `TAXONOMY_COUNT` is **65**. The
 claim repeats across roughly ten surfaces including `/subscribe`, `/for-institutions`,
@@ -860,21 +908,73 @@ claim repeats across roughly ten surfaces including `/subscribe`, `/for-institut
 **Root cause.** A literal that was true at one point and was never derived from the
 taxonomy.
 
-**Blocked on** a product-owner decision: is the advertised number 65 (the taxonomy), 49
-(some prior product boundary), or a deliberately curated subset? This touches pricing and
-public API copy, so it is not an engineering call.
+**Decided 2026-08-15.** The catalog is a **curated subset**, and **no hard number is
+advertised**. This is the better answer than picking 49 or 65: a count is a promise that
+has to be maintained forever, it goes stale the moment the taxonomy moves, and it invites
+exactly the drift that produced this finding. Describing the coverage qualitatively is
+accurate at every point in time.
 
-**Solution once decided.** Derive the number from a single exported constant; delete every
-literal.
+**Solution.** Remove the numeric claim rather than correcting it. Replace with language
+that describes the coverage without committing to a figure — "every fee category we
+benchmark", "a curated set of consumer and commercial fee categories". Where a number is
+genuinely informational rather than promotional — an API response describing its own
+payload, an admin count — derive it from the taxonomy at runtime; never type it.
 
 **Success criteria.**
-- [ ] The advertised figure is decided and recorded here
-- [ ] Zero hardcoded category counts anywhere in `src/`
-- [ ] All surfaces read the same constant
-- [ ] `getVisibleCategoryCount` agrees with the advertised figure
-- [ ] A test fails if the constant and the taxonomy diverge
+- [ ] Zero hardcoded category counts in user-facing copy anywhere in `src/`
+- [ ] The two guide occurrences replaced with non-numeric language
+- [ ] Pricing, register, for-institutions, pro, account and OpenAPI copy updated
+      consistently — one voice, not eight rewordings
+- [ ] Any remaining numeric display derives from the taxonomy at runtime
+- [ ] `getVisibleCategoryCount`'s free/paid split still works and no longer implies a
+      total that copy contradicts
+- [ ] A test fails if a hardcoded category count reappears in copy
 
-**Verification.** `grep -rn '\b49\b' src/` returns no category-count claims.
+**Verification.** `grep -rnE '\b(49|65) (fee )?categor' src/` returns nothing in copy.
+
+**Note on scope.** The two guide occurrences are in scope for this plan. The other eight
+touch pricing and public API description; they are listed for the same pass so the voice
+stays consistent, but they are outside `/guides` and should be reviewed as marketing copy
+before shipping.
+
+**Resolution.** —
+
+---
+
+### E-6 — Fee-aware institution lookup `P2` `OPEN`
+
+**Issue.** Split out of B-3. A consumer finishes the overdraft guide and clicks "Find your
+institution." Today `/institutions` accepts only `q`, `state` and `charter`, and its
+results table shows a *count* of published fees per institution — "12 verified" — never an
+amount. The reader must find their bank, click into `/institution/[id]`, and scan a full
+fee list for the one line they came for. `/institution/[id]` takes no search params and has
+no per-fee anchors, so there is nothing to deep-link to either.
+
+**Root cause.** The directory was built to answer "does this institution have fee data?"
+The guides ask a different question — "what does this institution charge for *this* fee?"
+— and no read path answers it.
+
+**Solution.** Make the fee category a first-class dimension of the lookup, so the guide can
+hand the reader straight to the answer.
+
+**Success criteria.**
+- [ ] `searchInstitutions` accepts a fee category and returns that fee's amount per row
+- [ ] The results table shows the amount, and how it sits against the national median, when
+      a category is supplied
+- [ ] Results can be sorted by that amount
+- [ ] `/institution/[id]` accepts a fee category and anchors or highlights that row
+- [ ] Guides link with the category; the reader lands on the answer, not on a search box
+- [ ] Institutions with no observation for that category are shown honestly as "not
+      published", never as `$0`
+- [ ] Reads go through `published_fee_catalog`, consistent with every other public fee read
+- [ ] No new gating — this is `public`-tier behaviour, per the tier model
+
+**Verification.** From three guides, follow the lookup to a named institution and confirm
+the cited fee is visible without a manual scan; confirm the no-observation path.
+
+**Depends on** B-3. **Note:** this touches `/institutions` and `/institution/[id]`, which
+serve more than the guides — treat the parameter as additive and leave the unparameterised
+behaviour unchanged.
 
 **Resolution.** —
 
@@ -890,17 +990,25 @@ Newest first. One line per closed issue.
 
 ---
 
-## Open decisions for the product owner
+## Decisions
 
-| # | Decision | Blocks | Notes |
+### Open
+
+None. All decisions raised by the audit have been answered.
+
+### Answered 2026-08-15
+
+| # | Decision | Answer | Effect on the plan |
 | --- | --- | --- | --- |
-| 1 | Advertised category count — 49, 65, or a curated subset | E-5 | Touches pricing and public API copy |
-| 2 | Which professional guide topics ship first | E-4 | Peer-set construction and disclosure guidance are the obvious openers |
-| 3 | Whether `/institutions` gains a category pre-filter | B-3 | If not, the lookup block links unfiltered — still a large improvement |
-| 4 | Who signs off regulatory content | C-3 | A wrong Reg E statement is a compliance problem, not a quality one |
+| 0 | Who is the paying audience? | Bank and CU employees are a paying audience, on the same tier as consultants | Audience collapses to `consumer \| professional`; access tiers to `public \| registered \| pro`. Added E-3 and E-4; reshaped B-5 |
+| 1 | Advertised category count — 49, 65, or a curated subset? | **A curated subset, with no hard number advertised** | E-5 unblocked. The fix becomes *remove the claim*, not *correct the number* — a count is a promise that goes stale the moment the taxonomy moves |
+| 2 | Which professional guide topics ship first? | **Peer set, state, and institution type** | E-4 now names three guides, one per benchmarking dimension — deliberately the same three the fee detail pages already break down, so the guides teach the site's own instrument |
+| 3 | Does `/institutions` gain a category pre-filter? | **Staged** — ship the plain link now, build the fee-aware lookup separately | B-3 emits no dead parameter. New item **E-6** carries the real work: `/institutions` today cannot show a specific fee amount at all, so a `?fee=` param would have been inert |
+| 4 | Who signs off regulatory content? | **The product owner, through admin functionality on the Hamilton surface** | Sign-off becomes a workflow state, not a convention. C-3 gains an approval gate; D-2 gains a `regulatory_review` status; D-4 must clear approval on re-draft — an agent never inherits a human's sign-off |
 
-**Resolved decisions.**
-
-| Date | Decision | Effect |
-| --- | --- | --- |
-| 2026-08-15 | Bank and CU employees are a paying audience, on the same tier as consultants | Audience collapses to `consumer \| professional`; access tiers to `public \| registered \| pro`; recorded in the tier model above and reflected in E-3 and E-4 |
+**Note on decision 3.** The question was poorly put the first time. Concretely: today a
+reader clicking "Find your institution" from the overdraft guide lands on a name/state
+search whose results show *"12 fees verified"* — a count, not the overdraft amount. They
+then click into the institution and scan its full fee list for the line they came for.
+Making the guide hand them the answer directly requires new work in `searchInstitutions`
+and the results table, which is why it is now its own item rather than a condition on B-3.
