@@ -24,10 +24,19 @@ export interface GuideActionResult {
   error?: string;
 }
 
+/**
+ * Consumer guide pages are statically rendered, so publishing has to invalidate them
+ * explicitly — the time-based revalidation is only a backstop. Both guide paths are
+ * revalidated because the audience may have changed in the same edit.
+ */
 function refresh(slug?: string): void {
   revalidatePath("/admin/hamilton/guides");
   revalidatePath("/guides");
-  if (slug) revalidatePath(`/guides/${slug}`);
+  revalidatePath("/sitemap.xml");
+  if (slug) {
+    revalidatePath(`/guides/${slug}`);
+    revalidatePath(`/guides/pro/${slug}`);
+  }
 }
 
 export async function moveGuideToReviewAction(

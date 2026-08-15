@@ -35,30 +35,31 @@ raise (D-4, E-3, E-4). Several items close more than one finding — B-8, B-9 an
 resolve three — because those findings share a single root cause and fixing them
 separately would mean touching the same code three times.
 
-| Tranche | Theme | Items | Findings closed | Done | Open | Deferred |
-| --- | --- | ---: | --- | ---: | ---: | ---: |
-| A | Correctness | 1 | P-1 | 1 | 0 | 0 |
-| B | Stop shipping contradictions | 9 | P-2 P-4 U-1…U-9 C-7 | 9 | 0 | 0 |
-| C | Content to spec | 6 | C-1 C-2 C-3 C-4 C-6 C-8 | 6 | 0 | 0 |
-| D | Storage & management | 5 | P-3 P-5 P-6 P-9 | 4 | 0 | 1 |
-| E | Scale, coverage & tiering | 6 | P-7 P-8 P-10 C-5 U-11 | 6 | 0 | 0 |
-| **Total** | | **27** | **29 of 29** | **26** | **0** | **1** |
+| Tranche | Theme | Items | Findings closed | Done |
+| --- | --- | ---: | --- | ---: |
+| A | Correctness | 1 | P-1 | 1 |
+| B | Stop shipping contradictions | 9 | P-2 P-4 U-1…U-9 C-7 | 9 |
+| C | Content to spec | 6 | C-1 C-2 C-3 C-4 C-6 C-8 | 6 |
+| D | Storage & management | 5 | P-3 P-5 P-6 P-9 | 5 |
+| E | Scale, coverage & tiering | 6 | P-7 P-8 P-10 C-5 U-11 | 6 |
+| **Total** | | **27** | **29 of 29** | **27** |
 
-Work items by severity: P0 **2** (both done) · P1 **14** (all done) · P2 **11** (10 done,
-1 deferred).
+**All 27 items are closed and all 29 audit findings are resolved.** Work items by
+severity: P0 **2** · P1 **14** · P2 **11** — all done.
 
-**Both P0s are closed.** A-1 corrected the dangling fee-category references; B-1 removed
-the last hardcoded dollar figure from guide prose, which was the drift risk the audit
-called the largest content-integrity problem on the surface.
+D-5 was briefly deferred when three items in this plan (B-5, E-3, E-4) made guide pages
+session-dependent, and then resolved properly rather than left: professional guides moved
+to their own dynamic route, personalisation became a client island, and reader-conditional
+labels became content-conditional. `/guides/[slug]` now prerenders as SSG. Two deliberate
+exceptions are documented in the D-5 entry.
 
-**One item is deferred, not dropped: D-5** (static rendering). It became unachievable
-*because of* three other items in this plan — B-5, E-3 and E-4 all made guide pages
-depend on the reader's session, and a route that reads cookies cannot be static without
-Partial Prerendering, which is not enabled here. The cost that made P-9 worth fixing is
-addressed anyway; the rendering-mode question needs a platform decision. Full reasoning in
-the D-5 entry.
+**Verified against a real production build**, not inferred — `npx next build` reports
+`● /guides/[slug]`. The build also surfaced a defect the plan would otherwise have
+shipped: prerendering failed without `DATABASE_URL`, now guarded the same way
+`/fees/[category]` guards it.
 
-All four product decisions were answered 2026-08-15 — see [Decisions](#decisions).
+All product decisions raised by the audit and by the work have been answered — see
+[Decisions](#decisions).
 
 ---
 
@@ -759,52 +760,66 @@ surface.
 
 ---
 
-### D-5 · P-9 — Return guides to static rendering `P2` `DEFERRED`
+### D-5 · P-9 — Return guides to static rendering `P2` `DONE`
 
-**Issue.** `generateStaticParams` is declared but dead — `force-dynamic` means guides never
-statically render, even though the prose is a compile-time constant today.
+**Issue.** `generateStaticParams` was declared but dead — `force-dynamic` meant guides
+never statically rendered, and every reader paid for a full re-render.
 
-**Root cause.** `force-dynamic` was applied to get live fee data, taking the prose with it.
+**Root cause.** `force-dynamic` was applied to get live fee data, and it took the prose
+with it. Later, three items in this plan added session reads that would have kept the
+route dynamic regardless: B-5 (deep-dive labelling), E-3 (saved institutions) and E-4
+(the professional tier).
 
-**Solution as planned.** Once prose is in Postgres (D-1) and summaries are cached (E-1),
-switch to `revalidate` + `generateStaticParams`, revalidating on publish.
+**Solution.** Separate what varies by reader from what does not, rather than making the
+whole page pay for the parts that do.
 
-**Why it is deferred, 2026-08-15.** The plan set this item against the assumption that
-guide pages render the same HTML for every reader. They no longer do, and two of the
-things that changed that were themselves plan items:
+- **Professional guides moved to `/guides/pro/[slug]`**, which stays `force-dynamic`
+  because it gates on the session. Nothing gated is ever rendered into a cached page.
+- **Personalisation became a client island.** `SavedInstitutionsPanel` fetches
+  `/api/guides/saved-institutions` after hydration. Signed-out readers get an empty list
+  and the panel renders nothing, so there is no teaser and no layout shift.
+- **Reader-conditional labels became content-conditional.** "Breakdowns require a
+  subscription" states a fact about the destination, which is true for everyone, instead
+  of branching on `isPro`.
 
-- **B-5** made the deep-dive labelling depend on whether the reader is a subscriber.
-- **E-3** renders a signed-in reader's saved institutions against the median.
-- The professional tier (E-4) gates whole guides on the session.
+`/guides/[slug]` now reads no session at all and is prerendered via
+`generateStaticParams` with `revalidate` as a backstop. Invalidation is event-driven:
+Hamilton publishing drops the cached benchmark summaries, and publishing a guide from
+admin revalidates both guide paths and the sitemap.
 
-All three read the session, and reading cookies makes a Next route dynamic. This repo has
-neither Partial Prerendering nor `cacheComponents` enabled in `next.config.ts`, so there
-is no mechanism for a static shell with dynamic holes. The two ways forward are a static
-shell with client-fetched islands for the gate and the personalisation — which risks
-flashing gated content and changes the page's rendering model — or enabling PPR site-wide,
-which affects every route on the site. **Both are platform decisions wider than a guides
-remediation, and neither should be made as a side effect of this plan.**
+**Success criteria.**
+- [x] `force-dynamic` removed from the guide detail route
+- [x] `generateStaticParams` actually generates — the build reports `● /guides/[slug]` (SSG)
+- [x] Publishing a guide or a Hamilton run revalidates the affected pages
+- [x] Rendered output is identical for every reader, which is what makes caching correct
+- [x] A build without database access does not fail and does not bake an empty page
 
-**What shipped instead.** The finding underneath P-9 was that `generateStaticParams` was
-dead code and that guides recomputed everything per request. Both are addressed:
+**Verification.** `npx next build` route table:
 
-- [x] The dead `generateStaticParams` is removed, and `force-dynamic` now carries a comment
-      explaining precisely why the route must be dynamic
-- [x] The per-request cost is gone: national summaries are cached and invalidated on
-      publish (E-1), the sidebar extremes are bounded in Postgres, and remaining reads run
-      in parallel
-- [ ] `force-dynamic` removed — **not done**, and cannot be while the page personalises
-- [ ] Guide routes render as static/ISR — **not done**, same reason
+```
+├ ƒ /guides                      dynamic — see note below
+├ ● /guides/[slug]               SSG, prerendered via generateStaticParams
+├ ƒ /guides/pro/[slug]           dynamic — gates on the session
+├ ƒ /api/guides/saved-institutions
+```
 
-**Verification.** `grep -n "generateStaticParams" src/app/\(public\)/guides/` returns
-nothing; the comment on `export const dynamic` states the constraint.
+**Two deliberate exceptions, both for correctness rather than convenience.**
 
-**Decision needed** before this can close: does the product want per-reader personalisation
-on guide pages (keep dynamic, as now), or static guide pages with client-side
-personalisation islands, or PPR enabled site-wide?
+*The index stays dynamic.* It reads no session and could be prerendered on that basis. It
+is not, because it has no route params, so there is no `generateStaticParams` to return
+`[]` from when the database is unreachable at build time. A build during a database blip
+would bake an index with no medians and serve it until the next revalidation. The detail
+pages avoid exactly that by prerendering nothing in that case — a guard this repo already
+uses on `/fees/[category]`. Rendering the index per request is cheap now that summaries
+are cached, so correctness is the better trade.
 
-**Resolution — deferred, not closed.** Recorded here rather than silently dropped.
+*Prerendering is skipped without a database.* `loadConsumerGuideSlugs` returns `[]` when
+`hasData()` is false. This was found by running the build: the first attempt failed with
+`DATABASE_URL not set` while prerendering `/guides/overdraft-fees`. `dynamicParams` stays
+enabled, so every guide still renders on first request and caches from then on.
 
+**Resolution — 2026-08-15.** Route split, personalisation island, and a build-safe
+prerender guard. Verified against a real production build, not inferred.
 ---
 
 # Tranche E — Scale, coverage & tiering
@@ -1019,7 +1034,7 @@ Newest first. One line per closed issue.
 
 | Date | Issue | Commit | Summary |
 | --- | --- | --- | --- |
-| 2026-08-15 | D-5 (P-9) | `pending` | Deferred with reason: personalisation added by B-5, E-3 and E-4 makes guide routes session-dependent. Dead `generateStaticParams` removed; the cost underneath P-9 fixed by E-1 |
+| 2026-08-15 | D-5 (P-9) | `pending` | Resolved. Professional guides split to `/guides/pro/[slug]`, personalisation moved to a client island, reader-conditional labels made content-conditional. `/guides/[slug]` prerenders as SSG, verified in a production build |
 | 2026-08-15 | D-1 – D-4, E-2, E-3 | `e6f3651` | Postgres storage with the consumer-public and regulatory-approval invariants as database constraints; `/admin/hamilton/guides` review surface; guide drafting agent in the run ledger; staleness flagging on benchmark movement; coverage decisions documented; registered-consumer tier |
 | 2026-08-15 | E-1, E-6 | `2775e1a` | Cached national summaries invalidated on publish, bounded sidebar query, fee-aware institution lookup, and the guide link back from `/fees/[category]` |
 | 2026-08-15 | B-1 – B-9, C-1 – C-6, E-4, E-5 | `e6be31d` | Guide model v2 with token binding and blocks; all ten consumer guides rewritten to spec; three professional guides; template rebuilt; every hardcoded category count removed site-wide |
@@ -1031,11 +1046,7 @@ Newest first. One line per closed issue.
 
 ### Open
 
-One, raised by the work rather than by the audit.
-
-| # | Decision | Blocks | Notes |
-| --- | --- | --- | --- |
-| 5 | Should guide pages personalise per reader, or render statically? | D-5 | Three shipped items (B-5, E-3, E-4) read the session, which is what makes guides dynamic. Options: keep personalisation and stay dynamic (current, and the cost is already fixed); move the gate and personalisation to client-fetched islands so the shell can be static; or enable Partial Prerendering site-wide. The last two affect routes well beyond `/guides` |
+None. Every decision raised by the audit and by the work has been answered.
 
 ### Answered 2026-08-15
 

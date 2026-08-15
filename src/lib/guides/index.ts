@@ -53,8 +53,8 @@ export function canReadGuide(guide: Guide, isPro: boolean): boolean {
  * sharing a family, then to the same audience. Capped so the reader gets a choice, not
  * a directory.
  */
-export function relatedGuides(guide: Guide, limit = 4): Guide[] {
-  const pool = GUIDES.filter(
+export function relatedGuides(guide: Guide, limit = 4, pool_?: Guide[]): Guide[] {
+  const pool = (pool_ ?? GUIDES).filter(
     (g) => g.slug !== guide.slug && g.audience === guide.audience,
   );
 

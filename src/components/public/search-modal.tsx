@@ -30,12 +30,16 @@ const FEE_CATEGORIES = Object.keys(DISPLAY_NAMES).map((key) => ({
   href: `/fees/${key}`,
 }));
 
+// Search is a client component, so it indexes the typed catalog rather than the database.
+// That is the published set; a guide added only in Postgres appears on /guides and in the
+// sitemap immediately, and here on the next deploy.
 const GUIDE_ITEMS: SearchItem[] = GUIDES.map((g) => ({
   type: "guide" as const,
   id: g.slug,
   label: g.title,
-  sublabel: "Consumer guide",
-  href: `/guides/${g.slug}`,
+  sublabel: g.audience === "professional" ? "Professional guide" : "Consumer guide",
+  href:
+    g.audience === "professional" ? `/guides/pro/${g.slug}` : `/guides/${g.slug}`,
 }));
 
 export function SearchModal() {

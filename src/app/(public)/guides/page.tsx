@@ -1,19 +1,28 @@
+/**
+ * Rendered per request, deliberately — unlike the guide pages themselves, which are
+ * statically prerendered.
+ *
+ * This page reads no session; the professional set is labelled by what it is rather than
+ * by who is reading. It could be prerendered on that basis, and it is not, for one
+ * reason: it has no route params, so there is no `generateStaticParams` to skip
+ * prerendering through when the database is unreachable at build time. A build during a
+ * database blip would bake an index with no medians and serve it until the next
+ * revalidation. The guide pages avoid that by prerendering nothing in that case.
+ *
+ * The cost of rendering per request is small — the benchmark summaries are cached and
+ * invalidated on publish — so correctness is the better trade here.
+ */
 export const dynamic = "force-dynamic";
+
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  CONSUMER_GUIDES,
-  PROFESSIONAL_GUIDES,
-  guideCategories,
-  type Guide,
-} from "@/lib/guides";
+import { guideCategories, type Guide } from "@/lib/guides";
+import { loadConsumerGuides, loadProfessionalGuides } from "@/lib/guides/source";
 import { getStats, getDataFreshness } from "@/lib/data-store";
 import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 
@@ -185,19 +194,14 @@ function GuideCard({
 }
 
 export default async function GuidesIndexPage() {
-  let user = null;
-  try {
-    user = await getCurrentUser();
-  } catch {
-    // Signed out. Every consumer guide below is public regardless.
-  }
-  const isPro = canAccessPremium(user);
-
-  const [allSummaries, stats, freshness] = await Promise.all([
-    getCachedFeeCategorySummaries(),
-    getStats(),
-    getDataFreshness(),
-  ]);
+  const [allSummaries, stats, freshness, consumerGuides, professionalGuides] =
+    await Promise.all([
+      getCachedFeeCategorySummaries(),
+      getStats(),
+      getDataFreshness(),
+      loadConsumerGuides(),
+      loadProfessionalGuides(),
+    ]);
 
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
   const totalObservations = allSummaries.reduce((a, s) => a + s.total_observations, 0);
@@ -208,8 +212,8 @@ export default async function GuidesIndexPage() {
       })
     : null;
 
-  const featured = CONSUMER_GUIDES.filter((g) => g.featured);
-  const more = CONSUMER_GUIDES.filter((g) => !g.featured);
+  const featured = consumerGuides.filter((g) => g.featured);
+  const more = consumerGuides.filter((g) => !g.featured);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-16">
@@ -305,7 +309,7 @@ export default async function GuidesIndexPage() {
       )}
 
       {/* ── Professional guides ── */}
-      {PROFESSIONAL_GUIDES.length > 0 && (
+      {professionalGuides.length > 0 && (
         <section aria-labelledby="professional-heading" className="mt-16">
           <div className="mb-6 flex items-center gap-3">
             <h2
@@ -316,9 +320,7 @@ export default async function GuidesIndexPage() {
               For Bankers &amp; Consultants
             </h2>
             <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
-            <span className="text-[11px] text-[#8A8073]">
-              {isPro ? "Included in your plan" : "Professional plan"}
-            </span>
+            <span className="text-[11px] text-[#8A8073]">Professional plan</span>
           </div>
 
           <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-[#7A7062]">
@@ -328,30 +330,28 @@ export default async function GuidesIndexPage() {
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {PROFESSIONAL_GUIDES.map((guide) => (
+            {professionalGuides.map((guide) => (
               <Link
                 key={guide.slug}
-                href={`/guides/${guide.slug}`}
+                href={`/guides/pro/${guide.slug}`}
                 className="group rounded-xl border border-[#E8DFD1]/80 bg-[#FAF7F2]/60 px-5 py-4 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:bg-white hover:shadow-md hover:shadow-[#C44B2E]/5"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A8073]">
                     {guide.family}
                   </span>
-                  {!isPro && (
-                    <svg
-                      className="h-2.5 w-2.5 text-[#8A8073]"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      role="img"
-                      aria-label="Professional plan required"
-                    >
-                      <rect x="3" y="11" width="18" height="11" rx="2" />
-                      <path d="M7 11V7a5 5 0 0110 0v4" />
-                    </svg>
-                  )}
+                  <svg
+                    className="h-2.5 w-2.5 text-[#8A8073]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    role="img"
+                    aria-label="Professional plan required"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" />
+                    <path d="M7 11V7a5 5 0 0110 0v4" />
+                  </svg>
                 </div>
                 <h3
                   className="mt-2 text-[15px] font-semibold leading-snug text-[#1A1815] transition-colors group-hover:text-[#C44B2E]"

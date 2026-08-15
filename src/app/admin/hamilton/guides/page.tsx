@@ -154,7 +154,11 @@ export default async function AdminGuidesPage() {
                 <tr key={row.id} className="border-b border-gray-100 last:border-0 align-top">
                   <td className="px-4 py-3">
                     <Link
-                      href={`/guides/${row.slug}`}
+                      href={
+                        row.guide.audience === "professional"
+                          ? `/guides/pro/${row.slug}`
+                          : `/guides/${row.slug}`
+                      }
                       className="font-semibold text-gray-900 hover:text-[#C44B2E]"
                     >
                       {row.title}

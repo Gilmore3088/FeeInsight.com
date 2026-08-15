@@ -1,31 +1,30 @@
 /**
- * Rendered per request, deliberately.
+ * Consumer fee guides — statically rendered.
  *
- * The page reads the session to decide the professional-tier gate and to render a
- * signed-in reader's saved institutions against the median. Reading cookies makes a
- * route dynamic, so `generateStaticParams` cannot apply here — it was previously
- * declared alongside `force-dynamic` and never generated anything.
+ * This route reads no session and renders identical HTML for every reader, which is what
+ * lets it be prerendered and served from cache. Two things make that possible:
  *
- * The cost that made per-request rendering expensive is fixed instead: national fee
- * summaries are cached and invalidated on Hamilton publish, the sidebar's extremes are
- * bounded in Postgres, and the remaining reads run in parallel.
+ *  - Professional guides live at `/guides/pro/[slug]`, which stays dynamic because it
+ *    gates on the session. Nothing gated is ever rendered here.
+ *  - A signed-in reader's saved institutions are fetched by a client island after
+ *    hydration, so personalisation is additive to a page that is the same for everyone.
  *
- * Making the shell static would need either a static shell with client-fetched islands
- * for the gate and the personalisation, or Partial Prerendering enabled site-wide. Both
- * are platform decisions wider than this route — see D-5 in
- * docs/plans/guides-remediation-plan-2026-08-15.md.
+ * Revalidation is event-driven: Hamilton publishing new fees drops the cached benchmark
+ * summaries, and publishing a guide from admin revalidates this path. The interval below
+ * is a backstop, not the mechanism.
  */
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
+export const dynamicParams = true;
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { guideCategories, resolveTokensToText } from "@/lib/guides";
 import {
-  getGuide,
-  guideCategories,
-  relatedGuides,
-  resolveTokensToText,
-  canReadGuide,
-} from "@/lib/guides";
+  loadGuide,
+  loadRelatedGuides,
+  loadConsumerGuideSlugs,
+} from "@/lib/guides/source";
 import {
   getFeeCategoryDetail,
   getCheapestAndMostExpensive,
@@ -33,29 +32,30 @@ import {
   getStats,
 } from "@/lib/data-store";
 import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
-import { getSavedInstitutionFees } from "@/lib/data-store/alerts";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
-import { UpgradeGate } from "@/components/upgrade-gate";
 import {
   GuideSectionRenderer,
   type GuideBreakdowns,
 } from "@/components/public/guide-blocks";
+import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
 import { SITE_URL } from "@/lib/constants";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+export async function generateStaticParams() {
+  return (await loadConsumerGuideSlugs()).map((slug) => ({ slug }));
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const guide = getGuide(slug);
-  if (!guide) return { title: "Guide Not Found" };
+  const guide = await loadGuide(slug);
+  if (!guide || guide.audience !== "consumer") return { title: "Guide Not Found" };
 
   const url = `${SITE_URL}/guides/${slug}`;
   return {
@@ -106,30 +106,22 @@ const Arrow = () => (
 
 export default async function GuidePage({ params }: PageProps) {
   const { slug } = await params;
-  const guide = getGuide(slug);
-  if (!guide) notFound();
+  const guide = await loadGuide(slug);
+
+  // Professional guides live at /guides/pro/[slug], which gates on the session. Serving
+  // one here would mean rendering paid content into a page cached for everyone.
+  if (!guide || guide.audience !== "consumer") notFound();
 
   const categories = guideCategories(guide);
 
-  let user = null;
-  try {
-    user = await getCurrentUser();
-  } catch {
-    // Signed out, or the session store is unavailable. Consumer guides are public.
-  }
-  const isPro = canAccessPremium(user);
-
-  const [allSummaries, freshness, stats, primaryDetail, extremes, savedInstitutions] =
+  const [allSummaries, freshness, stats, primaryDetail, extremes, related] =
     await Promise.all([
       getCachedFeeCategorySummaries(),
       getDataFreshness(),
       getStats(),
       getFeeCategoryDetail(guide.primaryCategory),
       getCheapestAndMostExpensive(guide.primaryCategory, 5),
-      // Registered-consumer tier: additive personalisation, never a gate.
-      user
-        ? getSavedInstitutionFees(user.id, guide.primaryCategory).catch(() => [])
-        : Promise.resolve([]),
+      loadRelatedGuides(guide),
     ]);
 
   // Editorial order — never the global sort by institution count.
@@ -138,9 +130,6 @@ export default async function GuidePage({ params }: PageProps) {
     .map((c) => summaryFor.get(c))
     .filter((s): s is FeeCategorySummary => Boolean(s));
   const primarySummary = summaryFor.get(guide.primaryCategory);
-
-  // A pro guide gates as a whole. Consumer guides never reach this branch.
-  const readable = canReadGuide(guide, isPro);
 
   const comparisonCategories = new Set(
     guide.sections.flatMap((s) =>
@@ -182,9 +171,6 @@ export default async function GuidePage({ params }: PageProps) {
   const primaryName = getDisplayName(guide.primaryCategory);
   const crawlDate = formatDate(freshness.last_crawl_at);
   const reviewDate = formatDate(guide.reviewedAt);
-  const related = relatedGuides(guide);
-  const isConsumer = guide.audience === "consumer";
-
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
 
   return (
@@ -221,7 +207,7 @@ export default async function GuidePage({ params }: PageProps) {
         <div className="mb-4 flex items-center gap-2">
           <span className="h-px w-8 bg-[#C44B2E]/40" aria-hidden="true" />
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#C44B2E]/60">
-            {isConsumer ? "Consumer Guide" : "Professional Guide"}
+            Consumer Guide
           </span>
         </div>
 
@@ -264,133 +250,13 @@ export default async function GuidePage({ params }: PageProps) {
         </div>
       </div>
 
-      {!readable ? (
-        <div className="mt-10 max-w-2xl">
-          <UpgradeGate
-            message={`${guide.title} is part of the professional guide set`}
+      <>
+          {/* ── YOUR SAVED INSTITUTIONS — client island, so this page stays static ── */}
+          <SavedInstitutionsPanel
+            category={guide.primaryCategory}
+            categoryLabel={primaryName}
+            median={primarySummary?.median_amount ?? null}
           />
-          <p className="mt-6 text-[14px] leading-relaxed text-[#7A7062]">
-            Every consumer fee guide on this site is free and ungated.{" "}
-            <Link href="/guides" className="font-medium text-[#C44B2E]">
-              Browse the consumer guides
-            </Link>
-            .
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* ── LIVE BENCHMARK CARDS ── */}
-          {relevantFees.length > 0 && (
-            <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {relevantFees.slice(0, 4).map((fee) => (
-                <Link
-                  key={fee.fee_category}
-                  href={`/fees/${fee.fee_category}`}
-                  className="group relative overflow-hidden rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline backdrop-blur-sm transition-all duration-300 hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
-                >
-                  <div
-                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/0 to-transparent transition-all duration-700 group-hover:via-[#C44B2E]/30"
-                    aria-hidden="true"
-                  />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8073] transition-colors group-hover:text-[#C44B2E]/70">
-                    {getDisplayName(fee.fee_category)}
-                  </p>
-                  <p
-                    className="mt-2 text-[28px] font-light tracking-tight tabular-nums text-[#1A1815]"
-                    style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-                  >
-                    {formatAmount(fee.median_amount)}
-                    <span className="ml-2 font-sans text-[11px] font-normal text-[#8A8073]">
-                      median
-                    </span>
-                  </p>
-                  <p className="mt-1 text-[11px] tabular-nums text-[#8A8073]">
-                    {formatAmount(fee.min_amount)} &ndash; {formatAmount(fee.max_amount)}
-                    <span className="mx-1.5 text-[#D4C9BA]" aria-hidden="true">
-                      &middot;
-                    </span>
-                    {fee.institution_count.toLocaleString()} institutions
-                  </p>
-                </Link>
-              ))}
-            </div>
-          )}
-
-          {/* ── YOUR SAVED INSTITUTIONS — registered tier, additive only ── */}
-          {savedInstitutions.length > 0 && (
-            <section
-              aria-labelledby="your-institutions-heading"
-              className="mt-8 rounded-xl border border-[#1A1815]/15 bg-white/80 px-6 py-5"
-            >
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#1A1815]/50">
-                Your institutions
-              </p>
-              <h2
-                id="your-institutions-heading"
-                className="mt-2 text-[17px] font-medium text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-              >
-                What you pay for {primaryName.toLowerCase()}
-              </h2>
-              <ul className="mt-4 space-y-2.5">
-                {savedInstitutions.map((inst) => {
-                  const median = primarySummary?.median_amount ?? null;
-                  const delta =
-                    inst.amount !== null && median !== null ? inst.amount - median : null;
-                  return (
-                    <li
-                      key={inst.institution_id}
-                      className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#E8DFD1]/60 pb-2.5 last:border-0 last:pb-0"
-                    >
-                      <Link
-                        href={`/institution/${inst.institution_id}?fee=${guide.primaryCategory}#fee-${guide.primaryCategory}`}
-                        className="text-[14px] font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
-                      >
-                        {inst.institution_name}
-                        {inst.state_code && (
-                          <span className="ml-1.5 text-[11px] font-normal text-[#8A8073]">
-                            {inst.state_code}
-                          </span>
-                        )}
-                      </Link>
-                      {inst.amount === null ? (
-                        <span className="text-[12px] text-[#8A8073]">
-                          No published {primaryName.toLowerCase()}
-                        </span>
-                      ) : (
-                        <span className="text-[15px] font-semibold tabular-nums text-[#1A1815]">
-                          {formatAmount(inst.amount)}
-                          {delta !== null && (
-                            <span
-                              className={`ml-2 text-[11px] font-normal tabular-nums ${
-                                delta > 0
-                                  ? "text-red-700"
-                                  : delta < 0
-                                    ? "text-emerald-700"
-                                    : "text-[#8A8073]"
-                              }`}
-                            >
-                              {delta > 0
-                                ? `${formatAmount(delta)} above median`
-                                : delta < 0
-                                  ? `${formatAmount(Math.abs(delta))} below median`
-                                  : "at the median"}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="mt-3 text-[11px] text-[#8A8073]">
-                We&rsquo;ll email you when one of these changes.{" "}
-                <Link href="/account" className="text-[#C44B2E]/80 hover:text-[#C44B2E]">
-                  Manage your alerts
-                </Link>
-              </p>
-            </section>
-          )}
 
           {/* ── CHECK YOUR OWN BANK ── */}
           <section
@@ -562,7 +428,9 @@ export default async function GuidePage({ params }: PageProps) {
                               ? "Distribution, breakdowns by charter, state and tier"
                               : "Distribution and national median — free"}
                           </span>
-                          {!open && !isPro && (
+                          {/* Stated about the destination, not the reader, so this page
+                              renders the same HTML for everyone and can be cached. */}
+                          {!open && (
                             <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-[#8A8073]">
                               <svg
                                 className="h-2.5 w-2.5"
@@ -752,9 +620,8 @@ export default async function GuidePage({ params }: PageProps) {
                 </ul>
               </nav>
 
-              {/* ── CTA: consumers get a consumer offer ── */}
-              {isConsumer ? (
-                <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5">
+              {/* ── CTA: a consumer page offers the consumer something ── */}
+              <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5">
                   <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#C44B2E]/60">
                     Stay ahead of fee changes
                   </p>
@@ -782,44 +649,9 @@ export default async function GuidePage({ params }: PageProps) {
                     </Link>
                   </p>
                 </div>
-              ) : (
-                <div className="relative overflow-hidden rounded-xl border border-[#1A1815] bg-[#1A1815] px-5 py-6 text-center">
-                  <div
-                    className="absolute inset-0 opacity-[0.04]"
-                    aria-hidden="true"
-                    style={{
-                      backgroundImage:
-                        "linear-gradient(rgba(255,255,255,.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.3) 1px, transparent 1px)",
-                      backgroundSize: "24px 24px",
-                    }}
-                  />
-                  <div className="relative">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A09788]">
-                      For Professionals
-                    </p>
-                    <p
-                      className="mt-2.5 text-[16px] font-medium text-white"
-                      style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-                    >
-                      Build your peer set
-                    </p>
-                    <p className="mt-1.5 text-[12px] text-[#A09788]">
-                      Peer benchmarks, custom datasets and API access.
-                    </p>
-                    <Link
-                      href="/pro/peers"
-                      className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white px-5 py-2 text-[12px] font-semibold text-[#1A1815] no-underline transition-all hover:shadow-md"
-                    >
-                      Open peer tools
-                      <Arrow />
-                    </Link>
-                  </div>
-                </div>
-              )}
             </aside>
           </div>
-        </>
-      )}
+      </>
 
       <script
         type="application/ld+json"
@@ -838,8 +670,7 @@ export default async function GuidePage({ params }: PageProps) {
           }).replace(/</g, "\\u003c"),
         }}
       />
-      {readable && (
-        <script
+      <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify({
@@ -869,7 +700,6 @@ export default async function GuidePage({ params }: PageProps) {
             }).replace(/</g, "\\u003c"),
           }}
         />
-      )}
     </div>
   );
 }

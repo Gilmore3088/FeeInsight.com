@@ -15,7 +15,7 @@ import {
   FEE_FAMILIES,
   DISPLAY_NAMES,
 } from "@/lib/fee-taxonomy";
-import { guidesForCategory } from "@/lib/guides";
+import { loadGuidesForCategory } from "@/lib/guides/source";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -118,7 +118,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
 
   // Close the loop the other way: a reader on a fee page can reach the guide that
   // explains it. Consumer guides are public, so this link is never a dead end.
-  const consumerGuides = guidesForCategory(category, "consumer");
+  const consumerGuides = await loadGuidesForCategory(category, "consumer");
 
   // N and M share one basis: verified fees with a stated amount, and the
   // distinct institutions those fees came from.

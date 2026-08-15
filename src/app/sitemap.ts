@@ -6,7 +6,7 @@ import {
   getDataFreshness,
   getInstitutionIdsWithFeeDates,
 } from "@/lib/data-store";
-import { GUIDES } from "@/lib/guides";
+import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 
@@ -133,9 +133,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/research/fee-revenue-analysis", dataUpdated, "weekly", 0.8),
   ];
 
+  // Consumer guides live at /guides/[slug]; professional guides at /guides/pro/[slug],
+  // where the body is gated. Both are indexable — the professional pages show title,
+  // description and an upgrade prompt — but the free ones carry the higher priority.
+  const allGuides = await loadGuides();
   const guidePages: Entry[] = [
     entry("/guides", now, "monthly", 0.7),
-    ...GUIDES.map((g) => entry(`/guides/${g.slug}`, now, "monthly", 0.7)),
+    ...allGuides.map((g) =>
+      g.audience === "professional"
+        ? entry(`/guides/pro/${g.slug}`, toDate(g.reviewedAt, now), "monthly", 0.4)
+        : entry(`/guides/${g.slug}`, toDate(g.reviewedAt, now), "monthly", 0.7),
+    ),
   ];
 
   // Only institutions with at least one verified fee; lastmod is the latest observation.
