@@ -31,6 +31,14 @@ export interface InstitutionSearchResult {
   confidence_summary: string;
   quality_status: InstitutionQualityStatus;
   quality_label: string;
+  /**
+   * The institution's published amount for the requested fee category, when
+   * `searchInstitutions` was called with one. `null` means the institution has no
+   * published observation for that fee — never treat it as $0.
+   */
+  focus_fee_amount?: number | null;
+  /** True when a fee category was requested, so callers can distinguish null from absent. */
+  focus_fee_requested?: boolean;
 }
 
 export interface InstitutionStateDirectorySummary {
@@ -177,6 +185,13 @@ export async function searchInstitutions(params: {
   query?: string;
   state_code?: string;
   charter_type?: string;
+  /**
+   * Optional fee category to surface per institution. Additive: omitting it leaves the
+   * directory's behaviour and result shape exactly as before.
+   */
+  fee_category?: string;
+  /** Only meaningful alongside `fee_category`. Institutions without an observation sort last. */
+  fee_sort?: "asc" | "desc";
   page?: number;
   pageSize?: number;
 }): Promise<{ rows: InstitutionSearchResult[]; total: number }> {
@@ -210,6 +225,34 @@ export async function searchInstitutions(params: {
     queryParams
   ) as { cnt: number }[];
 
+  // Optional fee-category focus. Reads through published_fee_catalog like every other
+  // public fee read. LEFT JOIN so institutions without an observation still appear —
+  // they are shown as "not published", never as $0.
+  const focusCategory = params.fee_category?.trim() || null;
+  let focusJoin = "";
+  let focusSelect = "";
+  if (focusCategory) {
+    paramIdx++;
+    focusJoin = `
+     LEFT JOIN LATERAL (
+       SELECT ef.amount
+       FROM published_fee_catalog ef
+       WHERE ef.institution_id = ct.id
+         AND ef.fee_category = $${paramIdx}
+         AND ef.review_status = 'approved'
+         AND ef.amount IS NOT NULL
+       ORDER BY ef.amount ASC
+       LIMIT 1
+     ) focus ON TRUE`;
+    focusSelect = ",\n            focus.amount as focus_fee_amount";
+    queryParams.push(focusCategory);
+  }
+
+  const orderBy =
+    focusCategory && params.fee_sort
+      ? `ORDER BY focus.amount ${params.fee_sort === "desc" ? "DESC" : "ASC"} NULLS LAST, ct.institution_name ASC`
+      : "ORDER BY (COALESCE(cc.published_fee_count, 0) > 0) DESC, ct.institution_name ASC";
+
   paramIdx++;
   const limitParam = paramIdx;
   paramIdx++;
@@ -234,19 +277,32 @@ export async function searchInstitutions(params: {
             ld.latest_source_status,
             COALESCE(ld.latest_extracted_fee_count, 0) as latest_extracted_fee_count,
             ld.latest_source_error,
-            ld.latest_source_collected_at
+            ld.latest_source_collected_at${focusSelect}
      FROM institution_sources ct
      LEFT JOIN catalog_counts cc ON cc.institution_id = ct.id
      LEFT JOIN verified_unpublished_counts vuc ON vuc.institution_id = ct.id
      LEFT JOIN raw_unverified_counts ruc ON ruc.institution_id = ct.id
-     LEFT JOIN latest_docs ld ON ld.institution_id = ct.id
+     LEFT JOIN latest_docs ld ON ld.institution_id = ct.id${focusJoin}
      ${where}
-     ORDER BY (COALESCE(cc.published_fee_count, 0) > 0) DESC, ct.institution_name ASC
+     ${orderBy}
      LIMIT $${limitParam} OFFSET $${offsetParam}`,
     [...queryParams, pageSize, offset]
   );
 
-  return { rows: rows.map(mapInstitutionSearchRow), total: Number(countRow.cnt) };
+  return {
+    rows: rows.map((row) => {
+      const mapped = mapInstitutionSearchRow(row);
+      if (!focusCategory) return mapped;
+      const raw = (row as InstitutionSearchRow & { focus_fee_amount?: number | null })
+        .focus_fee_amount;
+      return {
+        ...mapped,
+        focus_fee_requested: true,
+        focus_fee_amount: raw === null || raw === undefined ? null : Number(raw),
+      };
+    }),
+    total: Number(countRow.cnt),
+  };
 }
 
 export async function autocompleteInstitutions(query: string, limit = 8): Promise<InstitutionSearchResult[]> {

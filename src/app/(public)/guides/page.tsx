@@ -7,7 +7,8 @@ import {
   guideCategories,
   type Guide,
 } from "@/lib/guides";
-import { getFeeCategorySummaries, getStats, getDataFreshness } from "@/lib/data-store";
+import { getStats, getDataFreshness } from "@/lib/data-store";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -193,7 +194,7 @@ export default async function GuidesIndexPage() {
   const isPro = canAccessPremium(user);
 
   const [allSummaries, stats, freshness] = await Promise.all([
-    getFeeCategorySummaries(),
+    getCachedFeeCategorySummaries(),
     getStats(),
     getDataFreshness(),
   ]);

@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -543,6 +544,12 @@ export async function runHamiltonPublish(
 
   if (!dryRun) {
     await recordPublicationSignals(db, options.runId, batchId, results, rowByVerifiedFeeId);
+
+    // Public benchmark reads are cached between publishes. Drop the cache so readers
+    // see the rows this run just published. Never allowed to fail a publish.
+    if (results.some((result) => result.status === "published")) {
+      invalidateFeeSummaryCache();
+    }
   }
 
   return {

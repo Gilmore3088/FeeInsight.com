@@ -11,11 +11,12 @@ import {
   canReadGuide,
 } from "@/lib/guides";
 import {
-  getFeeCategorySummaries,
   getFeeCategoryDetail,
+  getCheapestAndMostExpensive,
   getDataFreshness,
   getStats,
 } from "@/lib/data-store";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -105,11 +106,12 @@ export default async function GuidePage({ params }: PageProps) {
   }
   const isPro = canAccessPremium(user);
 
-  const [allSummaries, freshness, stats, primaryDetail] = await Promise.all([
-    getFeeCategorySummaries(),
+  const [allSummaries, freshness, stats, primaryDetail, extremes] = await Promise.all([
+    getCachedFeeCategorySummaries(),
     getDataFreshness(),
     getStats(),
     getFeeCategoryDetail(guide.primaryCategory),
+    getCheapestAndMostExpensive(guide.primaryCategory, 5),
   ]);
 
   // Editorial order — never the global sort by institution count.
@@ -155,11 +157,7 @@ export default async function GuidePage({ params }: PageProps) {
     .map((f) => f.amount)
     .filter((a): a is number => a !== null && a > 0);
 
-  const sortedFees = primaryDetail.fees
-    .filter((f) => f.amount !== null && f.amount >= 0)
-    .sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0));
-  const cheapest = sortedFees.slice(0, 5);
-  const mostExpensive = sortedFees.slice(-5).reverse();
+  const { cheapest, mostExpensive } = extremes;
   const zeroFeeCount = primarySummary?.zero_count ?? 0;
 
   const spotlight = new Set(getSpotlightCategories());
@@ -321,12 +319,12 @@ export default async function GuidePage({ params }: PageProps) {
                 </h2>
                 <p className="mt-1 text-[13px] text-[#7A7062]">
                   Search the {stats.total_institutions.toLocaleString()} banks and credit
-                  unions in the index and open your institution&rsquo;s published fee
-                  schedule.
+                  unions in the index and see your institution&rsquo;s published{" "}
+                  {primaryName.toLowerCase()} against the national median.
                 </p>
               </div>
               <Link
-                href="/institutions"
+                href={`/institutions?fee=${guide.primaryCategory}`}
                 className="shrink-0 rounded-full bg-[#C44B2E] px-5 py-2.5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
               >
                 Find your institution

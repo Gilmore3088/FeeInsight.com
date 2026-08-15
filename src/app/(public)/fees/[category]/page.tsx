@@ -15,6 +15,7 @@ import {
   FEE_FAMILIES,
   DISPLAY_NAMES,
 } from "@/lib/fee-taxonomy";
+import { guidesForCategory } from "@/lib/guides";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -110,8 +111,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const family = getFeeFamily(category);
   const familyColor = family ? getFamilyColor(family) : null;
   const tier = getFeeTier(category);
-  const detail = await getFeeCategoryDetail(category);
-  const freshness = await getDataFreshness();
+  const [detail, freshness] = await Promise.all([
+    getFeeCategoryDetail(category),
+    getDataFreshness(),
+  ]);
+
+  // Close the loop the other way: a reader on a fee page can reach the guide that
+  // explains it. Consumer guides are public, so this link is never a dead end.
+  const consumerGuides = guidesForCategory(category, "consumer");
 
   // N and M share one basis: verified fees with a stated amount, and the
   // distinct institutions those fees came from.
@@ -219,6 +226,30 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           />
         </div>
       </section>
+
+      {/* Guide to this fee — free for everyone */}
+      {consumerGuides.length > 0 && (
+        <section className="mt-8 rounded-xl border border-[#E8DFD1] bg-white/70 px-5 py-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#C44B2E]/70">
+            New to this fee?
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="text-[14px] text-[#5A5347]">
+              Read the plain-language guide to {name.toLowerCase()} — what it is, who
+              charges the most, and how to avoid it. Free to read.
+            </p>
+            {consumerGuides.slice(0, 2).map((guide) => (
+              <Link
+                key={guide.slug}
+                href={`/guides/${guide.slug}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#C44B2E]"
+              >
+                {guide.title}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Premium gate */}
       {!isPro && (

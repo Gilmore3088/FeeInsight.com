@@ -158,6 +158,64 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   return results;
 }
 
+export interface FeeExtreme {
+  id: number;
+  institution_id: number;
+  institution_name: string;
+  amount: number;
+}
+
+/**
+ * The cheapest and most expensive institutions for one fee category.
+ *
+ * The guide sidebar needs ten names. Fetching every row for the category to take two
+ * five-row slices is the wrong shape for that, so this bounds the work in Postgres.
+ */
+export async function getCheapestAndMostExpensive(
+  category: string,
+  limit = 5,
+): Promise<{ cheapest: FeeExtreme[]; mostExpensive: FeeExtreme[] }> {
+  const bounded = Math.max(1, Math.min(25, Math.trunc(limit)));
+
+  const [cheapestRows, expensiveRows] = await Promise.all([
+    sql`
+      SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount
+      FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ${category}
+        AND ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+      ORDER BY ef.amount ASC, ct.institution_name ASC
+      LIMIT ${bounded}
+    `,
+    sql`
+      SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount
+      FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ${category}
+        AND ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+      ORDER BY ef.amount DESC, ct.institution_name ASC
+      LIMIT ${bounded}
+    `,
+  ]);
+
+  const normalize = (rows: unknown[]): FeeExtreme[] =>
+    (rows as FeeExtreme[]).map((r) => ({
+      id: Number(r.id),
+      institution_id: Number(r.institution_id),
+      institution_name: r.institution_name,
+      amount: Number(r.amount),
+    }));
+
+  return {
+    cheapest: normalize(cheapestRows),
+    mostExpensive: normalize(expensiveRows),
+  };
+}
+
 export async function getFeeCategoryDetail(category: string): Promise<{
   fees: FeeInstance[];
   by_charter_type: DimensionBreakdown[];
