@@ -13,6 +13,8 @@ export interface FeeCategorySummary {
   p75_amount: number | null;
   bank_count: number;
   cu_count: number;
+  /** Institutions publishing this fee at $0. Consumer guides cite it directly. */
+  zero_count: number;
 }
 
 export interface FeeInstance {
@@ -86,7 +88,13 @@ export function computeStats(amounts: number[]): {
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   const grouped = new Map<
     string,
-    { amounts: number[]; banks: Set<number>; cus: Set<number>; total: number }
+    {
+      amounts: number[];
+      banks: Set<number>;
+      cus: Set<number>;
+      total: number;
+      zeroInstitutions: Set<number>;
+    }
   >();
 
   const rows = await sql`
@@ -103,13 +111,22 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
 
   for (const row of rows) {
     if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, { amounts: [], banks: new Set(), cus: new Set(), total: 0 });
+      grouped.set(row.fee_category, {
+        amounts: [],
+        banks: new Set(),
+        cus: new Set(),
+        total: 0,
+        zeroInstitutions: new Set(),
+      });
     }
     const entry = grouped.get(row.fee_category)!;
     entry.total++;
     const amt = row.amount !== null ? Number(row.amount) : null;
     if (amt !== null && amt > 0) {
       entry.amounts.push(amt);
+    }
+    if (amt === 0) {
+      entry.zeroInstitutions.add(Number(row.institution_id));
     }
     if (row.charter_type === "bank") {
       entry.banks.add(Number(row.institution_id));
@@ -133,6 +150,7 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
       median_amount: stats.median,
       p25_amount: stats.p25,
       p75_amount: stats.p75,
+      zero_count: data.zeroInstitutions.size,
     });
   }
 

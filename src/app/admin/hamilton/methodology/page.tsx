@@ -207,7 +207,7 @@ export default async function MethodologyPage() {
           </table>
         </div>
         <p className="mb-3">
-          The spotlight and core tiers (15 categories collectively) represent the fees most
+          The spotlight and core tiers together represent the fees most
           universally charged and most frequently compared by consumers and analysts. These are
           shown by default in the index. The extended and comprehensive tiers are available for
           deeper analysis.

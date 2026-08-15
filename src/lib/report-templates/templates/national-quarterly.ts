@@ -98,7 +98,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   // ── Cover ──────────────────────────────────────────────────────────────────
   const cover = coverPage({
     title: "The Death of Fee-Based Differentiation",
-    subtitle: `${data.total_institutions.toLocaleString()} Institutions \u2014 49 Fee Categories \u2014 National Benchmark Analysis`,
+    subtitle: `${data.total_institutions.toLocaleString()} Institutions \u2014 Full Fee Catalog \u2014 National Benchmark Analysis`,
     report_date: formattedDate,
     series: `National Quarterly Report \u2014 ${data.quarter}`,
   });
@@ -448,7 +448,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   ch3Sections.push(
     keyFinding(
-      "Most institutions optimize pricing across 49 categories \u2014 but revenue is driven by fewer than 5.",
+      "Most institutions optimize pricing across every category they publish \u2014 but revenue is driven by fewer than 5.",
       "Key Finding",
     )
   );

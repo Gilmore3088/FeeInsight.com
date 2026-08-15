@@ -48,7 +48,7 @@ export default async function NationalIndexPage() {
           National Fee Index
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Benchmark medians across all 49 fee categories
+          Benchmark medians across the full fee catalog
         </p>
       </div>
 

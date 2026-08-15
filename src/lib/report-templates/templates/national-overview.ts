@@ -66,7 +66,7 @@ export function renderNationalOverviewReport(input: NationalOverviewReportInput)
   // Section 1: Cover page
   const cover = coverPage({
     title: "National Fee Index",
-    subtitle: `49 Fee Categories — ${data.total_institutions.toLocaleString()} Institutions`,
+    subtitle: `Full Fee Catalog — ${data.total_institutions.toLocaleString()} Institutions`,
     report_date: new Date(data.report_date).toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",

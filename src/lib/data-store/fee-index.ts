@@ -2,7 +2,7 @@ import { sql } from "./connection";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { computeStats } from "./fees";
 
-/** All 49 canonical fee categories — only these appear in indexes and reports */
+/** The canonical fee catalog — only these categories appear in indexes and reports */
 const CANONICAL_CATEGORIES = Object.values(FEE_FAMILIES).flat();
 
 export interface IndexEntry {
