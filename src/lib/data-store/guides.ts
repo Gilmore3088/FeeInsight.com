@@ -255,7 +255,7 @@ export async function upsertGuide(input: GuideUpsertInput): Promise<StoredGuide>
       INSERT INTO consumer_guide_sections (guide_id, anchor, heading, position, blocks)
       VALUES (
         ${guideId}, ${section.id}, ${section.heading}, ${position},
-        ${JSON.stringify(section.blocks)}::jsonb
+        ${sql.json(section.blocks)}
       )
     `;
   }
@@ -312,7 +312,7 @@ export async function publishGuide(
       guide_id, snapshot, changed_by, change_note, agent_run_id,
       regulatory_approved_by, regulatory_approved_at
     ) VALUES (
-      ${guideId}, ${JSON.stringify(guide)}::jsonb, ${actor}, ${changeNote ?? null},
+      ${guideId}, ${sql.json(JSON.parse(JSON.stringify(guide)))}, ${actor}, ${changeNote ?? null},
       ${guide.agentRunId}, ${guide.regulatoryApprovedBy}, ${guide.regulatoryApprovedAt}
     )
   `;
