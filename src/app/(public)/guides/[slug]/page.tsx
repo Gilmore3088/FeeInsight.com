@@ -169,6 +169,8 @@ export default async function GuidePage({ params }: PageProps) {
 
   const spotlight = new Set(getSpotlightCategories());
   const primaryName = getDisplayName(guide.primaryCategory);
+  // For prose: "overdraft", not "overdraft (od)".
+  const primaryNamePlain = primaryName.replace(/\s*\([^)]*\)/g, "").toLowerCase();
   const crawlDate = formatDate(freshness.last_crawl_at);
   const reviewDate = formatDate(guide.reviewedAt);
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
@@ -254,7 +256,7 @@ export default async function GuidePage({ params }: PageProps) {
           {/* ── YOUR SAVED INSTITUTIONS — client island, so this page stays static ── */}
           <SavedInstitutionsPanel
             category={guide.primaryCategory}
-            categoryLabel={primaryName}
+            categoryLabel={primaryNamePlain}
             median={primarySummary?.median_amount ?? null}
           />
 
@@ -275,12 +277,12 @@ export default async function GuidePage({ params }: PageProps) {
                 >
                   {primarySummary?.median_amount != null
                     ? `Does your bank charge more than ${formatAmount(primarySummary.median_amount)}?`
-                    : `How does your bank compare on ${primaryName.toLowerCase()}?`}
+                    : `How does your bank compare on ${primaryNamePlain}?`}
                 </h2>
                 <p className="mt-1 text-[13px] text-[#7A7062]">
                   Search the {stats.total_institutions.toLocaleString()} banks and credit
                   unions in the index and see your institution&rsquo;s published{" "}
-                  {primaryName.toLowerCase()} against the national median.
+                  {primaryNamePlain} against the national median.
                 </p>
               </div>
               <Link
@@ -358,7 +360,7 @@ export default async function GuidePage({ params }: PageProps) {
                   <span className="tabular-nums">
                     {(primarySummary?.institution_count ?? stats.total_institutions).toLocaleString()}
                   </span>{" "}
-                  institutions&rsquo; published fee schedules for {primaryName.toLowerCase()}.
+                  institutions&rsquo; published fee schedules for {primaryNamePlain}.
                   Medians reflect the most recent collection period. Individual institutions
                   change fees without much notice — always check your own
                   institution&rsquo;s current schedule.
@@ -633,7 +635,7 @@ export default async function GuidePage({ params }: PageProps) {
                   </p>
                   <p className="mt-1.5 text-[12px] leading-relaxed text-[#7A7062]">
                     Free account. Save your institution and we&rsquo;ll email you when its{" "}
-                    {primaryName.toLowerCase()} changes.
+                    {primaryNamePlain} changes.
                   </p>
                   <Link
                     href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}

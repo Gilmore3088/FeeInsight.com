@@ -251,6 +251,20 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         </section>
       )}
 
+      {/* The reader's own bank — the question every fee page is really being asked */}
+      <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#C44B2E]/15 bg-gradient-to-r from-[#FFFDF9] to-[#FAF7F2] px-5 py-4">
+        <p className="text-[14px] text-[#5A5347]">
+          See what <span className="font-medium text-[#1A1815]">your</span> bank charges for{" "}
+          {name.replace(/\s*\([^)]*\)/g, "").toLowerCase()}, next to the national median.
+        </p>
+        <Link
+          href={`/institutions?fee=${category}`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
+        >
+          Find your institution
+        </Link>
+      </section>
+
       {/* Premium gate */}
       {!isPro && (
         <div className="mt-8">

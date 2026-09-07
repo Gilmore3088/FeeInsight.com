@@ -56,7 +56,7 @@ export function SavedInstitutionsPanel({
         className="mt-2 text-[17px] font-medium text-[#1A1815]"
         style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
       >
-        What you pay for {categoryLabel.toLowerCase()}
+        What you pay for {categoryLabel}
       </h2>
       <ul className="mt-4 space-y-2.5">
         {institutions.map((inst) => {
@@ -80,7 +80,7 @@ export function SavedInstitutionsPanel({
               </Link>
               {inst.amount === null ? (
                 <span className="text-[12px] text-[#8A8073]">
-                  No published {categoryLabel.toLowerCase()}
+                  No published {categoryLabel}
                 </span>
               ) : (
                 <span className="text-[15px] font-semibold tabular-nums text-[#1A1815]">
