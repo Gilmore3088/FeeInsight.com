@@ -220,7 +220,7 @@ const spec = {
                 schema: {
                   type: "object",
                   properties: {
-                    total: { type: "integer", example: 49 },
+                    total: { type: "integer", example: 60 },
                     data: {
                       type: "array",
                       items: { $ref: "#/components/schemas/FeeSummary" },

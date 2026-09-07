@@ -254,7 +254,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const bankByCategory = new Map(bankEntries.map((e) => [e.fee_category, e]));
   const cuByCategory = new Map(cuEntries.map((e) => [e.fee_category, e]));
 
-  // Build categories array — only the 49 taxonomy categories, not raw uncategorized fee names
+  // Build categories array — only taxonomy categories, not raw uncategorized fee names
   const taxonomyEntries = nationalEntries.filter((e) => e.fee_category in FEE_TIERS);
   const categories: NationalQuarterlySection[] = taxonomyEntries.map((entry) => {
     const bankEntry = bankByCategory.get(entry.fee_category);
