@@ -235,7 +235,10 @@
 }
 
 .fi-reveal {
-  animation: public-fade-up 360ms ease-out both;
+  /* "backwards", not "both": a fill-mode that persists keeps the element promoted
+     and traps any z-indexed child (the institution search dropdown) beneath later
+     siblings. The keyframes end at the natural state, so nothing visible changes. */
+  animation: public-fade-up 360ms ease-out backwards;
 }
 
 .fi-reveal-delay-1 {

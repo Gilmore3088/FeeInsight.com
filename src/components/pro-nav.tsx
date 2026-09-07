@@ -23,7 +23,7 @@ export function ProNav({ user }: ProNavProps) {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-40 border-b border-[#E8DFD1] bg-[#FAF7F2]/95">
       <div className="mx-auto max-w-7xl px-6">
         <div className="flex items-center justify-between h-14">
           <div className="flex items-center gap-8">

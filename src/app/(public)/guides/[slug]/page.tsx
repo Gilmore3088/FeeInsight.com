@@ -253,13 +253,6 @@ export default async function GuidePage({ params }: PageProps) {
       </div>
 
       <>
-          {/* ── YOUR SAVED INSTITUTIONS — client island, so this page stays static ── */}
-          <SavedInstitutionsPanel
-            category={guide.primaryCategory}
-            categoryLabel={primaryNamePlain}
-            median={primarySummary?.median_amount ?? null}
-          />
-
           {/* ── CHECK YOUR OWN BANK ── */}
           <section
             aria-labelledby="check-your-bank-heading"
@@ -293,6 +286,13 @@ export default async function GuidePage({ params }: PageProps) {
               </Link>
             </div>
           </section>
+
+          {/* ── YOUR SAVED INSTITUTIONS — client island; placed after the CTA so its late arrival cannot shift the hero ── */}
+          <SavedInstitutionsPanel
+            category={guide.primaryCategory}
+            categoryLabel={primaryNamePlain}
+            median={primarySummary?.median_amount ?? null}
+          />
 
           {/* ── ACTION LINKS ── */}
           <div className="mt-5 flex flex-wrap items-center gap-3">

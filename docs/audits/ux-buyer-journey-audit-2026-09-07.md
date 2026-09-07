@@ -64,6 +64,9 @@ run surfaced one that only a real runtime could catch. All are committed on this
 | **Search submits on Enter** | The typeahead only navigated on click; Enter did nothing, and `?q=` results were reachable only by URL. Both paths also dropped the fee focus | `search-bar.tsx`: Enter runs a search; `?fee=` survives Enter and selection; wrapped in Suspense so the prerendered home hero is safe |
 | **Fee page → your bank** | `/fees/[category]` never linked to the lookup that now exists | "Find your institution" block linking to `/institutions?fee=…` |
 | **Prose labels** | "its published overdraft (od) against the median" — taxonomy display names leaked their abbreviations into sentences | Parentheticals stripped in prose on the guide, lookup and personalisation panel |
+| **Search suggestion unclickable** (found only in the browser) | `.fi-reveal` used `animation-fill-mode: both`, which keeps the animated section promoted after the animation ends, so the search dropdown's `z-50` was trapped beneath the next section — `elementFromPoint` over a suggestion returned the map heading, and click/tap timed out on both viewports. This was the guide's promised payoff step. | `globals.css`: fill-mode `backwards` (end state is the natural state, so nothing visible changes); search section `relative z-20`. Verified: suggestion is the top element, click and tap both land on `/institution/3?fee=overdraft#fee-overdraft` with the row highlighted |
+| **Mobile drawer painted under the page** (browser only) | The sticky header's `backdrop-blur` made it the containing block for the `fixed` drawer, so page text bled through the open menu | `backdrop-blur-sm` removed from the three sticky headers; the 95% ground carries the look. Verified: a menu item is the top element at its own centre |
+| **Personalisation panel shifted the hero** (browser only) | The signed-in "Your institutions" island rendered above the "Check your own bank" box ~475 ms after load, moving the primary CTA | Island moved below the CTA block, so its arrival shifts only what sits beneath it. Verified |
 
 ## 3. Consolidated findings — what to do, in order
 
@@ -103,7 +106,60 @@ and the webhook maps `paused` to `none` while leaving `role = premium` (J-16).
 
 ## 4. Browser simulation
 
-_Filled from the `playwright-ux-simulator` run — see below._
+Chromium 141 via Playwright, 375×812 (touch) and 1280×800, 84 screenshots. Signed out
+through all ten journey steps, then signed in as a registered consumer with two saved
+institutions and as an active professional. Full report:
+[`playwright-ux-simulation-2026-09-07.md`](./playwright-ux-simulation-2026-09-07.md);
+selected frames in [`screenshots/`](./screenshots/).
+
+**What it felt like, in the simulator's words.**
+
+- *Consumer, anonymous:* "The guide is the best page on the site. Landing cold I
+  understood within a second what it was about, and the number I came for is inside the
+  'Check your own bank' box well above the fold, with a big button next to it." Then: "the
+  promised payoff dies at the institution search — the suggestion cannot be clicked on
+  desktop or tapped on mobile, and forcing through drops the fee context onto a data-ops
+  page with the row 2,500–6,000 px down and no way back." *(The unclickable suggestion and
+  the dropped fee are fixed above; the institution page's hierarchy is item 4 in §3.)*
+- *Professional:* pricing is one click from `/` on desktop "only because the landing page
+  has no global header"; on a phone the link is below the fold. The site tells "four
+  different scale stories" — 12 / 12+ / 8,000+ institutions, 384 vs 60,000+ observations.
+- *Registered consumer:* the "Your institutions" panel appears in ~475 ms with correct
+  deltas and deep links that scroll to the highlighted row — "but 'Manage your alerts'
+  leads to `/account`, a professional dashboard with an upsell and no alerts."
+- *Professional, signed in:* the pro guide and the breakdown tables render in full;
+  `/pro/monitor` "is a different skin with placeholder-strategy copy, a self-contradicting
+  header, and horizontal overflow on mobile."
+
+**Confirmed from the browser.** `/guides/overdraft-fees` served prerendered
+(`x-nextjs-cache: HIT`, `x-nextjs-prerender: 1`). The professional guide shows a gate
+signed out (lock, "View Plans", 162 words, no article body) and the full article signed in
+(759 words, five sections). No 5xx, no page errors, no console warnings; every audited
+link and button had an accessible name; focus rings were visible on all 14 tab stops.
+
+**Defects the source-based agents could not have seen** — 19 in total, by type:
+functional 8 · recurring console error 1 · overflow 1 · landmark/ARIA 4 · copy/trust 4 ·
+environmental 1.
+
+| ID | Where | Finding | Status |
+| --- | --- | --- | --- |
+| D1 | `/institutions` search | Suggestion unclickable on both viewports (stacking context from `.fi-reveal`) | **Fixed** |
+| D2 | Search → institution | Suggestion dropped `?fee=`; state links drop it too | **Fixed** for suggestion and Enter; state/charter filter links still drop `fee=` — item 9 in §3 |
+| D3 | `/institution/[id]?fee=` | Highlight applied but no scroll without the `#fee-` hash | All links now carry the hash; consider scrolling on `?fee=` alone |
+| D4 | Mobile drawer | Painted under page content (`backdrop-filter` containing block) | **Fixed** |
+| D5 | Mobile | No search entry point (trigger is `hidden md:flex`) | Open — item 9 in §3 |
+| D6 | Guide → `/account` | "Manage your alerts" leads to a page with no alerts | Open — item 1 in §3 |
+| D7 | `/register` | `intent`/`category` unused; "Work email"; organisation block | Open — item 2 in §3 |
+| D8 | `/pro/monitor` mobile | Horizontal overflow (566 > 375); header contradicts body | Open |
+| D9 | Every page | `/_vercel/insights/script.js` 404 + MIME refusal — `@vercel/analytics` injects its script off-Vercel | Open — guard `<Analytics />` on `process.env.VERCEL` |
+| D11–D14 | Landmarks | Nested `<main>`; five routes with no `<main>`; search overlay without `role="dialog"`; no skip link | Open — the a11y pass in §3 |
+| D15 | `/institution/[id]` | Raw enums in the UI: `tier_4`, `per_item` | Open — item 4 in §3 |
+| D16–D19 | Copy | Four scale stories; "12 observations from 12 institutions" above "384 observations"; login asks *Username* after register collected *Work email*; `/pro/monitor` placeholder-strategy copy | Open — item 6 in §3 |
+
+One thing the simulator flagged that is not a defect: the professional guide showed no
+comparison bars. The comparison block suppresses itself below eight observations per group
+by design (audit item C-4), and a twelve-institution fixture never reaches that in any
+asset tier or state. On production data it renders.
 
 ## 5. What works and should be kept
 
