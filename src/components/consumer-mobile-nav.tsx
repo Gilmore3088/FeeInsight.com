@@ -3,19 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
-import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
-
-const PUBLIC_NAV = [
-  { label: "Find Your Institution", href: "/institutions" },
-  { label: PRODUCT_NAME, href: "/fees" },
-  { label: "Research", href: "/research" },
-  { label: "Guides", href: "/guides" },
-  { label: "For Institutions", href: "/for-institutions" },
-];
-
-const PRO_NAV = HAMILTON_NAV.filter((item) => item.label !== "Admin");
-const REQUEST_REPORT = { label: "Request your report", href: "/for-institutions#report" };
+import { SITE_NAME } from "@/lib/constants";
+import { navItemsFor, REQUEST_REPORT_NAV } from "./nav-items";
+import { useSessionChrome } from "./use-session-chrome";
 
 /** 44px open/close controls: the minimum comfortable touch target. */
 const ICON_BUTTON =
@@ -24,14 +14,18 @@ const DRAWER_LINK =
   "block rounded-lg px-3 py-2.5 text-[14px] font-medium text-[#5A5347] hover:bg-[#E8DFD1]/40 hover:text-[#1A1815] transition-colors";
 
 interface ConsumerMobileNavProps {
-  isLoggedIn: boolean;
+  /**
+   * Accepted for callers that still pass session props, but ignored: the drawer resolves
+   * the session client-side so it can be rendered into static pages.
+   */
+  isLoggedIn?: boolean;
   isPro?: boolean;
 }
 
-export function ConsumerMobileNav({ isLoggedIn, isPro = false }: ConsumerMobileNavProps) {
-  const displayItems = isPro
-    ? PRO_NAV
-    : [...PUBLIC_NAV, ...(isLoggedIn ? [] : [{ label: "Pricing", href: "/subscribe" }])];
+export function ConsumerMobileNav(_props: ConsumerMobileNavProps = {}) {
+  const session = useSessionChrome();
+  const isLoggedIn = session?.signedIn === true;
+  const displayItems = navItemsFor(session);
 
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -117,11 +111,11 @@ export function ConsumerMobileNav({ isLoggedIn, isPro = false }: ConsumerMobileN
                       Sign in
                     </Link>
                     <Link
-                      href={REQUEST_REPORT.href}
+                      href={REQUEST_REPORT_NAV.href}
                       onClick={() => setOpen(false)}
                       className="mt-2 block rounded-md bg-[#C44B2E] px-3 py-2.5 text-center text-[14px] font-semibold text-white transition-colors hover:bg-[#A93D25]"
                     >
-                      {REQUEST_REPORT.label}
+                      {REQUEST_REPORT_NAV.label}
                     </Link>
                   </>
                 )}

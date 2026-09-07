@@ -1,55 +1,31 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
-import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
+import { NavAccount } from "./nav-account";
+import { NavLinks, ProBadge } from "./nav-links";
 import { ConsumerMobileNav } from "./consumer-mobile-nav";
 import { SearchTrigger } from "./search-trigger";
-import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 
-export const PUBLIC_NAV_ITEMS = [
-  { label: "Find Your Institution", href: "/institutions" },
-  { label: PRODUCT_NAME, href: "/fees" },
-  { label: "Research", href: "/research" },
-  { label: "Guides", href: "/guides" },
-  { label: "For Institutions", href: "/for-institutions" },
-] as const;
-
-export const PRO_NAV_ITEMS = HAMILTON_NAV.filter((item) => item.label !== "Admin");
-
-/** The one nav pill for signed-out visitors: the money path, not a vague "Pro". */
-export const REQUEST_REPORT_NAV = { label: "Request your report", href: "/for-institutions#report" } as const;
+export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, REQUEST_REPORT_NAV } from "./nav-items";
 
 /**
- * The single public site header. Signed-out and free users see the public
- * items; Pro users see the Hamilton workspace items with a Pro badge.
+ * The single public site header.
+ *
+ * Reads no session on the server, so pages under the public layout can be prerendered:
+ * a header that reads cookies would make every page beneath it dynamic and silently undo
+ * the static rendering of the consumer guides. Everything that depends on who is signed
+ * in — the nav items, the Pro badge, the account corner, the mobile drawer — is a client
+ * island that resolves the session after hydration (see `use-session-chrome.ts`).
  */
-export async function ConsumerNav() {
-  let user = null;
-  let isPro = false;
-  try {
-    user = await getCurrentUser();
-    if (user) isPro = canAccessPremium(user);
-  } catch {
-    // Not logged in or DB unavailable
-  }
-
-  const navItems = isPro
-    ? PRO_NAV_ITEMS
-    : [...PUBLIC_NAV_ITEMS, ...(user ? [] : [{ label: "Pricing", href: "/subscribe" }])];
-
-  const userInitial = user
-    ? (user.institution_name?.[0] || user.email?.[0] || user.username?.[0] || "U").toUpperCase()
-    : null;
-
+export function ConsumerNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-40 border-b border-[#E8DFD1] bg-[#FAF7F2]/95">
       <div className="mx-auto max-w-6xl px-6">
         <div className="flex h-14 items-center justify-between">
           <div className="flex items-center gap-8">
             <Link
-              href={user ? "/account" : "/"}
+              href="/"
               className="flex items-center gap-2 text-[#1A1815] no-underline"
-              aria-label="Fee Insight home"
+              aria-label={`${SITE_NAME} home`}
             >
               <BrandMark className="h-[18px] w-[18px] text-[#C44B2E]" />
               <span
@@ -58,55 +34,16 @@ export async function ConsumerNav() {
               >
                 {SITE_NAME}
               </span>
-              {isPro && (
-                <span className="inline-flex items-center rounded bg-[#C44B2E]/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#A93D25]">
-                  Pro
-                </span>
-              )}
+              <ProBadge />
             </Link>
-            <nav className="hidden items-center gap-5 lg:flex" aria-label="Main navigation">
-              {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+            <NavLinks />
           </div>
           <div className="flex items-center gap-3">
             <SearchTrigger />
             <div className="hidden lg:block">
-              {user ? (
-                <Link
-                  href="/account"
-                  className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
-                >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
-                    {userInitial}
-                  </span>
-                  <span className="hidden lg:inline">Account</span>
-                </Link>
-              ) : (
-                <>
-                  <Link
-                    href="/login"
-                    className="mr-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    href={REQUEST_REPORT_NAV.href}
-                    className="inline-flex items-center rounded-md bg-[#C44B2E] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#A93D25]"
-                  >
-                    {REQUEST_REPORT_NAV.label}
-                  </Link>
-                </>
-              )}
+              <NavAccount />
             </div>
-            <ConsumerMobileNav isLoggedIn={!!user} isPro={isPro} />
+            <ConsumerMobileNav />
           </div>
         </div>
       </div>
