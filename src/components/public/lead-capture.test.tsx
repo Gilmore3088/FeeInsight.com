@@ -106,4 +106,21 @@ describe("LeadCapture", () => {
       status: 400,
     });
   });
+
+  it("renders the inline variant as just the field and button, still tracked and tagged", async () => {
+    const { container } = render(
+      <LeadCapture placement="homepage" variant="inline" headline="Get the sample report by email" buttonLabel="Send it" />,
+    );
+    expect(container.querySelector("section")).toBeNull();
+    expect(screen.queryByText(/Unsubscribe anytime/)).toBeNull();
+    expect(trackMock).toHaveBeenCalledWith("lead_capture_view", { placement: "homepage" });
+
+    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "vp@bank.example" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send it" }));
+    await screen.findByRole("status");
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      email: "vp@bank.example",
+      source: "capture_homepage",
+    });
+  });
 });
