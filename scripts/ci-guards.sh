@@ -104,6 +104,8 @@ legacy_kill() {
     ":(exclude)src/**/*.test.ts"
     ":(exclude)src/**/*.test.tsx"
     ":(exclude)src/lib/execution-backend.ts"
+    # Agent guidance docs name retired surfaces only to forbid them; they are not runtime code.
+    ":(exclude)src/**/AGENTS.md"
   )
   local pattern='spawnJob\(|from ['\''"]@/lib/job-runner['\''"]|from ['\''"][^'\'']*/job-runner['\''"]|\bops_jobs\b|\bops_job_id\b|\bmodal_call_id\b|modalCallId|python -m fee_crawler|process\.env\.(OPS_RUN_URL|OPS_CANCEL_URL|MODAL_[A-Z0-9_]*|DARWIN_SIDECAR_URL|MAGELLAN_SIDECAR_URL|EXTRACT_SINGLE_URL)|modal\.run'
   local hits=""
