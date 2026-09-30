@@ -4,7 +4,7 @@ import Link from "next/link";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
+import { PRODUCT_NAME } from "@/lib/constants";
 
 interface LandingHeroProps {
   institutionsLabel: string;
@@ -15,7 +15,7 @@ const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 
 /**
  * Two jobs, one each side: consumers look up a bank; bank/CU staff get the
- * sample report or request their own. Keep the copy short — the trust stats
+ * sample report or request their own (free). Keep the copy short — the trust stats
  * band below carries the numbers.
  */
 export function LandingHero({ institutionsLabel }: LandingHeroProps) {
@@ -67,7 +67,6 @@ function ReportCard() {
         className="mt-2"
         headline="Get a free sample report by email"
         buttonLabel="Send it"
-        successMessage="Sent — check your work inbox for the sample and confirm your email."
       />
       <p className="mt-3 text-xs text-[#6B6255]">
         <TrackLink
@@ -80,7 +79,7 @@ function ReportCard() {
         </TrackLink>
         <span className="mx-2 text-[#D5CBBF]">·</span>
         <Link href={REPORT_LANE_HREF} className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
-          Get yours — {REPORT_OFFER.priceLabel}
+          Get yours free
         </Link>
       </p>
     </div>

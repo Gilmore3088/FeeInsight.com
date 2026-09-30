@@ -22,7 +22,7 @@ function renderState() {
 }
 
 function submit(email: string) {
-  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: email } });
   fireEvent.click(screen.getByRole("button"));
 }
 
@@ -80,19 +80,43 @@ describe("LeadCapture", () => {
     });
   });
 
-  it("blocks personal email on the sample-report magnet before calling the API", () => {
+  it("accepts any email on the sample offer and hands over the PDF on the spot", async () => {
     render(
       <LeadCapture
         placement="sample_report"
         eyebrow="Free sample"
-        headline="Send the sample to your work inbox"
+        headline="Email me the sample"
         body="Sample PDF."
-        buttonLabel="Email me the sample"
+        buttonLabel="Send it"
       />,
     );
     submit("someone@gmail.com");
-    expect(screen.getByRole("alert")).toHaveTextContent(/work email/);
-    expect(fetchMock).not.toHaveBeenCalled();
+    const download = await screen.findByRole("link", { name: /Download the sample report/ });
+    expect(download).toHaveAttribute("href", "/reports/sample-competitive-fee-position.pdf");
+    // No email went out (the mock response carries no notifications), so never claim one did.
+    expect(screen.queryByText(/emailed you a copy/)).toBeNull();
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      email: "someone@gmail.com",
+      source: "capture_report_sample",
+    });
+  });
+
+  it("mentions the emailed copy only when the confirmation was sent", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ success: true, notifications: { notification: "sent", confirmation: "sent" } }), {
+        status: 200,
+      }),
+    );
+    render(<LeadCapture placement="homepage" variant="inline" headline="Get a free sample" buttonLabel="Send it" />);
+    submit("vp@bank.example");
+    expect(await screen.findByText("We also emailed you a copy.")).toBeInTheDocument();
+  });
+
+  it("says signed up rather than check your inbox when no email went out", async () => {
+    renderState();
+    submit("vp@bank.example");
+    expect(await screen.findByText("You're signed up.")).toBeInTheDocument();
+    expect(screen.queryByText(/Check your inbox/)).toBeNull();
   });
 
   it("shows the server error and tracks it", async () => {
@@ -115,7 +139,7 @@ describe("LeadCapture", () => {
     expect(screen.queryByText(/Unsubscribe anytime/)).toBeNull();
     expect(trackMock).toHaveBeenCalledWith("lead_capture_view", { placement: "homepage" });
 
-    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "vp@bank.example" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "vp@bank.example" } });
     fireEvent.click(screen.getByRole("button", { name: "Send it" }));
     await screen.findByRole("status");
     expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({

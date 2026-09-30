@@ -9,7 +9,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -222,7 +222,7 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             buttonLabel="Alert me"
             secondaryLink={{
               href: links.reportOfferHref,
-              label: `Benchmark it against peers — ${REPORT_OFFER.priceLabel}`,
+              label: "Benchmark it against peers — free",
             }}
           />
 

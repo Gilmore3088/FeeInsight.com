@@ -76,6 +76,24 @@ export function shouldNotify(source: string) {
   );
 }
 
+function deliveryReason(result: LeadNotificationOutcome["notification"]) {
+  if (result.status === "not_configured") return result.reason;
+  if (result.status === "failed") return result.error;
+  return null;
+}
+
+/**
+ * The lead is stored either way; an email that did not go out is logged with its reason
+ * (e.g. "RESEND_API_KEY is not configured.") so it is visible in the deployment logs.
+ */
+function logUndelivered(source: string, outcome: LeadNotificationOutcome) {
+  const notification = deliveryReason(outcome.notification);
+  const confirmation = deliveryReason(outcome.confirmation);
+  if (notification || confirmation) {
+    console.warn("[api/leads] lead email not delivered", { source, notification, confirmation });
+  }
+}
+
 function toStatus(outcome: LeadNotificationOutcome): LeadNotificationStatus {
   return {
     notification: outcome.notification.status,
@@ -96,6 +114,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionName: lead.institutionName ?? null,
         stateCode: lead.stateCode ?? null,
       });
+      logUndelivered(lead.source, outcome);
       return toStatus(outcome);
     }
     if (lead.source === REPORT_SOURCE) {
@@ -107,6 +126,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionId: lead.institutionId,
         src: lead.src,
       });
+      logUndelivered(lead.source, outcome);
       return toStatus(outcome);
     }
     const outcome = await sendContactRequestNotifications({
@@ -118,6 +138,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
       inquiryType:
         lead.source === ENTERPRISE_SOURCE ? ENTERPRISE_SOURCE : contactInquiryType(lead.source),
     });
+    logUndelivered(lead.source, outcome);
     return toStatus(outcome);
   } catch (error) {
     console.error("[api/leads] notification failed", {

@@ -179,6 +179,21 @@ describe("POST /api/leads", () => {
     expect(issued(1).text).toContain("INSERT INTO leads");
   });
 
+  it("logs why a lead email was not delivered, without failing the request", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const notConfigured = { status: "not_configured", reason: "RESEND_API_KEY is not configured." };
+    captureNotifyMock.mockResolvedValue({ notification: notConfigured, confirmation: notConfigured });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const res = await post({ email: "vp@bank.example", source: "capture_homepage" });
+    expect(res.status).toBe(200);
+    expect(warnSpy).toHaveBeenCalledWith("[api/leads] lead email not delivered", {
+      source: "capture_homepage",
+      notification: "RESEND_API_KEY is not configured.",
+      confirmation: "RESEND_API_KEY is not configured.",
+    });
+    warnSpy.mockRestore();
+  });
+
   it("still returns success when the notifier throws unexpectedly", async () => {
     sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     reportNotifyMock.mockRejectedValue(new Error("boom"));
@@ -299,11 +314,11 @@ describe("POST /api/leads", () => {
       expect(append.values).toEqual([attribution, "cmo@bank.com", attribution]);
     });
 
-    it.each(["capture_report_sample", "capture_homepage"])("requires a work email for %s", async (source) => {
+    it.each(["capture_report_sample", "capture_homepage"])("accepts a personal email for %s", async (source) => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       const res = await post({ email: "someone@gmail.com", source });
-      expect(res.status).toBe(400);
-      expect((await res.json()).error).toMatch(/work email/);
-      expect(sqlMock).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(issued(1).values[1]).toBe("someone@gmail.com");
     });
 
     it("allows personal email on non-magnet placements", async () => {

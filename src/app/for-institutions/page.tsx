@@ -10,7 +10,7 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
-import { ReportOfferSection, REPORT_NAME, REPORT_PRICE_LABEL } from "./report-offer";
+import { ReportOfferSection, REPORT_NAME } from "./report-offer";
 import { ProToolsSection } from "./pro-tools";
 import { CompareTableSection } from "./compare-table";
 
@@ -20,7 +20,7 @@ const REPORT_ANCHOR = "#report";
 export const metadata: Metadata = {
   title: "For Financial Institutions",
   description:
-    `Competitive Fee Position Report ($300, 48 hours), peer benchmarking, and the Hamilton ` +
+    `Competitive Fee Position Report (free, 48 hours), peer benchmarking, and the Hamilton ` +
     `workspace for banking teams — built on the ${PRODUCT_NAME}.`,
 };
 
@@ -54,7 +54,7 @@ export default async function ForInstitutionsPage() {
               <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
-                it came from. Start with a {REPORT_PRICE_LABEL} report or run the workspace yourself.
+                it came from. Start with a free report or run the workspace yourself.
               </p>
 
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">
@@ -76,7 +76,7 @@ export default async function ForInstitutionsPage() {
               </div>
               <p className="mt-4 text-[13px] text-[#D5CBBF]">
                 <a href={REPORT_ANCHOR} className="underline underline-offset-2 hover:text-warm-150">
-                  Request your report — {REPORT_PRICE_LABEL}
+                  Get your free report
                 </a>{" "}
                 · {REPORT_NAME}, delivered in 48 hours.
               </p>
@@ -179,7 +179,7 @@ function AdvisorySection() {
               href={REPORT_ANCHOR}
               className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
             >
-              Request your report — {REPORT_PRICE_LABEL}
+              Get your free report
             </TrackLink>
           </div>
         </div>
@@ -215,7 +215,7 @@ function FinalCtaSection() {
             href={REPORT_ANCHOR}
             className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
           >
-            Request your report — {REPORT_PRICE_LABEL}
+            Get your free report
           </a>
         </div>
       </div>

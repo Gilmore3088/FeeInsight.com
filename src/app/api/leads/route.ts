@@ -6,10 +6,8 @@ import {
   LEAD_HONEYPOT_FIELD,
   buildCaptureAttribution,
   isEmailOnlySource,
-  isWorkEmail,
   parseStateCode,
   placementForSource,
-  requiresWorkEmail,
 } from "@/lib/lead-capture";
 import {
   REPORT_SOURCE,
@@ -70,13 +68,6 @@ async function handlePOST(request: NextRequest) {
     if (!EMAIL_PATTERN.test(email)) {
       return NextResponse.json(
         { error: "Invalid email address" },
-        { status: 400 },
-      );
-    }
-
-    if (requiresWorkEmail(source) && !isWorkEmail(email)) {
-      return NextResponse.json(
-        { error: "Use your work email — the sample is for bank and credit union teams." },
         { status: 400 },
       );
     }
