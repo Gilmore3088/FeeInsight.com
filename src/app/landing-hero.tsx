@@ -6,7 +6,7 @@ import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
-import { ArrowRight, FileText, Search, Users, type LucideIcon } from "lucide-react";
+import { FileText, Search, Users, type LucideIcon } from "lucide-react";
 
 interface LandingHeroProps {
   institutionsLabel: string;
@@ -14,6 +14,8 @@ interface LandingHeroProps {
 
 const REPORT_LANE_HREF = "/for-institutions#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
+const LANE_LINK_CLASS =
+  "font-semibold text-[#A93D25] underline decoration-[#A93D25]/40 underline-offset-2 hover:text-[#8E2A17]";
 
 export function LandingHero({ institutionsLabel }: LandingHeroProps) {
   return (
@@ -50,19 +52,12 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
                 Submit a fee source
               </Link>
             </div>
-            <LeadCapture
-              placement="homepage"
-              className="mt-6 max-w-2xl"
-              eyebrow="Work at a bank or credit union?"
-              headline="Get the free sample fee report"
-              body="A real Competitive Fee Position Report — one community bank against eight named peers. Sent to your work inbox."
-              buttonLabel="Email me the sample"
-              successMessage="Sent — check your work inbox for the sample PDF and confirm your email."
-              secondaryLink={{
-                href: REPORT_LANE_HREF,
-                label: `Or get yours — ${REPORT_OFFER.priceLabel}`,
-              }}
-            />
+            <p className="mt-4 max-w-2xl text-sm text-[#5A5347]">
+              Work at a bank or credit union?{" "}
+              <Link href={REPORT_LANE_HREF} className={LANE_LINK_CLASS}>
+                Get your {REPORT_OFFER.name} — {REPORT_OFFER.priceLabel}
+              </Link>
+            </p>
           </div>
 
           <ProWorkflowCard />
@@ -89,23 +84,29 @@ function ProWorkflowCard() {
         <WorkflowStep icon={Users} title="Named competitors on the same lines" />
         <WorkflowStep icon={FileText} title="Every figure traced to the published schedule" />
       </div>
-      <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+      <p className="mt-5 text-sm font-semibold text-[#1A1815]">Get the sample report by email</p>
+      <LeadCapture
+        placement="homepage"
+        variant="inline"
+        className="mt-2"
+        headline="Get the sample report by email"
+        buttonLabel="Send it"
+        successMessage="Sent — check your work inbox for the sample PDF and confirm your email."
+      />
+      <p className="mt-3 text-xs text-[#6B6255]">
         <TrackLink
           event="see_sample_report"
           eventProps={{ placement: "home_card" }}
           href={SAMPLE_REPORT_HREF}
-          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md bg-[#C44B2E] px-3 py-2 text-sm font-semibold text-white hover:bg-[#A93D25]"
+          className="font-semibold text-[#1A1815] hover:text-[#C44B2E]"
         >
-          See the sample report
-          <ArrowRight className="h-4 w-4" />
+          View it online
         </TrackLink>
-        <Link
-          href={REPORT_LANE_HREF}
-          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-[#D5CBBF] px-3 py-2 text-sm font-semibold text-[#1A1815] hover:border-[#1A1815]"
-        >
+        <span className="mx-2 text-[#D5CBBF]">·</span>
+        <Link href={REPORT_LANE_HREF} className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
           Request yours — {REPORT_OFFER.priceLabel}
         </Link>
-      </div>
+      </p>
       <p className="mt-4 text-xs leading-relaxed text-[#6B6255]">
         Need it every quarter? {HAMILTON_CANONICAL}{" "}
         <Link href="/subscribe" className="font-semibold text-[#A93D25] underline">

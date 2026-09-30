@@ -13,9 +13,11 @@ import {
 
 export interface LeadCaptureProps {
   placement: LeadCapturePlacement;
-  eyebrow: string;
+  /** Card variant only. */
+  eyebrow?: string;
   headline: string;
-  body: string;
+  /** Card variant only. */
+  body?: string;
   buttonLabel: string;
   /** Shown after a successful submit; defaults to a confirm-your-inbox line. */
   successMessage?: string;
@@ -24,6 +26,12 @@ export interface LeadCaptureProps {
   stateCode?: string | null;
   secondaryLink?: { href: string; label: string };
   className?: string;
+  /**
+   * "card" (default) is the standalone band with eyebrow, headline and body.
+   * "inline" is just the email field and button, for placing inside an existing
+   * card that already carries the offer copy; headline is used only as its label.
+   */
+  variant?: "card" | "inline";
 }
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -41,9 +49,9 @@ const DEFAULT_SUCCESS = "Check your inbox — confirm your email and your first 
  */
 export function LeadCapture({
   placement,
-  eyebrow,
+  eyebrow = "",
   headline,
-  body,
+  body = "",
   buttonLabel,
   successMessage = DEFAULT_SUCCESS,
   institutionId = null,
@@ -51,6 +59,7 @@ export function LeadCapture({
   stateCode = null,
   secondaryLink,
   className = "",
+  variant = "card",
 }: LeadCaptureProps) {
   const source = LEAD_CAPTURE_SOURCES[placement];
   const workEmailOnly = requiresWorkEmail(source);
@@ -131,6 +140,75 @@ export function LeadCapture({
     }
   }
 
+  const honeypotField = (
+    // Honeypot: hidden from people and assistive tech; bots fill it.
+    <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+      <label>
+        Website
+        <input
+          type="text"
+          name={LEAD_HONEYPOT_FIELD}
+          tabIndex={-1}
+          autoComplete="off"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+        />
+      </label>
+    </div>
+  );
+
+  const fields = (
+    <>
+      <label htmlFor={inputId} className="sr-only">
+        {workEmailOnly ? "Work email" : "Email"}
+      </label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          id={inputId}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={workEmailOnly ? "you@yourbank.com" : "you@company.com"}
+          autoComplete="email"
+          required
+          className="min-w-0 flex-1 rounded-md border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#8A8072] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30"
+        />
+        <button
+          type="submit"
+          disabled={status === "loading"}
+          className="shrink-0 whitespace-nowrap rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50"
+        >
+          {status === "loading" ? "Sending…" : buttonLabel}
+        </button>
+      </div>
+      {honeypotField}
+    </>
+  );
+
+  const errorLine =
+    status === "error" && error ? (
+      <p className="mt-2 text-[12px] text-red-600" role="alert">
+        {error}
+      </p>
+    ) : null;
+
+  if (variant === "inline") {
+    return (
+      <div ref={rootRef as React.RefObject<HTMLDivElement>} data-placement={placement} className={className}>
+        {status === "success" ? (
+          <p className="text-[13px] leading-relaxed text-emerald-700" role="status">
+            {successMessage}
+          </p>
+        ) : (
+          <form onSubmit={handleSubmit} aria-label={headline} noValidate>
+            {fields}
+            {errorLine}
+          </form>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section
       ref={rootRef}
@@ -156,47 +234,8 @@ export function LeadCapture({
           </p>
         ) : (
           <form onSubmit={handleSubmit} className="w-full md:max-w-[44%]" noValidate>
-            <label htmlFor={inputId} className="sr-only">
-              {workEmailOnly ? "Work email" : "Email"}
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                id={inputId}
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={workEmailOnly ? "you@yourbank.com" : "you@company.com"}
-                autoComplete="email"
-                required
-                className="min-w-0 flex-1 rounded-md border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#8A8072] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30"
-              />
-              <button
-                type="submit"
-                disabled={status === "loading"}
-                className="shrink-0 rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50"
-              >
-                {status === "loading" ? "Sending…" : buttonLabel}
-              </button>
-            </div>
-            {/* Honeypot: hidden from people and assistive tech; bots fill it. */}
-            <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
-              <label>
-                Website
-                <input
-                  type="text"
-                  name={LEAD_HONEYPOT_FIELD}
-                  tabIndex={-1}
-                  autoComplete="off"
-                  value={honeypot}
-                  onChange={(e) => setHoneypot(e.target.value)}
-                />
-              </label>
-            </div>
-            {status === "error" && error ? (
-              <p className="mt-2 text-[12px] text-red-600" role="alert">
-                {error}
-              </p>
-            ) : (
+            {fields}
+            {errorLine ?? (
               <p className="mt-2 text-[11px] text-[#6B6255]">
                 One confirmation email, then only what you asked for. Unsubscribe anytime.
                 {secondaryLink && (
