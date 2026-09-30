@@ -15,7 +15,12 @@ vi.mock("@/lib/email/report-request", () => ({
   sendContactRequestNotifications: vi.fn(),
 }));
 
+vi.mock("@/lib/email/lead-capture", () => ({
+  sendLeadCaptureNotifications: vi.fn(),
+}));
+
 import { sql } from "@/lib/data-store/connection";
+import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import {
   sendContactRequestNotifications,
   sendReportRequestNotifications,
@@ -25,6 +30,7 @@ import { POST } from "./route";
 const sqlMock = sql as unknown as ReturnType<typeof vi.fn>;
 const reportNotifyMock = sendReportRequestNotifications as unknown as ReturnType<typeof vi.fn>;
 const contactNotifyMock = sendContactRequestNotifications as unknown as ReturnType<typeof vi.fn>;
+const captureNotifyMock = sendLeadCaptureNotifications as unknown as ReturnType<typeof vi.fn>;
 const SENT = { status: "sent", providerId: "em_1" };
 
 function post(body: Record<string, unknown>) {
@@ -50,6 +56,8 @@ describe("POST /api/leads", () => {
     contactNotifyMock.mockReset();
     reportNotifyMock.mockResolvedValue({ notification: SENT, confirmation: SENT });
     contactNotifyMock.mockResolvedValue({ notification: SENT, confirmation: SENT });
+    captureNotifyMock.mockReset();
+    captureNotifyMock.mockResolvedValue({ notification: SENT, confirmation: SENT });
   });
 
   it("inserts a new lead with its source", async () => {
@@ -209,5 +217,108 @@ describe("POST /api/leads", () => {
     expect((await post({ email: "a@b.co" })).status).toBe(400);
     expect((await post({ name: "x", email: "nope" })).status).toBe(400);
     expect(sqlMock).not.toHaveBeenCalled();
+  });
+  it("accumulates sources by exact member, so a report request is not hidden by a capture source", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: 9 }]).mockResolvedValueOnce([]);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    const update = issued(1);
+    expect(update.text).toContain("WHEN ? = ANY(string_to_array(source, ',')) THEN source");
+    expect(update.text).not.toContain("position(? in source)");
+  });
+
+  describe("contextual capture placements", () => {
+    const cases = [
+      {
+        body: { source: "capture_institution", institutionId: 4802, institutionName: "Example CU", state: "tx" },
+        useCase: "placement=institution_alerts; institution_id=4802; state=TX",
+        placement: "institution_alerts",
+      },
+      {
+        body: { source: "capture_state", state: "OH" },
+        useCase: "placement=state_benchmark; state=OH",
+        placement: "state_benchmark",
+      },
+      {
+        body: { source: "capture_national_index" },
+        useCase: "placement=national_index",
+        placement: "national_index",
+      },
+      {
+        body: { source: "capture_report_sample" },
+        useCase: "placement=sample_report",
+        placement: "sample_report",
+      },
+    ];
+
+    it.each(cases)("stores $placement with its source and attribution", async ({ body, useCase, placement }) => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      const res = await post({ email: "vp@firstbank.example", ...body });
+      expect(res.status).toBe(200);
+      const insert = issued(1);
+      expect(insert.text).toContain("INSERT INTO leads");
+      expect(insert.values).toEqual(["Newsletter signup", "vp@firstbank.example", null, null, useCase, body.source]);
+      expect(captureNotifyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "vp@firstbank.example", placement }),
+      );
+      expect(reportNotifyMock).not.toHaveBeenCalled();
+    });
+
+    it("passes institution and state context to the capture email", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await post({ email: "vp@firstbank.example", ...cases[0].body });
+      expect(captureNotifyMock).toHaveBeenCalledWith({
+        email: "vp@firstbank.example",
+        placement: "institution_alerts",
+        institutionId: 4802,
+        institutionName: "Example CU",
+        stateCode: "TX",
+      });
+    });
+
+    it("drops an unknown state code and malformed institution id", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await post({ email: "vp@firstbank.example", source: "capture_state", state: "ZZ", institutionId: "1; DROP" });
+      expect(issued(1).values[4]).toBe("placement=state_benchmark");
+    });
+
+    it("appends capture attribution for a returning lead without overwriting use_case", async () => {
+      sqlMock.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await post({ email: "cmo@bank.com", source: "capture_state", state: "OH" });
+      const update = issued(1);
+      expect(update.text).toContain("use_case = COALESCE(use_case, ?)");
+      expect(update.values).toContain("capture_state");
+      const append = issued(2);
+      expect(append.text).toContain("UPDATE leads SET use_case = use_case || '; ' || ?");
+      expect(append.text).toContain("position(? in use_case) = 0");
+      const attribution = "placement=state_benchmark; state=OH";
+      expect(append.values).toEqual([attribution, "cmo@bank.com", attribution]);
+    });
+
+    it("requires a work email for the sample-report lead magnet", async () => {
+      const res = await post({ email: "someone@gmail.com", source: "capture_report_sample" });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/work email/);
+      expect(sqlMock).not.toHaveBeenCalled();
+    });
+
+    it("allows personal email on non-magnet placements", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      const res = await post({ email: "someone@gmail.com", source: "capture_national_index" });
+      expect(res.status).toBe(200);
+    });
+
+    it("rejects an invalid email on a capture placement", async () => {
+      const res = await post({ email: "not-an-email", source: "capture_state", state: "OH" });
+      expect(res.status).toBe(400);
+      expect(sqlMock).not.toHaveBeenCalled();
+    });
+
+    it("silently drops honeypot submissions", async () => {
+      const res = await post({ email: "bot@spam.example", source: "capture_state", website: "http://spam" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+      expect(sqlMock).not.toHaveBeenCalled();
+      expect(captureNotifyMock).not.toHaveBeenCalled();
+    });
   });
 });

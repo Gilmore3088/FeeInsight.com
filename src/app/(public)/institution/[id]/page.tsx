@@ -8,7 +8,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_NAME } from "@/lib/constants";
+import { LeadCapture } from "@/components/public/lead-capture";
+import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -207,6 +208,22 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             needsSource={needsSource}
             correctSourceHref={links.correctSourceHref}
             claimHref={links.claimHref}
+          />
+
+          <LeadCapture
+            placement="institution_alerts"
+            className="mb-6"
+            institutionId={instId}
+            institutionName={inst.institution_name}
+            stateCode={inst.state_code}
+            eyebrow="Fee change alerts"
+            headline={`Get alerted when ${inst.institution_name} changes fees`}
+            body="One email when a verified change to this published fee schedule lands in the index. No newsletter unless you ask for it."
+            buttonLabel="Alert me"
+            secondaryLink={{
+              href: links.reportOfferHref,
+              label: `Benchmark it against peers — ${REPORT_OFFER.priceLabel}`,
+            }}
           />
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">

@@ -19,6 +19,8 @@ export interface ResendMessage {
   text: string;
   replyTo?: string;
   idempotencyKey?: string;
+  /** Extra message headers, e.g. List-Unsubscribe for subscription mail. */
+  headers?: Record<string, string>;
 }
 
 export function getResendApiKey() {
@@ -80,7 +82,7 @@ export async function sendResendEmail(
   };
   if (message.idempotencyKey) headers["Idempotency-Key"] = message.idempotencyKey;
 
-  const body: Record<string, string> = {
+  const body: Record<string, unknown> = {
     from: message.from,
     to: message.to,
     subject: message.subject,
@@ -88,6 +90,7 @@ export async function sendResendEmail(
     text: message.text,
   };
   if (message.replyTo) body.reply_to = message.replyTo;
+  if (message.headers && Object.keys(message.headers).length > 0) body.headers = message.headers;
 
   try {
     const response = await fetch(process.env.RESEND_EMAIL_ENDPOINT || RESEND_EMAIL_ENDPOINT, {

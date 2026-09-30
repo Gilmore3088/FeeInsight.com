@@ -3,7 +3,9 @@ import {
   sendReportRequestNotifications,
   type LeadNotificationOutcome,
 } from "@/lib/email/report-request";
+import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import type { EmailDeliveryStatus } from "@/lib/email/resend";
+import { placementForSource } from "@/lib/lead-capture";
 
 export const REPORT_SOURCE = "report";
 const CONTACT_SOURCE_PATTERN = /^contact(?:_([a-z0-9-]+))?$/;
@@ -21,6 +23,9 @@ export interface StoredLead {
   source: string;
   institutionId: number | null;
   src: string | null;
+  /** Capture placements only: state context and the institution name for email copy. */
+  stateCode?: string | null;
+  institutionName?: string | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -65,6 +70,7 @@ export function contactInquiryType(source: string): string | null {
 export function shouldNotify(source: string) {
   return (
     source === REPORT_SOURCE ||
+    placementForSource(source) !== null ||
     source === ENTERPRISE_SOURCE ||
     CONTACT_SOURCE_PATTERN.test(source)
   );
@@ -81,6 +87,17 @@ function toStatus(outcome: LeadNotificationOutcome): LeadNotificationStatus {
 export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationStatus | null> {
   if (!shouldNotify(lead.source)) return null;
   try {
+    const placement = placementForSource(lead.source);
+    if (placement) {
+      const outcome = await sendLeadCaptureNotifications({
+        email: lead.email,
+        placement,
+        institutionId: lead.institutionId,
+        institutionName: lead.institutionName ?? null,
+        stateCode: lead.stateCode ?? null,
+      });
+      return toStatus(outcome);
+    }
     if (lead.source === REPORT_SOURCE) {
       const outcome = await sendReportRequestNotifications({
         name: lead.name,

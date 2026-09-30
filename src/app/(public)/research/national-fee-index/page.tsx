@@ -13,6 +13,7 @@ import {
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
+import { LeadCapture } from "@/components/public/lead-capture";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -114,6 +115,16 @@ export default async function NationalFeeIndexPage() {
       <div className="mt-1">
         <DataFreshness />
       </div>
+
+      <LeadCapture
+        placement="national_index"
+        className="mt-5"
+        eyebrow="Monthly index update"
+        headline="Get the national fee index in your inbox"
+        body="New national medians, the fee changes that moved them, and one chart — about once a month."
+        buttonLabel="Subscribe"
+        secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
+      />
 
       {/* CPI context strip */}
       {cpi.bankFees && cpi.allItems && (

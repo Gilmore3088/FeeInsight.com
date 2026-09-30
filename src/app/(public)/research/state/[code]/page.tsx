@@ -19,7 +19,8 @@ import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
-import { SITE_URL } from "@/lib/constants";
+import { LeadCapture } from "@/components/public/lead-capture";
+import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -150,6 +151,17 @@ export default async function StateReportPage({ params }: PageProps) {
       <div className="mt-1">
         <DataFreshness />
       </div>
+
+      <LeadCapture
+        placement="state_benchmark"
+        className="mt-5"
+        stateCode={stateCode}
+        eyebrow="Free benchmark"
+        headline={`Get the free ${stateName} fee benchmark`}
+        body={`${stateName} medians against national, sent each time the state index refreshes — plus a link to the sample ${REPORT_OFFER.name}.`}
+        buttonLabel="Send it to me"
+        secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
+      />
 
       {/* Stat cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
