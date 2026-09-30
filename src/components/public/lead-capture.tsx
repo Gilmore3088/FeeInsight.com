@@ -6,8 +6,7 @@ import { trackEvent, type AnalyticsProps } from "@/lib/analytics";
 import {
   LEAD_CAPTURE_SOURCES,
   LEAD_HONEYPOT_FIELD,
-  isWorkEmail,
-  requiresWorkEmail,
+  deliversSampleReport,
   type LeadCapturePlacement,
 } from "@/lib/lead-capture";
 
@@ -19,7 +18,10 @@ export interface LeadCaptureProps {
   /** Card variant only. */
   body?: string;
   buttonLabel: string;
-  /** Shown after a successful submit; defaults to a confirm-your-inbox line. */
+  /**
+   * Shown after a successful submit when the confirmation email went out; defaults to a
+   * confirm-your-inbox line. Without a sent email the form never tells people to check it.
+   */
   successMessage?: string;
   institutionId?: number | null;
   institutionName?: string | null;
@@ -41,6 +43,12 @@ function captureEventProps(placement: LeadCapturePlacement, stateCode: string | 
 }
 
 const DEFAULT_SUCCESS = "Check your inbox — confirm your email and your first update is on its way.";
+const SIGNED_UP_NO_EMAIL = "You're signed up.";
+const SAMPLE_REPORT_PDF_HREF = "/reports/sample-competitive-fee-position.pdf";
+
+interface LeadsResponse {
+  notifications?: { confirmation?: string };
+}
 
 /**
  * Contextual, above-the-fold email capture. Posts to /api/leads with a
@@ -62,7 +70,7 @@ export function LeadCapture({
   variant = "card",
 }: LeadCaptureProps) {
   const source = LEAD_CAPTURE_SOURCES[placement];
-  const workEmailOnly = requiresWorkEmail(source);
+  const offersSample = deliversSampleReport(placement);
   const inputId = useId();
   const rootRef = useRef<HTMLElement>(null);
   const viewedRef = useRef(false);
@@ -70,6 +78,7 @@ export function LeadCapture({
   const [honeypot, setHoneypot] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
 
   const eventProps = captureEventProps(placement, stateCode);
 
@@ -101,11 +110,6 @@ export function LeadCapture({
     e.preventDefault();
     const trimmed = email.trim();
     if (!trimmed) return;
-    if (workEmailOnly && !isWorkEmail(trimmed)) {
-      setError("Use your work email — the sample is for bank and credit union teams.");
-      setStatus("error");
-      return;
-    }
 
     trackEvent("lead_capture_submit", eventProps);
     setStatus("loading");
@@ -124,6 +128,8 @@ export function LeadCapture({
         }),
       });
       if (resp.ok) {
+        const payload = (await resp.json().catch(() => ({}))) as LeadsResponse;
+        setEmailSent(payload.notifications?.confirmation === "sent");
         trackEvent("lead_capture_success", eventProps);
         setStatus("success");
         setEmail("");
@@ -160,7 +166,7 @@ export function LeadCapture({
   const fields = (
     <>
       <label htmlFor={inputId} className="sr-only">
-        {workEmailOnly ? "Work email" : "Email"}
+        Email
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
@@ -168,7 +174,7 @@ export function LeadCapture({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder={workEmailOnly ? "you@yourbank.com" : "you@company.com"}
+          placeholder={offersSample ? "you@yourbank.com" : "you@company.com"}
           autoComplete="email"
           required
           className="min-w-0 flex-1 rounded-md border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#8A8072] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30"
@@ -185,6 +191,25 @@ export function LeadCapture({
     </>
   );
 
+  const successBlock = (
+    <div role="status" className="text-[13px] leading-relaxed text-[#1A1815]">
+      {offersSample ? (
+        <>
+          <a
+            href={SAMPLE_REPORT_PDF_HREF}
+            download
+            className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25]"
+          >
+            Download the sample report (PDF)
+          </a>
+          {emailSent && <p className="mt-2 text-[#5A5347]">We also emailed you a copy.</p>}
+        </>
+      ) : (
+        <p className="text-emerald-700">{emailSent ? successMessage : SIGNED_UP_NO_EMAIL}</p>
+      )}
+    </div>
+  );
+
   const errorLine =
     status === "error" && error ? (
       <p className="mt-2 text-[12px] text-red-600" role="alert">
@@ -196,9 +221,7 @@ export function LeadCapture({
     return (
       <div ref={rootRef as React.RefObject<HTMLDivElement>} data-placement={placement} className={className}>
         {status === "success" ? (
-          <p className="text-[13px] leading-relaxed text-emerald-700" role="status">
-            {successMessage}
-          </p>
+          successBlock
         ) : (
           <form onSubmit={handleSubmit} aria-label={headline} noValidate>
             {fields}
@@ -229,9 +252,7 @@ export function LeadCapture({
         </div>
 
         {status === "success" ? (
-          <p className="text-[13px] leading-relaxed text-emerald-700 md:max-w-[44%]" role="status">
-            {successMessage}
-          </p>
+          <div className="md:max-w-[44%]">{successBlock}</div>
         ) : (
           <form onSubmit={handleSubmit} className="w-full md:max-w-[44%]" noValidate>
             {fields}

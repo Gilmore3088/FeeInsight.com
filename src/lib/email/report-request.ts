@@ -44,7 +44,7 @@ export async function sendReportRequestNotifications(
 ): Promise<LeadNotificationOutcome> {
   const roleSuffix = input.role ? `, ${input.role}` : "";
   const notificationLines = [
-    `${input.name} requested a ${REPORT_OFFER.name} (${REPORT_OFFER.priceLabel}) for ${input.institution}.`,
+    `${input.name} requested a free ${REPORT_OFFER.name} for ${input.institution}.`,
     "",
     ...[
       detailLine("Institution", input.institution),
@@ -70,7 +70,7 @@ export async function sendReportRequestNotifications(
       lines: [
         `We received your request for ${input.institution}. ${REPORT_REQUEST_CONFIRMATION_LINE}`,
         "",
-        "No payment is taken until the peer set is confirmed. Reply to this email with questions.",
+        "The report is free. Reply to this email with questions.",
       ],
     },
   });

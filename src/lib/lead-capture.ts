@@ -45,49 +45,9 @@ export function isEmailOnlySource(source: string) {
   return source === NEWSLETTER_SOURCE || isLeadCaptureSource(source);
 }
 
-const WORK_EMAIL_SOURCES = new Set<string>([
-  LEAD_CAPTURE_SOURCES.sample_report,
-  LEAD_CAPTURE_SOURCES.homepage,
-]);
-
-/** Placements whose offer is only for bank/CU staff, so a work email is required. */
-export function requiresWorkEmail(source: string) {
-  return WORK_EMAIL_SOURCES.has(source);
-}
-
 /** Placements whose offer is the sample report PDF (the lead magnet). */
 export function deliversSampleReport(placement: LeadCapturePlacement) {
   return placement === "sample_report" || placement === "homepage";
-}
-
-const PERSONAL_EMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "yahoo.com",
-  "ymail.com",
-  "hotmail.com",
-  "outlook.com",
-  "live.com",
-  "msn.com",
-  "aol.com",
-  "icloud.com",
-  "me.com",
-  "mac.com",
-  "proton.me",
-  "protonmail.com",
-  "gmx.com",
-  "mail.com",
-  "zoho.com",
-  "yandex.com",
-  "comcast.net",
-  "att.net",
-  "verizon.net",
-  "sbcglobal.net",
-]);
-
-export function isWorkEmail(email: string) {
-  const domain = email.trim().toLowerCase().split("@")[1] ?? "";
-  return domain.length > 0 && !PERSONAL_EMAIL_DOMAINS.has(domain);
 }
 
 export function parseStateCode(value: unknown): string | null {

@@ -89,7 +89,7 @@ export function InstitutionOfferBand({
             href={reportOfferHref}
             className="inline-flex items-center gap-2 rounded-md bg-[#C44B2E] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
           >
-            Request your report — $300
+            Get your free report
             <ArrowRight className="h-4 w-4" />
           </Link>
           <Link

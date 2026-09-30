@@ -15,15 +15,19 @@ export function pageTitle(section: string): string {
   return `${section} | ${SITE_NAME}`;
 }
 
-// The one commissioned product: one name, one price, one turnaround, everywhere.
+// The one commissioned product: one name, one offer, one turnaround, everywhere.
+// The report is free; its list value anchors what it is worth. Never pair "free"
+// with a bare price the visitor would pay.
 export const REPORT_OFFER = {
   name: "Competitive Fee Position Report",
-  priceUsd: 300,
-  priceLabel: "$300",
+  priceUsd: 0,
+  priceLabel: "Free",
+  valueLabel: "a $300 value",
+  ctaLabel: "Get your free report",
   turnaround: "delivered in 48 hours",
-  refreshLabel: "Refresh the same report any quarter for $300",
+  refreshLabel: "Quarterly refreshes on request",
 } as const;
-export const REPORT_OFFER_LINE = `${REPORT_OFFER.name} — ${REPORT_OFFER.priceLabel}, ${REPORT_OFFER.turnaround}`;
+export const REPORT_OFFER_LINE = `${REPORT_OFFER.name} — free (${REPORT_OFFER.valueLabel}), ${REPORT_OFFER.turnaround}`;
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =

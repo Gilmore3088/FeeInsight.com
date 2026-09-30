@@ -88,7 +88,7 @@ function SampleReportCard() {
         className="report-title-link text-[20px] font-semibold leading-snug tracking-[-0.01em] text-[#1A1815] no-underline"
         style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
       >
-        Sample: Competitive Fee Position Report — see what a $300 report contains
+        Sample: Competitive Fee Position Report — see what the free report contains
       </Link>
       <p className="max-w-[560px] text-[14px] leading-relaxed text-[#5A5347]">
         An anonymized report for a ~$400M community bank: fee position against a verified peer

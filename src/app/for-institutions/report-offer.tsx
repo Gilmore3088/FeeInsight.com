@@ -3,7 +3,6 @@ import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
 import { RequestReportForm } from "./request-report-form";
 
 export const REPORT_NAME = REPORT_OFFER.name;
-export const REPORT_PRICE_LABEL = REPORT_OFFER.priceLabel;
 export const REPORT_TURNAROUND = REPORT_OFFER.turnaround;
 
 const REPORT_CONTENTS = [
@@ -27,7 +26,7 @@ export function ReportOfferSection() {
               className="mt-3 text-warm-900 text-[28px] leading-tight"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
-              {REPORT_NAME} — {REPORT_PRICE_LABEL}, {REPORT_TURNAROUND}
+              {REPORT_NAME} — free, {REPORT_TURNAROUND}
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-warm-700">
               One institution, one peer set, one PDF you can hand to your pricing committee.
