@@ -13,6 +13,7 @@ export const LEAD_CAPTURE_SOURCES = {
   state_benchmark: "capture_state",
   national_index: "capture_national_index",
   sample_report: "capture_report_sample",
+  homepage: "capture_homepage",
 } as const;
 
 export type LeadCapturePlacement = keyof typeof LEAD_CAPTURE_SOURCES;
@@ -44,9 +45,19 @@ export function isEmailOnlySource(source: string) {
   return source === NEWSLETTER_SOURCE || isLeadCaptureSource(source);
 }
 
+const WORK_EMAIL_SOURCES = new Set<string>([
+  LEAD_CAPTURE_SOURCES.sample_report,
+  LEAD_CAPTURE_SOURCES.homepage,
+]);
+
 /** Placements whose offer is only for bank/CU staff, so a work email is required. */
 export function requiresWorkEmail(source: string) {
-  return source === LEAD_CAPTURE_SOURCES.sample_report;
+  return WORK_EMAIL_SOURCES.has(source);
+}
+
+/** Placements whose offer is the sample report PDF (the lead magnet). */
+export function deliversSampleReport(placement: LeadCapturePlacement) {
+  return placement === "sample_report" || placement === "homepage";
 }
 
 const PERSONAL_EMAIL_DOMAINS = new Set([

@@ -24,9 +24,9 @@ describe("lead capture emails", () => {
     ).toBe("fee-change alerts for Example CU");
   });
 
-  it("delivers the sample PDF and the report offer in the magnet confirmation", () => {
+  it.each(["sample_report", "homepage"] as const)("delivers the sample PDF and the report offer for %s", (placement) => {
     const content = buildCaptureConfirmation(
-      { ...base, placement: "sample_report" },
+      { ...base, placement },
       { confirmUrl: "https://x/confirm", unsubscribeUrl: "https://x/unsub" },
     );
     const text = content.lines.join("\n");

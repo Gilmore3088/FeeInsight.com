@@ -5,7 +5,7 @@
  * heads-up. Storage happens first in /api/leads; this only reports delivery.
  */
 import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, SITE_NAME, SITE_URL } from "@/lib/constants";
-import type { LeadCapturePlacement } from "@/lib/lead-capture";
+import { deliversSampleReport, type LeadCapturePlacement } from "@/lib/lead-capture";
 import { STATE_NAMES } from "@/lib/us-states";
 import {
   adminLeadsUrl,
@@ -39,6 +39,7 @@ function absolute(path: string) {
 
 /** What the visitor signed up for, in the words the placement offered it. */
 export function describeCaptureOffer(input: LeadCaptureNotificationInput): string {
+  if (deliversSampleReport(input.placement)) return `the sample ${REPORT_OFFER.name}`;
   const stateName = input.stateCode ? STATE_NAMES[input.stateCode] ?? input.stateCode : null;
   switch (input.placement) {
     case "institution_alerts":
@@ -47,12 +48,16 @@ export function describeCaptureOffer(input: LeadCaptureNotificationInput): strin
       return `the ${stateName ?? "state"} fee benchmark`;
     case "national_index":
       return "the national fee index update";
-    case "sample_report":
-      return `the sample ${REPORT_OFFER.name}`;
   }
 }
 
 function deliveryLines(input: LeadCaptureNotificationInput): string[] {
+  if (deliversSampleReport(input.placement)) {
+    return [
+      "Here is the sample report (PDF), prepared for a real ~$400M community bank with the client anonymized:",
+      absolute(SAMPLE_REPORT_PDF_PATH),
+    ];
+  }
   switch (input.placement) {
     case "institution_alerts":
       return [
@@ -68,11 +73,6 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
       return [
         "New national medians, notable fee changes, and one chart — about once a month.",
         `Current index: ${absolute("/research/national-fee-index")}`,
-      ];
-    case "sample_report":
-      return [
-        "Here is the sample report (PDF), prepared for a real ~$400M community bank with the client anonymized:",
-        absolute(SAMPLE_REPORT_PDF_PATH),
       ];
   }
 }

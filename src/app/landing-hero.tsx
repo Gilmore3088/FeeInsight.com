@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
+import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
@@ -13,8 +14,6 @@ interface LandingHeroProps {
 
 const REPORT_LANE_HREF = "/for-institutions#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const LANE_LINK_CLASS =
-  "font-semibold text-[#A93D25] underline decoration-[#A93D25]/40 underline-offset-2 hover:text-[#8E2A17]";
 
 export function LandingHero({ institutionsLabel }: LandingHeroProps) {
   return (
@@ -51,12 +50,19 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
                 Submit a fee source
               </Link>
             </div>
-            <p className="mt-4 max-w-2xl text-sm text-[#5A5347]">
-              Work at a bank or credit union?{" "}
-              <Link href={REPORT_LANE_HREF} className={LANE_LINK_CLASS}>
-                Get your {REPORT_OFFER.name} — {REPORT_OFFER.priceLabel}
-              </Link>
-            </p>
+            <LeadCapture
+              placement="homepage"
+              className="mt-6 max-w-2xl"
+              eyebrow="Work at a bank or credit union?"
+              headline="Get the free sample fee report"
+              body="A real Competitive Fee Position Report — one community bank against eight named peers. Sent to your work inbox."
+              buttonLabel="Email me the sample"
+              successMessage="Sent — check your work inbox for the sample PDF and confirm your email."
+              secondaryLink={{
+                href: REPORT_LANE_HREF,
+                label: `Or get yours — ${REPORT_OFFER.priceLabel}`,
+              }}
+            />
           </div>
 
           <ProWorkflowCard />

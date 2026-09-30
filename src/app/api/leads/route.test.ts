@@ -248,6 +248,11 @@ describe("POST /api/leads", () => {
         useCase: "placement=sample_report",
         placement: "sample_report",
       },
+      {
+        body: { source: "capture_homepage" },
+        useCase: "placement=homepage",
+        placement: "homepage",
+      },
     ];
 
     it.each(cases)("stores $placement with its source and attribution", async ({ body, useCase, placement }) => {
@@ -294,8 +299,8 @@ describe("POST /api/leads", () => {
       expect(append.values).toEqual([attribution, "cmo@bank.com", attribution]);
     });
 
-    it("requires a work email for the sample-report lead magnet", async () => {
-      const res = await post({ email: "someone@gmail.com", source: "capture_report_sample" });
+    it.each(["capture_report_sample", "capture_homepage"])("requires a work email for %s", async (source) => {
+      const res = await post({ email: "someone@gmail.com", source });
       expect(res.status).toBe(400);
       expect((await res.json()).error).toMatch(/work email/);
       expect(sqlMock).not.toHaveBeenCalled();
