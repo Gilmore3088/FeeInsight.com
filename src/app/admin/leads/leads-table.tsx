@@ -23,6 +23,7 @@ const SOURCE_LABELS: Record<string, string> = {
   capture_state: "State benchmark",
   capture_national_index: "National index update",
   capture_report_sample: "Sample report (lead magnet)",
+  capture_homepage: "Homepage sample report",
 };
 
 /** Sources accumulate as a comma-separated list; label each one. */

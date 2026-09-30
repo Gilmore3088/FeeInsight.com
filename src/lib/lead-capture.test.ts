@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCaptureAttribution,
+  requiresWorkEmail,
   isEmailOnlySource,
   isWorkEmail,
   parseStateCode,
@@ -13,6 +14,7 @@ describe("lead capture contract", () => {
     expect(placementForSource("capture_state")).toBe("state_benchmark");
     expect(placementForSource("capture_national_index")).toBe("national_index");
     expect(placementForSource("capture_report_sample")).toBe("sample_report");
+    expect(placementForSource("capture_homepage")).toBe("homepage");
     expect(placementForSource("report")).toBeNull();
   });
 
@@ -27,6 +29,12 @@ describe("lead capture contract", () => {
     expect(parseStateCode("ZZ")).toBeNull();
     expect(isWorkEmail("vp@firstbank.com")).toBe(true);
     expect(isWorkEmail("VP@Gmail.com")).toBe(false);
+  });
+
+  it("requires a work email only for the sample-report offers", () => {
+    expect(requiresWorkEmail("capture_report_sample")).toBe(true);
+    expect(requiresWorkEmail("capture_homepage")).toBe(true);
+    expect(requiresWorkEmail("capture_state")).toBe(false);
   });
 
   it("builds queryable attribution", () => {
