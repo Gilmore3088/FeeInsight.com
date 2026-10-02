@@ -25,9 +25,13 @@ import {
 import { getAtlasCommandCenter, type AttentionItem, type CommandCenterJob } from "@/lib/admin-command-center";
 import { getAtlasStateLaneDispatch } from "@/lib/agents/state-lane-memory";
 import { getExecutionBackendStatus, type ExecutionBackendStatus } from "@/lib/execution-backend";
+import { pipelineHealthProblems } from "@/lib/job-health";
+import { getPipelineHealth } from "@/lib/pipeline-health";
+import { EMPTY_PIPELINE_FUNNEL, getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import type { JobFreshness } from "@/lib/admin-queries";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AtlasCommandMap } from "./atlas-command-map";
+import { AtlasOverview } from "./atlas-overview";
 import { AtlasEmergencyControl } from "./atlas-emergency-control";
 import { AtlasLiveStatus } from "./atlas-live-status";
 import { AtlasResumeControl } from "./atlas-resume-control";
@@ -57,6 +61,24 @@ const getCachedAtlasStateLaneDispatch = unstable_cache(
   {
     revalidate: ADMIN_ATLAS_DASHBOARD_REVALIDATE_SECONDS,
     tags: [ADMIN_ATLAS_STATE_LANE_DISPATCH_CACHE_TAG],
+  },
+);
+
+const getCachedPipelineHealth = unstable_cache(
+  getPipelineHealth,
+  ["admin", "atlas-pipeline-health"],
+  {
+    revalidate: ADMIN_ATLAS_DASHBOARD_REVALIDATE_SECONDS,
+    tags: [ADMIN_ATLAS_COMMAND_CENTER_CACHE_TAG],
+  },
+);
+
+const getCachedPipelineFunnel = unstable_cache(
+  getPipelineFunnel,
+  ["admin", "atlas-pipeline-funnel"],
+  {
+    revalidate: ADMIN_ATLAS_DASHBOARD_REVALIDATE_SECONDS,
+    tags: [ADMIN_ATLAS_COMMAND_CENTER_CACHE_TAG],
   },
 );
 
@@ -350,10 +372,21 @@ function workflowLanes(
 
 export default async function AtlasCommandPage() {
   await requireAuth("view");
-  const [center, stateLaneDispatch] = await Promise.all([
+  const [center, stateLaneDispatch, pipelineHealth, funnel] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getCachedAtlasStateLaneDispatch(),
+    getCachedPipelineHealth().catch((error) => {
+      console.error("Atlas pipeline health query failed", error);
+      return null;
+    }),
+    getCachedPipelineFunnel().catch((error) => {
+      console.error("Atlas pipeline funnel query failed", error);
+      return EMPTY_PIPELINE_FUNNEL;
+    }),
   ]);
+  const pipelineProblems = pipelineHealth
+    ? pipelineHealthProblems(pipelineHealth)
+    : ["Pipeline health could not be read; check the database connection."];
   const execution = getExecutionBackendStatus();
   const problemSchedules = center.schedules.failed_count
     + center.schedules.stale_count
@@ -403,8 +436,21 @@ export default async function AtlasCommandPage() {
         </div>
       </header>
 
-      <ExecutionBackendBanner status={execution} />
-      <ProviderReadinessBanner readiness={center.provider} />
+      {!execution.enabled && <ExecutionBackendBanner status={execution} />}
+
+      {pipelineHealth && (
+        <AtlasOverview
+          health={pipelineHealth}
+          problems={pipelineProblems}
+          funnel={funnel}
+          attention={center.attention}
+        />
+      )}
+      {!pipelineHealth && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200" role="status">
+          {pipelineProblems[0]}
+        </p>
+      )}
 
       <AtlasEmergencyControl
         enabled={center.automation.enabled}
@@ -418,272 +464,296 @@ export default async function AtlasCommandPage() {
         pipelineChangedAtLabel={dateTime(center.pipeline.changedAt)}
       />
 
-      <AtlasOperatorPath
-        center={center}
-        stateLaneDispatch={stateLaneDispatch}
-        execution={execution}
-      />
-
-      <AtlasCommandMap
-        center={center}
-        stateLaneDispatch={stateLaneDispatch}
-      />
-
-      <AtlasTickControl
-        disabled={!center.automation.enabled || !execution.enabled}
-        disabledReason={
-          !center.automation.enabled
-            ? "Automation safety stop is active."
-            : !execution.enabled
-              ? execution.detail
-              : undefined
-        }
-      />
-
-      <AtlasLiveStatus
-        initialActiveJobs={center.activeJobs.map(initialLiveJob)}
-        initialGeneratedAt={center.generatedAt}
-      />
-
-      <AtlasStateLaneDispatchPanel
-        dispatch={stateLaneDispatch}
-        automationEnabled={center.automation.enabled}
-        activeJobCount={center.activeJobs.length}
-        executionEnabled={execution.enabled}
-        executionBlockedReason={execution.detail}
-      />
-
-      <section aria-labelledby="health-heading" className="border-y border-black/[0.06] py-5 dark:border-white/[0.06]">
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-5">
-          <div className="xl:col-span-2">
-            <p id="health-heading" className="admin-section-title">Is the system healthy?</p>
-            <div className="mt-2 flex items-center gap-3">
-              <span className={`relative flex h-3 w-3 rounded-full ${healthy ? "bg-emerald-500" : "bg-red-500"}`}>
-                {healthy && <span className="live-pulse absolute inset-0 rounded-full bg-emerald-400" />}
-              </span>
-              <p className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-                {healthStatusText}
-              </p>
-            </div>
-            <p className="admin-meta mt-2">Checked {dateTime(center.generatedAt)}</p>
-          </div>
-          <Metric label="URL Coverage" value={center.metrics.url.value} metric={center.metrics.url} />
-          <Metric label="Verified Coverage" value={center.metrics.verified.value} metric={center.metrics.verified} />
-          <Metric label="Fresh Coverage" value={center.metrics.fresh.value} metric={center.metrics.fresh} />
+      <details id="atlas-runs" className="group border-t border-black/[0.06] pt-4 dark:border-white/[0.06]">
+        <summary className="cursor-pointer list-none select-none">
+          <span className="text-sm font-semibold text-gray-900 group-open:text-[var(--brand-primary)] dark:text-gray-100">Run controls and live runs</span>
+          <span className="admin-meta ml-2">Tick, live runs, state lanes, workflow launcher</span>
+        </summary>
+        <div className="mt-6 space-y-9">
+        <AtlasTickControl
+          disabled={!center.pipeline.enabled || !execution.enabled}
+          disabledReason={
+            !center.pipeline.enabled
+              ? "Pipeline is paused."
+              : !execution.enabled
+                ? execution.detail
+                : undefined
+          }
+        />
+        <AtlasLiveStatus
+          initialActiveJobs={center.activeJobs.map(initialLiveJob)}
+          initialGeneratedAt={center.generatedAt}
+        />
+        <AtlasStateLaneDispatchPanel
+          dispatch={stateLaneDispatch}
+          automationEnabled={center.automation.enabled}
+          activeJobCount={center.activeJobs.length}
+          executionEnabled={execution.enabled}
+          executionBlockedReason={execution.detail}
+        />
+        <AtlasWorkflowLauncher
+          lanes={workflowLanes(center, stateLaneDispatch)}
+          automationEnabled={center.automation.enabled}
+          activeJobCount={center.activeJobs.length}
+          executionEnabled={execution.enabled}
+          executionBlockedReason={execution.detail}
+        />
         </div>
-      </section>
+      </details>
 
-      <AtlasWorkflowLauncher
-        lanes={workflowLanes(center, stateLaneDispatch)}
-        automationEnabled={center.automation.enabled}
-        activeJobCount={center.activeJobs.length}
-        executionEnabled={execution.enabled}
-        executionBlockedReason={execution.detail}
-      />
-
-      <section aria-labelledby="usage-heading">
-        <div className="admin-section-header">
-          <div>
-            <p className="admin-eyebrow">Cost control</p>
-            <h2 id="usage-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              API usage
-            </h2>
-          </div>
-          <p className="admin-meta">
-            {center.apiUsage.firstTrackedAt
-              ? `Metered since ${dateTime(center.apiUsage.firstTrackedAt)}`
-              : "Provider metering begins with this release"}
-          </p>
-        </div>
-        <div className="grid gap-x-6 gap-y-5 border-y border-black/[0.06] py-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 dark:border-white/[0.06]">
-          <UsageMetric label="AI calls today" value={number(center.apiUsage.callsToday)} />
-          <UsageMetric label="AI calls · 30d" value={number(center.apiUsage.calls30d)} />
-          <UsageMetric label="Tokens · 30d" value={number(center.apiUsage.inputTokens30d + center.apiUsage.outputTokens30d)} />
-          <UsageMetric label="Est. AI spend · 30d" value={estimatedUsd(center.apiUsage.estimatedCostMicrousd30d)} />
-          <UsageMetric label="Provider failures · 30d" value={number(center.apiUsage.failures30d)} tone={center.apiUsage.failures30d > 0 ? "danger" : "default"} />
-          <UsageMetric label="Provider blocked · 30d" value={number(center.apiUsage.blocked30d)} tone={center.apiUsage.blocked30d > 0 ? "danger" : "default"} />
-          <UsageMetric label="Client API requests · 30d" value={number(center.apiUsage.clientApiRequests30d)} />
-        </div>
-        <p className="admin-meta mt-2">
-          Spend is estimated from recorded model tokens and configured Anthropic model-family rates. Provider invoices remain authoritative.
-        </p>
-
-        <div className="mt-5 overflow-x-auto border-y border-black/[0.06] dark:border-white/[0.06]">
-          <table className="admin-table w-full text-xs">
-            <thead><tr><th>Provider / model</th><th>Agent / operation</th><th>Calls</th><th>Tokens</th><th>Failed / blocked</th><th>Last event</th><th>Est. spend</th></tr></thead>
-            <tbody>
-              {center.apiUsage.breakdown.map((row) => (
-                <tr key={`${row.provider}:${row.model}:${row.agent}`}>
-                  <td><span className="font-semibold capitalize text-gray-800 dark:text-gray-200">{row.provider}</span><span className="ml-2 text-gray-500">{row.model}</span></td>
-                  <td>
-                    <span className="capitalize text-gray-700 dark:text-gray-300">{row.agent}</span>
-                    <span className="mt-1 block font-mono text-[10px] text-gray-500">{row.lastOperation ?? "No operation recorded"}</span>
-                  </td>
-                  <td className="tabular-nums">{number(row.calls)}</td>
-                  <td className="tabular-nums">{number(row.tokens)}</td>
-                  <td className={row.failures > 0 || row.blocked > 0 ? "font-semibold text-red-700 dark:text-red-400" : "text-gray-500"}>
-                    {number(row.failures)} / {number(row.blocked)}
-                  </td>
-                  <td>
-                    <span className="tabular-nums text-gray-600 dark:text-gray-400">{dateTime(row.lastSeenAt)}</span>
-                    {row.lastStatus && (
-                      <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-semibold capitalize ${statusTone(row.lastStatus)}`}>
-                        {row.lastStatus}
-                      </span>
-                    )}
-                  </td>
-                  <td className="tabular-nums">{estimatedUsd(row.estimatedCostMicrousd)}</td>
-                </tr>
-              ))}
-              {center.apiUsage.breakdown.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-gray-400">No metered provider calls yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {center.apiUsage.recentFailures.length > 0 && (
-          <div className="mt-4 divide-y divide-red-100 border-y border-red-100 dark:divide-red-950 dark:border-red-950">
-            {center.apiUsage.recentFailures.slice(0, 4).map((failure) => (
-              <div key={failure.id} className="grid gap-1 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center">
-                <p className="text-xs font-semibold capitalize text-red-800 dark:text-red-300">{failure.agent} · {failure.operation} · {failure.status}</p>
-                <p className="truncate text-xs text-gray-600 dark:text-gray-400" title={failure.error}>{failure.error}</p>
-                <p className="admin-meta">{dateTime(failure.createdAt)}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="attention-heading">
-        <div className="admin-section-header">
-          <div>
-            <p className="admin-eyebrow">Priority queue</p>
-            <h2 id="attention-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              What needs my attention?
-            </h2>
-          </div>
-          <span className="admin-meta">{center.attention.length} actionable items</span>
-        </div>
-        {center.attention.length === 0 ? (
-          <div className="flex items-center gap-3 border-y border-emerald-200 py-5 text-emerald-800 dark:border-emerald-900/50 dark:text-emerald-300">
-            <Check className="h-5 w-5" />
-            <p className="text-sm font-medium">No exceptions need operator attention.</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-black/[0.06] border-y border-black/[0.06] dark:divide-white/[0.06] dark:border-white/[0.06]">
-            {center.attention.map((item) => <AttentionRow key={item.id} item={item} />)}
-          </div>
-        )}
-      </section>
-
-      {center.agentHealth.errors24h > 0 && (
-        <section id="agent-failures" aria-labelledby="agent-failures-heading">
+      <details id="atlas-coverage" className="group border-t border-black/[0.06] pt-4 dark:border-white/[0.06]">
+        <summary className="cursor-pointer list-none select-none">
+          <span className="text-sm font-semibold text-gray-900 group-open:text-[var(--brand-primary)] dark:text-gray-100">Coverage, attention and next actions</span>
+          <span className="admin-meta ml-2">Operator path, command map, all attention items</span>
+        </summary>
+        <div className="mt-6 space-y-9">
+        <section aria-labelledby="attention-heading">
           <div className="admin-section-header">
             <div>
-              <p className="admin-eyebrow">Failure ledger</p>
-              <h2 id="agent-failures-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-                Agent errors · last 24 hours
+              <p className="admin-eyebrow">Priority queue</p>
+              <h2 id="attention-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                What needs my attention?
               </h2>
             </div>
-            <span className="admin-meta">{center.agentHealth.affectedAgents24h} affected agents</span>
+            <span className="admin-meta">{center.attention.length} actionable items</span>
           </div>
-          <div className="divide-y divide-black/[0.06] border-y border-black/[0.06] dark:divide-white/[0.06] dark:border-white/[0.06]">
-            {center.agentHealth.groups.map((group) => (
-              <div key={`${group.agent}:${group.tool}:${group.error}`} className="grid gap-2 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center">
-                <div className="flex items-center gap-2">
-                  <TriangleAlert className="h-4 w-4 text-red-600" />
-                  <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">{group.agent} · {group.tool}</p>
-                </div>
-                <p className="truncate text-xs text-gray-600 dark:text-gray-400">{group.error}</p>
-                <p className="text-xs tabular-nums text-red-700 dark:text-red-400">{group.occurrences} · {dateTime(group.lastSeenAt)}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section aria-labelledby="next-heading">
-        <div className="admin-section-header">
-          <div>
-            <p className="admin-eyebrow">Operator guidance</p>
-            <h2 id="next-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              What should I do next?
-            </h2>
-          </div>
-        </div>
-        <div className="flex flex-col justify-between gap-4 border-y border-black/[0.06] py-5 sm:flex-row sm:items-center dark:border-white/[0.06]">
-          {center.activeJobs.length > 0 ? (
-            <div>
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Let Atlas finish the active run.</p>
-              <p className="admin-meta mt-1">If it stops, the failing agent and its repair action will appear above.</p>
+          {center.attention.length === 0 ? (
+            <div className="flex items-center gap-3 border-y border-emerald-200 py-5 text-emerald-800 dark:border-emerald-900/50 dark:text-emerald-300">
+              <Check className="h-5 w-5" />
+              <p className="text-sm font-medium">No exceptions need operator attention.</p>
             </div>
-          ) : center.attention[0] ? (
-            <>
-              <div>
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{center.attention[0].title}</p>
-                <p className="admin-meta mt-1">{center.attention[0].detail}</p>
-              </div>
-              {center.attention[0].repairRunId ? (
-                <AtlasResumeControl runId={center.attention[0].repairRunId} />
-              ) : (
-                <Link href={center.attention[0].href} className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)]">
-                  {center.attention[0].action}<ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              )}
-            </>
           ) : (
-            <div>
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">No operator action is required.</p>
-              <p className="admin-meta mt-1">Atlas will run on schedule. Use the command action only for an intentional out-of-cycle refresh.</p>
+            <div className="divide-y divide-black/[0.06] border-y border-black/[0.06] dark:divide-white/[0.06] dark:border-white/[0.06]">
+              {center.attention.map((item) => <AttentionRow key={item.id} item={item} />)}
             </div>
           )}
-        </div>
-      </section>
-
-      <section aria-labelledby="pipeline-heading">
-        <div className="admin-section-header">
-          <div>
-            <p className="admin-eyebrow">Agent handoff</p>
-            <h2 id="pipeline-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              Who owns each step?
-            </h2>
-          </div>
-          <p className="admin-meta">Atlas coordinates; specialists own remediation.</p>
-        </div>
-        <AgentRail schedules={center.schedules.jobs} />
-      </section>
-
-      <section aria-labelledby="history-heading">
-        <div className="admin-section-header">
-          <div>
-            <p className="admin-eyebrow">Run history</p>
-            <h2 id="history-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              Recent terminal jobs
-            </h2>
-          </div>
-        </div>
-        <div className="overflow-x-auto border-y border-black/[0.06] dark:border-white/[0.06]">
-          <table className="admin-table w-full text-xs">
-            <thead><tr><th>Run</th><th>Owner</th><th>Status</th><th>Started</th><th>Backend</th><th>Result</th></tr></thead>
-            <tbody>
-              {center.recentJobs.map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    <span className="font-semibold text-gray-800 dark:text-gray-200">#{job.id}</span>
-                    <span className="mt-1 block truncate font-mono text-[10px] text-gray-500">{commandLine(job)}</span>
-                  </td>
-                  <td className="capitalize text-gray-600 dark:text-gray-400">{job.agent}</td>
-                  <td><span className={`rounded-full px-2 py-1 text-[10px] font-semibold capitalize ${statusTone(job.status)}`}>{job.status}</span></td>
-                  <td className="tabular-nums text-gray-500">{dateTime(job.startedAt ?? job.createdAt)}</td>
-                  <td className="max-w-[180px] truncate font-mono text-[10px] text-gray-500">{job.backendReceipt ?? "agentic_v1"}</td>
-                  <td className="max-w-xl truncate text-gray-500" title={jobResult(job)}>{jobResult(job)}</td>
-                </tr>
+        </section>
+        {center.agentHealth.errors24h > 0 && (
+          <section id="agent-failures" aria-labelledby="agent-failures-heading">
+            <div className="admin-section-header">
+              <div>
+                <p className="admin-eyebrow">Failure ledger</p>
+                <h2 id="agent-failures-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                  Agent errors · last 24 hours
+                </h2>
+              </div>
+              <span className="admin-meta">{center.agentHealth.affectedAgents24h} affected agents</span>
+            </div>
+            <div className="divide-y divide-black/[0.06] border-y border-black/[0.06] dark:divide-white/[0.06] dark:border-white/[0.06]">
+              {center.agentHealth.groups.map((group) => (
+                <div key={`${group.agent}:${group.tool}:${group.error}`} className="grid gap-2 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center">
+                  <div className="flex items-center gap-2">
+                    <TriangleAlert className="h-4 w-4 text-red-600" />
+                    <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">{group.agent} · {group.tool}</p>
+                  </div>
+                  <p className="truncate text-xs text-gray-600 dark:text-gray-400">{group.error}</p>
+                  <p className="text-xs tabular-nums text-red-700 dark:text-red-400">{group.occurrences} · {dateTime(group.lastSeenAt)}</p>
+                </div>
               ))}
-              {center.recentJobs.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-gray-400">No terminal jobs recorded.</td></tr>}
-            </tbody>
-          </table>
+            </div>
+          </section>
+        )}
+        <section aria-labelledby="next-heading">
+          <div className="admin-section-header">
+            <div>
+              <p className="admin-eyebrow">Operator guidance</p>
+              <h2 id="next-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                What should I do next?
+              </h2>
+            </div>
+          </div>
+          <div className="flex flex-col justify-between gap-4 border-y border-black/[0.06] py-5 sm:flex-row sm:items-center dark:border-white/[0.06]">
+            {center.activeJobs.length > 0 ? (
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Let Atlas finish the active run.</p>
+                <p className="admin-meta mt-1">If it stops, the failing agent and its repair action will appear above.</p>
+              </div>
+            ) : center.attention[0] ? (
+              <>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{center.attention[0].title}</p>
+                  <p className="admin-meta mt-1">{center.attention[0].detail}</p>
+                </div>
+                {center.attention[0].repairRunId ? (
+                  <AtlasResumeControl runId={center.attention[0].repairRunId} />
+                ) : (
+                  <Link href={center.attention[0].href} className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)]">
+                    {center.attention[0].action}<ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </>
+            ) : (
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">No operator action is required.</p>
+                <p className="admin-meta mt-1">Atlas will run on schedule. Use the command action only for an intentional out-of-cycle refresh.</p>
+              </div>
+            )}
+          </div>
+        </section>
+        <AtlasOperatorPath
+          center={center}
+          stateLaneDispatch={stateLaneDispatch}
+          execution={execution}
+        />
+        <AtlasCommandMap
+          center={center}
+          stateLaneDispatch={stateLaneDispatch}
+        />
+        <section aria-labelledby="health-heading" className="border-y border-black/[0.06] py-5 dark:border-white/[0.06]">
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="xl:col-span-2">
+              <p id="health-heading" className="admin-section-title">Is the system healthy?</p>
+              <div className="mt-2 flex items-center gap-3">
+                <span className={`relative flex h-3 w-3 rounded-full ${healthy ? "bg-emerald-500" : "bg-red-500"}`}>
+                  {healthy && <span className="live-pulse absolute inset-0 rounded-full bg-emerald-400" />}
+                </span>
+                <p className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                  {healthStatusText}
+                </p>
+              </div>
+              <p className="admin-meta mt-2">Checked {dateTime(center.generatedAt)}</p>
+            </div>
+            <Metric label="URL Coverage" value={center.metrics.url.value} metric={center.metrics.url} />
+            <Metric label="Verified Coverage" value={center.metrics.verified.value} metric={center.metrics.verified} />
+            <Metric label="Fresh Coverage" value={center.metrics.fresh.value} metric={center.metrics.fresh} />
+          </div>
+        </section>
         </div>
-      </section>
+      </details>
+
+      <details id="atlas-usage" className="group border-t border-black/[0.06] pt-4 dark:border-white/[0.06]">
+        <summary className="cursor-pointer list-none select-none">
+          <span className="text-sm font-semibold text-gray-900 group-open:text-[var(--brand-primary)] dark:text-gray-100">AI usage and provider</span>
+          <span className="admin-meta ml-2">Provider readiness, metered calls and spend</span>
+        </summary>
+        <div className="mt-6 space-y-9">
+        <ProviderReadinessBanner readiness={center.provider} />
+        <section aria-labelledby="usage-heading">
+          <div className="admin-section-header">
+            <div>
+              <p className="admin-eyebrow">Cost control</p>
+              <h2 id="usage-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                API usage
+              </h2>
+            </div>
+            <p className="admin-meta">
+              {center.apiUsage.firstTrackedAt
+                ? `Metered since ${dateTime(center.apiUsage.firstTrackedAt)}`
+                : "Provider metering begins with this release"}
+            </p>
+          </div>
+          <div className="grid gap-x-6 gap-y-5 border-y border-black/[0.06] py-5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 dark:border-white/[0.06]">
+            <UsageMetric label="AI calls today" value={number(center.apiUsage.callsToday)} />
+            <UsageMetric label="AI calls · 30d" value={number(center.apiUsage.calls30d)} />
+            <UsageMetric label="Tokens · 30d" value={number(center.apiUsage.inputTokens30d + center.apiUsage.outputTokens30d)} />
+            <UsageMetric label="Est. AI spend · 30d" value={estimatedUsd(center.apiUsage.estimatedCostMicrousd30d)} />
+            <UsageMetric label="Provider failures · 30d" value={number(center.apiUsage.failures30d)} tone={center.apiUsage.failures30d > 0 ? "danger" : "default"} />
+            <UsageMetric label="Provider blocked · 30d" value={number(center.apiUsage.blocked30d)} tone={center.apiUsage.blocked30d > 0 ? "danger" : "default"} />
+            <UsageMetric label="Client API requests · 30d" value={number(center.apiUsage.clientApiRequests30d)} />
+          </div>
+          <p className="admin-meta mt-2">
+            Spend is estimated from recorded model tokens and configured Anthropic model-family rates. Provider invoices remain authoritative.
+          </p>
+
+          <div className="mt-5 overflow-x-auto border-y border-black/[0.06] dark:border-white/[0.06]">
+            <table className="admin-table w-full text-xs">
+              <thead><tr><th>Provider / model</th><th>Agent / operation</th><th>Calls</th><th>Tokens</th><th>Failed / blocked</th><th>Last event</th><th>Est. spend</th></tr></thead>
+              <tbody>
+                {center.apiUsage.breakdown.map((row) => (
+                  <tr key={`${row.provider}:${row.model}:${row.agent}`}>
+                    <td><span className="font-semibold capitalize text-gray-800 dark:text-gray-200">{row.provider}</span><span className="ml-2 text-gray-500">{row.model}</span></td>
+                    <td>
+                      <span className="capitalize text-gray-700 dark:text-gray-300">{row.agent}</span>
+                      <span className="mt-1 block font-mono text-[10px] text-gray-500">{row.lastOperation ?? "No operation recorded"}</span>
+                    </td>
+                    <td className="tabular-nums">{number(row.calls)}</td>
+                    <td className="tabular-nums">{number(row.tokens)}</td>
+                    <td className={row.failures > 0 || row.blocked > 0 ? "font-semibold text-red-700 dark:text-red-400" : "text-gray-500"}>
+                      {number(row.failures)} / {number(row.blocked)}
+                    </td>
+                    <td>
+                      <span className="tabular-nums text-gray-600 dark:text-gray-400">{dateTime(row.lastSeenAt)}</span>
+                      {row.lastStatus && (
+                        <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-semibold capitalize ${statusTone(row.lastStatus)}`}>
+                          {row.lastStatus}
+                        </span>
+                      )}
+                    </td>
+                    <td className="tabular-nums">{estimatedUsd(row.estimatedCostMicrousd)}</td>
+                  </tr>
+                ))}
+                {center.apiUsage.breakdown.length === 0 && (
+                  <tr><td colSpan={7} className="py-6 text-center text-gray-400">No metered provider calls yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {center.apiUsage.recentFailures.length > 0 && (
+            <div className="mt-4 divide-y divide-red-100 border-y border-red-100 dark:divide-red-950 dark:border-red-950">
+              {center.apiUsage.recentFailures.slice(0, 4).map((failure) => (
+                <div key={failure.id} className="grid gap-1 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center">
+                  <p className="text-xs font-semibold capitalize text-red-800 dark:text-red-300">{failure.agent} · {failure.operation} · {failure.status}</p>
+                  <p className="truncate text-xs text-gray-600 dark:text-gray-400" title={failure.error}>{failure.error}</p>
+                  <p className="admin-meta">{dateTime(failure.createdAt)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        </div>
+      </details>
+
+      <details id="atlas-history" className="group border-t border-black/[0.06] pt-4 dark:border-white/[0.06]">
+        <summary className="cursor-pointer list-none select-none">
+          <span className="text-sm font-semibold text-gray-900 group-open:text-[var(--brand-primary)] dark:text-gray-100">History and agent ownership</span>
+          <span className="admin-meta ml-2">Recent runs and who owns each step</span>
+        </summary>
+        <div className="mt-6 space-y-9">
+        <section aria-labelledby="pipeline-heading">
+          <div className="admin-section-header">
+            <div>
+              <p className="admin-eyebrow">Agent handoff</p>
+              <h2 id="pipeline-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                Who owns each step?
+              </h2>
+            </div>
+            <p className="admin-meta">Atlas coordinates; specialists own remediation.</p>
+          </div>
+          <AgentRail schedules={center.schedules.jobs} />
+        </section>
+        <section aria-labelledby="history-heading">
+          <div className="admin-section-header">
+            <div>
+              <p className="admin-eyebrow">Run history</p>
+              <h2 id="history-heading" className="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                Recent terminal jobs
+              </h2>
+            </div>
+          </div>
+          <div className="overflow-x-auto border-y border-black/[0.06] dark:border-white/[0.06]">
+            <table className="admin-table w-full text-xs">
+              <thead><tr><th>Run</th><th>Owner</th><th>Status</th><th>Started</th><th>Backend</th><th>Result</th></tr></thead>
+              <tbody>
+                {center.recentJobs.map((job) => (
+                  <tr key={job.id}>
+                    <td>
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">#{job.id}</span>
+                      <span className="mt-1 block truncate font-mono text-[10px] text-gray-500">{commandLine(job)}</span>
+                    </td>
+                    <td className="capitalize text-gray-600 dark:text-gray-400">{job.agent}</td>
+                    <td><span className={`rounded-full px-2 py-1 text-[10px] font-semibold capitalize ${statusTone(job.status)}`}>{job.status}</span></td>
+                    <td className="tabular-nums text-gray-500">{dateTime(job.startedAt ?? job.createdAt)}</td>
+                    <td className="max-w-[180px] truncate font-mono text-[10px] text-gray-500">{job.backendReceipt ?? "agentic_v1"}</td>
+                    <td className="max-w-xl truncate text-gray-500" title={jobResult(job)}>{jobResult(job)}</td>
+                  </tr>
+                ))}
+                {center.recentJobs.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-gray-400">No terminal jobs recorded.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        </div>
+      </details>
     </div>
   );
 }

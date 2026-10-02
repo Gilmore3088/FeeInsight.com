@@ -16,6 +16,8 @@ export interface PipelineHealth {
   last_published_at: string | null;
   hours_since_last_publish: number | null;
   provider_failure_count_24h: number;
+  runs_completed_24h?: number;
+  runs_failed_24h?: number;
 }
 
 /** Cron fires every 5 minutes; three missed ticks is an outage. */
