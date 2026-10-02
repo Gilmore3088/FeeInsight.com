@@ -2,7 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { CircleStop, Play, ShieldAlert, X } from "lucide-react";
-import { resumeAllAutomation, stopAllAutomation } from "./atlas-actions";
+import {
+  markProviderBillingResolved,
+  resumeAllAutomation,
+  setPipelinePaused,
+  stopAllAutomation,
+} from "./atlas-actions";
 
 interface Props {
   enabled: boolean;
@@ -10,6 +15,10 @@ interface Props {
   changedBy: string;
   changedAtLabel: string;
   activeJobCount: number;
+  pipelineEnabled: boolean;
+  pipelineReason: string | null;
+  pipelineChangedBy: string;
+  pipelineChangedAtLabel: string;
 }
 
 export function AtlasEmergencyControl({
@@ -18,14 +27,67 @@ export function AtlasEmergencyControl({
   changedBy,
   changedAtLabel,
   activeJobCount,
+  pipelineEnabled,
+  pipelineReason,
+  pipelineChangedBy,
+  pipelineChangedAtLabel,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [stopReason, setStopReason] = useState("Potential runaway API activity");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const resumeBlockedReason = /credit balance is too low/i.test(reason ?? "")
-    ? "Fix provider billing or move extraction off Anthropic before resuming."
+  const billingStop = /credit balance is too low|insufficient credits|purchase credits/i.test(reason ?? "");
+  const [billingResolved, setBillingResolved] = useState(false);
+  const resumeBlockedReason = billingStop && !billingResolved
+    ? "Fix provider billing, then mark billing resolved before resuming."
     : null;
+
+  function resolveBilling() {
+    startTransition(async () => {
+      const result = await markProviderBillingResolved("Operator confirmed provider billing is fixed");
+      if (result.success) setBillingResolved(true);
+      setMessage(result.success ? "Billing marked resolved. You can resume automation." : result.error ?? "Could not record billing resolution");
+    });
+  }
+
+  function togglePipeline() {
+    startTransition(async () => {
+      const result = await setPipelinePaused(
+        pipelineEnabled,
+        pipelineEnabled ? "Operator paused deterministic pipeline" : "Operator resumed deterministic pipeline",
+      );
+      setMessage(
+        result.success
+          ? pipelineEnabled ? "Pipeline paused. Queued runs stay queued." : "Pipeline resumed."
+          : result.error ?? "Pipeline control failed",
+      );
+    });
+  }
+
+  const pipelineRow = (
+    <div className="mt-3 flex flex-col justify-between gap-3 border-t border-black/[0.06] pt-3 sm:flex-row sm:items-center dark:border-white/[0.06]">
+      <div>
+        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+          Pipeline {pipelineEnabled ? "running" : "paused"}
+        </p>
+        <p className="admin-meta mt-1">
+          {pipelineEnabled
+            ? "Discover, fetch, read, extract, verify, and publish run on schedule. They never call paid providers."
+            : `Deterministic steps are paused. ${pipelineReason ?? ""}`}
+          {" "}Changed by {pipelineChangedBy} · {pipelineChangedAtLabel}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={togglePipeline}
+        disabled={pending}
+        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-gray-300 px-4 text-xs font-bold text-gray-800 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+      >
+        {pipelineEnabled ? <CircleStop className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+        {pipelineEnabled ? "Pause pipeline" : "Resume pipeline"}
+      </button>
+    </div>
+  );
 
   function engage() {
     startTransition(async () => {
@@ -58,9 +120,9 @@ export function AtlasEmergencyControl({
           <div className="flex gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-700 dark:text-red-400" />
             <div>
-              <p className="text-sm font-bold text-red-900 dark:text-red-200">Emergency stop is active</p>
+              <p className="text-sm font-bold text-red-900 dark:text-red-200">Provider automation stop is active</p>
               <p className="mt-1 text-xs text-red-800/80 dark:text-red-300/80">
-                New worker execution, agent tools, and AI provider calls are blocked. {reason ?? "No reason recorded."}
+                Paid AI provider calls and provider steps are blocked. Deterministic pipeline steps follow the pipeline control below. {reason ?? "No reason recorded."}
               </p>
               <p className="mt-1 text-[10px] text-red-700/70 dark:text-red-400/70">
                 Changed by {changedBy} · {changedAtLabel}
@@ -78,8 +140,19 @@ export function AtlasEmergencyControl({
           </button>
         </div>
         {resumeBlockedReason && (
-          <p className="mt-3 text-xs font-medium text-red-800 dark:text-red-300" role="status">{resumeBlockedReason}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="text-xs font-medium text-red-800 dark:text-red-300" role="status">{resumeBlockedReason}</p>
+            <button
+              type="button"
+              onClick={resolveBilling}
+              disabled={pending}
+              className="rounded-md border border-red-400 px-3 py-1.5 text-xs font-bold text-red-800 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+            >
+              Mark billing resolved
+            </button>
+          </div>
         )}
+        {pipelineRow}
         {message && <p className="mt-3 text-xs font-medium text-red-800 dark:text-red-300" role="status">{message}</p>}
       </section>
     );
@@ -91,7 +164,7 @@ export function AtlasEmergencyControl({
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Automation safety</p>
-            <p className="admin-meta mt-1">Provider calls and scheduled work are permitted. {activeJobCount} run{activeJobCount === 1 ? "" : "s"} active.</p>
+            <p className="admin-meta mt-1">Provider calls are permitted. {activeJobCount} run{activeJobCount === 1 ? "" : "s"} active.</p>
           </div>
           <button
             type="button"
@@ -140,6 +213,7 @@ export function AtlasEmergencyControl({
           </div>
         </div>
       )}
+      {pipelineRow}
       {message && <p className="mt-3 text-xs font-medium text-gray-700 dark:text-gray-300" role="status">{message}</p>}
     </section>
   );

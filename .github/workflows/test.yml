@@ -21,3 +21,9 @@ jobs:
         run: npm run guard:legacy
       - name: Run focused agentic tests
         run: npm run test:agentic
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Run full test suite
+        run: npx vitest run

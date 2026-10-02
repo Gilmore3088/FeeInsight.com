@@ -1,9 +1,13 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasPermission } from "@/lib/auth";
-import { executeQueuedAgentRuns } from "@/lib/agents/run-store";
+import {
+  executeQueuedAgentRuns,
+  hasQueuedProviderSteps,
+  reapStaleAgentSteps,
+} from "@/lib/agents/run-store";
 import { scheduleDueStateLaneRuns } from "@/lib/agents/state-lane-scheduler";
-import { getAutomationControl } from "@/lib/automation-control";
+import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import { assertCronTickBudgetAllowed } from "@/lib/api-hardening/budget";
@@ -30,22 +34,22 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [automation, execution] = await Promise.all([
-    getAutomationControl(),
+  const [pipeline, execution] = await Promise.all([
+    getPipelineControl(),
     Promise.resolve(getExecutionBackendStatus()),
   ]);
-  if (!automation.enabled || !execution.enabled) {
+  if (!pipeline.enabled || !execution.enabled) {
     return NextResponse.json({
       ok: true,
       paused: true,
-      pauseReason: !automation.enabled
-        ? automation.reason ?? "Automation safety stop is active."
+      pauseReason: !pipeline.enabled
+        ? pipeline.reason ?? "Pipeline is paused."
         : execution.detail,
-      automation: {
-        enabled: automation.enabled,
-        reason: automation.reason,
-        changedAt: automation.changedAt,
-        changedBy: automation.changedBy,
+      pipeline: {
+        enabled: pipeline.enabled,
+        reason: pipeline.reason,
+        changedAt: pipeline.changedAt,
+        changedBy: pipeline.changedBy,
       },
       execution: {
         backend: execution.backend,
@@ -67,34 +71,44 @@ async function handleGET(request: NextRequest) {
   const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), 2, 10);
   const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), 1, 5);
   const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), 2, 10);
-  const budget = await assertCronTickBudgetAllowed({
-    routeId: "api.admin.agents.tick",
-    requestedRunLimit: runLimit,
-    requestedMaxStepsPerRun: maxStepsPerRun,
-    requestedStateLaneLimit: stateLaneLimit,
-    triggeredBy: "api.admin.agents.tick",
-  });
-  if (!budget.allowed) {
-    return NextResponse.json({
-      ok: true,
-      paused: true,
-      pauseReason: budget.message ?? "Agent tick budget policy blocks execution.",
-      blockedReason: budget.reasonCode,
-      budget: {
-        policyId: budget.policyId ?? null,
-        configured: false,
-        reasonCode: budget.reasonCode,
-      },
-      scheduledStateLanes: {
-        selected: 0,
-        scheduled: 0,
-        reused: 0,
-        failed: [],
-        results: [],
-      },
-      selected: 0,
-      results: [],
-    }, { status: 423 });
+
+  // Recover steps a killed invocation left running before selecting new work.
+  const reaped = await reapStaleAgentSteps();
+
+  // The provider budget policy gates only steps that can call a paid provider.
+  // Deterministic steps (discover, fetch, read, extract, verify, publish) never
+  // spend provider money, so a disabled or exhausted budget must not stop them.
+  let providerBudget: {
+    checked: boolean;
+    allowed: boolean;
+    policyId: number | null;
+    reasonCode: string | null;
+    message: string | null;
+  } = { checked: false, allowed: false, policyId: null, reasonCode: null, message: null };
+  let budgetPolicyId: number | null = null;
+  let maxProviderCallsPerRun: number | null = null;
+  let maxEstimatedCostMicrousd: number | null = null;
+
+  if (await hasQueuedProviderSteps()) {
+    const budget = await assertCronTickBudgetAllowed({
+      routeId: "api.admin.agents.tick",
+      requestedRunLimit: runLimit,
+      requestedMaxStepsPerRun: maxStepsPerRun,
+      requestedStateLaneLimit: stateLaneLimit,
+      triggeredBy: "api.admin.agents.tick",
+    });
+    providerBudget = {
+      checked: true,
+      allowed: budget.allowed,
+      policyId: budget.policyId ?? null,
+      reasonCode: budget.allowed ? null : budget.reasonCode ?? null,
+      message: budget.allowed ? null : budget.message ?? "Agent tick budget policy blocks provider steps.",
+    };
+    if (budget.allowed) {
+      budgetPolicyId = budget.policyId ?? null;
+      maxProviderCallsPerRun = budget.maxProviderCalls ?? null;
+      maxEstimatedCostMicrousd = budget.maxEstimatedMicrousd ?? null;
+    }
   }
 
   const scheduledStateLanes = await scheduleDueStateLaneRuns({
@@ -104,11 +118,12 @@ async function handleGET(request: NextRequest) {
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
-    budgetPolicyId: budget.policyId ?? null,
-    maxProviderCallsPerRun: budget.maxProviderCalls ?? null,
-    maxEstimatedCostMicrousd: budget.maxEstimatedMicrousd ?? null,
+    allowProviderSteps: providerBudget.checked && providerBudget.allowed,
+    budgetPolicyId,
+    maxProviderCallsPerRun,
+    maxEstimatedCostMicrousd,
   });
-  return NextResponse.json({ ok: true, scheduledStateLanes, ...result });
+  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
 }
 
 async function handlePOST(request: NextRequest) {

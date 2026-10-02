@@ -1,5 +1,5 @@
 import { sql } from "./data-store/connection";
-import { getAutomationControl, type AutomationControlState } from "./automation-control";
+import { getAutomationControl, getPipelineControl, type AutomationControlState } from "./automation-control";
 import { getJobFreshness, getSourceSubmissionCounts } from "./admin-queries";
 import { getKnoxReviewCounts } from "./data-store/knox-reviews";
 import type { AdminAgent, AgentRunStatus } from "./agents/types";
@@ -55,6 +55,7 @@ export interface AtlasCommandCenter {
   recentJobs: CommandCenterJob[];
   attention: AttentionItem[];
   automation: AutomationControlState;
+  pipeline: AutomationControlState;
   provider: ProviderReadiness;
   trustReview: TrustReviewOverview;
   apiUsage: ApiUsageOverview;
@@ -462,7 +463,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     getJobFreshness(),
   ]);
 
-  const [knoxCounts, sourceSubmissionCounts, automation, apiUsage, agentHealth] = await Promise.all([
+  const [knoxCounts, sourceSubmissionCounts, automation, pipeline, apiUsage, agentHealth] = await Promise.all([
     getKnoxReviewCounts(),
     getSourceSubmissionCounts(),
     getAutomationControl().catch((error) => {
@@ -470,6 +471,16 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       return {
         enabled: false,
         reason: "Safety control is unavailable; automation is treated as stopped",
+        changedBy: "system",
+        changedAt: new Date().toISOString(),
+        revision: 0,
+      } satisfies AutomationControlState;
+    }),
+    getPipelineControl().catch((error) => {
+      console.error("Atlas pipeline control query failed", error);
+      return {
+        enabled: false,
+        reason: "Pipeline control is unavailable; deterministic work is treated as paused",
         changedBy: "system",
         changedAt: new Date().toISOString(),
         revision: 0,
@@ -512,10 +523,22 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       id: "automation:stopped",
       severity: "critical",
       owner: "atlas",
-      title: "Emergency stop is active",
-      detail: automation.reason ?? "New jobs and provider calls are blocked.",
+      title: "Provider automation stop is active",
+      detail: automation.reason ?? "Paid AI provider calls are blocked; deterministic pipeline steps continue.",
       href: "/admin",
       action: "Review safety control",
+    });
+  }
+
+  if (!pipeline.enabled) {
+    attention.push({
+      id: "pipeline:paused",
+      severity: "critical",
+      owner: "atlas",
+      title: "Pipeline is paused",
+      detail: pipeline.reason ?? "Discovery, fetch, read, extract, verify, and publish are paused.",
+      href: "/admin#atlas-safety",
+      action: "Review pipeline pause",
     });
   }
 
@@ -633,6 +656,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     recentJobs: jobs.filter((job) => !activeJobs.includes(job)).slice(0, 10),
     attention: attention.slice(0, 8),
     automation,
+    pipeline,
     provider,
     trustReview,
     apiUsage,

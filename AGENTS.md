@@ -9,7 +9,9 @@ This repository uses one agentic experience for data trust, validation, publishi
 - Scheduled advancement happens through `/api/admin/agents/tick`.
 - Manual advancement happens through `/api/admin/agents/runs/[id]/execute`.
 - Provider access must flow through `src/lib/ai-provider.ts` and usage/circuit accounting.
-- `src/lib/automation-control.ts` is the global stop. If automation is stopped, agents may queue, inspect, or mark manual validation, but must not call provider automation.
+- `src/lib/automation-control.ts` holds two controls. The `global` provider stop blocks provider steps (`PROVIDER_STEP_KEYS`, paid model calls) and provider calls; deterministic steps keep running. The `pipeline` control is the operator pause for deterministic steps; a paused run stays queued. The Atlas emergency stop engages both.
+- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued.
+- `/api/admin/job-health` is the external alerting endpoint: it returns 503 with plain-language problems when ticks stop succeeding, ticks are blocked, steps are stuck, lanes are overdue, or nothing has been published for a week.
 
 ## Agent Roster
 
@@ -117,6 +119,7 @@ Before calling agentic work done, run the narrow tests for the touched code and 
 - `npm run test:agentic`
 - `npx tsc --noEmit`
 - `npm run lint`
+- `npx vitest run` (full suite; CI runs all of these)
 - Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton Pro flows.
 
 For database-affecting work, verify against the actual current schema and add a migration only through the project migration workflow. Do not edit production-applied migrations in place.

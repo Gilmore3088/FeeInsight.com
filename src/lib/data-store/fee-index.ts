@@ -310,9 +310,11 @@ function buildIndexEntries(
 
 /**
  * Read precomputed index from fee_index_cache (materialized by publish-index).
- * Falls back to live computation if cache is empty.
+ * Falls back to live computation if the cache is empty or older than NATIONAL_INDEX_CACHE_MAX_AGE_MS.
  */
 const NATIONAL_INDEX_CACHE_TTL_MS = 60_000;
+/** Rows in fee_index_cache older than this are ignored in favor of a live computation. */
+const NATIONAL_INDEX_CACHE_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 let nationalIndexCache: {
   expiresAt: number;
   value: IndexEntry[];
@@ -362,7 +364,13 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       computed_at: string;
     }[];
 
-    if (rows.length === 0) {
+    // The cache is only trustworthy when a publish step rebuilt it recently. A stale
+    // cache (e.g. left over from before the agentic pipeline) must never be served.
+    const newest = rows.reduce<number>((max, row) => {
+      const at = row.computed_at ? new Date(row.computed_at).getTime() : 0;
+      return Number.isFinite(at) && at > max ? at : max;
+    }, 0);
+    if (rows.length === 0 || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
       return getNationalIndex();
     }
 

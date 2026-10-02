@@ -12,6 +12,13 @@ Make Fee Insight run through one visible agentic system:
 4. Provider usage and provider failures attach to `ai_api_usage_events`.
 5. No active runtime, prompt, config, script, or current plan points at retired external launchers, Supabase Edge Function product endpoints, or local crawler tooling.
 
+## Active Plan
+
+The 2026-09-30 pipeline audit (`docs/audits/2026-09-30-data-pipeline-audit.md`) is being
+fixed under `docs/plans/pipeline-self-learning-plan-2026-10-02.md`: Phase 0 (restart and
+S0 fixes), Phase 1 (learning foundation, idempotency, correct statistics), Phase 2 (scale
+and the improvement loop), Phase 3 (paid extraction under a $300/month cap).
+
 ## Current Priorities
 
 | Priority | Owner | Task | Done When |

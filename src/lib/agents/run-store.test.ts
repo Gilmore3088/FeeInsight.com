@@ -7,6 +7,8 @@ const {
   txMock,
   withTransactionMock,
   assertAutomationEnabledMock,
+  getAutomationControlMock,
+  getPipelineControlMock,
   getExecutionBackendMock,
   runDarwinVerifyMock,
   runHamiltonPublishMock,
@@ -24,6 +26,8 @@ const {
     txMock: tx,
     withTransactionMock: withTransaction,
     assertAutomationEnabledMock: vi.fn(),
+    getAutomationControlMock: vi.fn(),
+    getPipelineControlMock: vi.fn(),
     getExecutionBackendMock: vi.fn(),
     runDarwinVerifyMock: vi.fn(),
     runHamiltonPublishMock: vi.fn(),
@@ -46,6 +50,8 @@ vi.mock("@/lib/execution-backend", () => ({
 
 vi.mock("@/lib/automation-control", () => ({
   assertAutomationEnabled: assertAutomationEnabledMock,
+  getAutomationControl: getAutomationControlMock,
+  getPipelineControl: getPipelineControlMock,
 }));
 
 vi.mock("@/lib/agents/darwin/verify", () => ({
@@ -95,6 +101,7 @@ import {
   executeAgentRun,
   executeQueuedAgentRuns,
   startAgentRun,
+  reapStaleAgentSteps,
 } from "./run-store";
 
 const runRow = {
@@ -229,6 +236,8 @@ describe("agentic run store", () => {
     txMock.unsafe.mockReset();
     withTransactionMock.mockClear();
     assertAutomationEnabledMock.mockReset().mockResolvedValue({ enabled: true });
+    getAutomationControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
+    getPipelineControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getExecutionBackendMock.mockReset().mockReturnValue("disabled");
     runDarwinVerifyMock.mockReset().mockResolvedValue({
       selectedRawFees: 7,
@@ -348,23 +357,15 @@ describe("agentic run store", () => {
     expect(combinedSql).not.toContain("ops_jobs");
   });
 
-  it("creates a visible blocked run shell when automation safety stop is active", async () => {
+  it("accepts deterministic runs while the provider automation stop is active", async () => {
+    // Regression: the provider stop used to block every run at launch, freezing
+    // deterministic fee ingestion when only provider billing was the problem.
     getExecutionBackendMock.mockReturnValue("agentic_v1");
-    assertAutomationEnabledMock.mockRejectedValueOnce(new Error("Emergency stop is active"));
-    installSqlMocks({
-      finalRun: {
-        ...blockedRunRow,
-        error_summary: "Emergency stop is active",
-      },
-      finalSteps: [
-        {
-          ...blockedStepRows[0],
-          error_summary: "Emergency stop is active",
-        },
-        blockedStepRows[1],
-      ],
-    });
-    installTxMocks();
+    assertAutomationEnabledMock.mockRejectedValue(new Error("Emergency stop is active"));
+    getAutomationControlMock.mockResolvedValue({ enabled: false, reason: "Provider credit failure" });
+    const discoverRunRow = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: discoverRunRow, finalSteps: queuedStepRows.slice(0, 1) });
+    installTxMocks(queuedStepRows.slice(0, 1), discoverRunRow);
 
     const result = await startAgentRun({
       agent: "atlas",
@@ -373,27 +374,36 @@ describe("agentic run store", () => {
       params: { limit: 10 },
       triggeredBy: "admin",
       idempotencyKey: "atlas:test",
-      steps: [
-        { key: "discover", agent: "magellan", title: "Find URLs" },
-        { key: "review", agent: "knox", title: "Review exceptions" },
-      ],
+      steps: [{ key: "discover", agent: "magellan", title: "Find URLs" }],
     });
 
-    expect(result.reused).toBe(false);
-    expect(result.run).toMatchObject({
-      id: 101,
-      status: "blocked",
-      error: "Emergency stop is active",
+    expect(result.run).toMatchObject({ id: 101, status: "queued" });
+    expect(assertAutomationEnabledMock).not.toHaveBeenCalled();
+    expect(combinedTransactionSql()).not.toContain("run.blocked");
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({
+      runId: 101,
+      status: "completed",
+      executedSteps: 1,
     });
-    expect(result.steps[0]).toMatchObject({
-      status: "blocked",
-      error: "Emergency stop is active",
+    expect(runMagellanDiscoveryMock).toHaveBeenCalled();
+  });
+
+  it("leaves runs queued and executes nothing while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const discoverRunRow = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: discoverRunRow, finalSteps: queuedStepRows.slice(0, 1) });
+    installTxMocks(queuedStepRows.slice(0, 1), discoverRunRow);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({
+      runId: 101,
+      status: "queued",
+      terminal: false,
+      executedSteps: 0,
     });
     expect(runMagellanDiscoveryMock).not.toHaveBeenCalled();
-    const combinedSql = combinedTransactionSql();
-    expect(combinedSql).toContain("run.blocked");
-    expect(combinedSql).toContain("UPDATE agent_runs");
-    expect(combinedSql).not.toContain("ops_jobs");
+    expect(combinedTransactionSql()).not.toContain("run.blocked");
   });
 
   it("creates a visible queued run first, then advances it through the agentic runner", async () => {
@@ -817,5 +827,43 @@ describe("agentic run store", () => {
       results: [{ runId: 101, status: "blocked" }],
     });
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
+  });
+
+  it("re-queues a stale running step and records a step.reaped event", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("AS prior_reaps")) {
+        return Promise.resolve([{ id: 7, agent_run_id: 240, step_key: "reclassify", prior_reaps: 0 }]);
+      }
+      return Promise.resolve([]);
+    });
+    txMock.mockResolvedValue([]);
+
+    const result = await reapStaleAgentSteps();
+
+    expect(result.requeued).toEqual([{ runId: 240, stepId: 7, stepKey: "reclassify", attempt: 1 }]);
+    expect(result.dead).toEqual([]);
+    const combinedSql = combinedTransactionSql();
+    expect(combinedSql).toContain("SET status = 'queued'");
+    expect(combinedSql).toContain("step.reaped");
+  });
+
+  it("marks a step dead and fails its run after the maximum reaped attempts", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("AS prior_reaps")) {
+        return Promise.resolve([{ id: 8, agent_run_id: 241, step_key: "read", prior_reaps: 2 }]);
+      }
+      return Promise.resolve([]);
+    });
+    txMock.mockResolvedValue([]);
+
+    const result = await reapStaleAgentSteps({ maxAttempts: 3 });
+
+    expect(result.dead).toEqual([{ runId: 241, stepId: 8, stepKey: "read", attempts: 3 }]);
+    expect(result.requeued).toEqual([]);
+    const combinedSql = combinedTransactionSql();
+    expect(combinedSql).toContain("step.dead");
+    expect(combinedSql).toContain("SET status = 'failed'");
   });
 });

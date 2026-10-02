@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getCurrentUserMock = vi.fn();
 const hasPermissionMock = vi.fn();
 const matchesConfiguredCronSecretMock = vi.fn();
-const getAutomationControlMock = vi.fn();
+const getPipelineControlMock = vi.fn();
+const hasQueuedProviderStepsMock = vi.fn();
+const reapStaleAgentStepsMock = vi.fn();
 const getExecutionBackendStatusMock = vi.fn();
 const scheduleDueStateLaneRunsMock = vi.fn();
 const executeQueuedAgentRunsMock = vi.fn();
@@ -20,7 +22,7 @@ vi.mock("@/lib/cron-secret", () => ({
 }));
 
 vi.mock("@/lib/automation-control", () => ({
-  getAutomationControl: getAutomationControlMock,
+  getPipelineControl: getPipelineControlMock,
 }));
 
 vi.mock("@/lib/execution-backend", () => ({
@@ -33,6 +35,8 @@ vi.mock("@/lib/agents/state-lane-scheduler", () => ({
 
 vi.mock("@/lib/agents/run-store", () => ({
   executeQueuedAgentRuns: executeQueuedAgentRunsMock,
+  hasQueuedProviderSteps: hasQueuedProviderStepsMock,
+  reapStaleAgentSteps: reapStaleAgentStepsMock,
 }));
 
 vi.mock("@/lib/api-hardening/budget", () => ({
@@ -47,7 +51,9 @@ describe("/api/admin/agents/tick", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     matchesConfiguredCronSecretMock.mockReturnValue(true);
-    getAutomationControlMock.mockResolvedValue({
+    hasQueuedProviderStepsMock.mockResolvedValue(false);
+    reapStaleAgentStepsMock.mockResolvedValue({ requeued: [], dead: [], orphanRunsRequeued: [] });
+    getPipelineControlMock.mockResolvedValue({
       enabled: true,
       reason: null,
       changedBy: "system",
@@ -79,7 +85,7 @@ describe("/api/admin/agents/tick", () => {
     });
   });
 
-  it("schedules due state lanes before draining when Atlas is enabled", async () => {
+  it("drains deterministic work without consulting the provider budget", async () => {
     const { GET } = await import("./route");
 
     const response = await GET(request("https://feeinsight.com/api/admin/agents/tick?stateLaneLimit=3&runLimit=2&maxStepsPerRun=1"));
@@ -88,6 +94,7 @@ describe("/api/admin/agents/tick", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.paused).toBeUndefined();
+    expect(assertCronTickBudgetAllowedMock).not.toHaveBeenCalled();
     expect(scheduleDueStateLaneRunsMock).toHaveBeenCalledWith({
       limit: 3,
       triggeredBy: "api.admin.agents.tick",
@@ -95,18 +102,89 @@ describe("/api/admin/agents/tick", () => {
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith({
       runLimit: 2,
       maxStepsPerRun: 1,
+      allowProviderSteps: false,
+      budgetPolicyId: null,
+      maxProviderCallsPerRun: null,
+      maxEstimatedCostMicrousd: null,
+    });
+  });
+
+  it("reaps stale running steps before scheduling new work", async () => {
+    const order: string[] = [];
+    reapStaleAgentStepsMock.mockImplementation(async () => {
+      order.push("reap");
+      return { requeued: [{ runId: 240, stepId: 1, stepKey: "reclassify", attempt: 1 }], dead: [], orphanRunsRequeued: [] };
+    });
+    scheduleDueStateLaneRunsMock.mockImplementation(async () => {
+      order.push("schedule");
+      return { selected: 0, scheduled: 0, reused: 0, failed: [], results: [] };
+    });
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(order).toEqual(["reap", "schedule"]);
+    expect(body.reaped.requeued).toHaveLength(1);
+  });
+
+  it("keeps draining deterministic steps when the cron budget policy is disabled (2026-08-23 outage regression)", async () => {
+    assertCronTickBudgetAllowedMock.mockResolvedValue({
+      allowed: false,
+      reasonCode: "budget_policy_disabled",
+      policyId: 42,
+      message: "Cron tick policy is disabled.",
+    });
+    const { GET } = await import("./route");
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(scheduleDueStateLaneRunsMock).toHaveBeenCalled();
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
+  });
+
+  it("passes provider caps through when provider steps are queued and the budget allows them", async () => {
+    hasQueuedProviderStepsMock.mockResolvedValue(true);
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request("https://feeinsight.com/api/admin/agents/tick?runLimit=2&maxStepsPerRun=1"))).json();
+
+    expect(assertCronTickBudgetAllowedMock).toHaveBeenCalled();
+    expect(body.providerBudget).toMatchObject({ checked: true, allowed: true, policyId: 42 });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith({
+      runLimit: 2,
+      maxStepsPerRun: 1,
+      allowProviderSteps: true,
       budgetPolicyId: 42,
       maxProviderCallsPerRun: 3,
       maxEstimatedCostMicrousd: 250_000,
     });
   });
 
-  it("does not create blocked runs while automation is stopped", async () => {
-    getAutomationControlMock.mockResolvedValue({
+  it("holds provider steps but still drains deterministic work when the budget denies provider calls", async () => {
+    hasQueuedProviderStepsMock.mockResolvedValue(true);
+    assertCronTickBudgetAllowedMock.mockResolvedValue({
+      allowed: false,
+      reasonCode: "budget_policy_disabled",
+      policyId: 42,
+      message: "Cron tick policy is disabled.",
+    });
+    const { GET } = await import("./route");
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.providerBudget).toMatchObject({ checked: true, allowed: false, reasonCode: "budget_policy_disabled" });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(expect.objectContaining({ allowProviderSteps: false }));
+  });
+
+  it("does not schedule or drain while the pipeline is paused", async () => {
+    getPipelineControlMock.mockResolvedValue({
       enabled: false,
-      reason: "Provider credit failure",
-      changedBy: "codex-provider-guard",
-      changedAt: "2026-08-15T00:00:00.000Z",
+      reason: "Operator pause for maintenance",
+      changedBy: "admin",
+      changedAt: "2026-10-02T00:00:00.000Z",
       revision: 2,
     });
     const { GET } = await import("./route");
@@ -117,7 +195,8 @@ describe("/api/admin/agents/tick", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.paused).toBe(true);
-    expect(body.pauseReason).toBe("Provider credit failure");
+    expect(body.pauseReason).toBe("Operator pause for maintenance");
+    expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });
@@ -137,25 +216,6 @@ describe("/api/admin/agents/tick", () => {
     expect(response.status).toBe(200);
     expect(body.paused).toBe(true);
     expect(body.pauseReason).toBe("Agent execution is blocked.");
-    expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
-    expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
-  });
-
-  it("does not schedule or drain when the cron budget policy is not configured", async () => {
-    assertCronTickBudgetAllowedMock.mockResolvedValue({
-      allowed: false,
-      reasonCode: "budget_policy_disabled",
-      policyId: 42,
-      message: "Cron tick policy is disabled.",
-    });
-    const { GET } = await import("./route");
-
-    const response = await GET(request());
-    const body = await response.json();
-
-    expect(response.status).toBe(423);
-    expect(body.paused).toBe(true);
-    expect(body.blockedReason).toBe("budget_policy_disabled");
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });

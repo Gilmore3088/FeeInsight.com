@@ -8,11 +8,18 @@ const { sqlMock, controlMock, stopMock, budgetMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("./data-store/connection", () => ({ sql: sqlMock }));
-vi.mock("./automation-control", () => ({
-  assertAutomationEnabled: controlMock,
-  engageEmergencyStop: stopMock,
-  EmergencyStopActiveError: class EmergencyStopActiveError extends Error {},
-}));
+vi.mock("./automation-control", async () => {
+  // Keep the real credit-marker list and circuit query (they run against sqlMock);
+  // stub only the stateful control functions.
+  const actual = await vi.importActual<typeof import("./automation-control")>("./automation-control");
+  return {
+    PROVIDER_CREDIT_ERROR_MARKERS: actual.PROVIDER_CREDIT_ERROR_MARKERS,
+    findOpenProviderCreditFailure: actual.findOpenProviderCreditFailure,
+    assertAutomationEnabled: controlMock,
+    engageEmergencyStop: stopMock,
+    EmergencyStopActiveError: class EmergencyStopActiveError extends Error {},
+  };
+});
 vi.mock("./api-hardening/budget", () => {
   class ProviderBudgetBlockedError extends Error {
     reasonCode: string;

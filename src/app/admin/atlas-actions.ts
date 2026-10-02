@@ -8,8 +8,10 @@ import {
 } from "@/lib/admin-dashboard-cache";
 import {
   engageEmergencyStop,
+  recordBillingResolved,
   recordEmergencyStopOutcome,
   resumeAutomation,
+  setPipelineEnabled,
 } from "@/lib/automation-control";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { cancelAgentRun, cancelAllActiveAgentRuns, startAgentRun } from "@/lib/agents/run-store";
@@ -101,7 +103,10 @@ export async function stopAllAutomation(reason: string): Promise<{
 }> {
   const user = await requireAuth("cancel_jobs");
   try {
+    // The operator emergency stop halts everything: paid provider calls (global
+    // control) and deterministic pipeline work (pipeline control).
     await engageEmergencyStop(user.username, reason);
+    await setPipelineEnabled(user.username, false, reason);
     const cancellations = await cancelAllActiveAgentRuns(user.username);
     await recordEmergencyStopOutcome(user.username, cancellations);
     refreshAtlasDashboard();
@@ -124,6 +129,37 @@ export async function resumeAllAutomation(reason: string): Promise<{
   const user = await requireAuth("trigger_jobs");
   try {
     await resumeAutomation(user.username, reason);
+    await setPipelineEnabled(user.username, true, reason);
+    refreshAtlasDashboard();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Pause or resume deterministic pipeline steps without touching the provider stop. */
+export async function setPipelinePaused(paused: boolean, reason: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const user = await requireAuth(paused ? "cancel_jobs" : "trigger_jobs");
+  try {
+    await setPipelineEnabled(user.username, !paused, reason);
+    refreshAtlasDashboard();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Operator attestation that provider billing is fixed; clears the credit circuit. */
+export async function markProviderBillingResolved(reason: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const user = await requireAuth("trigger_jobs");
+  try {
+    await recordBillingResolved(user.username, reason);
     refreshAtlasDashboard();
     return { success: true };
   } catch (error) {

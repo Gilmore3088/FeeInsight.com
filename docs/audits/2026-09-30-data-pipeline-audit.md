@@ -9,6 +9,20 @@ docs. The audit was read-only: static review of the code at `307176c`, local run
 Severity: **S0** means the pipeline is not running or product numbers are wrong ·
 **S1** means correctness or scale is blocked · **S2** means hygiene or debt.
 
+## Remediation status
+
+Tracked in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`.
+
+| Item | Status |
+|---|---|
+| R-O1 gate split (deterministic steps no longer need the provider budget or provider stop) | Fixed in Phase 0 (code). The production tick-policy caps still need operator approval. |
+| R-O2 stuck-step reaper | Fixed in Phase 0 |
+| R-O3 (part 1) job-health rebuilt on the ledger and tick audit | Fixed in Phase 0; an external monitor still needs attaching |
+| R-D1 median string bug, plus never serving a stale `fee_index_cache` | Fixed in Phase 0 |
+| R-H1 (part 1) CI green; tsc, lint and the full test suite added to CI | Fixed in Phase 0 |
+| R-H4 crawler User-Agent and `/bot` page | Fixed in Phase 0 |
+| Everything else | Phases 1–3 |
+
 ---
 
 ## 1. Executive summary

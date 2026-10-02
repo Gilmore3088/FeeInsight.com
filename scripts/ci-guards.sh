@@ -104,6 +104,8 @@ legacy_kill() {
     ":(exclude)src/**/*.test.ts"
     ":(exclude)src/**/*.test.tsx"
     ":(exclude)src/lib/execution-backend.ts"
+    # AGENTS.md guidance must be able to name retired surfaces in order to prohibit them.
+    ":(exclude)src/**/AGENTS.md"
   )
   local pattern='spawnJob\(|from ['\''"]@/lib/job-runner['\''"]|from ['\''"][^'\'']*/job-runner['\''"]|\bops_jobs\b|\bops_job_id\b|\bmodal_call_id\b|modalCallId|python -m fee_crawler|process\.env\.(OPS_RUN_URL|OPS_CANCEL_URL|MODAL_[A-Z0-9_]*|DARWIN_SIDECAR_URL|MAGELLAN_SIDECAR_URL|EXTRACT_SINGLE_URL)|modal\.run'
   local hits=""
@@ -590,8 +592,9 @@ legacy_data_contract_kill() {
 brand_kill() {
   # Fee Insight is the site/company; Bank Fee Index is the product. Block copy that
   # names the site as the product, and stale bankfeeindex.com web references.
+  # Also blocks identifiers from another brand (e.g. a crawler User-Agent naming it).
   # Allowed: hello@bankfeeindex.com (contact address) and the redirect in src/proxy.ts.
-  local pattern='(\| Bank Fee Index["'"'"'`]|- Bank Fee Index["'"'"'`]|— Bank Fee Index["'"'"'`]|siteName: "Bank Fee Index"|Hamilton — Bank Fee Index|Welcome to Bank Fee Index|(https?://)?(www\.)?bankfeeindex\.com)'
+  local pattern='(AiBI-|theaibankinginstitute|\| Bank Fee Index["'"'"'`]|- Bank Fee Index["'"'"'`]|— Bank Fee Index["'"'"'`]|siteName: "Bank Fee Index"|Hamilton — Bank Fee Index|Welcome to Bank Fee Index|(https?://)?(www\.)?bankfeeindex\.com)'
   local hits=""
 
   if git rev-parse --git-dir >/dev/null 2>&1; then

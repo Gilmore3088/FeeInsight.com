@@ -51,12 +51,14 @@ export interface FeeChangeEvent {
 
 export function computePercentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0];
+  // Coerce defensively: NUMERIC values that reach here as strings would otherwise
+  // concatenate ("10.00" + 5 = "10.005") instead of interpolating.
   const idx = (p / 100) * (sorted.length - 1);
   const lo = Math.floor(idx);
   const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (idx - lo) * (sorted[hi] - sorted[lo]);
+  const loValue = Number(sorted[lo]);
+  if (lo === hi) return loValue;
+  return loValue + (idx - lo) * (Number(sorted[hi]) - loValue);
 }
 
 export function computeStats(amounts: number[]): {
@@ -67,10 +69,10 @@ export function computeStats(amounts: number[]): {
   p25: number | null;
   p75: number | null;
 } {
-  if (amounts.length === 0) {
+  const sorted = amounts.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) {
     return { min: null, max: null, avg: null, median: null, p25: null, p75: null };
   }
-  const sorted = [...amounts].sort((a, b) => a - b);
   return {
     min: sorted[0],
     max: sorted[sorted.length - 1],

@@ -6,6 +6,7 @@ import {
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
+import { CRAWLER_USER_AGENT } from "@/lib/agents/crawler-identity";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -13,7 +14,6 @@ type Fetcher = typeof fetch;
 export const MAGELLAN_FETCH_DEFAULT_LIMIT = 25;
 export const MAGELLAN_FETCH_MAX_LIMIT = 50;
 
-const USER_AGENT = "AiBI-Magellan/1.0 (+https://theaibankinginstitute.com)";
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
 
@@ -105,7 +105,7 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
       signal: controller.signal,
       redirect: "follow",
       headers: {
-        "User-Agent": USER_AGENT,
+        "User-Agent": CRAWLER_USER_AGENT,
         Accept: "text/html,application/pdf;q=0.9,text/plain;q=0.8,*/*;q=0.5",
       },
     });
