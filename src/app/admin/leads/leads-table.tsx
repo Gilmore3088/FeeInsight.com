@@ -18,7 +18,22 @@ const SOURCE_LABELS: Record<string, string> = {
   contact_partnership: "Data partnership",
   contact_general: "General inquiry",
   coming_soon: "Coming soon signup",
+  newsletter: "Footer newsletter",
+  capture_institution: "Institution fee alerts",
+  capture_state: "State benchmark",
+  capture_national_index: "National index update",
+  capture_report_sample: "Sample report (lead magnet)",
+  capture_homepage: "Homepage sample report",
 };
+
+/** Sources accumulate as a comma-separated list; label each one. */
+function sourceLabel(source: string | null | undefined) {
+  if (!source) return "\u2014";
+  return source
+    .split(",")
+    .map((part) => SOURCE_LABELS[part.trim()] || part.trim())
+    .join(", ");
+}
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -101,7 +116,7 @@ export function LeadsTable({ leads }: { leads: LeadRow[] }) {
                         {lead.company || "\u2014"}
                       </span>
                       <span className="px-4 py-2.5 text-gray-500 text-xs">
-                        {SOURCE_LABELS[lead.source || ""] || lead.source || "\u2014"}
+                        {sourceLabel(lead.source)}
                       </span>
                       <span className="px-4 py-2.5">
                         <StatusBadge status={lead.status} />
@@ -127,7 +142,7 @@ export function LeadsTable({ leads }: { leads: LeadRow[] }) {
                               Source
                             </p>
                             <p className="text-sm text-gray-700 dark:text-gray-300">
-                              {SOURCE_LABELS[lead.source || ""] || lead.source || "\u2014"}
+                              {sourceLabel(lead.source)}
                             </p>
                           </div>
                           <div>

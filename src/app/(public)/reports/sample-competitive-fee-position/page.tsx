@@ -8,6 +8,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
+import { LeadCapture } from "@/components/public/lead-capture";
 import { ReportExecutiveSummaryBlock } from "@/components/public/report-executive-summary";
 import { ReportFrame } from "@/components/public/report-frame";
 import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL, REPORT_OFFER, REPORT_OFFER_LINE } from "@/lib/constants";
@@ -22,7 +23,7 @@ const REPORT_DESCRIPTION = `An anonymized ${REPORT_OFFER.name} for a ~$400M comm
 
 export const metadata: Metadata = {
   title: REPORT_TITLE,
-  description: `See what a ${REPORT_OFFER.priceLabel} ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the outliers that matter, the revenue lens, and a named peer comparison. Delivered in 48 hours.`,
+  description: `See what the free ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the outliers that matter, the revenue lens, and a named peer comparison. Delivered in 48 hours.`,
   alternates: { canonical: SAMPLE_PATH },
   robots: { index: true, follow: true },
   openGraph: {
@@ -80,7 +81,7 @@ export default function SampleReportPage() {
             className="text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815] sm:text-[2.5rem]"
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
           >
-            This is what a {REPORT_OFFER.priceLabel} report looks like.
+            This is what your free report looks like.
           </h1>
           <p className="mt-4 max-w-[560px] text-[16px] leading-relaxed text-[#5A5347]">
             Yours is built for your institution and your peer set, delivered in 48 hours. The report
@@ -99,10 +100,18 @@ export default function SampleReportPage() {
               href={REQUEST_HREF}
               className={SECONDARY_BUTTON}
             >
-              Request your report — $300
+              {REPORT_OFFER.ctaLabel}
             </TrackLink>
           </div>
           <p className="mt-3 text-[13px] text-[#6B6255]">{REPORT_OFFER_LINE}.</p>
+          <LeadCapture
+            placement="sample_report"
+            className="mt-6"
+            eyebrow="Free sample, by email"
+            headline="Email me the sample"
+            body={`Get the sample PDF to share with your team, and a free ${REPORT_OFFER.name} for your own institution when you want one.`}
+            buttonLabel="Send it"
+          />
         </div>
 
         <aside className="rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-5">
@@ -151,7 +160,7 @@ export default function SampleReportPage() {
             href={REQUEST_HREF}
             className={PRIMARY_BUTTON}
           >
-            Request your report — $300
+            {REPORT_OFFER.ctaLabel}
           </TrackLink>
           <a href={SAMPLE_PDF_PATH} className={SECONDARY_BUTTON} download>
             Download the sample (PDF)

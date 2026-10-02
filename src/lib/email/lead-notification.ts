@@ -72,7 +72,7 @@ export function renderLeadEmailHtml(content: LeadEmailContent) {
   `;
 }
 
-function renderLeadEmailText(content: LeadEmailContent) {
+export function renderLeadEmailText(content: LeadEmailContent) {
   const body = content.lines.join("\n");
   return content.cta ? `${body}\n\n${content.cta.label}: ${content.cta.href}` : body;
 }

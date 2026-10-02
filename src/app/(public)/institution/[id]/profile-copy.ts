@@ -4,7 +4,7 @@ import { PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 /** One name, one price, one turnaround — matches the plan's report offer. */
 export const COMPETITIVE_FEE_POSITION_REPORT = {
   name: REPORT_OFFER.name,
-  price: REPORT_OFFER.priceLabel,
+  price: REPORT_OFFER.priceLabel.toLowerCase(),
   turnaround: REPORT_OFFER.turnaround.replace(/^delivered in /, ""),
 } as const;
 

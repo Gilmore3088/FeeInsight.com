@@ -220,11 +220,11 @@ function RequestReportFormInner({
         disabled={status === "submitting"}
         className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
       >
-        {status === "submitting" ? "Sending…" : `Request your report — ${REPORT_OFFER.priceLabel}`}
+        {status === "submitting" ? "Sending…" : REPORT_OFFER.ctaLabel}
       </button>
       <p className="text-xs leading-relaxed text-[#6B6255]">
-        No payment is taken at this step. You get a confirmation email right away; we confirm
-        your peer set by email before any work starts.
+        It&apos;s free — no payment, no card. We confirm your peer set by email before any work
+        starts.
       </p>
     </form>
   );

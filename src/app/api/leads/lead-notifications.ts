@@ -3,7 +3,9 @@ import {
   sendReportRequestNotifications,
   type LeadNotificationOutcome,
 } from "@/lib/email/report-request";
+import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import type { EmailDeliveryStatus } from "@/lib/email/resend";
+import { placementForSource } from "@/lib/lead-capture";
 
 export const REPORT_SOURCE = "report";
 const CONTACT_SOURCE_PATTERN = /^contact(?:_([a-z0-9-]+))?$/;
@@ -21,6 +23,9 @@ export interface StoredLead {
   source: string;
   institutionId: number | null;
   src: string | null;
+  /** Capture placements only: state context and the institution name for email copy. */
+  stateCode?: string | null;
+  institutionName?: string | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -65,9 +70,28 @@ export function contactInquiryType(source: string): string | null {
 export function shouldNotify(source: string) {
   return (
     source === REPORT_SOURCE ||
+    placementForSource(source) !== null ||
     source === ENTERPRISE_SOURCE ||
     CONTACT_SOURCE_PATTERN.test(source)
   );
+}
+
+function deliveryReason(result: LeadNotificationOutcome["notification"]) {
+  if (result.status === "not_configured") return result.reason;
+  if (result.status === "failed") return result.error;
+  return null;
+}
+
+/**
+ * The lead is stored either way; an email that did not go out is logged with its reason
+ * (e.g. "RESEND_API_KEY is not configured.") so it is visible in the deployment logs.
+ */
+function logUndelivered(source: string, outcome: LeadNotificationOutcome) {
+  const notification = deliveryReason(outcome.notification);
+  const confirmation = deliveryReason(outcome.confirmation);
+  if (notification || confirmation) {
+    console.warn("[api/leads] lead email not delivered", { source, notification, confirmation });
+  }
 }
 
 function toStatus(outcome: LeadNotificationOutcome): LeadNotificationStatus {
@@ -81,6 +105,18 @@ function toStatus(outcome: LeadNotificationOutcome): LeadNotificationStatus {
 export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationStatus | null> {
   if (!shouldNotify(lead.source)) return null;
   try {
+    const placement = placementForSource(lead.source);
+    if (placement) {
+      const outcome = await sendLeadCaptureNotifications({
+        email: lead.email,
+        placement,
+        institutionId: lead.institutionId,
+        institutionName: lead.institutionName ?? null,
+        stateCode: lead.stateCode ?? null,
+      });
+      logUndelivered(lead.source, outcome);
+      return toStatus(outcome);
+    }
     if (lead.source === REPORT_SOURCE) {
       const outcome = await sendReportRequestNotifications({
         name: lead.name,
@@ -90,6 +126,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionId: lead.institutionId,
         src: lead.src,
       });
+      logUndelivered(lead.source, outcome);
       return toStatus(outcome);
     }
     const outcome = await sendContactRequestNotifications({
@@ -101,6 +138,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
       inquiryType:
         lead.source === ENTERPRISE_SOURCE ? ENTERPRISE_SOURCE : contactInquiryType(lead.source),
     });
+    logUndelivered(lead.source, outcome);
     return toStatus(outcome);
   } catch (error) {
     console.error("[api/leads] notification failed", {

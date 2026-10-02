@@ -3,7 +3,7 @@
 import { useState, use } from "react";
 
 const INQUIRY_TYPES = [
-  { value: "report", label: "Competitive Fee Position Report ($300)" },
+  { value: "report", label: "Competitive Fee Position Report (free)" },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },

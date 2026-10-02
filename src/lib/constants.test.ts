@@ -31,9 +31,12 @@ describe("brand constants", () => {
 });
 
 describe("report offer", () => {
-  it("has one name, price and turnaround", async () => {
+  it("is free, with its value stated once", async () => {
     const { REPORT_OFFER, REPORT_OFFER_LINE } = await import("./constants");
-    expect(REPORT_OFFER.priceLabel).toBe(`$${REPORT_OFFER.priceUsd}`);
-    expect(REPORT_OFFER_LINE).toBe("Competitive Fee Position Report — $300, delivered in 48 hours");
+    expect(REPORT_OFFER.priceUsd).toBe(0);
+    expect(REPORT_OFFER.priceLabel).toBe("Free");
+    expect(REPORT_OFFER_LINE).toBe(
+      "Competitive Fee Position Report — free (a $300 value), delivered in 48 hours",
+    );
   });
 });

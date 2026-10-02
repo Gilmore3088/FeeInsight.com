@@ -51,7 +51,7 @@ export default async function AboutPage() {
           <Link href="/for-institutions#report" className="text-[#A93D25] hover:underline">
             {REPORT_OFFER.name}
           </Link>{" "}
-          ({REPORT_OFFER.priceLabel}) is a one-time report placing one institution against
+          is a free, one-time report placing one institution against
           its verified peer set. Fee Insight Pro is the subscription; Hamilton is its
           workspace for benchmarking, scenarios, reports and monitoring. Fee Insight Advisory
           covers custom competitor sets, board decks and multi-institution work.
