@@ -4,7 +4,7 @@ import {
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
-import { CRAWLER_USER_AGENT } from "@/lib/agents/crawler-identity";
+import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -293,7 +293,7 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
       signal: controller.signal,
       redirect: "follow",
       headers: {
-        "User-Agent": CRAWLER_USER_AGENT,
+        "User-Agent": crawlerUserAgent("Magellan"),
         Accept: "text/html,application/pdf;q=0.9,*/*;q=0.5",
       },
     });

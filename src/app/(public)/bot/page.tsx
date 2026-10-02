@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
-import { CRAWLER_USER_AGENT } from "@/lib/agents/crawler-identity";
+import { CRAWLER_PRODUCT_TOKEN, crawlerUserAgent } from "@/lib/agents/crawler-identity";
 
 export const metadata: Metadata = {
   title: "FeeInsightBot",
@@ -26,7 +26,7 @@ export default function BotPage() {
         FeeInsightBot
       </h1>
       <p className="mt-2 text-[13px] text-[#6B6255]">
-        User-Agent: <code className="break-all">{CRAWLER_USER_AGENT}</code>
+        Product token: <code>{CRAWLER_PRODUCT_TOKEN}</code>
       </p>
 
       <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
@@ -40,6 +40,27 @@ export default function BotPage() {
             uses these public documents to build the Bank Fee Index, and every published
             fee links back to the document it came from.
           </p>
+        </section>
+
+        <section>
+          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2" style={headingStyle}>
+            How it identifies itself
+          </h2>
+          <p>
+            Every request starts with <code>{CRAWLER_PRODUCT_TOKEN}</code>, so one rule in your
+            robots.txt or allowlist covers all of them. The name in brackets says which part of
+            the pipeline made the request:
+          </p>
+          <ul className="mt-3 list-disc pl-6 space-y-1.5">
+            <li>
+              <code className="break-all">{crawlerUserAgent("Magellan")}</code>: finds your fee
+              schedule and checks whether it has changed.
+            </li>
+            <li>
+              <code className="break-all">{crawlerUserAgent("Rosetta")}</code>: reads the fee
+              schedule document.
+            </li>
+          </ul>
         </section>
 
         <section>
