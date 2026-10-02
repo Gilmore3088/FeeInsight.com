@@ -3,6 +3,8 @@ import {
   assertAutomationEnabled,
   EmergencyStopActiveError,
   engageEmergencyStop,
+  findOpenProviderCreditFailure,
+  PROVIDER_CREDIT_ERROR_MARKERS,
 } from "./automation-control";
 import {
   assertProviderBudgetAllowed,
@@ -57,13 +59,6 @@ const ANTHROPIC_RATES_MICROUSD_PER_TOKEN = [
   { match: "haiku", input: 0.8, output: 4 },
   { match: "sonnet", input: 3, output: 15 },
   { match: "opus", input: 15, output: 75 },
-] as const;
-
-const PROVIDER_CREDIT_ERROR_MARKERS = [
-  "credit balance is too low",
-  "insufficient credits",
-  "purchase credits",
-  "plans & billing",
 ] as const;
 
 function nonNegative(value: unknown): number {
@@ -154,26 +149,12 @@ async function recordProviderRouteAudit(
 async function assertProviderCircuitHealthy(context: ProviderCallContext): Promise<void> {
   if (context.provider !== "anthropic") return;
 
-  const [failure] = await sql`
-    SELECT provider, model, agent_name, operation, created_at
-      FROM ai_api_usage_events
-     WHERE provider = ${context.provider}
-       AND status = 'failed'
-       AND (
-         error_summary ILIKE '%credit balance is too low%'
-         OR error_summary ILIKE '%insufficient credits%'
-         OR error_summary ILIKE '%purchase credits%'
-         OR error_summary ILIKE '%plans & billing%'
-       )
-       AND created_at >= NOW() - INTERVAL '24 hours'
-     ORDER BY created_at DESC
-     LIMIT 1
-  `;
+  const failure = await findOpenProviderCreditFailure(context.provider);
   if (!failure) return;
 
-  const seenAt = new Date(failure.created_at as string | Date).toISOString();
-  const failedAgent = String(failure.agent_name ?? "unknown");
-  const failedOperation = String(failure.operation ?? "unknown");
+  const seenAt = failure.createdAt;
+  const failedAgent = failure.agentName;
+  const failedOperation = failure.operation;
   await engageProviderCreditStop(context);
   throw new ProviderCircuitOpenError(
     `Provider circuit is open: latest Anthropic credit-balance failure was ${seenAt} on ${failedAgent}.${failedOperation}. Fix provider billing or move this route off Anthropic before retrying.`,

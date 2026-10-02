@@ -68,11 +68,14 @@ This repo no longer uses the Python `fee_crawler` runtime, Modal workers,
 - Every agent action must create or update a visible agent run/step/event.
 - Do not reintroduce a public prelaunch proxy gate that serves a parallel static
   site instead of the App Router pages.
-- Do not read `extracted_fees` for product, report, Scout, public API,
-  research, market, peer, state, or analytics data. Those reads must use
-  `published_fee_catalog`. `extracted_fees` is only a temporary staged
-  review bridge for Knox ready-review, fee review actions, and explicit review
-  queue diagnostics.
+- Do not read `extracted_fees` anywhere. It was renamed to an archive table and
+  `fee-read-model-kill` blocks it; product, report, Scout, public API, research,
+  market, peer, state, and analytics reads must use `published_fee_catalog`.
+- Two separate controls gate agent work (`src/lib/automation-control.ts`): the
+  `global` provider stop blocks only provider steps (`PROVIDER_STEP_KEYS` in
+  `src/lib/agents/types.ts`, paid model calls), and the `pipeline` control pauses
+  deterministic steps. The cron tick checks the provider budget policy only when
+  a provider step is queued. Do not gate deterministic work on provider budget.
 - Do not query historical source tables directly from app code. `source-read-model-kill`
   scans all of `src/`; use the semantic source contracts instead.
 - Document agents must use `institution_id`, `source_document_id`, and

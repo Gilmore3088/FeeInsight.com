@@ -14,6 +14,14 @@ describe("computePercentile", () => {
     expect(computePercentile([1, 2, 3, 4], 50)).toBe(2.5);
   });
 
+  it("interpolates even-length medians when NUMERIC values arrive as strings", () => {
+    // Regression: postgres.js returns NUMERIC as strings; ["10.00","20.00"] used to yield 10.005.
+    const sorted = ["10.00", "20.00"] as unknown as number[];
+    expect(computePercentile(sorted, 50)).toBe(15);
+    const four = ["10.00", "20.00", "30.00", "40.00"] as unknown as number[];
+    expect(computePercentile(four, 25)).toBeCloseTo(17.5, 5);
+  });
+
   it("computes P25 and P75", () => {
     const sorted = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const p25 = computePercentile(sorted, 25);
@@ -133,5 +141,15 @@ describe("computeStats", () => {
     // Straight average includes outliers: (sum of 15-24 repeating + 0 + 9999) / 100
     const rawAvg = values.reduce((s, v) => s + v, 0) / values.length;
     expect(stats.avg).toBeCloseTo(rawAvg, 0);
+  });
+});
+
+describe("computeStats with string amounts", () => {
+  it("treats NUMERIC strings as numbers", () => {
+    const stats = computeStats(["20.00", "10.00"] as unknown as number[]);
+    expect(stats.median).toBe(15);
+    expect(stats.min).toBe(10);
+    expect(stats.max).toBe(20);
+    expect(stats.avg).toBe(15);
   });
 });

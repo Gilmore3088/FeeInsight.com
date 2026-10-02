@@ -85,3 +85,19 @@ export interface AgentRunEventSnapshot {
   detail: Record<string, unknown>;
   createdAt: string;
 }
+
+/**
+ * Step keys that may call a paid model provider. Only these steps are gated by the
+ * provider budget policy and the global (provider) automation stop. Every other step
+ * is deterministic and is paused only by the separate pipeline control.
+ */
+export const PROVIDER_STEP_KEYS: readonly string[] = [];
+
+export function isProviderStep(stepKey: string): boolean {
+  return PROVIDER_STEP_KEYS.includes(stepKey);
+}
+
+/** A step still `running` after this long was killed (function timeout, crash). */
+export const STALE_RUNNING_STEP_MINUTES = 15;
+/** Reaped attempts allowed before a step is declared dead and its run failed. */
+export const MAX_STEP_ATTEMPTS = 3;

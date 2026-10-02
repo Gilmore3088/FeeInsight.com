@@ -8,6 +8,18 @@ const DATABASE_POOL_MAX = Number.isInteger(configuredPoolMax) && configuredPoolM
 
 let _sql: ReturnType<typeof postgres> | null = null;
 
+/**
+ * NUMERIC (oid 1700) arrives from postgres.js as a string by default. Fee amounts
+ * and percentiles are NUMERIC, and string values silently broke arithmetic (string
+ * concatenation inside percentile interpolation). Parse to number at the boundary.
+ */
+export const NUMERIC_AS_NUMBER = {
+  to: 1700,
+  from: [1700],
+  serialize: (value: unknown) => String(value),
+  parse: (value: string) => Number.parseFloat(value),
+};
+
 export function getSql() {
   if (!_sql) {
     if (!DATABASE_URL) {
@@ -21,6 +33,7 @@ export function getSql() {
       idle_timeout: 20,
       connect_timeout: 15,
       prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
+      types: { numeric: NUMERIC_AS_NUMBER },
     });
   }
   return _sql;

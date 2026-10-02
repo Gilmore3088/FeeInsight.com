@@ -7,6 +7,7 @@ import {
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
+import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -14,7 +15,6 @@ type Fetcher = typeof fetch;
 export const ROSETTA_READ_DEFAULT_LIMIT = 25;
 export const ROSETTA_READ_MAX_LIMIT = 50;
 
-const USER_AGENT = "AiBI-Rosetta/1.0 (+https://theaibankinginstitute.com)";
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_TEXT_DOCUMENT_BYTES = 8 * 1024 * 1024;
 const MAX_PDF_PAGES = 150;
@@ -187,7 +187,7 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
       signal: controller.signal,
       redirect: "follow",
       headers: {
-        "User-Agent": USER_AGENT,
+        "User-Agent": crawlerUserAgent("Rosetta"),
         Accept: "text/html,text/plain,application/pdf;q=0.9,*/*;q=0.5",
       },
     });

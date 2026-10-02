@@ -6,7 +6,7 @@ This folder contains the active TypeScript agent runtime. Keep all agent work on
 
 - Every agent run must flow through `run-store.ts` and write durable `agent_runs`, `agent_run_steps`, and `agent_run_events` state.
 - Provider calls must go through `src/lib/ai-provider.ts` and respect `src/lib/automation-control.ts`.
-- If automation is stopped, agents may inspect deterministic data, queue manual validation, or record safe lifecycle state, but they must not call paid provider automation.
+- If the provider (`global`) stop is active, deterministic steps continue but provider steps wait and no paid provider call is made. If the `pipeline` control is paused, no step runs and runs stay queued. Any step that can call a provider must be listed in `PROVIDER_STEP_KEYS` (`types.ts`).
 - Agent output must preserve lineage: institution ID, source URL or document key, source text/row IDs, confidence, flags, and the agent run/event that produced the row.
 - Public and Pro surfaces consume agent results through semantic read models. Do not write UI-only shortcuts that bypass the trust pipeline.
 - Pro workspace authority uses numeric `users.id` membership records. Delegated access may grant existing Pro users institution-scoped roles, and pending invitations may queue access by lower-cased email until a matching user activates Pro. Agents must not infer publication authority from membership or invitation records alone.

@@ -12,7 +12,7 @@ import {
   summarizePublicDiscoveryDiagnosis,
 } from "@/lib/agents/public-discovery";
 import { runRosettaRead } from "@/lib/agents/rosetta/read";
-import { assertAutomationEnabled } from "@/lib/automation-control";
+import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import type {
   AdminAgent,
@@ -24,6 +24,12 @@ import type {
   AgentRunStepStatus,
   AgentRunStepSnapshot,
   AgentRunTriggerSource,
+} from "./types";
+import {
+  isProviderStep,
+  MAX_STEP_ATTEMPTS,
+  PROVIDER_STEP_KEYS,
+  STALE_RUNNING_STEP_MINUTES,
 } from "./types";
 
 const ACTIVE_STATUSES = ["queued", "running", "cancel_requested"];
@@ -1027,9 +1033,173 @@ async function failAgenticStep(
   };
 }
 
+export interface ReapStaleAgentStepsResult {
+  requeued: Array<{ runId: number; stepId: number; stepKey: string; attempt: number }>;
+  dead: Array<{ runId: number; stepId: number; stepKey: string; attempts: number }>;
+  orphanRunsRequeued: number[];
+}
+
+export { MAX_STEP_ATTEMPTS, STALE_RUNNING_STEP_MINUTES };
+
+/**
+ * Recover work that a killed invocation left `running`. Runs first in every tick.
+ * Each stale step goes back to `queued` (attempt + 1); after MAX_STEP_ATTEMPTS it is
+ * marked failed and its run fails, so a poison step can never wedge a lane forever.
+ * Every transition writes an agent_run_events row.
+ */
+export async function reapStaleAgentSteps({
+  staleAfterMinutes = STALE_RUNNING_STEP_MINUTES,
+  maxAttempts = MAX_STEP_ATTEMPTS,
+}: { staleAfterMinutes?: number; maxAttempts?: number } = {}): Promise<ReapStaleAgentStepsResult> {
+  const result: ReapStaleAgentStepsResult = { requeued: [], dead: [], orphanRunsRequeued: [] };
+  const staleSteps = await sql`
+    SELECT s.id, s.agent_run_id, s.step_key,
+           (SELECT COUNT(*)::int
+              FROM agent_run_events e
+             WHERE e.step_id = s.id
+               AND e.event_type = 'step.reaped') AS prior_reaps
+      FROM agent_run_steps s
+      JOIN agent_runs r ON r.id = s.agent_run_id
+     WHERE s.status = 'running'
+       AND s.updated_at < NOW() - make_interval(mins => ${staleAfterMinutes})
+       AND r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
+     ORDER BY s.updated_at ASC
+     LIMIT 50
+  `;
+
+  for (const row of staleSteps) {
+    const runId = Number(row.agent_run_id);
+    const stepId = Number(row.id);
+    const stepKey = String(row.step_key);
+    const attempt = Number(row.prior_reaps ?? 0) + 1;
+
+    if (attempt >= maxAttempts) {
+      const message = `Step ${stepKey} was left running ${attempt} times (timeout or crash); marked failed after ${maxAttempts} attempts.`;
+      await withTransaction(async (tx) => {
+        await tx`
+          UPDATE agent_run_steps
+             SET status = 'failed', error_summary = ${message}, completed_at = NOW(), updated_at = NOW()
+           WHERE id = ${stepId} AND status = 'running'
+        `;
+        await tx`
+          UPDATE agent_runs
+             SET status = 'failed', current_stage = ${stepKey}, error_summary = ${message},
+                 completed_at = NOW(), updated_at = NOW()
+           WHERE id = ${runId} AND status IN ('running', 'queued')
+        `;
+        await tx`
+          INSERT INTO agent_run_events
+            (agent_run_id, step_id, event_type, status, message, detail)
+          VALUES
+            (${runId}, ${stepId}, 'step.dead', 'failed', ${message},
+             ${JSON.stringify({ step_key: stepKey, attempts: attempt, reaper: true })}::jsonb)
+        `;
+        await updateStateLaneTerminalStatus(tx, runId, "failed");
+      });
+      result.dead.push({ runId, stepId, stepKey, attempts: attempt });
+      continue;
+    }
+
+    const message = `Step ${stepKey} was left running past ${staleAfterMinutes} minutes; re-queued (attempt ${attempt + 1} of ${maxAttempts}).`;
+    await withTransaction(async (tx) => {
+      await tx`
+        UPDATE agent_run_steps
+           SET status = 'queued', started_at = NULL, error_summary = ${message}, updated_at = NOW()
+         WHERE id = ${stepId} AND status = 'running'
+      `;
+      await tx`
+        UPDATE agent_runs
+           SET status = 'queued', updated_at = NOW()
+         WHERE id = ${runId} AND status = 'running'
+      `;
+      await tx`
+        INSERT INTO agent_run_events
+          (agent_run_id, step_id, event_type, status, message, detail)
+        VALUES
+          (${runId}, ${stepId}, 'step.reaped', 'queued', ${message},
+           ${JSON.stringify({ step_key: stepKey, attempt, reaper: true })}::jsonb)
+      `;
+    });
+    result.requeued.push({ runId, stepId, stepKey, attempt });
+  }
+
+  // A run marked running with no running step (crash between ledger writes) is
+  // returned to the queue so its next queued step can execute.
+  const orphanRuns = await sql`
+    UPDATE agent_runs r
+       SET status = 'queued', updated_at = NOW()
+     WHERE r.status = 'running'
+       AND r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
+       AND r.updated_at < NOW() - make_interval(mins => ${staleAfterMinutes})
+       AND NOT EXISTS (
+         SELECT 1 FROM agent_run_steps s
+          WHERE s.agent_run_id = r.id AND s.status = 'running'
+       )
+     RETURNING r.id
+  `;
+  for (const row of orphanRuns) {
+    const runId = Number(row.id);
+    await sql`
+      INSERT INTO agent_run_events
+        (agent_run_id, event_type, status, message, detail)
+      VALUES
+        (${runId}, 'run.reaped', 'queued',
+         'Run was marked running with no running step; returned to the queue.',
+         ${JSON.stringify({ reaper: true })}::jsonb)
+    `;
+    result.orphanRunsRequeued.push(runId);
+  }
+
+  return result;
+}
+
+/** True when any queued ledger run's next step is a provider (paid) step. */
+export async function hasQueuedProviderSteps(): Promise<boolean> {
+  if (PROVIDER_STEP_KEYS.length === 0) return false;
+  const [row] = await sql`
+    SELECT 1
+      FROM agent_run_steps s
+      JOIN agent_runs r ON r.id = s.agent_run_id
+     WHERE r.status = 'queued'
+       AND r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
+       AND s.status = 'queued'
+       AND s.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+     LIMIT 1
+  `;
+  return Boolean(row);
+}
+
+async function peekNextQueuedStepKey(runId: number): Promise<string | null> {
+  const [row] = await sql`
+    SELECT step_key
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     ORDER BY sequence ASC, id ASC
+     LIMIT 1
+  `;
+  return row ? String(row.step_key) : null;
+}
+
+async function providerStepGate(
+  budgetAllowsProviderSteps: boolean,
+): Promise<{ allowed: true } | { allowed: false; reason: string }> {
+  if (!budgetAllowsProviderSteps) {
+    return { allowed: false, reason: "provider budget policy does not allow provider calls this tick" };
+  }
+  const control = await getAutomationControl();
+  if (!control.enabled) {
+    return {
+      allowed: false,
+      reason: `provider automation stop is active${control.reason ? ` (${control.reason})` : ""}`,
+    };
+  }
+  return { allowed: true };
+}
+
 export async function executeAgentRun(
   runId: number,
-  options: { maxSteps?: number } = {},
+  options: { maxSteps?: number; allowProviderSteps?: boolean } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
     return {
@@ -1065,13 +1235,17 @@ export async function executeAgentRun(
     return blockRunForBackend(runId);
   }
 
-  try {
-    await assertAutomationEnabled("agent run execution");
-  } catch (error) {
-    return blockRunForAutomationStop(
+  // Deterministic work is paused only by the pipeline control. A paused run stays
+  // queued (never terminal) so it resumes on its own when the pipeline is re-enabled.
+  const pipeline = await getPipelineControl();
+  if (!pipeline.enabled) {
+    return {
       runId,
-      error instanceof Error ? error.message : String(error),
-    );
+      status: existing.status,
+      terminal: false,
+      executedSteps: 0,
+      message: `Pipeline is paused${pipeline.reason ? `: ${pipeline.reason}` : ""}; run left queued.`,
+    };
   }
 
   const maxSteps = Math.min(Math.max(Math.floor(options.maxSteps ?? 1), 1), 10);
@@ -1079,6 +1253,22 @@ export async function executeAgentRun(
   let lastResult: AgentRunExecutionResult | null = null;
 
   for (let index = 0; index < maxSteps; index += 1) {
+    // Provider steps (paid model calls) additionally require the global automation
+    // stop to be clear and the caller to have provider budget for this tick.
+    const nextStepKey = await peekNextQueuedStepKey(runId);
+    if (nextStepKey && isProviderStep(nextStepKey)) {
+      const gate = await providerStepGate(options.allowProviderSteps ?? true);
+      if (!gate.allowed) {
+        return {
+          runId,
+          status: lastResult?.status ?? existing.status,
+          terminal: false,
+          executedSteps,
+          message: `Provider step "${nextStepKey}" is waiting: ${gate.reason}`,
+        };
+      }
+    }
+
     const prepared = await prepareNextAgenticStep(runId);
     if (prepared.kind === "missing") {
       return {
@@ -1131,23 +1321,43 @@ export async function executeAgentRun(
 export async function executeQueuedAgentRuns({
   runLimit = 2,
   maxStepsPerRun = 1,
+  allowProviderSteps = true,
   budgetPolicyId = null,
   maxProviderCallsPerRun = null,
   maxEstimatedCostMicrousd = null,
 }: {
   runLimit?: number;
   maxStepsPerRun?: number;
+  allowProviderSteps?: boolean;
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
+  // When provider steps cannot run this tick, skip runs whose next queued step is a
+  // provider step so they do not crowd deterministic work out of the run limit.
   const rows = await sql`
-    SELECT id
-      FROM agent_runs
-     WHERE run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
-       AND status = 'queued'
-     ORDER BY started_at ASC, id ASC
+    SELECT r.id
+      FROM agent_runs r
+     WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
+       AND r.status = 'queued'
+       AND (
+         ${allowProviderSteps}
+         OR NOT EXISTS (
+           SELECT 1
+             FROM agent_run_steps s
+            WHERE s.agent_run_id = r.id
+              AND s.status = 'queued'
+              AND s.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+              AND s.sequence = (
+                SELECT MIN(s2.sequence)
+                  FROM agent_run_steps s2
+                 WHERE s2.agent_run_id = r.id
+                   AND s2.status = 'queued'
+              )
+         )
+       )
+     ORDER BY r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
   const results: AgentRunExecutionResult[] = [];
@@ -1163,7 +1373,7 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun }));
+    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps }));
   }
   return { selected: rows.length, results };
 }
@@ -1412,8 +1622,13 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
     return { run: run ?? created.run, steps, reused: false };
   }
 
+  // Deterministic runs are always accepted (a pipeline pause leaves them queued).
+  // Runs that include a provider step are blocked at launch while the provider
+  // automation stop is active, so no paid work is queued behind a stop.
   try {
-    await assertAutomationEnabled("agent run launch");
+    if (input.steps.some((step) => isProviderStep(step.key))) {
+      await assertAutomationEnabled("agent run launch");
+    }
   } catch (error) {
     await blockRunForAutomationStop(
       created.run.id,

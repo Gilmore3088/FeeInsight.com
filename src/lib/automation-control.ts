@@ -8,6 +8,20 @@ export interface AutomationControlState {
   revision: number;
 }
 
+/**
+ * Provider error text that means billing/credits are exhausted. The provider circuit
+ * (ai-provider-usage.ts) and the resume guard below share this one list so they can
+ * never disagree about whether a failure is a billing failure.
+ */
+export const PROVIDER_CREDIT_ERROR_MARKERS = [
+  "credit balance is too low",
+  "insufficient credits",
+  "purchase credits",
+  "plans & billing",
+] as const;
+
+export const PROVIDER_CREDIT_ERROR_PATTERNS = PROVIDER_CREDIT_ERROR_MARKERS.map((marker) => `%${marker}%`);
+
 export class EmergencyStopActiveError extends Error {
   readonly control: AutomationControlState;
 
@@ -26,6 +40,16 @@ function mapControl(row: Record<string, unknown>): AutomationControlState {
     changedAt: new Date(row.changed_at as string | Date).toISOString(),
     revision: Number(row.revision ?? 1),
   };
+}
+
+export class PipelinePausedError extends Error {
+  readonly control: AutomationControlState;
+
+  constructor(control: AutomationControlState, context: string) {
+    super(`Pipeline is paused; ${context} is blocked${control.reason ? `: ${control.reason}` : ""}`);
+    this.name = "PipelinePausedError";
+    this.control = control;
+  }
 }
 
 export async function getAutomationControl(): Promise<AutomationControlState> {
@@ -48,6 +72,114 @@ export async function assertAutomationEnabled(context: string): Promise<Automati
   return control;
 }
 
+/**
+ * Operator pause for deterministic pipeline steps (discover, fetch, read, extract,
+ * verify, publish). Independent of the provider stop above. A missing row means the
+ * pipeline is enabled, so code can deploy before its migration.
+ */
+export async function getPipelineControl(): Promise<AutomationControlState> {
+  const [row] = await sql`
+    SELECT enabled, reason, changed_by, changed_at, revision
+      FROM automation_control
+     WHERE control_key = 'pipeline'
+  `;
+  if (!row) {
+    return {
+      enabled: true,
+      reason: null,
+      changedBy: "default",
+      changedAt: new Date(0).toISOString(),
+      revision: 0,
+    };
+  }
+  return mapControl(row);
+}
+
+export async function assertPipelineEnabled(context: string): Promise<AutomationControlState> {
+  const control = await getPipelineControl();
+  if (!control.enabled) {
+    throw new PipelinePausedError(control, context);
+  }
+  return control;
+}
+
+export async function setPipelineEnabled(
+  actor: string,
+  enabled: boolean,
+  reason: string,
+): Promise<AutomationControlState> {
+  const normalizedReason = reason.trim().slice(0, 500)
+    || (enabled ? "Pipeline resumed by an administrator" : "Pipeline paused by an administrator");
+
+  return withTransaction(async (tx) => {
+    const [row] = await tx`
+      INSERT INTO automation_control (control_key, enabled, reason, changed_by, changed_at, revision)
+      VALUES ('pipeline', ${enabled}, ${normalizedReason}, ${actor}, NOW(), 1)
+      ON CONFLICT (control_key) DO UPDATE
+         SET enabled = EXCLUDED.enabled,
+             reason = EXCLUDED.reason,
+             changed_by = EXCLUDED.changed_by,
+             changed_at = NOW(),
+             revision = automation_control.revision + 1
+      RETURNING enabled, reason, changed_by, changed_at, revision
+    `;
+    await tx`
+      INSERT INTO automation_control_audit
+        (action, reason, actor, active_job_count)
+      VALUES
+        (${enabled ? "pipeline_resume" : "pipeline_pause"}, ${normalizedReason}, ${actor}, 0)
+    `;
+    return mapControl(row);
+  });
+}
+
+/**
+ * Operator attestation that provider billing was fixed. Provider credit failures
+ * recorded before this moment no longer hold the circuit open or block resume.
+ */
+export async function recordBillingResolved(actor: string, reason: string): Promise<void> {
+  const normalizedReason = reason.trim().slice(0, 500) || "Provider billing resolved by an administrator";
+  await sql`
+    INSERT INTO automation_control_audit
+      (action, reason, actor, active_job_count)
+    VALUES
+      ('billing_resolved', ${normalizedReason}, ${actor}, 0)
+  `;
+}
+
+/**
+ * Most recent provider credit failure in the last 24 hours that is newer than the
+ * latest operator billing-resolved attestation. Null means the circuit is clear.
+ */
+export async function findOpenProviderCreditFailure(provider?: string): Promise<{
+  provider: string;
+  agentName: string;
+  operation: string;
+  createdAt: string;
+} | null> {
+  const [failure] = await sql`
+    SELECT provider, model, agent_name, operation, created_at
+      FROM ai_api_usage_events
+     WHERE status = 'failed'
+       AND (${provider ?? null}::text IS NULL OR provider = ${provider ?? null})
+       AND error_summary ILIKE ANY(${PROVIDER_CREDIT_ERROR_PATTERNS as string[]})
+       AND created_at >= NOW() - INTERVAL '24 hours'
+       AND created_at > COALESCE(
+         (SELECT MAX(created_at) FROM automation_control_audit WHERE action = 'billing_resolved'),
+         '-infinity'::timestamptz
+       )
+     ORDER BY created_at DESC
+     LIMIT 1
+  `;
+  if (!failure) return null;
+  return {
+    provider: String(failure.provider ?? "provider"),
+    agentName: String(failure.agent_name ?? "unknown agent"),
+    operation: String(failure.operation ?? "unknown operation"),
+    createdAt: new Date(failure.created_at as string | Date).toISOString(),
+  };
+}
+
 export async function engageEmergencyStop(
   actor: string,
   reason: string,
@@ -59,7 +191,7 @@ export async function engageEmergencyStop(
     const [active] = await tx`
       SELECT COUNT(*)::int AS count
         FROM agent_runs
-       WHERE run_kind IN ('workflow', 'workflow_lane', 'report', 'manual_repair', 'dry_run')
+       WHERE run_kind IN ('workflow', 'workflow_lane', 'state_agent', 'report', 'manual_repair', 'dry_run')
          AND status IN ('queued', 'running', 'cancel_requested')
     `;
     const [row] = await tx`
@@ -84,22 +216,10 @@ export async function engageEmergencyStop(
 }
 
 async function assertNoRecentProviderCreditFailure(): Promise<void> {
-  const [failure] = await sql`
-    SELECT provider, model, agent_name, operation, created_at
-      FROM ai_api_usage_events
-     WHERE status = 'failed'
-       AND error_summary ILIKE '%credit balance is too low%'
-       AND created_at >= NOW() - INTERVAL '24 hours'
-     ORDER BY created_at DESC
-     LIMIT 1
-  `;
+  const failure = await findOpenProviderCreditFailure();
   if (!failure) return;
-  const provider = String(failure.provider ?? "provider");
-  const agent = String(failure.agent_name ?? "unknown agent");
-  const operation = String(failure.operation ?? "unknown operation");
-  const seenAt = new Date(failure.created_at as string | Date).toISOString();
   throw new Error(
-    `Cannot resume automation: latest ${provider} credit-balance failure was ${seenAt} on ${agent}.${operation}. Fix provider billing or move this route off the failing provider before resuming.`,
+    `Cannot resume automation: latest ${failure.provider} credit-balance failure was ${failure.createdAt} on ${failure.agentName}.${failure.operation}. Fix provider billing and record "billing resolved", or move this route off the failing provider before resuming.`,
   );
 }
 

@@ -153,12 +153,23 @@ function operatorMode({
     };
   }
 
-  if (!center.automation.enabled) {
+  if (!center.pipeline.enabled) {
     return {
       tone: "warning" as const,
       label: "Paused",
-      title: "Automation is stopped",
-      detail: center.automation.reason ?? "Provider-backed workers are held by the global safety control.",
+      title: "Pipeline is paused",
+      detail: center.pipeline.reason ?? "Deterministic pipeline steps are held by the operator pause.",
+      action: "Review pause",
+      href: "#atlas-safety",
+    };
+  }
+
+  if (!center.automation.enabled) {
+    return {
+      tone: "warning" as const,
+      label: "Provider stop",
+      title: "Provider automation is stopped",
+      detail: center.automation.reason ?? "Paid AI provider calls are held by the global safety control; deterministic steps continue.",
       action: "Review stop",
       href: "#atlas-safety",
     };
@@ -351,11 +362,14 @@ export default async function AtlasCommandPage() {
     && center.agentHealth.errors24h === 0
     && stateLaneDispatch.totalCriticalPublicFindings === 0
     && center.automation.enabled
+    && center.pipeline.enabled
     && center.provider.status === "ready";
   const healthStatusText = healthy
     ? "Automation and scheduled systems are healthy"
-    : !center.automation.enabled
-      ? "Automation is stopped"
+    : !center.pipeline.enabled
+      ? "Pipeline is paused"
+      : !center.automation.enabled
+      ? "Provider automation is stopped"
       : center.agentHealth.errors24h > 0
         ? `${center.agentHealth.errors24h.toLocaleString()} agent failures need attention`
         : stateLaneDispatch.totalCriticalPublicFindings > 0
@@ -375,10 +389,10 @@ export default async function AtlasCommandPage() {
             </p>
           </div>
           <AtlasRunControl
-            disabled={!center.automation.enabled || !execution.enabled || center.activeJobs.some((job) => job.agent === "atlas")}
+            disabled={!center.pipeline.enabled || !execution.enabled || center.activeJobs.some((job) => job.agent === "atlas")}
             disabledReason={
-              !center.automation.enabled
-                ? "Safety stop is active."
+              !center.pipeline.enabled
+                ? "Pipeline is paused."
                 : !execution.enabled
                   ? execution.detail
                   : center.activeJobs.some((job) => job.agent === "atlas")
@@ -398,6 +412,10 @@ export default async function AtlasCommandPage() {
         changedBy={center.automation.changedBy}
         changedAtLabel={dateTime(center.automation.changedAt)}
         activeJobCount={center.activeJobs.length}
+        pipelineEnabled={center.pipeline.enabled}
+        pipelineReason={center.pipeline.reason}
+        pipelineChangedBy={center.pipeline.changedBy}
+        pipelineChangedAtLabel={dateTime(center.pipeline.changedAt)}
       />
 
       <AtlasOperatorPath
