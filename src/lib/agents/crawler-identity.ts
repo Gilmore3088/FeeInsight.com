@@ -4,13 +4,13 @@ import { SITE_DOMAIN } from "@/lib/constants";
 export type CrawlerAgent = "Magellan" | "Rosetta";
 
 export const CRAWLER_PRODUCT_TOKEN = "FeeInsightBot";
-export const CRAWLER_INFO_URL = `https://${SITE_DOMAIN}/bot`;
+export const CRAWLER_INFO_URL = `https://${SITE_DOMAIN}/contact`;
 
 /**
  * The identity every outbound pipeline fetch presents. Sites match the shared
  * product token (FeeInsightBot) in robots.txt and allowlists; the bracketed agent
- * name tells anyone reading their logs which agent made the request. Site operators
- * can read what the bot does and how to reach us at /bot.
+ * name tells anyone reading their logs which agent made the request. The URL points
+ * site operators to the public contact page.
  */
 export function crawlerUserAgent(agent: CrawlerAgent): string {
   return `${CRAWLER_PRODUCT_TOKEN}/1.0 (${agent}; +${CRAWLER_INFO_URL})`;

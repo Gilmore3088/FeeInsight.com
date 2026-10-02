@@ -233,8 +233,8 @@ on current tables:
 You attach an external uptime monitor to it.
 
 **0.7 Hygiene.**
-- Change the User-Agent to `FeeInsightBot/1.0 (+https://feeinsight.com/bot)` and add a
-  `/bot` page.
+- Change the User-Agent to `FeeInsightBot/1.0 (<Agent>; +https://feeinsight.com/contact)`.
+  No public `/bot` page, by owner decision.
 - Make `brand-kill` catch the old UA.
 - Correct the CLAUDE.md and `darwin/AGENTS.md` claims.
 

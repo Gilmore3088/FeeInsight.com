@@ -20,7 +20,7 @@ Tracked in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`.
 | R-O3 (part 1) job-health rebuilt on the ledger and tick audit | Fixed in Phase 0; an external monitor still needs attaching |
 | R-D1 median string bug, plus never serving a stale `fee_index_cache` | Fixed in Phase 0 |
 | R-H1 (part 1) CI green; tsc, lint and the full test suite added to CI | Fixed in Phase 0 |
-| R-H4 crawler User-Agent and `/bot` page | Fixed in Phase 0 |
+| R-H4 crawler User-Agent (`FeeInsightBot/1.0 (<Agent>; +https://feeinsight.com/contact)`) | Fixed in Phase 0; no separate `/bot` page, by owner decision |
 | Everything else | Phases 1–3 |
 
 ---
