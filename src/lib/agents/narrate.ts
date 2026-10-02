@@ -50,6 +50,12 @@ export function narrateStepFinished(
     case "fetch": {
       const processed = n(detail, "processed_institutions");
       if (processed === 0) return `Checked fee schedules ${scope}; none were due for a refresh.`;
+      if (n(detail, "unchanged_documents") > 0) {
+        return `Checked ${count(processed, "fee schedule")} ${scope}: ${n(detail, "fetched_documents").toLocaleString("en-US")} new, ${n(detail, "unchanged_documents").toLocaleString("en-US")} unchanged${joinParts([
+          n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
+          n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
+        ]).replace(/^: /, ", ")}.`;
+      }
       return `Downloaded ${count(n(detail, "fetched_documents"), "fee schedule")} ${scope}${joinParts([
         n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
         n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
@@ -62,6 +68,7 @@ export function narrateStepFinished(
         n(detail, "needs_ocr") > 0 && `${n(detail, "needs_ocr")} are scans that need OCR`,
         n(detail, "failed_reads") > 0 && `${n(detail, "failed_reads")} failed`,
         n(detail, "empty_documents") > 0 && `${n(detail, "empty_documents")} were empty`,
+        n(detail, "skipped_known_failures") > 0 && `${n(detail, "skipped_known_failures")} skipped (failed before, unchanged since)`,
       ])}.`;
     }
     case "extract": {
@@ -69,6 +76,7 @@ export function narrateStepFinished(
       if (processed === 0) return `Had no new documents to pull fees from ${scope}.`;
       return `Pulled ${count(n(detail, "inserted_raw_fee_observations"), "fee")} from ${count(processed, "document")} ${scope}${joinParts([
         n(detail, "skipped_fee_candidates") > 0 && `${n(detail, "skipped_fee_candidates")} lines set aside`,
+        n(detail, "skipped_known_inputs") > 0 && `${n(detail, "skipped_known_inputs")} documents already done`,
       ])}.`;
     }
     case "classify":

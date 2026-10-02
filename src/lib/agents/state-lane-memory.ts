@@ -395,6 +395,11 @@ export async function syncStateLaneProfiles(
         source_kind = CASE
           WHEN public.institution_source_profiles.locked_by_correction
             THEN public.institution_source_profiles.source_kind
+          -- Rosetta learned from the bytes that this PDF is a scan; the URL-based guess
+          -- here must not flip it back to 'pdf' (and out of the OCR backlog).
+          WHEN public.institution_source_profiles.source_kind = 'scanned_pdf'
+               AND EXCLUDED.source_kind IN ('pdf', 'unknown')
+            THEN public.institution_source_profiles.source_kind
           ELSE EXCLUDED.source_kind
         END,
         read_strategy = CASE

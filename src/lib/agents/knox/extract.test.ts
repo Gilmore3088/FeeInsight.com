@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, runKnoxExtract } from "./extract";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -144,5 +144,85 @@ describe("Knox agentic extraction", () => {
     const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
     expect(unsafeSql).toContain("JOIN institution_sources inst ON inst.id = adt.institution_id");
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
+  });
+
+  it("never extracts the same text twice, even under another document id", async () => {
+    const db = createDbMock([]);
+
+    await runKnoxExtract({ runId: 105, db: asExtractDb(db) });
+
+    const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(unsafeSql).toContain("prior.text_hash = adt.text_hash");
+  });
+
+  describe("with the learning core", () => {
+    function learningDb(rows: Array<Record<string, unknown>>): DbMock {
+      const db = createDbMock(rows);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("INSERT INTO raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 900 }]);
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    function attemptValues(db: DbMock): unknown[][] {
+      return db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))
+        .map((call) => call.slice(1));
+    }
+
+    it("records an attempt with its yield and excludes extracted text hashes in SQL", async () => {
+      const db = learningDb([textArtifact]);
+
+      const result = await runKnoxExtract({ runId: 106, stepId: 11, db: asExtractDb(db) });
+
+      expect(result).toMatchObject({ learning: true, insertedFees: 3, outcomes: { ok: 1 } });
+      expect(attemptValues(db)[0]).toEqual(
+        expect.arrayContaining([42, 501, "extract", KNOX_EXTRACT_STRATEGY.strategy, "text-hash", "ok", 3, 106, 11]),
+      );
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("FROM pipeline_attempts pa");
+      expect(query).toContain("pa.input_fingerprint = adt.text_hash");
+      expect(params).toEqual(expect.arrayContaining([KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version]));
+    });
+
+    it("flags a yield far below the institution's usual fee count as low_yield", async () => {
+      const db = learningDb([{ ...textArtifact, expected_fee_count: 40 }]);
+
+      const result = await runKnoxExtract({ runId: 107, db: asExtractDb(db) });
+
+      expect(result.results[0].attemptOutcome).toBe("low_yield");
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["low_yield"]));
+    });
+
+    it("records no_candidates so the same text is not retried with this version", async () => {
+      const db = learningDb([{ ...textArtifact, normalized_text: "Rates effective today\nFree online banking" }]);
+
+      const result = await runKnoxExtract({ runId: 108, db: asExtractDb(db) });
+
+      expect(result.outcomes).toEqual({ no_candidates: 1 });
+      const playbookUpdate = db.mock.calls.find((call) => templateText(call[0]).includes("do_not_retry = "));
+      expect(JSON.parse(String(playbookUpdate?.[4]))).toEqual([
+        expect.objectContaining({ stage: "extract", fingerprint: "text-hash", outcome: "no_candidates" }),
+      ]);
+    });
+
+    it("skips a text the playbook already marked as failed for this version", async () => {
+      const db = learningDb([
+        {
+          ...textArtifact,
+          do_not_retry: [
+            { stage: "extract", strategy: "extract.rules", version: 1, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
+          ],
+        },
+      ]);
+
+      const result = await runKnoxExtract({ runId: 109, db: asExtractDb(db) });
+
+      expect(result).toMatchObject({ skippedKnownInputs: 1, processedDocuments: 0, insertedFees: 0 });
+      expect(attemptValues(db)).toHaveLength(0);
+    });
   });
 });

@@ -317,6 +317,7 @@ async function executeAgenticStep(
     case "fetch": {
       const fetched = await runMagellanFetch({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["fetch_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
@@ -324,16 +325,19 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
+        summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
         detail: {
           selected_institutions: fetched.selected,
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
+          unchanged_documents: fetched.unchanged,
           failed_fetches: fetched.failed,
           skipped_fetches: fetched.skipped,
           fetched_bytes: fetched.bytes,
           fetch_limit: fetched.limit,
           dry_run: fetched.dryRun,
+          outcomes: fetched.outcomes,
+          learning_log: fetched.learning,
           sample_results: fetched.results.slice(0, 10).map((result) => ({
             institution_id: result.institutionId,
             outcome: result.outcome,
@@ -341,6 +345,7 @@ async function executeAgenticStep(
             status_code: result.statusCode,
             document_type: result.documentType,
             content_hash: result.contentHash,
+            attempt_outcome: result.attemptOutcome,
             reason: result.reason,
           })),
         },
@@ -349,6 +354,7 @@ async function executeAgenticStep(
     case "read": {
       const read = await runRosettaRead({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["read_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
@@ -365,6 +371,9 @@ async function executeAgenticStep(
           needs_ocr: read.needsOcr,
           failed_reads: read.failed,
           skipped_reads: read.skipped,
+          skipped_known_failures: read.skippedKnownFailures,
+          outcomes: read.outcomes,
+          learning_log: read.learning,
           read_chars: read.chars,
           read_limit: read.limit,
           dry_run: read.dryRun,
@@ -377,6 +386,8 @@ async function executeAgenticStep(
             document_type: result.documentType,
             content_type: result.contentType,
             char_count: result.charCount,
+            attempt_outcome: result.attemptOutcome,
+            format: result.format,
             error: result.error,
           })),
         },
@@ -385,6 +396,7 @@ async function executeAgenticStep(
     case "extract": {
       const extraction = await runKnoxExtract({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["extract_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
@@ -400,6 +412,9 @@ async function executeAgenticStep(
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
           skipped_fee_candidates: extraction.skippedFees,
+          skipped_known_inputs: extraction.skippedKnownInputs,
+          outcomes: extraction.outcomes,
+          learning_log: extraction.learning,
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
           sample_results: extraction.results.slice(0, 10).map((result) => ({

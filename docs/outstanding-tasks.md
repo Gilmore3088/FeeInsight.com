@@ -35,6 +35,7 @@ and the improvement loop), Phase 3 (paid extraction under a $300/month cap).
 
 | Owner | Shipped |
 |---|---|
+| Learning core (Phase 1a) | `pipeline_attempts` attempt log, the per-institution playbook on `institution_source_profiles`, and the strategy router (`src/lib/agents/learning/`). Magellan sends conditional GETs and records `unchanged` instead of inserting duplicate documents. Rosetta detects formats from bytes and marks thin-text PDFs `scanned_pdf`. Knox never re-extracts the same text with the same extractor version. Migration `20270102020000_learning_core.sql`. |
 | Atlas | Visible run launch receipts plus pickup/stale status on `/admin/atlas/status`. |
 | Magellan | Rescue/fetch batches rotate through retry windows instead of retrying the same failed rows. |
 | Provider boundary | Recent Anthropic credit-balance failures block new calls before provider execution and record visible `blocked` usage events. |

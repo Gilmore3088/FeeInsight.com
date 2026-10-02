@@ -8,6 +8,22 @@ import {
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
+import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import {
+  detectFormat,
+  documentTypeForFormat,
+  isLikelyScannedPdf,
+  type DocumentFormat,
+  type PlaybookFormat,
+} from "@/lib/agents/learning/format";
+import {
+  classifyFetchFailure,
+  countOutcomes,
+  PERMANENT_OUTCOMES,
+  type AttemptOutcome,
+} from "@/lib/agents/learning/outcomes";
+import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -26,9 +42,15 @@ interface ReadCandidateRow {
   institution_name: string;
   document_url: string | null;
   content_hash: string | null;
+  /** Playbook columns, present once the learning-core migration is applied. */
+  format?: string | null;
+  best_strategy?: unknown;
+  strategy_stats?: unknown;
+  do_not_retry?: unknown;
 }
 
-type ReadStatus = "completed" | "empty" | "needs_ocr" | "failed" | "skipped";
+/** `known_failure` is the router's skip: nothing is fetched again or written. */
+type ReadStatus = "completed" | "empty" | "needs_ocr" | "failed" | "skipped" | "known_failure";
 
 interface PdfTextExtraction {
   text: string;
@@ -49,10 +71,16 @@ interface ReadResult {
   textHash: string | null;
   charCount: number;
   error: string | null;
+  attemptOutcome: AttemptOutcome | null;
+  strategy: string | null;
+  format: PlaybookFormat | null;
+  routerReason: string | null;
+  durationMs: number;
 }
 
 export interface RunRosettaReadOptions {
   runId: number;
+  stepId?: number;
   limit?: number;
   institutionId?: number;
   stateCode?: string;
@@ -70,9 +98,13 @@ export interface RunRosettaReadResult {
   needsOcr: number;
   failed: number;
   skipped: number;
+  /** Inputs the router refused because they already failed with this reader version. */
+  skippedKnownFailures: number;
   chars: number;
   limit: number;
   dryRun: boolean;
+  learning: boolean;
+  outcomes: Partial<Record<AttemptOutcome, number>>;
   results: ReadResult[];
 }
 
@@ -92,15 +124,6 @@ function normalizeHttpUrl(value: string | null): string | null {
   } catch {
     return null;
   }
-}
-
-function detectDocumentType(url: string, contentType: string | null): string {
-  const lowerType = contentType?.toLowerCase() ?? "";
-  const lowerUrl = url.toLowerCase();
-  if (lowerType.includes("application/pdf") || lowerUrl.endsWith(".pdf")) return "pdf";
-  if (lowerType.includes("text/html")) return "html";
-  if (lowerType.includes("text/plain")) return "text";
-  return "unknown";
 }
 
 function normalizeWhitespace(value: string): string {
@@ -196,6 +219,23 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
   }
 }
 
+/** Read strategies by detected format. Bump ROSETTA_READ_VERSION when any of them changes. */
+export const ROSETTA_READ_VERSION = 1;
+const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
+  pdf: [{ strategy: "read.pdf_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["pdf_text"] }],
+  html: [{ strategy: "read.html_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["html_static"] }],
+  text: [{ strategy: "read.plain_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["text"] }],
+  docx: [],
+  other: [],
+};
+
+function pdfFailureOutcome(error: unknown): AttemptOutcome {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/timed out/i.test(message)) return "timeout";
+  if (/too many pages/i.test(message)) return "too_large";
+  return "parse_error";
+}
+
 async function readCandidate(
   row: ReadCandidateRow,
   fetchImpl: Fetcher,
@@ -204,206 +244,177 @@ async function readCandidate(
   result: ReadResult;
   normalizedText: string | null;
 }> {
-  const sourceDocumentId = Number(row.source_document_id);
-  const institutionId = Number(row.institution_id);
-  const institutionName = String(row.institution_name);
+  const startedAt = Date.now();
   const sourceUrl = normalizeHttpUrl(row.document_url);
+  const base: Omit<ReadResult, "status" | "error" | "attemptOutcome" | "durationMs"> = {
+    sourceDocumentId: Number(row.source_document_id),
+    institutionId: Number(row.institution_id),
+    institutionName: String(row.institution_name),
+    sourceUrl: sourceUrl ?? row.document_url,
+    documentType: null,
+    contentType: null,
+    sourceHash: row.content_hash,
+    textHash: null,
+    charCount: 0,
+    strategy: null,
+    format: null,
+    routerReason: null,
+  };
+  const finish = (
+    fields: Partial<ReadResult> & Pick<ReadResult, "status" | "error" | "attemptOutcome">,
+    normalizedText: string | null = null,
+  ) => ({
+    normalizedText,
+    result: { ...base, ...fields, durationMs: Date.now() - startedAt },
+  });
+
   if (!sourceUrl) {
-    return {
-      normalizedText: null,
-      result: {
-        sourceDocumentId,
-        institutionId,
-        institutionName,
-        sourceUrl: row.document_url,
-        status: "skipped",
-        documentType: null,
-        contentType: null,
-        sourceHash: row.content_hash,
-        textHash: null,
-        charCount: 0,
-        error: "Invalid or missing document_url",
-      },
-    };
+    return finish({ status: "skipped", error: "Invalid or missing document_url", attemptOutcome: "invalid_url" });
   }
 
   let response: Response;
   try {
     response = await fetchWithTimeout(fetchImpl, sourceUrl);
   } catch (error) {
-    return {
-      normalizedText: null,
-      result: {
-        sourceDocumentId,
-        institutionId,
-        institutionName,
-        sourceUrl,
-        status: "failed",
-        documentType: null,
-        contentType: null,
-        sourceHash: row.content_hash,
-        textHash: null,
-        charCount: 0,
-        error: `Read fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    };
+    return finish({
+      status: "failed",
+      error: `Read fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+      attemptOutcome: classifyFetchFailure(null, error),
+    });
   }
 
-  const contentType = response.headers.get("content-type");
-  const documentType = detectDocumentType(response.url || sourceUrl, contentType);
+  base.contentType = response.headers.get("content-type");
+  const finalUrl = response.url || sourceUrl;
+  base.documentType = documentTypeForFormat(detectFormat(null, base.contentType, finalUrl));
   if (!response.ok) {
-    return {
-      normalizedText: null,
-      result: {
-        sourceDocumentId,
-        institutionId,
-        institutionName,
-        sourceUrl,
-        status: "failed",
-        documentType,
-        contentType,
-        sourceHash: row.content_hash,
-        textHash: null,
-        charCount: 0,
-        error: `HTTP ${response.status}`,
-      },
-    };
+    return finish({ status: "failed", error: `HTTP ${response.status}`, attemptOutcome: classifyFetchFailure(response.status) });
   }
 
   const contentLength = Number(response.headers.get("content-length") ?? 0);
   if (contentLength > MAX_TEXT_DOCUMENT_BYTES) {
-    return {
-      normalizedText: null,
-      result: {
-        sourceDocumentId,
-        institutionId,
-        institutionName,
-        sourceUrl,
-        status: "failed",
-        documentType,
-        contentType,
-        sourceHash: row.content_hash,
-        textHash: null,
-        charCount: 0,
-        error: `Document too large for Rosetta text read: ${contentLength} bytes`,
-      },
-    };
+    return finish({
+      status: "failed",
+      error: `Document too large for Rosetta text read: ${contentLength} bytes`,
+      attemptOutcome: "too_large",
+    });
   }
 
-  if (documentType === "pdf") {
-    let bytes: Uint8Array;
-    try {
-      bytes = new Uint8Array(await response.arrayBuffer());
-    } catch (error) {
-      return {
-        normalizedText: null,
-        result: {
-          sourceDocumentId,
-          institutionId,
-          institutionName,
-          sourceUrl,
-          status: "failed",
-          documentType,
-          contentType,
-          sourceHash: row.content_hash,
-          textHash: null,
-          charCount: 0,
-          error: `PDF read failed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      };
-    }
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await response.arrayBuffer());
+  } catch (error) {
+    return finish({
+      status: "failed",
+      error: `Read failed: ${error instanceof Error ? error.message : String(error)}`,
+      attemptOutcome: classifyFetchFailure(null, error),
+    });
+  }
+  if (bytes.byteLength > MAX_TEXT_DOCUMENT_BYTES) {
+    return finish({
+      status: "failed",
+      error: `Document too large for Rosetta text read: ${bytes.byteLength} bytes`,
+      attemptOutcome: "too_large",
+    });
+  }
 
-    if (bytes.byteLength > MAX_TEXT_DOCUMENT_BYTES) {
-      return {
-        normalizedText: null,
-        result: {
-          sourceDocumentId,
-          institutionId,
-          institutionName,
-          sourceUrl,
-          status: "failed",
-          documentType,
-          contentType,
-          sourceHash: row.content_hash,
-          textHash: null,
-          charCount: 0,
-          error: `Document too large for Rosetta text read: ${bytes.byteLength} bytes`,
-        },
-      };
+  // The bytes, not the URL or the declared type, decide how to read the document.
+  const format = detectFormat(bytes, base.contentType, finalUrl);
+  base.documentType = documentTypeForFormat(format);
+  const decision = chooseStrategy({
+    stage: "read",
+    playbook: playbookFromRow(row),
+    fingerprint: row.content_hash,
+    candidates: READ_STRATEGIES[format],
+  });
+  if (decision.kind === "skip") {
+    if (decision.reason === "known_failure") {
+      return finish({ status: "known_failure", error: decision.detail, attemptOutcome: null, routerReason: decision.detail });
     }
+    return finish({
+      status: "failed",
+      error: `No reader for ${format === "docx" ? "Word" : format} documents yet`,
+      attemptOutcome: "unsupported_format",
+      format: format === "docx" ? "docx" : "other",
+      routerReason: decision.detail,
+    });
+  }
+  base.strategy = decision.strategy;
+  base.routerReason = decision.reason;
 
+  if (format === "pdf") {
     try {
       const extracted = await pdfTextExtractor(bytes);
       const normalizedText = normalizeWhitespace(extracted.text);
-      const status: ReadStatus = normalizedText.length > 0 ? "completed" : "needs_ocr";
-      return {
-        normalizedText,
-        result: {
-          sourceDocumentId,
-          institutionId,
-          institutionName,
-          sourceUrl,
-          status,
-          documentType,
-          contentType,
-          sourceHash: row.content_hash,
-          textHash: normalizedText.length > 0 ? hashText(normalizedText) : null,
+      if (normalizedText.length === 0 || isLikelyScannedPdf(normalizedText, extracted.totalPages)) {
+        return finish(
+          {
+            status: "needs_ocr",
+            charCount: normalizedText.length,
+            error:
+              normalizedText.length === 0
+                ? `No embedded PDF text found across ${extracted.totalPages} pages; OCR required`
+                : `Only ${normalizedText.length} characters of embedded text across ${extracted.totalPages} pages; likely a scan, OCR required`,
+            attemptOutcome: "scanned_pdf",
+            format: "pdf_scanned",
+          },
+          normalizedText,
+        );
+      }
+      return finish(
+        {
+          status: "completed",
+          textHash: hashText(normalizedText),
           charCount: normalizedText.length,
-          error:
-            status === "needs_ocr"
-              ? `No embedded PDF text found across ${extracted.totalPages} pages; OCR required`
-              : null,
+          error: null,
+          attemptOutcome: "ok",
+          format: "pdf_text",
         },
-      };
+        normalizedText,
+      );
     } catch (error) {
-      return {
-        normalizedText: null,
-        result: {
-          sourceDocumentId,
-          institutionId,
-          institutionName,
-          sourceUrl,
-          status: "failed",
-          documentType,
-          contentType,
-          sourceHash: row.content_hash,
-          textHash: null,
-          charCount: 0,
-          error: `PDF text extraction failed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      };
+      return finish({
+        status: "failed",
+        error: `PDF text extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+        attemptOutcome: pdfFailureOutcome(error),
+      });
     }
   }
 
-  const raw = await response.text();
-  const normalizedText =
-    documentType === "html" ? extractHtmlText(raw) : normalizeWhitespace(raw);
-  const status: ReadStatus = normalizedText.length > 0 ? "completed" : "empty";
-  return {
-    normalizedText,
-    result: {
-      sourceDocumentId,
-      institutionId,
-      institutionName,
-      sourceUrl,
-      status,
-      documentType,
-      contentType,
-      sourceHash: row.content_hash,
-      textHash: normalizedText.length > 0 ? hashText(normalizedText) : null,
+  const raw = new TextDecoder("utf-8").decode(bytes);
+  const normalizedText = format === "html" ? extractHtmlText(raw) : normalizeWhitespace(raw);
+  if (normalizedText.length === 0) {
+    return finish(
+      {
+        status: "empty",
+        error: "No readable text found",
+        // An HTML page with no text is almost always rendered by JavaScript.
+        attemptOutcome: format === "html" ? "js_required" : "empty",
+        format: format === "html" ? "html_js" : "text",
+      },
+      normalizedText,
+    );
+  }
+  return finish(
+    {
+      status: "completed",
+      textHash: hashText(normalizedText),
       charCount: normalizedText.length,
-      error: status === "empty" ? "No readable text found" : null,
+      error: null,
+      attemptOutcome: "ok",
+      format: format === "html" ? "html_static" : "text",
     },
-  };
+    normalizedText,
+  );
 }
 
 async function selectCandidates(
   db: SqlTag,
   limit: number,
+  learning: boolean,
   institutionId?: number,
   stateCode?: string,
 ): Promise<ReadCandidateRow[]> {
-  const params: Array<number | string> = [limit];
+  const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
   if (institutionId) {
     params.push(institutionId);
@@ -414,13 +425,32 @@ async function selectCandidates(
     params.push(normalizedState);
     filters.push(`AND upper(btrim(ct.state_code)) = $${params.length}`);
   }
+  let playbookColumns = "";
+  if (learning) {
+    // Skip inputs that already failed permanently with the current reader version.
+    params.push(ROSETTA_READ_VERSION, PERMANENT_OUTCOMES);
+    playbookColumns = `,
+             profile.format,
+             profile.best_strategy,
+             profile.strategy_stats,
+             profile.do_not_retry`;
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM pipeline_attempts pa
+            WHERE pa.stage = 'read'
+              AND pa.institution_id = cr.institution_id
+              AND pa.input_fingerprint = cr.content_hash
+              AND pa.strategy_version = $${params.length - 1}
+              AND pa.outcome = ANY($${params.length}::text[])
+         )`);
+  }
   return db.unsafe<ReadCandidateRow[]>(
     `
       SELECT cr.id AS source_document_id,
              cr.institution_id,
              ct.institution_name,
              cr.document_url,
-             cr.content_hash
+             cr.content_hash${playbookColumns}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -436,9 +466,12 @@ async function selectCandidates(
          AND NOT EXISTS (
            SELECT 1
              FROM agent_source_texts adt
-            WHERE adt.source_document_id = cr.id
-              AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
-              AND adt.status IN ('completed', 'empty', 'needs_ocr')
+            WHERE adt.status IN ('completed', 'empty', 'needs_ocr')
+              AND (
+                (adt.source_document_id = cr.id AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash)
+                -- The same bytes stored under another document id were already read.
+                OR (cr.content_hash IS NOT NULL AND adt.institution_id = cr.institution_id AND adt.source_hash = cr.content_hash)
+              )
          )
        ORDER BY cr.crawled_at DESC NULLS LAST, cr.id DESC
        LIMIT $1
@@ -576,7 +609,8 @@ export async function runRosettaRead(
   const pdfTextExtractor = options.pdfTextExtractor ?? extractPdfText;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
-  const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode);
+  const learning = !dryRun && (await learningSchemaReady(db));
+  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode);
 
   const results: ReadResult[] = [];
   for (const row of rows) {
@@ -586,7 +620,32 @@ export async function runRosettaRead(
       pdfTextExtractor,
     );
     results.push(result);
-    if (!dryRun) await recordReadResult(db, options.runId, result, normalizedText);
+    if (dryRun || result.status === "known_failure") continue;
+    await recordReadResult(db, options.runId, result, normalizedText);
+    if (learning && result.attemptOutcome) {
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId: result.sourceDocumentId,
+        stage: "read",
+        strategy: result.strategy ?? `read.${result.documentType ?? "unknown"}`,
+        version: ROSETTA_READ_VERSION,
+        fingerprint: result.sourceHash,
+        outcome: result.attemptOutcome,
+        yieldCount: result.charCount,
+        costMicrousd: 0,
+        durationMs: result.durationMs,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        format: result.format,
+        detail: {
+          url: result.sourceUrl,
+          document_type: result.documentType,
+          content_type: result.contentType,
+          router: result.routerReason,
+          error: result.error,
+        },
+      });
+    }
   }
 
   return {
@@ -597,9 +656,12 @@ export async function runRosettaRead(
     needsOcr: results.filter((result) => result.status === "needs_ocr").length,
     failed: results.filter((result) => result.status === "failed").length,
     skipped: results.filter((result) => result.status === "skipped").length,
+    skippedKnownFailures: results.filter((result) => result.status === "known_failure").length,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,
     dryRun,
+    learning,
+    outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     results,
   };
 }

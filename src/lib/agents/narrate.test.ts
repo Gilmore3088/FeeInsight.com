@@ -8,6 +8,24 @@ describe("narrateStepFinished", () => {
     }, "GA")).toBe("Downloaded 21 fee schedules in GA: 3 failed, 1 skipped.");
   });
 
+  it("leads with new vs unchanged once Magellan stops re-downloading duplicates", () => {
+    expect(narrateStepFinished("fetch", {
+      processed_institutions: 25, fetched_documents: 3, unchanged_documents: 21, failed_fetches: 1, skipped_fetches: 0,
+    }, "GA")).toBe("Checked 25 fee schedules in GA: 3 new, 21 unchanged, 1 failed.");
+    expect(narrateStepFinished("fetch", {
+      processed_institutions: 4, fetched_documents: 0, unchanged_documents: 4,
+    }, "GA")).toBe("Checked 4 fee schedules in GA: 0 new, 4 unchanged.");
+  });
+
+  it("mentions inputs skipped because they already failed or were already done", () => {
+    expect(narrateStepFinished("read", {
+      processed_documents: 5, text_artifacts: 3, skipped_known_failures: 2,
+    }, "TX")).toBe("Read 3 documents in TX: 2 skipped (failed before, unchanged since).");
+    expect(narrateStepFinished("extract", {
+      processed_text_artifacts: 4, inserted_raw_fee_observations: 40, skipped_known_inputs: 1,
+    }, "TX")).toBe("Pulled 40 fees from 4 documents in TX: 1 documents already done.");
+  });
+
   it("describes discovery results", () => {
     expect(narrateStepFinished("discover", {
       processed_institutions: 25, discovered_fee_urls: 7, retry_after: 2, dead_institutions: 1, needs_human: 0,
