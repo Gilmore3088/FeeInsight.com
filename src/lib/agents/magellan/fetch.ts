@@ -7,12 +7,18 @@ import {
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
+import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
+import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
 export const MAGELLAN_FETCH_DEFAULT_LIMIT = 25;
 export const MAGELLAN_FETCH_MAX_LIMIT = 50;
+
+/** The fetch strategy recorded in the attempt log; bump the version when its behavior changes. */
+export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 1 } as const;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
@@ -25,9 +31,19 @@ interface FetchCandidateRow {
   last_crawl_at: string | Date | null;
   consecutive_failures: number | string | null;
   profile_canonical_source_url?: string | null;
+  profile_last_source_hash?: string | null;
+  profile_last_document_id?: number | string | null;
 }
 
-type FetchOutcome = "success" | "failed" | "skipped";
+/** The last stored copy of an institution's fee document, for conditional requests. */
+interface PreviousDocument {
+  id: number | null;
+  contentHash: string | null;
+  etag: string | null;
+  lastModified: string | null;
+}
+
+type FetchOutcome = "success" | "unchanged" | "failed" | "skipped";
 
 interface FetchResult {
   institutionId: number;
@@ -41,10 +57,18 @@ interface FetchResult {
   contentHash: string | null;
   bytes: number;
   reason: string | null;
+  /** Typed outcome for the attempt log; null when no request was made. */
+  attemptOutcome: AttemptOutcome | null;
+  etag: string | null;
+  lastModified: string | null;
+  durationMs: number;
+  /** The existing document this fetch matched, when unchanged. */
+  previousDocumentId: number | null;
 }
 
 export interface RunMagellanFetchOptions {
   runId: number;
+  stepId?: number;
   limit?: number;
   institutionId?: number;
   stateCode?: string;
@@ -57,11 +81,16 @@ export interface RunMagellanFetchResult {
   selected: number;
   processed: number;
   succeeded: number;
+  /** Fetched fine, but the content matched the stored copy: no new document. */
+  unchanged: number;
   failed: number;
   skipped: number;
   bytes: number;
   limit: number;
   dryRun: boolean;
+  /** False until the learning-core migration is applied (no attempt log yet). */
+  learning: boolean;
+  outcomes: Partial<Record<AttemptOutcome, number>>;
   results: FetchResult[];
 }
 
@@ -84,30 +113,29 @@ function normalizeHttpUrl(value: string | null): string | null {
   }
 }
 
-function detectDocumentType(url: string, contentType: string | null): string {
-  const lowerType = contentType?.toLowerCase() ?? "";
-  const lowerUrl = url.toLowerCase();
-  if (lowerType.includes("application/pdf") || lowerUrl.endsWith(".pdf")) return "pdf";
-  if (lowerType.includes("text/html")) return "html";
-  if (lowerType.includes("text/plain")) return "text";
-  return "unknown";
-}
-
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Response> {
+async function fetchWithTimeout(
+  fetchImpl: Fetcher,
+  url: string,
+  previous: PreviousDocument | null,
+): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const headers: Record<string, string> = {
+    "User-Agent": crawlerUserAgent("Magellan"),
+    Accept: "text/html,application/pdf;q=0.9,text/plain;q=0.8,*/*;q=0.5",
+  };
+  // Conditional GET: a 304 means the stored copy is current and costs no download.
+  if (previous?.contentHash && previous.etag) headers["If-None-Match"] = previous.etag;
+  if (previous?.contentHash && previous.lastModified) headers["If-Modified-Since"] = previous.lastModified;
   try {
     return await fetchImpl(url, {
       signal: controller.signal,
       redirect: "follow",
-      headers: {
-        "User-Agent": crawlerUserAgent("Magellan"),
-        Accept: "text/html,application/pdf;q=0.9,text/plain;q=0.8,*/*;q=0.5",
-      },
+      headers,
     });
   } finally {
     clearTimeout(timeout);
@@ -117,111 +145,143 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
 async function fetchCandidate(
   row: FetchCandidateRow,
   fetchImpl: Fetcher,
+  previous: PreviousDocument | null,
 ): Promise<FetchResult> {
+  const startedAt = Date.now();
   const institutionId = Number(row.id);
   const institutionName = String(row.institution_name);
   const sourceUrl = normalizeHttpUrl(row.profile_canonical_source_url ?? row.fee_schedule_url);
+  const base = {
+    institutionId,
+    institutionName,
+    sourceUrl,
+    finalUrl: null as string | null,
+    statusCode: null as number | null,
+    contentType: null as string | null,
+    documentType: null as string | null,
+    contentHash: null as string | null,
+    bytes: 0,
+    etag: null as string | null,
+    lastModified: null as string | null,
+    previousDocumentId: null as number | null,
+  };
+  const finish = (fields: Partial<FetchResult> & Pick<FetchResult, "outcome" | "reason" | "attemptOutcome">): FetchResult => ({
+    ...base,
+    ...fields,
+    durationMs: Date.now() - startedAt,
+  });
+
   if (!sourceUrl) {
-    return {
-      institutionId,
-      institutionName,
+    return finish({
       outcome: "skipped",
       sourceUrl: row.fee_schedule_url,
-      finalUrl: null,
-      statusCode: null,
-      contentType: null,
-      documentType: null,
-      contentHash: null,
-      bytes: 0,
       reason: "Invalid or missing fee_schedule_url",
-    };
+      attemptOutcome: "invalid_url",
+    });
   }
 
   let response: Response;
   try {
-    response = await fetchWithTimeout(fetchImpl, sourceUrl);
+    response = await fetchWithTimeout(fetchImpl, sourceUrl, previous);
   } catch (error) {
-    return {
-      institutionId,
-      institutionName,
+    return finish({
       outcome: "failed",
-      sourceUrl,
-      finalUrl: null,
-      statusCode: null,
-      contentType: null,
-      documentType: null,
-      contentHash: null,
-      bytes: 0,
       reason: `Fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-    };
+      attemptOutcome: classifyFetchFailure(null, error),
+    });
   }
 
   const finalUrl = response.url || sourceUrl;
   const contentType = response.headers.get("content-type");
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
-  if (contentLength > MAX_DOCUMENT_BYTES) {
-    return {
-      institutionId,
-      institutionName,
-      outcome: "failed",
-      sourceUrl,
-      finalUrl,
-      statusCode: response.status,
-      contentType,
-      documentType: detectDocumentType(finalUrl, contentType),
-      contentHash: null,
-      bytes: 0,
-      reason: `Document too large: ${contentLength} bytes`,
-    };
-  }
-
-  if (!response.ok) {
-    return {
-      institutionId,
-      institutionName,
-      outcome: "failed",
-      sourceUrl,
-      finalUrl,
-      statusCode: response.status,
-      contentType,
-      documentType: detectDocumentType(finalUrl, contentType),
-      contentHash: null,
-      bytes: 0,
-      reason: `HTTP ${response.status}`,
-    };
-  }
-
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > MAX_DOCUMENT_BYTES) {
-    return {
-      institutionId,
-      institutionName,
-      outcome: "failed",
-      sourceUrl,
-      finalUrl,
-      statusCode: response.status,
-      contentType,
-      documentType: detectDocumentType(finalUrl, contentType),
-      contentHash: null,
-      bytes: buffer.byteLength,
-      reason: `Document too large: ${buffer.byteLength} bytes`,
-    };
-  }
-
-  const bytes = new Uint8Array(buffer);
-  return {
-    institutionId,
-    institutionName,
-    outcome: "success",
-    sourceUrl,
+  const headerFields = {
     finalUrl,
     statusCode: response.status,
     contentType,
-    documentType: detectDocumentType(finalUrl, contentType),
-    contentHash: sha256(bytes),
+    etag: response.headers.get("etag"),
+    lastModified: response.headers.get("last-modified"),
+  };
+
+  if (response.status === 304 && previous?.contentHash) {
+    return finish({
+      ...headerFields,
+      outcome: "unchanged",
+      contentHash: previous.contentHash,
+      previousDocumentId: previous.id,
+      reason: null,
+      attemptOutcome: "unchanged",
+    });
+  }
+
+  const declaredType = documentTypeForFormat(detectFormat(null, contentType, finalUrl));
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+  if (contentLength > MAX_DOCUMENT_BYTES) {
+    return finish({
+      ...headerFields,
+      outcome: "failed",
+      documentType: declaredType,
+      reason: `Document too large: ${contentLength} bytes`,
+      attemptOutcome: "too_large",
+    });
+  }
+
+  if (!response.ok) {
+    return finish({
+      ...headerFields,
+      outcome: "failed",
+      documentType: declaredType,
+      reason: `HTTP ${response.status}`,
+      attemptOutcome: classifyFetchFailure(response.status),
+    });
+  }
+
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await response.arrayBuffer();
+  } catch (error) {
+    return finish({
+      ...headerFields,
+      outcome: "failed",
+      documentType: declaredType,
+      reason: `Fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+      attemptOutcome: classifyFetchFailure(null, error),
+    });
+  }
+  if (buffer.byteLength > MAX_DOCUMENT_BYTES) {
+    return finish({
+      ...headerFields,
+      outcome: "failed",
+      documentType: declaredType,
+      bytes: buffer.byteLength,
+      reason: `Document too large: ${buffer.byteLength} bytes`,
+      attemptOutcome: "too_large",
+    });
+  }
+
+  const bytes = new Uint8Array(buffer);
+  const contentHash = sha256(bytes);
+  const documentType = documentTypeForFormat(detectFormat(bytes, contentType, finalUrl));
+  if (previous?.contentHash && previous.contentHash === contentHash) {
+    return finish({
+      ...headerFields,
+      outcome: "unchanged",
+      documentType,
+      contentHash,
+      bytes: bytes.byteLength,
+      previousDocumentId: previous.id,
+      reason: null,
+      attemptOutcome: "unchanged",
+    });
+  }
+
+  return finish({
+    ...headerFields,
+    outcome: "success",
+    documentType,
+    contentHash,
     bytes: bytes.byteLength,
     reason: null,
-  };
+    attemptOutcome: "ok",
+  });
 }
 
 async function selectCandidates(
@@ -239,7 +299,9 @@ async function selectCandidates(
              inst.asset_size,
              inst.last_crawl_at,
              inst.consecutive_failures,
-             profile.canonical_source_url AS profile_canonical_source_url
+             profile.canonical_source_url AS profile_canonical_source_url,
+             profile.last_source_hash AS profile_last_source_hash,
+             profile.last_successful_source_document_id AS profile_last_document_id
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
@@ -259,7 +321,9 @@ async function selectCandidates(
            inst.asset_size,
            inst.last_crawl_at,
            inst.consecutive_failures,
-           profile.canonical_source_url AS profile_canonical_source_url
+           profile.canonical_source_url AS profile_canonical_source_url,
+           profile.last_source_hash AS profile_last_source_hash,
+           profile.last_successful_source_document_id AS profile_last_document_id
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
@@ -290,18 +354,102 @@ async function selectCandidates(
   `;
 }
 
-async function recordFetchResult(db: SqlTag, result: FetchResult): Promise<void> {
-  const crawlStatus = result.outcome === "success" ? "success" : "failed";
-  const [sourceDocument] = await db`
-    INSERT INTO source_documents
-      (institution_id, status, document_url, document_path, content_hash,
-       fees_extracted, error_message, crawled_at, status_code)
-    VALUES
-      (${result.institutionId}, ${crawlStatus}, ${result.finalUrl ?? result.sourceUrl},
-       NULL, ${result.contentHash}, 0, ${result.reason}, NOW(), ${result.statusCode})
-    RETURNING id
+async function loadPreviousDocument(
+  db: SqlTag,
+  row: FetchCandidateRow,
+  learning: boolean,
+): Promise<PreviousDocument | null> {
+  const fromProfile: PreviousDocument | null = row.profile_last_source_hash
+    ? {
+        id: row.profile_last_document_id == null ? null : Number(row.profile_last_document_id),
+        contentHash: row.profile_last_source_hash,
+        etag: null,
+        lastModified: null,
+      }
+    : null;
+  if (!learning) return fromProfile;
+  const [latest] = await db`
+    SELECT id, content_hash, etag, last_modified
+      FROM source_documents
+     WHERE institution_id = ${Number(row.id)}
+       AND status = 'success'
+       AND content_hash IS NOT NULL
+     ORDER BY crawled_at DESC NULLS LAST, id DESC
+     LIMIT 1
   `;
-  const sourceDocumentId = sourceDocument?.id == null ? null : Number(sourceDocument.id);
+  if (!latest) return fromProfile;
+  return {
+    id: Number(latest.id),
+    contentHash: String(latest.content_hash),
+    etag: latest.etag == null ? null : String(latest.etag),
+    lastModified: latest.last_modified == null ? null : String(latest.last_modified),
+  };
+}
+
+/** Same content as the stored copy: touch it instead of inserting a duplicate document. */
+async function recordUnchanged(db: SqlTag, result: FetchResult, learning: boolean): Promise<void> {
+  if (learning && result.previousDocumentId != null) {
+    await db`
+      UPDATE source_documents
+         SET last_checked_at = NOW(),
+             etag = COALESCE(${result.etag}, etag),
+             last_modified = COALESCE(${result.lastModified}, last_modified)
+       WHERE id = ${result.previousDocumentId}
+    `;
+  }
+  await db`
+    UPDATE institution_sources
+       SET last_crawl_at = NOW(),
+           last_success_at = NOW(),
+           consecutive_failures = 0,
+           failure_reason = NULL,
+           failure_reason_note = NULL
+     WHERE id = ${result.institutionId}
+  `;
+  await db`
+    UPDATE institution_source_profiles
+       SET last_success_at = NOW(),
+           last_failure_at = NULL,
+           last_failure_reason = NULL,
+           consecutive_failures = 0,
+           updated_at = NOW()
+     WHERE institution_id = ${result.institutionId}
+  `;
+}
+
+async function insertSourceDocument(db: SqlTag, result: FetchResult, learning: boolean): Promise<number | null> {
+  const crawlStatus = result.outcome === "success" ? "success" : "failed";
+  const [sourceDocument] = learning
+    ? await db`
+        INSERT INTO source_documents
+          (institution_id, status, document_url, document_path, content_hash,
+           fees_extracted, error_message, crawled_at, status_code,
+           etag, last_modified, last_checked_at)
+        VALUES
+          (${result.institutionId}, ${crawlStatus}, ${result.finalUrl ?? result.sourceUrl},
+           NULL, ${result.contentHash}, 0, ${result.reason}, NOW(), ${result.statusCode},
+           ${result.etag}, ${result.lastModified}, NOW())
+        RETURNING id
+      `
+    : await db`
+        INSERT INTO source_documents
+          (institution_id, status, document_url, document_path, content_hash,
+           fees_extracted, error_message, crawled_at, status_code)
+        VALUES
+          (${result.institutionId}, ${crawlStatus}, ${result.finalUrl ?? result.sourceUrl},
+           NULL, ${result.contentHash}, 0, ${result.reason}, NOW(), ${result.statusCode})
+        RETURNING id
+      `;
+  return sourceDocument?.id == null ? null : Number(sourceDocument.id);
+}
+
+/** Writes the fetch result; returns the source document it created or matched. */
+async function recordFetchResult(db: SqlTag, result: FetchResult, learning: boolean): Promise<number | null> {
+  if (result.outcome === "unchanged") {
+    await recordUnchanged(db, result, learning);
+    return result.previousDocumentId;
+  }
+  const sourceDocumentId = await insertSourceDocument(db, result, learning);
 
   if (result.outcome === "success") {
     await db`
@@ -374,14 +522,14 @@ async function recordFetchResult(db: SqlTag, result: FetchResult): Promise<void>
         consecutive_failures = 0,
         updated_at = NOW()
     `;
-    return;
+    return sourceDocumentId;
   }
 
   await db`
     UPDATE institution_sources
        SET last_crawl_at = NOW(),
            consecutive_failures = COALESCE(consecutive_failures, 0) + 1,
-           failure_reason = 'agentic_fetch_failed',
+           failure_reason = ${`magellan_fetch_${result.attemptOutcome ?? "failed"}`},
            failure_reason_note = ${result.reason},
            failure_reason_updated_at = NOW()
      WHERE id = ${result.institutionId}
@@ -434,6 +582,7 @@ async function recordFetchResult(db: SqlTag, result: FetchResult): Promise<void>
       consecutive_failures = institution_source_profiles.consecutive_failures + 1,
       updated_at = NOW()
   `;
+  return sourceDocumentId;
 }
 
 export async function runMagellanFetch(
@@ -444,23 +593,52 @@ export async function runMagellanFetch(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode);
+  const learning = !dryRun && rows.length > 0 && (await learningSchemaReady(db));
 
   const results: FetchResult[] = [];
   for (const row of rows) {
-    const result = await fetchCandidate(row, fetchImpl);
+    const previous = await loadPreviousDocument(db, row, learning);
+    const result = await fetchCandidate(row, fetchImpl, previous);
     results.push(result);
-    if (!dryRun) await recordFetchResult(db, result);
+    if (dryRun) continue;
+    const sourceDocumentId = await recordFetchResult(db, result, learning);
+    if (learning && result.attemptOutcome) {
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId,
+        stage: "fetch",
+        strategy: MAGELLAN_FETCH_STRATEGY.strategy,
+        version: MAGELLAN_FETCH_STRATEGY.version,
+        fingerprint: result.contentHash ?? result.sourceUrl,
+        outcome: result.attemptOutcome,
+        yieldCount: result.outcome === "success" ? 1 : 0,
+        costMicrousd: 0,
+        durationMs: result.durationMs,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        detail: {
+          url: result.finalUrl ?? result.sourceUrl,
+          status_code: result.statusCode,
+          document_type: result.documentType,
+          bytes: result.bytes,
+          reason: result.reason,
+        },
+      });
+    }
   }
 
   return {
     selected: rows.length,
     processed: results.length,
     succeeded: results.filter((result) => result.outcome === "success").length,
+    unchanged: results.filter((result) => result.outcome === "unchanged").length,
     failed: results.filter((result) => result.outcome === "failed").length,
     skipped: results.filter((result) => result.outcome === "skipped").length,
     bytes: results.reduce((total, result) => total + result.bytes, 0),
     limit,
     dryRun,
+    learning,
+    outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     results,
   };
 }

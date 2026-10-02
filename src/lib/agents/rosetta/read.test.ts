@@ -107,9 +107,10 @@ describe("Rosetta agentic read", () => {
     ]);
     const pdfBytes = new Uint8Array([37, 80, 68, 70]);
     const fetchImpl = vi.fn().mockResolvedValueOnce(response(pdfBytes, "application/pdf"));
+    const pdfText = `Schedule of Fees\n\nMonthly maintenance fee $7\n\n${"Overdraft fee $35 per item. ".repeat(10).trim()}`;
     const pdfTextExtractor = vi.fn().mockResolvedValueOnce({
-      totalPages: 2,
-      text: "Schedule of Fees\n\nMonthly maintenance fee $7",
+      totalPages: 1,
+      text: pdfText,
     });
 
     const result = await runRosettaRead({
@@ -130,10 +131,8 @@ describe("Rosetta agentic read", () => {
       sourceDocumentId: 502,
       status: "completed",
       documentType: "pdf",
-      charCount: "Schedule of Fees\n\nMonthly maintenance fee $7".length,
-      textHash: createHash("sha256")
-        .update("Schedule of Fees\n\nMonthly maintenance fee $7")
-        .digest("hex"),
+      charCount: pdfText.length,
+      textHash: createHash("sha256").update(pdfText).digest("hex"),
       error: null,
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -257,5 +256,109 @@ describe("Rosetta agentic read", () => {
     expect(unsafeSql).toContain("upper(btrim(ct.state_code))");
     expect(unsafeSql).toContain("institution_source_profiles");
     expect(unsafeSql).toContain("profile.read_strategy IN ('pdf_text', 'html_dom')");
+  });
+
+  describe("with the learning core", () => {
+    function learningDb(rows: Array<Record<string, unknown>>): DbMock {
+      const db = vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("INSERT INTO agent_source_texts")) return Promise.resolve([{ id: 801 }]);
+        return Promise.resolve([]);
+      }) as DbMock;
+      db.unsafe = vi.fn((query: string) => {
+        if (query.includes("FROM source_documents")) return Promise.resolve(rows);
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    function attemptValues(db: DbMock): unknown[][] {
+      return db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))
+        .map((call) => call.slice(1));
+    }
+
+    it("reads a PDF served as octet-stream from an extensionless URL as a PDF", async () => {
+      const db = learningDb([{ ...htmlCandidate, document_url: "https://testbank.example/download?id=7" }]);
+      const bytes = new TextEncoder().encode("%PDF-1.4 binary");
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(bytes, "application/octet-stream"));
+      const text = "Overdraft fee $35 per item. ".repeat(12);
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text });
+
+      const result = await runRosettaRead({ runId: 301, stepId: 9, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(pdfTextExtractor).toHaveBeenCalledTimes(1);
+      expect(result.results[0]).toMatchObject({
+        status: "completed",
+        documentType: "pdf",
+        strategy: "read.pdf_text",
+        format: "pdf_text",
+        attemptOutcome: "ok",
+      });
+      expect(result).toMatchObject({ learning: true, outcomes: { ok: 1 } });
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining([42, 501, "read", "read.pdf_text", "source-hash", "ok", 301, 9]));
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("UPDATE institution_source_profiles");
+      expect(JSON.stringify(db.mock.calls)).toContain('"pdf_text"');
+    });
+
+    it("marks a PDF with only a header line per page as a scan", async () => {
+      const db = learningDb([htmlCandidate]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4"), "application/pdf"));
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({
+        totalPages: 3,
+        text: "First Bank Fee Schedule Page 1\nPage 2\nPage 3",
+      });
+
+      const result = await runRosettaRead({ runId: 302, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(result).toMatchObject({ needsOcr: 1, completed: 0, outcomes: { scanned_pdf: 1 } });
+      expect(result.results[0]).toMatchObject({ status: "needs_ocr", format: "pdf_scanned" });
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "scanned_pdf"]));
+    });
+
+    it("excludes known failures and already-read bytes in candidate SQL", async () => {
+      const db = learningDb([]);
+
+      await runRosettaRead({ runId: 303, db: asReadDb(db), fetchImpl: vi.fn() });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("FROM pipeline_attempts pa");
+      expect(query).toContain("pa.outcome = ANY(");
+      expect(query).toContain("adt.source_hash = cr.content_hash");
+      expect(query).toContain("profile.do_not_retry");
+      expect(params).toContainEqual(expect.arrayContaining(["scanned_pdf", "parse_error"]));
+    });
+
+    it("skips an input the playbook says already failed with this reader version", async () => {
+      const db = learningDb([
+        {
+          ...htmlCandidate,
+          do_not_retry: [
+            { stage: "read", strategy: "read.html_text", version: 1, fingerprint: "source-hash", outcome: "js_required", at: "2026-09-01T00:00:00Z" },
+          ],
+        },
+      ]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("<div id=app></div>"));
+
+      const result = await runRosettaRead({ runId: 304, db: asReadDb(db), fetchImpl });
+
+      expect(result).toMatchObject({ skippedKnownFailures: 1, completed: 0, failed: 0 });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).not.toContain("INSERT INTO agent_source_texts");
+      expect(attemptValues(db)).toHaveLength(0);
+    });
+
+    it("records Word documents as unsupported instead of reading them as text", async () => {
+      const db = learningDb([htmlCandidate]);
+      const docx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new TextEncoder().encode("word/document.xml")]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(docx, "application/octet-stream"));
+
+      const result = await runRosettaRead({ runId: 305, db: asReadDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ status: "failed", documentType: "docx", attemptOutcome: "unsupported_format" });
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "unsupported_format"]));
+    });
   });
 });

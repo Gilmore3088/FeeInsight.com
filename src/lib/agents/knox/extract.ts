@@ -1,11 +1,20 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
+
+/** The extractor recorded in the attempt log; bump the version when the rules change. */
+export const KNOX_EXTRACT_STRATEGY = { strategy: "extract.rules", version: 1 } as const;
+/** Below this share of the institution's usual fee count, an extraction is `low_yield`. */
+const LOW_YIELD_RATIO = 0.5;
 
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
@@ -24,6 +33,12 @@ interface TextArtifactRow {
   normalized_text: string;
   text_hash: string | null;
   institution_name?: string | null;
+  /** Playbook columns, present once the learning-core migration is applied. */
+  format?: string | null;
+  best_strategy?: unknown;
+  strategy_stats?: unknown;
+  do_not_retry?: unknown;
+  expected_fee_count?: number | string | null;
 }
 
 export interface ExtractedFeeCandidate {
@@ -44,10 +59,12 @@ export interface KnoxExtractDocumentResult {
   inserted: number;
   skipped: number;
   candidates: ExtractedFeeCandidate[];
+  attemptOutcome: AttemptOutcome | null;
 }
 
 export interface RunKnoxExtractOptions {
   runId: number;
+  stepId?: number;
   limit?: number;
   institutionId?: number;
   stateCode?: string;
@@ -61,8 +78,12 @@ export interface RunKnoxExtractResult {
   extractedFees: number;
   insertedFees: number;
   skippedFees: number;
+  /** Texts the router refused because this extractor version already failed on them. */
+  skippedKnownInputs: number;
   limit: number;
   dryRun: boolean;
+  learning: boolean;
+  outcomes: Partial<Record<AttemptOutcome, number>>;
   results: KnoxExtractDocumentResult[];
 }
 
@@ -263,6 +284,7 @@ function stableUuid(value: string): string {
 async function selectTextArtifacts(
   db: SqlTag,
   limit: number,
+  learning: boolean,
   institutionId?: number,
   stateCode?: string,
 ): Promise<TextArtifactRow[]> {
@@ -277,6 +299,29 @@ async function selectTextArtifacts(
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
   }
+  let playbookColumns = "";
+  let playbookJoin = "";
+  if (learning) {
+    // Same text + same extractor version = same answer: never extract it twice.
+    params.push(KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version);
+    playbookColumns = `,
+             profile.format,
+             profile.best_strategy,
+             profile.strategy_stats,
+             profile.do_not_retry,
+             profile.expected_fee_count`;
+    playbookJoin = `
+        LEFT JOIN institution_source_profiles profile ON profile.institution_id = adt.institution_id`;
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM pipeline_attempts pa
+            WHERE pa.stage = 'extract'
+              AND pa.institution_id = adt.institution_id
+              AND pa.input_fingerprint = adt.text_hash
+              AND pa.strategy = $${params.length - 1}
+              AND pa.strategy_version = $${params.length}
+         )`);
+  }
   return db.unsafe<TextArtifactRow[]>(
     `
       SELECT adt.id AS document_text_id,
@@ -285,9 +330,9 @@ async function selectTextArtifacts(
              adt.source_url,
              adt.normalized_text,
              adt.text_hash,
-             inst.institution_name
+             inst.institution_name${playbookColumns}
         FROM agent_source_texts adt
-        JOIN institution_sources inst ON inst.id = adt.institution_id
+        JOIN institution_sources inst ON inst.id = adt.institution_id${playbookJoin}
        WHERE adt.status = 'completed'
          AND adt.normalized_text IS NOT NULL
          AND adt.char_count > 0
@@ -297,6 +342,18 @@ async function selectTextArtifacts(
              FROM raw_fee_observations fr
             WHERE fr.source = 'knox'
               AND fr.source_document_id = adt.source_document_id
+         )
+         AND NOT EXISTS (
+           -- The same text under another document id was already extracted.
+           SELECT 1
+             FROM agent_source_texts prior
+             JOIN raw_fee_observations prior_fr
+               ON prior_fr.source = 'knox'
+              AND prior_fr.source_document_id = prior.source_document_id
+            WHERE adt.text_hash IS NOT NULL
+              AND prior.institution_id = adt.institution_id
+              AND prior.text_hash = adt.text_hash
+              AND prior.id <> adt.id
          )
        ORDER BY adt.updated_at DESC, adt.id DESC
        LIMIT $1
@@ -481,17 +538,40 @@ async function recordExtractionSignals(
   }
 }
 
+function extractionOutcome(extracted: number, expectedFeeCount: number | null): AttemptOutcome {
+  if (extracted === 0) return "no_candidates";
+  if (expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
+    return "low_yield";
+  }
+  return "ok";
+}
+
 export async function runKnoxExtract(
   options: RunKnoxExtractOptions,
 ): Promise<RunKnoxExtractResult> {
   const db = options.db ?? sql;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
-  const rows = await selectTextArtifacts(db, limit, options.institutionId, options.stateCode);
+  const learning = !dryRun && (await learningSchemaReady(db));
+  const rows = await selectTextArtifacts(db, limit, learning, options.institutionId, options.stateCode);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
 
   const results: KnoxExtractDocumentResult[] = [];
+  let skippedKnownInputs = 0;
   for (const row of rows) {
+    const playbook = playbookFromRow(row);
+    const decision = chooseStrategy({
+      stage: "extract",
+      playbook,
+      fingerprint: row.text_hash,
+      candidates: [{ ...KNOX_EXTRACT_STRATEGY, costMicrousd: 0 }],
+    });
+    if (decision.kind === "skip") {
+      skippedKnownInputs += 1;
+      continue;
+    }
+
+    const startedAt = Date.now();
     const candidates = extractCandidatesFromText(row.normalized_text);
     let inserted = 0;
     if (!dryRun) {
@@ -499,6 +579,7 @@ export async function runKnoxExtract(
         if (await insertCandidate(db, { runId: options.runId, row, candidate })) inserted += 1;
       }
     }
+    const attemptOutcome = extractionOutcome(candidates.length, playbook.expectedFeeCount);
     results.push({
       documentTextId: Number(row.document_text_id),
       sourceDocumentId: Number(row.source_document_id),
@@ -508,7 +589,30 @@ export async function runKnoxExtract(
       inserted: dryRun ? 0 : inserted,
       skipped: dryRun ? candidates.length : candidates.length - inserted,
       candidates,
+      attemptOutcome,
     });
+    if (learning) {
+      await recordAttempt(db, {
+        institutionId: Number(row.institution_id),
+        sourceDocumentId: Number(row.source_document_id),
+        stage: "extract",
+        strategy: decision.strategy,
+        version: decision.version,
+        fingerprint: row.text_hash,
+        outcome: attemptOutcome,
+        yieldCount: candidates.length,
+        costMicrousd: 0,
+        durationMs: Date.now() - startedAt,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        detail: {
+          document_text_id: Number(row.document_text_id),
+          inserted,
+          expected_fee_count: playbook.expectedFeeCount,
+          router: decision.reason,
+        },
+      });
+    }
   }
 
   if (!dryRun) {
@@ -521,8 +625,11 @@ export async function runKnoxExtract(
     extractedFees: results.reduce((total, result) => total + result.extracted, 0),
     insertedFees: results.reduce((total, result) => total + result.inserted, 0),
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
+    skippedKnownInputs,
     limit,
     dryRun,
+    learning,
+    outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     results,
   };
 }

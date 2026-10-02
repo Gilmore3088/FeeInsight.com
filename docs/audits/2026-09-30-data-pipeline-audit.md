@@ -21,6 +21,7 @@ Tracked in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`.
 | R-D1 median string bug, plus never serving a stale `fee_index_cache` | Fixed in Phase 0 |
 | R-H1 (part 1) CI green; tsc, lint and the full test suite added to CI | Fixed in Phase 0 |
 | R-H4 crawler User-Agent (`FeeInsightBot/1.0 (<Agent>; +https://feeinsight.com/contact)`) | Fixed in Phase 0; no separate `/bot` page, by owner decision |
+| Learning core L1–L3 (attempt log, playbook, router); content idempotency for fetch, read and extract (R-D4, part 1); byte-based format detection and the OCR flip-flop | Fixed in Phase 1a (`src/lib/agents/learning/`). Existing duplicates and the unique index come in a later dedupe workflow. |
 | Everything else | Phases 1–3 |
 
 ---
