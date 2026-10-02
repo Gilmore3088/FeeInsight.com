@@ -12,6 +12,7 @@ import {
   summarizePublicDiscoveryDiagnosis,
 } from "@/lib/agents/public-discovery";
 import { runRosettaRead } from "@/lib/agents/rosetta/read";
+import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import type {
@@ -28,6 +29,7 @@ import type {
 import {
   isProviderStep,
   MAX_STEP_ATTEMPTS,
+  PAUSE_EXEMPT_STEP_KEYS,
   PROVIDER_STEP_KEYS,
   STALE_RUNNING_STEP_MINUTES,
 } from "./types";
@@ -569,6 +571,22 @@ async function executeAgenticStep(
           systemic_candidates: diagnosis.systemicCandidates,
           top_issue: diagnosis.topIssue,
           state_code: stateCode ?? null,
+        },
+      };
+    }
+    case "daily-brief": {
+      const result = await runDailyBrief({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: result.deliveryStatus === "sent"
+          ? `Atlas emailed the daily brief to ${result.recipient}.`
+          : `Atlas wrote the daily brief but did not email it: ${result.deliveryReason ?? result.deliveryStatus}.`,
+        detail: {
+          delivery_status: result.deliveryStatus,
+          delivery_reason: result.deliveryReason,
+          subject: result.brief.subject,
+          lines: result.brief.lines,
+          funnel: result.funnel,
         },
       };
     }
@@ -1238,7 +1256,8 @@ export async function executeAgentRun(
   // Deterministic work is paused only by the pipeline control. A paused run stays
   // queued (never terminal) so it resumes on its own when the pipeline is re-enabled.
   const pipeline = await getPipelineControl();
-  if (!pipeline.enabled) {
+  const firstQueuedStep = pipeline.enabled ? null : await peekNextQueuedStepKey(runId);
+  if (!pipeline.enabled && !(firstQueuedStep && PAUSE_EXEMPT_STEP_KEYS.includes(firstQueuedStep))) {
     return {
       runId,
       status: existing.status,

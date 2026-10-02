@@ -76,3 +76,11 @@ Hamilton owns publication and analysis surfaces.
 - Preserves evidence-policy labels in Account, Pro dashboard, Pro marketing, summary cards, quick actions, and exports so users can distinguish verified-only benchmarks from provisional-first analysis.
 - Keeps public, Pro, and internal analysis institution-aware and evidence-tier-aware.
 - Public Hamilton must be consumer-safe and caveated; Pro Hamilton can be consulting-grade; internal Hamilton can expose admin/analyst context behind access control.
+
+## The Crew (operator experience)
+
+- `/admin` is the crew home. Each agent shows a state (Working / Waiting / Blocked / Idle), a "Now" and a "Last" sentence, and today's count (`crew.ts`).
+- The activity log is generated from `agent_run_events` by `narrate.ts`. When a step records new numbers in its `detail`, add or update its template there so the log stays plain English.
+- The command bar is rule-based (`crew-commands.ts`, no model). Reads answer immediately; writes (run, retry, pause, resume) only return a proposal, and the confirm action re-parses the original text before calling `startAgentRun` or `setPipelineEnabled`. Never add a write path that skips the confirmation.
+- Atlas sends a daily brief (`daily-brief.ts`) as a visible one-step run from the `/api/admin/crew/daily-brief` cron. `daily-brief` is in `PAUSE_EXEMPT_STEP_KEYS`, so it still reports while the pipeline is paused.
+- The full command center is at `/admin/atlas/details`.

@@ -3,6 +3,10 @@
     {
       "path": "/api/admin/agents/tick",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/admin/crew/daily-brief",
+      "schedule": "47 12 * * *"
     }
   ]
 }

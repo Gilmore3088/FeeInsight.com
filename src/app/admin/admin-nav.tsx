@@ -31,7 +31,8 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Atlas Control",
     items: [
-      { href: "/admin", label: "Atlas", role: "Command center", icon: Orbit, exact: true },
+      { href: "/admin", label: "Crew", role: "Your agents", icon: Orbit, exact: true },
+      { href: "/admin/atlas/details", label: "Atlas", role: "Run controls", icon: Orbit },
       {
         href: "/admin/states",
         label: "State Lanes",

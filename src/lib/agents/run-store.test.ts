@@ -54,6 +54,16 @@ vi.mock("@/lib/automation-control", () => ({
   getPipelineControl: getPipelineControlMock,
 }));
 
+vi.mock("@/lib/agents/daily-brief", () => ({
+  runDailyBrief: vi.fn().mockResolvedValue({
+    brief: { subject: "Atlas daily brief", lines: ["What ran: 0 runs finished, 0 failed."] },
+    funnel: {},
+    deliveryStatus: "not_configured",
+    deliveryReason: "RESEND_API_KEY is not configured.",
+    recipient: "ops@example.com",
+  }),
+}));
+
 vi.mock("@/lib/agents/darwin/verify", () => ({
   runDarwinVerify: runDarwinVerifyMock,
 }));
@@ -827,6 +837,18 @@ describe("agentic run store", () => {
       results: [{ runId: 101, status: "blocked" }],
     });
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
+  });
+
+  it("still sends the Atlas daily brief while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+    expect(combinedTransactionSql()).toContain("step.finished");
   });
 
   it("re-queues a stale running step and records a step.reaped event", async () => {
