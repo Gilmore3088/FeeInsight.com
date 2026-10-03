@@ -1,6 +1,7 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import {
   getFeesByInstitution,
   getFinancialsByInstitution,
@@ -129,6 +130,7 @@ export async function previewReportPeerCoverage(
 ): Promise<PreviewReportPeerCoverageResult> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
+  if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
 
   try {
     const [selectedInstitution, selectedFees, selectedEvidence] = await Promise.all([
@@ -320,6 +322,8 @@ export async function generateReport(
 ): Promise<GenerateReportResult> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
+  // generateSection() below makes paid model calls: Pro only.
+  if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
 
   try {
     // 1. Fetch selected institution data as grounding for Hamilton
@@ -691,7 +695,7 @@ export async function loadScenarioById(scenarioId: string) {
  */
 export async function loadPublishedReport(reportId: string) {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
   const rows = await sql`
     SELECT
       id,

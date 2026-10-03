@@ -515,7 +515,10 @@ function simpleMarkdown(text: string): string {
   let html = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    // Quotes too: links below become href="…" attributes, and a raw " would end the attribute.
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
   // Horizontal rules
   html = html.replace(/^---+$/gm, '<hr class="my-4 border-gray-200 dark:border-gray-700" />');

@@ -188,7 +188,10 @@ function MarkdownContent({ content }: { content: string }) {
   const safe = content
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    // Quotes too: links below become href="…" attributes, and a raw " would end the attribute.
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
   // Then apply markdown transformations on escaped content
   const html = safe

@@ -26,6 +26,12 @@ interface SimulationPeerContextParams {
   peerSetId?: string | null;
 }
 
+/** Server actions are public POST endpoints: every Pro benchmark read checks access itself. */
+async function hasProAccess(): Promise<boolean> {
+  const user = await getCurrentUser();
+  return Boolean(user && canAccessPremium(user));
+}
+
 async function resolveSimulationPeerContext(params?: SimulationPeerContextParams) {
   const user = await getCurrentUser();
   const numericInstitutionId = params?.institutionId ? Number(params.institutionId) : null;
@@ -52,6 +58,7 @@ export async function getDistributionForCategory(
   feeCategory: string,
   peerContext?: SimulationPeerContextParams,
 ): Promise<{ distribution: DistributionData; confidenceTier: ConfidenceTier } | { error: string }> {
+  if (!(await hasProAccess())) return { error: "Pro subscription required" };
   try {
     const peerIndex = await resolveSimulationPeerContext(peerContext);
     let entry = peerIndex.entries.find((e) => e.fee_category === feeCategory);
@@ -114,6 +121,7 @@ export async function getInstitutionFee(
   institutionId: string,
   feeCategory: string
 ): Promise<{ amount: number } | null> {
+  if (!(await hasProAccess())) return null;
   const canonicalInstitutionId = normalizeCanonicalInstitutionId(institutionId);
   if (!canonicalInstitutionId) return null;
   const numericInstitutionId = Number(canonicalInstitutionId);
@@ -370,6 +378,7 @@ export async function getSimulationCategories(peerContext?: SimulationPeerContex
     confidence_tier: ConfidenceTier;
   }>
 > {
+  if (!(await hasProAccess())) return [];
   try {
     const peerIndex = await resolveSimulationPeerContext(peerContext);
     const entriesByCategory = new Map(peerIndex.entries.map((entry) => [entry.fee_category, entry]));

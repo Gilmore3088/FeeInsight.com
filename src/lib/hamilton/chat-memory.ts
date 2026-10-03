@@ -38,6 +38,7 @@ export async function createConversation(userId: number): Promise<string> {
  */
 export async function appendMessage(
   conversationId: string,
+  userId: number,
   role: "user" | "assistant",
   content: string,
   tokenCount?: number
@@ -46,7 +47,7 @@ export async function appendMessage(
     INSERT INTO hamilton_messages (conversation_id, user_id, role, content, token_count)
     SELECT id, user_id, ${role}, ${content}, ${tokenCount ?? null}
       FROM hamilton_conversations
-     WHERE id = ${conversationId}
+     WHERE id = ${conversationId} AND user_id = ${userId}
     RETURNING id
   `;
   if (rows.length === 0) throw new Error("Conversation not found");
@@ -54,7 +55,7 @@ export async function appendMessage(
   await sql`
     UPDATE hamilton_conversations
     SET updated_at = NOW()
-    WHERE id = ${conversationId}
+    WHERE id = ${conversationId} AND user_id = ${userId}
   `;
 }
 

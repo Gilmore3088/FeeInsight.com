@@ -67,13 +67,15 @@ export type Permission =
   | "manage_users"
   | "trigger_jobs"
   | "cancel_jobs"
-  | "research";
+  | "research"
+  /** Operator console (/admin pages, actions and APIs): admin and analyst only. */
+  | "operate";
 
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   viewer: ["view"],
   premium: ["view", "research"],
-  analyst: ["view", "approve", "reject", "research"],
-  admin: ["view", "approve", "reject", "edit", "bulk_approve", "manage_users", "trigger_jobs", "cancel_jobs", "research"],
+  analyst: ["view", "approve", "reject", "research", "operate"],
+  admin: ["view", "approve", "reject", "edit", "bulk_approve", "manage_users", "trigger_jobs", "cancel_jobs", "research", "operate"],
 };
 
 function hashPassword(password: string, salt: string): string {

@@ -10,7 +10,7 @@ export const revalidate = 0;
 /** Live crew roster and plain-English activity log for the admin crew page (polled). */
 async function handleGET(request: NextRequest) {
   const user = await getCurrentUser();
-  if (!user || !hasPermission(user, "view")) {
+  if (!user || !hasPermission(user, "operate")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const agentParam = request.nextUrl.searchParams.get("agent");

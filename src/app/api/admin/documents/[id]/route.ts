@@ -10,7 +10,7 @@ export const revalidate = 0;
 /** "View our copy": redirects an admin to a 1-hour presigned link for a stored source document. */
 async function handleGET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
-  if (!user || !hasPermission(user, "view")) {
+  if (!user || !hasPermission(user, "operate")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await context.params;
