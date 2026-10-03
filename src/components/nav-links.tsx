@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { navItemsFor } from "./nav-items";
+import { usePathname } from "next/navigation";
+import { isActivePath, navItemsFor } from "./nav-items";
 import { useSessionChrome } from "./use-session-chrome";
 
 /**
@@ -11,13 +12,15 @@ import { useSessionChrome } from "./use-session-chrome";
  */
 export function NavLinks() {
   const session = useSessionChrome();
+  const pathname = usePathname();
   return (
     <nav className="hidden items-center gap-5 lg:flex" aria-label="Main navigation">
       {navItemsFor(session).map((item) => (
         <Link
           key={item.href}
           href={item.href}
-          className="text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
+          aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
+          className="text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815] aria-[current=page]:text-[#1A1815]"
         >
           {item.label}
         </Link>

@@ -1310,3 +1310,12 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
     transition: none !important;
   }
 }
+
+/* Backstop for utility animations (drawer slide-in, spinners) when the reader asks for
+   less motion; component-level motion-reduce variants cover the rest. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-spin {
+    animation: none !important;
+  }
+}

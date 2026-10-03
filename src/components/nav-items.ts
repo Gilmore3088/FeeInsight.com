@@ -30,3 +30,10 @@ export function navItemsFor(session: { signedIn: boolean; isPro?: boolean } | nu
   if (session?.isPro) return [...PRO_NAV_ITEMS];
   return [...PUBLIC_NAV_ITEMS, ...(session?.signedIn ? [] : [PRICING_NAV])];
 }
+
+/** True for the section a path belongs to (`/guides` for `/guides/overdraft-fees`). */
+export function isActivePath(pathname: string | null, href: string): boolean {
+  if (!pathname) return false;
+  const path = href.split("#")[0];
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
