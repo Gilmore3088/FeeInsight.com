@@ -6,6 +6,7 @@ import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
   runPublicDiscoveryAudit,
@@ -604,6 +605,16 @@ async function executeAgenticStep(
           funnel: result.funnel,
         },
       };
+    }
+    case "registry-fdic-universe":
+    case "registry-fdic-financials": {
+      return runRegistryStep({
+        stepKey: step.stepKey,
+        runId: run.id,
+        partitionKey: stringRunParam(params, ["partition_key"]),
+        dryRun: run.runKind === "dry_run",
+        db: tx,
+      });
     }
     case "assemble":
     case "render": {
@@ -1331,7 +1342,8 @@ export async function executeAgentRun(
         step.stepKey === "fetch" ||
         step.stepKey === "read" ||
         step.stepKey === "public-discovery" ||
-        step.stepKey === "public-audit"
+        step.stepKey === "public-audit" ||
+        isRegistryStepKey(step.stepKey)
           ? await executeAgenticStep(sql, run, step)
           : await withTransaction((tx) => executeAgenticStep(tx, run, step));
       lastResult = await finishAgenticStep(runId, step, outcome);

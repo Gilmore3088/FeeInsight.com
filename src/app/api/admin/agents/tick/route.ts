@@ -7,6 +7,7 @@ import {
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
 import { scheduleDueStateLaneRuns } from "@/lib/agents/state-lane-scheduler";
+import { scheduleDueRegistryRuns, type RegistryScheduleResult } from "@/lib/agents/registry-scheduler";
 import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
@@ -115,6 +116,19 @@ async function handleGET(request: NextRequest) {
     limit: stateLaneLimit,
     triggeredBy: "api.admin.agents.tick",
   });
+  // Regulator data (FDIC universe + call reports) is deterministic; one partition
+  // at a time. A registry scheduling error must never stop the fee pipeline.
+  let scheduledRegistry: RegistryScheduleResult | { scheduled: false; reason: "error"; error: string };
+  try {
+    scheduledRegistry = await scheduleDueRegistryRuns({ triggeredBy: "api.admin.agents.tick" });
+  } catch (error) {
+    console.error("Registry scheduling failed:", error);
+    scheduledRegistry = {
+      scheduled: false,
+      reason: "error",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -123,7 +137,7 @@ async function handleGET(request: NextRequest) {
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
   });
-  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
+  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, scheduledRegistry, ...result });
 }
 
 async function handlePOST(request: NextRequest) {

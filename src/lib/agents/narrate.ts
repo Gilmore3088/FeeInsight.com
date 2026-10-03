@@ -102,6 +102,16 @@ export function narrateStepFinished(
     case "public-cluster":
     case "public-diagnose":
       return null;
+    case "registry-fdic-universe":
+      return `Synced ${count(n(detail, "active_institutions"), "FDIC-insured bank")}${joinParts([
+        n(detail, "inserted_institutions") > 0 && `${n(detail, "inserted_institutions")} added`,
+        n(detail, "deactivated_institutions") > 0 && `${n(detail, "deactivated_institutions")} marked closed or merged`,
+      ])}.`;
+    case "registry-fdic-financials":
+      if (detail.empty) return `Checked for ${String(detail.partition_key ?? "new")} FDIC call reports; not published yet.`;
+      return `Loaded ${count(n(detail, "parsed_rows"), "FDIC call report")} for ${String(detail.partition_key ?? "the quarter")}${joinParts([
+        n(detail, "unmatched_rows") > 0 && `${n(detail, "unmatched_rows")} not yet matched to an institution`,
+      ])}.`;
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
@@ -157,6 +167,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   fetch: "magellan",
   "public-discovery": "magellan",
   "public-audit": "magellan",
+  "registry-fdic-universe": "magellan",
+  "registry-fdic-financials": "magellan",
   read: "rosetta",
   extract: "knox",
   review: "knox",

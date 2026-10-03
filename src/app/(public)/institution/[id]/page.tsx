@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution, getNationalIndexCached } from "@/lib/data-store";
+import { getFinancialHistory, getPeerFinancialMedians } from "@/lib/data-store/financial";
+import { canAccessPremium } from "@/lib/access";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -17,6 +19,8 @@ import { formatAbsoluteDate } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeScheduleTable } from "./fee-schedule-table";
 import { FinancialContext } from "./financial-context";
+import { buildFinancialSeries, toPeerMedianPoints } from "./financial-history";
+import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
 import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
@@ -103,6 +107,17 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
     ),
     getCurrentUser().catch(() => null),
   ]);
+
+  // Financial history is Pro-only; free users never receive it in the RSC payload.
+  const isPro = canAccessPremium(user);
+  const [financialHistory, peerMedians] = isPro
+    ? await Promise.all([
+        getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
+        getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
+      ])
+    : [[], null];
+  const financialSeries = buildFinancialSeries(financialHistory);
+  const peerMedianPoints = toPeerMedianPoints(peerMedians);
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
   const catalogRows = toDisplayFees(visibleFees);
@@ -290,6 +305,15 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
               )}
 
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
+
+              {(isPro ? financialSeries.length > 0 : latestFinancial !== null) && (
+                <FinancialProfileSection
+                  isPro={isPro}
+                  points={financialSeries}
+                  peers={peerMedianPoints}
+                  charterLabel={charterLabel}
+                />
+              )}
             </div>
 
             <ProfileSidebar
