@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
@@ -61,15 +62,17 @@ export function ConsumerMobileNav({ isLoggedIn, isPro = false }: ConsumerMobileN
         </svg>
       </button>
 
-      {open && (
-        <>
+      {/* Portaled to <body>: the header's backdrop-blur makes it the containing block for
+          fixed children, which would clip the drawer to the header's 56px height. */}
+      {open && createPortal(
+        <div className="lg:hidden">
           <div
             className="fixed inset-0 z-40 bg-[#1A1815]/20 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
 
-          <div className="fixed top-0 right-0 z-50 h-full w-[min(18rem,calc(100vw-1rem))] bg-[#FAF7F2] border-l border-[#E8DFD1] shadow-xl animate-in slide-in-from-right duration-200">
+          <div className="fixed top-0 right-0 z-50 flex h-dvh w-[min(18rem,calc(100vw-1rem))] flex-col bg-[#FAF7F2] border-l border-[#E8DFD1] shadow-xl animate-in slide-in-from-right duration-200">
             <div className="flex h-14 items-center justify-between border-b border-[#E8DFD1] pl-6 pr-3">
               <span
                 className="text-[14px] font-medium text-[#1A1815]"
@@ -84,7 +87,7 @@ export function ConsumerMobileNav({ isLoggedIn, isPro = false }: ConsumerMobileN
               </button>
             </div>
 
-            <nav className="px-4 py-4" aria-label="Mobile navigation">
+            <nav className="flex-1 overflow-y-auto px-4 py-4" aria-label="Mobile navigation">
               <ul className="space-y-1">
                 {displayItems.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -128,7 +131,7 @@ export function ConsumerMobileNav({ isLoggedIn, isPro = false }: ConsumerMobileN
               </div>
             </nav>
 
-            <div className="absolute bottom-0 left-0 right-0 border-t border-[#E8DFD1] px-6 py-4">
+            <div className="border-t border-[#E8DFD1] px-6 py-4">
               <div className="flex items-center gap-2 text-[#6B6255]">
                 <svg
                   viewBox="0 0 24 24"
@@ -146,7 +149,8 @@ export function ConsumerMobileNav({ isLoggedIn, isPro = false }: ConsumerMobileN
               </div>
             </div>
           </div>
-        </>
+        </div>,
+        document.body,
       )}
     </div>
   );
