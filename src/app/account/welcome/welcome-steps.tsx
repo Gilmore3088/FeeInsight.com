@@ -100,7 +100,8 @@ export function WelcomeSteps({
   pendingWorkspaceInvitations,
   workspaceMemberships,
 }: WelcomeStepsProps) {
-  const [step, setStep] = useState(1);
+  // Someone who already told us their organization (at signup or earlier) skips that step.
+  const [step, setStep] = useState(user.institution_name ? 2 : 1);
   const [saving, setSaving] = useState(false);
   const [showBankFields, setShowBankFields] = useState(
     user.institution_type === "bank" || user.institution_type === "credit_union"

@@ -5,6 +5,8 @@ import { sql } from "@/lib/data-store/connection";
 import { canAccessPremium } from "@/lib/access";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getSpotlightCategories, getDisplayName } from "@/lib/fee-taxonomy";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { shouldResumeAfterCheckout } from "./resume";
 import {
   acceptPendingWorkspaceInvitationsForUser,
   getPendingWorkspaceInvitationsForEmail,
@@ -19,24 +21,19 @@ export const metadata: Metadata = {
   title: "Welcome",
 };
 
+/** True national medians for the spotlight fees (this step was labelled "median" but averaged). */
 async function getSpotlightMedians(): Promise<{ category: string; displayName: string; median: number }[]> {
-  const spotlight = getSpotlightCategories();
+  const spotlight = new Set(getSpotlightCategories());
   try {
-    const rows = await sql`
-      SELECT fee_category, ROUND(AVG(amount)::numeric, 2) as median
-      FROM published_fee_catalog
-      WHERE fee_category IN ${sql(spotlight)}
-        AND review_status = 'approved'
-        AND amount > 0
-      GROUP BY fee_category
-      ORDER BY median DESC
-    ` as { fee_category: string; median: number }[];
-
-    return rows.map((r) => ({
-      category: r.fee_category,
-      displayName: getDisplayName(r.fee_category),
-      median: Number(r.median),
-    }));
+    const summaries = await getCachedFeeCategorySummaries();
+    return summaries
+      .filter((s) => spotlight.has(s.fee_category) && s.median_amount !== null && s.median_amount > 0)
+      .map((s) => ({
+        category: s.fee_category,
+        displayName: getDisplayName(s.fee_category),
+        median: Number(s.median_amount),
+      }))
+      .sort((a, b) => b.median - a.median);
   } catch {
     return [];
   }
@@ -72,13 +69,6 @@ async function activateIfPaid(
   }
 
   return false;
-}
-
-function shouldResumeAfterCheckout(destination: string | null): destination is string {
-  return !!destination && (
-    destination.startsWith("/pro") ||
-    destination.startsWith("/workspace-invite")
-  );
 }
 
 export default async function WelcomePage({

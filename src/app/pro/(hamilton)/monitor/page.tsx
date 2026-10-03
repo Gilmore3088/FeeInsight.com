@@ -42,8 +42,8 @@ export default async function MonitorPage({
       {/* Status strip — full width above content */}
       <StatusStrip status={data.status} />
 
-      {/* Page content */}
-      <main
+      {/* Page content (HamiltonShell already renders the page's <main>) */}
+      <div
         className="@container"
         style={{
           backgroundColor: "var(--hamilton-surface)",
@@ -76,8 +76,8 @@ export default async function MonitorPage({
               lineHeight: 1.5,
             }}
           >
-            Continuous surveillance of high-priority counterparts and fee
-            structures to preserve long-term recurring value.
+            Fee changes at the institutions you watch: published fee movements,
+            newly verified schedules and competitor signals, as they reach the index.
           </p>
           <p
             style={{
@@ -160,7 +160,7 @@ export default async function MonitorPage({
             />
           </aside>
         </div>
-      </main>
+      </div>
 
       {/* Floating chat overlay — fixed position */}
       <FloatingChatOverlay />
