@@ -6,6 +6,7 @@ import { ManageBillingButton } from "./manage-billing-button";
 import { PremiumBadge } from "@/components/upgrade-gate";
 import { LogoutButton } from "./logout-button";
 import { ProfileForm } from "./profile-form";
+import { AlertsPanel } from "./alerts-panel";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { CustomerNav } from "@/components/customer-nav";
@@ -193,6 +194,9 @@ export default async function AccountPage({
           </div>
           <LogoutButton />
         </div>
+
+        {/* ── Saved institutions and fee alerts: what a free account is for, so it comes first ── */}
+        <AlertsPanel userId={user.id} />
 
         {/* ── Subscription Status ── */}
         {!isPro && (

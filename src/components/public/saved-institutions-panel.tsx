@@ -73,13 +73,13 @@ export function SavedInstitutionsPanel({
               >
                 {inst.institution_name}
                 {inst.state_code && (
-                  <span className="ml-1.5 text-[11px] font-normal text-[#8A8073]">
+                  <span className="ml-1.5 text-[11px] font-normal text-[#6B6255]">
                     {inst.state_code}
                   </span>
                 )}
               </Link>
               {inst.amount === null ? (
-                <span className="text-[12px] text-[#8A8073]">
+                <span className="text-[12px] text-[#6B6255]">
                   No published {categoryLabel}
                 </span>
               ) : (
@@ -92,7 +92,7 @@ export function SavedInstitutionsPanel({
                           ? "text-red-700"
                           : delta < 0
                             ? "text-emerald-700"
-                            : "text-[#8A8073]"
+                            : "text-[#6B6255]"
                       }`}
                     >
                       {delta > 0
@@ -108,9 +108,9 @@ export function SavedInstitutionsPanel({
           );
         })}
       </ul>
-      <p className="mt-3 text-[11px] text-[#8A8073]">
+      <p className="mt-3 text-[11px] text-[#6B6255]">
         We&rsquo;ll email you when one of these changes.{" "}
-        <Link href="/account" className="text-[#A93D25]/80 hover:text-[#A93D25]">
+        <Link href="/account#alerts" className="text-[#A93D25] hover:underline">
           Manage your alerts
         </Link>
       </p>

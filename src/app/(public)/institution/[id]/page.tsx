@@ -8,7 +8,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { LeadCapture } from "@/components/public/lead-capture";
+import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { FeeAlertControl } from "./fee-alert-control";
 import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
@@ -111,6 +113,15 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     ),
     getCurrentUser().catch(() => null),
   ]);
+
+  const alertSubscription = user
+    ? await getAlertSubscriptionForInstitution(user.id, instId).catch(fallbackTo("alert subscription", null))
+    : null;
+  const alertCategoryLabels = Object.fromEntries(
+    [focusFeeCategory, ...(alertSubscription?.fee_categories ?? [])]
+      .filter((category): category is string => Boolean(category))
+      .map((category) => [category, getDisplayName(category).replace(/\s*\([^)]*\)/g, "")]),
+  );
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
   const catalogRows = toDisplayFees(visibleFees);
@@ -218,21 +229,21 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             claimHref={links.claimHref}
           />
 
-          <LeadCapture
-            placement="institution_alerts"
-            className="mb-6"
-            institutionId={instId}
-            institutionName={inst.institution_name}
-            stateCode={inst.state_code}
-            eyebrow="Fee change alerts"
-            headline={`Get alerted when ${inst.institution_name} changes fees`}
-            body="One email when a verified change to this published fee schedule lands in the index. No newsletter unless you ask for it."
-            buttonLabel="Alert me"
-            secondaryLink={{
-              href: links.reportOfferHref,
-              label: "Benchmark it against peers — free",
-            }}
-          />
+          <div className="mb-6">
+            <FeeAlertControl
+              institutionId={instId}
+              institutionName={inst.institution_name}
+              focusCategory={focusFeeCategory}
+              categoryLabels={alertCategoryLabels}
+              mode={thinProfile ? "verify" : "alerts"}
+              initial={{
+                signedIn: Boolean(user),
+                saved: alertSubscription !== null,
+                feeCategories: alertSubscription?.fee_categories ?? null,
+              }}
+              secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Benchmark it against peers, free" }}
+            />
+          </div>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0 space-y-6">
@@ -289,8 +300,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
               {thinProfile ? (
                 <ThinProfilePanel
-                  institutionId={instId}
-                  institutionName={inst.institution_name}
                   status={status}
                   verifiedCount={verifiedFees.length}
                   correctSourceHref={links.correctSourceHref}
