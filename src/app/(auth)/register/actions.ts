@@ -3,27 +3,8 @@
 import { getStripe } from "@/lib/stripe";
 import { hashPassword } from "@/lib/passwords";
 import { withTransaction } from "@/lib/data-store/connection";
-import { cookies } from "next/headers";
-import crypto from "crypto";
+import { issueSession, setSessionCookie } from "@/lib/auth";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
-
-const SESSION_TTL_HOURS = 24;
-
-function getCookieSecret(): string {
-  const secret = process.env.BFI_COOKIE_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
-    throw new Error("BFI_COOKIE_SECRET must be set in production");
-  }
-  return secret || "dev-secret-change-in-production";
-}
-
-function signSessionId(sessionId: string): string {
-  const sig = crypto
-    .createHmac("sha256", getCookieSecret())
-    .update(sessionId)
-    .digest("hex");
-  return `${sessionId}.${sig}`;
-}
 
 export async function register(
   formData: FormData,
@@ -71,9 +52,7 @@ export async function register(
     return { success: false, error: "Registration failed. Please try again." };
   }
 
-  const sessionId = crypto.randomBytes(32).toString("hex");
-  const expiresDate = new Date(Date.now() + SESSION_TTL_HOURS * 60 * 60 * 1000);
-  const expiresAt = expiresDate.toISOString();
+  let signedSession = "";
 
   try {
     try {
@@ -89,10 +68,7 @@ export async function register(
           RETURNING id
         `;
 
-        await tx`
-          INSERT INTO sessions (id, user_id, expires_at)
-          VALUES (${sessionId}, ${insertRow.id}, ${expiresAt})
-        `;
+        signedSession = (await issueSession(Number(insertRow.id), tx)).signed;
       });
     } catch (e: unknown) {
       try {
@@ -106,14 +82,7 @@ export async function register(
       throw e;
     }
 
-    const cookieStore = await cookies();
-    cookieStore.set("fsh_session", signSessionId(sessionId), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: SESSION_TTL_HOURS * 60 * 60,
-      path: "/",
-    });
+    await setSessionCookie(signedSession);
 
     const destination = sanitizeInternalRedirect(redirectTo, "/account");
     return { success: true, redirect: resolvePostLoginRedirect(destination, "viewer") };

@@ -1,6 +1,6 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, renewSessionCookie } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,9 @@ async function handleGET(): Promise<NextResponse> {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ signedIn: false }, { headers });
+    // Sliding sessions: every page that mounts the site chrome calls this endpoint after
+    // hydration, so refreshing the cookie here keeps an active reader signed in.
+    await renewSessionCookie().catch(() => {});
     const initial = (
       user.institution_name?.[0] ||
       user.email?.[0] ||
