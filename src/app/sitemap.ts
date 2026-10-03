@@ -108,12 +108,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/terms", now, "yearly", 0.3),
   ];
 
+  // Individual report pages are noindex until they carry an on-page summary; the catalog
+  // and the sample stay listed.
   const reportPages: Entry[] = [
     entry("/reports", now, "weekly", reportsPriority),
     entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7),
-    ...publishedReports.map((r) =>
-      entry(`/reports/${r.slug}`, toDate(r.published_at, now), "monthly", 0.8),
-    ),
   ];
 
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)

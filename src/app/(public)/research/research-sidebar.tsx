@@ -24,7 +24,7 @@ const PRO_BULLETS = [
   "Unlimited peer sets by charter, size and district",
   "FDIC/NCUA financial context on every peer",
   "Scenarios, board-ready reports, monitoring",
-  "CSV and API exports",
+  "CSV exports (API access on request)",
 ];
 
 interface ResearchSidebarProps {
