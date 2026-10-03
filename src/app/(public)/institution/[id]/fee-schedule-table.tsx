@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
@@ -22,6 +23,47 @@ interface FeeGroup {
 }
 
 const OTHER_FAMILY = "Other fees";
+
+export interface MedianDelta {
+  text: string;
+  tone: "above" | "below" | "at";
+}
+
+/**
+ * How a verified amount sits against the national median, in words. Null when either
+ * side is missing: no comparison is better than a misleading one.
+ */
+export function describeMedianDelta(amount: number | null, median: number | null | undefined): MedianDelta | null {
+  if (amount === null || median === null || median === undefined) return null;
+  if (!Number.isFinite(amount) || !Number.isFinite(median)) return null;
+  const diff = Math.round((amount - median) * 100) / 100;
+  if (Math.abs(diff) < 0.01) return { text: "At the national median", tone: "at" };
+  const money = formatFeeAmount(Math.abs(diff)) ?? `$${Math.abs(diff).toFixed(2)}`;
+  return diff > 0
+    ? { text: `${money} above the national median`, tone: "above" }
+    : { text: `${money} below the national median`, tone: "below" };
+}
+
+const DELTA_TONE: Record<MedianDelta["tone"], string> = {
+  above: "text-red-700",
+  below: "text-emerald-700",
+  at: "text-[#6B6255]",
+};
+
+/** Verified rows with a known category link to the national picture for that fee. */
+function MedianCell({ fee, medians }: { fee: DisplayFee; medians: Map<string, number | null> }) {
+  if (fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
+  if (!delta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  return (
+    <Link
+      href={`/fees/${fee.feeCategory}`}
+      className={`text-xs font-medium underline-offset-2 hover:underline ${DELTA_TONE[delta.tone]}`}
+    >
+      {delta.text}
+    </Link>
+  );
+}
 const FAMILY_ORDER = [...Object.keys(FEE_FAMILIES), OTHER_FAMILY];
 
 function familyFor(fee: DisplayFee): string {
@@ -89,17 +131,20 @@ export function FeeScheduleTable({
   fees,
   disclosureUrl,
   focusCategory = null,
+  medians = new Map(),
 }: {
   fees: DisplayFee[];
   disclosureUrl: string | null;
   focusCategory?: string | null;
+  /** National medians by fee category, for the "vs national median" column. */
+  medians?: Map<string, number | null>;
 }) {
   const groups = groupFeesByFamily(fees);
   const isFocused = (fee: DisplayFee) => focusCategory !== null && fee.feeCategory === focusCategory;
 
   return (
     <>
-      <FeeScheduleStack groups={groups} disclosureUrl={disclosureUrl} isFocused={isFocused} />
+      <FeeScheduleStack groups={groups} disclosureUrl={disclosureUrl} isFocused={isFocused} medians={medians} />
       <div className="hidden sm:block">
         <p className="border-b border-[#F0EBE3] px-4 py-1.5 text-xs text-[#6B6255] lg:hidden">
           Swipe for source and notes &rarr;
@@ -110,6 +155,7 @@ export function FeeScheduleTable({
               <tr className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
                 <th scope="col" className={HEADER_CELL}>Fee</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Amount</th>
+                <th scope="col" className={HEADER_CELL}>vs national median</th>
                 <th scope="col" className={HEADER_CELL}>Basis</th>
                 <th scope="col" className={HEADER_CELL}>Note</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Source</th>
@@ -118,7 +164,7 @@ export function FeeScheduleTable({
             {groups.map((group) => (
               <tbody key={group.family} className="border-t border-[#E0D7C9]">
                 <tr className="bg-[#FAF7F2]">
-                  <th scope="rowgroup" colSpan={5} className="px-4 py-2.5 text-left">
+                  <th scope="rowgroup" colSpan={6} className="px-4 py-2.5 text-left">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-[#1A1815]">{group.family}</span>
                       <GroupBadge group={group} />
@@ -132,6 +178,7 @@ export function FeeScheduleTable({
                     disclosureUrl={disclosureUrl}
                     mixedGroup={group.verifiedCount > 0}
                     focused={isFocused(fee)}
+                    medians={medians}
                   />
                 ))}
               </tbody>
@@ -171,11 +218,13 @@ function FeeRow({
   disclosureUrl,
   mixedGroup,
   focused = false,
+  medians,
 }: {
   fee: DisplayFee;
   disclosureUrl: string | null;
   mixedGroup: boolean;
   focused?: boolean;
+  medians: Map<string, number | null>;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
   const amount = formatFeeAmount(fee.amount);
@@ -195,6 +244,9 @@ function FeeRow({
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
         {amount ?? "\u2014"}
       </td>
+      <td className="px-4 py-2.5 align-top">
+        <MedianCell fee={fee} medians={medians} />
+      </td>
       <td className="whitespace-nowrap px-4 py-2.5 align-top text-[#5A5347]">{basis || "\u2014"}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-[#6B6255]">
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
@@ -211,10 +263,12 @@ function FeeScheduleStack({
   groups,
   disclosureUrl,
   isFocused,
+  medians,
 }: {
   groups: FeeGroup[];
   disclosureUrl: string | null;
   isFocused: (fee: DisplayFee) => boolean;
+  medians: Map<string, number | null>;
 }) {
   return (
     <div className="sm:hidden">
@@ -245,6 +299,11 @@ function FeeScheduleStack({
                       {formatFeeAmount(fee.amount) ?? "\u2014"}
                     </span>
                   </div>
+                  {fee.status === "verified" && fee.feeCategory && medians.has(fee.feeCategory) && (
+                    <p className="mt-0.5">
+                      <MedianCell fee={fee} medians={medians} />
+                    </p>
+                  )}
                   <p className="mt-1 text-xs leading-relaxed text-[#6B6255]">
                     {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
                     {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}

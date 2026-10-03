@@ -140,6 +140,13 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const nationalIndex =
     verifiedFees.length > 0 ? await getNationalIndexCached().catch(fallbackTo("national index", [])) : [];
   const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
+  // Medians for the per-row comparison: the same verified-only index the rating uses, and
+  // only where enough institutions publish the fee for a median to mean something.
+  const nationalMedians = new Map<string, number | null>(
+    nationalIndex
+      .filter((entry) => entry.maturity_tier !== "insufficient")
+      .map((entry) => [entry.fee_category, entry.median_amount]),
+  );
   const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
   const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
@@ -214,14 +221,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             freshnessLine={freshnessLine}
           />
 
-          <InstitutionMetricRow
-            verifiedCount={verifiedCount}
-            underReviewCount={underReviewCount}
-            assetsDollars={assetsDollars}
-            scoreLabel={null}
-            financialsAsOf={financialsAsOf}
-          />
-
           <StatusNotice
             status={status}
             needsSource={needsSource}
@@ -229,35 +228,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             claimHref={links.claimHref}
           />
 
-          <div className="mb-6">
-            <FeeAlertControl
-              institutionId={instId}
-              institutionName={inst.institution_name}
-              focusCategory={focusFeeCategory}
-              categoryLabels={alertCategoryLabels}
-              mode={thinProfile ? "verify" : "alerts"}
-              initial={{
-                signedIn: Boolean(user),
-                saved: alertSubscription !== null,
-                feeCategories: alertSubscription?.fee_categories ?? null,
-              }}
-              secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Benchmark it against peers, free" }}
-            />
-          </div>
-
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0 space-y-6">
-              {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
-                  commissioned report carries the benchmark against a true peer set. */}
-              {showNarrative && rating && interpretation && (
-                <FeeProfileSummary
-                  rating={rating}
-                  interpretation={interpretation}
-                  overdraftAmount={headline.overdraft}
-                  factsOnly
-                />
-              )}
-
+              {/* The answer first: what this institution charges. */}
               <section className="border border-[#E0D7C9] bg-white">
                 <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -266,7 +239,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                       <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
                     </div>
                     <p className="text-sm text-[#6B6255]">
-                      Verified fees power benchmarks; fees under review do not.
+                      Verified fees come from {inst.institution_name}&rsquo;s own schedule. Fees under review are shown but not yet confirmed.
                     </p>
                   </div>
                 </div>
@@ -278,6 +251,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                       fees={displayFees}
                       disclosureUrl={inst.fee_schedule_url}
                       focusCategory={focusFeeCategory}
+                      medians={nationalMedians}
                     />
                   </>
                 ) : (
@@ -297,6 +271,38 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   </div>
                 )}
               </section>
+
+              <FeeAlertControl
+                institutionId={instId}
+                institutionName={inst.institution_name}
+                focusCategory={focusFeeCategory}
+                categoryLabels={alertCategoryLabels}
+                mode={thinProfile ? "verify" : "alerts"}
+                initial={{
+                  signedIn: Boolean(user),
+                  saved: alertSubscription !== null,
+                  feeCategories: alertSubscription?.fee_categories ?? null,
+                }}
+                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Benchmark it against peers, free" }}
+              />
+
+              {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
+                  commissioned report carries the benchmark against a true peer set. */}
+              {showNarrative && rating && interpretation && (
+                <FeeProfileSummary
+                  rating={rating}
+                  interpretation={interpretation}
+                  overdraftAmount={headline.overdraft}
+                  factsOnly
+                />
+              )}
+
+              <InstitutionMetricRow
+                verifiedCount={verifiedCount}
+                underReviewCount={underReviewCount}
+                assetsDollars={assetsDollars}
+                financialsAsOf={financialsAsOf}
+              />
 
               {thinProfile ? (
                 <ThinProfilePanel

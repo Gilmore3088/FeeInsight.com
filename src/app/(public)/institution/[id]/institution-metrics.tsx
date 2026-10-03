@@ -35,21 +35,19 @@ export interface InstitutionMetricRowProps {
   verifiedCount: number;
   underReviewCount: number;
   assetsDollars: number | null;
-  scoreLabel: string | null;
   financialsAsOf: string | null;
 }
 
-/** The single metric strip under the profile header. */
+/** Counts and context for the profile, below the fee schedule and the alert control. */
 export function InstitutionMetricRow({
   verifiedCount,
   underReviewCount,
   assetsDollars,
-  scoreLabel,
   financialsAsOf,
 }: InstitutionMetricRowProps) {
   return (
-    <section className="fi-reveal fi-reveal-delay-1 mb-5 overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="grid grid-cols-2 divide-y divide-[#E0D7C9] sm:grid-cols-3 lg:grid-cols-5 lg:divide-x lg:divide-y-0">
+    <section aria-label="Profile facts" className="overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
+      <div className="grid grid-cols-2 divide-y divide-[#E0D7C9] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
         <Metric label="Verified fees" value={verifiedCount.toLocaleString("en-US")} tone="verified" />
         <Metric
           label="Under review"
@@ -57,7 +55,6 @@ export function InstitutionMetricRow({
           tone={underReviewCount > 0 ? "review" : undefined}
         />
         <Metric label="Assets" value={assetsDollars ? formatCompactDollars(assetsDollars) : "N/A"} />
-        <Metric label="Fee benchmark score" value={scoreLabel ?? "Not scored"} />
         <Metric label="Financials as of" value={financialsAsOf ?? "N/A"} />
       </div>
     </section>
