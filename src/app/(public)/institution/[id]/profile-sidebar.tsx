@@ -1,33 +1,18 @@
 import Link from "next/link";
 import { BarChart2, ClipboardCheck, FileText, MessageSquareText } from "lucide-react";
+import { InfoTip } from "@/components/public/info-tip";
 import type { PublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { METHODOLOGY_COPY } from "./profile-copy";
-
-export interface KeyFact {
-  label: string;
-  value: string;
-}
-
-function Fact({ label, value }: KeyFact) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-[#F0EBE3] pb-3 last:border-0 last:pb-0">
-      <span className="text-[#6B6255]">{label}</span>
-      <span className="max-w-[55%] break-words text-right font-semibold text-[#1A1815]">{value}</span>
-    </div>
-  );
-}
 
 const PRO_LINK_SECONDARY =
   "inline-flex items-center justify-center gap-2 rounded-md border border-[#5A5347] px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-[#D4A574]";
 
 export function ProfileSidebar({
-  facts,
   links,
   isAuthenticated,
   showAddSource,
   showProCard,
 }: {
-  facts: KeyFact[];
   links: PublicInstitutionProfileLinks;
   isAuthenticated: boolean;
   showAddSource: boolean;
@@ -36,25 +21,12 @@ export function ProfileSidebar({
 }) {
   return (
     <aside className="min-w-0 space-y-6 lg:sticky lg:top-6">
-      <section className="border border-[#E0D7C9] bg-white p-5">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Key Facts</p>
-        <div className="mt-4 space-y-3 text-sm">
-          {facts.map((fact) => (
-            <Fact key={fact.label} label={fact.label} value={fact.value} />
-          ))}
-        </div>
-      </section>
-
       {showProCard && (
         <section className="border border-[#1A1815] bg-[#1A1815] p-5 text-white">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D4A574]">
             Fee Insight Pro
           </p>
           <h2 className="mt-2 text-lg font-semibold">Benchmark this institution in Hamilton</h2>
-          <p className="mt-2 text-sm leading-relaxed text-[#E8DFD1]">
-            Hamilton is the Fee Insight Pro workspace: benchmark, scenario, report and monitor this
-            institution&apos;s fee position against a verified peer set.
-          </p>
           <div className="mt-4 grid gap-2">
             <Link
               href={links.briefHref}
@@ -79,21 +51,25 @@ export function ProfileSidebar({
             )}
           </div>
           {!isAuthenticated && (
-            <p className="mt-3 text-xs leading-relaxed text-[#E8DFD1]">
-              Pro actions open pricing first; you return to this profile after signing up.
-            </p>
+            <p className="mt-3 text-xs text-[#E8DFD1]">Opens pricing first, then returns here.</p>
           )}
         </section>
       )}
 
-      <section className="border border-[#E0D7C9] bg-white p-5">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Methodology</p>
-        <div className="mt-3 space-y-3 text-sm leading-relaxed text-[#5A5347]">
-          {METHODOLOGY_COPY.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
-          ))}
-        </div>
-      </section>
+      <div className="flex items-center gap-1.5 text-xs text-[#6B6255]">
+        <span>How we verify fees</span>
+        <InfoTip label="How we verify fees">
+          <span className="block space-y-2">
+            {METHODOLOGY_COPY.map((paragraph) => (
+              <span key={paragraph} className="block">{paragraph}</span>
+            ))}
+          </span>
+        </InfoTip>
+        <span aria-hidden="true" className="text-[#D5CBBF]">·</span>
+        <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
+          Methodology
+        </Link>
+      </div>
     </aside>
   );
 }
