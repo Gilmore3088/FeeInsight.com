@@ -171,7 +171,7 @@ export function ReportGenerationForm({ limitReached, limitInfo }: Props) {
         onClick={handleBack}
         className="inline-flex items-center gap-1.5 text-sm text-[#7A7265] hover:text-[#1A1815] transition-colors"
       >
-        <svg
+        <svg aria-hidden="true"
           className="h-4 w-4"
           fill="none"
           viewBox="0 0 24 24"

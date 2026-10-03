@@ -27,7 +27,7 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
     (isSubscriptionAction(action) || (isFeeAlert && Boolean(uid))) && Boolean(email) && Boolean(token);
 
   return (
-    <main className="mx-auto max-w-lg px-6 py-20">
+    <div className="mx-auto max-w-lg px-6 py-20">
       <h1
         className="text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]"
         style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
@@ -50,6 +50,6 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
           and we&apos;ll update your preferences.
         </p>
       )}
-    </main>
+    </div>
   );
 }

@@ -245,7 +245,7 @@ export default async function NationalFeeIndexPage() {
               className="mt-4 md:mt-0 inline-flex items-center gap-2 rounded-full bg-[#C44B2E] px-6 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-[#C44B2E]/15 hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all flex-shrink-0 no-underline"
             >
               Unlock Full Index
-              <svg
+              <svg aria-hidden="true"
                 className="h-3.5 w-3.5"
                 fill="none"
                 viewBox="0 0 24 24"

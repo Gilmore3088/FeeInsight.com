@@ -42,7 +42,7 @@ export default async function MonitorPage({
       {/* Status strip — full width above content */}
       <StatusStrip status={data.status} />
 
-      {/* Page content (HamiltonShell already renders the page's <main>) */}
+      {/* Page content. HamiltonShell already provides the main landmark. */}
       <div
         className="@container"
         style={{

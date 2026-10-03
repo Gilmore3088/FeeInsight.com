@@ -130,7 +130,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
       />
 
       {/* Breadcrumb — sticky on mobile */}
-      <nav className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-4 sticky top-14 z-30 -mx-6 px-6 py-2 bg-[#FAF7F2]/95 backdrop-blur-sm sm:static sm:mx-0 sm:px-0 sm:py-0 sm:bg-transparent sm:backdrop-blur-none">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-4 sticky top-14 z-30 -mx-6 px-6 py-2 bg-[#FAF7F2]/95 backdrop-blur-sm sm:static sm:mx-0 sm:px-0 sm:py-0 sm:bg-transparent sm:backdrop-blur-none">
         <Link href="/" className="hover:text-[#1A1815] transition-colors">Home</Link>
         <span className="text-[#D4C9BA]">/</span>
         <Link href="/research" className="hover:text-[#1A1815] transition-colors">Research</Link>

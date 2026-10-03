@@ -175,7 +175,7 @@ export function BriefStatusPoller({ jobId }: Props) {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white bg-[#C44B2E] hover:bg-[#A83D25] transition-colors"
           >
-            <svg
+            <svg aria-hidden="true"
               className="h-4 w-4"
               fill="none"
               viewBox="0 0 24 24"

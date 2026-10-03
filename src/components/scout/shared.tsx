@@ -613,7 +613,7 @@ export function ScoreRing({ score = 5 }: { score?: number }) {
   return (
     <div className="flex items-center gap-4">
       <div className="relative w-16 h-16 shrink-0">
-        <svg width="64" height="64" viewBox="0 0 64 64">
+        <svg aria-hidden="true" width="64" height="64" viewBox="0 0 64 64">
           <circle cx="32" cy="32" r={r} fill="none" stroke="var(--scout-ring-track)" strokeWidth="5" />
           <circle
             cx="32"

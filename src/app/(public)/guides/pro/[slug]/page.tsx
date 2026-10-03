@@ -130,7 +130,7 @@ export default async function ProGuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="mb-8 flex items-center gap-2 text-[12px] text-[#8A8073]"
+        className="mb-8 flex items-center gap-2 text-[12px] text-[#6B6255]"
       >
         <Link href="/" className="transition-colors hover:text-[#1A1815]">
           Home
@@ -166,7 +166,7 @@ export default async function ProGuidePage({ params }: PageProps) {
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#8A8073]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
@@ -210,7 +210,7 @@ export default async function ProGuidePage({ params }: PageProps) {
                   href={`/fees/${fee.fee_category}`}
                   className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
                 >
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8073] transition-colors group-hover:text-[#A93D25]/70">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] transition-colors group-hover:text-[#A93D25]/70">
                     {getDisplayName(fee.fee_category)}
                   </p>
                   <p
@@ -218,11 +218,11 @@ export default async function ProGuidePage({ params }: PageProps) {
                     style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                   >
                     {formatAmount(fee.median_amount)}
-                    <span className="ml-2 font-sans text-[11px] font-normal text-[#8A8073]">
+                    <span className="ml-2 font-sans text-[11px] font-normal text-[#6B6255]">
                       median
                     </span>
                   </p>
-                  <p className="mt-1 text-[11px] tabular-nums text-[#8A8073]">
+                  <p className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
                     {fee.institution_count.toLocaleString()} institutions
                   </p>
                 </Link>

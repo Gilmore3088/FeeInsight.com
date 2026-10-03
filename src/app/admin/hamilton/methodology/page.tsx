@@ -63,7 +63,7 @@ export default async function MethodologyPage() {
       <div className="admin-card p-6 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
 
         {/* Table of Contents */}
-        <nav className="mb-8">
+        <nav aria-label="On this page" className="mb-8">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Contents</p>
           <ol className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
             {[

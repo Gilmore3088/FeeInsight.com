@@ -110,7 +110,7 @@ export default async function WelcomePage({
       <header className="border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 flex items-center h-14">
           <div className="flex items-center gap-2 text-[#1A1815]">
-            <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
               <rect x="4" y="13" width="4" height="8" rx="1" />
               <rect x="10" y="8" width="4" height="13" rx="1" />
               <rect x="16" y="3" width="4" height="18" rx="1" />
@@ -122,7 +122,7 @@ export default async function WelcomePage({
         </div>
       </header>
 
-      <div className="px-4 py-10">
+      <main id="main-content" className="px-4 py-10">
         <WelcomeSteps
           userName={user.display_name}
           user={user}
@@ -133,7 +133,7 @@ export default async function WelcomePage({
           pendingWorkspaceInvitations={pendingWorkspaceInvitations}
           workspaceMemberships={workspaceMemberships}
         />
-      </div>
+      </main>
     </div>
   );
 }

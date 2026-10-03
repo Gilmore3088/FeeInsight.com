@@ -64,7 +64,7 @@ export default function SampleReportPage() {
         summary={summary}
       />
 
-      <nav className="mb-6 flex items-center gap-2 text-[12px] text-[#6B6255]">
+      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-[#6B6255]">
         <Link href="/reports" className="transition-colors hover:text-[#1A1815]">
           Reports
         </Link>

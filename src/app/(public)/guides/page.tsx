@@ -136,7 +136,7 @@ function GuideCard({
               >
                 {formatAmount(primary.median_amount)}
               </span>
-              <span className="text-[11px] text-[#8A8073]">
+              <span className="text-[11px] text-[#6B6255]">
                 median {getDisplayName(primary.fee_category).toLowerCase()}
               </span>
             </div>
@@ -148,7 +148,7 @@ function GuideCard({
                     key={fee.fee_category}
                     className="flex items-center justify-between"
                   >
-                    <span className="text-[11px] text-[#8A8073]">
+                    <span className="text-[11px] text-[#6B6255]">
                       {getDisplayName(fee.fee_category)}
                     </span>
                     <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ function GuideCard({
             >
               {formatAmount(primary.median_amount)}
             </span>
-            <span className="text-[10px] text-[#8A8073]">
+            <span className="text-[10px] text-[#6B6255]">
               median {getDisplayName(primary.fee_category).toLowerCase()}
             </span>
           </div>
@@ -249,7 +249,7 @@ export default async function GuidesIndexPage() {
           institutions. Free to read, and always will be.
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#8A8073]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
           <span className="tabular-nums">
             {totalObservations.toLocaleString()} fee observations
           </span>
@@ -291,7 +291,7 @@ export default async function GuidesIndexPage() {
               More Fee Guides
             </h2>
             <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
-            <span className="text-[11px] tabular-nums text-[#8A8073]">
+            <span className="text-[11px] tabular-nums text-[#6B6255]">
               {more.length} guides
             </span>
           </div>
@@ -321,7 +321,7 @@ export default async function GuidesIndexPage() {
               For Bankers &amp; Consultants
             </h2>
             <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
-            <span className="text-[11px] text-[#8A8073]">Professional plan</span>
+            <span className="text-[11px] text-[#6B6255]">Professional plan</span>
           </div>
 
           <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-[#6B6255]">
@@ -338,11 +338,11 @@ export default async function GuidesIndexPage() {
                 className="group rounded-xl border border-[#E8DFD1]/80 bg-[#FAF7F2]/60 px-5 py-4 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:bg-white hover:shadow-md hover:shadow-[#C44B2E]/5"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A8073]">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6B6255]">
                     {guide.family}
                   </span>
                   <svg
-                    className="h-2.5 w-2.5 text-[#8A8073]"
+                    className="h-2.5 w-2.5 text-[#6B6255]"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -378,7 +378,7 @@ export default async function GuidesIndexPage() {
           <span className="h-px w-6 bg-[#C44B2E]/30" aria-hidden="true" />
           <h2
             id="explore-heading"
-            className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#8A8073]"
+            className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]"
           >
             Explore More
           </h2>

@@ -3,6 +3,7 @@ import { NavAccount } from "./nav-account";
 import { NavLinks, ProBadge } from "./nav-links";
 import { ConsumerMobileNav } from "./consumer-mobile-nav";
 import { SearchTrigger } from "./search-trigger";
+import { SkipLink } from "./public/skip-link";
 import { SITE_NAME } from "@/lib/constants";
 
 export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, REQUEST_REPORT_NAV } from "./nav-items";
@@ -19,6 +20,7 @@ export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, REQUEST_REPORT_NAV } from "./nav-items
 export function ConsumerNav() {
   return (
     <header className="sticky top-0 z-40 border-b border-[#E8DFD1] bg-[#FAF7F2]/95">
+      <SkipLink />
       <div className="mx-auto max-w-6xl px-6">
         <div className="flex h-14 items-center justify-between">
           <div className="flex items-center gap-8">

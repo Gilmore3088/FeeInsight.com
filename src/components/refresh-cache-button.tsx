@@ -23,7 +23,7 @@ export function RefreshCacheButton() {
       disabled={isPending}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50"
     >
-      <svg
+      <svg aria-hidden="true"
         className={`w-3.5 h-3.5 ${isPending ? "animate-spin" : ""}`}
         fill="none"
         viewBox="0 0 24 24"

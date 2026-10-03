@@ -50,7 +50,7 @@ export default async function LoginPage({
         <div className="relative z-10 max-w-md">
           {/* Logo */}
           <Link href="/" className="inline-flex items-center gap-2 text-[#1A1815] no-underline mb-10">
-            <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
               <rect x="4" y="13" width="4" height="8" rx="1" />
               <rect x="10" y="8" width="4" height="13" rx="1" />
               <rect x="16" y="3" width="4" height="18" rx="1" />
@@ -99,7 +99,7 @@ export default async function LoginPage({
           {/* Mobile logo */}
           <div className="text-center mb-8 lg:hidden">
             <Link href="/" className="inline-flex items-center gap-2 text-[#1A1815] no-underline mb-4">
-              <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
                 <rect x="4" y="13" width="4" height="8" rx="1" />
                 <rect x="10" y="8" width="4" height="13" rx="1" />
                 <rect x="16" y="3" width="4" height="18" rx="1" />

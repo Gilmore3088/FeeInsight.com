@@ -45,7 +45,7 @@ export function PeerFiltersBar() {
   return (
     <div className="flex flex-wrap items-center gap-2 mb-6 print:hidden">
       <div className="flex items-center gap-1.5 mr-1">
-        <svg
+        <svg aria-hidden="true"
           viewBox="0 0 16 16"
           className="w-3.5 h-3.5 text-gray-400"
           fill="none"

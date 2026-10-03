@@ -207,7 +207,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         ]}
       />
 
-      <main className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
+      <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
           <ProfileHeader
             name={inst.institution_name}
@@ -331,7 +331,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             />
           </div>
         </div>
-      </main>
+      </div>
 
       <InstitutionJsonLd
         institutionId={instId}

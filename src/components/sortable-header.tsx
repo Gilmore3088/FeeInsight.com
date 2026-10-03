@@ -33,14 +33,14 @@ export function SortableHeader({
       >
         {label}
         <span className="inline-flex flex-col leading-none -space-y-0.5">
-          <svg
+          <svg aria-hidden="true"
             viewBox="0 0 8 5"
             className={`w-2 h-1.5 ${isActive && currentDir === "asc" ? "text-gray-900" : "text-gray-300"}`}
             fill="currentColor"
           >
             <path d="M4 0L8 5H0z" />
           </svg>
-          <svg
+          <svg aria-hidden="true"
             viewBox="0 0 8 5"
             className={`w-2 h-1.5 ${isActive && currentDir === "desc" ? "text-gray-900" : "text-gray-300"}`}
             fill="currentColor"

@@ -370,7 +370,7 @@ export function AnalystHub({
             className="flex h-7 w-7 items-center justify-center rounded-lg text-warm-600 hover:bg-warm-200/40 transition-colors"
             aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
-            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
             </svg>
           </button>

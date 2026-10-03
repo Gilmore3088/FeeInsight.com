@@ -208,7 +208,7 @@ export function SearchModal() {
               onChange={(e) => search(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search institutions, fees, or guides..."
-              className="flex-1 bg-transparent text-[14px] text-[#1A1815] placeholder:text-[#A09788] outline-none"
+              className="flex-1 bg-transparent text-[14px] text-[#1A1815] placeholder:text-[#6B6255] outline-none"
               aria-label="Search"
               role="combobox"
               aria-expanded={results.length > 0}

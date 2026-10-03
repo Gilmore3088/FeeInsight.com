@@ -14,7 +14,8 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-[#FAF7F2]">
       <AdminViewBanner />
       <ConsumerNav />
-      <main>{children}</main>
+      {/* The one <main> for every public page; pages render sections, not their own <main>. */}
+      <main id="main-content">{children}</main>
       <CustomerFooter />
       <SearchModal />
     </div>

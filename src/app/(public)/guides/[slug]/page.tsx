@@ -224,7 +224,7 @@ export default async function GuidePage({ params }: PageProps) {
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#8A8073]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
@@ -365,7 +365,7 @@ export default async function GuidePage({ params }: PageProps) {
                   change fees without much notice — always check your own
                   institution&rsquo;s current schedule.
                 </p>
-                <p className="mt-2 text-[#8A8073]">
+                <p className="mt-2 text-[#6B6255]">
                   {guide.author}
                   {reviewDate && <> &middot; Last reviewed {reviewDate}</>}
                   {guide.methodologyHref && (
@@ -425,7 +425,7 @@ export default async function GuidePage({ params }: PageProps) {
                           <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
                             {getDisplayName(fee.fee_category)}
                           </span>
-                          <span className="block text-[11px] text-[#8A8073]">
+                          <span className="block text-[11px] text-[#6B6255]">
                             {open
                               ? "Distribution, breakdowns by charter, state and tier"
                               : "Distribution and national median — free"}
@@ -433,7 +433,7 @@ export default async function GuidePage({ params }: PageProps) {
                           {/* Stated about the destination, not the reader, so this page
                               renders the same HTML for everyone and can be cached. */}
                           {!open && (
-                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-[#8A8073]">
+                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-[#6B6255]">
                               <svg
                                 className="h-2.5 w-2.5"
                                 viewBox="0 0 24 24"
@@ -525,9 +525,9 @@ export default async function GuidePage({ params }: PageProps) {
                           >
                             {formatAmount(fee.median_amount)}
                           </span>
-                          <span className="text-[10px] text-[#8A8073]">median</span>
+                          <span className="text-[10px] text-[#6B6255]">median</span>
                         </div>
-                        <div className="mt-1 text-[11px] tabular-nums text-[#8A8073]">
+                        <div className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
                           P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
                           {formatAmount(fee.p75_amount)}
                         </div>
@@ -561,7 +561,7 @@ export default async function GuidePage({ params }: PageProps) {
                         className="flex items-center justify-between text-[12px]"
                       >
                         <span className="mr-2 truncate text-[#5A5347]">
-                          <span className="mr-1 tabular-nums text-[#8A8073]">{i + 1}.</span>
+                          <span className="mr-1 tabular-nums text-[#6B6255]">{i + 1}.</span>
                           {f.institution_name}
                         </span>
                         <span className="shrink-0 font-semibold tabular-nums text-emerald-800">
@@ -585,7 +585,7 @@ export default async function GuidePage({ params }: PageProps) {
                         className="flex items-center justify-between text-[12px]"
                       >
                         <span className="mr-2 truncate text-[#5A5347]">
-                          <span className="mr-1 tabular-nums text-[#8A8073]">{i + 1}.</span>
+                          <span className="mr-1 tabular-nums text-[#6B6255]">{i + 1}.</span>
                           {f.institution_name}
                         </span>
                         <span className="shrink-0 font-semibold tabular-nums text-red-700">
@@ -601,7 +601,7 @@ export default async function GuidePage({ params }: PageProps) {
                 aria-label="Guide contents"
                 className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-4"
               >
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#8A8073]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]">
                   In This Guide
                 </p>
                 <ul className="mt-3 space-y-2">
@@ -644,7 +644,7 @@ export default async function GuidePage({ params }: PageProps) {
                     Create a free account
                     <Arrow />
                   </Link>
-                  <p className="mt-3 text-[11px] text-[#8A8073]">
+                  <p className="mt-3 text-[11px] text-[#6B6255]">
                     Benchmarking for your institution?{" "}
                     <Link href="/subscribe" className="text-[#A93D25]/80 hover:text-[#A93D25]">
                       See professional plans

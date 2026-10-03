@@ -141,7 +141,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       />
 
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
         <Link href="/" className="hover:text-[#1A1815] transition-colors">
           Home
         </Link>
