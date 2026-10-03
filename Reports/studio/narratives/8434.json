@@ -1,46 +1,49 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your outgoing international wire fee ($30 vs a $45 median) sits below the market range.",
   "findings": [
     {
-      "stat": "$0 vs $5",
-      "stat_label": "OD protection transfer vs median",
-      "headline": "You waive two fees most peers charge — silently.",
-      "body": "Overdraft-protection transfers are free against a $5.00 peer median (13th percentile, 24 publishing peers), and monthly maintenance is free against a $3.50 median (21st percentile, 33 peers). Waived fees that peers charge are the strongest possible comparison claim — and right now they generate zero marketing value because nobody is told about them."
+      "stat": "7 of 8",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 8 fee lines where we found both your published amount and at least eight comparable peers, seven sit between the peer 25th and 75th percentiles and one below."
     },
     {
-      "stat": "$5 vs $25",
-      "stat_label": "card replacement vs peer median",
-      "headline": "Your service fees run well below market across the board.",
-      "body": "Card replacement ($5 vs a $25 median across 94 peers, 24th percentile), paper statements ($1 vs $2.75, 25th percentile), and international wires ($30 vs $40, 28th percentile) all price in the bottom third of the cohort. Combined with the waived fees, Bay Cities has one of the most member-friendly published schedules in its comparison set."
+      "stat": "$30 vs $45",
+      "stat_label": "outgoing international wire fee, yours vs peer median",
+      "headline": "Your outgoing international wire fee is priced below the market.",
+      "body": "Your outgoing international wire fee ($30 vs a $45 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify."
     },
     {
-      "stat": "2 fees",
-      "stat_label": "missing from published schedule",
-      "headline": "Your overdraft fee is invisible — and that now costs you.",
-      "body": "No overdraft fee and no incoming domestic wire fee could be verified from your published schedule. Overdraft is the single most scrutinized fee in the industry; when it cannot be found, comparison tools and cautious prospective members assume the worst rather than the best. For an institution priced this favorably everywhere else, an unpublished overdraft line surrenders the exact comparison you would win."
+      "stat": "42nd",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is in line with peers.",
+      "body": "Service-charge income was 29.2 basis points of assets in your latest full-year filing, against a 37.2 bps median for 3,325 same-size credit unions."
     }
   ],
-  "exec_narrative": "Net position: Bay Cities Credit Union prices at the median on the penalty core (NSF $25 and stop payment $20 both sit exactly at the peer median of a 182-credit-union cohort) and at or below market everywhere else — two fees waived outright, card replacement at a fifth of the median, statements and international wires in the bottom third. There is no genuine overpricing finding on this schedule. The exposure is informational, not financial: the overdraft and incoming wire fees are absent from the published schedule, leaving the most examined line in banking invisible. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Bay Cities Credit Union is compared with 102 credit unions of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in California have published data, so local competitors may price differently. Of 8 rankable lines, seven sit inside the middle half of the market and one below it (outgoing international wire fee). No change is indicated by the published data; the value of this report is in confirming that position and tracking peers as they move.",
   "callouts": [
     {
       "kind": "opportunity",
-      "title": "Waived fees — free where peers charge",
-      "stat": "Monthly maintenance $0 vs $3.50 median (P21, n=33) · OD protection transfer $0 vs $5.00 median (P13, n=24)",
-      "body": "Free maintenance and free overdraft-protection transfers are claims your competitors' own published schedules substantiate. These are precisely the lines prospective members compare when choosing an institution, and 'we don't charge for that' is the shortest marketing sentence in banking. It belongs on the website, in branch materials, and in member acquisition messaging."
-    },
-    {
-      "kind": "opportunity",
-      "title": "Service fees — bottom third of the cohort",
-      "stat": "Card replacement $5 vs $25 median (P24, n=94) · Paper statement $1 vs $2.75 (P25) · Intl wire $30 vs $40 (P28)",
-      "body": "Against the largest and most reliable comparison sets in this analysis, Bay Cities undercuts the market on everyday service fees. If deliberate, this is a differentiation story; if legacy, it is margin available without touching a single penalty line. Either way it deserves a decision — and if the answer is 'keep it,' it deserves an audience."
-    },
-    {
-      "kind": "risk",
-      "title": "Overdraft and incoming wire — not found on published schedule",
-      "stat": "Overdraft: peer median $25.00, n=27, no published value · Incoming domestic wire: peer median $10.00, n=13, no published value",
-      "body": "Unpublished fees are read as hidden fees, whatever the actual price. In an era of junk-fee scrutiny and automated schedule comparison, transparency itself has become a competitive attribute — and an institution with this favorable a pricing profile has every incentive to publish. If the overdraft fee is at or below the $25 cohort median, disclosure is pure upside; if it is above, that is a pricing conversation worth having before an examiner or a journalist has it for you."
+      "title": "Outgoing international wire fee — $30",
+      "stat": "Peer median $45 · middle half $33.75–$50 · 25th percentile · n=16",
+      "body": "Published as “Wire Transfer - Foreign.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $45 is the reference point."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from penalty fees: NSF and overdraft charges are being cut, capped, or eliminated under regulatory and reputational pressure, and your own cohort reflects it — the NSF median across 182 comparable credit unions has settled at $25, exactly where you price. Second, published fee schedules have become public documents: scraped, compared, and surfaced to prospective members automatically. That cuts both ways — every outlier is exposed, but every below-market line and every waived fee is independently verifiable by anyone who looks.</p><p>Small community credit unions win on relationships and trust, and a fee schedule is one of the few places that promise is testable in writing. Bay Cities' schedule already passes the test almost everywhere — waived maintenance, waived protection transfers, bottom-third service fees. The two highest-leverage moves are therefore unusual ones: publish the missing overdraft and wire lines so the schedule's transparency matches its pricing, and then market the member-friendly profile the data already proves.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Bay Cities Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "nsf",
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 8,
+    "above": [],
+    "below": [
+      "wire_intl_outgoing"
+    ],
+    "gaps": [],
+    "thin": 0
+  }
 }

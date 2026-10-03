@@ -1,46 +1,56 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your NSF / returned-item fee ($32) is $8 above the $24 peer median, the 89th percentile of 9 peers.",
   "findings": [
     {
-      "stat": "$32 vs $15",
-      "stat_label": "NSF fee vs peer median",
-      "headline": "Your NSF fee is the highest in your peer set.",
-      "body": "At $32.00, your NSF fee tops every one of the five comparable large credit unions with published data — more than double the $15 median, and flagged as an extreme outlier. One peer in the set has eliminated the fee entirely. The contrast is sharpened by the rest of your schedule, which is otherwise notably member-friendly: this is the one line that tells a different story."
+      "stat": "$32 vs $24",
+      "stat_label": "NSF / returned-item fee, yours vs peer median",
+      "headline": "Your NSF / returned-item fee is above the market range.",
+      "body": "At $32, it is $8 above the $24 peer median and the 89th percentile of 9 peers (middle half of the market: $20–$29). Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them."
     },
     {
-      "stat": "$0",
-      "stat_label": "two fees fully waived",
-      "headline": "You waive fees your peers still charge.",
-      "body": "Non-network ATM transactions ($0 against a $1.00 peer median) and minimum-balance charges ($0 against a $4.00 median) are waived outright on your schedule. These are exactly the small, frequent frictions members notice — and exactly the claims that comparison-minded members verify against published schedules. Today neither waiver appears anywhere in your marketing."
+      "stat": "3 of 4",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 4 fee lines where we found both your published amount and at least eight comparable peers, three sit between the peer 25th and 75th percentiles, one above."
     },
     {
-      "stat": "$5 vs $25",
-      "stat_label": "card replacement vs peer median",
-      "headline": "Your service-fee stack runs well below market.",
-      "body": "Card replacement ($5.00 vs a $25.00 median, 31st percentile), overdraft-protection transfers ($5.00 vs a $20.00 median), and stop payments ($10.00 vs $15.00, 33rd percentile) all price under most comparable credit unions. Combined with the waived fees above, this is a coherent member-value posture — undermined only by the NSF outlier, and unclaimed as a story."
+      "stat": "19th",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is a smaller contributor than at most peers.",
+      "body": "Service-charge income was 21.0 basis points of assets in your latest full-year filing, against a 41.5 bps median for 448 same-size credit unions. That gives room to adjust the lines flagged in this report at limited revenue cost."
     }
   ],
-  "exec_narrative": "Net position: Dfcu Financial runs one of the more member-friendly published schedules in its cohort — two fees waived outright, a service-fee stack below market — with a single glaring exception: a $32 NSF fee that is the highest among the five comparable large credit unions with published data and more than double their median. One caveat on the data: peer samples in this cohort are thin (four to thirteen institutions for most categories), so percentiles should be read as directional. The strategic question is coherence: either the NSF fee comes into line with the rest of the schedule, or the member-value story stays untellable because its biggest counterexample sits on page one of the fee schedule.",
+  "exec_narrative": "Dfcu Financial Federal Credit Union is compared with 38 credit unions $300M–$10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 4 rankable lines, three sit inside the middle half of the market, one above it (NSF / returned-item fee). We would suggest one step: review the NSF / returned-item fee, which sits above the market range; the peer median of $24 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "NSF / returned item — $32.00",
-      "stat": "Peer median $15.00 · P25 $7.00 · 100th percentile · n=5 · flagged: extreme outlier (>2x median)",
-      "body": "The peer set is small, but its shape is unambiguous: the median is $15, a quarter of the set charges $7 or less, and one comparable credit union has retired the fee altogether. At $32 you hold the top of the distribution during an industry-wide retreat from NSF fees. For an institution whose other fees signal member value, this line is the outlier in both senses — statistical and strategic. It warrants a decision: cut, cap, or a documented rationale."
+      "title": "NSF / returned-item fee — $32",
+      "stat": "Peer median $24 · middle half $20–$29 · range $7–$35 · 89th percentile · n=9",
+      "body": "Published as “Non-Sufficient Funds Fee.” At $32 it is $8 above the $24 peer median. Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them. A penalty fee offers little service to differentiate on, so the peer median of $24 is the natural reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Waived fees — $0 where peers charge",
-      "stat": "ATM non-network $0.00 vs $1.00 median · Minimum balance $0.00 vs $4.00 median",
-      "body": "Two fees your peers still charge, you have eliminated. These waivers are verifiable in your published schedule and directly comparable against peers' — which makes them low-risk marketing claims with real substance. A member choosing between large credit unions can confirm the difference in five minutes; today, nothing invites them to look."
-    },
-    {
-      "kind": "opportunity",
-      "title": "Service fees — priced below market, marketed nowhere",
-      "stat": "Card replacement $5.00 vs $25.00 median (P31) · OD protection transfer $5.00 vs $20.00 median · Stop payment $10.00 vs $15.00 median (P33)",
-      "body": "Three consumer-facing service fees run at a fraction of the cohort median. If deliberate, they complete a member-value narrative that spans the whole schedule and deserves to be told. If not deliberate, they are margin available without touching a headline fee. The one move to avoid is the current default: below market, and invisible."
+      "title": "Lines with too few peers to rank",
+      "stat": "Overdraft-protection transfer fee $5 (n=2, median $3.50) · Paper statement fee $2 (n=5, median $3) · Incoming wire fee $0 (n=3, median $10)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: the largest institutions have largely eliminated returned-item fees, and the pressure has migrated across the industry — visible even in your small peer set, where the median has fallen to $15 and one comparable credit union charges nothing. Second, published fee schedules have become marketing documents: public, scraped, and compared, which converts every outlier line into a reputational bet and every waiver into a verifiable claim.</p><p>Large community credit unions occupy the exposed middle of that landscape: big enough to appear in every comparison and press survey, without the brand gravity that lets money-center banks price premiums quietly. What credit unions at your scale do have is the member-ownership story — and your schedule already substantiates it almost everywhere. In that position the highest-leverage move is rarely an across-the-board cut; it is resolving the single conspicuous outlier so the rest of the schedule can be advertised without an asterisk.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Dfcu Financial Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return",
+    "monthly_maintenance",
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 4,
+    "above": [
+      "nsf"
+    ],
+    "below": [],
+    "gaps": [],
+    "thin": 3
+  }
 }

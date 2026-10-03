@@ -1,52 +1,57 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your outgoing domestic wire fee ($20 vs a $25 median) sits below the market range.",
   "findings": [
     {
-      "stat": "$50 vs $35",
-      "stat_label": "international wire vs peer median",
-      "headline": "Your international wire fee sits near the top of the cohort.",
-      "body": "At $50.00, your outgoing international wire is at the 90th percentile of 10 peer banks — $15 over the $35 median and above the cohort's 75th percentile of $47.50. International wire customers are disproportionately businesses and internationally connected households, a segment with growing low-cost alternatives that publish their pricing aggressively."
+      "stat": "$20 vs $25",
+      "stat_label": "outgoing domestic wire fee, yours vs peer median",
+      "headline": "Your outgoing domestic wire fee is priced below the market.",
+      "body": "Your outgoing domestic wire fee ($20 vs a $25 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify."
     },
     {
-      "stat": "P96",
-      "stat_label": "deposited item return percentile",
-      "headline": "Returned deposited items are priced near the top of the market.",
-      "body": "Your $25.00 deposited-item return fee sits at the 96th percentile of 27 peers — $10 over the $15 median and above the 75th percentile of $20. This fee lands on customers whose deposited check bounced through no fault of their own, which makes a near-top-of-cohort price a reputational bet as much as a revenue line."
+      "stat": "6 of 7",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 7 fee lines where we found both your published amount and at least eight comparable peers, six sit between the peer 25th and 75th percentiles and one below."
     },
     {
-      "stat": "-25%",
-      "stat_label": "outgoing domestic wire vs peer median",
-      "headline": "You are below market on everyday money movement — quietly.",
-      "body": "Outgoing domestic wires ($15 vs a $20 median, 47th percentile), incoming wires ($12 vs $15, 41st percentile), and cashier's checks ($5 vs an $8 median, 33rd percentile) all run below the cohort. That is either unclaimed margin or an untold customer-friendly story; today it is neither, because these prices are invisible next to the two lines that stand out for the wrong reason."
+      "stat": "2 fees",
+      "stat_label": "not found in your published schedule",
+      "headline": "Some headline fees are not in the schedule we found.",
+      "body": "We did not find a non-network ATM fee and a deposited-item return fee in your published documents, although 23 or more peers publish one. If you charge them, the amount may sit in a separate disclosure; customers comparing schedules online will not see it."
     }
   ],
-  "exec_narrative": "Net position: Lawrence Bank prices core penalty fees close to market (NSF at $15 vs a $12 median, 60th percentile) but carries two conspicuous premiums — an international wire at the 90th percentile and a deposited-item return fee at the 96th — alongside quieter premiums on paper statements (88th percentile) and stop payments (80th). At the same time, its everyday domestic money-movement fees run below the median and earn no credit for it. The pattern is a schedule priced line by line rather than as a posture; the three findings above are the agenda for making it deliberate.",
+  "exec_narrative": "Lawrence Bank is compared with 68 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Tennessee have published data, so local competitors may price differently. Of 7 rankable lines, six sit inside the middle half of the market and one below it (outgoing domestic wire fee). We would suggest one step: check that the non-network ATM and deposited-item return fees are published where customers can find them.",
   "callouts": [
     {
-      "kind": "risk",
-      "title": "International wire (outgoing) — $50.00",
-      "stat": "Peer median $35.00 · P75 $47.50 · 90th percentile · n=10",
-      "body": "The largest dollar gap on your schedule: $15 over the median, near the top of the cohort. This fee falls on business and internationally connected customers who have the most alternatives and the most reason to compare. It deserves either a competitive rationale or a move toward the median."
-    },
-    {
-      "kind": "risk",
-      "title": "Deposited item return — $25.00",
-      "stat": "Peer median $15.00 · P75 $20.00 · 96th percentile · n=27",
-      "body": "This fee charges your customer for someone else's bad check. At $10 over the median and above the 75th percentile of a 27-bank cohort, it is the kind of line that attracts junk-fee framing quickly — the triggering event is outside the customer's control. It warrants a decision rather than a default."
-    },
-    {
-      "kind": "risk",
-      "title": "Small recurring fees — a quiet premium stack",
-      "stat": "Paper statement $5.00 vs $3.00 median (P88, n=16) · Stop payment $34.00 vs $30.00 median (P80, n=15)",
-      "body": "Individually modest, together these place two routine consumer touchpoints in the top quintile of the cohort. Paper statements in particular hit older and lower-digital-engagement customers monthly — a $2-over-median fee that compounds into a visible pattern on the statement itself."
-    },
-    {
       "kind": "opportunity",
-      "title": "Domestic wires and cashier's checks — below market, marketed nowhere",
-      "stat": "Outgoing wire $15 vs $20 median (P47) · Incoming wire $12 vs $15 median (P41) · Cashier's check $5 vs $8 median (P33)",
-      "body": "Three everyday service fees priced below most peers. If deliberate, they belong in your messaging — 'cheaper to move money here than at most banks in your market' is a claim your competitors' own published schedules substantiate. If not deliberate, they are margin available without touching a single headline fee."
+      "title": "Outgoing domestic wire fee — $20",
+      "stat": "Peer median $25 · middle half $25–$30 · 20th percentile · n=10",
+      "body": "Published as “Wire Transfer Fee: Domestic Outgoing via VB Branch.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $25 is the reference point."
+    },
+    {
+      "kind": "risk",
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Non-network ATM fee: published by 9 peers (median $2) · Deposited-item return fee: published by 23 peers (median $10)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median has fallen to $12 and your own $15 fee sits only modestly above it. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet and every below-market line into an unclaimed advantage.</p><p>Community-scale institutions ($1B–$10B) occupy the exposed middle: large enough to be included in comparisons, without the brand gravity that lets money-center banks charge premiums quietly. In that position, the highest-leverage moves are usually not across-the-board cuts but surgical ones — trimming the two near-top-of-cohort fees on international wires and returned deposited items, deciding whether the quiet premiums on paper statements and stop payments are worth their visibility, and actively advertising the money-movement fees already priced below market.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Lawrence Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "nsf"
+  ],
+  "summary": {
+    "ranked": 7,
+    "above": [],
+    "below": [
+      "wire_domestic_outgoing"
+    ],
+    "gaps": [
+      "atm_non_network",
+      "deposited_item_return"
+    ],
+    "thin": 0
+  }
 }

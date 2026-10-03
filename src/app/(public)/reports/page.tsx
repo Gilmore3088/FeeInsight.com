@@ -92,7 +92,7 @@ function SampleReportCard() {
       </Link>
       <p className="max-w-[560px] text-[14px] leading-relaxed text-[#5A5347]">
         An anonymized report for a ~$400M community bank: fee position against a verified peer
-        set, the outliers that matter, the revenue lens, and a named peer comparison. Yours is
+        set, the lines outside the market range, the revenue lens, and a named peer comparison. Yours is
         built for your institution and delivered in 48 hours.
       </p>
       <Link

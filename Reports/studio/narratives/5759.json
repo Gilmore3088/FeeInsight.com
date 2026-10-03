@@ -1,52 +1,69 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your NSF / returned-item fee ($40) is $15 above the $25 peer median, the highest of the 21 peers that publish it.",
   "findings": [
     {
-      "stat": "$43 vs $20",
-      "stat_label": "stop payment vs peer median",
-      "headline": "Your stop-payment fee is an extreme outlier.",
-      "body": "At $43.00, your stop-payment fee is more than double the $20 median of 66 comparable credit unions — the 98th percentile, flagged as an extreme outlier. Three quarters of your peers charge $30 or less. This is a service fee members request in moments of stress, which makes an outlier price here disproportionately visible."
+      "stat": "$40 vs $25",
+      "stat_label": "NSF / returned-item fee, yours vs peer median",
+      "headline": "Your NSF / returned-item fee is above the market range.",
+      "body": "At $40, it is $15 above the $25 peer median and the highest of the 21 peers that publish it (middle half of the market: $20–$30). Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them."
     },
     {
-      "stat": "P100",
-      "stat_label": "deposited-item return percentile",
-      "headline": "Two more fees sit at the very top of the cohort.",
-      "body": "Deposited-item returns run $40.00 against a $20.00 median — the highest value among 25 peers — and paper statements run $5.00 against a $2.75 median, at the top of 28 peers. Add an NSF fee of $30 versus a $25 median (83rd percentile), and your penalty-and-exception stack occupies the cohort's ceiling across multiple lines."
+      "stat": "3 more",
+      "stat_label": "lines above the market range",
+      "headline": "Smaller premiums elsewhere on the schedule.",
+      "body": "Your deposited-item return fee ($40 vs a $25 median, n=8), your stop-payment fee ($43 vs a $25 median, n=27) and your cashier's check fee ($10 vs a $3 median, n=9) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison."
     },
     {
-      "stat": "$3 vs $25",
-      "stat_label": "card replacement vs peer median",
-      "headline": "Your everyday fees are genuinely member-friendly — and unknown.",
-      "body": "Card replacement ($3.00 vs a $25.00 median, 11th percentile across 94 peers), monthly maintenance ($1.00 vs $3.50, 39th percentile), and cashier's checks ($2.00 vs $4.00, 31st percentile) all price well below comparable credit unions. The schedule's generous half is real; it simply earns nothing today because nobody has been told about it."
+      "stat": "3 of 7",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 7 fee lines where we found both your published amount and at least eight comparable peers, three sit between the peer 25th and 75th percentiles, four above."
     }
   ],
-  "exec_narrative": "Net position: Coopers Cave runs a barbell schedule. Exception and penalty fees sit at or near the top of the cohort — a stop-payment fee flagged as an extreme outlier, deposited-item returns and paper statements at the cohort maximum, NSF above a falling median — while everyday service fees like card replacement and monthly maintenance price near the bottom. Three categories (overdraft, overdraft-protection transfer, incoming domestic wire) are absent from the published schedule. The barbell is the risk: members and reviewers notice the ceiling fees, and the generous floor earns no offsetting credit. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Coopers Cave Federal Credit Union is compared with 32 credit unions of similar size in New York that publish fee schedules in the Bank Fee Index. Of 7 rankable lines, three sit inside the middle half of the market, four above it (NSF / returned-item fee, deposited-item return fee, stop-payment fee and cashier's check fee). We would suggest one step: review the NSF / returned-item fee, which sits above the market range; the peer median of $25 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Stop payment — $43.00",
-      "stat": "Peer median $20.00 · P75 $30.00 · 98th percentile · n=66 · flagged: extreme outlier (>2x median)",
-      "body": "At more than double the peer median, this is the single most conspicuous line on your schedule. Stop payments are requested by members already dealing with a problem — a lost check, a disputed payment — so the fee lands at a moment of maximum sensitivity. Whether the answer is a cut toward the $20 center or a documented rationale, this fee should be a decision rather than an inheritance."
+      "title": "NSF / returned-item fee — $40",
+      "stat": "Peer median $25 · middle half $20–$30 · range $15–$40 · 100th percentile · n=21",
+      "body": "Published as “NSF Returned Item.” At $40 it is $15 above the $25 peer median. Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them. A penalty fee offers little service to differentiate on, so the peer median of $25 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "Deposited item return — $40.00",
-      "stat": "Peer median $20.00 · peer max $40.00 · 100th percentile · n=25",
-      "body": "You hold the cohort ceiling on a fee that charges members because someone else's check failed — a charge members consistently experience as unfair, since the failure is not theirs. Fees that penalize members for third-party behavior are exactly the category regulators and comparison surveys highlight first. At double the median, this line pairs with the stop-payment outlier to define your schedule's exposure."
+      "title": "Deposited-item return fee — $40",
+      "stat": "Peer median $25 · middle half $18.75–$30.75 · range $15–$35 · 100th percentile · n=8",
+      "body": "Published as “Returned Deposited Item.” At $40 it is $15 above the $25 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $25 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "NSF / returned item — $30.00",
-      "stat": "Peer median $25.00 · 83rd percentile · n=66",
-      "body": "The industry-wide retreat from NSF fees has reached small credit unions: your cohort's median is $25 and the low end has already reached zero. A $30 fee is not yet an outlier, but it sits on the wrong side of a falling trend line and compounds the top-of-cohort posture established by your other exception fees."
+      "title": "Stop-payment fee — $43",
+      "stat": "Peer median $25 · middle half $17.50–$30 · range $10–$40 · 100th percentile · n=27",
+      "body": "Published as “Stop Payment.” At $43 it is $18 above the $25 peer median. It is infrequent, but it appears in most side-by-side schedule comparisons. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Everyday fees — near the bottom of the cohort, marketed nowhere",
-      "stat": "Card replacement $3.00 vs $25.00 median (P11) · Monthly maintenance $1.00 vs $3.50 median (P39) · Cashier's check $2.00 vs $4.00 median (P31)",
-      "body": "Three routine member fees price at a fraction of the cohort. If deliberate, they are the foundation of a member-value story your peers' own published schedules substantiate — one that could offset the exception-fee optics above. If not deliberate, they are margin available without touching a headline fee. Below market and invisible is the one position that earns nothing."
+      "title": "Lines with too few peers to rank",
+      "stat": "Non-network ATM fee $1 (n=7, median $1.75) · Outgoing international wire fee $40 (n=7, median $50)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF and penalty pricing generally: the largest institutions have eliminated returned-item fees, regulatory attention to so-called junk fees has intensified, and the pressure now reaches small credit unions — visible in your own cohort, where a quarter of peers price NSF at $20 or less. Second, published fee schedules have become public documents in practice: scraped, compared, and surfaced in searches, which converts every top-of-cohort line into a small reputational bet.</p><p>Small community credit unions compete on relationship and trust, which makes fee coherence unusually valuable at your scale — members forgive a fee they understand and resent one that feels arbitrary, and a $43 stop payment next to a $1 maintenance fee reads as arbitrary. The highest-leverage moves here are surgical: bring the two or three ceiling fees toward the cohort center, publish the categories currently missing from the schedule, and start telling the genuinely member-friendly story the bottom half of your schedule already contains.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Coopers Cave Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "monthly_maintenance"
+  ],
+  "summary": {
+    "ranked": 7,
+    "above": [
+      "nsf",
+      "deposited_item_return",
+      "stop_payment",
+      "cashiers_check"
+    ],
+    "below": [],
+    "gaps": [],
+    "thin": 2
+  }
 }
