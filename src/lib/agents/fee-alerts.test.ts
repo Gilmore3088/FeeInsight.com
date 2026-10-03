@@ -181,6 +181,7 @@ describe("runFeeAlertDispatch", () => {
     expect(mocks.sendResendEmail).not.toHaveBeenCalled();
     expect(updates()).toHaveLength(0);
     expect(summarizeFeeAlertDispatch(result)).toContain("did not email them");
+    expect(summarizeFeeAlertDispatch(result)).not.toMatch(/\.\.$/);
   });
 
   it("moves past signals about fees nobody follows even without email", async () => {

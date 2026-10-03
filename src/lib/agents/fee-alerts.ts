@@ -422,7 +422,8 @@ export function summarizeFeeAlertDispatch(result: FeeAlertDispatchResult): strin
   }
   if (result.readers === 0) return "Atlas found no fee changes for readers' saved institutions.";
   if (result.notConfigured) {
-    return `Atlas found ${result.readers} reader(s) with fee changes but did not email them: ${result.reason ?? "email is not configured"}.`;
+    const reason = (result.reason ?? "email is not configured").replace(/\.+$/, "");
+    return `Atlas found ${result.readers} reader(s) with fee changes but did not email them: ${reason}.`;
   }
   const deferred = result.deferred > 0 ? ` ${result.deferred} reader(s) wait for the next run.` : "";
   return `Atlas emailed ${result.sent} fee alert(s) covering ${result.institutions} institution(s): ${result.changes} change(s), ${result.newlyPublished} newly verified fee(s), ${result.failed} failed.${deferred}`;

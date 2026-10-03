@@ -15,6 +15,8 @@ const SIGNED_OUT: SessionChrome = { signedIn: false };
 
 // One fetch per page load, shared by every chrome island that asks.
 let inflight: Promise<SessionChrome> | null = null;
+// Mounted islands, so a sign-in or sign-out on the client updates the header in place.
+const listeners = new Set<(state: SessionChrome) => void>();
 
 function load(): Promise<SessionChrome> {
   if (!inflight) {
@@ -31,6 +33,10 @@ function load(): Promise<SessionChrome> {
  */
 export function resetSessionChrome(): void {
   inflight = null;
+  if (listeners.size === 0) return;
+  load().then((state) => {
+    for (const listener of listeners) listener(state);
+  });
 }
 
 /**
@@ -43,11 +49,14 @@ export function useSessionChrome(): SessionChrome | null {
   const [state, setState] = useState<SessionChrome | null>(null);
   useEffect(() => {
     let live = true;
-    load().then((s) => {
-      if (live) setState(s);
-    });
+    const listener = (next: SessionChrome) => {
+      if (live) setState(next);
+    };
+    listeners.add(listener);
+    load().then(listener);
     return () => {
       live = false;
+      listeners.delete(listener);
     };
   }, []);
   return state;
