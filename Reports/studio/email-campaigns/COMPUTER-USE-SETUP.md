@@ -34,6 +34,7 @@ You're finishing the Fee Insight email setup in two web dashboards: MailerLite a
    - the content preview shows a designed email with the "Fee Insight" masthead, not a blank or default template.
 
    If MailerLite has a separate **Preheader** field, leave it empty. The preheader is built into the HTML.
+   If an automation shows as **Draft** or "incomplete" even though every email checks out, open its workflow editor and save it (Save / Done) without turning it on. It should then show as **Inactive**. If it still says Draft, tell me which step it flags.
 5. **Exclusion.** Open the trigger of the **Welcome** automation. If there's an "exclude subscribers in group" option, exclude "Fee Insight · Report requests". Save. Don't change anything else on the trigger.
 6. **Test send.** For each of the three automations, use "Send test" (or the test-email option) to send the test emails to my test inbox only.
 7. **Report back** with a table: automation → email # → subject → sender name → content looks designed (yes/no) → test sent (yes/no). List anything that looked wrong.
