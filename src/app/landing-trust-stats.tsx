@@ -11,40 +11,40 @@ export function LandingTrustStats({ summary }: LandingTrustStatsProps) {
   // via the wrapper for compatibility with older surfaces).
   return (
     <section className="border-t border-warm-300 bg-warm-150/60">
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <dl className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
           <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
+            <dd className="text-[24px] font-bold text-warm-900 tabular-nums sm:text-[28px]">
               {summary.institutionsLabel}
             </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
+            <dt className="text-[11px] font-normal text-warm-600 uppercase tracking-wide mt-1 leading-snug sm:text-[12px]">
               Institutions with verified fees
             </dt>
           </div>
 
           <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
+            <dd className="text-[24px] font-bold text-warm-900 tabular-nums sm:text-[28px]">
               {summary.categoriesLabel}
             </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
+            <dt className="text-[11px] font-normal text-warm-600 uppercase tracking-wide mt-1 leading-snug sm:text-[12px]">
               Fee categories
             </dt>
           </div>
 
           <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
+            <dd className="text-[24px] font-bold text-warm-900 tabular-nums sm:text-[28px]">
               {summary.statesLabel}
             </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
+            <dt className="text-[11px] font-normal text-warm-600 uppercase tracking-wide mt-1 leading-snug sm:text-[12px]">
               U.S. states covered
             </dt>
           </div>
 
           <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
+            <dd className="text-[24px] font-bold text-warm-900 tabular-nums sm:text-[28px]">
               {summary.observationsLabel}
             </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
+            <dt className="text-[11px] font-normal text-warm-600 uppercase tracking-wide mt-1 leading-snug sm:text-[12px]">
               Verified fee observations
             </dt>
           </div>
