@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Clock3, FileText, type LucideIcon } from "lucide-react";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
+import { SearchModal } from "@/components/public/search-modal";
 import { getPublicInstitutionById } from "@/lib/data-store";
 import { SubmitForm } from "./submit-form";
 
@@ -135,6 +136,7 @@ export default async function SubmitFeesPage({ searchParams }: PageProps) {
         </div>
       </main>
       <CustomerFooter />
+      <SearchModal />
     </div>
   );
 }

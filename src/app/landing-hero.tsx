@@ -5,6 +5,7 @@ import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
+import { AudiencePaths } from "@/components/public/audience-paths";
 
 interface LandingHeroProps {
   institutionsLabel: string;
@@ -33,7 +34,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             <p className="mt-4 max-w-xl text-base leading-relaxed text-[#5A5347]">
               Look up what {institutionsLabel} banks and credit unions charge — every fee sourced.
             </p>
-            <div className="mt-6 max-w-2xl" aria-label="Search for a bank or credit union">
+            <div className="mt-6 max-w-2xl" role="search" aria-label="Search for a bank or credit union">
               <InstitutionSearchBar />
             </div>
             <Link
@@ -46,6 +47,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
 
           <ReportCard />
         </div>
+        <AudiencePaths compact className="mt-10" />
       </div>
     </section>
   );
