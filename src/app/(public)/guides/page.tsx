@@ -15,6 +15,7 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
+import { ProLock } from "@/components/public/pro-lock";
 import Link from "next/link";
 import { guideCategories, type Guide } from "@/lib/guides";
 import { loadConsumerGuides, loadProfessionalGuides } from "@/lib/guides/source";
@@ -396,6 +397,7 @@ export default async function GuidesIndexPage() {
               label: "Revenue Analysis",
               href: "/research/fee-revenue-analysis",
               desc: "Fee-to-income data",
+              pro: true,
             },
           ].map((item) => (
             <Link
@@ -406,7 +408,8 @@ export default async function GuidesIndexPage() {
               <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
                 {item.label}
               </span>
-              <span className="mt-0.5 block text-[11px] text-[#8A8073]">{item.desc}</span>
+              {"pro" in item && item.pro && <ProLock className="ml-1.5 align-middle" />}
+              <span className="mt-0.5 block text-[11px] text-[#6B6255]">{item.desc}</span>
             </Link>
           ))}
         </div>

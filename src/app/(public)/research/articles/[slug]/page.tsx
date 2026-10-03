@@ -99,17 +99,20 @@ export default async function ArticlePage({
           {/* CTA */}
           <div className="mt-12 rounded-xl border border-[#E8DFD1]/80 bg-[#FAF7F2]/50 px-6 py-5">
             <p className="text-sm font-semibold text-[#1A1815]">
-              Need institution-specific benchmarking?
+              Work at a bank or credit union?
             </p>
             <p className="mt-1 text-[13px] text-[#6B6255]">
-              Get a custom competitive analysis for your bank or credit union with peer comparisons, percentile rankings, and actionable insights.
+              Request a free competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <Link
-                href="/institutions"
-                className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#C44B2E]/90 transition-colors"
+                href="/for-institutions#report"
+                className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#A93D25] transition-colors"
               >
-                Find Your Institution
+                Request your report
+              </Link>
+              <Link href="/institutions" className="text-[12px] font-medium text-[#A93D25] hover:underline">
+                Or look up any bank&rsquo;s fees
               </Link>
             </div>
           </div>

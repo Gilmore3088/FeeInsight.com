@@ -11,3 +11,10 @@ describe("sitemap contents", () => {
     expect(source).not.toMatch(/`\/reports\/\$\{/);
   });
 });
+
+describe("gated research", () => {
+  it("keeps fully Pro-gated research pages out of the sitemap", () => {
+    expect(source).not.toContain("/research/fee-revenue-analysis");
+    expect(source).not.toContain("/research/market-concentration");
+  });
+});
