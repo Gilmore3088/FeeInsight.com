@@ -25,12 +25,12 @@ function attempt(overrides: Partial<AttemptFacts> = {}): AttemptFacts {
 
 describe("outcomes", () => {
   it("matches the pipeline_attempts CHECK constraints in the migration", () => {
-    const migration = readFileSync(
-      join(process.cwd(), "supabase/migrations/20270102020000_learning_core.sql"),
-      "utf8",
-    );
-    for (const outcome of ATTEMPT_OUTCOMES) expect(migration).toContain(`'${outcome}'`);
-    for (const stage of ATTEMPT_STAGES) expect(migration).toContain(`'${stage}'`);
+    const read = (name: string) => readFileSync(join(process.cwd(), "supabase/migrations", name), "utf8");
+    // The latest definition of the outcome CHECK must list every outcome.
+    const latestOutcomeCheck = read("20270103000000_repair_double_encoded_jsonb.sql");
+    for (const outcome of ATTEMPT_OUTCOMES) expect(latestOutcomeCheck).toContain(`'${outcome}'`);
+    const core = read("20270102020000_learning_core.sql");
+    for (const stage of ATTEMPT_STAGES) expect(core).toContain(`'${stage}'`);
   });
 
   it("classifies HTTP failures and thrown errors into typed outcomes", () => {
@@ -117,6 +117,16 @@ describe("applyAttempt", () => {
     const recovered = applyAttempt(failed, attempt({ stage: "read", strategy: "read.pdf_text", outcome: "ok" }), NOW);
     expect(recovered.doNotRetry).toEqual([]);
     expect(recovered.format).toBe("pdf_scanned");
+  });
+
+  it("keeps row-level rejections out of the document memory", () => {
+    let playbook = applyAttempt(EMPTY_PLAYBOOK, attempt({ stage: "read", strategy: "read.pdf_text", outcome: "scanned_pdf" }), NOW);
+    for (let index = 0; index < 80; index += 1) {
+      playbook = applyAttempt(playbook, attempt({ stage: "verify", strategy: "verify.rules", outcome: "rejected", fingerprint: `raw:${index}` }), NOW);
+    }
+    expect(playbook.doNotRetry).toHaveLength(1);
+    expect(playbook.doNotRetry[0]).toMatchObject({ stage: "read", outcome: "scanned_pdf" });
+    expect(playbook.strategyStats[strategyKey("verify", "verify.rules", 1)]).toMatchObject({ attempts: 80, successes: 0 });
   });
 
   it("does not block retries after transient failures", () => {

@@ -440,6 +440,7 @@ async function executeAgenticStep(
     case "verify": {
       const verification = await runDarwinVerify({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["verify_limit", "classify_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
@@ -454,6 +455,8 @@ async function executeAgenticStep(
           processed_raw_fees: verification.processedRawFees,
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
+          outcomes: verification.outcomes,
+          learning_log: verification.learning,
           verify_limit: verification.limit,
           dry_run: verification.dryRun,
           sample_results: verification.results.slice(0, 10).map((result) => ({

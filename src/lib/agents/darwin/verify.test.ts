@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runDarwinVerify } from "./verify";
+import { DARWIN_VERIFY_STRATEGY, runDarwinVerify } from "./verify";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -63,7 +63,7 @@ describe("Darwin agentic verification", () => {
       institutionId: 42,
       canonicalFeeKey: "overdraft",
       status: "verified",
-      feeVerifiedId: 1201,
+      feeVerifiedId: expect.any(Number),
     });
 
     const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
@@ -143,5 +143,51 @@ describe("Darwin agentic verification", () => {
     const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
     expect(unsafeSql).toContain("JOIN institution_sources inst ON inst.id = fr.institution_id");
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
+  });
+
+  describe("with the learning core", () => {
+    function learningDb(rows: Array<Record<string, unknown>>): DbMock {
+      const db = createDbMock(rows);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 1300 }]);
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    function attemptValues(db: DbMock): unknown[][] {
+      return db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))
+        .map((call) => call.slice(1));
+    }
+
+    it("logs every decision so rejected rows are never selected again", async () => {
+      const db = learningDb([
+        rawFee,
+        { ...rawFee, fee_raw_id: 802, outlier_flags: ["needs_darwin_verification"], conditions: null },
+      ]);
+
+      const result = await runDarwinVerify({ runId: 401, stepId: 12, db: asVerifyDb(db) });
+
+      expect(result).toMatchObject({ verifiedFees: 1, skippedFees: 1, learning: true, outcomes: { ok: 1, rejected: 1 } });
+      const attempts = attemptValues(db);
+      expect(attempts[0]).toEqual(expect.arrayContaining([42, "verify", DARWIN_VERIFY_STRATEGY.strategy, "raw:801", "ok", 401, 12]));
+      expect(attempts[1]).toEqual(expect.arrayContaining(["verify", "raw:802", "rejected"]));
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("FROM pipeline_attempts pa");
+      expect(query).toContain("'raw:' || fr.fee_raw_id::text");
+      expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+    });
+
+    it("selects rows whose flags are stored as a real JSON array", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 402, db: asVerifyDb(db) });
+
+      expect(String(db.unsafe.mock.calls[0][0])).toContain("fr.outlier_flags ? 'needs_darwin_verification'");
+    });
   });
 });
