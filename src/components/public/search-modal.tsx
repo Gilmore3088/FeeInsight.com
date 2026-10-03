@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { OPEN_SEARCH_EVENT } from "./search-events";
 import { useRouter } from "next/navigation";
 import { getDisplayName, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { GUIDES } from "@/lib/guides";
@@ -63,8 +64,15 @@ export function SearchModal() {
         setOpen(false);
       }
     }
+    function onOpenRequest() {
+      setOpen(true);
+    }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    document.addEventListener(OPEN_SEARCH_EVENT, onOpenRequest);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener(OPEN_SEARCH_EVENT, onOpenRequest);
+    };
   }, []);
 
   // Focus input when opened

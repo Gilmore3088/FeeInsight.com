@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SITE_NAME } from "@/lib/constants";
 import { navItemsFor, REQUEST_REPORT_NAV } from "./nav-items";
+import { openSearch } from "./public/search-events";
 import { useSessionChrome } from "./use-session-chrome";
 
 /** 44px open/close controls: the minimum comfortable touch target. */
@@ -74,6 +75,20 @@ export function ConsumerMobileNav() {
             </div>
 
             <nav className="px-4 py-4" aria-label="Mobile navigation">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  openSearch();
+                }}
+                className="mb-3 flex w-full items-center gap-2 rounded-lg border border-[#E8DFD1] bg-white px-3 py-2.5 text-left text-[14px] text-[#6B6255] transition-colors hover:border-[#C44B2E]/30"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+                Search banks, fees and guides
+              </button>
               <ul className="space-y-1">
                 {displayItems.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
