@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { InfoTip } from "@/components/public/info-tip";
 import { LeadCapture } from "@/components/public/lead-capture";
 import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
@@ -15,7 +16,7 @@ import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
-import { FeeScheduleTable } from "./fee-schedule-table";
+import { FeeScheduleTable, type FeeBenchmarks } from "./fee-schedule-table";
 import { FinancialContext } from "./financial-context";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
@@ -31,7 +32,7 @@ import {
 } from "./profile-data";
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
-import { ProfileSidebar, type KeyFact } from "./profile-sidebar";
+import { ProfileSidebar } from "./profile-sidebar";
 import { FeeProfileSummary, StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
 
@@ -121,6 +122,16 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
   const nationalIndex =
     verifiedFees.length > 0 ? await getNationalIndexCached().catch(fallbackTo("national index", [])) : [];
   const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
+  const feeBenchmarks: FeeBenchmarks = {};
+  for (const entry of nationalIndex) {
+    if (entry.maturity_tier === "insufficient") continue;
+    if (entry.p25_amount == null || entry.median_amount == null || entry.p75_amount == null) continue;
+    feeBenchmarks[entry.fee_category] = {
+      p25: entry.p25_amount,
+      median: entry.median_amount,
+      p75: entry.p75_amount,
+    };
+  }
   const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
   const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
@@ -148,28 +159,12 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
   const districtName = inst.fed_district ? DISTRICT_NAMES[inst.fed_district] ?? null : null;
   const segmentLabel = getSegmentLabel(inst.asset_size_tier, inst.charter_type);
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
-  const freshnessLine = [
-    collectedOn ? `Fee schedule collected ${collectedOn}` : null,
-    financialsAsOf ? `Financials as of ${financialsAsOf}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ") || null;
-
   const links = buildPublicInstitutionProfileLinks({
     institutionId: instId,
     institutionName: inst.institution_name,
     isAuthenticated: Boolean(user),
   });
   const needsSource = status === "unavailable" || status === "under_review";
-
-  const facts: KeyFact[] = [
-    { label: "Charter", value: charterLabel },
-    { label: "Location", value: locationLabel ?? "N/A" },
-    { label: "Segment", value: segmentLabel ?? "N/A" },
-    { label: "Fed district", value: districtName ?? "N/A" },
-    { label: "Fee schedule collected", value: collectedOn ?? "Not yet" },
-    { label: "Financials as of", value: financialsAsOf ?? "N/A" },
-  ];
 
   return (
     <>
@@ -192,15 +187,14 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             districtName={districtName}
             websiteUrl={inst.website_url}
             feeScheduleUrl={inst.fee_schedule_url}
-            freshnessLine={freshnessLine}
+            collectedOn={collectedOn}
+            financialsAsOf={financialsAsOf}
           />
 
           <InstitutionMetricRow
             verifiedCount={verifiedCount}
             underReviewCount={underReviewCount}
             assetsDollars={assetsDollars}
-            scoreLabel={null}
-            financialsAsOf={financialsAsOf}
           />
 
           <StatusNotice
@@ -225,19 +219,16 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
 
               <section className="border border-[#E0D7C9] bg-white">
                 <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Fee Schedule</p>
-                      <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
-                    </div>
-                    <p className="text-sm text-[#6B6255]">
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
+                    <InfoTip label="About verified fees">
                       Verified fees power benchmarks; fees under review do not.
-                    </p>
+                    </InfoTip>
                   </div>
                 </div>
 
                 {displayFees.length > 0 ? (
-                  <FeeScheduleTable fees={displayFees} disclosureUrl={inst.fee_schedule_url} />
+                  <FeeScheduleTable fees={displayFees} disclosureUrl={inst.fee_schedule_url} benchmarks={feeBenchmarks} />
                 ) : (
                   <div className="px-4 py-8 sm:px-5">
                     <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
@@ -293,7 +284,6 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             </div>
 
             <ProfileSidebar
-              facts={facts}
               links={links}
               isAuthenticated={Boolean(user)}
               showAddSource={needsSource}

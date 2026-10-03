@@ -52,10 +52,55 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             </Link>
           </div>
 
-          <ReportCard />
+          {/* Bank/CU staff lane: a full card beside the hero on desktop, one slim row on phones
+              so consumers reach the search and prices first. */}
+          <div className="hidden lg:block">
+            <ReportCard />
+          </div>
+          <ReportBanner />
         </div>
       </div>
     </section>
+  );
+}
+
+/** A tiny drawn report page (title rule + bars, one highlighted) standing in for a thumbnail. */
+function ReportThumbnail() {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-12 w-10 shrink-0 flex-col gap-1 rounded-sm border border-[#E0D7C9] bg-white p-1.5 shadow-sm"
+    >
+      <span className="h-1 w-5 rounded-full bg-[#1A1815]" />
+      <span className="mt-0.5 h-1 w-6 rounded-full bg-[#D5CBBF]" />
+      <span className="h-1 w-4 rounded-full bg-[#C44B2E]" />
+      <span className="h-1 w-5 rounded-full bg-[#D5CBBF]" />
+      <span className="h-1 w-3 rounded-full bg-[#D5CBBF]" />
+    </span>
+  );
+}
+
+function ReportBanner() {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-3 lg:hidden">
+      <TrackLink
+        event="see_sample_report"
+        eventProps={{ placement: "home_banner" }}
+        href={SAMPLE_REPORT_HREF}
+        aria-label="View the sample report"
+      >
+        <ReportThumbnail />
+      </TrackLink>
+      <Link href={REPORT_LANE_HREF} className="group flex min-w-0 flex-1 items-center justify-between gap-2">
+        <span className="min-w-0">
+          <span className="block text-[11px] text-[#6B6255]">Work at a bank or credit union?</span>
+          <span className="block text-sm font-semibold text-[#1A1815] group-hover:text-[#A93D25]">
+            See your fees vs. competitors
+          </span>
+        </span>
+        <span aria-hidden="true" className="shrink-0 text-lg text-[#C44B2E]">→</span>
+      </Link>
+    </div>
   );
 }
 
