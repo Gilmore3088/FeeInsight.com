@@ -55,10 +55,16 @@ function buildRows(entries: IndexEntry[]): PriceRow[] {
  * each with a bar showing where most institutions fall (25th–75th percentile).
  * Numbers carry the message; words stay small. Renders nothing without data.
  */
-export function LandingPriceStrip({ entries }: { entries: IndexEntry[] }) {
+export function LandingPriceStrip({
+  entries,
+  institutionsLabel,
+}: {
+  entries: IndexEntry[];
+  /** Live count of institutions with verified fees, same figure as the hero and stats band. */
+  institutionsLabel: string;
+}) {
   const rows = buildRows(entries);
   if (rows.length === 0) return null;
-  const basedOn = Math.max(...rows.map((r) => r.institutions));
 
   return (
     <section className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
@@ -87,7 +93,7 @@ export function LandingPriceStrip({ entries }: { entries: IndexEntry[] }) {
           <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
           Most banks
           <span aria-hidden="true" className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" />
-          Typical · {basedOn.toLocaleString("en-US")} institutions
+          Typical price · {institutionsLabel} verified institutions
         </p>
       </div>
     </section>
