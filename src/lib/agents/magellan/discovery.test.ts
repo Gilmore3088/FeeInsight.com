@@ -200,4 +200,59 @@ describe("Magellan agentic discovery", () => {
       confidence: 1,
     });
   });
+
+  describe("fee-page check and rejected URLs", () => {
+    const bank = {
+      id: 47,
+      institution_name: "Footer Bank",
+      website_url: "https://footer.example",
+      state_code: "GA",
+      asset_size: "1000",
+      rescue_status: "pending",
+    };
+
+    function vaultDb(rejected: string[]): DbMock {
+      return vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("vault_schema_ready")) return Promise.resolve([{ vault_schema_ready: true }]);
+        if (text.includes("FROM institution_sources")) return Promise.resolve([bank]);
+        if (text.includes("rejected_source_urls")) {
+          return Promise.resolve([{ institution_id: 47, rejected_source_urls: rejected.map((url) => ({ url, reason: "not a fee page" })) }]);
+        }
+        return Promise.resolve([]);
+      });
+    }
+
+    it("rejects a candidate page that only mentions fees in its footer", async () => {
+      const db = vaultDb([]);
+      const footerPage = "<p>Personal banking</p><footer>Fee Schedule | Truth in Savings | Service charge info</footer>";
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) => { const url = String(input); return (
+        url === "https://footer.example/"
+          ? response('<a href="/personal/fees">Fee schedule</a>')
+          : url.endsWith(".pdf")
+            ? response("missing", "text/html", 404)
+            : response(footerPage));
+      });
+
+      const result = await runMagellanDiscovery({ runId: 701, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ outcome: "dead", url: null });
+      expect(fetchImpl.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it("never proposes a URL that was already read and found not to be a fee page", async () => {
+      const db = vaultDb(["https://www.footer.example/schedule-of-fees.pdf/"]);
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) => { const url = String(input); return (
+        url === "https://footer.example/"
+          ? response('<a href="/schedule-of-fees.pdf">Schedule of Fees</a>')
+          : response("%PDF", "application/pdf"));
+      });
+
+      const result = await runMagellanDiscovery({ runId: 702, db: asDiscoveryDb(db), fetchImpl });
+
+      const fetched = fetchImpl.mock.calls.map((call) => String(call[0]));
+      expect(fetched).not.toContain("https://footer.example/schedule-of-fees.pdf");
+      expect(result.results[0].url).not.toBe("https://footer.example/schedule-of-fees.pdf");
+    });
+  });
 });

@@ -1,0 +1,69 @@
+/**
+ * Is this document actually a fee schedule? A deterministic, $0 check run on every
+ * text Rosetta reads and on every page Magellan discovery considers.
+ *
+ * Calibrated on production texts (2026-10-03): of 439 HTML pages with no fee lines
+ * and fewer than 3 dollar amounts, Knox found fees on only 3 (0.7%), while it found
+ * none on 302. Pages that clearly list fees pass; everything in between is
+ * "uncertain" and is still read, so the check only removes clear misses.
+ */
+
+export type FeePageVerdict = "fee_page" | "uncertain" | "wrong_document";
+
+export interface FeePageScore {
+  verdict: FeePageVerdict;
+  /** Lines that pair a dollar amount with a fee word: the strongest single signal. */
+  feeLines: number;
+  dollarAmounts: number;
+  rateTerms: number;
+  reason: string;
+}
+
+/** Bump when the rules change, so earlier verdicts are re-checked. */
+export const FEE_PAGE_CHECK_VERSION = 1;
+
+const DOLLAR = /\$\s?[0-9]/g;
+const FEE_WORD = /(fee|charge|overdraft|nsf|insufficient|stop payment|wire|returned|statement|cashier|money order|dormant|inactive|research|safe deposit|replacement)/i;
+const RATE_TERM = /(APY|APR|annual percentage)/g;
+
+export function scoreFeePage(text: string): FeePageScore {
+  const dollarAmounts = (text.match(DOLLAR) ?? []).length;
+  const rateTerms = (text.match(RATE_TERM) ?? []).length;
+  let feeLines = 0;
+  for (const line of text.split("\n")) {
+    if (/\$\s?[0-9]/.test(line) && FEE_WORD.test(line)) feeLines += 1;
+  }
+
+  if (feeLines >= 3) {
+    return { verdict: "fee_page", feeLines, dollarAmounts, rateTerms, reason: `${feeLines} lines list a fee with an amount` };
+  }
+  if (feeLines === 0 && dollarAmounts < 3) {
+    return {
+      verdict: "wrong_document",
+      feeLines,
+      dollarAmounts,
+      rateTerms,
+      reason: `No fee lines and only ${dollarAmounts} dollar amount${dollarAmounts === 1 ? "" : "s"}: not a fee schedule`,
+    };
+  }
+  return {
+    verdict: "uncertain",
+    feeLines,
+    dollarAmounts,
+    rateTerms,
+    reason: `${feeLines} fee line${feeLines === 1 ? "" : "s"}, ${dollarAmounts} dollar amounts`,
+  };
+}
+
+/** HTML to plain lines, for scoring pages before Rosetta has read them. */
+export function htmlToScoringText(html: string): string {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\/(p|div|li|tr|h[1-6]|section|article|table)>|<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#36;|&dollar;/gi, "$")
+    .replace(/[ \t]+/g, " ");
+}

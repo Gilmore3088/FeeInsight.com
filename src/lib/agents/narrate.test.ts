@@ -26,6 +26,19 @@ describe("narrateStepFinished", () => {
     }, "TX")).toBe("Pulled 40 fees from 4 documents in TX: 1 documents already done.");
   });
 
+  it("reports wrong pages, send-backs and vault use", () => {
+    expect(narrateStepFinished("read", {
+      processed_documents: 25, text_artifacts: 14, wrong_documents: 9, sent_back_to_magellan: 8, read_from_vault: 20,
+    }, "GA")).toBe(
+      "Read 14 documents in GA: 9 were not fee pages, 8 sent back to Magellan to find the real fee page, 20 read from our stored copy.",
+    );
+    expect(narrateStepFinished("read", { processed_documents: 0, wrong_documents: 12, sent_back_to_magellan: 10 }, "TX"))
+      .toBe("Re-checked earlier pages in TX: 12 pages not a fee schedule, 10 sent back to Magellan.");
+    expect(narrateStepFinished("fetch", {
+      processed_institutions: 5, fetched_documents: 2, unchanged_documents: 3, stored_documents: 4,
+    }, "GA")).toBe("Checked 5 fee schedules in GA: 2 new, 3 unchanged, 4 saved to the vault.");
+  });
+
   it("describes discovery results", () => {
     expect(narrateStepFinished("discover", {
       processed_institutions: 25, discovered_fee_urls: 7, retry_after: 2, dead_institutions: 1, needs_human: 0,
