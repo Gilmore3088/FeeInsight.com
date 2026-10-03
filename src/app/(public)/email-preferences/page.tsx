@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { isSubscriptionAction } from "@/lib/email/subscription-token";
+import { FEE_ALERT_UNSUBSCRIBE_ACTION, isSubscriptionAction } from "@/lib/email/subscription-token";
 import { SubscriptionActionForm } from "./subscription-action-form";
 
 export const metadata: Metadata = {
@@ -21,7 +21,10 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
   const action = first(params.action);
   const email = first(params.email);
   const token = first(params.token);
-  const valid = isSubscriptionAction(action) && Boolean(email) && Boolean(token);
+  const uid = first(params.uid);
+  const isFeeAlert = action === FEE_ALERT_UNSUBSCRIBE_ACTION;
+  const valid =
+    (isSubscriptionAction(action) || (isFeeAlert && Boolean(uid))) && Boolean(email) && Boolean(token);
 
   return (
     <main className="mx-auto max-w-lg px-6 py-20">
@@ -32,7 +35,12 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
         Email preferences
       </h1>
       {valid && action && email && token ? (
-        <SubscriptionActionForm action={action} email={email} token={token} />
+        <SubscriptionActionForm
+          action={isFeeAlert ? FEE_ALERT_UNSUBSCRIBE_ACTION : (action as "confirm" | "unsubscribe")}
+          email={email}
+          token={token}
+          uid={uid}
+        />
       ) : (
         <p className="mt-4 text-[15px] leading-relaxed text-[#5A5347]">
           This link is incomplete. Use the link from your email, or{" "}

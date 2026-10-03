@@ -14,6 +14,7 @@ import {
 } from "@/lib/agents/public-discovery";
 import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
+import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import type {
@@ -653,6 +654,14 @@ async function executeAgenticStep(
           lines: result.brief.lines,
           funnel: result.funnel,
         },
+      };
+    }
+    case "fee-alert-dispatch": {
+      const result = await runFeeAlertDispatch({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeFeeAlertDispatch(result),
+        detail: { ...result },
       };
     }
     case "assemble":
