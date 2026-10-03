@@ -113,13 +113,15 @@ export async function login(
 
   const sessionId = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_HOURS * 60 * 60 * 1000);
+  // Sign first: a missing cookie secret must fail before a session row exists.
+  const signedSession = signSessionId(sessionId);
 
   await sql`
     INSERT INTO sessions (id, user_id, expires_at) VALUES (${sessionId}, ${row.id}, ${expiresAt})
   `;
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, signSessionId(sessionId), {
+  cookieStore.set(SESSION_COOKIE, signedSession, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
