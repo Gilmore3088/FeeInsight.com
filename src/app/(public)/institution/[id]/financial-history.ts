@@ -5,10 +5,11 @@ import { balanceToDollars, formatReportQuarter, sourceRank } from "./financial-u
  * Chart-ready call-report history for the gated Financial profile.
  *
  * Every value is whole dollars or percent (8.2 = 8.2%), one point per quarter,
- * oldest first. Quarterly income lines come only from registry-written FDIC rows
- * (they carry net_income); NCUA income is year-to-date and legacy rows predate
- * the corrected service-charge mapping, so those quarters leave income null
- * rather than drawing a misleading series.
+ * oldest first. Quarterly income comes from registry-written rows only: FDIC
+ * rows are already quarterly; NCUA rows are year to date and are differenced
+ * against the prior quarter of the same year. Legacy rows predate the corrected
+ * service-charge mapping, so they leave income null rather than drawing a
+ * misleading series.
  */
 export interface FinancialPoint {
   reportDate: string;
@@ -49,6 +50,40 @@ function finiteOrNull(value: number | null | undefined): number | null {
 
 function hasQuarterlyIncome(row: InstitutionFinancialHistoryRow): boolean {
   return row.source === "fdic" && row.net_income !== null;
+}
+
+/** Registry-written NCUA rows carry year-to-date income (legacy NCUA rows have no net_income). */
+function hasYearToDateIncome(row: InstitutionFinancialHistoryRow): boolean {
+  return row.source === "ncua" && row.net_income !== null;
+}
+
+function quarterNumber(reportDate: string): number {
+  return Math.floor(Number(reportDate.slice(5, 7)) / 3);
+}
+
+/** YTD minus the prior quarter's YTD in the same year; Q1 is already one quarter. */
+function deYearToDate(points: FinancialPoint[], rows: Map<string, InstitutionFinancialHistoryRow>): FinancialPoint[] {
+  return points.map((point, index) => {
+    const row = rows.get(point.reportDate);
+    if (!row || !hasYearToDateIncome(row)) return point;
+    const dollars = (value: number | null) => balanceToDollars(finiteOrNull(value), "ncua");
+    const q = quarterNumber(point.reportDate);
+    if (q === 1) {
+      return { ...point, netIncome: dollars(row.net_income), serviceCharges: dollars(row.service_charge_income) };
+    }
+    const prev = points[index - 1];
+    const prevRow = prev ? rows.get(prev.reportDate) : undefined;
+    const contiguous =
+      prev && prevRow && hasYearToDateIncome(prevRow) &&
+      prev.reportDate.slice(0, 4) === point.reportDate.slice(0, 4) && quarterNumber(prev.reportDate) === q - 1;
+    if (!contiguous) return point;
+    const diff = (a: number | null, b: number | null) => (a === null || b === null ? null : dollars(a - b));
+    return {
+      ...point,
+      netIncome: diff(row.net_income, prevRow.net_income),
+      serviceCharges: diff(row.service_charge_income, prevRow.service_charge_income),
+    };
+  });
 }
 
 export function toFinancialPoint(row: InstitutionFinancialHistoryRow): FinancialPoint {
@@ -95,9 +130,10 @@ export function buildFinancialSeries(rows: InstitutionFinancialHistoryRow[]): Fi
     const current = byQuarter.get(row.report_date);
     if (!current || sourceRank(row.source) < sourceRank(current.source)) byQuarter.set(row.report_date, row);
   }
-  return [...byQuarter.values()]
+  const points = [...byQuarter.values()]
     .sort((a, b) => a.report_date.localeCompare(b.report_date))
     .map(toFinancialPoint);
+  return deYearToDate(points, byQuarter);
 }
 
 export function toPeerMedianPoints(peers: PeerFinancialMedians | null): PeerMedianPoints | null {

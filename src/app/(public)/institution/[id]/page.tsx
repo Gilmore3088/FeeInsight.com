@@ -4,6 +4,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution, getNationalIndexCached } from "@/lib/data-store";
 import { getFinancialHistory, getPeerFinancialMedians } from "@/lib/data-store/financial";
+import {
+  getBranchFootprint,
+  getComplaintTrend,
+  getHoldingCompanyProfile,
+  getRegulatorInfo,
+} from "@/lib/data-store/registry-profile";
 import { canAccessPremium } from "@/lib/access";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getCurrentUser } from "@/lib/auth";
@@ -110,12 +116,16 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
 
   // Financial history is Pro-only; free users never receive it in the RSC payload.
   const isPro = canAccessPremium(user);
-  const [financialHistory, peerMedians] = isPro
+  const [financialHistory, peerMedians, footprint, complaints, holdingCompany] = isPro
     ? await Promise.all([
         getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
         getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
+        getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
+        getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
+        getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
       ])
-    : [[], null];
+    : [[], null, null, null, null];
+  const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
 
@@ -185,6 +195,15 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
     { label: "Fee schedule collected", value: collectedOn ?? "Not yet" },
     { label: "Financials as of", value: financialsAsOf ?? "N/A" },
   ];
+  const regulatorLabel = regulator?.primary_regulator ?? null;
+  if (regulatorLabel) facts.push({ label: "Primary regulator", value: regulatorLabel });
+  if (regulator?.charter_agency === "State" && regulator.state_agency_name) {
+    facts.push({ label: "Chartered by", value: regulator.state_agency_name });
+  }
+  if (regulator?.holding_company_name) facts.push({ label: "Holding company", value: toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name });
+  if (regulator?.regulatory_status === "inactive") {
+    facts.push({ label: "Status", value: regulator.closed_date ? `Closed or merged ${regulator.closed_date}` : "Closed or merged" });
+  }
 
   return (
     <>
@@ -306,12 +325,17 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
 
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
 
-              {(isPro ? financialSeries.length > 0 : latestFinancial !== null) && (
+              {(isPro
+                ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany)
+                : latestFinancial !== null) && (
                 <FinancialProfileSection
                   isPro={isPro}
                   points={financialSeries}
                   peers={peerMedianPoints}
                   charterLabel={charterLabel}
+                  footprint={footprint}
+                  complaints={complaints}
+                  holdingCompany={holdingCompany}
                 />
               )}
             </div>

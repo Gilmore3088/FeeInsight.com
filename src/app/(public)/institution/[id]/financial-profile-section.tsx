@@ -1,6 +1,8 @@
 import { UpgradeGate } from "@/components/upgrade-gate";
 import type { FinancialPoint, PeerMedianPoints } from "./financial-history";
 import { FinancialProfileCharts } from "./financial-profile";
+import { BranchFootprintCard, ComplaintsCard, HoldingCompanyCard } from "./registry-cards";
+import type { BranchFootprint, ComplaintTrend, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
 
 /** Decorative silhouette for the locked state; contains no institution data. */
 function LockedPreview() {
@@ -29,13 +31,20 @@ export function FinancialProfileSection({
   points,
   peers,
   charterLabel,
+  footprint = null,
+  complaints = null,
+  holdingCompany = null,
 }: {
   isPro: boolean;
   points: FinancialPoint[];
   peers: PeerMedianPoints | null;
   charterLabel: string;
+  footprint?: BranchFootprint | null;
+  complaints?: ComplaintTrend | null;
+  holdingCompany?: HoldingCompanyProfile | null;
 }) {
-  if (isPro && points.length === 0) return null;
+  const hasRegistryCards = Boolean(footprint || complaints || holdingCompany);
+  if (isPro && points.length === 0 && !hasRegistryCards) return null;
   const years = points.length > 0 ? Math.max(1, Math.round(points.length / 4)) : null;
 
   return (
@@ -56,13 +65,24 @@ export function FinancialProfileSection({
 
       <div className="mt-4">
         {isPro ? (
-          <FinancialProfileCharts points={points} peers={peers} charterLabel={charterLabel} />
+          <>
+            {points.length > 0 && <FinancialProfileCharts points={points} peers={peers} charterLabel={charterLabel} />}
+            {hasRegistryCards && (
+              <div className="mt-4 grid gap-4">
+                {footprint && <BranchFootprintCard footprint={footprint} />}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {complaints && <ComplaintsCard trend={complaints} />}
+                  {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="relative">
             <LockedPreview />
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div className="w-full max-w-md">
-                <UpgradeGate message="Assets, earnings, loan mix, credit quality, and fee income: 10+ years of call-report history with peer benchmarks" />
+                <UpgradeGate message="10+ years of call-report history with peer benchmarks, branch footprint, consumer complaints, and SEC filings" />
               </div>
             </div>
           </div>

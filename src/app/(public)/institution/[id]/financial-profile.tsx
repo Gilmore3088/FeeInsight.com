@@ -419,8 +419,8 @@ export function FinancialProfileCharts({
       </div>
       <p className="mt-3 text-[11px]" style={{ color: INK_MUTED }}>
         <span style={{ color: INK }} className="font-medium">How to read this:</span> figures come straight from
-        regulator filings and refresh as each quarter is published. Credit union income is reported year to date, so
-        quarterly income charts appear for banks only.
+        regulator filings and refresh as each quarter is published. Credit unions report income year to date;
+        quarterly figures here are the change from the prior quarter of the same year.
       </p>
     </div>
   );
