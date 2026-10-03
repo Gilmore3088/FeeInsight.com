@@ -5,7 +5,7 @@ import {
 } from "@/lib/email/report-request";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import type { EmailDeliveryStatus } from "@/lib/email/resend";
-import { placementForSource } from "@/lib/lead-capture";
+import { NEWSLETTER_SOURCE, placementForSource, type LeadCapturePlacement } from "@/lib/lead-capture";
 
 export const REPORT_SOURCE = "report";
 const CONTACT_SOURCE_PATTERN = /^contact(?:_([a-z0-9-]+))?$/;
@@ -67,10 +67,15 @@ export function contactInquiryType(source: string): string | null {
   return match ? (match[1] ?? null) : null;
 }
 
+/** The footer newsletter box offers the same thing as the national index placement. */
+function captureOfferFor(source: string): LeadCapturePlacement | null {
+  return source === NEWSLETTER_SOURCE ? "national_index" : placementForSource(source);
+}
+
 export function shouldNotify(source: string) {
   return (
     source === REPORT_SOURCE ||
-    placementForSource(source) !== null ||
+    captureOfferFor(source) !== null ||
     source === ENTERPRISE_SOURCE ||
     CONTACT_SOURCE_PATTERN.test(source)
   );
@@ -105,7 +110,7 @@ function toStatus(outcome: LeadNotificationOutcome): LeadNotificationStatus {
 export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationStatus | null> {
   if (!shouldNotify(lead.source)) return null;
   try {
-    const placement = placementForSource(lead.source);
+    const placement = captureOfferFor(lead.source);
     if (placement) {
       const outcome = await sendLeadCaptureNotifications({
         email: lead.email,

@@ -1,12 +1,14 @@
 export const dynamic = "force-dynamic";
 import { requireAuth } from "@/lib/auth";
+import { describeLeadEmailConfig } from "@/lib/email/lead-notification";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { getLeads } from "@/lib/admin-queries";
 import type { LeadRow } from "@/lib/admin-queries";
+import { EmailDeliveryPanel } from "./email-delivery-panel";
 import { LeadsTable } from "./leads-table";
 
 export default async function LeadsPage() {
-  await requireAuth("view");
+  const user = await requireAuth("view");
 
   let leads: LeadRow[] = [];
   try {
@@ -31,6 +33,8 @@ export default async function LeadsPage() {
           {leads.length} lead{leads.length !== 1 ? "s" : ""} collected
         </p>
       </div>
+
+      <EmailDeliveryPanel config={describeLeadEmailConfig()} defaultTo={user.email ?? ""} />
 
       <LeadsTable leads={leads} />
     </div>
