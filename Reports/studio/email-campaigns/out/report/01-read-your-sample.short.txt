@@ -1,0 +1,16 @@
+How to read a Competitive Fee Position report in five minutes.
+
+Your sample report, and how to read it in five minutes
+Open the sample report: https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=read-your-sample
+No login. Every figure links to the source schedule.
+1. Executive summary. Three findings, each with a dollar figure and a peer count.
+2. Position chart. Every headline fee placed between the peer low 25% and high 25%. Dots outside the band are the story.
+3. Outlier flags. Fees more than 2× the peer median, or statistically high. Each gets a suggested next step.
+4. Named competitors. The same fees at the institutions customers actually compare you to.
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

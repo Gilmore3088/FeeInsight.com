@@ -24,10 +24,10 @@ The pattern: banks still anchor overdraft near $30, but more of them have pulled
 
 
 [ THE RULES THAT SHAPE THESE FEES ]
-[ ] Reg E opt-in (2010): an overdraft fee on ATM and one-time debit card transactions requires the consumer's affirmative opt-in.
-[ ] CFPB Circular 2022-06: overdraft fees on transactions authorized against a positive balance ("authorize positive, settle negative") can be an unfair practice.
-[ ] FDIC FIL-40-2022: charging an NSF fee every time the same item is re-presented carries consumer-compliance risk; the FDIC expects institutions to correct the practice and may require restitution.
-[ ] Truth in Savings (Reg DD): fee schedules must be disclosed. That's why this data is public, and why your competitors can read yours.
+- Reg E opt-in (2010): an overdraft fee on ATM and one-time debit card transactions requires the consumer's affirmative opt-in.
+- CFPB Circular 2022-06: overdraft fees on transactions authorized against a positive balance ("authorize positive, settle negative") can be an unfair practice.
+- FDIC FIL-40-2022: charging an NSF fee every time the same item is re-presented carries consumer-compliance risk; the FDIC expects institutions to correct the practice and may require restitution.
+- Truth in Savings (Reg DD): fee schedules must be disclosed. That's why this data is public, and why your competitors can read yours.
 
 
 [ QUESTIONS TO ASK ABOUT YOUR OWN SCHEDULE ]

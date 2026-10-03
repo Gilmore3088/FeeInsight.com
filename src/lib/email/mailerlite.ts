@@ -27,8 +27,22 @@ export function isMailerLiteSyncEnabled() {
   );
 }
 
+// Each lead joins one group, so it runs one nurture sequence at a time. Highest intent
+// wins: report requests, then institution/state watchers, then the newsletter group.
+const REPORT_GROUP_SOURCES = new Set(["report", "capture_report_sample"]);
+const WATCHER_GROUP_SOURCES = new Set(["capture_institution", "capture_state"]);
+
+export function mailerLiteGroupForSource(source?: string | null): string {
+  const env = (name: string) => (process.env[name] || "").trim();
+  const sources = new Set((source || "").split(",").map((s) => s.trim()).filter(Boolean));
+  const has = (set: Set<string>) => [...sources].some((s) => set.has(s));
+  if (has(REPORT_GROUP_SOURCES) && env("MAILERLITE_REPORT_GROUP_ID")) return env("MAILERLITE_REPORT_GROUP_ID");
+  if (has(WATCHER_GROUP_SOURCES) && env("MAILERLITE_WATCHER_GROUP_ID")) return env("MAILERLITE_WATCHER_GROUP_ID");
+  return env("MAILERLITE_GROUP_ID");
+}
+
 export function buildMailerLitePayload(input: MailerLiteLeadInput) {
-  const groupId = (process.env.MAILERLITE_GROUP_ID || "").trim();
+  const groupId = mailerLiteGroupForSource(input.source);
   const sourceField = (process.env.MAILERLITE_SOURCE_FIELD || "").trim();
   const payload: Record<string, unknown> = {
     email: input.email,

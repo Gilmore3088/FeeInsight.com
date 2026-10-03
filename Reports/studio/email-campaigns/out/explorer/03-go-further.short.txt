@@ -1,0 +1,13 @@
+The free method, the free data, and the $300 shortcut.
+
+Three ways to go further, two of them free
+1. Free: the method. Peer group, headline amount, percentile, outlier rule. It's all in our methodology (https://feeinsight.com/methodology?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=go-further).
+2. Free: the data. Every institution profile and fee category page is public: browse fees (https://feeinsight.com/fees?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=go-further).
+3. $300: the report. Your institution against its true peers and named competitors, every figure sourced. See a sample (https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=go-further).
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

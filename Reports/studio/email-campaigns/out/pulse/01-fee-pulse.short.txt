@@ -1,0 +1,15 @@
+What moved in the Bank Fee Index this month, and one idea to use it.
+
+This month in the Bank Fee Index
+* 1,232 — institutions with published schedules
+* $29 — median overdraft
+* $25 — median NSF
+[ ONE IDEA TO USE THIS MONTH ]
+List your checking accounts by monthly fee and by how to waive it. If the waiver needs more than one condition, a customer will read it as "not free". Try rewriting it as one sentence.
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

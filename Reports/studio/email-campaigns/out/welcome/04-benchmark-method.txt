@@ -21,10 +21,10 @@ Peer group: all credit unions in the index (n=84). Low 25% is $15, median $25, h
 
 
 [ MISTAKES WE SEE CONSTANTLY ]
-[ ] Benchmarking against the big national banks when your customers compare you to the credit union down the street.
-[ ] Comparing your branch price to a competitor's online price.
-[ ] Using an old schedule. Fee pages change more often than the PDF in the shared drive.
-[ ] Counting a fee as "$0" when it's really "waived with direct deposit". Record the condition.
+- Benchmarking against the big national banks when your customers compare you to the credit union down the street.
+- Comparing your branch price to a competitor's online price.
+- Using an old schedule. Fee pages change more often than the PDF in the shared drive.
+- Counting a fee as "$0" when it's really "waived with direct deposit". Record the condition.
 
 Shortcut: every institution profile on Fee Insight already shows its fees next to peer medians. Find an institution (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method) · Read the full methodology (https://feeinsight.com/methodology?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method).
 

@@ -110,7 +110,7 @@ const R = {
       ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${b.items.map((it, i) => `<tr><td valign="top" style="width:24px;padding:0 0 8px;font-family:${MONO};font-size:12px;color:${tone[1]};">${b.ordered ? `${i + 1}.` : "&#9633;"}</td><td style="padding:0 0 8px;font-family:${SERIF};font-size:15px;line-height:1.5;color:${C.ink2};">${inline(it)}</td></tr>`).join("")}</table>`
       : "";
     const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 22px;"><tr><td style="background:${tone[0]};border-left:4px solid ${tone[1]};padding:16px 18px 8px;"><p style="margin:0 0 10px;font-family:${MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${tone[1]};">${esc(b.title)}</p>${body}${items}</td></tr></table>`;
-    const text = [`\n[ ${b.title.toUpperCase()} ]`, ...(b.paras || []).map(plain), ...(b.items || []).map((it, i) => `${b.ordered ? `${i + 1}.` : "[ ]"} ${plain(it)}`)].join("\n");
+    const text = [`\n[ ${b.title.toUpperCase()} ]`, ...(b.paras || []).map(plain), ...(b.items || []).map((it, i) => `${b.ordered ? `${i + 1}.` : (b.tone || "action") === "action" ? "[ ]" : "-"} ${plain(it)}`)].join("\n");
     return [html, text];
   },
   cta: (b) => [
@@ -156,19 +156,40 @@ ${bodyHtml}
 </table></td></tr></table></body></html>
 `;
   const text = `${email.preheader}\n\n${bodyText}\n\n----\nFee Insight publishes the Bank Fee Index: fee schedules from ${BRAND.institutionsLabel} U.S. banks and credit unions.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n${BRAND.mailingAddress}\nUnsubscribe: {$unsubscribe}\n`;
-  return { html, text };
+  return { html, text, short: condense(email, parts) };
+}
+
+// MailerLite's API caps plain text at 1,000 characters. The condensed version keeps the
+// headline, the numbers and the action items, and links to the full email ({$url}).
+const SHORT_LIMIT = 1000;
+function condense(email, parts) {
+  const head = `${email.preheader}\n\n`;
+  const tail = `\n\nFull email with tables and charts: {$url}\n\n--\nFee Insight · feeinsight.com · reply with questions\n${BRAND.mailingAddress}\nUnsubscribe: {$unsubscribe}\n`;
+  const lines = [];
+  email.blocks.forEach((b, i) => {
+    if (b.type === "h1") lines.push(plain(b.text));
+    else if (["stats", "box", "list", "cta"].includes(b.type)) lines.push(parts[i][1].trim());
+  });
+  let body = "";
+  for (const chunk of lines.flatMap((l) => l.split("\n"))) {
+    const next = body ? `${body}\n${chunk}` : chunk;
+    if (head.length + next.length + tail.length > SHORT_LIMIT) break;
+    body = next;
+  }
+  return head + body + tail;
 }
 
 rmSync(outDir, { recursive: true, force: true });
 const index = [];
 for (const a of PROGRAM) {
   a.emails.forEach((e, i) => {
-    const { html, text } = renderEmail(a, e);
+    const { html, text, short } = renderEmail(a, e);
     const base = `${String(i + 1).padStart(2, "0")}-${e.key}`;
     const dir = join(outDir, a.key);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${base}.html`), html);
     writeFileSync(join(dir, `${base}.txt`), text);
+    writeFileSync(join(dir, `${base}.short.txt`), short);
     index.push({ a, e, path: `${a.key}/${base}.html`, chars: text.length });
   });
 }
