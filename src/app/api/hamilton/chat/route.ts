@@ -203,10 +203,10 @@ async function handlePOST(request: Request) {
               .join(" ") ?? "";
 
             if (userText) {
-              await appendMessage(conversationId, "user", userText).catch(() => {});
+              await appendMessage(conversationId, user.id, "user", userText).catch(() => {});
             }
             if (text) {
-              await appendMessage(conversationId, "assistant", text, outputTokens).catch(() => {});
+              await appendMessage(conversationId, user.id, "assistant", text, outputTokens).catch(() => {});
             }
           }
         } catch {

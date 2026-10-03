@@ -27,7 +27,7 @@ export interface SearchResult {
 }
 
 export async function searchDashboard(query: string): Promise<SearchResult> {
-  await requireAuth("view");
+  await requireAuth("operate");
   if (!query || query.length < 2) {
     return { institutions: [], categories: [], feeNames: [], conversations: [] };
   }

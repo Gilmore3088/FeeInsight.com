@@ -12,7 +12,7 @@ export async function exportIndexCsv(
   },
   approvedOnly: boolean
 ): Promise<string> {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const hasFilters = !!(
     filters.charter_type ||

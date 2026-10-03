@@ -9,6 +9,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  * Listed in serverExternalPackages in next.config.ts.
  * Never imported in client bundle.
  */
+import { canAccessPremium } from "@/lib/access";
 import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
@@ -33,6 +34,9 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
   }
   if (!user) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  if (!canAccessPremium(user)) {
+    return NextResponse.json({ error: "Pro subscription required" }, { status: 403 });
   }
 
   // Parse body and dispatch on type

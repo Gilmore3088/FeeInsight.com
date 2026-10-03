@@ -9,7 +9,8 @@ const BLOCKED_KEYWORDS = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE
 export async function runQuery(
   query: string
 ): Promise<{ success: boolean; columns?: string[]; rows?: Record<string, unknown>[]; count?: number; error?: string; duration?: number }> {
-  await requireAuth("view");
+  // Raw SQL against production: admins only (analysts and public accounts never).
+  await requireAuth("manage_users");
 
   const trimmed = query.trim();
   if (!trimmed) return { success: false, error: "Empty query" };
