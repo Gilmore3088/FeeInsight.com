@@ -43,6 +43,16 @@ const GUIDE_ITEMS: SearchItem[] = GUIDES.map((g) => ({
     g.audience === "professional" ? `/guides/pro/${g.slug}` : `/guides/${g.slug}`,
 }));
 
+const RESULT_GROUPS = [
+  { type: "institution", label: "Institutions" },
+  { type: "category", label: "Fee categories" },
+  { type: "guide", label: "Guides" },
+] as const;
+
+function optionId(index: number): string {
+  return `search-option-${index}`;
+}
+
 export function SearchModal() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -74,6 +84,17 @@ export function SearchModal() {
       document.removeEventListener(OPEN_SEARCH_EVENT, onOpenRequest);
     };
   }, []);
+
+  // Return focus to whatever opened the search when it closes.
+  const openerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (open) {
+      openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    } else if (openerRef.current) {
+      openerRef.current.focus();
+      openerRef.current = null;
+    }
+  }, [open]);
 
   // Focus input when opened
   useEffect(() => {
@@ -167,14 +188,13 @@ export function SearchModal() {
     } else if (e.key === "Enter" && results[selectedIndex]) {
       e.preventDefault();
       handleSelect(results[selectedIndex]);
+    } else if (e.key === "Tab") {
+      // The input is the dialog's only tab stop; keep focus inside the dialog.
+      e.preventDefault();
     }
   }
 
   if (!open) return null;
-
-  const institutions = results.filter((r) => r.type === "institution");
-  const categories = results.filter((r) => r.type === "category");
-  const guides = results.filter((r) => r.type === "guide");
 
   return (
     <div className="fixed inset-0 z-[100]">
@@ -186,7 +206,7 @@ export function SearchModal() {
       />
 
       {/* Modal */}
-      <div className="relative mx-auto mt-[15vh] w-full max-w-lg px-4">
+      <div role="dialog" aria-modal="true" aria-label="Search" className="relative mx-auto mt-[15vh] w-full max-w-lg px-4">
         <div className="rounded-2xl border border-[#E8DFD1] bg-[#FFFDF9] shadow-2xl shadow-[#1A1815]/10 overflow-hidden">
           {/* Search input */}
           <div className="flex items-center gap-3 border-b border-[#E8DFD1] px-4 py-3">
@@ -209,101 +229,61 @@ export function SearchModal() {
               onKeyDown={handleKeyDown}
               placeholder="Search institutions, fees, or guides..."
               className="flex-1 bg-transparent text-[14px] text-[#1A1815] placeholder:text-[#6B6255] outline-none"
-              aria-label="Search"
+              aria-label="Search institutions, fees, or guides"
               role="combobox"
               aria-expanded={results.length > 0}
+              aria-controls="search-results"
+              aria-autocomplete="list"
+              aria-activedescendant={results.length > 0 ? optionId(selectedIndex) : undefined}
             />
             {loading && (
-              <div className="h-4 w-4 border-2 border-[#E8DFD1] border-t-[#C44B2E] rounded-full animate-spin shrink-0" />
+              <div role="status" aria-label="Searching" className="h-4 w-4 border-2 border-[#E8DFD1] border-t-[#C44B2E] rounded-full animate-spin shrink-0" />
             )}
             <kbd className="hidden sm:inline-flex h-5 items-center rounded bg-[#E8DFD1]/50 px-1.5 text-[10px] font-medium text-[#6B6255]">
               ESC
             </kbd>
           </div>
 
-          {/* Results */}
+          {/* Results: one listbox, grouped; options are not separately focusable, the
+              input keeps focus and points at the selected option. */}
           {results.length > 0 && (
-            <div className="max-h-[50vh] overflow-y-auto py-2" role="listbox">
-              {institutions.length > 0 && (
-                <div>
-                  <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
-                    Institutions
-                  </p>
-                  {institutions.map((item, i) => {
-                    const globalIdx = results.indexOf(item);
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleSelect(item)}
-                        role="option"
-                        aria-selected={globalIdx === selectedIndex}
-                        className={`w-full text-left px-4 py-2.5 transition-colors ${
-                          globalIdx === selectedIndex
-                            ? "bg-[#C44B2E]/8 text-[#C44B2E]"
-                            : "text-[#1A1815] hover:bg-[#FAF7F2]"
-                        }`}
-                      >
-                        <div className="text-[13px] font-medium">{item.label}</div>
-                        <div className="text-[11px] text-[#6B6255] mt-0.5">{item.sublabel}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {categories.length > 0 && (
-                <div>
-                  <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mt-1">
-                    Fee Categories
-                  </p>
-                  {categories.map((item) => {
-                    const globalIdx = results.indexOf(item);
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleSelect(item)}
-                        role="option"
-                        aria-selected={globalIdx === selectedIndex}
-                        className={`w-full text-left px-4 py-2.5 transition-colors ${
-                          globalIdx === selectedIndex
-                            ? "bg-[#C44B2E]/8 text-[#C44B2E]"
-                            : "text-[#1A1815] hover:bg-[#FAF7F2]"
-                        }`}
-                      >
-                        <div className="text-[13px] font-medium">{item.label}</div>
-                        <div className="text-[11px] text-[#6B6255] mt-0.5">{item.sublabel}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {guides.length > 0 && (
-                <div>
-                  <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mt-1">
-                    Guides
-                  </p>
-                  {guides.map((item) => {
-                    const globalIdx = results.indexOf(item);
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleSelect(item)}
-                        role="option"
-                        aria-selected={globalIdx === selectedIndex}
-                        className={`w-full text-left px-4 py-2.5 transition-colors ${
-                          globalIdx === selectedIndex
-                            ? "bg-[#C44B2E]/8 text-[#C44B2E]"
-                            : "text-[#1A1815] hover:bg-[#FAF7F2]"
-                        }`}
-                      >
-                        <div className="text-[13px] font-medium">{item.label}</div>
-                        <div className="text-[11px] text-[#6B6255] mt-0.5">{item.sublabel}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+            <div id="search-results" className="max-h-[50vh] overflow-y-auto py-2" role="listbox" aria-label="Search results">
+              {RESULT_GROUPS.map((group) => {
+                const items = results.filter((r) => r.type === group.type);
+                if (items.length === 0) return null;
+                return (
+                  <div key={group.type} role="group" aria-labelledby={`search-group-${group.type}`}>
+                    <div
+                      id={`search-group-${group.type}`}
+                      role="presentation"
+                      className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]"
+                    >
+                      {group.label}
+                    </div>
+                    {items.map((item) => {
+                      const globalIdx = results.indexOf(item);
+                      const selected = globalIdx === selectedIndex;
+                      return (
+                        <div
+                          key={item.id}
+                          id={optionId(globalIdx)}
+                          role="option"
+                          aria-selected={selected}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleSelect(item)}
+                          onMouseEnter={() => setSelectedIndex(globalIdx)}
+                          className={`w-full cursor-pointer text-left px-4 py-2.5 transition-colors ${
+                            selected ? "bg-[#C44B2E]/8 text-[#A93D25]" : "text-[#1A1815] hover:bg-[#FAF7F2]"
+                          }`}
+                        >
+                          <div className="text-[13px] font-medium">{item.label}</div>
+                          <div className="text-[11px] text-[#6B6255] mt-0.5">{item.sublabel}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           )}
 
