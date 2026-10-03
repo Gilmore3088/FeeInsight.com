@@ -8,6 +8,13 @@ import {
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
+import {
+  documentVaultSchemaReady,
+  getDocumentVault,
+  isVaultKey,
+  type DocumentVault,
+} from "@/lib/agents/document-vault";
+import { FEE_PAGE_CHECK_VERSION, scoreFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import {
   detectFormat,
@@ -42,6 +49,9 @@ interface ReadCandidateRow {
   institution_name: string;
   document_url: string | null;
   content_hash: string | null;
+  /** Vault columns, present once the document-vault migration is applied. */
+  document_r2_key?: string | null;
+  stored_content_type?: string | null;
   /** Playbook columns, present once the learning-core migration is applied. */
   format?: string | null;
   best_strategy?: unknown;
@@ -50,7 +60,7 @@ interface ReadCandidateRow {
 }
 
 /** `known_failure` is the router's skip: nothing is fetched again or written. */
-type ReadStatus = "completed" | "empty" | "needs_ocr" | "failed" | "skipped" | "known_failure";
+type ReadStatus = "completed" | "empty" | "needs_ocr" | "failed" | "skipped" | "known_failure" | "wrong_document";
 
 interface PdfTextExtraction {
   text: string;
@@ -75,6 +85,9 @@ interface ReadResult {
   strategy: string | null;
   format: PlaybookFormat | null;
   routerReason: string | null;
+  /** True when the bytes came from our stored copy instead of a new download. */
+  fromVault: boolean;
+  pageCheck: FeePageScore | null;
   durationMs: number;
 }
 
@@ -88,6 +101,7 @@ export interface RunRosettaReadOptions {
   db?: SqlTag;
   fetchImpl?: Fetcher;
   pdfTextExtractor?: PdfTextExtractor;
+  vault?: DocumentVault;
 }
 
 export interface RunRosettaReadResult {
@@ -100,6 +114,14 @@ export interface RunRosettaReadResult {
   skipped: number;
   /** Inputs the router refused because they already failed with this reader version. */
   skippedKnownFailures: number;
+  /** Read, but not a fee schedule: Knox skips them and Magellan looks again. */
+  wrongDocuments: number;
+  readFromVault: number;
+  /** Earlier texts re-checked with the fee-page check this run, and how many failed it. */
+  triagedTexts: number;
+  triagedWrongDocuments: number;
+  /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
+  sentBackToMagellan: number;
   chars: number;
   limit: number;
   dryRun: boolean;
@@ -240,6 +262,8 @@ async function readCandidate(
   row: ReadCandidateRow,
   fetchImpl: Fetcher,
   pdfTextExtractor: PdfTextExtractor,
+  vault: DocumentVault | null = null,
+  checkPage = false,
 ): Promise<{
   result: ReadResult;
   normalizedText: string | null;
@@ -259,6 +283,8 @@ async function readCandidate(
     strategy: null,
     format: null,
     routerReason: null,
+    fromVault: false,
+    pageCheck: null,
   };
   const finish = (
     fields: Partial<ReadResult> & Pick<ReadResult, "status" | "error" | "attemptOutcome">,
@@ -272,49 +298,63 @@ async function readCandidate(
     return finish({ status: "skipped", error: "Invalid or missing document_url", attemptOutcome: "invalid_url" });
   }
 
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(fetchImpl, sourceUrl);
-  } catch (error) {
-    return finish({
-      status: "failed",
-      error: `Read fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-      attemptOutcome: classifyFetchFailure(null, error),
-    });
+  // Our stored copy first: no second download, and the exact bytes Magellan saw.
+  let bytes: Uint8Array | null = null;
+  let finalUrl = sourceUrl;
+  if (vault?.configured && isVaultKey(row.document_r2_key)) {
+    try {
+      bytes = await vault.read(row.document_r2_key);
+      base.contentType = row.stored_content_type ?? null;
+      base.fromVault = true;
+    } catch (error) {
+      console.error(`Vault read failed for ${row.document_r2_key}; downloading instead:`, error);
+      bytes = null;
+    }
   }
+  if (!bytes) {
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(fetchImpl, sourceUrl);
+    } catch (error) {
+      return finish({
+        status: "failed",
+        error: `Read fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+        attemptOutcome: classifyFetchFailure(null, error),
+      });
+    }
 
-  base.contentType = response.headers.get("content-type");
-  const finalUrl = response.url || sourceUrl;
-  base.documentType = documentTypeForFormat(detectFormat(null, base.contentType, finalUrl));
-  if (!response.ok) {
-    return finish({ status: "failed", error: `HTTP ${response.status}`, attemptOutcome: classifyFetchFailure(response.status) });
-  }
+    base.contentType = response.headers.get("content-type");
+    finalUrl = response.url || sourceUrl;
+    base.documentType = documentTypeForFormat(detectFormat(null, base.contentType, finalUrl));
+    if (!response.ok) {
+      return finish({ status: "failed", error: `HTTP ${response.status}`, attemptOutcome: classifyFetchFailure(response.status) });
+    }
 
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
-  if (contentLength > MAX_TEXT_DOCUMENT_BYTES) {
-    return finish({
-      status: "failed",
-      error: `Document too large for Rosetta text read: ${contentLength} bytes`,
-      attemptOutcome: "too_large",
-    });
-  }
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_TEXT_DOCUMENT_BYTES) {
+      return finish({
+        status: "failed",
+        error: `Document too large for Rosetta text read: ${contentLength} bytes`,
+        attemptOutcome: "too_large",
+      });
+    }
 
-  let bytes: Uint8Array;
-  try {
-    bytes = new Uint8Array(await response.arrayBuffer());
-  } catch (error) {
-    return finish({
-      status: "failed",
-      error: `Read failed: ${error instanceof Error ? error.message : String(error)}`,
-      attemptOutcome: classifyFetchFailure(null, error),
-    });
-  }
-  if (bytes.byteLength > MAX_TEXT_DOCUMENT_BYTES) {
-    return finish({
-      status: "failed",
-      error: `Document too large for Rosetta text read: ${bytes.byteLength} bytes`,
-      attemptOutcome: "too_large",
-    });
+    try {
+      bytes = new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      return finish({
+        status: "failed",
+        error: `Read failed: ${error instanceof Error ? error.message : String(error)}`,
+        attemptOutcome: classifyFetchFailure(null, error),
+      });
+    }
+    if (bytes.byteLength > MAX_TEXT_DOCUMENT_BYTES) {
+      return finish({
+        status: "failed",
+        error: `Document too large for Rosetta text read: ${bytes.byteLength} bytes`,
+        attemptOutcome: "too_large",
+      });
+    }
   }
 
   // The bytes, not the URL or the declared type, decide how to read the document.
@@ -341,6 +381,24 @@ async function readCandidate(
   base.strategy = decision.strategy;
   base.routerReason = decision.reason;
 
+  /** A readable text: completed, unless the fee-page check says it is not a fee schedule. */
+  const finishRead = (normalizedText: string, learnedFormat: PlaybookFormat) => {
+    const pageCheck = checkPage ? scoreFeePage(normalizedText) : null;
+    const wrong = pageCheck?.verdict === "wrong_document";
+    return finish(
+      {
+        status: wrong ? "wrong_document" : "completed",
+        textHash: hashText(normalizedText),
+        charCount: normalizedText.length,
+        error: wrong ? pageCheck.reason : null,
+        attemptOutcome: wrong ? "wrong_document" : "ok",
+        format: learnedFormat,
+        pageCheck,
+      },
+      normalizedText,
+    );
+  };
+
   if (format === "pdf") {
     try {
       const extracted = await pdfTextExtractor(bytes);
@@ -360,17 +418,7 @@ async function readCandidate(
           normalizedText,
         );
       }
-      return finish(
-        {
-          status: "completed",
-          textHash: hashText(normalizedText),
-          charCount: normalizedText.length,
-          error: null,
-          attemptOutcome: "ok",
-          format: "pdf_text",
-        },
-        normalizedText,
-      );
+      return finishRead(normalizedText, "pdf_text");
     } catch (error) {
       return finish({
         status: "failed",
@@ -394,17 +442,7 @@ async function readCandidate(
       normalizedText,
     );
   }
-  return finish(
-    {
-      status: "completed",
-      textHash: hashText(normalizedText),
-      charCount: normalizedText.length,
-      error: null,
-      attemptOutcome: "ok",
-      format: format === "html" ? "html_static" : "text",
-    },
-    normalizedText,
-  );
+  return finishRead(normalizedText, format === "html" ? "html_static" : "text");
 }
 
 async function selectCandidates(
@@ -413,6 +451,7 @@ async function selectCandidates(
   learning: boolean,
   institutionId?: number,
   stateCode?: string,
+  vaultSchema = false,
 ): Promise<ReadCandidateRow[]> {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
@@ -444,13 +483,18 @@ async function selectCandidates(
               AND pa.outcome = ANY($${params.length}::text[])
          )`);
   }
+  const vaultColumns = vaultSchema
+    ? `,
+             cr.document_r2_key,
+             cr.content_type AS stored_content_type`
+    : "";
   return db.unsafe<ReadCandidateRow[]>(
     `
       SELECT cr.id AS source_document_id,
              cr.institution_id,
              ct.institution_name,
              cr.document_url,
-             cr.content_hash${playbookColumns}
+             cr.content_hash${playbookColumns}${vaultColumns}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -466,7 +510,7 @@ async function selectCandidates(
          AND NOT EXISTS (
            SELECT 1
              FROM agent_source_texts adt
-            WHERE adt.status IN ('completed', 'empty', 'needs_ocr')
+            WHERE adt.status IN ('completed', 'empty', 'needs_ocr', 'wrong_document')
               AND (
                 (adt.source_document_id = cr.id AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash)
                 -- The same bytes stored under another document id were already read.
@@ -601,6 +645,149 @@ async function recordReadResult(
   `;
 }
 
+/**
+ * The page Rosetta read is not a fee schedule. Remember the URL so discovery never
+ * proposes it again and, unless a person locked this source, send the institution
+ * back to Magellan to find the real fee page. Only the institution's latest document
+ * can trigger this, so an old version never undoes a newer, correct URL.
+ */
+async function sendBackToMagellan(
+  db: SqlTag,
+  input: { institutionId: number; sourceDocumentId: number; url: string | null; reason: string },
+): Promise<boolean> {
+  const rejected = JSON.stringify([{ url: input.url, reason: input.reason, at: new Date().toISOString() }]);
+  await db`
+    UPDATE institution_source_profiles
+       SET rejected_source_urls = COALESCE(rejected_source_urls, '[]'::jsonb) || ${rejected}::jsonb,
+           canonical_source_url = CASE WHEN locked_by_correction THEN canonical_source_url ELSE NULL END,
+           updated_at = NOW()
+     WHERE institution_id = ${input.institutionId}
+  `;
+  const cleared = await db`
+    UPDATE institution_sources inst
+       SET fee_schedule_url = NULL,
+           rescue_status = 'pending',
+           failure_reason = 'rosetta_wrong_document',
+           failure_reason_note = ${input.url},
+           failure_reason_updated_at = NOW()
+     WHERE inst.id = ${input.institutionId}
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM source_documents newer
+          WHERE newer.institution_id = inst.id
+            AND newer.status = 'success'
+            AND newer.id > ${input.sourceDocumentId}
+       )
+    RETURNING inst.id
+  `;
+  return cleared.length > 0;
+}
+
+export const ROSETTA_TRIAGE_LIMIT = 100;
+const PAGE_CHECK_STRATEGY = "read.page_check";
+
+/**
+ * Re-checks texts read before the fee-page check existed (no download). A text Knox
+ * already pulled fees from is never rejected.
+ */
+async function triageEarlierTexts(
+  db: SqlTag,
+  options: { runId: number; stepId: number | null; institutionId?: number; stateCode?: string },
+): Promise<{ checked: number; wrong: number; sentBack: number }> {
+  const params: Array<number | string> = [ROSETTA_TRIAGE_LIMIT, PAGE_CHECK_STRATEGY, FEE_PAGE_CHECK_VERSION];
+  const filters: string[] = [];
+  if (options.institutionId) {
+    params.push(options.institutionId);
+    filters.push(`AND adt.institution_id = $${params.length}`);
+  }
+  const normalizedState = normalizeStateCode(options.stateCode);
+  if (normalizedState) {
+    params.push(normalizedState);
+    filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  const rows = await db.unsafe<Array<{
+    text_id: number | string;
+    source_document_id: number | string;
+    institution_id: number | string;
+    source_url: string | null;
+    text_hash: string | null;
+    normalized_text: string;
+    has_knox_fees: boolean;
+  }>>(
+    `
+      SELECT adt.id AS text_id,
+             adt.source_document_id,
+             adt.institution_id,
+             adt.source_url,
+             adt.text_hash,
+             adt.normalized_text,
+             EXISTS (
+               SELECT 1 FROM raw_fee_observations fr
+                WHERE fr.source = 'knox' AND fr.source_document_id = adt.source_document_id
+             ) AS has_knox_fees
+        FROM agent_source_texts adt
+        JOIN institution_sources inst ON inst.id = adt.institution_id
+       WHERE adt.status = 'completed'
+         AND adt.normalized_text IS NOT NULL
+         ${filters.join("\n         ")}
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.stage = 'read'
+              AND pa.institution_id = adt.institution_id
+              AND pa.input_fingerprint = adt.text_hash
+              AND pa.strategy = $2
+              AND pa.strategy_version = $3
+         )
+       ORDER BY adt.updated_at DESC, adt.id DESC
+       LIMIT $1
+    `,
+    params,
+  );
+
+  let wrong = 0;
+  let sentBack = 0;
+  for (const row of rows) {
+    const score = scoreFeePage(row.normalized_text);
+    const isWrong = score.verdict === "wrong_document" && !row.has_knox_fees;
+    if (isWrong) {
+      wrong += 1;
+      await db`
+        UPDATE agent_source_texts
+           SET status = 'wrong_document', error_message = ${score.reason}, updated_at = NOW()
+         WHERE id = ${Number(row.text_id)}
+      `;
+      if (
+        await sendBackToMagellan(db, {
+          institutionId: Number(row.institution_id),
+          sourceDocumentId: Number(row.source_document_id),
+          url: row.source_url,
+          reason: score.reason,
+        })
+      ) {
+        sentBack += 1;
+      }
+    }
+    await recordAttempt(db, {
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: Number(row.source_document_id),
+      stage: "read",
+      strategy: PAGE_CHECK_STRATEGY,
+      version: FEE_PAGE_CHECK_VERSION,
+      fingerprint: row.text_hash,
+      outcome: isWrong ? "wrong_document" : "ok",
+      yieldCount: score.feeLines,
+      costMicrousd: 0,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: { text_id: Number(row.text_id), url: row.source_url, triage: true, ...score },
+    });
+  }
+  return { checked: rows.length, wrong, sentBack };
+}
+
 export async function runRosettaRead(
   options: RunRosettaReadOptions,
 ): Promise<RunRosettaReadResult> {
@@ -610,18 +797,36 @@ export async function runRosettaRead(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
-  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode);
+  // The fee-page check and the vault need the document-vault migration (new status, columns).
+  const vaultSchema = learning && (await documentVaultSchemaReady(db));
+  const vault = vaultSchema ? options.vault ?? getDocumentVault() : null;
+  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode, vaultSchema);
 
   const results: ReadResult[] = [];
+  let sentBack = 0;
   for (const row of rows) {
     const { result, normalizedText } = await readCandidate(
       row,
       fetchImpl,
       pdfTextExtractor,
+      vault,
+      vaultSchema,
     );
     results.push(result);
     if (dryRun || result.status === "known_failure") continue;
     await recordReadResult(db, options.runId, result, normalizedText);
+    if (result.status === "wrong_document") {
+      if (
+        await sendBackToMagellan(db, {
+          institutionId: result.institutionId,
+          sourceDocumentId: result.sourceDocumentId,
+          url: result.sourceUrl,
+          reason: result.error ?? "Not a fee schedule",
+        })
+      ) {
+        sentBack += 1;
+      }
+    }
     if (learning && result.attemptOutcome) {
       await recordAttempt(db, {
         institutionId: result.institutionId,
@@ -642,11 +847,39 @@ export async function runRosettaRead(
           document_type: result.documentType,
           content_type: result.contentType,
           router: result.routerReason,
+          from_vault: result.fromVault,
+          page_check: result.pageCheck,
           error: result.error,
         },
       });
+      if (vaultSchema && result.textHash) {
+        // Mark this text as page-checked so the triage pass never re-checks it.
+        await recordAttempt(db, {
+          institutionId: result.institutionId,
+          sourceDocumentId: result.sourceDocumentId,
+          stage: "read",
+          strategy: PAGE_CHECK_STRATEGY,
+          version: FEE_PAGE_CHECK_VERSION,
+          fingerprint: result.textHash,
+          outcome: result.status === "wrong_document" ? "wrong_document" : "ok",
+          yieldCount: result.pageCheck?.feeLines ?? 0,
+          costMicrousd: 0,
+          runId: options.runId,
+          stepId: options.stepId ?? null,
+          detail: { url: result.sourceUrl, ...(result.pageCheck ?? {}) },
+        });
+      }
     }
   }
+
+  const triage = vaultSchema
+    ? await triageEarlierTexts(db, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+      })
+    : { checked: 0, wrong: 0, sentBack: 0 };
 
   return {
     selected: rows.length,
@@ -657,6 +890,11 @@ export async function runRosettaRead(
     failed: results.filter((result) => result.status === "failed").length,
     skipped: results.filter((result) => result.status === "skipped").length,
     skippedKnownFailures: results.filter((result) => result.status === "known_failure").length,
+    wrongDocuments: results.filter((result) => result.status === "wrong_document").length,
+    sentBackToMagellan: sentBack + triage.sentBack,
+    readFromVault: results.filter((result) => result.fromVault).length,
+    triagedTexts: triage.checked,
+    triagedWrongDocuments: triage.wrong,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,
     dryRun,

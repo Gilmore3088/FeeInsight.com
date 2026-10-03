@@ -35,6 +35,8 @@ and the improvement loop), Phase 3 (paid extraction under a $300/month cap).
 
 | Owner | Shipped |
 |---|---|
+| Document vault (Phase 1c) | Every new or changed fee document is stored in R2 under a content-addressed key, and Rosetta reads our copy. The deterministic fee-page check marks wrong pages `wrong_document`, sends the bank back to Magellan, and blocks the URL from rediscovery. Before this, 61% of HTML pages read were not fee schedules. Admin institution pages show source history with "View our copy". Migration `20270103010000_document_vault.sql`. |
+| Data flow (Phase 1b) | Fixed double-encoded JSON writes: Darwin had selected 0 Knox rows since launch, because `outlier_flags` was stored as a JSON string. The connection now passes JSON text through, and migration `20270103000000_repair_double_encoded_jsonb.sql` repairs stored values. Darwin logs every decision (`verify.rules@1`), so rejected rows no longer starve its batch. |
 | Learning core (Phase 1a) | `pipeline_attempts` attempt log, the per-institution playbook on `institution_source_profiles`, and the strategy router (`src/lib/agents/learning/`). Magellan sends conditional GETs and records `unchanged` instead of inserting duplicate documents. Rosetta detects formats from bytes and marks thin-text PDFs `scanned_pdf`. Knox never re-extracts the same text with the same extractor version. Migration `20270102020000_learning_core.sql`. |
 | Atlas | Visible run launch receipts plus pickup/stale status on `/admin/atlas/status`. |
 | Magellan | Rescue/fetch batches rotate through retry windows instead of retrying the same failed rows. |

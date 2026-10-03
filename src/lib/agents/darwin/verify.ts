@@ -1,11 +1,16 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
+
+/** The verifier recorded in the attempt log; bump the version when the rules change. */
+export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 1 } as const;
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
@@ -39,6 +44,7 @@ export interface DarwinVerificationResult {
 
 export interface RunDarwinVerifyOptions {
   runId: number;
+  stepId?: number;
   limit?: number;
   institutionId?: number;
   stateCode?: string;
@@ -53,7 +59,14 @@ export interface RunDarwinVerifyResult {
   skippedFees: number;
   limit: number;
   dryRun: boolean;
+  learning: boolean;
+  outcomes: Partial<Record<AttemptOutcome, number>>;
   results: DarwinVerificationResult[];
+}
+
+/** The attempt-log fingerprint for one raw row. */
+export function rawFeeFingerprint(feeRawId: number | string): string {
+  return `raw:${feeRawId}`;
 }
 
 function boundedLimit(value: unknown): number {
@@ -118,6 +131,7 @@ function verificationSkipReason(row: RawFeeRow, canonicalFeeKey: string | null):
 async function selectRawFees(
   db: SqlTag,
   limit: number,
+  learning: boolean,
   institutionId?: number,
   stateCode?: string,
 ): Promise<RawFeeRow[]> {
@@ -131,6 +145,18 @@ async function selectRawFees(
   if (normalizedState) {
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  if (learning) {
+    // A row this rule version already rejected is never selected again, so rejected
+    // rows cannot starve the batch.
+    params.push(DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version);
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+              AND pa.strategy = $${params.length - 1}
+              AND pa.strategy_version = $${params.length}
+         )`);
   }
   return db.unsafe<RawFeeRow[]>(
     `
@@ -327,21 +353,27 @@ async function recordVerificationSignals(
   }
 }
 
+function rejectionOutcome(reason: string): AttemptOutcome {
+  return reason === "Duplicate verified row" ? "unchanged" : "rejected";
+}
+
 export async function runDarwinVerify(
   options: RunDarwinVerifyOptions,
 ): Promise<RunDarwinVerifyResult> {
   const db = options.db ?? sql;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
-  const rows = await selectRawFees(db, limit, options.institutionId, options.stateCode);
+  const learning = !dryRun && (await learningSchemaReady(db));
+  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode);
   const rowByRawFeeId = new Map(rows.map((row) => [Number(row.fee_raw_id), row]));
   const results: DarwinVerificationResult[] = [];
 
   for (const row of rows) {
     const canonicalFeeKey = canonicalHintFrom(row);
     const skipReason = verificationSkipReason(row, canonicalFeeKey);
+    let result: DarwinVerificationResult;
     if (skipReason || !canonicalFeeKey) {
-      results.push({
+      result = {
         feeRawId: Number(row.fee_raw_id),
         institutionId: Number(row.institution_id),
         feeName: row.fee_name,
@@ -350,23 +382,44 @@ export async function runDarwinVerify(
         status: "skipped",
         reason: skipReason ?? "Not verified",
         feeVerifiedId: null,
-      });
-      continue;
+      };
+    } else {
+      const feeVerifiedId = dryRun
+        ? null
+        : await insertVerifiedFee(db, { runId: options.runId, row, canonicalFeeKey });
+      result = {
+        feeRawId: Number(row.fee_raw_id),
+        institutionId: Number(row.institution_id),
+        feeName: row.fee_name,
+        amount: normalizedAmount(row.amount),
+        canonicalFeeKey,
+        status: feeVerifiedId || dryRun ? "verified" : "skipped",
+        reason: feeVerifiedId || dryRun ? null : "Duplicate verified row",
+        feeVerifiedId,
+      };
     }
+    results.push(result);
 
-    const feeVerifiedId = dryRun
-      ? null
-      : await insertVerifiedFee(db, { runId: options.runId, row, canonicalFeeKey });
-    results.push({
-      feeRawId: Number(row.fee_raw_id),
-      institutionId: Number(row.institution_id),
-      feeName: row.fee_name,
-      amount: normalizedAmount(row.amount),
-      canonicalFeeKey,
-      status: feeVerifiedId || dryRun ? "verified" : "skipped",
-      reason: feeVerifiedId || dryRun ? null : "Duplicate verified row",
-      feeVerifiedId,
-    });
+    if (learning) {
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        stage: "verify",
+        strategy: DARWIN_VERIFY_STRATEGY.strategy,
+        version: DARWIN_VERIFY_STRATEGY.version,
+        fingerprint: rawFeeFingerprint(result.feeRawId),
+        outcome: result.status === "verified" ? "ok" : rejectionOutcome(result.reason ?? ""),
+        yieldCount: result.status === "verified" ? 1 : 0,
+        costMicrousd: 0,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        detail: {
+          fee_raw_id: result.feeRawId,
+          fee_verified_id: result.feeVerifiedId,
+          canonical_fee_key: result.canonicalFeeKey,
+          reason: result.reason,
+        },
+      });
+    }
   }
 
   if (!dryRun) {
@@ -380,6 +433,10 @@ export async function runDarwinVerify(
     skippedFees: results.filter((result) => result.status === "skipped").length,
     limit,
     dryRun,
+    learning,
+    outcomes: learning
+      ? countOutcomes(results.map((result) => (result.status === "verified" ? "ok" : rejectionOutcome(result.reason ?? ""))))
+      : {},
     results,
   };
 }

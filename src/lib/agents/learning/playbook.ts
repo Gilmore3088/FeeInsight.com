@@ -57,6 +57,12 @@ export interface AttemptFacts {
 }
 
 export const DO_NOT_RETRY_LIMIT = 50;
+/**
+ * Stages that act on individual fee rows, not documents. Their failures live in the
+ * attempt log only (the candidate SQL excludes them); copying one entry per row into
+ * the capped do-not-retry list would evict the document-level memory.
+ */
+export const ROW_LEVEL_STAGES: ReadonlySet<AttemptStage> = new Set(["verify", "publish"]);
 export const RECENT_YIELD_LIMIT = 5;
 /** Minimum success rate for a strategy to be preferred for an institution. */
 export const PREFERRED_SUCCESS_RATE = 0.8;
@@ -124,7 +130,7 @@ export function applyAttempt(playbook: Playbook, attempt: AttemptFacts, now: Dat
     entry.version === attempt.version &&
     entry.fingerprint === attempt.fingerprint;
   let doNotRetry = playbook.doNotRetry.filter((entry) => !sameInput(entry));
-  if (attempt.fingerprint && isPermanentForInput(attempt.outcome)) {
+  if (attempt.fingerprint && isPermanentForInput(attempt.outcome) && !ROW_LEVEL_STAGES.has(attempt.stage)) {
     doNotRetry = [
       ...doNotRetry,
       {

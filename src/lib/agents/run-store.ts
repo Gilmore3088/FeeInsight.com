@@ -332,6 +332,8 @@ async function executeAgenticStep(
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
           unchanged_documents: fetched.unchanged,
+          stored_documents: fetched.storedDocuments,
+          vault: fetched.vault,
           failed_fetches: fetched.failed,
           skipped_fetches: fetched.skipped,
           fetched_bytes: fetched.bytes,
@@ -373,6 +375,10 @@ async function executeAgenticStep(
           failed_reads: read.failed,
           skipped_reads: read.skipped,
           skipped_known_failures: read.skippedKnownFailures,
+          wrong_documents: read.wrongDocuments + read.triagedWrongDocuments,
+          sent_back_to_magellan: read.sentBackToMagellan,
+          read_from_vault: read.readFromVault,
+          triaged_texts: read.triagedTexts,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
@@ -441,6 +447,7 @@ async function executeAgenticStep(
     case "verify": {
       const verification = await runDarwinVerify({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["verify_limit", "classify_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
@@ -455,6 +462,8 @@ async function executeAgenticStep(
           processed_raw_fees: verification.processedRawFees,
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
+          outcomes: verification.outcomes,
+          learning_log: verification.learning,
           verify_limit: verification.limit,
           dry_run: verification.dryRun,
           sample_results: verification.results.slice(0, 10).map((result) => ({

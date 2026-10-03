@@ -122,12 +122,10 @@ export async function sendLeadCaptureNotifications(
   input: LeadCaptureNotificationInput,
 ): Promise<LeadNotificationOutcome> {
   const from = getLeadNotificationFromAddress();
-  if (!getResendApiKey() || !from) {
+  if (!getResendApiKey()) {
     const result: EmailDeliveryResult = {
       status: "not_configured",
-      reason: !getResendApiKey()
-        ? "RESEND_API_KEY is not configured."
-        : "No lead notification From address is configured.",
+      reason: "RESEND_API_KEY is not configured.",
     };
     return { notification: result, confirmation: result };
   }

@@ -7,6 +7,12 @@ import {
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
+import {
+  documentVaultSchemaReady,
+  getDocumentVault,
+  type DocumentVault,
+  type VaultStoreStatus,
+} from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
@@ -41,6 +47,8 @@ interface PreviousDocument {
   contentHash: string | null;
   etag: string | null;
   lastModified: string | null;
+  /** Our stored copy, when the vault already has it. */
+  vaultKey: string | null;
 }
 
 type FetchOutcome = "success" | "unchanged" | "failed" | "skipped";
@@ -64,6 +72,10 @@ interface FetchResult {
   durationMs: number;
   /** The existing document this fetch matched, when unchanged. */
   previousDocumentId: number | null;
+  /** Downloaded bytes, kept only long enough to store them in the vault. */
+  body: Uint8Array | null;
+  vaultStatus: VaultStoreStatus | null;
+  vaultKey: string | null;
 }
 
 export interface RunMagellanFetchOptions {
@@ -75,6 +87,7 @@ export interface RunMagellanFetchOptions {
   dryRun?: boolean;
   db?: SqlTag;
   fetchImpl?: Fetcher;
+  vault?: DocumentVault;
 }
 
 export interface RunMagellanFetchResult {
@@ -90,6 +103,9 @@ export interface RunMagellanFetchResult {
   dryRun: boolean;
   /** False until the learning-core migration is applied (no attempt log yet). */
   learning: boolean;
+  /** Documents saved to the R2 vault this run (new files plus unchanged ones not yet stored). */
+  storedDocuments: number;
+  vault: "on" | "not_configured" | "schema_pending";
   outcomes: Partial<Record<AttemptOutcome, number>>;
   results: FetchResult[];
 }
@@ -164,6 +180,9 @@ async function fetchCandidate(
     etag: null as string | null,
     lastModified: null as string | null,
     previousDocumentId: null as number | null,
+    body: null as Uint8Array | null,
+    vaultStatus: null as VaultStoreStatus | null,
+    vaultKey: null as string | null,
   };
   const finish = (fields: Partial<FetchResult> & Pick<FetchResult, "outcome" | "reason" | "attemptOutcome">): FetchResult => ({
     ...base,
@@ -268,6 +287,7 @@ async function fetchCandidate(
       contentHash,
       bytes: bytes.byteLength,
       previousDocumentId: previous.id,
+      body: bytes,
       reason: null,
       attemptOutcome: "unchanged",
     });
@@ -279,6 +299,7 @@ async function fetchCandidate(
     documentType,
     contentHash,
     bytes: bytes.byteLength,
+    body: bytes,
     reason: null,
     attemptOutcome: "ok",
   });
@@ -358,6 +379,7 @@ async function loadPreviousDocument(
   db: SqlTag,
   row: FetchCandidateRow,
   learning: boolean,
+  vaultSchema: boolean,
 ): Promise<PreviousDocument | null> {
   const fromProfile: PreviousDocument | null = row.profile_last_source_hash
     ? {
@@ -365,10 +387,21 @@ async function loadPreviousDocument(
         contentHash: row.profile_last_source_hash,
         etag: null,
         lastModified: null,
+        vaultKey: null,
       }
     : null;
   if (!learning) return fromProfile;
-  const [latest] = await db`
+  const [latest] = vaultSchema
+    ? await db`
+    SELECT id, content_hash, etag, last_modified, document_r2_key
+      FROM source_documents
+     WHERE institution_id = ${Number(row.id)}
+       AND status = 'success'
+       AND content_hash IS NOT NULL
+     ORDER BY crawled_at DESC NULLS LAST, id DESC
+     LIMIT 1
+  `
+    : await db`
     SELECT id, content_hash, etag, last_modified
       FROM source_documents
      WHERE institution_id = ${Number(row.id)}
@@ -383,6 +416,7 @@ async function loadPreviousDocument(
     contentHash: String(latest.content_hash),
     etag: latest.etag == null ? null : String(latest.etag),
     lastModified: latest.last_modified == null ? null : String(latest.last_modified),
+    vaultKey: latest.document_r2_key == null ? null : String(latest.document_r2_key),
   };
 }
 
@@ -585,6 +619,30 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
   return sourceDocumentId;
 }
 
+/** Saves the downloaded bytes to the vault and records the key on the document row. */
+async function storeInVault(
+  db: SqlTag,
+  vault: DocumentVault,
+  result: FetchResult,
+  sourceDocumentId: number | null,
+): Promise<void> {
+  if (!result.body || !result.contentHash || sourceDocumentId == null) return;
+  const stored = await vault.store(result.body, result.contentHash, result.contentType);
+  result.vaultStatus = stored.status;
+  result.vaultKey = stored.key;
+  if (stored.key) {
+    await db`
+      UPDATE source_documents
+         SET document_r2_key = ${stored.key},
+             content_type = ${result.contentType},
+             byte_size = ${result.body.byteLength}
+       WHERE id = ${sourceDocumentId}
+    `;
+  } else if (stored.error) {
+    console.error(`Document vault store failed for institution ${result.institutionId}: ${stored.error}`);
+  }
+}
+
 export async function runMagellanFetch(
   options: RunMagellanFetchOptions,
 ): Promise<RunMagellanFetchResult> {
@@ -594,14 +652,22 @@ export async function runMagellanFetch(
   const dryRun = Boolean(options.dryRun);
   const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode);
   const learning = !dryRun && rows.length > 0 && (await learningSchemaReady(db));
+  const vaultSchema = learning && (await documentVaultSchemaReady(db));
+  const vault = options.vault ?? getDocumentVault();
+  const vaultOn = vaultSchema && vault.configured;
 
   const results: FetchResult[] = [];
   for (const row of rows) {
-    const previous = await loadPreviousDocument(db, row, learning);
+    const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
     const result = await fetchCandidate(row, fetchImpl, previous);
     results.push(result);
     if (dryRun) continue;
     const sourceDocumentId = await recordFetchResult(db, result, learning);
+    // New content is always stored; an unchanged document is stored once if it predates the vault.
+    if (vaultOn && (result.outcome === "success" || (result.outcome === "unchanged" && !previous?.vaultKey))) {
+      await storeInVault(db, vault, result, sourceDocumentId);
+    }
+    result.body = null;
     if (learning && result.attemptOutcome) {
       await recordAttempt(db, {
         institutionId: result.institutionId,
@@ -621,6 +687,8 @@ export async function runMagellanFetch(
           status_code: result.statusCode,
           document_type: result.documentType,
           bytes: result.bytes,
+          vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
+          vault_key: result.vaultKey,
           reason: result.reason,
         },
       });
@@ -638,6 +706,8 @@ export async function runMagellanFetch(
     limit,
     dryRun,
     learning,
+    storedDocuments: results.filter((result) => result.vaultStatus === "stored" || result.vaultStatus === "already_stored").length,
+    vault: vaultOn ? "on" : vaultSchema ? "not_configured" : "schema_pending",
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     results,
   };

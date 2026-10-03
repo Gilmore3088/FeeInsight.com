@@ -5,6 +5,8 @@ import {
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
+import { documentVaultSchemaReady } from "@/lib/agents/document-vault";
+import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -336,14 +338,26 @@ async function validateLinkCandidate(
     };
   }
 
-  const body = (await response.text()).toLowerCase();
+  const rawBody = await response.text();
+  const body = rawBody.toLowerCase();
   const keywordMatches = FEE_CONTENT_KEYWORDS.filter((keyword) => body.includes(keyword)).length;
-  if (keywordMatches >= 2 || (candidate.score >= 0.88 && keywordMatches >= 1)) {
+  // Fee words in a footer ("Fee Schedule | Truth in Savings") are not a fee page: the page
+  // must actually list fees with amounts, or at least not clearly fail the fee-page check.
+  const page = scoreFeePage(htmlToScoringText(rawBody));
+  if (page.verdict === "wrong_document") {
+    return {
+      ok: false,
+      documentType: null,
+      confidence: candidate.score,
+      reason: `Candidate page is not a fee schedule (${page.reason})`,
+    };
+  }
+  if (page.verdict === "fee_page" || keywordMatches >= 2 || (candidate.score >= 0.88 && keywordMatches >= 1)) {
     return {
       ok: true,
       documentType: "html",
-      confidence: Math.max(candidate.score, keywordMatches >= 2 ? 0.84 : 0.78),
-      reason: `${keywordMatches} fee keywords found on candidate page`,
+      confidence: Math.max(candidate.score, page.verdict === "fee_page" ? 0.88 : keywordMatches >= 2 ? 0.84 : 0.78),
+      reason: `${keywordMatches} fee keywords, ${page.feeLines} fee lines found on candidate page`,
     };
   }
 
@@ -355,9 +369,40 @@ async function validateLinkCandidate(
   };
 }
 
+function urlIdentity(value: string): string {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return `${url.host.toLowerCase().replace(/^www\./, "")}${url.pathname.replace(/\/+$/, "")}${url.search}`;
+  } catch {
+    return value.trim().toLowerCase();
+  }
+}
+
+async function loadRejectedUrls(db: SqlTag, institutionIds: number[]): Promise<Map<number, Set<string>>> {
+  const byInstitution = new Map<number, Set<string>>();
+  if (institutionIds.length === 0) return byInstitution;
+  const rows = await db`
+    SELECT institution_id, rejected_source_urls
+      FROM institution_source_profiles
+     WHERE institution_id = ANY(${institutionIds})
+       AND jsonb_array_length(rejected_source_urls) > 0
+  `;
+  for (const row of rows) {
+    const entries = Array.isArray(row.rejected_source_urls) ? row.rejected_source_urls : [];
+    const urls = new Set<string>();
+    for (const entry of entries as Array<{ url?: unknown }>) {
+      if (typeof entry?.url === "string") urls.add(urlIdentity(entry.url));
+    }
+    byInstitution.set(Number(row.institution_id), urls);
+  }
+  return byInstitution;
+}
+
 async function discoverForInstitution(
   row: DiscoveryCandidateRow,
   fetchImpl: Fetcher,
+  rejectedUrls: Set<string> = new Set(),
 ): Promise<CandidateDiscoveryResult> {
   const institutionId = Number(row.id);
   const institutionName = String(row.institution_name);
@@ -430,7 +475,10 @@ async function discoverForInstitution(
   }
 
   const html = await homepage.text();
-  const candidates = extractLinkCandidates(html, baseUrl);
+  // Pages already read and found not to be fee schedules are never proposed again.
+  const candidates = extractLinkCandidates(html, baseUrl).filter(
+    (candidate) => !rejectedUrls.has(urlIdentity(candidate.url)),
+  );
   if (candidates.length === 0) {
     return {
       institutionId,
@@ -643,10 +691,13 @@ export async function runMagellanDiscovery(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const rows = await selectCandidates(db, limit, options.stateCode);
+  const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
+    ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
+    : new Map<number, Set<string>>();
 
   const results: CandidateDiscoveryResult[] = [];
   for (const row of rows) {
-    const result = await discoverForInstitution(row, fetchImpl);
+    const result = await discoverForInstitution(row, fetchImpl, rejected.get(Number(row.id)));
     results.push(result);
     if (!dryRun) await recordDiscoveryResult(db, result);
   }

@@ -54,21 +54,30 @@ export function narrateStepFinished(
         return `Checked ${count(processed, "fee schedule")} ${scope}: ${n(detail, "fetched_documents").toLocaleString("en-US")} new, ${n(detail, "unchanged_documents").toLocaleString("en-US")} unchanged${joinParts([
           n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
           n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
+          n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
         ]).replace(/^: /, ", ")}.`;
       }
       return `Downloaded ${count(n(detail, "fetched_documents"), "fee schedule")} ${scope}${joinParts([
         n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
         n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
+        n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
       ])}.`;
     }
     case "read": {
       const processed = n(detail, "processed_documents");
-      if (processed === 0) return `Had no new documents to read ${scope}.`;
+      if (processed === 0) {
+        return n(detail, "wrong_documents") > 0
+          ? `Re-checked earlier pages ${scope}: ${count(n(detail, "wrong_documents"), "page")} not a fee schedule${n(detail, "sent_back_to_magellan") > 0 ? `, ${n(detail, "sent_back_to_magellan")} sent back to Magellan` : ""}.`
+          : `Had no new documents to read ${scope}.`;
+      }
       return `Read ${count(n(detail, "text_artifacts"), "document")} ${scope}${joinParts([
         n(detail, "needs_ocr") > 0 && `${n(detail, "needs_ocr")} are scans that need OCR`,
         n(detail, "failed_reads") > 0 && `${n(detail, "failed_reads")} failed`,
         n(detail, "empty_documents") > 0 && `${n(detail, "empty_documents")} were empty`,
         n(detail, "skipped_known_failures") > 0 && `${n(detail, "skipped_known_failures")} skipped (failed before, unchanged since)`,
+        n(detail, "wrong_documents") > 0 && `${n(detail, "wrong_documents")} were not fee pages`,
+        n(detail, "sent_back_to_magellan") > 0 && `${n(detail, "sent_back_to_magellan")} sent back to Magellan to find the real fee page`,
+        n(detail, "read_from_vault") > 0 && `${n(detail, "read_from_vault")} read from our stored copy`,
       ])}.`;
     }
     case "extract": {

@@ -56,6 +56,52 @@ version changes. Transient outcomes (`timeout`, `network_error`, `http_429`,
 
 **Profile sync:** never flips a learned `scanned_pdf` back to `pdf`.
 
+**Darwin verify (`verify.rules@1`, PR 1b):**
+- Records one attempt per raw row, with the fingerprint `raw:<fee_raw_id>`: `ok`, or
+  `rejected` with the reason in `detail`.
+- Its candidate SQL excludes rows that already have an attempt for this version,
+  so rejected rows can no longer starve the batch.
+- Row-level stages (verify, publish) keep their failures in the attempt log only.
+  They never enter the capped `do_not_retry` list, which holds document-level
+  memory.
+
+## Document vault and fee-page check (PR 1c)
+
+**Vault.** `src/lib/agents/document-vault.ts` stores each new or changed document in R2
+under a content-addressed key, `<2 hex>/<sha256>`.
+- Magellan stores on `ok`. It also stores an `unchanged` document once if it predates
+  the vault.
+- Rosetta reads the stored copy instead of downloading again.
+- Admins open "View our copy" through `/api/admin/documents/[id]`, which issues a
+  1-hour presigned link.
+- Without the `R2_*` env vars the vault reports `not_configured`, and everything else
+  runs as before.
+
+**Fee-page check.** `learning/fee-page.ts` exports `scoreFeePage`, which is pure, at
+$0. It runs on every text Rosetta reads and on every HTML page discovery considers.
+- `wrong_document` means no line pairs a fee word with a dollar amount, and the page
+  has fewer than 3 dollar amounts.
+- It was calibrated on production: Knox had found fees on 0.7% of such pages.
+- A wrong page is stored with the status `wrong_document`, so Knox skips it.
+- Its URL goes into the profile's `rejected_source_urls`, and the institution is sent
+  back to Magellan, unless `locked_by_correction` is set or a newer document exists.
+- Discovery never re-proposes a rejected URL.
+
+**Backlog triage.** Each read step re-checks up to 100 earlier texts, with no
+download, under the strategy `read.page_check@<FEE_PAGE_CHECK_VERSION>`. It never
+rejects a text Knox already pulled fees from.
+
+## JSON parameters
+
+`src/lib/data-store/connection.ts` passes JSON text through unchanged
+(`JSON_TEXT_PASSTHROUGH`), so `${JSON.stringify(x)}::jsonb` stores a real object or
+array.
+
+Before PR 1b it stored a JSON string, and every SQL JSON operator silently missed it.
+Darwin's `outlier_flags ? 'needs_darwin_verification'` is one example: it selected
+nothing. Migration `20270103000000_repair_double_encoded_jsonb.sql` unwrapped the
+stored values.
+
 ## Deploy order
 
 The code checks `learningSchemaReady` before it uses the new table and columns. Until
@@ -66,7 +112,7 @@ until then.
 
 ## Not yet (later PRs)
 
-- Discover, verify and publish attempts.
+- Discover and publish attempts.
 - Knowledge promotion (L4): aliases, templates, discovery patterns.
 - The error-to-test loop and weekly retrospective (L5).
 - A unique `(institution_id, content_hash)` index after the dedupe workflow.
