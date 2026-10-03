@@ -10,7 +10,8 @@
 --
 -- Deterministic and idempotent: only values whose jsonb type is 'string' AND whose
 -- text parses as a JSON object or array are rewritten to that object or array.
--- Ordinary JSON strings are left alone. Backup and archive tables are skipped.
+-- Ordinary JSON strings are left alone. Backup and archive tables and generated
+-- columns (which recompute from their source column) are skipped.
 --
 -- Also adds the 'rejected' attempt outcome, which Darwin records for rows it will not
 -- verify, so they are never re-selected with the same rules.
@@ -53,6 +54,7 @@ BEGIN
        AND a.atttypid = 'jsonb'::regtype
        AND a.attnum > 0
        AND NOT a.attisdropped
+       AND a.attgenerated = ''
        AND c.relname NOT LIKE 'backup\_%'
        AND c.relname NOT LIKE '%\_backup\_%'
        AND c.relname NOT LIKE 'historical\_%'
