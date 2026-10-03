@@ -210,22 +210,6 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             claimHref={links.claimHref}
           />
 
-          <LeadCapture
-            placement="institution_alerts"
-            className="mb-6"
-            institutionId={instId}
-            institutionName={inst.institution_name}
-            stateCode={inst.state_code}
-            eyebrow="Fee change alerts"
-            headline={`Get alerted when ${inst.institution_name} changes fees`}
-            body="One email when a verified change to this published fee schedule lands in the index. No newsletter unless you ask for it."
-            buttonLabel="Alert me"
-            secondaryLink={{
-              href: links.reportOfferHref,
-              label: "Benchmark it against peers — free",
-            }}
-          />
-
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0 space-y-6">
               {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
@@ -271,6 +255,22 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
                   </div>
                 )}
               </section>
+
+              {/* Fees first: the alert signup sits after the schedule people came to see. */}
+              <LeadCapture
+                placement="institution_alerts"
+                institutionId={instId}
+                institutionName={inst.institution_name}
+                stateCode={inst.state_code}
+                eyebrow="Fee change alerts"
+                headline={`Get alerted when ${inst.institution_name} changes fees`}
+                body="One email when a verified change to this published fee schedule lands in the index. No newsletter unless you ask for it."
+                buttonLabel="Alert me"
+                secondaryLink={{
+                  href: links.reportOfferHref,
+                  label: "Benchmark it against peers — free",
+                }}
+              />
 
               {thinProfile ? (
                 <ThinProfilePanel
