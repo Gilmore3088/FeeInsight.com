@@ -25,6 +25,10 @@ vi.mock("@/lib/stripe", () => ({
   })),
 }));
 
+vi.mock("@/lib/stripe-customer", () => ({
+  ensureStripeCustomer: vi.fn(async () => "cus_lazy"),
+}));
+
 vi.mock("next/headers", () => ({
   headers: mocks.headersMock,
 }));
@@ -78,6 +82,15 @@ describe("createCheckoutSession", () => {
         }),
       }),
     );
+  });
+
+  it("checks out against the user's lazily created Stripe customer", async () => {
+    const { createCheckoutSession } = await import("./stripe-actions");
+    await createCheckoutSession("price_pro");
+    expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ customer: "cus_lazy" }),
+    );
+    expect(mocks.stripeCheckoutCreateMock.mock.calls[0][0]).not.toHaveProperty("customer_email");
   });
 
   it("drops unsafe external destinations instead of putting them into checkout URLs", async () => {

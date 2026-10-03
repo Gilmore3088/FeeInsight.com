@@ -26,6 +26,14 @@ function load(): Promise<SessionChrome> {
 }
 
 /**
+ * Forget the cached session so the next chrome island re-fetches it. Call after signing
+ * in, registering or signing out on the client.
+ */
+export function resetSessionChrome(): void {
+  inflight = null;
+}
+
+/**
  * Session state for site chrome, resolved after hydration.
  *
  * Returns `null` until known, so callers can render the signed-out shape immediately and
