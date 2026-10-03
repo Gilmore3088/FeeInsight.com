@@ -56,6 +56,26 @@ version changes. Transient outcomes (`timeout`, `network_error`, `http_429`,
 
 **Profile sync:** never flips a learned `scanned_pdf` back to `pdf`.
 
+**Darwin verify (`verify.rules@1`, PR 1b):**
+- Records one attempt per raw row, with the fingerprint `raw:<fee_raw_id>`: `ok`, or
+  `rejected` with the reason in `detail`.
+- Its candidate SQL excludes rows that already have an attempt for this version,
+  so rejected rows can no longer starve the batch.
+- Row-level stages (verify, publish) keep their failures in the attempt log only.
+  They never enter the capped `do_not_retry` list, which holds document-level
+  memory.
+
+## JSON parameters
+
+`src/lib/data-store/connection.ts` passes JSON text through unchanged
+(`JSON_TEXT_PASSTHROUGH`), so `${JSON.stringify(x)}::jsonb` stores a real object or
+array.
+
+Before PR 1b it stored a JSON string, and every SQL JSON operator silently missed it.
+Darwin's `outlier_flags ? 'needs_darwin_verification'` is one example: it selected
+nothing. Migration `20270103000000_repair_double_encoded_jsonb.sql` unwrapped the
+stored values.
+
 ## Deploy order
 
 The code checks `learningSchemaReady` before it uses the new table and columns. Until
@@ -66,7 +86,7 @@ until then.
 
 ## Not yet (later PRs)
 
-- Discover, verify and publish attempts.
+- Discover and publish attempts.
 - Knowledge promotion (L4): aliases, templates, discovery patterns.
 - The error-to-test loop and weekly retrospective (L5).
 - A unique `(institution_id, content_hash)` index after the dedupe workflow.

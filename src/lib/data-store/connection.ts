@@ -20,6 +20,36 @@ export const NUMERIC_AS_NUMBER = {
   parse: (value: string) => Number.parseFloat(value),
 };
 
+/**
+ * json/jsonb parameters. postgres.js JSON-encodes every json/jsonb parameter, so the
+ * common `${JSON.stringify(x)}::jsonb` pattern was stored as a JSON *string*
+ * ("[\"a\"]") instead of an array or object. SQL JSON operators then never matched
+ * (Darwin's `outlier_flags ? 'needs_darwin_verification'` selected nothing). Text
+ * that already is a JSON object or array passes through unchanged; everything
+ * else is encoded as before.
+ */
+export function serializeJsonParam(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        JSON.parse(trimmed);
+        return trimmed;
+      } catch {
+        // Not JSON text: encode it as a JSON string below.
+      }
+    }
+  }
+  return JSON.stringify(value);
+}
+
+export const JSON_TEXT_PASSTHROUGH = {
+  to: 3802,
+  from: [114, 3802],
+  serialize: serializeJsonParam,
+  parse: (value: string) => JSON.parse(value) as unknown,
+};
+
 export function getSql() {
   if (!_sql) {
     if (!DATABASE_URL) {
@@ -33,7 +63,7 @@ export function getSql() {
       idle_timeout: 20,
       connect_timeout: 15,
       prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
-      types: { numeric: NUMERIC_AS_NUMBER },
+      types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH },
     });
   }
   return _sql;

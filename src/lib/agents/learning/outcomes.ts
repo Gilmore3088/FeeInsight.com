@@ -31,6 +31,7 @@ export const ATTEMPT_OUTCOMES = [
   "no_candidates",
   "low_yield",
   "evidence_mismatch",
+  "rejected",
   "budget_blocked",
 ] as const;
 export type AttemptOutcome = (typeof ATTEMPT_OUTCOMES)[number];
@@ -53,6 +54,7 @@ const PERMANENT_FOR_INPUT = new Set<AttemptOutcome>([
   "unsupported_format",
   "wrong_document",
   "no_candidates",
+  "rejected",
 ]);
 
 export function isSuccessOutcome(outcome: AttemptOutcome): boolean {
