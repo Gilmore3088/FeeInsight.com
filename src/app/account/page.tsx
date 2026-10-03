@@ -7,6 +7,7 @@ import { PremiumBadge } from "@/components/upgrade-gate";
 import { LogoutButton } from "./logout-button";
 import { ProfileForm } from "./profile-form";
 import { AlertsPanel } from "./alerts-panel";
+import { SubscriptionStatusNotice } from "./subscription-status-notice";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { CustomerNav } from "@/components/customer-nav";
@@ -195,6 +196,8 @@ export default async function AccountPage({
           <LogoutButton />
         </div>
 
+        <SubscriptionStatusNotice user={user} />
+
         {/* ── Saved institutions and fee alerts: what a free account is for, so it comes first ── */}
         <AlertsPanel userId={user.id} />
 
@@ -252,11 +255,6 @@ export default async function AccountPage({
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 uppercase">
                   Active
                 </span>
-                {user.subscription_status === "past_due" && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 uppercase">
-                    Past Due
-                  </span>
-                )}
               </div>
               {user.stripe_customer_id && <ManageBillingButton />}
             </div>
