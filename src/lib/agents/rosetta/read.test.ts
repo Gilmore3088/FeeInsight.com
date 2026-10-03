@@ -361,4 +361,73 @@ describe("Rosetta agentic read", () => {
       expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "unsupported_format"]));
     });
   });
+
+  describe("with the document vault and fee-page check", () => {
+    const vaultKey = `ab/${"ab".repeat(32)}`;
+    const feeText = ["Schedule of fees", "Overdraft fee $35.00", "NSF fee $35.00", "Stop payment fee $30.00"].join("\n");
+
+    function vaultDb(rows: Array<Record<string, unknown>>, triageRows: Array<Record<string, unknown>> = []): DbMock {
+      const db = vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("vault_schema_ready")) return Promise.resolve([{ vault_schema_ready: true }]);
+        if (text.includes("INSERT INTO agent_source_texts")) return Promise.resolve([{ id: 801 }]);
+        if (text.includes("UPDATE institution_sources inst")) return Promise.resolve([{ id: 42 }]);
+        return Promise.resolve([]);
+      }) as DbMock;
+      db.unsafe = vi.fn((query: string) => {
+        if (query.includes("FROM source_documents")) return Promise.resolve(rows);
+        if (query.includes("has_knox_fees")) return Promise.resolve(triageRows);
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    function fakeVault(bytes: Uint8Array) {
+      return { configured: true, store: vi.fn(), read: vi.fn(async () => bytes), presign: vi.fn() };
+    }
+
+    it("reads our stored copy instead of downloading again", async () => {
+      const html = `<table>${feeText.split("\n").map((line) => `<tr><td>${line}</td></tr>`).join("")}</table>`;
+      const db = vaultDb([{ ...htmlCandidate, document_r2_key: vaultKey, stored_content_type: "text/html" }]);
+      const vault = fakeVault(new TextEncoder().encode(html));
+      const fetchImpl = vi.fn();
+
+      const result = await runRosettaRead({ runId: 601, db: asReadDb(db), fetchImpl, vault });
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(vault.read).toHaveBeenCalledWith(vaultKey);
+      expect(result).toMatchObject({ completed: 1, readFromVault: 1, wrongDocuments: 0 });
+      expect(result.results[0].pageCheck).toMatchObject({ verdict: "fee_page" });
+    });
+
+    it("marks a homepage as wrong_document and sends the bank back to Magellan", async () => {
+      const db = vaultDb([htmlCandidate]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("<p>Welcome to Test Bank</p><p>Fee Schedule | Privacy</p>"));
+
+      const result = await runRosettaRead({ runId: 602, db: asReadDb(db), fetchImpl, vault: fakeVault(new Uint8Array()) });
+
+      expect(result).toMatchObject({ completed: 0, wrongDocuments: 1, sentBackToMagellan: 1, outcomes: { wrong_document: 1 } });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("rejected_source_urls = COALESCE(rejected_source_urls");
+      expect(sqlText).toContain("SET fee_schedule_url = NULL");
+      expect(sqlText).toContain("locked_by_correction IS TRUE");
+      expect(JSON.stringify(db.mock.calls)).toContain('"wrong_document"');
+    });
+
+    it("re-checks earlier texts without downloading, sparing ones Knox found fees in", async () => {
+      const db = vaultDb([], [
+        { text_id: 1, source_document_id: 11, institution_id: 42, source_url: "https://a.example", text_hash: "h1", normalized_text: "Welcome home", has_knox_fees: false },
+        { text_id: 2, source_document_id: 12, institution_id: 43, source_url: "https://b.example", text_hash: "h2", normalized_text: "Welcome home", has_knox_fees: true },
+        { text_id: 3, source_document_id: 13, institution_id: 44, source_url: "https://c.example", text_hash: "h3", normalized_text: feeText, has_knox_fees: false },
+      ]);
+
+      const result = await runRosettaRead({ runId: 603, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+
+      expect(result).toMatchObject({ triagedTexts: 3, triagedWrongDocuments: 1, sentBackToMagellan: 1 });
+      const statusUpdates = db.mock.calls.filter((call) => templateText(call[0]).includes("SET status = 'wrong_document'"));
+      expect(statusUpdates).toHaveLength(1);
+      expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
+    });
+  });
 });

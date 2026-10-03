@@ -73,6 +73,17 @@ export interface InstitutionCrawl {
   fees_extracted: number;
   error_message: string | null;
   crawled_at: string;
+  /** Short content fingerprint: the same value means the same document version. */
+  content_hash: string | null;
+  /** True when our copy is in the document vault ("View our copy"). */
+  stored: boolean;
+  content_type: string | null;
+  /** What Rosetta made of it: completed, wrong_document, needs_ocr, ... (null = not read). */
+  read_status: string | null;
+  read_note: string | null;
+  /** Fees Knox pulled from this version. */
+  knox_fees: number;
+  last_checked_at: string | null;
 }
 
 export interface InstitutionAgentResult {
@@ -673,14 +684,56 @@ export async function getInstitutionSubmissionState(
 
 export async function getInstitutionCrawlHistory(
   id: number,
-  limit = 10,
+  limit = 25,
 ): Promise<InstitutionCrawl[]> {
+  try {
+    const rows = await sql`
+      SELECT
+        sd.id, sd.source_collection_run_id, sd.status, sd.document_url,
+        COALESCE(sd.fees_extracted, 0) AS fees_extracted,
+        sd.error_message, sd.crawled_at, sd.content_hash,
+        sd.document_r2_key, sd.content_type, sd.last_checked_at,
+        adt.status AS read_status, adt.error_message AS read_note,
+        (SELECT COUNT(*)::int FROM raw_fee_observations fr
+          WHERE fr.source = 'knox' AND fr.source_document_id = sd.id) AS knox_fees
+      FROM source_documents sd
+      LEFT JOIN agent_source_texts adt ON adt.source_document_id = sd.id
+      WHERE sd.institution_id = ${id}
+      ORDER BY sd.crawled_at DESC NULLS LAST, sd.id DESC
+      LIMIT ${limit}
+    `;
+    return rows.map((r) => ({
+      id: Number(r.id),
+      source_collection_run_id: r.source_collection_run_id != null
+        ? Number(r.source_collection_run_id)
+        : null,
+      status: String(r.status),
+      document_url: r.document_url ? String(r.document_url) : null,
+      fees_extracted: Number(r.fees_extracted),
+      error_message: r.error_message ? String(r.error_message) : null,
+      crawled_at: toDateStr(r.crawled_at as string | Date | null),
+      content_hash: r.content_hash ? String(r.content_hash) : null,
+      stored: typeof r.document_r2_key === "string" && /^[0-9a-f]{2}\/[0-9a-f]{64}$/.test(r.document_r2_key),
+      content_type: r.content_type ? String(r.content_type) : null,
+      read_status: r.read_status ? String(r.read_status) : null,
+      read_note: r.read_note ? String(r.read_note) : null,
+      knox_fees: Number(r.knox_fees ?? 0),
+      last_checked_at: r.last_checked_at ? toDateStr(r.last_checked_at as string | Date) : null,
+    }));
+  } catch (e) {
+    // Before the document-vault migration the new columns don't exist; show the basics.
+    console.error("getInstitutionCrawlHistory (source history) failed, falling back:", e);
+    return getBasicCrawlHistory(id, limit);
+  }
+}
+
+async function getBasicCrawlHistory(id: number, limit: number): Promise<InstitutionCrawl[]> {
   try {
     const rows = await sql`
       SELECT
         id, source_collection_run_id, status, document_url,
         COALESCE(fees_extracted, 0) as fees_extracted,
-        error_message, crawled_at
+        error_message, crawled_at, content_hash
       FROM source_documents
       WHERE institution_id = ${id}
       ORDER BY crawled_at DESC NULLS LAST
@@ -696,6 +749,13 @@ export async function getInstitutionCrawlHistory(
       fees_extracted: Number(r.fees_extracted),
       error_message: r.error_message ? String(r.error_message) : null,
       crawled_at: toDateStr(r.crawled_at as string | Date | null),
+      content_hash: r.content_hash ? String(r.content_hash) : null,
+      stored: false,
+      content_type: null,
+      read_status: null,
+      read_note: null,
+      knox_fees: 0,
+      last_checked_at: null,
     }));
   } catch (e) {
     console.error("getInstitutionCrawlHistory failed:", e);
