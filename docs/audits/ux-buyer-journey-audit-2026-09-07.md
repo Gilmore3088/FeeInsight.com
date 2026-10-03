@@ -77,6 +77,47 @@ run surfaced one that only a real runtime could catch. All are committed on this
 
 ## 3. Consolidated findings — what to do, in order
 
+### Resolution status (2026-10-03)
+
+Every item below is resolved on this branch. Each was re-verified against the code first
+(13 findings had already been fixed on main and were left alone), then implemented with
+tests, and the consumer journeys were walked in Chromium at 375px and 1280px against a
+fixture database: 34 of 34 browser checks pass, plus a signed-in Pro check of
+`/pro/monitor` at 375px.
+
+| Item | Resolution | Commit |
+| --- | --- | --- |
+| 1. Save / alert action | Save control on the institution page (one click signed in; email and password create a free account in place when signed out), "Your institutions and alerts" first on `/account`, taxonomy-validated categories with union merge | 892edf98 |
+| 2. Guide intent on `/register` | Consumer variant (email and password only), lands on `/institutions?fee=<category>`, user row before Stripe, customer created at checkout | b129e16c |
+| 3. The e-mail promise | Atlas `fee-alert-dispatch` run from a daily cron: reads Hamilton movement and publication signals, one email per reader, signed one-click unsubscribe, high-water mark only after a send is accepted | 3ed339e1 |
+| 4. Institution page | Fee schedule straight after the header, per-row "vs national median" linked to `/fees/{category}`, dead score tile removed, category-first paid-item detection | 936aee0e |
+| 5. Home | Consumer / researcher / institution starting points under the hero (shared with `/research`); search works on `/submit-fees` | 9f866e14 |
+| 6. Unkeepable promises | Unreachable `/pro` marketing page replaced by a redirect; "CSV exports (API access on request)"; report pages lose placeholder text, are noindex and leave the sitemap | 9f2ba873 |
+| 7. Professional landing | Paid users resume any return path; welcome skips the org re-ask and shows true medians; `/pro/monitor` lede, landmark and 375px fixes | 08821afe |
+| 8. Consumer fee page | Gate moved below all free content with consumer copy; raw tier chip removed | f6d2b1ca |
+| 9. Search on phones | Header search visible at every width; drawer "Search" entry; `openSearch()` event instead of a fake keypress | d33888b3 |
+| 10. Gated research | "Pro" lock on links to fully gated pages; gated page out of the sitemap; article CTA matches its button | befa65c2 |
+| Quality pass | One `<main>` per page with a skip link, labelled navs and selects, 42 decorative SVGs hidden, one 404 and error style, dead navs deleted, `#6B6255` text floor, analytics only on Vercel, one observations figure | f878c490 |
+| Drawer and search dialogs | Radix dialog drawer with focus trap and `aria-current`; search modal as a dialog with a wired combobox and focus return | 21a8b21c, edcaf570 |
+| J-15 Sessions | 30 days, sliding: the row renews in `getCurrentUser`, the cookie in `/api/session` | e0ad74b3 |
+| J-16 Lapsed subscriptions | `paused` is past due; cancellation returns the role to viewer; `/account` explains a lapsed status | 857e1d2a |
+
+Found by the browser run and fixed: the header kept "Sign in" after an in-page signup
+until a reload (69f184e8).
+
+**Corrections to the original text.** The quality pass named `#8A8073` as the small-text
+token; the site standard is `#6B6255` (`#8A8073` is about 3.6:1 and fails AA). The
+signed-out save box asks for a password as well as an email, because the site has no
+password-reset flow to finish an email-only account.
+
+**Not done here.** Neither the consumer-guides migration nor the new
+`20270104000000_fee_alert_dispatch_support.sql` is applied to production: this
+environment has no database credentials. Fee-alert email also needs
+`TRANSACTIONAL_EMAIL_FROM` and `RESEND_API_KEY` set; without them the run says so and
+sends nothing. Signups have a honeypot but no per-IP throttle.
+
+### Original findings
+
 Deduplicated across the two source-based reports (IDs: **F-** = UX audit, **J-** = journey
 map). Ordered by consumer impact, then by how much of the funnel each unblocks.
 
