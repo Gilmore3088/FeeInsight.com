@@ -1,3 +1,4 @@
+import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * island after hydration. This returns only what the chrome needs to draw itself — never
  * the full user record.
  */
-export async function GET(): Promise<NextResponse> {
+async function handleGET(): Promise<NextResponse> {
   const headers = { "Cache-Control": "private, no-store" };
   try {
     const user = await getCurrentUser();
@@ -37,3 +38,5 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ signedIn: false }, { headers });
   }
 }
+
+export const GET = withApiRoutePolicy("api.session", "GET", handleGET);

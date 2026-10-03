@@ -69,7 +69,7 @@ export function SavedInstitutionsPanel({
             >
               <Link
                 href={`/institution/${inst.institution_id}?fee=${category}#fee-${category}`}
-                className="text-[14px] font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
+                className="text-[14px] font-medium text-[#1A1815] transition-colors hover:text-[#A93D25]"
               >
                 {inst.institution_name}
                 {inst.state_code && (
@@ -110,7 +110,7 @@ export function SavedInstitutionsPanel({
       </ul>
       <p className="mt-3 text-[11px] text-[#8A8073]">
         We&rsquo;ll email you when one of these changes.{" "}
-        <Link href="/account" className="text-[#C44B2E]/80 hover:text-[#C44B2E]">
+        <Link href="/account" className="text-[#A93D25]/80 hover:text-[#A93D25]">
           Manage your alerts
         </Link>
       </p>

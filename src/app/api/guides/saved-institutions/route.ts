@@ -1,3 +1,4 @@
+import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getSavedInstitutionFees } from "@/lib/data-store/alerts";
@@ -17,7 +18,7 @@ const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
  * Signed-out callers get an empty list rather than a 401 — the island simply renders
  * nothing, and no guide content depends on the response.
  */
-export async function GET(request: Request): Promise<NextResponse> {
+async function handleGET(request: Request): Promise<NextResponse> {
   const category = new URL(request.url).searchParams.get("category")?.trim() ?? "";
   if (!TAXONOMY.has(category)) {
     return NextResponse.json({ institutions: [] }, { status: 400 });
@@ -49,3 +50,5 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
 }
+
+export const GET = withApiRoutePolicy("api.guides.saved_institutions", "GET", handleGET);

@@ -79,18 +79,27 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]";
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
+const FOCUSED_ROW = "border-l-2 border-l-[#C44B2E] bg-[#C44B2E]/[0.035]";
+
+/**
+ * @param focusCategory The fee the reader came to compare (`?fee=`), highlighted and
+ *   anchored so the guide → directory → profile handoff lands on the right row.
+ */
 export function FeeScheduleTable({
   fees,
   disclosureUrl,
+  focusCategory = null,
 }: {
   fees: DisplayFee[];
   disclosureUrl: string | null;
+  focusCategory?: string | null;
 }) {
   const groups = groupFeesByFamily(fees);
+  const isFocused = (fee: DisplayFee) => focusCategory !== null && fee.feeCategory === focusCategory;
 
   return (
     <>
-      <FeeScheduleStack groups={groups} disclosureUrl={disclosureUrl} />
+      <FeeScheduleStack groups={groups} disclosureUrl={disclosureUrl} isFocused={isFocused} />
       <div className="hidden sm:block">
         <p className="border-b border-[#F0EBE3] px-4 py-1.5 text-xs text-[#6B6255] lg:hidden">
           Swipe for source and notes &rarr;
@@ -117,7 +126,13 @@ export function FeeScheduleTable({
                   </th>
                 </tr>
                 {group.rows.map((fee) => (
-                  <FeeRow key={fee.id} fee={fee} disclosureUrl={disclosureUrl} mixedGroup={group.verifiedCount > 0} />
+                  <FeeRow
+                    key={fee.id}
+                    fee={fee}
+                    disclosureUrl={disclosureUrl}
+                    mixedGroup={group.verifiedCount > 0}
+                    focused={isFocused(fee)}
+                  />
                 ))}
               </tbody>
             ))}
@@ -155,10 +170,12 @@ function FeeRow({
   fee,
   disclosureUrl,
   mixedGroup,
+  focused = false,
 }: {
   fee: DisplayFee;
   disclosureUrl: string | null;
   mixedGroup: boolean;
+  focused?: boolean;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
   const amount = formatFeeAmount(fee.amount);
@@ -166,7 +183,11 @@ function FeeRow({
   const showUnderReview = mixedGroup && fee.status === "provisional";
 
   return (
-    <tr className="fi-row-interaction border-b border-[#F0EBE3] last:border-0">
+    <tr
+      id={focused && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
+      data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
+      className={`fi-row-interaction scroll-mt-24 border-b border-[#F0EBE3] last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+    >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
         <span className="break-words font-medium text-[#1A1815]">{fee.feeName}</span>
         {showUnderReview && <UnderReviewChip />}
@@ -186,7 +207,15 @@ function FeeRow({
 }
 
 /** Below 640px: stacked rows — fee + amount on one line; basis, note and source beneath. */
-function FeeScheduleStack({ groups, disclosureUrl }: { groups: FeeGroup[]; disclosureUrl: string | null }) {
+function FeeScheduleStack({
+  groups,
+  disclosureUrl,
+  isFocused,
+}: {
+  groups: FeeGroup[];
+  disclosureUrl: string | null;
+  isFocused: (fee: DisplayFee) => boolean;
+}) {
   return (
     <div className="sm:hidden">
       {groups.map((group) => (
@@ -200,8 +229,13 @@ function FeeScheduleStack({ groups, disclosureUrl }: { groups: FeeGroup[]; discl
               const sourceUrl = fee.sourceUrl ?? disclosureUrl;
               const basis = getFrequencyLabel(fee.frequency);
               const showUnderReview = group.verifiedCount > 0 && fee.status === "provisional";
+              const focused = isFocused(fee);
               return (
-                <li key={fee.id} className="border-b border-[#F0EBE3] px-4 py-2.5 last:border-0">
+                <li
+                  key={fee.id}
+                  data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
+                  className={`scroll-mt-24 border-b border-[#F0EBE3] px-4 py-2.5 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words text-sm font-medium text-[#1A1815]">
                       {fee.feeName}

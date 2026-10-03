@@ -13,16 +13,11 @@ const ICON_BUTTON =
 const DRAWER_LINK =
   "block rounded-lg px-3 py-2.5 text-[14px] font-medium text-[#5A5347] hover:bg-[#E8DFD1]/40 hover:text-[#1A1815] transition-colors";
 
-interface ConsumerMobileNavProps {
-  /**
-   * Accepted for callers that still pass session props, but ignored: the drawer resolves
-   * the session client-side so it can be rendered into static pages.
-   */
-  isLoggedIn?: boolean;
-  isPro?: boolean;
-}
-
-export function ConsumerMobileNav(_props: ConsumerMobileNavProps = {}) {
+/**
+ * Takes no session props: the drawer resolves the session client-side (see
+ * `use-session-chrome.ts`) so the header can be rendered into static pages.
+ */
+export function ConsumerMobileNav() {
   const session = useSessionChrome();
   const isLoggedIn = session?.signedIn === true;
   const displayItems = navItemsFor(session);

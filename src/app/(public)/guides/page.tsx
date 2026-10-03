@@ -110,7 +110,7 @@ function GuideCard({
         </span>
 
         <h3
-          className={`mt-3 tracking-[-0.01em] text-[#1A1815] transition-colors duration-300 group-hover:text-[#C44B2E] ${
+          className={`mt-3 tracking-[-0.01em] text-[#1A1815] transition-colors duration-300 group-hover:text-[#A93D25] ${
             featured
               ? "text-[18px] font-semibold leading-snug"
               : "text-[14px] font-semibold leading-snug"
@@ -121,7 +121,7 @@ function GuideCard({
         </h3>
 
         {featured && (
-          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-[#7A7062]">
+          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-[#6B6255]">
             {guide.description}
           </p>
         )}
@@ -181,7 +181,7 @@ function GuideCard({
         )}
 
         <div
-          className={`flex items-center gap-1.5 text-[12px] font-medium text-[#C44B2E]/60 transition-colors duration-300 group-hover:text-[#C44B2E] ${
+          className={`flex items-center gap-1.5 text-[12px] font-medium text-[#A93D25]/60 transition-colors duration-300 group-hover:text-[#A93D25] ${
             featured ? "mt-4" : "mt-3"
           }`}
         >
@@ -228,7 +228,7 @@ export default async function GuidesIndexPage() {
       <div className="max-w-2xl">
         <div className="mb-4 flex items-center gap-2">
           <span className="h-px w-8 bg-[#C44B2E]/40" aria-hidden="true" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#C44B2E]/60">
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
             Consumer Guides
           </span>
         </div>
@@ -240,7 +240,7 @@ export default async function GuidesIndexPage() {
           Understand what your bank <em style={{ fontWeight: 300 }}>charges</em>
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[#7A7062]">
+        <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
           Plain-language guides backed by live benchmark data from{" "}
           <span className="font-medium tabular-nums text-[#5A5347]">
             {stats.total_institutions.toLocaleString()}
@@ -323,7 +323,7 @@ export default async function GuidesIndexPage() {
             <span className="text-[11px] text-[#8A8073]">Professional plan</span>
           </div>
 
-          <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-[#7A7062]">
+          <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-[#6B6255]">
             Benchmarking method for people who set fees rather than pay them. Separate
             guides for a separate reader — the consumer guides above stay free for
             everyone, including you.
@@ -354,12 +354,12 @@ export default async function GuidesIndexPage() {
                   </svg>
                 </div>
                 <h3
-                  className="mt-2 text-[15px] font-semibold leading-snug text-[#1A1815] transition-colors group-hover:text-[#C44B2E]"
+                  className="mt-2 text-[15px] font-semibold leading-snug text-[#1A1815] transition-colors group-hover:text-[#A93D25]"
                   style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                 >
                   {guide.title}
                 </h3>
-                <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-[#7A7062]">
+                <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-[#6B6255]">
                   {guide.description}
                 </p>
               </Link>
@@ -403,7 +403,7 @@ export default async function GuidesIndexPage() {
               href={item.href}
               className="group rounded-lg border border-[#E8DFD1]/60 bg-[#FAF7F2]/50 px-4 py-3 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:bg-white"
             >
-              <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#C44B2E]">
+              <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
                 {item.label}
               </span>
               <span className="mt-0.5 block text-[11px] text-[#8A8073]">{item.desc}</span>

@@ -1,12 +1,16 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
   getInstitutionStateDirectorySummaries,
   searchInstitutions,
   type InstitutionSearchResult,
 } from "@/lib/data-store/search";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
+import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
+import { formatAmount } from "@/lib/format";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { InstitutionSearchBar } from "./search-bar";
 import { StateDirectoryMap } from "./state-directory-map";
@@ -15,6 +19,7 @@ import {
   DirectoryPagination,
   InstitutionMobileCards,
   InstitutionResultsTable,
+  type FeeFocus,
 } from "./institution-results";
 import {
   DIRECTORY_PAGE_SIZE,
@@ -35,7 +40,16 @@ interface PageProps {
     state?: string;
     charter?: string;
     page?: string;
+    /** A fee category to compare, arriving from a consumer guide ("check your own bank"). */
+    fee?: string;
   }>;
+}
+
+const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
+
+/** Display name without its abbreviation, for prose: "Overdraft", not "Overdraft (OD)". */
+function plainLabel(category: string): string {
+  return getDisplayName(category).replace(/\s*\([^)]*\)/g, "");
 }
 
 interface DirectoryResults {
@@ -51,6 +65,7 @@ async function loadResults(params: {
   query?: string;
   state_code?: string;
   charter_type?: string;
+  fee_category?: string;
   page: number;
 }): Promise<DirectoryResults> {
   const firstPass = await searchInstitutions({
@@ -74,11 +89,13 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   const stateCode = (params.state || "").toUpperCase();
   const charterType = params.charter || "";
   const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
+  // Validated against the taxonomy: an unknown value degrades to the plain directory.
+  const focusCategory = params.fee && TAXONOMY.has(params.fee) ? params.fee : "";
 
   const hasQuery = query.trim().length >= 2;
   const hasState = Boolean(stateCode);
   const shouldShowResults = hasQuery || hasState;
-  const [stats, stateSummaries, results] = await Promise.all([
+  const [stats, stateSummaries, results, summaries] = await Promise.all([
     getPublicStatsSummary(),
     getInstitutionStateDirectorySummaries({ charter_type: charterType || undefined }),
     shouldShowResults
@@ -86,18 +103,30 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           query: hasQuery ? query : undefined,
           state_code: stateCode || undefined,
           charter_type: charterType || undefined,
+          fee_category: focusCategory || undefined,
           page,
         })
       : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
+    focusCategory ? getCachedFeeCategorySummaries() : Promise.resolve([]),
   ]);
+
+  const focus: FeeFocus | null = focusCategory
+    ? {
+        category: focusCategory,
+        label: plainLabel(focusCategory),
+        median: summaries.find((s) => s.fee_category === focusCategory)?.median_amount ?? null,
+      }
+    : null;
 
   const totalPages = Math.ceil(results.total / DIRECTORY_PAGE_SIZE);
   const selectedStateName = stateCode ? STATE_NAMES[stateCode] ?? stateCode : "";
+  /** Pagination preserves every active filter, including the fee focus. */
   const buildPageHref = (nextPage: number) => {
     const search = new URLSearchParams();
     if (query) search.set("q", query);
     if (stateCode) search.set("state", stateCode);
     if (charterType) search.set("charter", charterType);
+    if (focusCategory) search.set("fee", focusCategory);
     search.set("page", String(nextPage));
     return `/institutions?${search.toString()}`;
   };
@@ -105,7 +134,32 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   return (
     <main className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
       <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
-        <section className="fi-reveal border-b border-[#D8CBB8] pb-6">
+        {focus && (
+          <div className="fi-reveal mb-6 rounded-xl border border-[#C44B2E]/20 bg-white px-5 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A93D25]/80">
+              Comparing {focus.label}
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-[#5A5347]">
+              Search your institution below and its published {focus.label.toLowerCase()} appears
+              alongside the national median
+              {focus.median !== null && (
+                <>
+                  {" "}
+                  of{" "}
+                  <span className="font-semibold tabular-nums text-[#1A1815]">
+                    {formatAmount(focus.median)}
+                  </span>
+                </>
+              )}
+              .{" "}
+              <Link href={`/fees/${focus.category}`} className="font-medium text-[#A93D25] hover:underline">
+                See the full {focus.label.toLowerCase()} analysis
+              </Link>
+            </p>
+          </div>
+        )}
+        {/* `relative z-20` keeps the search dropdown above the sections that follow; see .fi-reveal. */}
+        <section className="fi-reveal relative z-20 border-b border-[#D8CBB8] pb-6">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
@@ -146,9 +200,15 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           selectedStateCode={stateCode}
           query={hasQuery ? query : ""}
           charterType={charterType}
+          feeCategory={focusCategory}
         />
 
-        <DirectoryFilters query={query} stateCode={stateCode} charterType={charterType} />
+        <DirectoryFilters
+          query={query}
+          stateCode={stateCode}
+          charterType={charterType}
+          feeCategory={focusCategory}
+        />
 
         {!shouldShowResults && (
           <section className="fi-reveal fi-reveal-delay-2 py-6">
@@ -180,8 +240,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               </p>
             </div>
 
-            <InstitutionMobileCards rows={results.rows} />
-            <InstitutionResultsTable rows={results.rows} />
+            <InstitutionMobileCards rows={results.rows} focus={focus} />
+            <InstitutionResultsTable rows={results.rows} focus={focus} />
             <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
           </section>
         )}

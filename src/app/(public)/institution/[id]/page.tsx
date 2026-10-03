@@ -15,7 +15,9 @@ import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
+import { FeeFocusScroll } from "./fee-focus-scroll";
 import { FeeScheduleTable } from "./fee-schedule-table";
+import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { FinancialContext } from "./financial-context";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
@@ -37,7 +39,11 @@ import { ThinProfilePanel } from "./thin-profile-panel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  /** `fee`: the category a consumer guide sent the reader to compare; highlights that row. */
+  searchParams?: Promise<{ fee?: string }>;
 }
+
+const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 
 const FINANCIAL_HISTORY_QUARTERS = 4;
 /** Up to three call-report sources can carry the same quarter; fetch enough rows to dedupe. */
@@ -79,10 +85,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function InstitutionProfilePage({ params }: PageProps) {
+export default async function InstitutionProfilePage({ params, searchParams }: PageProps) {
   const { id } = await params;
   const instId = parseInt(id, 10);
   if (Number.isNaN(instId)) notFound();
+  const requestedFee = (await searchParams)?.fee ?? "";
+  const focusFeeCategory = TAXONOMY.has(requestedFee) ? requestedFee : null;
 
   const inst = await getPublicInstitutionForPage(instId);
   if (!inst) notFound();
@@ -253,7 +261,14 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
                 </div>
 
                 {displayFees.length > 0 ? (
-                  <FeeScheduleTable fees={displayFees} disclosureUrl={inst.fee_schedule_url} />
+                  <>
+                    {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
+                    <FeeScheduleTable
+                      fees={displayFees}
+                      disclosureUrl={inst.fee_schedule_url}
+                      focusCategory={focusFeeCategory}
+                    />
+                  </>
                 ) : (
                   <div className="px-4 py-8 sm:px-5">
                     <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">

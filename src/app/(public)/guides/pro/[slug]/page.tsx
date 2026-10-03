@@ -162,7 +162,7 @@ export default async function ProGuidePage({ params }: PageProps) {
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[#7A7062]">
+        <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
           {guide.description}
         </p>
 
@@ -179,7 +179,7 @@ export default async function ProGuidePage({ params }: PageProps) {
               <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
               <Link
                 href={guide.methodologyHref}
-                className="text-[#C44B2E]/70 transition-colors hover:text-[#C44B2E]"
+                className="text-[#A93D25]/70 transition-colors hover:text-[#A93D25]"
               >
                 Methodology
               </Link>
@@ -191,7 +191,7 @@ export default async function ProGuidePage({ params }: PageProps) {
       {!isPro ? (
         <div className="mt-10 max-w-2xl">
           <UpgradeGate message={`"${guide.title}" is part of the professional guide set`} />
-          <p className="mt-6 text-[14px] leading-relaxed text-[#7A7062]">
+          <p className="mt-6 text-[14px] leading-relaxed text-[#6B6255]">
             Every consumer fee guide on this site is free and ungated, including for
             subscribers.{" "}
             <Link href="/guides" className="font-medium text-[#C44B2E]">
@@ -210,7 +210,7 @@ export default async function ProGuidePage({ params }: PageProps) {
                   href={`/fees/${fee.fee_category}`}
                   className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
                 >
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8073] transition-colors group-hover:text-[#C44B2E]/70">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8073] transition-colors group-hover:text-[#A93D25]/70">
                     {getDisplayName(fee.fee_category)}
                   </p>
                   <p
@@ -251,7 +251,7 @@ export default async function ProGuidePage({ params }: PageProps) {
             </Link>
             <Link
               href="/research"
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-white/80 px-5 py-2.5 text-[13px] font-medium text-[#5A5347] no-underline transition-all hover:border-[#C44B2E]/30 hover:text-[#C44B2E]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-white/80 px-5 py-2.5 text-[13px] font-medium text-[#5A5347] no-underline transition-all hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
             >
               State &amp; district reports
             </Link>
@@ -279,12 +279,12 @@ export default async function ProGuidePage({ params }: PageProps) {
                 className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
               >
                 <span
-                  className="text-[14px] font-medium text-[#1A1815] transition-colors group-hover:text-[#C44B2E]"
+                  className="text-[14px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]"
                   style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                 >
                   {g.title}
                 </span>
-                <span className="mt-1 line-clamp-2 block text-[12px] text-[#7A7062]">
+                <span className="mt-1 line-clamp-2 block text-[12px] text-[#6B6255]">
                   {g.description}
                 </span>
               </Link>

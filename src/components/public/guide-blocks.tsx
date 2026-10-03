@@ -127,13 +127,13 @@ function BenchmarkBlock({
           <tr className="border-b border-[#E8DFD1]">
             <th
               scope="col"
-              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#A09788]"
+              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#6B6255]"
             >
               If your bank charges
             </th>
             <th
               scope="col"
-              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#A09788]"
+              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#6B6255]"
             >
               Where that puts you
             </th>
@@ -145,7 +145,7 @@ function BenchmarkBlock({
               <td className="px-5 py-3 text-[14px] text-[#1A1815]">
                 <Prose text={row.condition} summaries={summaries} />
               </td>
-              <td className="px-5 py-3 text-[13.5px] text-[#7A7062]">
+              <td className="px-5 py-3 text-[13.5px] text-[#6B6255]">
                 <Prose text={row.meaning} summaries={summaries} />
               </td>
             </tr>
@@ -196,7 +196,7 @@ function ComparisonBlock({
                 </span>
                 <span className="text-[13px] font-semibold tabular-nums text-[#1A1815]">
                   {formatAmount(median)}
-                  <span className="ml-2 text-[11px] font-normal tabular-nums text-[#A09788]">
+                  <span className="ml-2 text-[11px] font-normal tabular-nums text-[#6B6255]">
                     n={row.count.toLocaleString()}
                   </span>
                 </span>
@@ -211,14 +211,14 @@ function ComparisonBlock({
           );
         })}
       </div>
-      <figcaption className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#A09788]">
+      <figcaption className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#6B6255]">
         <span>
           {block.caption ?? `${getDisplayName(block.category)} median by group`}
         </span>
         <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
         <Link
           href={`/fees/${block.category}`}
-          className="font-medium text-[#C44B2E]/70 transition-colors hover:text-[#C44B2E]"
+          className="font-medium text-[#A93D25]/70 transition-colors hover:text-[#A93D25]"
         >
           Full breakdown
         </Link>

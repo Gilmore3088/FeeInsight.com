@@ -8,7 +8,7 @@ const spec = {
     title: "Bank Fee Index API",
     version: "1.0.0",
     description:
-      "Programmatic access to bank and credit union fee benchmarking data covering 49 fee categories across thousands of U.S. financial institutions. Data sourced from published fee schedules, FDIC, and NCUA registries. Unauthenticated JSON reads are supported with free-tier rate limits; API keys are manually issued and are not self-serve from Account yet.",
+      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Unauthenticated JSON reads are supported with free-tier rate limits; API keys are manually issued and are not self-serve from Account yet.",
     contact: {
       name: SITE_NAME,
       email: "hello@bankfeeindex.com",
@@ -207,7 +207,7 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns all 49 fee categories with national median, P25/P75 percentiles, min/max, and institution counts. Free tier is limited to 6 spotlight categories.",
+          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free tier is limited to 6 spotlight categories.",
         tags: ["Fees"],
         parameters: [
           { $ref: "#/components/parameters/FormatParam" },

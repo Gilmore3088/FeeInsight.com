@@ -181,6 +181,21 @@ export const API_ROUTE_POLICIES = [
     auditPriority: "critical",
   },
   {
+    routeId: "api.guides.saved_institutions",
+    routeTemplate: "/api/guides/saved-institutions",
+    file: "src/app/api/guides/saved-institutions/route.ts",
+    surface: "public",
+    allowedMethods: ["GET"],
+    authRequirement: "public",
+    rateLimitBucket: "account-alerts",
+    costPolicy: "none",
+    telemetryEvent: "api.guides.saved_institutions",
+    failBehavior: "fail_open_audit_only",
+    auditPriority: "low",
+    notes:
+      "Personalisation island for static guide pages. Signed-out callers get an empty list, never a 401, so the page never depends on it.",
+  },
+  {
     routeId: "api.hamilton.chat",
     routeTemplate: "/api/hamilton/chat",
     file: "src/app/api/hamilton/chat/route.ts",
@@ -531,6 +546,21 @@ export const API_ROUTE_POLICIES = [
     telemetryEvent: "api.scout.pipeline",
     failBehavior: "fail_closed",
     auditPriority: "high",
+  },
+  {
+    routeId: "api.session",
+    routeTemplate: "/api/session",
+    file: "src/app/api/session/route.ts",
+    surface: "auth",
+    allowedMethods: ["GET"],
+    authRequirement: "public",
+    rateLimitBucket: "auth",
+    costPolicy: "none",
+    telemetryEvent: "api.session",
+    failBehavior: "fail_open_audit_only",
+    auditPriority: "low",
+    notes:
+      "Minimal signed-in/initial/isPro/isStaff shape for the site chrome islands; returns signedIn:false on any failure.",
   },
   {
     routeId: "api.v1.fees",

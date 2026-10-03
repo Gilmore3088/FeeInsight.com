@@ -242,7 +242,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               <Link
                 key={guide.slug}
                 href={`/guides/${guide.slug}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#C44B2E]"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
               >
                 {guide.title}
               </Link>

@@ -187,7 +187,7 @@ export default async function GuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-[#FAF7F2]/95 px-6 py-2 text-[12px] text-[#A09788] backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
+        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-[#FAF7F2]/95 px-6 py-2 text-[12px] text-[#6B6255] backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
       >
         <Link href="/" className="transition-colors hover:text-[#1A1815]">
           Home
@@ -208,7 +208,7 @@ export default async function GuidePage({ params }: PageProps) {
       <div className="max-w-3xl">
         <div className="mb-4 flex items-center gap-2">
           <span className="h-px w-8 bg-[#C44B2E]/40" aria-hidden="true" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#C44B2E]/60">
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
             Consumer Guide
           </span>
         </div>
@@ -220,7 +220,7 @@ export default async function GuidePage({ params }: PageProps) {
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[#7A7062]">
+        <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
           {guide.description}
         </p>
 
@@ -243,7 +243,7 @@ export default async function GuidePage({ params }: PageProps) {
               <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
               <Link
                 href={guide.methodologyHref}
-                className="text-[#C44B2E]/70 transition-colors hover:text-[#C44B2E]"
+                className="text-[#A93D25]/70 transition-colors hover:text-[#A93D25]"
               >
                 Methodology
               </Link>
@@ -260,7 +260,7 @@ export default async function GuidePage({ params }: PageProps) {
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#C44B2E]/60">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
                   Check your own bank
                 </p>
                 <h2
@@ -272,7 +272,7 @@ export default async function GuidePage({ params }: PageProps) {
                     ? `Does your bank charge more than ${formatAmount(primarySummary.median_amount)}?`
                     : `How does your bank compare on ${primaryNamePlain}?`}
                 </h2>
-                <p className="mt-1 text-[13px] text-[#7A7062]">
+                <p className="mt-1 text-[13px] text-[#6B6255]">
                   Search the {stats.total_institutions.toLocaleString()} banks and credit
                   unions in the index and see your institution&rsquo;s published{" "}
                   {primaryNamePlain} against the national median.
@@ -298,7 +298,7 @@ export default async function GuidePage({ params }: PageProps) {
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Link
               href="/fees"
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-white/80 px-4 py-2 text-[12px] font-medium text-[#5A5347] no-underline transition-all hover:border-[#C44B2E]/30 hover:text-[#C44B2E]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-white/80 px-4 py-2 text-[12px] font-medium text-[#5A5347] no-underline transition-all hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
             >
               View the full fee index
               <Arrow />
@@ -324,7 +324,7 @@ export default async function GuidePage({ params }: PageProps) {
                   >
                     {primaryName} Fee Distribution
                   </h2>
-                  <p className="mt-1.5 text-[13px] text-[#7A7062]">
+                  <p className="mt-1.5 text-[13px] text-[#6B6255]">
                     How {primaryAmounts.length.toLocaleString()} institutions price this
                     fee. National median:{" "}
                     <span className="font-medium text-[#1A1815]">
@@ -354,7 +354,7 @@ export default async function GuidePage({ params }: PageProps) {
               </div>
 
               {/* ── Attribution ── */}
-              <footer className="mt-12 rounded-xl border border-[#E8DFD1]/70 bg-[#FAF7F2]/60 px-5 py-4 text-[12.5px] leading-relaxed text-[#7A7062]">
+              <footer className="mt-12 rounded-xl border border-[#E8DFD1]/70 bg-[#FAF7F2]/60 px-5 py-4 text-[12.5px] leading-relaxed text-[#6B6255]">
                 <p>
                   Fee data from the Fee Insight National Fee Index, covering{" "}
                   <span className="tabular-nums">
@@ -374,7 +374,7 @@ export default async function GuidePage({ params }: PageProps) {
                       &middot;{" "}
                       <Link
                         href={guide.methodologyHref}
-                        className="text-[#C44B2E]/70 hover:text-[#C44B2E]"
+                        className="text-[#A93D25]/70 hover:text-[#A93D25]"
                       >
                         Methodology
                       </Link>
@@ -422,7 +422,7 @@ export default async function GuidePage({ params }: PageProps) {
                           </svg>
                         </div>
                         <div>
-                          <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#C44B2E]">
+                          <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
                             {getDisplayName(fee.fee_category)}
                           </span>
                           <span className="block text-[11px] text-[#8A8073]">
@@ -477,12 +477,12 @@ export default async function GuidePage({ params }: PageProps) {
                         className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
                       >
                         <span
-                          className="text-[14px] font-medium text-[#1A1815] transition-colors group-hover:text-[#C44B2E]"
+                          className="text-[14px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]"
                           style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                         >
                           {g.title}
                         </span>
-                        <span className="mt-1 line-clamp-2 block text-[12px] text-[#7A7062]">
+                        <span className="mt-1 line-clamp-2 block text-[12px] text-[#6B6255]">
                           {g.description}
                         </span>
                       </Link>
@@ -500,7 +500,7 @@ export default async function GuidePage({ params }: PageProps) {
                     className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/30 to-transparent"
                     aria-hidden="true"
                   />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#C44B2E]/60">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
                     Live National Benchmarks
                   </p>
                   <div className="mt-4 space-y-4">
@@ -511,7 +511,7 @@ export default async function GuidePage({ params }: PageProps) {
                       >
                         <Link
                           href={`/fees/${fee.fee_category}`}
-                          className="text-[13px] font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
+                          className="text-[13px] font-medium text-[#1A1815] transition-colors hover:text-[#A93D25]"
                           style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                         >
                           {getDisplayName(fee.fee_category)}
@@ -533,7 +533,7 @@ export default async function GuidePage({ params }: PageProps) {
                         </div>
                         <Link
                           href={`/fees/${fee.fee_category}`}
-                          className="mt-2 inline-block rounded-full border border-[#E8DFD1]/60 bg-[#FAF7F2] px-2.5 py-0.5 text-[10px] font-medium text-[#7A7062] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#C44B2E]"
+                          className="mt-2 inline-block rounded-full border border-[#E8DFD1]/60 bg-[#FAF7F2] px-2.5 py-0.5 text-[10px] font-medium text-[#6B6255] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
                         >
                           Full analysis
                         </Link>
@@ -609,7 +609,7 @@ export default async function GuidePage({ params }: PageProps) {
                     <li key={section.id}>
                       <a
                         href={`#${section.id}`}
-                        className="flex items-center gap-2 text-[13px] text-[#7A7062] transition-colors hover:text-[#C44B2E]"
+                        className="flex items-center gap-2 text-[13px] text-[#6B6255] transition-colors hover:text-[#A93D25]"
                       >
                         <span
                           className="h-1 w-1 shrink-0 rounded-full bg-[#D4C9BA]"
@@ -624,7 +624,7 @@ export default async function GuidePage({ params }: PageProps) {
 
               {/* ── CTA: a consumer page offers the consumer something ── */}
               <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#C44B2E]/60">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
                     Stay ahead of fee changes
                   </p>
                   <p
@@ -633,7 +633,7 @@ export default async function GuidePage({ params }: PageProps) {
                   >
                     Get told when your bank raises this fee
                   </p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-[#7A7062]">
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-[#6B6255]">
                     Free account. Save your institution and we&rsquo;ll email you when its{" "}
                     {primaryNamePlain} changes.
                   </p>
@@ -646,7 +646,7 @@ export default async function GuidePage({ params }: PageProps) {
                   </Link>
                   <p className="mt-3 text-[11px] text-[#8A8073]">
                     Benchmarking for your institution?{" "}
-                    <Link href="/subscribe" className="text-[#C44B2E]/80 hover:text-[#C44B2E]">
+                    <Link href="/subscribe" className="text-[#A93D25]/80 hover:text-[#A93D25]">
                       See professional plans
                     </Link>
                   </p>
