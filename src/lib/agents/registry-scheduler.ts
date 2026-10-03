@@ -2,8 +2,13 @@ import { sql } from "@/lib/data-store/connection";
 import { startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
-import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
+import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
+import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
+import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE } from "@/lib/agents/magellan/registry/ncua-financials";
+import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
+import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
   parseQuarterKey,
@@ -21,8 +26,8 @@ import {
  * multi-year backfill into a visible sequence of small runs that resumes on its
  * own after any failure.
  *
- * Order: universe sync first (so new certificates match), then the newest FDIC
- * quarters, then history back to REGISTRY_BACKFILL_FROM (default 2010Q1).
+ * Order: round-robin across sources, newest partitions first, then history
+ * back to REGISTRY_BACKFILL_FROM (default 2010Q1).
  */
 
 export const REGISTRY_RUN_SOURCE = "magellan.registry";
@@ -48,13 +53,48 @@ export function backfillStart(env: string | undefined = process.env.REGISTRY_BAC
   return (env && parseQuarterKey(env)) || DEFAULT_BACKFILL_FROM;
 }
 
-/** Every partition the registry should hold, in priority order. */
+function years(from: number, to: number): string[] {
+  const out: string[] = [];
+  for (let year = to; year >= from; year -= 1) out.push(String(year));
+  return out;
+}
+
+/** Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES. */
+export function registryPartitionsBySource(now: Date, from: Quarter = backfillStart()): Array<{ source: string; partitions: string[] }> {
+  const quarters = (lagDays: number) =>
+    quartersNewestFirst(from, latestPublishableQuarter(now, lagDays)).map(quarterKey);
+  const dynamic: Record<string, string[]> = {
+    [FDIC_FINANCIALS_SOURCE]: quarters(FDIC_FILING_LAG_DAYS),
+    [NCUA_FINANCIALS_SOURCE]: quarters(NCUA_FILING_LAG_DAYS),
+    [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
+    [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
+    [SEC_FILINGS_SOURCE]: secBatchPartitions(),
+    [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
+  };
+  return REGISTRY_SOURCES.map((definition) => ({
+    source: definition.source,
+    partitions: definition.fixedPartition ? [definition.fixedPartition] : dynamic[definition.source] ?? [],
+  }));
+}
+
+/**
+ * Every partition the registry should hold, in priority order: round-robin
+ * across sources (each source's newest partition first), so one source's long
+ * backfill never starves the others. Within a round, REGISTRY_SOURCES order
+ * applies, which puts identity syncs (FDIC universe, SEC links) ahead of the
+ * data that depends on them.
+ */
 export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
-  const latest = latestPublishableQuarter(now, FDIC_FILING_LAG_DAYS);
-  return [
-    { source: FDIC_UNIVERSE_SOURCE, partitionKey: FDIC_UNIVERSE_PARTITION },
-    ...quartersNewestFirst(from, latest).map((q) => ({ source: FDIC_FINANCIALS_SOURCE, partitionKey: quarterKey(q) })),
-  ];
+  const lists = registryPartitionsBySource(now, from);
+  const longest = Math.max(0, ...lists.map((list) => list.partitions.length));
+  const out: RegistryPartitionCandidate[] = [];
+  for (let round = 0; round < longest; round += 1) {
+    for (const list of lists) {
+      const partitionKey = list.partitions[round];
+      if (partitionKey) out.push({ source: list.source, partitionKey });
+    }
+  }
+  return out;
 }
 
 interface PartitionStateRow {
@@ -118,7 +158,7 @@ export async function startRegistryRun(input: {
 }) {
   const definition = REGISTRY_SOURCES.find((entry) => entry.source === input.source);
   if (!definition) throw new Error(`Unknown registry source: ${input.source}`);
-  const label = input.partitionKey === FDIC_UNIVERSE_PARTITION ? "" : ` ${input.partitionKey}`;
+  const label = input.partitionKey === definition.fixedPartition ? "" : ` ${input.partitionKey}`;
   return startAgentRun({
     agent: "magellan",
     kind: input.dryRun ? "dry_run" : "workflow",

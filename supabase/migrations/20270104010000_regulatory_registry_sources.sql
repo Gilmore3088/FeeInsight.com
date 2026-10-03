@@ -11,7 +11,8 @@
 -- 4. institution_filings and holding_company_financials hold SEC EDGAR filings
 --    and XBRL facts at the holding-company level, kept apart from bank-level
 --    call reports so the two never mix on one chart.
--- 5. state_regulators is the chartering-agency registry for all states + DC.
+-- 5. state_regulators is the chartering-agency registry for all states + DC
+--    (bank regulator, plus the credit-union regulator where a state splits them).
 --
 -- Additive and idempotent.
 
@@ -100,8 +101,8 @@ CREATE TABLE IF NOT EXISTS public.state_regulators (
   state_name TEXT NOT NULL,
   agency_name TEXT NOT NULL,
   website_url TEXT,
-  charters_banks BOOLEAN NOT NULL DEFAULT TRUE,
-  charters_credit_unions BOOLEAN NOT NULL DEFAULT TRUE,
+  credit_union_agency_name TEXT,
+  credit_union_website_url TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

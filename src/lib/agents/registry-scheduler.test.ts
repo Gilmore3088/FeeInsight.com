@@ -22,14 +22,29 @@ function templateText(strings: unknown): string {
 describe("registry scheduler", () => {
   const now = new Date("2026-10-03T00:00:00Z");
 
-  it("orders the universe sync first, then FDIC quarters newest to oldest", () => {
-    const candidates = registryCandidates(now, { year: 2025, quarter: 4 });
-    expect(candidates.map((c) => `${c.source}:${c.partitionKey}`)).toEqual([
+  it("round-robins sources, identity syncs first, newest partition of each source first", () => {
+    const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
+    expect(candidates.slice(0, 10)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
-      "fdic-financials:2026Q1",
-      "fdic-financials:2025Q4",
+      "ncua-financials:2026Q2",
+      "fdic-sod:2026",
+      "cfpb:2026",
+      "sec-links:current",
+      "sec-filings:batch-0",
+      "beige-book:202610",
+      "fred:current",
+      "state-regulators:current",
     ]);
+    // Round two continues each source's history.
+    expect(candidates.slice(10, 15)).toEqual([
+      "fdic-financials:2026Q1",
+      "ncua-financials:2026Q1",
+      "fdic-sod:2025",
+      "cfpb:2025",
+      "sec-filings:batch-1",
+    ]);
+    expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
   });
 
   it("defaults the backfill to 2010Q1 and honours REGISTRY_BACKFILL_FROM", () => {
@@ -39,13 +54,24 @@ describe("registry scheduler", () => {
   });
 
   it("picks the first never-attempted or due partition", () => {
-    const candidates = registryCandidates(now, { year: 2026, quarter: 1 });
+    const candidates = [
+      { source: "fdic-universe", partitionKey: "current" },
+      { source: "fdic-financials", partitionKey: "2026Q2" },
+      { source: "fdic-financials", partitionKey: "2026Q1" },
+    ];
     expect(
       pickDueCandidate(candidates, [
         { source: "fdic-universe", partition_key: "current", due: false },
         { source: "fdic-financials", partition_key: "2026Q2", due: false },
       ]),
     ).toEqual({ source: "fdic-financials", partitionKey: "2026Q1" });
+    expect(
+      pickDueCandidate(candidates, [
+        { source: "fdic-universe", partition_key: "current", due: false },
+        { source: "fdic-financials", partition_key: "2026Q2", due: true },
+        { source: "fdic-financials", partition_key: "2026Q1", due: false },
+      ]),
+    ).toEqual({ source: "fdic-financials", partitionKey: "2026Q2" });
     expect(
       pickDueCandidate(candidates, [
         { source: "fdic-universe", partition_key: "current", due: false },

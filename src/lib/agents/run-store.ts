@@ -261,6 +261,18 @@ async function executeAgenticStep(
   const stateCode = normalizeStateCode(
     stringRunParam(params, ["state_code", "stateCode", "state"]),
   ) ?? undefined;
+
+  // Regulator-data steps (registry-*) share one dispatcher in magellan/registry.
+  if (isRegistryStepKey(step.stepKey)) {
+    return runRegistryStep({
+      stepKey: step.stepKey,
+      runId: run.id,
+      partitionKey: stringRunParam(params, ["partition_key"]),
+      dryRun: run.runKind === "dry_run",
+      db: tx,
+    });
+  }
+
   switch (step.stepKey) {
     case "enhance": {
       const memory = await syncStateLaneProfiles(tx, stateCode);
@@ -614,16 +626,6 @@ async function executeAgenticStep(
           funnel: result.funnel,
         },
       };
-    }
-    case "registry-fdic-universe":
-    case "registry-fdic-financials": {
-      return runRegistryStep({
-        stepKey: step.stepKey,
-        runId: run.id,
-        partitionKey: stringRunParam(params, ["partition_key"]),
-        dryRun: run.runKind === "dry_run",
-        db: tx,
-      });
     }
     case "assemble":
     case "render": {
