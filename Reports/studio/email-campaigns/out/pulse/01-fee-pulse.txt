@@ -1,0 +1,50 @@
+What moved in the Bank Fee Index this month, and one idea to use it.
+
+FEE PULSE · OCTOBER 3, 2026
+
+This month in the Bank Fee Index
+================================
+
+* 1,232 — institutions with published schedules
+* $29 — median overdraft
+* $25 — median NSF
+
+
+THE NUMBER THAT MATTERS
+
+14% of institutions in the index publish a $0 monthly maintenance fee on at least one checking account, and 52% charge $5 or less. If your entry-level checking account still carries a fee, the "free checking" competitor is closer than you think.
+
+
+[ ONE IDEA TO USE THIS MONTH ]
+List your checking accounts by monthly fee and by how to waive it. If the waiver needs more than one condition, a customer will read it as "not free". Try rewriting it as one sentence.
+
+
+FULL BENCHMARK TABLE
+
+Fee | low 25% | median | high 25% | banks | CUs | n
+Overdraft (paid item) | $9 | $29 | $34 | $30 | $25 | 88
+NSF (returned item) | $10 | $25 | $30 | $18 | $25 | 173
+Monthly maintenance | $2 | $5 | $15 | $8 | $5 | 133
+Stop payment | $15 | $25 | $30 | $30 | $20 | 125
+Deposited item returned | $10 | $15 | $25 | $15 | $20 | 82
+Debit card replacement | $7.63 | $20 | $43.75 | $10 | $25 | 174
+Overdraft protection transfer | $3 | $5 | $10 | $5 | $5 | 69
+Out-of-network ATM | $1 | $2 | $3 | $2 | $1.50 | 69
+Cashier's check | $3 | $5 | $7.25 | $7 | $5 | 68
+Paper statement | $2 | $3 | $5 | $3 | $3 | 86
+Domestic wire, outgoing | $15 | $20 | $25 | $20 | $20 | 94
+Domestic wire, incoming | $10 | $10 | $15 | $15 | $10 | 53
+International wire, outgoing | $30 | $40 | $50 | $40 | $40 | 44
+Bank Fee Index, October 3, 2026. One headline amount per institution (lowest published amount for that fee). "Low 25%" and "High 25%" are the 25th and 75th percentiles; n = institutions with that fee published. Banks and CUs columns are medians.
+
+More: National Fee Index (https://feeinsight.com/research/national-fee-index?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse) · Research (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse) · Guides (https://feeinsight.com/guides?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse)
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}
