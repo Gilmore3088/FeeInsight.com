@@ -21,6 +21,28 @@ export const NUMERIC_AS_NUMBER = {
 };
 
 /**
+ * Postgres text cannot hold NUL (U+0000): any parameter containing one fails the whole
+ * statement with `invalid byte sequence for encoding "UTF8": 0x00`, and jsonb rejects
+ * the `\u0000` escape. PDFs and some HTML carry stray NULs, so every text and JSON
+ * parameter is stripped of them here, at the one place all writes pass through.
+ */
+export function stripNulChars(value: string): string {
+  return value.includes("\u0000") ? value.replace(/\u0000/g, "") : value;
+}
+
+function stripNulDeep(_key: string, value: unknown): unknown {
+  return typeof value === "string" ? stripNulChars(value) : value;
+}
+
+/** text (25), bpchar (1042) and varchar (1043) parameters, NULs stripped. */
+export const TEXT_WITHOUT_NUL = {
+  to: 25,
+  from: [25, 1042, 1043],
+  serialize: (value: unknown) => stripNulChars(String(value)),
+  parse: (value: string) => value,
+};
+
+/**
  * json/jsonb parameters. postgres.js JSON-encodes every json/jsonb parameter, so the
  * common `${JSON.stringify(x)}::jsonb` pattern was stored as a JSON *string*
  * ("[\"a\"]") instead of an array or object. SQL JSON operators then never matched
@@ -33,14 +55,15 @@ export function serializeJsonParam(value: unknown): string {
     const trimmed = value.trim();
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
-        JSON.parse(trimmed);
-        return trimmed;
+        const parsed: unknown = JSON.parse(trimmed);
+        // Re-encode only when a NUL escape is present, so clean text passes through as is.
+        return trimmed.includes("\\u0000") ? JSON.stringify(parsed, stripNulDeep) : trimmed;
       } catch {
         // Not JSON text: encode it as a JSON string below.
       }
     }
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value, stripNulDeep);
 }
 
 export const JSON_TEXT_PASSTHROUGH = {
@@ -63,7 +86,7 @@ export function getSql() {
       idle_timeout: 20,
       connect_timeout: 15,
       prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
-      types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH },
+      types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
     });
   }
   return _sql;

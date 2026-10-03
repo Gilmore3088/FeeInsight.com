@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, serializeJsonParam } from "./connection";
+import {
+  JSON_TEXT_PASSTHROUGH,
+  NUMERIC_AS_NUMBER,
+  serializeJsonParam,
+  stripNulChars,
+  TEXT_WITHOUT_NUL,
+} from "./connection";
 
 describe("NUMERIC_AS_NUMBER", () => {
   it("parses postgres NUMERIC (oid 1700) text into numbers", () => {
@@ -35,5 +41,22 @@ describe("JSON_TEXT_PASSTHROUGH", () => {
 
   it("parses json results", () => {
     expect(JSON_TEXT_PASSTHROUGH.parse('["a"]')).toEqual(["a"]);
+  });
+});
+
+describe("NUL characters", () => {
+  it("strips NUL from text, bpchar and varchar parameters", () => {
+    expect(TEXT_WITHOUT_NUL.to).toBe(25);
+    expect(TEXT_WITHOUT_NUL.from).toEqual([25, 1042, 1043]);
+    expect(TEXT_WITHOUT_NUL.serialize("Over\u0000draft fee\u0000")).toBe("Overdraft fee");
+    expect(TEXT_WITHOUT_NUL.serialize("clean")).toBe("clean");
+    expect(stripNulChars("\u0000\u0000")).toBe("");
+  });
+
+  it("strips NUL from json parameters, whether objects or JSON text", () => {
+    expect(serializeJsonParam({ error: "bad\u0000byte", n: 1 })).toBe('{"error":"badbyte","n":1}');
+    expect(serializeJsonParam(JSON.stringify({ error: "bad\u0000byte" }))).toBe('{"error":"badbyte"}');
+    // A literal backslash-u sequence is data, not a NUL, and survives.
+    expect(JSON.parse(serializeJsonParam({ note: "\\u0000" }))).toEqual({ note: "\\u0000" });
   });
 });
