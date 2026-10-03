@@ -80,6 +80,20 @@ describe("Rosetta agentic read", () => {
     expect(JSON.stringify(db.mock.calls)).not.toContain("window.noise");
   });
 
+  it("strips NUL characters, which Postgres text columns reject", async () => {
+    const body = "<main><h1>Schedule\u0000 of Fees</h1><p>Overdraft fee\u0000 $30</p></main>";
+    const db = createDbMock([htmlCandidate]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
+
+    const result = await runRosettaRead({ runId: 102, limit: 5, db: asReadDb(db), fetchImpl });
+
+    expect(result.results[0]).toMatchObject({ status: "completed" });
+    const values = JSON.stringify(db.mock.calls);
+    expect(values).toContain("Schedule of Fees");
+    expect(values).toContain("Overdraft fee $30");
+    expect(values).not.toContain("\\u0000");
+  });
+
   it("keeps dry runs read-only while still reporting normalized text", async () => {
     const db = createDbMock([htmlCandidate]);
     const fetchImpl = vi.fn().mockResolvedValueOnce(response("<p>Overdraft fee $35</p>"));
