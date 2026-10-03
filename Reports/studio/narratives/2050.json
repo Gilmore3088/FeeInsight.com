@@ -1,52 +1,63 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your deposited-item return fee ($10) is 2× the $5 peer median, the 87th percentile of 15 peers.",
   "findings": [
     {
-      "stat": "$65 vs $40",
-      "stat_label": "international wire vs peer median",
-      "headline": "Wires are your most expensive line in the cohort.",
-      "body": "Outgoing international wires ($65 vs a $40 median, 89th percentile — above the $60 75th-percentile mark) and outgoing domestic wires ($25 vs $15, 83rd percentile) both price near the top of 9 and 12 peer banks respectively. Wire senders are typically businesses and higher-balance households — the customers you least want comparing schedules."
+      "stat": "$10 vs $5",
+      "stat_label": "deposited-item return fee, yours vs peer median",
+      "headline": "Your deposited-item return fee is well above the market range.",
+      "body": "At $10, it is 2× the $5 peer median and the 87th percentile of 15 peers (middle half of the market: $5–$10). This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism."
     },
     {
-      "stat": "$30 vs $15",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF fee is double the peer median.",
-      "body": "At $30.00, your returned-item fee is 2x the median of 34 comparable banks — the 82nd percentile. A quarter of the cohort now charges $6.25 or less as the industry retreats from NSF pricing under regulatory scrutiny. This is the most visible consumer line on your schedule."
+      "stat": "$65 vs $50",
+      "stat_label": "outgoing international wire fee, yours vs peer median",
+      "headline": "Your outgoing international wire fee is above the market range.",
+      "body": "At $65, it is $15 above the $50 peer median and the 88th percentile of 8 peers (middle half of the market: $38.75–$52.50). Volumes are typically low; the premium matters mainly to the few customers who use the service."
     },
     {
-      "stat": "2 gaps",
-      "stat_label": "overdraft and maintenance unpublished",
-      "headline": "Your two most-watched fees are missing from the data.",
-      "body": "Overdraft and monthly maintenance — the categories regulators and comparison sites watch most closely — did not appear in your published schedule data. Peers publish these lines (medians of $30 and $12); until you do, comparisons happen without your side of the story."
+      "stat": "5 of 7",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 7 fee lines where we found both your published amount and at least eight comparable peers, five sit between the peer 25th and 75th percentiles, two above."
     }
   ],
-  "exec_narrative": "Net position: Kentland Bank carries a consistent premium on the fees customers incur when money moves or goes wrong — international wires at the 89th percentile, domestic outgoing wires at the 83rd, NSF at double the peer median, and card replacement at twice the median — while core service lines like cashier's checks, incoming wires, and deposited-item returns price at or slightly below market. The exposure is concentrated: four lines account for essentially all of the above-market posture, and two of the most scrutinized categories are absent from the published data entirely. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Kentland Bank is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Indiana have published data, so local competitors may price differently. Of 7 rankable lines, five sit inside the middle half of the market, two above it (deposited-item return fee and outgoing international wire fee). We would suggest one step: review the deposited-item return fee, which sits well above the market range; the peer median of $5 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Outgoing wires — $65.00 international, $25.00 domestic",
-      "stat": "Intl: peer median $40.00 · P75 $60.00 · 89th percentile · n=9 — Domestic: peer median $15.00 · 83rd percentile · n=12",
-      "body": "Both outgoing wire fees sit at or near the top of the cohort, and the international fee clears the 75th percentile with room to spare. At $25 over the international median, this is the largest single dollar gap on your schedule — earned on exactly the customer segment (businesses, high-balance households) with the most alternatives and the most reason to shop."
+      "title": "Deposited-item return fee — $10",
+      "stat": "Peer median $5 · middle half $5–$10 · range $3–$18 · 87th percentile · n=15",
+      "body": "Published as “Return Deposit Item.” At $10 it is 2× the $5 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $5 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "NSF / returned item — $30.00",
-      "stat": "Peer median $15.00 · P25 $6.25 · 82nd percentile · n=34",
-      "body": "The peer distribution tells the story: the median has fallen to $15 and a quarter of comparable banks now charge $6.25 or less as institutions retire NSF fees ahead of regulatory and reputational pressure. A $30 NSF fee is increasingly conspicuous. Whether the right answer is a cut, a cap, or a documented rationale, this line deserves a decision rather than a default."
-    },
-    {
-      "kind": "risk",
-      "title": "Card replacement — $20.00",
-      "stat": "Peer median $10.00 · 69th percentile · n=13",
-      "body": "Twice the peer median for a routine service event — usually triggered by loss or fraud, when the customer is already frustrated. It earns little revenue and generates outsized irritation; several peers charge $5, and one charges nothing."
+      "title": "Outgoing international wire fee — $65",
+      "stat": "Peer median $50 · middle half $38.75–$52.50 · range $25–$75 · 88th percentile · n=8",
+      "body": "Published as “Wire Transfer - Outgoing Foreign.” At $65 it is $15 above the $50 peer median. Volumes are typically low; the premium matters mainly to the few customers who use the service. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $50 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Publish the missing lines — and claim the quiet wins",
-      "stat": "Overdraft and monthly maintenance flagged as data gaps · Deposited item return $10 vs $12 median (P47) · Incoming wire $10 vs $12.50 (P50)",
-      "body": "Two of the most-compared fee categories are absent from your published data, which means comparisons happen without you. Meanwhile the receiving-side fees you do publish sit at or below median and earn no credit. Publishing the gaps and marketing the below-market lines costs nothing and converts an information deficit into a transparency story."
+      "title": "Lines with too few peers to rank",
+      "stat": "Card replacement fee $20 (n=6, median $7.50)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($15) is half your posted fee and a quarter of peers charge $6.25 or less. Second, published fee schedules have become marketing documents: public, scraped, and compared, which turns every outlier line into a small reputational bet and every unpublished line into an open question.</p><p>Mid-sized community banks occupy an exposed middle: large enough to be swept into fee surveys and comparison tools, without the brand gravity that lets the largest institutions charge premiums quietly. In that position, the highest-leverage moves are surgical, not across-the-board — bring the two or three top-decile lines back toward the pack, publish what is missing, and let the rest of the schedule, which already prices at market, speak for itself.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Kentland Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "monthly_maintenance",
+    "nsf"
+  ],
+  "summary": {
+    "ranked": 7,
+    "above": [
+      "deposited_item_return",
+      "wire_intl_outgoing"
+    ],
+    "below": [],
+    "gaps": [],
+    "thin": 1
+  }
 }

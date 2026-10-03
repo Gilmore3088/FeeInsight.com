@@ -1,52 +1,64 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your overdraft-protection transfer fee ($12.50) is $6 above the $6.50 peer median, the highest of the 10 peers that publish it.",
   "findings": [
     {
-      "stat": "$60 vs $35",
-      "stat_label": "international wire vs peer median",
-      "headline": "Your international wire fee tops the entire cohort.",
-      "body": "At $60.00, your outgoing international wire is the highest of 10 peer banks — the 100th percentile, $25 over the $35 median and above the cohort's 75th percentile of $47.50. Paired with a $30 outgoing domestic wire (93rd percentile vs a $20 median), customers moving money out pay a consistent top-of-market premium."
+      "stat": "$12.50 vs $6.50",
+      "stat_label": "overdraft-protection transfer fee, yours vs peer median",
+      "headline": "Your overdraft-protection transfer fee is above the market range.",
+      "body": "At $12.50, it is $6 above the $6.50 peer median and the highest of the 10 peers that publish it (middle half of the market: $5–$10). Customers who enroll in overdraft protection are doing what you ask; a premium transfer fee works against that."
     },
     {
-      "stat": "2.5x",
-      "stat_label": "OD protection transfer vs peer median",
-      "headline": "You charge an extreme premium on overdraft protection.",
-      "body": "Your $12.50 overdraft-protection transfer fee is a flagged extreme outlier — two and a half times the $5.00 median of 23 peers, at the 87th percentile. Customers who enroll in overdraft protection are doing exactly what banks ask of them; charging 2.5x the market rate for the transfer undercuts the message, and your $20 NSF fee (69th percentile vs a $12 median) compounds the penalty-fee posture."
+      "stat": "2 more",
+      "stat_label": "lines above the market range",
+      "headline": "Smaller premiums elsewhere on the schedule.",
+      "body": "Your outgoing domestic wire fee ($30 vs a $25 median, n=10) and your outgoing international wire fee ($60 vs a $40 median, n=9) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison."
     },
     {
-      "stat": "5 of 15",
-      "stat_label": "core fee categories unpublished",
-      "headline": "A third of your fee schedule is invisible to comparison.",
-      "body": "Overdraft, monthly maintenance, paper statement, card replacement, and cashier's check fees do not appear in your published schedule data — five of the fifteen categories we benchmark. In a market where published fees are scraped and compared, unpublished fees read as either a transparency gap or a missed chance to compete on lines where you may be well priced."
+      "stat": "4 of 7",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 7 fee lines where we found both your published amount and at least eight comparable peers, four sit between the peer 25th and 75th percentiles, three above."
     }
   ],
-  "exec_narrative": "Net position: Burke & Herbert prices money movement and penalty exceptions at the top of its cohort — the highest international wire fee of 10 peers, a 93rd-percentile domestic outgoing wire, an overdraft-protection transfer flagged as an extreme outlier at 2.5x the median, and an NSF fee $8 over the market. Meanwhile, five core categories are absent from the published schedule entirely, so the fees customers can see skew toward the expensive ones. The agenda is twofold: decide which of the outlier fees deserve their premium, and close the disclosure gap so the schedule presents the whole picture rather than its worst lines.",
+  "exec_narrative": "Burke & Herbert Bank & Trust Company is compared with 68 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Virginia have published data, so local competitors may price differently. Of 7 rankable lines, four sit inside the middle half of the market, three above it (overdraft-protection transfer fee, outgoing domestic wire fee and outgoing international wire fee). We would suggest one step: review the overdraft-protection transfer fee, which sits above the market range; the peer median of $6.50 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "International wire (outgoing) — $60.00",
-      "stat": "Peer median $35.00 · P75 $47.50 · 100th percentile · n=10",
-      "body": "No peer charges more. At $25 over the median, this is the single largest dollar gap on your schedule, and it lands on internationally connected households and businesses — customers with above-average balances and above-average alternatives, including fintech remittance providers that publish their pricing aggressively. This line deserves either a competitive rationale or a cut."
+      "title": "Overdraft-protection transfer fee — $12.50",
+      "stat": "Peer median $6.50 · middle half $5–$10 · range $5–$10 · 100th percentile · n=10",
+      "body": "Published as “Overdraft Protection Transfer Fee.” At $12.50 it is $6 above the $6.50 peer median. Customers who enroll in overdraft protection are doing what you ask; a premium transfer fee works against that. A penalty fee offers little service to differentiate on, so the peer median of $6.50 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "OD protection transfer — $12.50",
-      "stat": "Peer median $5.00 · 87th percentile · n=23 · flagged: extreme outlier (>2x median)",
-      "body": "This fee is charged to customers who opted into the responsible behavior banks promote. At 2.5x the peer median — and with a growing share of competitors waiving it outright — it is the kind of line item that features in junk-fee coverage. The revenue is modest; the framing risk is not."
+      "title": "Outgoing domestic wire fee — $30",
+      "stat": "Peer median $25 · middle half $21.25–$28.75 · range $15–$35 · 80th percentile · n=10",
+      "body": "Published as “Outgoing Domestic Wire.” At $30 it is $5 above the $25 peer median. Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "Outgoing domestic wire — $30.00",
-      "stat": "Peer median $20.00 · P75 $25.00 · 93rd percentile · n=15",
-      "body": "Fifty percent over the median and above the 75th percentile of the cohort. Combined with the international wire fee, both outbound money-movement lines price at the top of the market — a consistent premium on business and high-balance customers, the segment most likely to compare."
-    },
-    {
-      "kind": "opportunity",
-      "title": "Five unpublished categories — control the comparison",
-      "stat": "No published data: overdraft · monthly maintenance · paper statement · card replacement · cashier's check",
-      "body": "Comparison sites and fee surveys fill gaps with assumptions rarely favorable to the institution. Publishing complete fee information is a low-cost transparency win — and if any of these five fees are priced at or below market, disclosure converts them from invisible to advantageous. Right now the visible schedule leads with your most expensive lines."
+      "title": "Outgoing international wire fee — $60",
+      "stat": "Peer median $40 · middle half $36–$50 · range $30–$50 · 100th percentile · n=9",
+      "body": "Published as “Outgoing International Wire.” At $60 it is $20 above the $40 peer median. Volumes are typically low; the premium matters mainly to the few customers who use the service. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $40 is the reference point."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from penalty fees: large banks have largely eliminated NSF fees and softened overdraft programs, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($12) sits $8 below your posted fee and overdraft-protection transfers are increasingly waived. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet and every unpublished line into a gap someone else fills.</p><p>Community-scale institutions ($1B–$10B) occupy the exposed middle: large enough to be included in comparisons, without the brand gravity that lets money-center banks charge premiums quietly. In that position, the highest-leverage moves are usually surgical — bringing the one or two top-of-cohort fees back toward the market, retiring the extreme outlier on overdraft protection, and completing the published schedule so the comparison customers inevitably run is one you have chosen to shape.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Burke & Herbert Bank & Trust Company with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "monthly_maintenance",
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 7,
+    "above": [
+      "od_protection_transfer",
+      "wire_domestic_outgoing",
+      "wire_intl_outgoing"
+    ],
+    "below": [],
+    "gaps": [],
+    "thin": 0
+  }
 }

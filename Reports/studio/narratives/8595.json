@@ -1,46 +1,65 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your non-network ATM fee ($3) is $1 above the $2 peer median, the 76th percentile of 21 peers.",
   "findings": [
     {
-      "stat": "$30 vs $24.50",
-      "stat_label": "overdraft fee vs peer median",
-      "headline": "Your overdraft fee ties for highest in the cohort.",
-      "body": "At $30.00, your overdraft fee sits at the 100th percentile of 6 comparable credit unions — matching the cohort maximum, $5.50 over the median. The cohort is small, so treat the percentile with care, but the direction is unambiguous: on the one fee regulators and members watch most, you are at the top of your peer group."
+      "stat": "$3 vs $2",
+      "stat_label": "non-network ATM fee, yours vs peer median",
+      "headline": "Your non-network ATM fee is above the market range.",
+      "body": "At $3, it is $1 above the $2 peer median and the 76th percentile of 21 peers (middle half of the market: $1–$2.50). It recurs for every customer who banks outside your ATM footprint."
     },
     {
-      "stat": "$5 vs $35",
-      "stat_label": "card replacement vs peer median",
-      "headline": "You charge a fraction of what peers charge to replace a card.",
-      "body": "Card replacement runs $5.00 against a $35.00 median across 23 comparable credit unions — the 17th percentile, $30 below the middle of the pack. This is a genuinely member-friendly price on a high-emotion service moment (cards are usually replaced after loss or fraud), and today it earns you no credit because nobody knows."
+      "stat": "$2 vs $5",
+      "stat_label": "overdraft-protection transfer fee, yours vs peer median",
+      "headline": "Your overdraft-protection transfer fee is priced below the market.",
+      "body": "Your overdraft-protection transfer fee ($2 vs a $5 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify."
     },
     {
-      "stat": "P20",
-      "stat_label": "deposited item return percentile",
-      "headline": "You are priced at or below market almost everywhere else.",
-      "body": "Deposited-item returns ($15 vs a $32 median, 20th percentile), paper statements ($1 vs $3), and overdraft-protection transfers ($2 vs a $2 median) all sit at or below peers. Outside of overdraft, this schedule reads as one of the most member-friendly in the cohort — a story worth telling deliberately."
+      "stat": "4 of 6",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 6 fee lines where we found both your published amount and at least eight comparable peers, four sit between the peer 25th and 75th percentiles, one above and one below."
     }
   ],
-  "exec_narrative": "Net position: Union Square Credit Union runs one of the most member-friendly published schedules in its cohort — card replacement at a seventh of the peer median, deposited-item returns at less than half, paper statements at a third — with a single exception: an overdraft fee that ties for the highest among 6 comparable credit unions. That is an unusual and fixable asymmetry. The overdraft line is the one members and examiners will notice; everything else is a marketing asset going unused. One decision and one communications plan cover the whole agenda.",
+  "exec_narrative": "Union Square Credit Union is compared with 141 credit unions under $10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 6 rankable lines, four sit inside the middle half of the market, one above it (non-network ATM fee), and one below it (overdraft-protection transfer fee). We would suggest two steps, in order of value: (1) review the non-network ATM fee, which sits above the market range; the peer median of $2 is the reference point; (2) check that the monthly maintenance fee is published where customers can find it.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Overdraft — $30.00",
-      "stat": "Peer median $24.50 · peer max $30.00 · 100th percentile · n=6",
-      "body": "You share the top of the cohort on the single most scrutinized fee in consumer finance. The peer group here is small (6 credit unions), which argues for caution on the percentile — but not on the exposure: overdraft is the fee that appears in examiner conversations and member complaints, and yours is $5.50 over the median while the rest of your schedule undercuts peers. A modest cut would make the whole schedule consistent with the member-friendly posture you already have everywhere else."
+      "title": "Non-network ATM fee — $3",
+      "stat": "Peer median $2 · middle half $1–$2.50 · range $0.50–$10 · 76th percentile · n=21",
+      "body": "Published as “ATM Foreign Transaction.” At $3 it is $1 above the $2 peer median. It recurs for every customer who banks outside your ATM footprint. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $2 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Card replacement — $5.00 vs a $35.00 median",
-      "stat": "Peer median $35.00 · 17th percentile · n=23",
-      "body": "This is the largest below-market gap on your schedule — $30 under the median, against the broadest peer sample in your pack. Members compare exactly this kind of fee when a card is lost or compromised. 'We replace your card for $5; most comparable credit unions charge $35' is a claim your peers' own published schedules substantiate, and it costs nothing to make."
+      "title": "Overdraft-protection transfer fee — $2",
+      "stat": "Peer median $5 · middle half $3–$10 · 18th percentile · n=17",
+      "body": "Published as “Overdraft Transfer.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $5 is the reference point."
     },
     {
-      "kind": "opportunity",
-      "title": "The rest of the member-service stack — below market, unmarketed",
-      "stat": "Deposited item return $15 vs $32 median (P20) · Paper statement $1 vs $3 (P40) · OD protection transfer $2 vs $2 median",
-      "body": "Beyond card replacement, the service fees members actually encounter run at or below the cohort across the board. If this is deliberate strategy, it belongs in member communications and new-member onboarding; if it is inertia, it is at least worth confirming as policy before a future repricing quietly erodes it."
+      "kind": "risk",
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Monthly maintenance fee: published by 24 peers (median $5)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the industry-wide retreat from penalty pricing: NSF and overdraft fees have been falling across consumer finance under regulatory and reputational pressure, and overdraft in particular has become the line examiners and journalists check first. Second, published fee schedules have become marketing documents — public, scraped, and compared — which turns every outlier line into a small reputational bet and every below-market line into an unclaimed asset.</p><p>Mid-sized credit unions sit in an exposed middle: large enough to appear in fee comparisons alongside banks and larger credit unions, without the marketing budgets that let bigger institutions shape the narrative. For an institution whose schedule already undercuts comparable credit unions almost everywhere, the highest-leverage moves are narrow — bring the one top-of-cohort fee back toward the pack, then make the member-friendly pricing you already practice a named, advertised policy rather than an accident of history.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Union Square Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return",
+    "nsf"
+  ],
+  "summary": {
+    "ranked": 6,
+    "above": [
+      "atm_non_network"
+    ],
+    "below": [
+      "od_protection_transfer"
+    ],
+    "gaps": [
+      "monthly_maintenance"
+    ],
+    "thin": 0
+  }
 }
