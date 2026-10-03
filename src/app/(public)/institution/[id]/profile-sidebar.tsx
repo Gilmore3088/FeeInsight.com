@@ -12,7 +12,10 @@ export function ProfileSidebar({
   isAuthenticated,
   showAddSource,
   showProCard,
+  regulatorFacts = [],
 }: {
+  /** Regulator identity from the regulatory registry; the block is hidden when empty. */
+  regulatorFacts?: Array<{ label: string; value: string }>;
   links: PublicInstitutionProfileLinks;
   isAuthenticated: boolean;
   showAddSource: boolean;
@@ -21,6 +24,19 @@ export function ProfileSidebar({
 }) {
   return (
     <aside className="min-w-0 space-y-6 lg:sticky lg:top-6">
+      {regulatorFacts.length > 0 && (
+        <section className="border border-[#E0D7C9] bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Regulator</p>
+          <dl className="mt-2 space-y-1.5 text-sm">
+            {regulatorFacts.map((fact) => (
+              <div key={fact.label} className="flex justify-between gap-3">
+                <dt className="text-[#6B6255]">{fact.label}</dt>
+                <dd className="text-right font-medium text-[#1A1815]">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
       {showProCard && (
         <section className="border border-[#1A1815] bg-[#1A1815] p-5 text-white">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D4A574]">

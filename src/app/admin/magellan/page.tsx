@@ -27,6 +27,12 @@ export default async function MagellanPage() {
         <p className="admin-lede mt-2">
           Finds fee schedules, coordinates URL rescue, and hands collection work to the extraction fleet.
         </p>
+        <p className="mt-2 text-sm">
+          <a href="/admin/magellan/registry" className="font-medium underline">
+            Regulatory registry
+          </a>{" "}
+          — FDIC, NCUA, CFPB, SEC, and Federal Reserve data loads.
+        </p>
       </header>
       <AgentHandoffStrip
         steps={[
