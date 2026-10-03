@@ -1,3 +1,4 @@
+import { categoryStats, type ContractRow, type StatsBasis, type StatsMaturity } from "./fee-stats";
 import { sql } from "./connection";
 import type { FeeReview } from "./types";
 
@@ -13,6 +14,11 @@ export interface FeeCategorySummary {
   p75_amount: number | null;
   bank_count: number;
   cu_count: number;
+  /** Statistics-contract labels (src/lib/data-store/fee-stats.ts). */
+  sourced_institution_count?: number;
+  legacy_institution_count?: number;
+  basis?: StatsBasis;
+  maturity?: StatsMaturity;
 }
 
 export interface FeeInstance {
@@ -30,10 +36,13 @@ export interface FeeInstance {
   extraction_confidence: number;
   canonical_fee_key: string | null;
   variant_type: string | null;
+  /** Set when the fee traces to a stored source document. */
+  source_document_id?: number | null;
 }
 
 export interface DimensionBreakdown {
   dimension_value: string;
+  /** Institutions in this slice (each counted once). */
   count: number;
   min_amount: number | null;
   max_amount: number | null;
@@ -84,13 +93,8 @@ export function computeStats(amounts: number[]): {
 }
 
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
-  const grouped = new Map<
-    string,
-    { amounts: number[]; banks: Set<number>; cus: Set<number>; total: number }
-  >();
-
   const rows = await sql`
-    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category IS NOT NULL AND ef.review_status = 'approved'
@@ -99,40 +103,41 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     amount: number | null;
     institution_id: number;
     charter_type: string;
+    source_document_id: number | null;
   }[];
 
+  const grouped = new Map<string, { rows: ContractRow[]; total: number }>();
   for (const row of rows) {
-    if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, { amounts: [], banks: new Set(), cus: new Set(), total: 0 });
-    }
-    const entry = grouped.get(row.fee_category)!;
+    const entry = grouped.get(row.fee_category) ?? { rows: [], total: 0 };
     entry.total++;
-    const amt = row.amount !== null ? Number(row.amount) : null;
-    if (amt !== null && amt > 0) {
-      entry.amounts.push(amt);
-    }
-    if (row.charter_type === "bank") {
-      entry.banks.add(Number(row.institution_id));
-    } else {
-      entry.cus.add(Number(row.institution_id));
-    }
+    entry.rows.push({
+      institution_id: row.institution_id,
+      amount: row.amount,
+      sourced: row.source_document_id != null,
+      charter_type: row.charter_type,
+    });
+    grouped.set(row.fee_category, entry);
   }
 
   const results: FeeCategorySummary[] = [];
   for (const [category, data] of grouped.entries()) {
-    const stats = computeStats(data.amounts);
+    const stats = categoryStats(data.rows);
     results.push({
       fee_category: category,
-      institution_count: new Set([...data.banks, ...data.cus]).size,
+      institution_count: stats.institution_count,
       total_observations: data.total,
-      bank_count: data.banks.size,
-      cu_count: data.cus.size,
+      bank_count: stats.bank_count,
+      cu_count: stats.cu_count,
       min_amount: stats.min,
       max_amount: stats.max,
       avg_amount: stats.avg,
       median_amount: stats.median,
       p25_amount: stats.p25,
       p75_amount: stats.p75,
+      sourced_institution_count: stats.sourced_institution_count,
+      legacy_institution_count: stats.legacy_institution_count,
+      basis: stats.basis,
+      maturity: stats.maturity,
     });
   }
 
@@ -153,7 +158,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
            ef.amount, ef.frequency, ef.conditions,
            ct.charter_type, ct.state_code, ct.asset_size_tier,
            ct.asset_size, ef.review_status, ef.extraction_confidence,
-           ef.canonical_fee_key, ef.variant_type
+           ef.canonical_fee_key, ef.variant_type, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
@@ -171,23 +176,17 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   }));
 
   // Compute dimensional breakdowns
-  function buildBreakdown(
-    dimFn: (f: FeeInstance) => string | null
-  ): DimensionBreakdown[] {
-    const groups = new Map<string, number[]>();
-    for (const fee of fees) {
-      const dim = dimFn(fee) ?? "Unknown";
-      if (!groups.has(dim)) groups.set(dim, []);
-      if (fee.amount !== null && fee.amount > 0) {
-        groups.get(dim)!.push(fee.amount);
-      }
-    }
+  const sourcedById = new Map(rawFees.map((f) => [Number(f.id), f.source_document_id != null]));
+
+  // Dimensional breakdowns follow the statistics contract: one value per institution,
+  // $0 included, no median below MIN_INSTITUTIONS.
+  function breakdownFrom(groups: Map<string, ContractRow[]>): DimensionBreakdown[] {
     const result: DimensionBreakdown[] = [];
-    for (const [value, amounts] of groups.entries()) {
-      const s = computeStats(amounts);
+    for (const [value, groupRows] of groups.entries()) {
+      const s = categoryStats(groupRows);
       result.push({
         dimension_value: value,
-        count: amounts.length,
+        count: s.institution_count,
         min_amount: s.min,
         max_amount: s.max,
         avg_amount: s.avg,
@@ -197,41 +196,40 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     return result.sort((a, b) => b.count - a.count);
   }
 
+  function buildBreakdown(
+    dimFn: (f: FeeInstance) => string | null
+  ): DimensionBreakdown[] {
+    const groups = new Map<string, ContractRow[]>();
+    for (const fee of fees) {
+      const dim = dimFn(fee) ?? "Unknown";
+      const list = groups.get(dim) ?? [];
+      list.push({ institution_id: fee.institution_id, amount: fee.amount, sourced: sourcedById.get(fee.id) ?? false });
+      groups.set(dim, list);
+    }
+    return breakdownFrom(groups);
+  }
+
   const by_charter_type = buildBreakdown((f) => f.charter_type === "bank" ? "Bank" : "Credit Union");
   const by_asset_tier = buildBreakdown((f) => f.asset_size_tier);
 
   // For fed district, re-query with actual district numbers
   const districtRows = await sql`
-    SELECT ct.fed_district, ef.amount
+    SELECT ct.fed_district, ef.amount, ef.institution_id, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category}
       AND ef.review_status = 'approved'
       AND ct.fed_district IS NOT NULL
-  ` as { fed_district: number; amount: number | null }[];
+  ` as { fed_district: number; amount: number | null; institution_id: number; source_document_id: number | null }[];
 
-  const districtGroups = new Map<number, number[]>();
+  const districtGroups = new Map<string, ContractRow[]>();
   for (const row of districtRows) {
-    const dist = Number(row.fed_district);
-    const amt = row.amount !== null ? Number(row.amount) : null;
-    if (!districtGroups.has(dist)) districtGroups.set(dist, []);
-    if (amt !== null && amt > 0) {
-      districtGroups.get(dist)!.push(amt);
-    }
+    const key = `District ${Number(row.fed_district)}`;
+    const list = districtGroups.get(key) ?? [];
+    list.push({ institution_id: row.institution_id, amount: row.amount, sourced: row.source_document_id != null });
+    districtGroups.set(key, list);
   }
-  const by_fed_district_real: DimensionBreakdown[] = [];
-  for (const [district, amounts] of districtGroups.entries()) {
-    const s = computeStats(amounts);
-    by_fed_district_real.push({
-      dimension_value: `District ${district}`,
-      count: amounts.length,
-      min_amount: s.min,
-      max_amount: s.max,
-      avg_amount: s.avg,
-      median_amount: s.median,
-    });
-  }
-  by_fed_district_real.sort((a, b) => {
+  const by_fed_district_real = breakdownFrom(districtGroups).sort((a, b) => {
     const numA = parseInt(a.dimension_value.replace("District ", ""));
     const numB = parseInt(b.dimension_value.replace("District ", ""));
     return numA - numB;

@@ -119,7 +119,7 @@ const spec = {
           },
           family: { type: "string", example: "Account Maintenance" },
           tier: { type: "string" },
-          median: { type: "number", example: 12.0 },
+          median: { type: "number", nullable: true, example: 12.0, description: "Each institution counts once (the median of the amounts it lists); $0 fees included." },
           p25: { type: "number", example: 8.0 },
           p75: { type: "number", example: 15.0 },
           min: { type: "number", example: 0.0 },
@@ -130,7 +130,15 @@ const spec = {
           maturity: {
             type: "string",
             enum: ["strong", "provisional", "insufficient"],
+            description: "By institutions: strong at 20+, provisional at 5+. Below 5 the median is null.",
           },
+          basis: {
+            type: "string",
+            enum: ["sourced", "blended"],
+            description: "sourced: computed only from institutions whose fee traces to a stored fee-schedule document. blended: fewer than 20 sourced institutions, so earlier imported data is included.",
+          },
+          sourced_institution_count: { type: "integer", example: 46 },
+          legacy_institution_count: { type: "integer", example: 102 },
         },
       },
       InstitutionSummary: {

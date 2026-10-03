@@ -670,7 +670,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Status.</span>{" "}
-            Each category carries a status: Verified (10+ checked fees), Under review, or Too few to benchmark.
+            Each category carries a maturity (strong: 20+ institutions, provisional: 5+, insufficient: fewer than 5 and no median) and a basis: <code>sourced</code> when computed only from institutions whose fee traces to a stored fee-schedule document, <code>blended</code> until 20 or more sourced institutions exist. Each institution counts once (the median of the amounts it lists); $0 fees are included.
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}

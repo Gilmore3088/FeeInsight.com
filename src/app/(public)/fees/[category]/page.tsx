@@ -6,7 +6,8 @@ import {
   getFeeCategoryDetail,
   getDataFreshness,
 } from "@/lib/data-store";
-import { computeStats } from "@/lib/data-store";
+import { categoryStats } from "@/lib/data-store/fee-stats";
+import { StatsBasisBadge } from "@/components/public/stats-basis-badge";
 import {
   getDisplayName,
   getFeeFamily,
@@ -113,13 +114,15 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const detail = await getFeeCategoryDetail(category);
   const freshness = await getDataFreshness();
 
-  // N and M share one basis: verified fees with a stated amount, and the
-  // distinct institutions those fees came from.
-  const pricedFees = detail.fees.filter((f) => f.amount !== null && f.amount > 0);
+  // The statistics contract: one value per institution, $0 included, no median
+  // below five institutions, sourced data only once enough exists.
+  const pricedFees = detail.fees.filter((f) => f.amount !== null && f.amount >= 0);
   const amounts = pricedFees.map((f) => f.amount!);
   const verifiedFeeCount = amounts.length;
-  const institutionCount = new Set(pricedFees.map((f) => f.institution_id)).size;
-  const stats = computeStats(amounts);
+  const stats = categoryStats(
+    pricedFees.map((f) => ({ institution_id: f.institution_id, amount: f.amount, sourced: f.source_document_id != null })),
+  );
+  const institutionCount = stats.institution_count;
 
   const familyMembers = family
     ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category)
@@ -170,7 +173,16 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       </h1>
       <p className="mt-2 text-[14px] text-[#6B6255]">
         Based on {verifiedFeeCount.toLocaleString()} verified fees from{" "}
-        {institutionCount.toLocaleString()} institutions.
+        {institutionCount.toLocaleString()} institutions.{" "}
+        <StatsBasisBadge
+          basis={stats.basis}
+          sourcedInstitutions={stats.sourced_institution_count}
+          totalInstitutions={stats.sourced_institution_count + stats.legacy_institution_count}
+          className="ml-1 align-middle"
+        />
+        {stats.median == null && (
+          <span className="ml-2 text-[12px] text-[#6B6255]">Not enough institutions yet for a median.</span>
+        )}
       </p>
       <div className="mt-1">
         <DataFreshness />

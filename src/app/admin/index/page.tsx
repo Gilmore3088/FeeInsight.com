@@ -88,7 +88,7 @@ export default async function NationalIndexPage() {
               : "0%"}
           </p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            {strongCount} of {totalCategories} with 10+ approved
+            {strongCount} of {totalCategories} with 20+ institutions
           </p>
         </div>
       </div>

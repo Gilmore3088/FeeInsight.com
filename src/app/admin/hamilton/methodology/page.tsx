@@ -294,9 +294,9 @@ export default async function MethodologyPage() {
             </thead>
             <tbody>
               {[
-                ["Strong", "10+ approved observations", "Median is statistically reliable; P25/P75 meaningful"],
-                ["Provisional", "10+ total observations (staged + pending)", "Directionally correct; interpret with caution"],
-                ["Insufficient", "Fewer than 10 observations", "Do not use for benchmarking decisions"],
+                ["Strong", "20+ institutions (each counted once)", "Median is statistically reliable; P25/P75 meaningful"],
+                ["Provisional", "5-19 institutions", "Directionally correct; interpret with caution"],
+                ["Insufficient", "Fewer than 5 institutions (no median shown)", "Do not use for benchmarking decisions"],
               ].map(([maturity, threshold, interpretation]) => (
                 <tr key={maturity} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                   <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">{maturity}</td>

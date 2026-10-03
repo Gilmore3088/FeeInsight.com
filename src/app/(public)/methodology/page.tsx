@@ -136,7 +136,7 @@ export default async function MethodologyPage() {
             "Before any fee enters the published index, it passes two checks.",
             "First, certainty: fees the software is not sure about are held for a person to check and are excluded from public benchmarks until confirmed.",
             "Second, outliers: fees far outside the rest of their category — an ATM fee of $300 when the category median is $3.00 — are flagged and reviewed. Flagged fees are confirmed, corrected, or excluded.",
-            "Every category and every institution carries a plain status. Verified: 10 or more checked fees, benchmarked publicly. Under review: fees collected but still being checked. Too few to benchmark: fewer than 10 verified fees, shown but not used for medians.",
+            "Every institution counts once per fee, at the median of the amounts it lists, and $0 fees count. A category needs at least 5 institutions for a median (20+ is strong). Each figure is labelled Verified sources when it comes only from fees traced to a stored fee-schedule document, or Includes legacy data until 20 or more such institutions exist.",
           ]}
         />
 

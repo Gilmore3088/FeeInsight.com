@@ -28,6 +28,10 @@ function makeEntry(category: string, median: number): IndexEntry {
     cu_count: 40,
     maturity_tier: "strong",
     last_updated: null,
+    sourced_institution_count: 100,
+    legacy_institution_count: 0,
+    basis: "sourced",
+    stats_method_version: 2,
   };
 }
 

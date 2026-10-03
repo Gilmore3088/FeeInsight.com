@@ -11,6 +11,7 @@ import {
   getSpotlightCategories,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
+import { StatsBasisBadge } from "@/components/public/stats-basis-badge";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
@@ -329,9 +330,21 @@ export default async function NationalFeeIndexPage() {
                             >
                               {getDisplayName(entry.fee_category)}
                             </Link>
+                            <StatsBasisBadge
+                              basis={entry.basis}
+                              sourcedInstitutions={entry.sourced_institution_count}
+                              totalInstitutions={entry.sourced_institution_count + entry.legacy_institution_count}
+                              className="ml-2 align-middle"
+                            />
                           </td>
                           <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
-                            {formatAmount(entry.median_amount)}
+                            {entry.median_amount == null ? (
+                              <span className="text-[12px] font-normal text-[#6B6255]" title="Fewer than five institutions report this fee">
+                                Too few
+                              </span>
+                            ) : (
+                              formatAmount(entry.median_amount)
+                            )}
                           </td>
                           {isPro && (
                             <>

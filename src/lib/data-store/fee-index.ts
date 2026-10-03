@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
-import { computeStats } from "./fees";
+import { categoryStats, STATS_METHOD_VERSION, type StatsBasis } from "./fee-stats";
 
 /** All 49 canonical fee categories — only these appear in indexes and reports */
 const CANONICAL_CATEGORIES = Object.values(FEE_FAMILIES).flat();
@@ -20,29 +20,41 @@ export interface IndexEntry {
   cu_count: number;
   maturity_tier: "strong" | "provisional" | "insufficient";
   last_updated: string | null;
+  /** Institutions whose fee traces to a stored source document. */
+  sourced_institution_count: number;
+  /** Institutions known only from the legacy backfill. */
+  legacy_institution_count: number;
+  /** "sourced": computed from sourced institutions only; "blended": includes legacy data. */
+  basis: StatsBasis;
+  stats_method_version: number;
+}
+
+interface IndexRow {
+  fee_category: string;
+  amount: number | null;
+  institution_id: number;
+  review_status: string;
+  created_at: string;
+  charter_type: string;
+  source_document_id: number | null;
 }
 
 export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[]> {
+  return buildIndexEntries(await loadNationalRows(sql, approvedOnly));
+}
+
+async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<IndexRow[]> {
   const statusFilter = approvedOnly
     ? "ef.review_status = 'approved'"
     : "ef.review_status != 'rejected'";
 
-  const rows = await sql.unsafe(
+  return await db.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id,
-            ef.review_status, ef.created_at, ct.charter_type
+            ef.review_status, ef.created_at, ct.charter_type, ef.source_document_id
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}]) AND ${statusFilter}`
-  ) as {
-    fee_category: string;
-    amount: number | null;
-    institution_id: number;
-    review_status: string;
-    created_at: string;
-    charter_type: string;
-  }[];
-
-  return buildIndexEntries(rows);
+  ) as IndexRow[];
 }
 
 export async function getPeerIndex(
@@ -95,19 +107,12 @@ export async function getPeerIndex(
 
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id,
-            ef.review_status, ef.created_at, ct.charter_type
+            ef.review_status, ef.created_at, ct.charter_type, ef.source_document_id
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${where}`,
     params
-  ) as {
-    fee_category: string;
-    amount: number | null;
-    institution_id: number;
-    review_status: string;
-    created_at: string;
-    charter_type: string;
-  }[];
+  ) as IndexRow[];
 
   return buildIndexEntries(rows);
 }
@@ -126,166 +131,58 @@ export async function getIndexSnapshot(
   return entries.slice(0, limit);
 }
 
-export async function getDistrictMedianByCategory(
-  category: string,
-  filters?: { charter_type?: string; asset_tiers?: string[] }
-): Promise<{ district: number; median_amount: number | null; institution_count: number }[]> {
-  const conditions = [
-    "ef.fee_category = $1",
-    "ef.review_status = 'approved'",
-    "ct.fed_district IS NOT NULL",
-  ];
-  const params: (string | number)[] = [category];
-  let paramIdx = 1;
-
-  if (filters?.charter_type) {
-    paramIdx++;
-    conditions.push(`ct.charter_type = $${paramIdx}`);
-    params.push(filters.charter_type);
-  }
-  if (filters?.asset_tiers && filters.asset_tiers.length > 0) {
-    const placeholders = filters.asset_tiers.map(() => {
-      paramIdx++;
-      return `$${paramIdx}`;
-    }).join(",");
-    conditions.push(`ct.asset_size_tier IN (${placeholders})`);
-    params.push(...filters.asset_tiers);
-  }
-
-  const rows = await sql.unsafe(
-    `SELECT ef.amount, ct.fed_district, ef.institution_id
-     FROM published_fee_catalog ef
-     JOIN institution_sources ct ON ef.institution_id = ct.id
-     WHERE ${conditions.join(" AND ")}`,
-    params
-  ) as {
-    amount: number | null;
-    fed_district: number;
-    institution_id: number;
-  }[];
-
-  const grouped = new Map<
-    number,
-    { amounts: number[]; institutions: Set<number> }
-  >();
-
-  for (const row of rows) {
-    if (!grouped.has(row.fed_district)) {
-      grouped.set(row.fed_district, { amounts: [], institutions: new Set() });
-    }
-    const entry = grouped.get(row.fed_district)!;
-    entry.institutions.add(row.institution_id);
-    if (row.amount !== null && row.amount > 0) {
-      entry.amounts.push(row.amount);
-    }
-  }
-
-  const results: { district: number; median_amount: number | null; institution_count: number }[] = [];
-  for (const [district, data] of grouped.entries()) {
-    const stats = computeStats(data.amounts);
-    results.push({
-      district,
-      median_amount: stats.median,
-      institution_count: data.institutions.size,
-    });
-  }
-
-  results.sort((a, b) => a.district - b.district);
-  return results;
-}
-
 export async function getDistrictFeeMedians(
   district: number
 ): Promise<{ fee_category: string; median_amount: number; institution_count: number }[]> {
   const rows = await sql`
-    SELECT ef.fee_category,
-           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) AS median_amount,
-           COUNT(DISTINCT ef.institution_id) AS institution_count
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${district}
       AND ef.review_status = 'approved'
-      AND ef.amount IS NOT NULL
-      AND ef.amount > 0
-    GROUP BY ef.fee_category
-    HAVING COUNT(DISTINCT ef.institution_id) >= 3
-    ORDER BY COUNT(DISTINCT ef.institution_id) DESC
   `;
-  return rows.map(r => ({
-    fee_category: r.fee_category as string,
-    median_amount: Number(r.median_amount),
-    institution_count: Number(r.institution_count),
-  }));
+  const grouped = new Map<string, Array<{ institution_id: number; amount: number | null; sourced: boolean }>>();
+  for (const row of rows) {
+    const category = String(row.fee_category);
+    const list = grouped.get(category) ?? [];
+    list.push({ institution_id: Number(row.institution_id), amount: row.amount as number | null, sourced: row.source_document_id != null });
+    grouped.set(category, list);
+  }
+  return [...grouped.entries()]
+    .map(([fee_category, groupRows]) => ({ fee_category, stats: categoryStats(groupRows) }))
+    .filter((entry) => entry.stats.median != null)
+    .map((entry) => ({
+      fee_category: entry.fee_category,
+      median_amount: entry.stats.median as number,
+      institution_count: entry.stats.institution_count,
+    }))
+    .sort((a, b) => b.institution_count - a.institution_count);
 }
 
-function buildIndexEntries(
-  rows: {
-    fee_category: string;
-    amount: number | null;
-    institution_id: number;
-    review_status: string;
-    created_at: string;
-    charter_type: string;
-  }[]
-): IndexEntry[] {
-  const grouped = new Map<
-    string,
-    {
-      amounts: number[];
-      banks: Set<number>;
-      cus: Set<number>;
-      approved: number;
-      total: number;
-      latest: string;
-    }
-  >();
-
+/** Index entries under the statistics contract (src/lib/data-store/fee-stats.ts). */
+export function buildIndexEntries(rows: IndexRow[]): IndexEntry[] {
+  const grouped = new Map<string, { rows: IndexRow[]; approved: number; latest: string }>();
   for (const row of rows) {
-    if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, {
-        amounts: [],
-        banks: new Set(),
-        cus: new Set(),
-        approved: 0,
-        total: 0,
-        latest: "",
-      });
-    }
-    const entry = grouped.get(row.fee_category)!;
-    entry.total++;
-    const amt = row.amount !== null ? Number(row.amount) : null;
-    if (amt !== null && amt > 0) {
-      entry.amounts.push(amt);
-    }
-    const targetId = Number(row.institution_id);
-    if (row.charter_type === "bank") {
-      entry.banks.add(targetId);
-    } else {
-      entry.cus.add(targetId);
-    }
-    if (row.review_status === "approved") {
-      entry.approved++;
-    }
+    const entry = grouped.get(row.fee_category) ?? { rows: [], approved: 0, latest: "" };
+    entry.rows.push(row);
+    if (row.review_status === "approved") entry.approved++;
     const createdAt = (row.created_at as unknown) instanceof Date
       ? (row.created_at as unknown as Date).toISOString()
       : String(row.created_at ?? "");
-    if (createdAt > entry.latest) {
-      entry.latest = createdAt;
-    }
+    if (createdAt > entry.latest) entry.latest = createdAt;
+    grouped.set(row.fee_category, entry);
   }
 
   const results: IndexEntry[] = [];
   for (const [category, data] of grouped.entries()) {
-    const stats = computeStats(data.amounts);
-    const institutionCount = new Set([...data.banks, ...data.cus]).size;
-
-    let maturity_tier: IndexEntry["maturity_tier"] = "insufficient";
-    if (data.approved >= 10) {
-      maturity_tier = "strong";
-    } else if (data.total >= 10) {
-      maturity_tier = "provisional";
-    }
-
+    const stats = categoryStats(
+      data.rows.map((row) => ({
+        institution_id: row.institution_id,
+        amount: row.amount,
+        sourced: row.source_document_id != null,
+        charter_type: row.charter_type,
+      })),
+    );
     results.push({
       fee_category: category,
       fee_family: getFeeFamily(category),
@@ -294,13 +191,17 @@ function buildIndexEntries(
       p75_amount: stats.p75,
       min_amount: stats.min,
       max_amount: stats.max,
-      institution_count: institutionCount,
-      observation_count: data.total,
+      institution_count: stats.institution_count,
+      observation_count: data.rows.length,
       approved_count: data.approved,
-      bank_count: data.banks.size,
-      cu_count: data.cus.size,
-      maturity_tier,
+      bank_count: stats.bank_count,
+      cu_count: stats.cu_count,
+      maturity_tier: stats.maturity,
       last_updated: data.latest || null,
+      sourced_institution_count: stats.sourced_institution_count,
+      legacy_institution_count: stats.legacy_institution_count,
+      basis: stats.basis,
+      stats_method_version: stats.stats_method_version,
     });
   }
 
@@ -362,6 +263,10 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       cu_count: number;
       maturity_tier: string;
       computed_at: string;
+      sourced_institution_count?: number | null;
+      legacy_institution_count?: number | null;
+      basis?: string | null;
+      stats_method_version?: number | null;
     }[];
 
     // The cache is only trustworthy when a publish step rebuilt it recently. A stale
@@ -370,7 +275,9 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       const at = row.computed_at ? new Date(row.computed_at).getTime() : 0;
       return Number.isFinite(at) && at > max ? at : max;
     }, 0);
-    if (rows.length === 0 || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
+    // Rows computed under an older statistics method are stale too.
+    const currentMethod = rows.every((row) => Number(row.stats_method_version ?? 0) === STATS_METHOD_VERSION);
+    if (rows.length === 0 || !currentMethod || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
       return getNationalIndex();
     }
 
@@ -389,8 +296,83 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       cu_count: row.cu_count,
       maturity_tier: row.maturity_tier as IndexEntry["maturity_tier"],
       last_updated: row.computed_at,
+      sourced_institution_count: Number(row.sourced_institution_count ?? 0),
+      legacy_institution_count: Number(row.legacy_institution_count ?? 0),
+      basis: (row.basis === "sourced" ? "sourced" : "blended") as StatsBasis,
+      stats_method_version: Number(row.stats_method_version ?? 0),
     }));
   } catch {
     return getNationalIndex();
   }
+}
+
+/** True once the stats-contract migration added the method/basis columns to the cache. */
+async function feeIndexCacheContractReady(db: typeof sql): Promise<boolean> {
+  const [row] = await db`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'fee_index_cache' AND column_name = 'stats_method_version'
+    ) AS ready
+  `;
+  return row?.ready === true;
+}
+
+export interface FeeIndexCacheRefresh {
+  refreshed: boolean;
+  categories: number;
+  sourcedCategories: number;
+  reason: string;
+}
+
+/**
+ * Rebuilds fee_index_cache from published fees under the statistics contract. Hamilton
+ * calls it in its publish transaction (so it sees the rows it just published) whenever
+ * it published something or the cache is stale or from an older method.
+ */
+export async function refreshFeeIndexCache(
+  db: typeof sql,
+  options: { runId: number; force?: boolean },
+): Promise<FeeIndexCacheRefresh> {
+  if (!(await feeIndexCacheContractReady(db))) {
+    return { refreshed: false, categories: 0, sourcedCategories: 0, reason: "cache migration not applied" };
+  }
+  if (!options.force) {
+    const [state] = await db`
+      SELECT MAX(computed_at) AS newest, MIN(stats_method_version) AS method, COUNT(*)::int AS rows
+        FROM fee_index_cache
+    `;
+    const newest = state?.newest ? new Date(state.newest as string | Date).getTime() : 0;
+    const current =
+      Number(state?.rows ?? 0) > 0 &&
+      Number(state?.method ?? 0) === STATS_METHOD_VERSION &&
+      Date.now() - newest < 6 * 60 * 60 * 1000;
+    if (current) return { refreshed: false, categories: Number(state?.rows ?? 0), sourcedCategories: 0, reason: "cache is current" };
+  }
+
+  const entries = buildIndexEntries(await loadNationalRows(db));
+  await db`DELETE FROM fee_index_cache`;
+  for (const entry of entries) {
+    await db`
+      INSERT INTO fee_index_cache (
+        fee_category, fee_family, median_amount, p25_amount, p75_amount, min_amount, max_amount,
+        institution_count, observation_count, approved_count, bank_count, cu_count, maturity_tier,
+        sourced_institution_count, legacy_institution_count, basis, stats_method_version,
+        agent_run_id, computed_at
+      ) VALUES (
+        ${entry.fee_category}, ${entry.fee_family}, ${entry.median_amount}, ${entry.p25_amount},
+        ${entry.p75_amount}, ${entry.min_amount}, ${entry.max_amount}, ${entry.institution_count},
+        ${entry.observation_count}, ${entry.approved_count}, ${entry.bank_count}, ${entry.cu_count},
+        ${entry.maturity_tier}, ${entry.sourced_institution_count}, ${entry.legacy_institution_count},
+        ${entry.basis}, ${entry.stats_method_version}, ${options.runId}, NOW()
+      )
+    `;
+  }
+  // The in-process memo may hold the old index for up to a minute; drop it.
+  nationalIndexCache = null;
+  return {
+    refreshed: true,
+    categories: entries.length,
+    sourcedCategories: entries.filter((entry) => entry.basis === "sourced").length,
+    reason: options.force ? "forced" : "published or stale",
+  };
 }

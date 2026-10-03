@@ -76,7 +76,9 @@ export function FeeGroup({ groupName, fees, isPrimary, defaultOpen }: FeeGroupPr
 
       <div className="pl-8 pb-8 space-y-0.5">
         {fees.map((fee) => {
-          const hasBar = fee.indexEntry !== null && fee.amount !== null && fee.amount >= 0;
+          // No distribution bar without a national median (fewer than five institutions).
+          const hasBar =
+            fee.indexEntry !== null && fee.indexEntry.median_amount != null && fee.amount !== null && fee.amount >= 0;
           const barPos = hasBar
             ? computeBarPosition(fee.amount!, fee.indexEntry!)
             : null;
