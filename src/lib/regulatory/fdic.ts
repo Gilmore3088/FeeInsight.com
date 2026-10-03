@@ -17,7 +17,7 @@ import { fdicRepdte, quarterEndDate, type Quarter } from "./quarters";
 export const FDIC_API_BASE = "https://api.fdic.gov/banks";
 const PAGE_LIMIT = 10_000;
 /** Bounded so a malformed `meta.total` can never loop forever. */
-const MAX_PAGES = 10;
+const MAX_PAGES = 15;
 
 export const FDIC_FINANCIAL_FIELDS = [
   "CERT",
@@ -376,5 +376,79 @@ export function parseFdicInstitution(record: FdicRecord): FdicInstitutionRow | n
     cbsa_name: str(record.CBSA),
     established_date: parseFdicDate(record.ESTYMD),
     closed_date: active ? null : parseFdicDate(record.ENDEFYMD),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Summary of Deposits (branch office deposits as of June 30 each year)
+// ---------------------------------------------------------------------------
+
+export const FDIC_SOD_FIELDS = [
+  "CERT",
+  "YEAR",
+  "BRNUM",
+  "BKMO",
+  "DEPSUMBR",
+  "NAMEBR",
+  "ADDRESBR",
+  "CITYBR",
+  "STALPBR",
+  "ZIPBR",
+  "STCNTYBR",
+  "MSABR",
+  "MSANAMB",
+  "SIMS_LATITUDE",
+  "SIMS_LONGITUDE",
+] as const;
+
+export async function fetchFdicSodForYear(year: number, options: RegistryFetchOptions = {}): Promise<FdicPage> {
+  return fetchAllPages(
+    "sod",
+    { filters: `YEAR:${year}`, fields: FDIC_SOD_FIELDS.join(","), sort_by: "ID", sort_order: "ASC" },
+    { timeoutMs: 120_000, ...options },
+  );
+}
+
+export interface FdicSodRow {
+  cert: number;
+  year: number;
+  branch_number: number;
+  is_main_office: boolean;
+  /** Thousands of dollars, as FDIC reports DEPSUMBR. */
+  deposits: number | null;
+  branch_name: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  county_fips: number | null;
+  msa_code: number | null;
+  msa_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export function parseFdicSod(record: FdicRecord): FdicSodRow | null {
+  const cert = int(record.CERT);
+  const year = int(record.YEAR);
+  const branch = int(record.BRNUM);
+  if (cert === null || year === null || branch === null) return null;
+  const msa = int(record.MSABR);
+  return {
+    cert,
+    year,
+    branch_number: branch,
+    is_main_office: Number(record.BKMO) === 1,
+    deposits: int(record.DEPSUMBR),
+    branch_name: str(record.NAMEBR),
+    address: str(record.ADDRESBR),
+    city: str(record.CITYBR),
+    state: str(record.STALPBR)?.toUpperCase() ?? null,
+    zip: str(record.ZIPBR),
+    county_fips: int(record.STCNTYBR),
+    msa_code: msa && msa > 0 ? msa : null,
+    msa_name: str(record.MSANAMB),
+    latitude: num(record.SIMS_LATITUDE),
+    longitude: num(record.SIMS_LONGITUDE),
   };
 }
