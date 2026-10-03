@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { computePercentile } from "./fees";
+import { STATS_ROW_FILTER, summarizeFeesBy } from "./fee-stats";
 
 export interface PeerFilteredStats {
   total_institutions: number;
@@ -21,7 +21,7 @@ export async function getTopCategoriesForPeerSet(
   filters: { charter_type?: string; asset_tiers?: string[]; fed_districts?: number[] },
   limit = 5
 ): Promise<PeerTopCategory[]> {
-  const conditions = ["ef.fee_category IS NOT NULL"];
+  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
@@ -61,28 +61,12 @@ export async function getTopCategoriesForPeerSet(
     institution_id: number;
   }[];
 
-  const grouped = new Map<string, { amounts: number[]; institutions: Set<number> }>();
-  for (const row of rows) {
-    if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, { amounts: [], institutions: new Set() });
-    }
-    const entry = grouped.get(row.fee_category)!;
-    entry.institutions.add(row.institution_id);
-    if (row.amount !== null && row.amount > 0) {
-      entry.amounts.push(row.amount);
-    }
-  }
-
   const results: PeerTopCategory[] = [];
-  for (const [category, data] of grouped.entries()) {
-    const sorted = [...data.amounts].sort((a, b) => a - b);
-    const median = sorted.length > 0
-      ? Math.round(computePercentile(sorted, 50) * 100) / 100
-      : null;
+  for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
     results.push({
       fee_category: category,
-      institution_count: data.institutions.size,
-      median_amount: median,
+      institution_count: stats.institution_count,
+      median_amount: stats.median_amount,
       fee_family: null,
     });
   }
