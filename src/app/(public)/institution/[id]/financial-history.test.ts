@@ -62,8 +62,8 @@ describe("financial history series", () => {
     });
   });
 
-  it("drops income from rows that are year-to-date or predate the registry", () => {
-    const [ncua] = buildFinancialSeries([row({ source: "ncua", roa: 0 })]);
+  it("drops income from legacy rows that predate the registry", () => {
+    const [ncua] = buildFinancialSeries([row({ source: "ncua", roa: 0, net_income: null })]);
     expect(ncua.netIncome).toBeNull();
     expect(ncua.serviceCharges).toBeNull();
     expect(ncua.roaPct).toBeNull();
@@ -87,5 +87,24 @@ describe("financial history series", () => {
     };
     expect(toPeerMedianPoints({ ...base, peer_count: 2 })).toBeNull();
     expect(toPeerMedianPoints({ ...base, peer_count: 40 })).toMatchObject({ quarter: "Q1 2026", roaPct: 1 });
+  });
+
+  it("turns registry NCUA year-to-date income into quarterly figures within each year", () => {
+    const ncua = (report_date: string, net_income: number | null, fee: number) =>
+      row({ source: "ncua", report_date, net_income, service_charge_income: fee });
+    const series = buildFinancialSeries([
+      ncua("2025-09-30", 300, 90),
+      ncua("2025-12-31", 420, 120),
+      ncua("2026-03-31", 110, 35),
+      ncua("2026-06-30", 230, 70),
+      ncua("2026-12-31", 500, 150), // Q3 2026 missing: no contiguous prior quarter
+    ]);
+    expect(series.map((p) => [p.quarter, p.netIncome, p.serviceCharges])).toEqual([
+      ["Q3 2025", null, null],
+      ["Q4 2025", 120_000, 30_000],
+      ["Q1 2026", 110_000, 35_000],
+      ["Q2 2026", 120_000, 35_000],
+      ["Q4 2026", null, null],
+    ]);
   });
 });

@@ -25,22 +25,25 @@ Magellan owns institution source discovery and source fetching.
 ## Regulatory Registry (`registry/`)
 
 Magellan also ingests published regulator data through deterministic
-`registry-<source>` steps. Each step processes exactly one partition and records
-it in `registry_ingest_partitions`.
+`registry-<source>` steps. Each step processes exactly one partition, records it
+in `registry_ingest_partitions`, and keeps lineage (`source_url`, `agent_run_id`).
+Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 
-- `registry-fdic-universe`: syncs FDIC BankFind institutions into `institution_sources`.
-  It refreshes identity, regulator and holding company, adds new charters, and
-  marks closed or merged banks `regulatory_status = 'inactive'`. It never deletes.
-- `registry-fdic-financials`: one call-report quarter (`2026Q2`) into
-  `institution_financial_records`. Units are thousands and quarterly; lineage is
-  `source_url` and `agent_run_id`.
-- `src/lib/agents/registry-scheduler.ts` is called by the cron tick. It keeps one
-  registry run in flight at a time and claims partitions atomically. Order: the
-  universe first, then the newest quarters, then history back to
-  `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
-- HTTP clients and parsers live in `src/lib/regulatory/`. They are pure and never
-  write to the DB.
-- Registry steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
+| Step | Partition | Writes |
+| --- | --- | --- |
+| `registry-fdic-universe` | `current` (weekly) | `institution_sources`: identity, holding company, regulator; adds charters, marks closed/merged inactive |
+| `registry-fdic-financials` | quarter `2026Q2` | `institution_financial_records` (`fdic`, thousands, quarterly) |
+| `registry-ncua-financials` | quarter | `institution_financial_records` (`ncua`, thousands, income YTD); newest quarter also syncs the credit-union universe |
+| `registry-fdic-sod` | year | `institution_branch_deposits` |
+| `registry-cfpb` | year | `institution_identity_links` (`cfpb_company`), `institution_complaint_records` |
+| `registry-sec-links` | `current` | `institution_identity_links` (`sec_cik`), `institution_sources.sec_cik` |
+| `registry-sec-filings` | `batch-0`..`batch-7` | `institution_filings`, `holding_company_financials` |
+| `registry-beige-book` | release `YYYYMM` | `fed_beige_book` |
+| `registry-fred` | `current` | `fed_economic_indicators` (FRED-native series only) |
+| `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
 
-Next sources follow the same pattern: NCUA 5300, FDIC SOD branches, CFPB
-complaints, SEC EDGAR, Beige Book/FRED, and state regulators.
+- Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
+- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It merges candidates round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
+- Identity matching (`registry/identity.ts`) accepts only unambiguous names. Shared names are stored as `needs_review` and never used until a person accepts them. Links with `verified_by` set are never overwritten.
+- Operator view: `/admin/magellan/registry`. Manual queue: `POST /api/admin/registry/run` with `{ source, partition_key?, dry_run? }`.
+- Add a source: write a client in `regulatory/`, a worker in `registry/`, an entry in `REGISTRY_SOURCES` (`registry/index.ts`), a scheduler partition list, and a `narrate.ts` sentence. `run-store.ts` dispatches every `registry-*` key automatically.
