@@ -74,7 +74,7 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main>
         <LandingHero institutionsLabel={summary.institutionsLabel} />
-        <LandingPriceStrip entries={nationalIndex} />
+        <LandingPriceStrip entries={nationalIndex} institutionsLabel={summary.institutionsLabel} />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />

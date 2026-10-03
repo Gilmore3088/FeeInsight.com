@@ -50,7 +50,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                 >
                   {US_STATES.map((state) => {
                     const verified = byState.get(state.id)?.verified_institution_count ?? 0;
-                    const label = `${state.name}: ${verified.toLocaleString("en-US")} institutions with verified fees`;
+                    const label = `${state.name}: ${verified.toLocaleString("en-US")} ${verified === 1 ? "institution" : "institutions"} with verified fees`;
                     return (
                       <Link
                         key={state.id}
