@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { CrewReply } from "@/lib/agents/crew-execute";
 import { askCrew, confirmCrewCommand } from "./crew-actions";
 
@@ -24,6 +24,9 @@ export function CrewCommandBar() {
   const [text, setText] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
   const [pending, startTransition] = useTransition();
+  // Exchange ids are React keys: a counter, since two replies can land in the same
+  // millisecond and Date.now() would then give a reply the key of the one it follows.
+  const nextId = useRef(0);
 
   function send(command: string) {
     const said = command.trim();
@@ -31,7 +34,7 @@ export function CrewCommandBar() {
     setText("");
     startTransition(async () => {
       const reply = await askCrew(said);
-      setHistory((previous) => [{ id: Date.now(), said, reply }, ...previous].slice(0, 6));
+      setHistory((previous) => [{ id: ++nextId.current, said, reply }, ...previous].slice(0, 6));
     });
   }
 
@@ -41,7 +44,7 @@ export function CrewCommandBar() {
     startTransition(async () => {
       const reply = await confirmCrewCommand(commandText);
       setHistory((previous) => [
-        { id: Date.now(), said: `Confirmed: ${exchange.said}`, reply },
+        { id: ++nextId.current, said: `Confirmed: ${exchange.said}`, reply },
         ...previous.map((item) => (item.id === exchange.id ? { ...item, confirmed: true } : item)),
       ].slice(0, 6));
     });
