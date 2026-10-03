@@ -1,52 +1,72 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your NSF / returned-item fee ($35) is $3 above the $32 peer median, the 92nd percentile of 12 peers.",
   "findings": [
     {
-      "stat": "$25 vs $15",
-      "stat_label": "incoming domestic wire vs peer median",
-      "headline": "You charge the most in your cohort to receive money.",
-      "body": "At $25.00, your incoming domestic wire fee is a statistical outlier — the 100th percentile of 17 peer banks, $10 over the $15 median and above the entire cohort's 75th percentile of $15. Wires arrive from your most attractive customers: businesses and high-balance households. This is a friction fee on exactly the relationships you want more of."
+      "stat": "$35 vs $32",
+      "stat_label": "NSF / returned-item fee, yours vs peer median",
+      "headline": "Your NSF / returned-item fee is above the market range.",
+      "body": "At $35, it is $3 above the $32 peer median and the 92nd percentile of 12 peers (middle half of the market: $31.50–$33.50). Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them."
     },
     {
-      "stat": "P96",
-      "stat_label": "deposited item return percentile",
-      "headline": "Returned deposited items are priced near the top of the market.",
-      "body": "Your $25.00 deposited-item return fee sits at the 96th percentile of 27 peers — $10 over the $15 median. This fee lands on customers whose deposited check bounced through no fault of their own, which makes a top-of-cohort price a reputational bet, not just a revenue line."
+      "stat": "$1.50 vs $3",
+      "stat_label": "paper statement fee, yours vs peer median",
+      "headline": "Your paper statement fee is priced below the market.",
+      "body": "Your paper statement fee ($1.50 vs a $3 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify."
     },
     {
-      "stat": "$5 vs $12",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your customer-friendly fees are a story nobody is telling.",
-      "body": "Your NSF fee ($5 vs a $12 median, 31st percentile), free card replacement ($0 vs a $10 median), and $1.50 paper statement — the lowest of 16 peers — add up to a genuinely below-market consumer fee posture. That is marketing material your competitors' own published schedules substantiate, and today it earns you nothing."
+      "stat": "2 more",
+      "stat_label": "lines above the market range",
+      "headline": "Smaller premiums elsewhere on the schedule.",
+      "body": "Your overdraft fee ($35 vs a $32 median, n=15) and your incoming wire fee ($25 vs a $14.50 median, n=16) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison."
     }
   ],
-  "exec_narrative": "Net position: HomeTrust Bank runs a split fee schedule. On consumer-visible penalty and service fees it is at the friendly end of the market — a $5 NSF fee, free card replacement, and the cheapest paper statement in its cohort. On money-movement and exception fees it sits at or near the top: the highest incoming domestic wire fee of 17 peers (a flagged statistical outlier) and a 96th-percentile deposited-item return fee. The exposure is asymmetrical: the two outliers draw the scrutiny while the below-market fees go unadvertised. Both halves of that split are decisions worth making deliberately.",
+  "exec_narrative": "HomeTrust Bank is compared with 68 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in North Carolina have published data, so local competitors may price differently. Of 9 rankable lines, five sit inside the middle half of the market, three above it (NSF / returned-item fee, overdraft fee and incoming wire fee), and one below it (paper statement fee). We would suggest one step: review the NSF / returned-item fee, which sits above the market range; the peer median of $32 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Incoming domestic wire — $25.00",
-      "stat": "Peer median $15.00 · P75 $15.00 · 100th percentile · n=17 · flagged: statistical outlier",
-      "body": "No peer in the cohort charges more to receive a domestic wire. At $10 over the median it earns little revenue but sits alone at the top of the distribution — the kind of line item that surfaces in commercial-relationship negotiations and side-by-side fee comparisons. A cut to the $15 median would be nearly invisible in revenue and highly visible in positioning."
+      "title": "NSF / returned-item fee — $35",
+      "stat": "Peer median $32 · middle half $31.50–$33.50 · range $30–$37 · 92nd percentile · n=12",
+      "body": "Published as “Returned Item charge.” At $35 it is $3 above the $32 peer median. Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them. A penalty fee offers little service to differentiate on, so the peer median of $32 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "Deposited item return — $25.00",
-      "stat": "Peer median $15.00 · P75 $20.00 · 96th percentile · n=27",
-      "body": "This fee charges your customer for someone else's bad check. At $25 you are $10 over the median and above the 75th percentile of a 27-bank cohort. Because the triggering event is outside the customer's control, this category attracts junk-fee framing faster than most — it deserves either a reduction or a documented rationale."
+      "title": "Overdraft fee — $35",
+      "stat": "Peer median $32 · middle half $30–$33.50 · range $10–$36 · 93rd percentile · n=15",
+      "body": "Published as “Overdraft charge.” At $35 it is $3 above the $32 peer median. Overdraft pricing is the first line examiners, consumer advocates and comparison sites read. A penalty fee offers little service to differentiate on, so the peer median of $32 is the natural reference point."
+    },
+    {
+      "kind": "risk",
+      "title": "Incoming wire fee — $25",
+      "stat": "Peer median $14.50 · middle half $10–$15 · range $10–$20 · 100th percentile · n=16",
+      "body": "Published as “Wire transfer - incoming domestic U.S. dollar.” At $25 it is $10.50 above the $14.50 peer median. Charging to receive funds is increasingly uncommon and is noticed by business customers. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $14.50 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "NSF, card replacement, paper statements — below market, unmarketed",
-      "stat": "NSF $5 vs $12 median (P31) · Card replacement $0 vs $10 median (P11, waived) · Paper statement $1.50 vs $3.00 median (P6)",
-      "body": "Three consumer-facing fees run meaningfully below your cohort, including a fully waived card-replacement fee that most peers still charge. 'Lower everyday fees than most banks in your market' is a claim your competitors' published schedules prove for you. If these prices are deliberate, put them in front of customers; if not, they represent margin available without touching a headline fee."
-    },
-    {
-      "kind": "risk",
-      "title": "Outgoing domestic wire — $25.00",
-      "stat": "Peer median $20.00 · P75 $25.00 · 80th percentile · n=15",
-      "body": "Combined with the incoming-wire outlier, both directions of domestic wire traffic price in the top quintile of your cohort. Individually defensible, together they give wire-active customers — typically businesses — a consistent premium-price experience on money movement."
+      "title": "Paper statement fee — $1.50",
+      "stat": "Peer median $3 · middle half $2–$3 · 0th percentile · n=11",
+      "body": "Published as “Mailed paper statement fee.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $3 is the reference point."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($12) keeps falling and a meaningful share of peers now charge $5 or less. Your $5 NSF fee already sits on the right side of that trend. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet — and every below-market line into an unclaimed advantage.</p><p>Community-scale institutions ($1B–$10B) occupy the exposed middle: large enough to be included in comparisons, without the brand gravity that lets money-center banks charge premiums quietly. In that position, the highest-leverage moves are usually surgical — retiring or trimming the one or two conspicuous outliers, here both concentrated in money-movement fees, while actively advertising the everyday fees already priced below market.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing HomeTrust Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "deposited_item_return",
+    "monthly_maintenance"
+  ],
+  "summary": {
+    "ranked": 9,
+    "above": [
+      "nsf",
+      "overdraft",
+      "wire_domestic_incoming"
+    ],
+    "below": [
+      "paper_statement"
+    ],
+    "gaps": [],
+    "thin": 0
+  }
 }

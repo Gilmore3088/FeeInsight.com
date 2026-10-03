@@ -15,7 +15,6 @@ if (!id) { console.error("usage: node fill.mjs <institution_id> [--sample]"); pr
 
 const SAMPLE_NAME = "Sample Community Bank";
 const SAMPLE_PLACE = "San Francisco Fed district";
-const SAMPLE_REQUEST_URL = "https://feeinsight.com/for-institutions#report";
 
 const pack = JSON.parse(readFileSync(join(DIR, "packs", `${id}.json`), "utf8"));
 const narr = JSON.parse(readFileSync(join(DIR, "narratives", `${id}.json`), "utf8"));
@@ -68,23 +67,33 @@ const anon = (text) => {
   return out;
 };
 
-// Position rows
+// Position rows: every category, with the published line we used so the reader can check it.
+const unclassified = new Set(narr.unclassified ?? []);
+const TAGS = {
+  well_above: `<span class="tag above">2× median</span>`,
+  above_band: `<span class="tag above">above range</span>`,
+  below_band: `<span class="tag below">below range</span>`,
+  free: `<span class="tag below">no fee</span>`,
+  thin_peer_data: `<span class="tag gap">few peers</span>`,
+};
 const positionRows = fees.map((f) => {
   const p = f.percentile === null || f.percentile === undefined ? null : Number(f.percentile);
-  const barClass = p === null ? "" : p >= 80 ? "hi" : p <= 20 ? "lo" : "";
-  const bar = p === null
-    ? `<span class="small muted">not published</span>`
-    : `<div class="bar-wrap"><div class="bar ${barClass}" style="width:${p}%"></div></div>`;
-  const tag =
-    f.flag === "extreme_outlier" || f.flag === "statistical_outlier"
-      ? `<span class="tag outlier">outlier</span>`
-      : f.flag === "waived" ? `<span class="tag waived">waived</span>`
-      : f.flag === "data_gap" ? `<span class="tag gap">no data</span>` : "";
-  return `<tr><td>${DISPLAY[f.category] ?? f.category}</td>
+  const barClass = f.flag === "well_above" || f.flag === "above_band" ? "hi"
+    : f.flag === "below_band" || f.flag === "free" ? "lo" : "";
+  const missing = f.their_value === null || f.their_value === undefined;
+  const bar = missing
+    ? `<span class="small muted">${unclassified.has(f.category) ? "listed under another label — see appendix" : "not in published schedule"}</span>`
+    : p === null
+      ? `<span class="small muted">fewer than 8 peers publish it</span>`
+      : `<div class="bar-wrap"><div class="bar ${barClass}" style="width:${Math.max(p, 2)}%"></div></div><span class="small muted"> P${p}</span>`;
+  const line = String(f.their_fee_name ?? "");
+  const short = line.length > 46 ? `${line.slice(0, 44).replace(/[\s,;(–-]+$/, "")}…` : line;
+  const label = missing ? "" : `<span class="feeline">${esc(anon(short))}${f.has_zero_tier ? " · $0 option" : ""}</span>`;
+  return `<tr><td><span class="cat">${DISPLAY[f.category] ?? f.category}</span>${label}</td>
     <td class="r"><b>${money(f.their_value)}</b></td>
     <td class="r">${money(f.peer_p25)}</td><td class="r">${money(f.peer_median)}</td>
-    <td class="r">${money(f.peer_p75)}</td><td class="r">${money(f.national_median)}</td>
-    <td>${bar}${p === null ? "" : `<span class="small muted"> P${p}</span>`}</td><td>${tag}</td></tr>`;
+    <td class="r">${money(f.peer_p75)}</td><td class="r muted">${f.peer_count || "—"}</td>
+    <td>${bar}</td><td>${TAGS[f.flag] ?? ""}</td></tr>`;
 }).join("\n");
 
 // Exec findings (3 numbers) from narratives; shrink long stats so the column holds
@@ -114,7 +123,12 @@ function displayName(name) {
 }
 
 // Peer table: pick 5 headline categories with best coverage
-const HEADLINE = ["monthly_maintenance", "overdraft", "nsf", "stop_payment", "wire_domestic_outgoing"];
+const WEIGHT = { overdraft: 5, nsf: 5, monthly_maintenance: 5, atm_non_network: 3, deposited_item_return: 3 };
+const HEADLINE = fees.filter((f) => f.their_value != null)
+  .map((f) => ({ k: f.category, cov: (pack.peers ?? []).filter((p) => p.fees?.[f.category] != null).length }))
+  .filter((x) => x.cov >= 2)
+  .sort((a, b) => (WEIGHT[b.k] ?? 1) - (WEIGHT[a.k] ?? 1) || b.cov - a.cov)
+  .slice(0, 5).map((x) => x.k);
 const peerHead = HEADLINE.map((k) => `<th class="r">${DISPLAY[k]}</th>`).join("");
 const selfRow = HEADLINE.map((k) => {
   const f = fees.find((x) => x.category === k);
@@ -129,6 +143,10 @@ const allFees = pack.all_fees ?? [];
 const FREQ = { per_occurrence: "per occurrence", one_time: "one-time", monthly: "monthly",
   annual: "annual", daily: "daily", per_item: "per item", per_page: "per page" };
 const allFeesRows = allFees.map((a) => {
+  if (a.terms !== undefined) {
+    return `<tr><td>${esc(anon(a.fee_name))}</td><td class="r"><b>${money(a.amount)}</b></td>
+    <td class="small muted">${esc(anon(a.terms || "—"))}</td></tr>`;
+  }
   let freq = FREQ[a.frequency] ?? (a.frequency ?? "").replaceAll("_", " ");
   // Caps read as limits, not charges ("daily maximum", not a scary bare "daily")
   if (a.is_fee_cap) freq = freq ? `${freq} maximum` : "maximum";
@@ -138,9 +156,12 @@ const allFeesRows = allFees.map((a) => {
 }).join("\n");
 
 // Provenance: source documents
-const sourceList = (pack.sources ?? []).map((s) =>
-  `<li>${esc(s.url)} <span class="muted">(${s.n_fees} fee lines)</span></li>`).join("\n")
-  || `<li>Source URLs available on request.</li>`;
+// In sample mode the client's own URLs would identify it, so they are summarized instead.
+const sourceList = SAMPLE
+  ? `<li>${(pack.sources ?? []).length || 1} published fee schedule document${(pack.sources ?? []).length > 1 ? "s" : ""} on the institution's website <span class="muted">(URL withheld in this sample)</span></li>`
+  : (pack.sources ?? []).map((s) =>
+    `<li>${esc(s.url)}${s.n_fees ? ` <span class="muted">(${s.n_fees} fee lines)</span>` : ""}</li>`).join("\n")
+    || `<li>${esc(inst.institution_name)} published fee schedule</li>`;
 
 // Revenue lens (FDIC/NCUA Call Report data)
 const fin = pack.financials ?? {};
@@ -173,7 +194,7 @@ const finCards = [
   // NCUA filings often lack ROA — only show the card when both sides are real
   (fl.roa && fc.roa_median)
     ? card("Return on assets", `${fl.roa}%`, `cohort median <b>${fc.roa_median}%</b>`)
-    : card("Fee schedule", `${fees.filter((x) => x.their_value !== null).length} of 15`,
+    : card("Fee schedule", `${fees.filter((x) => x.their_value !== null).length} of ${fees.length}`,
         "featured categories published"),
 ].join("\n");
 
@@ -194,32 +215,35 @@ const econTable = [
     assess(me.sc, co.sc_median, "Above cohort", "Below cohort")),
   econRow("Fee intensity (income / assets)", bps(me.intensity_bps), bps(co.intensity_p25),
     bps(co.intensity_median), bps(co.intensity_p75), fe.intensity_pctile,
-    assess(me.intensity_bps, co.intensity_median, "Fee-reliant", "Light collector")),
+    assess(me.intensity_bps, co.intensity_median, "Above cohort", "Below cohort")),
   econRow("Fee dependency (share of noninterest income)", pc(me.dependency),
     pc(co.dependency_p25), pc(co.dependency_median), pc(co.dependency_p75),
-    fe.dependency_pctile, assess(me.dependency, co.dependency_median, "Concentrated", "Diversified")),
+    fe.dependency_pctile, assess(me.dependency, co.dependency_median, "Higher share", "Lower share")),
   (me.fee_to_ni != null && co.fee_to_ni_median != null)
     ? econRow("Fee income vs. net income", pc(me.fee_to_ni), "—", pc(co.fee_to_ni_median),
-      "—", null, assess(me.fee_to_ni, co.fee_to_ni_median, "Earnings-exposed", "Modest"))
+      "—", null, assess(me.fee_to_ni, co.fee_to_ni_median, "Higher share", "Lower share"))
     : "",
 ].join("\n");
 
-// Discrepancy verdict: posted-price aggressiveness vs realized fee intensity
+// Posted price vs realized fee income, stated as a reading of the numbers, not a conclusion.
+const ordinal = (n) => { const v = Math.round(n), t = ["th", "st", "nd", "rd"], m = v % 100; return `${v}${t[(m - 20) % 10] || t[m] || t[0]}`; };
 const pricePcts = fees.filter((x) => x.percentile != null).map((x) => Number(x.percentile));
-const avgPricePct = pricePcts.length
+const avgPricePct = pricePcts.length >= 3
   ? Math.round(pricePcts.reduce((a, b) => a + b, 0) / pricePcts.length) : null;
 const iPct = fe.intensity_pctile;
 let verdict = "";
 if (avgPricePct != null && iPct != null) {
+  const P = `${ordinal(avgPricePct)} percentile`, I = `${ordinal(iPct)} percentile`;
+  const lead = `Across the ${pricePcts.length} lines we could rank, your posted prices average the ${P} of peers; service-charge income relative to assets sits at the ${I} of the same-size cohort.`;
   const v = avgPricePct >= 60 && iPct <= 40
-    ? `Your posted prices average the ${avgPricePct}th percentile of the cohort, but your realized fee income sits at only the ${iPct}th. <b>You carry the optics of high fees without collecting the revenue</b> — the classic signature of heavy waivers, low incidence, or a mix that never touches the headline fees. Every outlier flagged in this report is reputational cost with little offsetting income; aligning them to market would cost less than it appears.`
+    ? `${lead} One reading is that waivers, low incidence or account mix limit how often the higher-priced lines are charged. If so, those lines carry comparison risk with limited revenue behind them; your own incidence data would confirm it.`
     : avgPricePct >= 60 && iPct >= 60
-    ? `Your posted prices (${avgPricePct}th percentile) and realized fee income (${iPct}th percentile) are both top-of-cohort. <b>Fees are a genuine earnings engine here</b> — which cuts both ways: repricing decisions carry real revenue consequences, and regulatory or competitive pressure on fee income lands harder on you than on peers.`
-    : avgPricePct <= 45 && iPct >= 60
-    ? `You post below-market prices (${avgPricePct}th percentile) yet realize top-cohort fee income (${iPct}th percentile). <b>Volume, not price, drives your fee line</b> — an enviable position that makes your customer-friendly schedule affordable to advertise loudly.`
-    : avgPricePct <= 45 && iPct <= 45
-    ? `Both your posted prices (${avgPricePct}th percentile) and realized fee income (${iPct}th percentile) run below the cohort. <b>You are structurally a low-fee institution</b> — the strategic question is whether that is a chosen identity worth marketing or an unexamined default leaving earnings unclaimed.`
-    : `Your posted prices (${avgPricePct}th percentile) and realized fee income (${iPct}th percentile) sit near the cohort middle — <b>fee strategy is neither a risk nor an engine today</b>, which makes the individual outliers in this report the whole story.`;
+    ? `${lead} Both sit above the middle of the market, so fee income is a meaningful contributor and any repricing should be modeled against actual incidence first.`
+    : avgPricePct <= 40 && iPct >= 60
+    ? `${lead} Prices below the middle with income above it suggests volume rather than price drives fee income.`
+    : avgPricePct <= 40 && iPct <= 40
+    ? `${lead} Both sit below the middle of the market: a consistently low-fee posture, and a marketable one if it is deliberate.`
+    : `${lead} Neither is far from the middle of the market, so the individual lines flagged in § 02 are where the decisions are.`;
   verdict = `<p class="narrative" style="margin-top:10pt">${v}</p>`;
 }
 
@@ -233,46 +257,56 @@ if (hist.length >= 2) {
 const finNarr = "";
 const dep = pack.deposits ?? {};
 const depositLine = (dep.branch_rows > 0)
-  ? `<p class="small muted" style="margin-top:6pt">Deposit footprint (FDIC Summary of Deposits, ${dep.sod_year}): ${dep.branch_rows} branch locations across ${dep.counties} counties holding ${kUSD(dep.total_branch_deposits)} in deposits.</p>`
+  ? `<p class="small muted" style="margin-top:6pt">Deposit footprint (FDIC Summary of Deposits, ${dep.sod_year}): ${dep.branch_rows} branch location${dep.branch_rows === 1 ? "" : "s"} across ${dep.counties} ${dep.counties === 1 ? "county" : "counties"} holding ${kUSD(dep.total_branch_deposits)} in deposits.</p>`
   : "";
 
-// Cover reconciliation: cohort size vs. per-line comparison sets (not every peer publishes every fee).
-const cohortNoun = tierLabel(inst.asset_size_tier, inst.charter_type, true).split(",")[0].toLowerCase();
-const lineN = (cat) => fees.find((x) => x.category === cat)?.peer_count ?? null;
-const nsfN = lineN("nsf"), odN = lineN("overdraft");
-const cohortNote = `Peer cohort: ${pack.meta.cohort_size} comparable ${cohortNoun}. Not every peer publishes every fee`
-  + (nsfN != null && odN != null ? `: ${nsfN} publish an NSF fee and ${odN} an overdraft fee, so those are the comparison sets for those lines.`
-    : nsfN != null ? `: ${nsfN} publish an NSF fee, so that is the comparison set for that line.`
-    : `, so each line is compared against the peers that publish it.`);
+// Cohort: who the institution is compared with, stated once and consistently.
+const STATE = { AL: "Alabama", AZ: "Arizona", CA: "California", CO: "Colorado", FL: "Florida", GA: "Georgia", IL: "Illinois",
+  IN: "Indiana", LA: "Louisiana", MD: "Maryland", MI: "Michigan", MN: "Minnesota", NC: "North Carolina", NY: "New York",
+  OH: "Ohio", TN: "Tennessee", TX: "Texas", VA: "Virginia", WA: "Washington", WV: "West Virginia" };
+const meta = pack.meta;
+const nounPl = isCU ? "credit unions" : "banks";
+const tierBounds = { community_small: [0, 300], community_mid: [300, 1000], community_large: [1000, 10000] };
+const fmtM = (m) => m >= 1000 ? `$${m / 1000}B` : `$${m}M`;
+let cohortWhere, cohortLabel;
+if (meta.cohort_scope === "national_widened") {
+  const t = (meta.cohort_tiers ?? []).map((x) => tierBounds[x]).filter(Boolean);
+  const lo = Math.min(...t.map((x) => x[0])), hi = Math.max(...t.map((x) => x[1]));
+  const band = lo === 0 ? `under ${fmtM(hi)}` : `${fmtM(lo)}–${fmtM(hi)}`;
+  cohortLabel = `${isCU ? "Credit unions" : "Banks"}, ${band} · nationwide`;
+  cohortWhere = `${nounPl} with ${lo === 0 ? `under ${fmtM(hi)}` : `${fmtM(lo)}–${fmtM(hi)}`} in assets nationwide (a wider size band than usual, because fewer than 40 ${nounPl} in your own size tier publish comparable data)`;
+} else {
+  const where = meta.cohort_scope === "state" ? `in ${STATE[inst.state_code] ?? inst.state_code}`
+    : meta.cohort_scope === "district" ? `in the ${ordinal(inst.fed_district)} Federal Reserve District` : "nationwide";
+  cohortLabel = `${tierLabel(inst.asset_size_tier, inst.charter_type, true)} · ${where}`;
+  cohortWhere = `${nounPl} with ${TIER_BANDS[inst.asset_size_tier] ?? "similar"} in assets ${where}`;
+}
+const cohortNote = `Compared with ${meta.cohort_size} ${cohortWhere} that publish fee schedules in the Bank Fee Index. `
+  + `Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.`;
+const methodText = `Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  ${meta.cohort_size} ${cohortWhere}. For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled ${fmtDate(meta.pull_date)}. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.`;
 
-// Back page: hosted copies keep the compliments page; the public sample gets a request CTA.
-const backHeadline = SAMPLE
-  ? `This is what a <em>$300 report</em> looks like.`
-  : `This report is yours,<br><em>with our compliments.</em>`;
-const backSub = SAMPLE
-  ? `A Competitive Fee Position Report is built for your institution and your peer set from source-verified fee data — the same index tracking ${narr.total_institutions ?? "1,100+"} institutions nationwide — and delivered in 48 hours.`
-  : `A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking ${narr.total_institutions ?? "1,100+"} institutions nationwide.`;
-const backCta = SAMPLE
-  ? `<div>
-      <h4>Retail $300 · quarterly refresh $300 · Request yours</h4>
-      <p>Named competitors, every fee benchmarked against a verified peer cohort, the revenue lens
-      from your own filings. Or go deeper with Fee Insight Advisory — custom competitor sets, a
-      board-ready deck, pricing-change modeling.</p>
+// Back page: about the analysis and how to reach us. No price, no pitch.
+const backHeadline = `About this <em>analysis</em>`;
+const backSub = `Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of ${narr.total_institutions ?? "1,100+"} U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.`;
+const backCta = `<div>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Request yours at</p>
-      <a class="mail" href="${SAMPLE_REQUEST_URL}">feeinsight.com/for-institutions</a>
-      <p style="margin-top:8pt">or write ${narr.contact_email}</p>
-    </div>`
-  : `<div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
-    </div>
-    <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">${narr.contact_email}</span>
-      <p style="margin-top:8pt">feeinsight.com</p>
+      <p style="margin-top:8pt">feeinsight.com${SAMPLE ? " · feeinsight.com/for-institutions" : ""}</p>
     </div>`;
 
 const repl = {
@@ -299,7 +333,8 @@ const repl = {
   CHARTER_LABEL: inst.charter_type === "credit_union" ? "Credit Union" : "Bank",
   TIER_LABEL: tierLabel(inst.asset_size_tier, inst.charter_type),
   PULL_DATE: fmtDate(pack.meta.pull_date),
-  COHORT_LABEL: tierLabel(inst.asset_size_tier, inst.charter_type, true),
+  COHORT_LABEL: cohortLabel,
+  METHOD_TEXT: methodText,
   COHORT_SIZE: pack.meta.cohort_size,
   TOTAL_INSTITUTIONS: narr.total_institutions ?? "1,100+",
   CONTACT_EMAIL: narr.contact_email,

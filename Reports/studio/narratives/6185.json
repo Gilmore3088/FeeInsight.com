@@ -1,46 +1,57 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your outgoing international wire fee ($25 vs a $45 median) sits below the market range.",
   "findings": [
     {
-      "stat": "$10 vs $25",
-      "stat_label": "card replacement vs peer median",
-      "headline": "You are meaningfully below market where members feel it most.",
-      "body": "Card replacement runs $10 against a $25 median across 94 comparable credit unions — the 38th percentile and a $15 gap on the broadest peer sample in your pack. International wires ($25 vs $40, 17th percentile) and paper statements ($1 vs $2.75, 25th percentile) tell the same story: on member-facing services, you undercut the cohort and take no credit for it."
+      "stat": "7 of 8",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 8 fee lines where we found both your published amount and at least eight comparable peers, seven sit between the peer 25th and 75th percentiles and one below."
     },
     {
-      "stat": "$25 vs $20",
-      "stat_label": "stop payment vs peer median",
-      "headline": "A small premium sits on your exception fees.",
-      "body": "Stop payments ($25 vs a $20 median, 68th percentile of 66 peers), deposited-item returns ($25 vs $20, 68th percentile), and cashier's checks ($5 vs $4, 90th percentile) each run modestly above market. Individually minor — $1 to $5 per line — but together they are the only above-median cluster on your schedule, and the easiest one to tidy."
+      "stat": "$25 vs $45",
+      "stat_label": "outgoing international wire fee, yours vs peer median",
+      "headline": "Your outgoing international wire fee is priced below the market.",
+      "body": "Your outgoing international wire fee ($25 vs a $45 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify."
     },
     {
-      "stat": "4 gaps",
-      "stat_label": "categories missing from published data",
-      "headline": "Overdraft is invisible to comparison — that cuts both ways.",
-      "body": "Overdraft, monthly maintenance, non-network ATM, and incoming domestic wire fees did not appear in your published schedule data. Your NSF fee, which is published, sits exactly at the $25 peer median. If your unpublished fees are similarly at-market, publishing them is free transparency; if not, better to know before a member or examiner finds out first."
+      "stat": "2 fees",
+      "stat_label": "not found in your published schedule",
+      "headline": "Some headline fees are not in the schedule we found.",
+      "body": "We did not find a non-network ATM fee and a monthly maintenance fee in your published documents, although 16 or more peers publish one. If you charge them, the amount may sit in a separate disclosure; customers comparing schedules online will not see it."
     }
   ],
-  "exec_narrative": "Net position: Peoples Federal Credit Union is priced at or below market almost everywhere — NSF exactly at the $25 median of 66 comparable credit unions, card replacement at $15 under the median, international wires $15 under, paper statements a third of the going rate. The exceptions are small: a $5 premium on stop payments and deposited-item returns, and a dollar on cashier's checks. The larger issue is visibility — four benchmark categories, including overdraft, are missing from the published data, and the genuinely member-friendly pricing that is published goes unadvertised. This is a schedule with little to fix and a lot to say.",
+  "exec_narrative": "Peoples Federal Credit Union is compared with 102 credit unions of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in West Virginia have published data, so local competitors may price differently. Of 8 rankable lines, seven sit inside the middle half of the market and one below it (outgoing international wire fee). We would suggest one step: check that the non-network ATM and monthly maintenance fees are published where customers can find them.",
   "callouts": [
     {
       "kind": "opportunity",
-      "title": "A below-market service stack, marketed nowhere",
-      "stat": "Card replacement $10 vs $25 median (P38, n=94) · Intl wire $25 vs $40 (P17) · Paper statement $1 vs $2.75 (P25) · OD protection transfer $3 vs $5",
-      "body": "Across the fees members actually encounter, you undercut comparable credit unions — in card replacement's case against 94 peers, the strongest sample in this report. 'Lower everyday fees than most credit unions' is a claim your peers' own published schedules substantiate. Today it appears in no member communication, which means it earns you nothing."
+      "title": "Outgoing international wire fee — $25",
+      "stat": "Peer median $45 · middle half $33.75–$50 · 13th percentile · n=16",
+      "body": "Published as “Wire Transfer: International.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $45 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "Exception fees — a quiet $5 premium",
-      "stat": "Stop payment $25 vs $20 (P68, n=66) · Deposited item return $25 vs $20 (P68) · Cashier's check $5 vs $4 (P90)",
-      "body": "Three exception and service lines run modestly above the cohort. None is an outlier, and none is worth a headline — but they are the only lines preventing a clean 'at or below market everywhere' claim. Trimming them, or documenting why they stay, closes the gap between your pricing and your story."
-    },
-    {
-      "kind": "risk",
-      "title": "Unpublished fees — overdraft, maintenance, ATM, incoming wire",
-      "stat": "4 of 15 benchmark categories flagged as data gaps · overdraft peer median $25.00 · maintenance peer median $3.50",
-      "body": "The most consequential gap is overdraft — the fee members, journalists, and examiners check first. Your published NSF fee sits exactly at the peer median, which suggests your unpublished lines may be similarly reasonable; publishing them would convert an information gap into a transparency point and complete an otherwise strong member-friendly schedule."
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Non-network ATM fee: published by 11 peers (median $1.75) · Monthly maintenance fee: published by 16 peers (median $5)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the industry-wide retreat from penalty pricing: NSF and overdraft fees have fallen across consumer finance under regulatory and reputational pressure, and the institutions that moved early have made fee schedules part of their pitch. Second, published fee schedules have become marketing documents — public, scraped, and compared — which turns every below-market line into an unclaimed asset and every unpublished line into an open question.</p><p>Small community credit unions compete on relationships, and a fee schedule like this one is relationship pricing in writing: card replacement at less than half the going rate, statements at a third, wires well under market. For an institution serving its members this well on price, the work is not repricing — it is closing the four publication gaps, deciding the handful of $5 premiums deliberately, and then saying out loud, in branches and onboarding materials, what the numbers already show.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Peoples Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 8,
+    "above": [],
+    "below": [
+      "wire_intl_outgoing"
+    ],
+    "gaps": [
+      "atm_non_network",
+      "monthly_maintenance"
+    ],
+    "thin": 0
+  }
 }

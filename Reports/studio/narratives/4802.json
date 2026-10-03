@@ -1,52 +1,65 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your stop-payment fee ($33) is $8 above the $25 peer median, the 82nd percentile of 62 peers.",
   "findings": [
     {
-      "stat": "$33 vs $20",
-      "stat_label": "stop payment vs peer median",
-      "headline": "Your penalty fees carry a top-quartile premium.",
-      "body": "Stop payments ($33 vs a $20 median, 83rd percentile) and NSF ($33 vs a $25 median, 85th percentile) both clear the 75th-percentile mark of $30 across 66 comparable credit unions. These are the two most scrutinized lines on any fee schedule, and yours sit near the top of the cohort on both."
+      "stat": "$33 vs $25",
+      "stat_label": "stop-payment fee, yours vs peer median",
+      "headline": "Your stop-payment fee is above the market range.",
+      "body": "At $33, it is $8 above the $25 peer median and the 82nd percentile of 62 peers (middle half of the market: $16.25–$30). It is infrequent, but it appears in most side-by-side schedule comparisons."
     },
     {
-      "stat": "$15 vs $5.50",
-      "stat_label": "minimum balance fee vs peers",
-      "headline": "Your minimum balance fee is an extreme outlier.",
-      "body": "At $15.00, your minimum balance fee is 2.7x the $5.50 median — the 83rd percentile and flagged as an extreme outlier. The comparison set is thin (six peers publish this fee), but the gap is not: only one peer charges more, and the national median is $5. A recurring balance fee lands hardest on the members with the least cushion."
+      "stat": "$2 vs $5",
+      "stat_label": "monthly maintenance fee, yours vs peer median",
+      "headline": "Your monthly maintenance fee is priced below the market.",
+      "body": "Your monthly maintenance fee ($2 vs a $5 median) sits below the peer 25th percentile. Low-cost checking is the single most marketable fee position. If the pricing is deliberate, it is worth stating plainly in account marketing."
     },
     {
-      "stat": "$0 vs $3.50",
-      "stat_label": "monthly maintenance vs peer median",
-      "headline": "You waive and undercut fees peers charge — and tell no one.",
-      "body": "Monthly maintenance is waived outright against a $3.50 peer median. Outgoing domestic wires ($10 vs $20, 9th percentile), card replacement ($10 vs $25), and deposited item returns ($10 vs $20) all run at half the peer median or less. That is a genuinely member-friendly service stack with no marketing attached to it."
+      "stat": "$12 vs $10",
+      "stat_label": "incoming wire fee, yours vs peer median",
+      "headline": "Your incoming wire fee is above the market range.",
+      "body": "At $12, it is $2 above the $10 peer median and the 82nd percentile of 11 peers (middle half of the market: $5–$10). Charging to receive funds is increasingly uncommon and is noticed by business customers."
     }
   ],
-  "exec_narrative": "Net position: Georgia Heritage Federal Credit Union runs a split schedule. Service and account fees are waived or priced well below the market of 182 comparable credit unions — free maintenance, half-of-median wires and card replacement — while the penalty stack (NSF and stop payment, both $33) sits in the top quartile and the minimum balance fee is flagged as an extreme outlier at nearly three times the peer median. One gap to close: no overdraft fee could be verified from the published schedule, which leaves your most scrutinized line invisible to comparison. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Georgia Heritage Federal Credit Union is compared with 102 credit unions of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Georgia have published data, so local competitors may price differently. Of 9 rankable lines, six sit inside the middle half of the market, two above it (stop-payment fee and incoming wire fee), and one below it (monthly maintenance fee). We would suggest two steps, in order of value: (1) review the stop-payment fee, which sits above the market range; the peer median of $25 is the reference point; (2) state the below-market monthly maintenance fee in account marketing, where peers' published schedules make it verifiable.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Stop payment — $33.00",
-      "stat": "Peer median $20.00 · P75 $30.00 · 83rd percentile · n=66",
-      "body": "At $13 over the median across a large, reliable comparison set, this is your widest verified dollar gap. Stop payments are a member-initiated protective action; pricing them at the top of the cohort works against the relationship story a community credit union runs on. This line deserves an explicit decision — hold with a rationale, or move toward the $20 median."
+      "title": "Stop-payment fee — $33",
+      "stat": "Peer median $25 · middle half $16.25–$30 · range $10–$43 · 82nd percentile · n=62",
+      "body": "Published as “Stop Payment Fee.” At $33 it is $8 above the $25 peer median. It is infrequent, but it appears in most side-by-side schedule comparisons. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "NSF / returned item — $33.00",
-      "stat": "Peer median $25.00 · P25 $20.00 · 85th percentile · n=66",
-      "body": "The industry retreat from NSF fees has reached the credit union cohort: the median is $25 and a quarter of peers charge $20 or less. At $33 you are above the 75th percentile on the single most examined fee in the industry. Whether the answer is a cut, a cap, or a documented rationale, defaulting to the current number is the weakest of the options."
-    },
-    {
-      "kind": "risk",
-      "title": "Minimum balance — $15.00",
-      "stat": "Peer median $5.50 · 83rd percentile · n=6 · flagged: extreme outlier (>2x median)",
-      "body": "Only six comparable credit unions publish this fee, so treat the percentile gently — but $15 against a $5.50 median and a $5 national median is a wide gap by any measure. Recurring balance fees compound monthly and fall on lower-balance members, which makes this a fairness question as much as a pricing one."
+      "title": "Incoming wire fee — $12",
+      "stat": "Peer median $10 · middle half $5–$10 · range $0–$15 · 82nd percentile · n=11",
+      "body": "Published as “Wire Transfer Fee - Incoming Domestic.” At $12 it is $2 above the $10 peer median. Charging to receive funds is increasingly uncommon and is noticed by business customers. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $10 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Service fees — waived or half-price, marketed nowhere",
-      "stat": "Monthly maintenance $0 vs $3.50 median (P21) · Outgoing wire $10 vs $20 (P9) · Card replacement $10 vs $25 (P38)",
-      "body": "Free checking maintenance and service fees at half the peer median are exactly the claims prospective members compare on — and your competitors' own published schedules substantiate them. If deliberate, this belongs in member acquisition messaging. If not deliberate, it is margin available without touching a single penalty fee."
+      "title": "Monthly maintenance fee — $2",
+      "stat": "Peer median $5 · middle half $3.75–$7.25 · 20th percentile · n=15",
+      "body": "Published as “Monthly Service Fee - Eazy Checking.” Low-cost checking is the single most marketable fee position. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $5 is the reference point."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from penalty fees: NSF charges are being cut or eliminated across the industry under regulatory and reputational pressure, and the shift is visible in your own cohort, where a quarter of 66 comparable credit unions now charge $20 or less and the median has settled at $25 — well below your posted $33. Second, published fee schedules have become public documents: scraped, compared, and surfaced to prospective members, which converts every outlier line into a small reputational bet.</p><p>Small community credit unions compete on exactly one asset the large institutions cannot replicate: the member relationship. That makes a top-quartile penalty stack a strategic contradiction, not just a pricing choice — the fees that bite hardest land on the members the relationship model exists to serve. The good news is the fix is surgical: Georgia Heritage already waives or undercuts most service fees. Aligning the three penalty and balance lines with that posture — and then saying so publicly — turns the fee schedule from a liability into the marketing document it should be.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Georgia Heritage Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return",
+    "nsf",
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 9,
+    "above": [
+      "stop_payment",
+      "wire_domestic_incoming"
+    ],
+    "below": [
+      "monthly_maintenance"
+    ],
+    "gaps": [],
+    "thin": 0
+  }
 }
