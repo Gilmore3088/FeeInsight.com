@@ -20,6 +20,13 @@ the guides cite, two fixture users (a free consumer with two saved institutions,
 active professional). Institution names and figures are synthetic; page behaviour is real
 production code served from a production build.
 
+
+**Port note (2026-10-03).** Main was re-rooted on 2026-08-15, so this work was ported onto
+the new history rather than merged. Main had meanwhile split the directory page into
+components, grouped the profile fee table by family, and given the nav Pro workspace items;
+the fee focus, the row highlight and the session-free chrome were rebuilt on those
+structures. The two new API routes are registered in the API hardening policy registry.
+
 ---
 
 ## 1. Verdict
@@ -90,7 +97,7 @@ map). Ordered by consumer impact, then by how much of the funnel each unblocks.
 | 6 | **Stop shipping promises the next page cannot keep.** "Start Free Trial" → real trial or "View pricing"; "See a Demo" → a reachable page (the `/pro` marketing route is unreachable behind its own layout gate); "3 free AI queries/day" → a surface free users can open, or drop the claim; one answer on API access; gate or finish `/reports/[slug]` until it has content. | F-01, F-02, F-07, F-08, F-21, J-6, J-8, J-9 |
 | 7 | **Land the professional buyer in the product.** `success_url` → `/pro/monitor?success=true`; carry `from`/`instId` from `/pro/layout.tsx` through `/subscribe` into checkout metadata; make `/account/welcome` send premium users on rather than re-asking their profile. | J-10, J-12, J-13, F-20 |
 | 8 | **Un-gate the consumer fee page.** Move the `UpgradeGate` on `/fees/[category]` below all free content and rewrite it for a consumer ("breakdowns by charter, tier and state are part of the professional tier"); stop selling CSV/API there. | F-09, F-29 |
-| 9 | **Global search on phones; honest lookup copy.** A search entry in the mobile drawer; H1 "Find your institution" instead of "Browse institutions by state."; retire "fee evidence is verified, provisional, under review". | F-15, F-17 |
+| 9 | **Global search on phones; honest lookup copy.** A search entry in the mobile drawer; retire "fee evidence is verified, provisional, under review". (The H1 now reads "Find your bank or credit union." and every directory link keeps `fee=`.) | F-15, F-17 |
 | 10 | **Two paywalled research pages are linked without a lock**; article CTA scrolls to an anchor that does not exist. | F-18, F-19 |
 
 ### Quality — one accessibility and consistency pass
@@ -144,8 +151,8 @@ environmental 1.
 | ID | Where | Finding | Status |
 | --- | --- | --- | --- |
 | D1 | `/institutions` search | Suggestion unclickable on both viewports (stacking context from `.fi-reveal`) | **Fixed** |
-| D2 | Search → institution | Suggestion dropped `?fee=`; state links drop it too | **Fixed** for suggestion and Enter; state/charter filter links still drop `fee=` — item 9 in §3 |
-| D3 | `/institution/[id]?fee=` | Highlight applied but no scroll without the `#fee-` hash | All links now carry the hash; consider scrolling on `?fee=` alone |
+| D2 | Search → institution | Suggestion dropped `?fee=`; state links drop it too | **Fixed** — suggestion, Enter, the state map, the filter selects and pagination all keep `fee=` |
+| D3 | `/institution/[id]?fee=` | Highlight applied but no scroll without the `#fee-` hash | **Fixed** — a client scroll targets whichever copy of the schedule is displayed, so `?fee=` alone scrolls too |
 | D4 | Mobile drawer | Painted under page content (`backdrop-filter` containing block) | **Fixed** |
 | D5 | Mobile | No search entry point (trigger is `hidden md:flex`) | Open — item 9 in §3 |
 | D6 | Guide → `/account` | "Manage your alerts" leads to a page with no alerts | Open — item 1 in §3 |
