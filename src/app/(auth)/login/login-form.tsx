@@ -20,14 +20,17 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
     setPending(true);
 
     const formData = new FormData(e.currentTarget);
-    const result = await loginAction(formData, redirectTo);
-
-    if (result.success && result.redirect) {
-      router.push(result.redirect);
-    } else {
+    try {
+      const result = await loginAction(formData, redirectTo);
+      if (result.success && result.redirect) {
+        router.push(result.redirect);
+        return;
+      }
       setError(result.error || "Invalid email or password");
-      setPending(false);
+    } catch {
+      setError("Sign-in is temporarily unavailable. Please try again.");
     }
+    setPending(false);
   }
 
   return (
