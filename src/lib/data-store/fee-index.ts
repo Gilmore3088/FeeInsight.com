@@ -2,6 +2,7 @@ import { sql } from "./connection";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
+  STATS_METHOD_VERSION,
   STATS_ROW_FILTER,
   summarizeFeesBy,
 } from "./fee-stats";
@@ -31,11 +32,24 @@ export interface IndexEntry {
  * `approvedOnly` changes nothing; statistics follow the contract in fee-stats.ts.
  */
 export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[]> {
+  return buildIndexEntries(await loadNationalRows(sql, approvedOnly));
+}
+
+type IndexRow = {
+  fee_category: string;
+  amount: number | null;
+  institution_id: number;
+  review_status: string;
+  created_at: string;
+  charter_type: string;
+};
+
+async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<IndexRow[]> {
   const statusFilter = approvedOnly
     ? "ef.review_status = 'approved'"
     : "ef.review_status != 'rejected'";
 
-  const rows = await sql.unsafe(
+  return await db.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id,
             ef.review_status, ef.created_at, ct.charter_type
      FROM published_fee_catalog ef
@@ -43,16 +57,7 @@ export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[
      WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}])
        AND ${statusFilter}
        AND ${STATS_ROW_FILTER}`
-  ) as {
-    fee_category: string;
-    amount: number | null;
-    institution_id: number;
-    review_status: string;
-    created_at: string;
-    charter_type: string;
-  }[];
-
-  return buildIndexEntries(rows);
+  ) as IndexRow[];
 }
 
 export async function getPeerIndex(
@@ -208,16 +213,7 @@ export async function getDistrictFeeMedians(
     .sort((a, b) => b.institution_count - a.institution_count);
 }
 
-function buildIndexEntries(
-  rows: {
-    fee_category: string;
-    amount: number | null;
-    institution_id: number;
-    review_status: string;
-    created_at: string;
-    charter_type: string;
-  }[]
-): IndexEntry[] {
+export function buildIndexEntries(rows: IndexRow[]): IndexEntry[] {
   const latestByCategory = new Map<string, string>();
   for (const row of rows) {
     const createdAt = (row.created_at as unknown) instanceof Date
@@ -253,8 +249,9 @@ function buildIndexEntries(
 }
 
 /**
- * Read precomputed index from fee_index_cache (materialized by publish-index).
- * Falls back to live computation if the cache is empty or older than NATIONAL_INDEX_CACHE_MAX_AGE_MS.
+ * Read the precomputed index from fee_index_cache (written by refreshFeeIndexCache after
+ * each Hamilton publish). Falls back to a live computation when the cache is empty, older
+ * than NATIONAL_INDEX_CACHE_MAX_AGE_MS, or was computed under an older statistics method.
  */
 const NATIONAL_INDEX_CACHE_TTL_MS = 60_000;
 /** Rows in fee_index_cache older than this are ignored in favor of a live computation. */
@@ -306,6 +303,7 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       cu_count: number;
       maturity_tier: string;
       computed_at: string;
+      stats_method_version?: number | null;
     }[];
 
     // The cache is only trustworthy when a publish step rebuilt it recently. A stale
@@ -314,7 +312,8 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       const at = row.computed_at ? new Date(row.computed_at).getTime() : 0;
       return Number.isFinite(at) && at > max ? at : max;
     }, 0);
-    if (rows.length === 0 || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
+    const oldMethod = rows.some((row) => Number(row.stats_method_version ?? 0) !== STATS_METHOD_VERSION);
+    if (rows.length === 0 || oldMethod || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
       return getNationalIndex();
     }
 
@@ -336,5 +335,82 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
     }));
   } catch {
     return getNationalIndex();
+  }
+}
+
+export interface FeeIndexCacheRefresh {
+  refreshed: boolean;
+  categories: number;
+  reason: string;
+}
+
+/** Rebuilt at most this often when nothing new was published. */
+const FEE_INDEX_CACHE_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+async function feeIndexCacheWriterReady(db: typeof sql): Promise<boolean> {
+  const [row] = await db`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'fee_index_cache' AND column_name = 'stats_method_version'
+    ) AS ready
+  `;
+  return row?.ready === true;
+}
+
+/**
+ * Recomputes the national index under the statistics contract and replaces
+ * fee_index_cache, stamped with the method version and the run that wrote it. Hamilton
+ * calls it inside its publish transaction (`force` when it published something), so the
+ * cache and the published rows never disagree.
+ */
+export async function refreshFeeIndexCache(
+  db: typeof sql,
+  options: { runId: number; force?: boolean },
+): Promise<FeeIndexCacheRefresh> {
+  if (!(await feeIndexCacheWriterReady(db))) {
+    return { refreshed: false, categories: 0, reason: "cache migration not applied" };
+  }
+  if (!options.force) {
+    const [state] = await db`
+      SELECT MAX(computed_at) AS newest, MIN(stats_method_version) AS method, COUNT(*)::int AS rows
+        FROM fee_index_cache
+    `;
+    const newest = state?.newest ? new Date(state.newest as string | Date).getTime() : 0;
+    const current =
+      Number(state?.rows ?? 0) > 0 &&
+      Number(state?.method ?? 0) === STATS_METHOD_VERSION &&
+      Date.now() - newest < FEE_INDEX_CACHE_REFRESH_MS;
+    if (current) return { refreshed: false, categories: Number(state?.rows ?? 0), reason: "cache is current" };
+  }
+
+  const entries = buildIndexEntries(await loadNationalRows(db));
+  // Inside a transaction, a savepoint keeps a cache failure from rolling back the publish.
+  const savepoint = (db as { savepoint?: <T>(fn: (sp: typeof sql) => Promise<T>) => Promise<T> }).savepoint;
+  try {
+    if (typeof savepoint === "function") await savepoint.call(db, (sp) => writeFeeIndexCache(sp, entries, options.runId));
+    else await writeFeeIndexCache(db, entries, options.runId);
+  } catch (error) {
+    return { refreshed: false, categories: 0, reason: `failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  // The in-process memo may hold the old index for up to a minute; drop it.
+  nationalIndexCache = null;
+  return { refreshed: true, categories: entries.length, reason: options.force ? "published" : "stale" };
+}
+
+async function writeFeeIndexCache(db: typeof sql, entries: IndexEntry[], runId: number): Promise<void> {
+  await db`DELETE FROM fee_index_cache`;
+  for (const entry of entries) {
+    await db`
+      INSERT INTO fee_index_cache (
+        fee_category, fee_family, median_amount, p25_amount, p75_amount, min_amount, max_amount,
+        institution_count, observation_count, approved_count, bank_count, cu_count, maturity_tier,
+        stats_method_version, agent_run_id, computed_at
+      ) VALUES (
+        ${entry.fee_category}, ${entry.fee_family}, ${entry.median_amount}, ${entry.p25_amount},
+        ${entry.p75_amount}, ${entry.min_amount}, ${entry.max_amount}, ${entry.institution_count},
+        ${entry.observation_count}, ${entry.approved_count}, ${entry.bank_count}, ${entry.cu_count},
+        ${entry.maturity_tier}, ${STATS_METHOD_VERSION}, ${runId}, NOW()
+      )
+    `;
   }
 }

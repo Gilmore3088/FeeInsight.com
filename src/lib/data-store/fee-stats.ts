@@ -17,6 +17,8 @@ import { computePercentile, computeStats } from "./fees";
 
 export const MIN_INSTITUTIONS_FOR_MEDIAN = 5;
 export const STRONG_INSTITUTION_COUNT = 20;
+/** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
+export const STATS_METHOD_VERSION = 2;
 
 /** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
 export const STATS_ROW_FILTER = "ef.source_document_id IS NOT NULL";

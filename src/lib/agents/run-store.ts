@@ -4,6 +4,7 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
+import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
@@ -521,9 +522,12 @@ async function executeAgenticStep(
         ]),
         db: tx,
       });
+      const indexRefresh = published.dryRun
+        ? null
+        : await refreshFeeIndexCache(tx, { runId: run.id, force: published.publishedFees > 0 });
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -533,6 +537,8 @@ async function executeAgenticStep(
           publish_min_confidence: published.minConfidence,
           publish_batch_id: published.batchId,
           dry_run: published.dryRun,
+          index_refreshed: indexRefresh?.refreshed ?? false,
+          index_categories: indexRefresh?.categories ?? 0,
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
             institution_id: result.institutionId,
