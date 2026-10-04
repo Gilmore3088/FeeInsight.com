@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { fetchMonitorPageData } from "@/lib/hamilton/monitor-data";
@@ -8,7 +9,7 @@ import { SignalFeed } from "@/components/hamilton/monitor/SignalFeed";
 import { WatchlistPanel } from "@/components/hamilton/monitor/WatchlistPanel";
 import { FloatingChatOverlay } from "@/components/hamilton/monitor/FloatingChatOverlay";
 
-export const metadata: Metadata = { title: "Institutional Monitor" };
+export const metadata: Metadata = { title: "Monitor" };
 
 // No ISR — fresh signal data on every page load
 export const dynamic = "force-dynamic";
@@ -65,7 +66,7 @@ export default async function MonitorPage({
               lineHeight: 1.1,
             }}
           >
-            Institutional Monitor
+            Monitor
           </h1>
           <p
             style={{
@@ -116,7 +117,7 @@ export default async function MonitorPage({
                   fontWeight: 600,
                 }}
               >
-                Live Insight Timeline
+                Insight Timeline
               </h2>
               <span
                 style={{
@@ -130,17 +131,11 @@ export default async function MonitorPage({
                   letterSpacing: "0.05em",
                 }}
               >
-                <span
-                  style={{
-                    width: "6px",
-                    height: "6px",
-                    borderRadius: "50%",
-                    backgroundColor: "var(--hamilton-primary)",
-                    display: "inline-block",
-                    animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-                  }}
-                />
-                LIVE UPDATES
+                {/* Server-rendered snapshot: say when, and offer a refresh (nothing polls). */}
+                Updated {new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
+                <Link href={selectedInstitution ? `/pro/monitor?instId=${selectedInstitution.id}` : "/pro/monitor"} style={{ textDecoration: "underline" }}>
+                  Refresh
+                </Link>
               </span>
             </div>
 
@@ -163,7 +158,7 @@ export default async function MonitorPage({
       </div>
 
       {/* Floating chat overlay — fixed position */}
-      <FloatingChatOverlay />
+      <FloatingChatOverlay institutionId={selectedInstitution?.id.toString() ?? null} />
     </>
   );
 }

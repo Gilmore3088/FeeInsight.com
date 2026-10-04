@@ -6,6 +6,7 @@
 import { describe, it, expect } from "vitest";
 import {
   HAMILTON_NAV,
+  HAMILTON_REFERENCE_NAV,
   HAMILTON_BASE,
   LEFT_RAIL_CONFIG,
   PRIMARY_ACTION_HREF,
@@ -104,8 +105,8 @@ describe("CTA_HIERARCHY", () => {
     expect(CTA_HIERARCHY).not.toHaveProperty("Admin");
   });
 
-  it("Peer Compare primary CTA is 'Simulate a Change'", () => {
-    expect(CTA_HIERARCHY["Benchmark"].primary).toBe("Simulate a Change");
+  it("Analyze primary CTA is 'Simulate a Change'", () => {
+    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Simulate a Change");
   });
 
   it("Scenarios primary CTA is 'Generate Board Scenario Summary'", () => {
@@ -161,3 +162,19 @@ describe("no Sovereign branding (D-05)", () => {
     expect(allText.toLowerCase()).not.toContain("sovereign");
   });
 });
+
+describe("labels open the screen of the same name", () => {
+  it("Analyze opens /pro/analyze and Benchmark opens the briefing", () => {
+    const byLabel = Object.fromEntries(HAMILTON_NAV.map((item) => [item.label, item.href]));
+    expect(byLabel.Analyze).toBe("/pro/analyze");
+    expect(byLabel.Benchmark).toBe("/pro/hamilton");
+    expect(byLabel.Scenario).toBe("/pro/simulate");
+    expect(byLabel.Report).toBe("/pro/reports");
+  });
+
+  it("reference pages stay inside Pro", () => {
+    expect(HAMILTON_REFERENCE_NAV.length).toBeGreaterThanOrEqual(5);
+    for (const item of HAMILTON_REFERENCE_NAV) expect(item.href.startsWith("/pro/")).toBe(true);
+  });
+});
+

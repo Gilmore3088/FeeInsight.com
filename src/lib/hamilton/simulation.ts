@@ -12,6 +12,8 @@ export interface DistributionData {
   min_amount: number;
   max_amount: number;
   approved_count: number;
+  /** Distinct institutions behind the distribution (the statistics contract's n). */
+  institution_count: number;
   peer_label?: string;
   peer_source?: "saved-peer-set" | "selected-institution-default" | "national";
   peer_set_id?: string | null;
@@ -112,14 +114,15 @@ export function computeTradeoffs(
 
   return {
     revenueImpact: {
-      label: "Revenue Impact",
-      value: `${direction}${feeChangePct}% per transaction`,
+      // Price only: without volume data this is the change per incident, not revenue.
+      label: "Per-incident price change",
+      value: `${direction}${feeChangePct}% per incident`,
       note:
         proposedFee > currentFee
-          ? "Higher fee increases per-incident revenue"
+          ? "Higher price per incident; total revenue also depends on incident volume"
           : proposedFee < currentFee
-          ? "Lower fee reduces per-incident revenue"
-          : "No revenue change",
+          ? "Lower price per incident; total revenue also depends on incident volume"
+          : "No price change",
     },
     riskMitigation: {
       label: "Peer Risk Exposure",

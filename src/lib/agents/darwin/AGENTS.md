@@ -9,13 +9,28 @@ Darwin owns verification and classification.
 - Darwin may skip or challenge raw rows when canonical category, amount, duplicate, source lineage, or policy checks fail.
 - Darwin may emit Monitor signals for verified rows and verification-review states.
 
-## Current Implementation (2026-10-02)
+## Current Implementation (2026-10-04, verify.rules version 2)
 
-Today `darwin/verify.ts` checks only: a valid canonical hint, a non-empty fee name, and
-0 < amount <= $2,500 (one global bound). It does not yet check per-category amount
-envelopes, duplicates, or source lineage, and skipped rows are not recorded as terminal
-rows. Those checks are scheduled in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`
-(Phase 1F). Do not describe Darwin as performing them until they ship.
+`darwin/verify.ts` checks, in order, and records the first failure as a reason code:
+
+| Code | Rule | Decision |
+|---|---|---|
+| `missing_canonical` | a valid canonical hint | rejected |
+| `missing_name` | a non-empty fee name | rejected |
+| `missing_lineage` | a source URL or stored document key | rejected |
+| `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
+| `outside_envelope` | a positive amount inside its category's range (`envelopes.ts`) | needs_review |
+| `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, source) not already verified in this batch | duplicate |
+| `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
+
+- Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
+  `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
+  version is never selected again, so skipped rows cannot starve the batch.
+- Review signals carry `reason_counts` keyed by code, and the category range for
+  `outside_envelope` rows.
+- A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
+- The ranges in `envelopes.ts` are hand-set and deliberately wide. Learned p1/p99 ranges
+  (`category_envelopes`) remain planned work.
 
 ## Required Behavior (target contract)
 

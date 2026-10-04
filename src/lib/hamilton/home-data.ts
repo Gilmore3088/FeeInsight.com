@@ -5,11 +5,12 @@
  * Per D-11: signal/alert queries are NOT cached — fresh on every load.
  */
 
-import { getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { getNationalIndexCached, getSourcedInstitutionCount } from "@/lib/data-store/fee-index";
 import { getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { sql } from "@/lib/data-store/connection";
 import { generateGlobalThesis } from "./generate";
+import { recordProRequest } from "@/lib/agents/run-store";
 import type { ThesisOutput, ThesisSummaryPayload } from "./types";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 
@@ -65,7 +66,6 @@ export interface HomeBriefingData {
   positioning: PositioningEntry[];
   spotlightCount: number;
   totalInstitutions: number;
-  recommendedCategory: string | null;
 }
 
 function getCurrentQuarter(): string {
@@ -102,7 +102,10 @@ function deriveConfidence(
  * Calls generateGlobalThesis() with a monthly_pulse scope — lighter than quarterly.
  * Returns thesis: null on API failure so page can render empty state gracefully.
  */
-export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
+export async function fetchHomeBriefingData(
+  options: { includeThesis?: boolean } = {},
+): Promise<HomeBriefingData> {
+  const includeThesis = options.includeThesis ?? true;
   // getNationalIndexCached hits the DB. During build-time ISR prerender (revalidate=86400)
   // the DB can be unreachable; degrade to an empty briefing — the page already renders an
   // "Analysis unavailable" state for null data — instead of crashing the build. Normal
@@ -135,11 +138,8 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
   // Derive confidence from spotlight maturity tiers
   const confidence = deriveConfidence(positioning.map((e) => e.maturityTier));
 
-  // Compute total unique institutions from all entries
-  const totalInstitutions = allEntries.reduce(
-    (sum, e) => sum + e.institution_count,
-    0
-  );
+  // Distinct institutions behind the index (summing per-category counts double-counts).
+  const totalInstitutions = allEntries.length > 0 ? await getSourcedInstitutionCount().catch(() => 0) : 0;
 
   // Build minimal ThesisSummaryPayload — lighter scope, no heavy data sources
   const top10 = allEntries.slice(0, 10);
@@ -163,7 +163,19 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
 
   let thesis: ThesisOutput | null = null;
   try {
-    thesis = await generateGlobalThesis({ scope: "monthly_pulse", data: thesisSummary });
+    thesis = includeThesis && allEntries.length > 0
+      ? await generateGlobalThesis({ scope: "monthly_pulse", data: thesisSummary })
+      : null;
+    if (thesis) {
+      await recordProRequest({
+        operation: "thesis",
+        title: "Hamilton briefing thesis",
+        status: "completed",
+        summary: "Generated the monthly briefing thesis.",
+        userId: null,
+        detail: { model: thesis.model, input_tokens: thesis.usage?.inputTokens ?? 0, output_tokens: thesis.usage?.outputTokens ?? 0 },
+      });
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     let errorType: "missing_key" | "rate_limit" | "api_error" = "api_error";
@@ -172,6 +184,13 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
     } else if (errorMessage.includes("rate_limit") || errorMessage.includes("429")) {
       errorType = "rate_limit";
     }
+    await recordProRequest({
+      operation: "thesis",
+      title: "Hamilton briefing thesis",
+      status: "failed",
+      summary: `Thesis generation failed (${errorType}).`,
+      userId: null,
+    });
     console.warn("[Hamilton] Thesis generation failed", {
       timestamp: new Date().toISOString(),
       errorType,
@@ -180,35 +199,32 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
     thesis = null;
   }
 
-  // Derive recommendedCategory from thesis tensions (per D-07)
-  // Note: spotlightCategories is already declared at the top of this function.
-  let recommendedCategory: string | null = null;
-  if (thesis) {
-    const textToSearch = [
-      thesis.core_thesis,
-      ...(thesis.tensions ?? []).map((t) => `${t.implication ?? ""}`),
-    ]
-      .join(" ")
-      .toLowerCase();
-    for (const cat of spotlightCategories) {
-      if (textToSearch.includes(cat.replace(/_/g, " "))) {
-        recommendedCategory = cat;
-        break;
-      }
-    }
-  }
-  if (!recommendedCategory) {
-    recommendedCategory = "overdraft";
-  }
-
   return {
     thesis,
     confidence,
     positioning,
     spotlightCount: positioning.length,
     totalInstitutions,
-    recommendedCategory,
   };
+}
+
+/** Raised inside the 24h cache so a failed briefing is never stored. */
+export class HomeBriefingUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`Hamilton briefing unavailable: ${reason}`);
+    this.name = "HomeBriefingUnavailableError";
+  }
+}
+
+/**
+ * The cacheable briefing: complete or nothing. Throwing (instead of returning a
+ * null thesis or an empty index) keeps unstable_cache from pinning an outage for a day.
+ */
+export async function fetchCacheableHomeBriefing(): Promise<HomeBriefingData> {
+  const data = await fetchHomeBriefingData();
+  if (data.positioning.length === 0) throw new HomeBriefingUnavailableError("fee index unavailable");
+  if (!data.thesis) throw new HomeBriefingUnavailableError("thesis generation failed");
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +251,8 @@ async function fetchRecentSignals(
 ): Promise<SignalEntry[]> {
   try {
     const scopedInstitutionIds = normalizeHomeInstitutionScope(institutionIds);
+    // No selected or watched institution: no signals (never another customer's activity).
+    if (scopedInstitutionIds.length === 0) return [];
     const rows = scopedInstitutionIds.length > 0
       ? await sql`
           SELECT

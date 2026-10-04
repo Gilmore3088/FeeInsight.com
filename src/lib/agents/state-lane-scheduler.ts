@@ -5,6 +5,20 @@ import type {
   AgentRunTriggerSource,
 } from "@/lib/agents/types";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
+import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
+import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
+
+/**
+ * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
+ * re-read backlog drains in fewer runs; reads come from the stored copy, so this does
+ * not hit bank websites any harder.
+ */
+export const STATE_LANE_DOCUMENT_BATCH = 50;
+/**
+ * While a state still has documents waiting for a re-read or re-extraction, its lane
+ * runs again this soon after the previous run instead of once a day.
+ */
+export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
 
 export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
   {
@@ -26,11 +40,13 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     key: "read",
     agent: "rosetta",
     title: "Read PDFs, HTML, and queued OCR candidates",
+    input: { read_limit: STATE_LANE_DOCUMENT_BATCH },
   },
   {
     key: "extract",
     agent: "knox",
     title: "Extract fee observations from normalized source text",
+    input: { extract_limit: STATE_LANE_DOCUMENT_BATCH },
   },
   {
     key: "classify",
@@ -87,8 +103,9 @@ export interface DueStateLaneScheduleResult {
   }>;
 }
 
-function todayKey(date = new Date()): string {
-  return date.toISOString().slice(0, 10);
+/** One lane run per state per hour at most; backlog runs come back after an hour. */
+function laneWindowKey(date = new Date()): string {
+  return date.toISOString().slice(0, 13);
 }
 
 function boundedLaneLimit(value: unknown): number {
@@ -105,12 +122,68 @@ function isMissingStateLaneSchemaError(error: unknown): boolean {
     message.includes("undefined_table");
 }
 
-async function markLaneScheduled(stateCode: string, runId: number): Promise<void> {
+/**
+ * True when the state has completed texts Rosetta has not re-read with the current
+ * reader, or Knox has not extracted with the current rules, that are still thin (the
+ * same tests the read and extract steps select on). False when the attempt log is
+ * missing, so a lane never loops on a schema it cannot check.
+ */
+export async function stateHasDocumentBacklog(stateCode: string): Promise<boolean> {
+  try {
+    const [row] = await sql<{ backlog: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM agent_source_texts adt
+          JOIN institution_sources inst ON inst.id = adt.institution_id
+         WHERE adt.status = 'completed'
+           AND adt.char_count > 0
+           AND upper(btrim(inst.state_code)) = ${stateCode}
+           AND (
+             (
+               (SELECT COUNT(*) FROM raw_fee_observations fr
+                 WHERE fr.source = 'knox'
+                   AND fr.source_document_id = adt.source_document_id) < ${KNOX_REEXTRACT_MAX_FEES}
+               AND NOT EXISTS (
+                 SELECT 1 FROM pipeline_attempts pa
+                  WHERE pa.stage = 'extract'
+                    AND pa.institution_id = adt.institution_id
+                    AND pa.input_fingerprint = adt.text_hash
+                    AND pa.strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
+                    AND pa.strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+               )
+             )
+             OR (
+               (SELECT COUNT(*) FROM raw_fee_observations fr
+                 WHERE fr.source = 'knox'
+                   AND fr.source_document_id = adt.source_document_id
+                   AND fr.outlier_flags ? 'needs_darwin_verification') < ${REREAD_MAX_KNOX_FEES}
+               AND NOT EXISTS (
+                 SELECT 1 FROM pipeline_attempts pa
+                  WHERE pa.stage = 'read'
+                    AND pa.institution_id = adt.institution_id
+                    AND pa.input_fingerprint = adt.source_hash
+                    AND pa.strategy_version >= ${ROSETTA_READ_VERSION}
+               )
+             )
+           )
+      ) AS backlog
+    `;
+    return Boolean(row?.backlog);
+  } catch (error) {
+    console.error("stateHasDocumentBacklog failed:", error);
+    return false;
+  }
+}
+
+async function markLaneScheduled(stateCode: string, runId: number, backlog: boolean): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
        SET last_agent_run_id = ${runId},
            last_run_at = NOW(),
-           next_run_after = NOW() + (freshness_target_hours * INTERVAL '1 hour'),
+           next_run_after = NOW() + CASE
+             WHEN ${backlog} THEN ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+             ELSE freshness_target_hours * INTERVAL '1 hour'
+           END,
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()
@@ -149,7 +222,7 @@ export async function startStateLaneRun(
   if (!stateCode) throw new Error("Invalid state code for state lane run");
 
   await syncStateLaneProfiles(sql, stateCode);
-  const idempotencyKey = `atlas:state-lane:${stateCode}:${todayKey()}`;
+  const idempotencyKey = `atlas:state-lane:${stateCode}:${laneWindowKey()}`;
   const parsedLimit = Number(input.limit);
   const limit = Number.isFinite(parsedLimit)
     ? Math.min(Math.max(Math.floor(parsedLimit), 1), 500)
@@ -174,7 +247,7 @@ export async function startStateLaneRun(
   if (result.run.status === "blocked") {
     await markLaneLaunchBlocked(stateCode, result.run.id);
   } else {
-    await markLaneScheduled(stateCode, result.run.id);
+    await markLaneScheduled(stateCode, result.run.id, await stateHasDocumentBacklog(stateCode));
   }
   return { ...result, stateCode, idempotencyKey };
 }
@@ -197,6 +270,12 @@ export async function scheduleDueStateLaneRuns({
           FROM public.agent_state_lanes
          WHERE next_run_after <= NOW()
            AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+           -- One run per state at a time: a backlog lane waits for its previous run.
+           AND NOT EXISTS (
+             SELECT 1 FROM public.agent_runs active
+              WHERE active.id = agent_state_lanes.last_agent_run_id
+                AND active.status IN ('queued', 'running', 'cancel_requested')
+           )
          ORDER BY priority_score DESC, next_run_after ASC, state_code ASC
          LIMIT ${safeLimit}
          FOR UPDATE SKIP LOCKED

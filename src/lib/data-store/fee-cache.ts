@@ -1,5 +1,6 @@
 import { unstable_cache, revalidateTag } from "next/cache";
 import { getFeeCategorySummaries, type FeeCategorySummary } from "./fees";
+import { PUBLIC_READ_CACHE_TAG } from "./public-read-cache";
 
 /**
  * Cached read path for national fee summaries.
@@ -26,8 +27,9 @@ export async function getCachedFeeCategorySummaries(): Promise<FeeCategorySummar
 }
 
 /**
- * Invalidate the cached summaries. Called after a Hamilton publish writes new rows, so
- * readers see fresh benchmarks without waiting out the ceiling.
+ * Invalidate the cached summaries and the other public aggregate reads
+ * (public-read-cache.ts). Called after a Hamilton publish writes new rows, so readers
+ * see fresh benchmarks and counts without waiting out the ceiling.
  *
  * Safe to call outside a request scope — a publish may run from a job context where
  * `revalidateTag` is unavailable, and a failure to invalidate must never fail a publish.
@@ -38,6 +40,7 @@ export function invalidateFeeSummaryCache(): void {
     // certainly covers this entry's hour-long lifetime. Over-invalidating costs one
     // recompute; under-invalidating would serve stale benchmarks, so err broad.
     revalidateTag(FEE_SUMMARY_CACHE_TAG, "max");
+    revalidateTag(PUBLIC_READ_CACHE_TAG, "max");
   } catch {
     // Outside a Next request/render scope — a publish may run from a job context.
     // The time ceiling still bounds staleness, and a publish must never fail on this.

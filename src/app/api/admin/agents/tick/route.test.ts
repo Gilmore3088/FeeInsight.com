@@ -106,6 +106,7 @@ describe("/api/admin/agents/tick", () => {
       budgetPolicyId: null,
       maxProviderCallsPerRun: null,
       maxEstimatedCostMicrousd: null,
+      deadlineAt: expect.any(Number),
     });
   });
 
@@ -158,7 +159,20 @@ describe("/api/admin/agents/tick", () => {
       budgetPolicyId: 42,
       maxProviderCallsPerRun: 3,
       maxEstimatedCostMicrousd: 250_000,
+      deadlineAt: expect.any(Number),
     });
+  });
+
+  it("runs several state lanes side by side, several steps each, bounded by a deadline", async () => {
+    const { GET } = await import("./route");
+    const before = Date.now();
+    await GET(request("https://feeinsight.com/api/admin/agents/tick"));
+
+    const call = executeQueuedAgentRunsMock.mock.calls.at(-1)?.[0];
+    expect(call.runLimit).toBe(3);
+    expect(call.maxStepsPerRun).toBe(5);
+    expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 180_000);
+    expect(call.deadlineAt).toBeLessThan(before + 300_000);
   });
 
   it("holds provider steps but still drains deterministic work when the budget denies provider calls", async () => {

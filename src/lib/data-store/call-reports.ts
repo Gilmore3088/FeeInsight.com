@@ -1,4 +1,5 @@
 import { getSql } from "./connection";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 
 // Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
 // ingest scaling). No query-layer multiplication needed.
@@ -212,7 +213,8 @@ export interface PeerRanking {
   sc_income: number;
   sc_rank: number;
   peer_count: number;
-  peer_median_sc: number;
+  /** Null when fewer than MIN_INSTITUTIONS_FOR_MEDIAN peers report. */
+  peer_median_sc: number | null;
   fee_income_ratio: number | null;
   peer_median_fee_ratio: number | null;
 }
@@ -287,6 +289,8 @@ export async function getInstitutionPeerRanking(
 
   const stats = statsRows[0];
   const peerCount = stats ? Number(stats.peer_count) : 0;
+  // Same minimum sample as the fee statistics contract: no peer median from a handful.
+  const enoughPeers = peerCount >= MIN_INSTITUTIONS_FOR_MEDIAN;
   const rank = rankRows[0] ? Number(rankRows[0].better_count) + 1 : peerCount;
 
   return {
@@ -295,9 +299,9 @@ export async function getInstitutionPeerRanking(
     sc_income: scIncome,
     sc_rank: rank,
     peer_count: peerCount,
-    peer_median_sc: stats ? Number(stats.median_sc) : 0,
+    peer_median_sc: enoughPeers && stats?.median_sc != null ? Number(stats.median_sc) : null,
     fee_income_ratio: feeRatio,
-    peer_median_fee_ratio: stats?.median_fee_ratio ? Number(stats.median_fee_ratio) : null,
+    peer_median_fee_ratio: enoughPeers && stats?.median_fee_ratio ? Number(stats.median_fee_ratio) : null,
   };
 }
 

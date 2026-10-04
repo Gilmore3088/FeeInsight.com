@@ -177,7 +177,7 @@ describe("Hamilton monitor data", () => {
     expect(sqlCalls[1].values).toEqual([["8109"], 20]);
   });
 
-  it("does not scope signals to legacy non-canonical watchlist values", async () => {
+  it("shows no signals for legacy non-canonical watchlist values instead of a global sample", async () => {
     const { fetchMonitorPageData } = await import("./monitor-data");
 
     queuedRows = [
@@ -200,7 +200,9 @@ describe("Hamilton monitor data", () => {
       institutionIds: [],
       isScoped: false,
     });
-    expect(data.monitoringScope.label).toContain("matched institution IDs");
-    expect(sqlCalls[1].text).not.toContain("ANY");
+    expect(data.monitoringScope.label).toContain("matched institutions");
+    // No global signal sample: nothing outside the user's scope is ever queried.
+    expect(sqlCalls.some((call) => call.text.includes("FROM hamilton_signals") && !call.text.includes("ANY"))).toBe(false);
+    expect(data.signalFeed ?? []).toEqual([]);
   });
 });

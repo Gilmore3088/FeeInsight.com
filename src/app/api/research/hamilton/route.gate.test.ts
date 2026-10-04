@@ -19,6 +19,11 @@ const providerUsageMocks = vi.hoisted(() => ({
   recordProviderUsageMock: vi.fn(async () => {}),
 }));
 
+vi.mock("@/lib/hamilton/quota", () => ({
+  checkProAiQuota: async () => ({ allowed: true, used: 0, limit: 50, resetsAt: "" }),
+  quotaExceededMessage: () => "quota",
+}));
+
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
   return {
@@ -36,6 +41,7 @@ vi.mock("@ai-sdk/anthropic", () => ({
 }));
 
 vi.mock("@/lib/ai-provider-usage", () => ({
+  estimateAnthropicCostMicrousd: () => 0,
   ProviderCircuitOpenError: class ProviderCircuitOpenError extends Error {
     constructor(message: string) {
       super(message);

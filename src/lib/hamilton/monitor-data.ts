@@ -112,8 +112,8 @@ function normalizeInstitutionScope(
 function buildScopeLabel(institutionIds: string[], watchlistCount: number): string {
   if (institutionIds.length === 0) {
     return watchlistCount > 0
-      ? "Showing the global signal sample until the watchlist uses matched institution IDs."
-      : "Showing the global signal sample until a watchlist or selected institution is configured.";
+      ? "Add matched institutions to your watchlist to see their signals here."
+      : "Choose an institution or add one to your watchlist to see its signals here.";
   }
   if (institutionIds.length === 1) {
     return watchlistCount > 0
@@ -131,6 +131,9 @@ async function fetchSignalFeed(
   limit: number,
   institutionIds: string[] = [],
 ): Promise<SignalEntry[]> {
+  // Signals belong to institutions: with nothing selected or watched there is nothing
+  // to show (the old "global sample" leaked other customers' institution activity).
+  if (institutionIds.length === 0) return [];
   try {
     const rows = institutionIds.length > 0
       ? await sql`
@@ -298,11 +301,9 @@ async function fetchStatusMetrics(
           `,
         ])
       : await Promise.all([
-          sql`
-            SELECT COUNT(*)::int AS count
-            FROM hamilton_signals
-            WHERE created_at >= ${cutoff}
-          `,
+          // Unscoped users see only their own alerts; other institutions' signal
+          // volume must not drive their status.
+          Promise.resolve([{ count: 0 }]),
           sql`
             SELECT COUNT(*)::int AS count
             FROM hamilton_priority_alerts pa
@@ -311,12 +312,7 @@ async function fetchStatusMetrics(
               AND pa.status = 'active'
               AND s.severity = 'high'
           `,
-          sql`
-            SELECT COUNT(*)::int AS count
-            FROM hamilton_signals
-            WHERE severity = 'high'
-              AND created_at >= ${cutoff}
-          `,
+          Promise.resolve([{ count: 0 }]),
         ]);
 
     return {
@@ -329,6 +325,9 @@ async function fetchStatusMetrics(
   }
 }
 
+/** Watchlist size limit: each entry is an institution lookup on every Monitor load. */
+export const MAX_WATCHLIST_INSTITUTIONS = 25;
+
 async function fetchWatchlist(userId: number): Promise<WatchlistEntry[]> {
   try {
     const rows = await sql`
@@ -340,7 +339,7 @@ async function fetchWatchlist(userId: number): Promise<WatchlistEntry[]> {
     if (rows.length === 0) return [];
 
     const ids: string[] = Array.isArray(rows[0]?.institution_ids)
-      ? (rows[0].institution_ids as string[])
+      ? (rows[0].institution_ids as string[]).slice(0, MAX_WATCHLIST_INSTITUTIONS)
       : [];
 
     return Promise.all(
@@ -362,9 +361,11 @@ async function fetchWatchlist(userId: number): Promise<WatchlistEntry[]> {
   }
 }
 
-async function fetchRefreshJobs(institutionIds: string[]): Promise<HamiltonRefreshJobEntry[]> {
+async function fetchRefreshJobs(userId: number, institutionIds: string[]): Promise<HamiltonRefreshJobEntry[]> {
+  // Jobs are institution-scoped: nothing selected or watched means nothing to refresh.
+  if (institutionIds.length === 0) return [];
   try {
-    return await fetchQueuedHamiltonRefreshJobs({ institutionIds, limit: 8 });
+    return await fetchQueuedHamiltonRefreshJobs({ institutionIds, userId, limit: 8 });
   } catch {
     return [];
   }
@@ -388,7 +389,7 @@ export async function fetchMonitorPageData(
     fetchSignalFeed(20, institutionIds),
     fetchTopAlert(userId, institutionIds),
     fetchStatusMetrics(userId, institutionIds),
-    fetchRefreshJobs(institutionIds),
+    fetchRefreshJobs(userId, institutionIds),
   ]);
 
   const overall = deriveOverallStatus(

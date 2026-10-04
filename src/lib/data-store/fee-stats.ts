@@ -15,15 +15,15 @@
  */
 import { computePercentile, computeStats } from "./fees";
 
-export const MIN_INSTITUTIONS_FOR_MEDIAN = 5;
-export const STRONG_INSTITUTION_COUNT = 20;
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
+
+export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
 export const STATS_METHOD_VERSION = 2;
 
 /** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
 export const STATS_ROW_FILTER = "ef.source_document_id IS NOT NULL";
 
-export type MaturityTier = "strong" | "provisional" | "insufficient";
 
 export interface StatsInputRow {
   institution_id: number | string;
@@ -45,11 +45,6 @@ export interface FeeStatistics {
   maturity_tier: MaturityTier;
 }
 
-export function maturityTier(institutionCount: number): MaturityTier {
-  if (institutionCount >= STRONG_INSTITUTION_COUNT) return "strong";
-  if (institutionCount >= MIN_INSTITUTIONS_FOR_MEDIAN) return "provisional";
-  return "insufficient";
-}
 
 function toAmount(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
@@ -124,4 +119,36 @@ export function summarizeFeesBy<T extends StatsInputRow>(
   const result = new Map<string, FeeStatistics>();
   for (const [key, group] of groups) result.set(key, summarizeFees(group));
   return result;
+}
+
+export interface InstitutionPosition {
+  institution_id: number;
+  fee_category: string;
+  /** The institution's value for the category (median of its amounts). */
+  value: number;
+  p25: number;
+  p75: number;
+}
+
+/**
+ * Each institution's value per category alongside that category's p25/p75, for
+ * "above p75 / below p25" style rankings. Categories below the minimum sample have
+ * no percentiles under the contract and are left out.
+ */
+export function institutionPositions<T extends StatsInputRow & { fee_category: string }>(rows: T[]): InstitutionPosition[] {
+  const byCategory = new Map<string, T[]>();
+  for (const row of rows) {
+    const group = byCategory.get(row.fee_category);
+    if (group) group.push(row);
+    else byCategory.set(row.fee_category, [row]);
+  }
+  const positions: InstitutionPosition[] = [];
+  for (const [category, group] of byCategory) {
+    const stats = summarizeFees(group);
+    if (stats.p25_amount === null || stats.p75_amount === null) continue;
+    for (const [institutionId, value] of valuePerInstitution(group)) {
+      positions.push({ institution_id: institutionId, fee_category: category, value, p25: stats.p25_amount, p75: stats.p75_amount });
+    }
+  }
+  return positions;
 }

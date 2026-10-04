@@ -4,6 +4,7 @@ import {
   summarizeFees,
   summarizeFeesBy,
   valuePerInstitution,
+  institutionPositions,
 } from "./fee-stats";
 
 function rowsFor(amounts: (number | string | null)[], charter = "bank") {
@@ -83,5 +84,22 @@ describe("fee statistics contract", () => {
     const grouped = summarizeFeesBy(rows, (row) => row.fee_category);
     expect(grouped.get("atm")?.median_amount).toBe(3);
     expect(grouped.get("overdraft")?.median_amount).toBeNull();
+  });
+});
+
+describe("institutionPositions", () => {
+  it("compares each institution's median to the category p25/p75 and skips thin categories", () => {
+    const rows = [
+      ...[10, 20, 30, 40, 50].map((amount, index) => ({ institution_id: index + 1, amount, fee_category: "nsf" })),
+      { institution_id: 5, amount: 70, fee_category: "nsf" },
+      { institution_id: 1, amount: 0, fee_category: "atm" },
+      { institution_id: 2, amount: 3, fee_category: "atm" },
+    ];
+    const positions = institutionPositions(rows);
+    expect(positions.every((position) => position.fee_category === "nsf")).toBe(true);
+    expect(positions).toHaveLength(5);
+    const top = positions.find((position) => position.institution_id === 5)!;
+    expect(top.value).toBe(60);
+    expect(top.value).toBeGreaterThan(top.p75);
   });
 });

@@ -23,7 +23,7 @@ vi.mock("@/lib/data-store/connection", () => ({
   sql: mocks.sqlMock,
 }));
 
-import { appendMessage, loadConversationHistory } from "./chat-memory";
+import { appendMessage, loadConversationHistory, updateConversationTitle } from "./chat-memory";
 
 const SOURCE = readFileSync(resolve(__dirname, "chat-memory.ts"), "utf-8");
 const CHAT_MEMORY_MIGRATION = readFileSync(
@@ -110,5 +110,24 @@ describe("Hamilton chat memory", () => {
       "e7f37394-d8dd-49ef-a842-e453c89415b5",
       7,
     ]);
+  });
+
+  it("loads the most recent messages, returned oldest-first", async () => {
+    mocks.state.queuedRows.push([{ id: "conversation-1" }], []);
+
+    await loadConversationHistory("e7f37394-d8dd-49ef-a842-e453c89415b5", 7, 20);
+
+    const text = mocks.state.sqlCalls[1].text.replace(/\s+/g, " ");
+    expect(text).toMatch(/ORDER BY created_at DESC LIMIT \?.*ORDER BY created_at ASC/);
+    expect(mocks.state.sqlCalls[1].values).toEqual(["e7f37394-d8dd-49ef-a842-e453c89415b5", 20]);
+  });
+
+  it("only retitles the user's own conversation", async () => {
+    mocks.state.queuedRows.push([]);
+
+    await updateConversationTitle("e7f37394-d8dd-49ef-a842-e453c89415b5", 7, "Overdraft review");
+
+    expect(mocks.state.sqlCalls[0].text).toContain("AND user_id =");
+    expect(mocks.state.sqlCalls[0].values).toEqual(["Overdraft review", "e7f37394-d8dd-49ef-a842-e453c89415b5", 7]);
   });
 });

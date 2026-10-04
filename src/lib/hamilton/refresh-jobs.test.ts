@@ -85,9 +85,16 @@ describe("Hamilton refresh jobs", () => {
     });
 
     expect(completed).toBe(2);
-    expect(mocks.state.sqlCalls[0].text).toContain("UPDATE hamilton_refresh_jobs");
-    expect(mocks.state.sqlCalls[0].text).toContain("status = 'completed'");
+    // Completion is per user: the shared job stays queued for other watchers.
+    expect(mocks.state.sqlCalls[0].text).toContain("INSERT INTO hamilton_refresh_job_completions");
+    expect(mocks.state.sqlCalls[0].text).not.toContain("UPDATE hamilton_refresh_jobs");
     expect(mocks.state.sqlCalls[0].values).toEqual([7, "2945", ["report_refresh"]]);
+  });
+
+  it("closes the shared job only for system completion", async () => {
+    mocks.state.queuedRows.push([{ id: "job-report" }]);
+    await completeHamiltonRefreshJobsForInstitution({ institutionId: 2945, jobTypes: ["report_refresh"] });
+    expect(mocks.state.sqlCalls[0].text).toContain("UPDATE hamilton_refresh_jobs");
   });
 
   it("fetches queued jobs scoped to canonical institution IDs", async () => {
@@ -135,6 +142,7 @@ describe("Hamilton refresh jobs", () => {
       },
     ]);
     expect(mocks.state.sqlCalls[0].text).toContain("institution_id = ANY");
-    expect(mocks.state.sqlCalls[0].values).toEqual([["2945"], 5]);
+    expect(mocks.state.sqlCalls[0].text).toContain("hamilton_refresh_job_completions");
+    expect(mocks.state.sqlCalls[0].values).toEqual([["2945"], -1, 5]);
   });
 });

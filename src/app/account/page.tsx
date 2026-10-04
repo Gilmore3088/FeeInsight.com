@@ -58,7 +58,7 @@ export default async function AccountPage({
       if (subs.data.length > 0) {
         const { sql: sqlConn } = await import("@/lib/data-store/connection");
         await sqlConn`
-          UPDATE users SET subscription_status = 'active', role = 'premium'
+          UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
           WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
         await acceptPendingWorkspaceInvitationsForUser({
           userId: user.id,

@@ -14,6 +14,7 @@ const MOCK_DIST: DistributionData = {
   p75_amount: 45,
   min_amount: 5,
   max_amount: 75,
+  institution_count: 40,
   approved_count: 30,
 };
 

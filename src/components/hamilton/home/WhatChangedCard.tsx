@@ -38,7 +38,7 @@ export function WhatChangedCard({
   if (signals.length === 0) {
     const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div
           style={{
             gridColumn: "1 / -1",
@@ -70,7 +70,7 @@ export function WhatChangedCard({
   const displayed = signals.slice(0, 3);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {displayed.map((signal) => {
         const meta = labelMap[signal.signalType] ?? { label: signal.signalType, bg: "#f5f3ee", emoji: "•" };
         return (

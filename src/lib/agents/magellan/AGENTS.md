@@ -13,6 +13,10 @@ Magellan owns institution source discovery and source fetching.
 
 - Prefer deterministic fetch and source classification before any provider-assisted work.
 - Preserve source URL, document path/key, content hash, status code, and institution ID lineage.
+- One stored document per (institution, content hash). Content matching the latest copy
+  is `unchanged`; content matching an older copy (A, B, A) reuses that document
+  (`reused_documents`) instead of inserting a new row. Older duplicates carry
+  `duplicate_of_id`, and a unique partial index enforces the rule.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 

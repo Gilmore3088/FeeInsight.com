@@ -135,6 +135,7 @@ import {
   executeQueuedAgentRuns,
   startAgentRun,
   reapStaleAgentSteps,
+  recordProRequest,
 } from "./run-store";
 
 const runRow = {
@@ -842,6 +843,7 @@ describe("agentic run store", () => {
         db: txMock,
       }),
     );
+    expect(combinedTransactionSql()).toContain("pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))");
     expect(txMock.unsafe).not.toHaveBeenCalledWith(
       expect.stringContaining("FROM published_fee_records"),
     );
@@ -921,6 +923,19 @@ describe("agentic run store", () => {
     expect(combinedTransactionSql()).toContain("step.finished");
   });
 
+  it("starts no further step once the tick deadline has passed", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await expect(
+      executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() - 1 }),
+    ).resolves.toMatchObject({ executedSteps: 1 });
+  });
+
   it("runs the fee-alert dispatch as a visible step while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
@@ -971,3 +986,45 @@ describe("agentic run store", () => {
     expect(combinedSql).toContain("SET status = 'failed'");
   });
 });
+
+describe("recordProRequest", () => {
+  beforeEach(() => {
+    txMock.mockReset();
+    withTransactionMock.mockClear();
+  });
+
+  function text(call: unknown[]): string {
+    return (call[0] as string[]).join("?");
+  }
+
+  it("writes one finished pro_request run, step and event in a transaction", async () => {
+    txMock.mockResolvedValueOnce([{ id: 501 }]).mockResolvedValue([]);
+
+    const runId = await recordProRequest({
+      operation: "report",
+      title: "Hamilton report: Peer Brief",
+      status: "completed",
+      summary: "Report saved.",
+      userId: 7,
+      institutionId: 2945,
+      detail: { input_tokens: 10 },
+    });
+
+    expect(runId).toBe(501);
+    expect(withTransactionMock).toHaveBeenCalledOnce();
+    const statements = txMock.mock.calls.map(text);
+    expect(statements[0]).toContain("INSERT INTO agent_runs");
+    expect(statements[0]).toContain("'pro_request'");
+    expect(statements[1]).toContain("INSERT INTO agent_run_steps");
+    expect(statements[2]).toContain("INSERT INTO agent_run_events");
+    expect(txMock.mock.calls[0]).toEqual(expect.arrayContaining(["completed", "user:7"]));
+  });
+
+  it("never throws, so the ledger cannot fail a paid request", async () => {
+    txMock.mockRejectedValueOnce(new Error("check constraint"));
+    await expect(
+      recordProRequest({ operation: "thesis", title: "t", status: "failed", summary: "s", userId: null }),
+    ).resolves.toBeNull();
+  });
+});
+

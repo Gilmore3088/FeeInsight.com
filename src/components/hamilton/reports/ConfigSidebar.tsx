@@ -36,10 +36,10 @@ interface ConfigSidebarProps {
  * enum so the API contract is unchanged — we just relabel the buttons.
  */
 const AUDIENCES: Array<{ value: NarrativeTone; label: string; hint: string }> = [
-  { value: "executive",  label: "Board",        hint: "Bold, headline-led, ~6 slides" },
-  { value: "consulting", label: "Internal Team", hint: "Consulting tone, action-oriented" },
-  { value: "technical",  label: "Analysts",     hint: "Full data, methodology footnotes" },
-  { value: "academic",   label: "Research",     hint: "Deep context, citations" },
+  { value: "executive",  label: "Board",         hint: "Short, headline-led, decision first" },
+  { value: "consulting", label: "Internal Team", hint: "Action-oriented, names next steps" },
+  { value: "technical",  label: "Analysts",      hint: "Data-first, sample size on every benchmark" },
+  { value: "academic",   label: "Research",      hint: "Fuller context, explains method and limits" },
 ];
 
 function formatEvidenceCounts(preview: ReportPeerCoveragePreview): string {
