@@ -256,7 +256,7 @@ describe("Knox agentic extraction", () => {
         {
           ...textArtifact,
           do_not_retry: [
-            { stage: "extract", strategy: "extract.rules", version: 2, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
+            { stage: "extract", strategy: KNOX_EXTRACT_STRATEGY.strategy, version: KNOX_EXTRACT_STRATEGY.version, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);

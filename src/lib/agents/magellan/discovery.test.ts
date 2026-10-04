@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runMagellanDiscovery } from "./discovery";
+import { HOMEPAGE_LINKS_FIRST_SINCE, runMagellanDiscovery } from "./discovery";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -72,6 +72,32 @@ describe("Magellan agentic discovery", () => {
     expect(sqlText).toContain("INSERT INTO agent_url_discovery_attempts");
   });
 
+  it("tries the fee link on the homepage before guessed paths", async () => {
+    const db = createDbMock([
+      { id: 43, institution_name: "Link Bank", website_url: "https://linkbank.example", state_code: "VT", rescue_status: null },
+    ]);
+    const feePage = "<h1>Fee Schedule</h1><table><tr><td>Overdraft fee</td><td>$32.00</td></tr>" +
+      "<tr><td>Stop payment</td><td>$35.00</td></tr><tr><td>Monthly maintenance fee</td><td>$12.00</td></tr></table>";
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === "https://linkbank.example/") {
+        return response('<a href="/about">About</a> <a href="/disclosures/fee-schedule">Fee Schedule</a>');
+      }
+      if (url === "https://linkbank.example/disclosures/fee-schedule") return response(feePage);
+      return response("not found", "text/html", 404);
+    });
+
+    const result = await runMagellanDiscovery({ runId: 111, db: asDiscoveryDb(db), fetchImpl });
+
+    expect(result.results[0]).toMatchObject({
+      outcome: "discovered",
+      url: "https://linkbank.example/disclosures/fee-schedule",
+    });
+    expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
+      "https://linkbank.example/",
+      "https://linkbank.example/disclosures/fee-schedule",
+    ]);
+  });
+
   it("keeps dry runs read-only while still reporting possible discoveries", async () => {
     const db = createDbMock([
       {
@@ -86,7 +112,7 @@ describe("Magellan agentic discovery", () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(response('<a href="/fees">Account Fees</a>'))
-      .mockResolvedValueOnce(response("monthly maintenance fee overdraft fee atm fee"));
+      .mockResolvedValueOnce(response("Monthly maintenance fee $10.00. Overdraft fee $30.00. ATM fee $2.50."));
 
     const result = await runMagellanDiscovery({
       runId: 102,
@@ -149,6 +175,9 @@ describe("Magellan agentic discovery", () => {
     expect(sqlText).toContain("CASE WHEN inst.last_rescue_attempt_at IS NULL THEN 0 ELSE 1 END");
     expect(sqlText).toContain("inst.last_rescue_attempt_at NULLS FIRST");
     expect(sqlText).toContain("CASE WHEN inst.rescue_status = 'retry_after' THEN 1 ELSE 0 END");
+    // Banks marked dead only because guessed paths 404'd get one more search.
+    expect(sqlText).toContain("inst.failure_reason_note LIKE 'Candidate HTTP 4%'");
+    expect(db.mock.calls[0]).toContain(HOMEPAGE_LINKS_FIRST_SINCE);
   });
 
   it("filters discovery candidates by state lane", async () => {
