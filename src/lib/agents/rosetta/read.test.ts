@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
-import { runRosettaRead } from "./read";
+import { REREAD_MAX_KNOX_FEES, runRosettaRead } from "./read";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -435,7 +435,7 @@ describe("Rosetta agentic read", () => {
       ]);
     });
 
-    it("re-reads older texts Knox found nothing in, newest documents first", async () => {
+    it("re-reads older texts Knox found few or no fees in, newest documents first", async () => {
       const db = learningDb([]);
 
       await runRosettaRead({ runId: 308, db: asReadDb(db), fetchImpl: vi.fn() });
@@ -447,7 +447,9 @@ describe("Rosetta agentic read", () => {
       expect(query).toContain("current_read.outcome = ANY(");
       expect(query).toContain("fr.source_document_id = adt.source_document_id");
       expect(query).toContain("ORDER BY is_reread ASC");
+      expect(query).toMatch(/SELECT COUNT\(\*\) FROM raw_fee_observations fr[\s\S]*\) < \$\d+/);
       expect(params).toContain(2);
+      expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });
 
     it("keeps the earlier text when a re-read fails", async () => {

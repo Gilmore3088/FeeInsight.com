@@ -263,6 +263,12 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
 export const ROSETTA_READ_VERSION = 2;
 const PAGE_CHECK_STRATEGY = "read.page_check";
 const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+/**
+ * An older text with fewer Knox fees than this is read again with the current reader.
+ * A real fee schedule lists far more; one or two fees usually means the table was
+ * flattened and most rows were lost.
+ */
+export const REREAD_MAX_KNOX_FEES = 5;
 const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
   pdf: [{ strategy: "read.pdf_layout", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["pdf_text"] }],
   html: [{ strategy: "read.html_dom", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["html_static"] }],
@@ -503,14 +509,18 @@ async function selectCandidates(
     // Only an answer settles a re-read; a timeout or 5xx leaves it eligible next run.
     params.push([...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES]);
     const settledParam = `$${params.length}`;
-    // A completed text from an older reader that Knox found no fees in gets one read
-    // with the current reader. Texts Knox already extracted from are left alone.
+    // A completed text from an older reader that Knox found few or no fees in gets one
+    // read with the current reader; Knox then re-extracts it if the text changed.
+    params.push(REREAD_MAX_KNOX_FEES);
+    const rereadMaxParam = `$${params.length}`;
     rereadable = `(
                 adt.status = 'completed'
-                AND NOT EXISTS (
-                  SELECT 1 FROM raw_fee_observations fr
-                   WHERE fr.source = 'knox' AND fr.source_document_id = adt.source_document_id
-                )
+                AND (
+                  SELECT COUNT(*) FROM raw_fee_observations fr
+                   WHERE fr.source = 'knox'
+                     AND fr.source_document_id = adt.source_document_id
+                     AND fr.outlier_flags ? 'needs_darwin_verification'
+                ) < ${rereadMaxParam}
                 AND NOT EXISTS (
                   SELECT 1 FROM pipeline_attempts current_read
                    WHERE current_read.stage = 'read'

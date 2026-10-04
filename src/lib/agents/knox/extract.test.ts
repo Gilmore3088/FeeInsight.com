@@ -105,6 +105,27 @@ describe("Knox agentic extraction", () => {
     ]);
   });
 
+  it("re-extracts a document whose text changed and retires rows from the older text", async () => {
+    const db = createDbMock([textArtifact]);
+    db.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 11 }, { fee_raw_id: 12 }]);
+      if (text.includes("INSERT INTO raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 950 }]);
+      return Promise.resolve([]);
+    });
+
+    const result = await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
+
+    const selectSql = String(db.unsafe.mock.calls[0][0]);
+    expect(selectSql).toContain("position(('text_hash=' || adt.text_hash || ';')");
+    expect(result.retiredOlderRows).toBe(2);
+    const retire = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE raw_fee_observations"));
+    expect(templateText(retire?.[0])).toContain("- 'needs_darwin_verification'");
+    expect(templateText(retire?.[0])).toContain("superseded_by_reread");
+    expect(templateText(retire?.[0])).toContain("FROM verified_fee_observations fv");
+    expect(retire?.slice(1)).toEqual(expect.arrayContaining([501, "text_hash=text-hash;"]));
+  });
+
   it("keeps dry runs read-only while still reporting candidates", async () => {
     const db = createDbMock([textArtifact]);
 

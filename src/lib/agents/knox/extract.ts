@@ -82,6 +82,8 @@ export interface RunKnoxExtractResult {
   skippedFees: number;
   /** $0, range, percentage and unrecognized priced lines held for review, not verified. */
   heldForReview: number;
+  /** Unverified rows from a document's older text that a re-extraction replaced. */
+  retiredOlderRows: number;
   /** Texts the router refused because this extractor version already failed on them. */
   skippedKnownInputs: number;
   limit: number;
@@ -168,10 +170,17 @@ async function selectTextArtifacts(
          AND adt.char_count > 0
          ${filters.join("\n         ")}
          AND NOT EXISTS (
+           -- This exact text was already extracted. Rows from an older text of the same
+           -- document (before a Rosetta re-read) do not count, so a changed text is
+           -- extracted again.
            SELECT 1
              FROM raw_fee_observations fr
             WHERE fr.source = 'knox'
               AND fr.source_document_id = adt.source_document_id
+              AND (
+                adt.text_hash IS NULL
+                OR position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+              )
          )
          AND NOT EXISTS (
            -- The same text under another document id was already extracted.
@@ -190,6 +199,28 @@ async function selectTextArtifacts(
     `,
     params,
   );
+}
+
+/**
+ * After a re-read, rows Knox took from the document's older text stop going to Darwin:
+ * the new text replaces them. Rows Darwin already verified are left as they are.
+ */
+async function retireRowsFromOlderText(db: SqlTag, row: TextArtifactRow): Promise<number> {
+  if (!row.text_hash) return 0;
+  const retired = await db`
+    UPDATE raw_fee_observations fr
+       SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'needs_darwin_verification')
+                           || '["superseded_by_reread"]'::jsonb
+     WHERE fr.source = 'knox'
+       AND fr.source_document_id = ${Number(row.source_document_id)}
+       AND position(${`text_hash=${row.text_hash};`} IN COALESCE(fr.conditions, '')) = 0
+       AND fr.outlier_flags ? 'needs_darwin_verification'
+       AND NOT EXISTS (
+         SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
+       )
+    RETURNING fr.fee_raw_id
+  `;
+  return retired.length;
 }
 
 async function insertCandidate(
@@ -460,6 +491,7 @@ export async function runKnoxExtract(
 
   const results: KnoxExtractDocumentResult[] = [];
   let skippedKnownInputs = 0;
+  let retiredOlderRows = 0;
   for (const row of rows) {
     const playbook = playbookFromRow(row);
     const decision = chooseStrategy({
@@ -478,6 +510,7 @@ export async function runKnoxExtract(
     let inserted = 0;
     let heldInserted = 0;
     if (!dryRun) {
+      retiredOlderRows += await retireRowsFromOlderText(db, row);
       for (const candidate of candidates) {
         if (await insertCandidate(db, { runId: options.runId, row, candidate })) inserted += 1;
       }
@@ -536,6 +569,7 @@ export async function runKnoxExtract(
     insertedFees: results.reduce((total, result) => total + result.inserted, 0),
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
+    retiredOlderRows,
     skippedKnownInputs,
     limit,
     dryRun,

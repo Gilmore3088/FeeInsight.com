@@ -87,6 +87,7 @@ export function narrateStepFinished(
       return `Pulled ${count(n(detail, "inserted_raw_fee_observations"), "fee")} from ${count(processed, "document")} ${scope}${joinParts([
         n(detail, "skipped_fee_candidates") > 0 && `${n(detail, "skipped_fee_candidates")} lines set aside`,
         n(detail, "held_for_review") > 0 && `${n(detail, "held_for_review")} free, range or percentage fees recorded separately (free fees go on to Darwin)`,
+        n(detail, "replaced_older_rows") > 0 && `${n(detail, "replaced_older_rows")} fees from older copies replaced`,
         n(detail, "skipped_known_inputs") > 0 && `${n(detail, "skipped_known_inputs")} documents already done`,
       ])}.`;
     }

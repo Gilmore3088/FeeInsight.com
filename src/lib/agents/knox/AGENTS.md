@@ -19,6 +19,10 @@ Knox owns conservative raw fee extraction.
   when they change). Patterns are ordered most specific first; monthly maintenance and
   minimum balance come last. On a line, the first amount is the fee; a later amount is
   another fee only when words naming one sit just before it.
+- Knox extracts each text once (keyed on `text_hash=` in `conditions`). When a Rosetta
+  re-read changes a document's text, Knox extracts the new text and retires the
+  unverified rows it took from the older text (`needs_darwin_verification` removed,
+  `superseded_by_reread` added). Rows Darwin already verified are left alone.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
   name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
