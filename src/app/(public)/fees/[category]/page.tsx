@@ -2,10 +2,6 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  getFeeCategoryDetail,
-  getDataFreshness,
-} from "@/lib/data-store";
 import { computeStats } from "@/lib/data-store";
 import {
   getDisplayName,
@@ -25,6 +21,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
+import { getFeeCategoryDetailCached, getDataFreshnessCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -110,8 +107,8 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const family = getFeeFamily(category);
   const familyColor = family ? getFamilyColor(family) : null;
   const [detail, freshness] = await Promise.all([
-    getFeeCategoryDetail(category),
-    getDataFreshness(),
+    getFeeCategoryDetailCached(category),
+    getDataFreshnessCached(),
   ]);
 
   // Close the loop the other way: a reader on a fee page can reach the guide that

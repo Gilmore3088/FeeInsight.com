@@ -2,10 +2,10 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCitiesInState } from "@/lib/data-store";
 import { STATE_NAMES, STATE_CODES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
+import { getCitiesInStateCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
   params: Promise<{ state: string }>;
@@ -41,7 +41,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
   if (!stateName) notFound();
 
-  const cities = await getCitiesInState(stateCode);
+  const cities = await getCitiesInStateCached(stateCode);
 
   return (
     <>

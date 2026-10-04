@@ -2,11 +2,6 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AudiencePaths } from "@/components/public/audience-paths";
-import {
-  getStatesWithFeeData,
-  getDistrictMetrics,
-  getFeeCategorySummaries,
-} from "@/lib/data-store";
 import { STATE_NAMES, US_STATES_ONLY, US_TERRITORIES } from "@/lib/us-states";
 import { UsStateMap } from "@/components/public/us-state-map";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -19,6 +14,8 @@ import { OriginalResearchSection } from "./original-research";
 import { DataSourcesSection } from "./data-sources";
 import { IndexModule } from "./index-module";
 import { DistrictReportsSection } from "./district-cards";
+import { getStatesWithFeeDataCached, getDistrictMetricsCached } from "@/lib/data-store/public-cached-reads";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 
 export const metadata: Metadata = {
   title: "Research - Bank & Credit Union Fee Analysis",
@@ -27,10 +24,12 @@ export const metadata: Metadata = {
 };
 
 export default async function ResearchHubPage() {
-  const statesData = await getStatesWithFeeData();
-  const districtMetrics = await getDistrictMetrics();
-  const summary = await getPublicStatsSummary();
-  const summaries = await getFeeCategorySummaries();
+  const [statesData, districtMetrics, summary, summaries] = await Promise.all([
+    getStatesWithFeeDataCached(),
+    getDistrictMetricsCached(),
+    getPublicStatsSummary(),
+    getCachedFeeCategorySummaries(),
+  ]);
 
   // Separate states from territories for accurate display
   const stateCount = statesData.filter((s) => US_STATES_ONLY.has(s.state_code)).length;

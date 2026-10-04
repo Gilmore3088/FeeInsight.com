@@ -2,6 +2,7 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
+import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -565,12 +566,19 @@ async function executeAgenticStep(
     case "publish":
     case "publish-index":
     case "publish-context": {
+      const institutionId = numericRunParam(params, ["institution_id"]);
+      const outlierRollbacks = await rollBackPublishedOutliers(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["publish_limit", "limit", "size"]),
-        institutionId: numericRunParam(params, ["institution_id"]),
+        institutionId,
         stateCode,
         minConfidence: numericRunParam(params, [
           "publish_min_confidence",
@@ -582,16 +590,32 @@ async function executeAgenticStep(
       });
       const indexRefresh = published.dryRun
         ? null
-        : await refreshFeeIndexCache(tx, { runId: run.id, force: published.publishedFees > 0 });
+        : await refreshFeeIndexCache(tx, {
+            runId: run.id,
+            force: published.publishedFees > 0 || outlierRollbacks.length > 0,
+          });
+      const outlierNote =
+        outlierRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
+          : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
           published_fees: published.publishedFees,
           skipped_verified_fees: published.skippedFees,
           superseded_fees: published.supersededFees,
+          outlier_rollbacks: outlierRollbacks.length,
+          outlier_rollback_samples: outlierRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            reason: rollback.reason,
+          })),
           published_free_fees: published.zeroFeesPublished,
           outcomes: published.outcomes,
           learning_log: published.learning,
