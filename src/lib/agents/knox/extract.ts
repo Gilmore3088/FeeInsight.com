@@ -154,7 +154,8 @@ async function selectTextArtifacts(
                 AND thin.source_document_id = adt.source_document_id
            ) < $${params.length}`;
     // Same text + same extractor version = same answer: never extract it twice.
-    params.push(KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version);
+    const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
+    const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
     playbookColumns = `,
              profile.format,
              profile.best_strategy,
@@ -169,8 +170,8 @@ async function selectTextArtifacts(
             WHERE pa.stage = 'extract'
               AND pa.institution_id = adt.institution_id
               AND pa.input_fingerprint = adt.text_hash
-              AND pa.strategy = $${params.length - 1}
-              AND pa.strategy_version = $${params.length}
+              AND pa.strategy = ${strategyParam}
+              AND pa.strategy_version = ${versionParam}
          )`);
   }
   return db.unsafe<TextArtifactRow[]>(

@@ -25,6 +25,8 @@
 #                 Fail if published fee catalog consumers use crawler-era aliases.
 #   legacy-data-contract-kill
 #                 Fail if active app code uses crawler-era institution keys or physical data tables.
+#   sql-placeholder-kill
+#                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
 #   brand-kill    Fail if src copy names the site as the product or references bankfeeindex.com (Fee Insight is the site; Bank Fee Index is the product).
 #   prompt-kill   Fail if active .claude prompts point agents at retired tooling.
 #   active-doc-kill
@@ -618,6 +620,26 @@ brand_kill() {
   exit 0
 }
 
+sql_placeholder_kill() {
+  # A placeholder computed from the end of the params array breaks silently when a later
+  # change pushes more params before it is used (the 4 Oct 2026 Rosetta read outage).
+  local pattern='\$\$\{params\.length[[:space:]]*-'
+  local hits=""
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    hits=$(git grep -nE "$pattern" -- src | grep -v '^Binary file' || true)
+  else
+    hits=$(grep -rnE "$pattern" --include='*.ts' --include='*.tsx' src 2>/dev/null || true)
+  fi
+  # Comments may name the pattern.
+  hits=$(printf '%s\n' "$hits" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' | grep -v '^$' || true)
+  if [[ -n "$hits" ]]; then
+    echo "sql-placeholder-kill: capture each placeholder when its param is pushed, e.g. const p = \`\$\${params.push(value)}\`:" >&2
+    echo "$hits" >&2
+    exit 1
+  fi
+  echo "sql-placeholder-kill: OK (no placeholders computed from params.length - N)"
+}
+
 case "$SUBCOMMAND" in
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
@@ -638,13 +660,14 @@ case "$SUBCOMMAND" in
   catalog-contract-kill) catalog_contract_kill ;;
   legacy-data-contract-kill) legacy_data_contract_kill ;;
   brand-kill) brand_kill ;;
+  sql-placeholder-kill) sql_placeholder_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill>" >&2
     exit 2
     ;;
 esac
