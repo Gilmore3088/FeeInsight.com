@@ -9,7 +9,8 @@
  * index maturity shown everywhere else. Insufficient tier BLOCKS simulation (D-06).
  */
 
-import { MIN_INSTITUTIONS_FOR_MEDIAN, maturityTier } from "@/lib/data-store/fee-stats";
+// maturity.ts, not fee-stats.ts: this module is imported by client components.
+import { MIN_INSTITUTIONS_FOR_MEDIAN, maturityTier } from "@/lib/data-store/maturity";
 
 /** The three confidence tiers for simulation data quality */
 export const CONFIDENCE_TIERS = ["strong", "provisional", "insufficient"] as const;
