@@ -619,6 +619,20 @@ describe("getInstitutionPeerRanking", () => {
     expect(result!.fee_income_ratio).toBeNull();
     expect(result!.peer_median_fee_ratio).toBeNull();
   });
+  it("withholds peer medians when fewer than five peers report", async () => {
+    const unsafe = vi.fn()
+      .mockResolvedValueOnce([
+        { institution_name: "Bank A", total_assets: "200000000", service_charge_income: "300000", fee_income_ratio: "10", report_date: "2024-09-30" },
+      ])
+      .mockResolvedValueOnce([{ peer_count: "3", median_sc: "250000", median_fee_ratio: "9" }])
+      .mockResolvedValueOnce([{ better_count: "1" }]);
+    getMock().unsafe = unsafe;
+
+    const result = await getInstitutionPeerRanking(33);
+    expect(result!.peer_count).toBe(3);
+    expect(result!.peer_median_sc).toBeNull();
+    expect(result!.peer_median_fee_ratio).toBeNull();
+  });
 });
 
 describe("scaling verification", () => {

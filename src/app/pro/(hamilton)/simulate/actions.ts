@@ -6,6 +6,7 @@ import { canAccessPremium } from "@/lib/access";
 import { getNationalIndex } from "@/lib/data-store/fee-index";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
+import { valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -99,13 +100,14 @@ export async function getDistributionForCategory(
       min_amount: entry.min_amount,
       max_amount: entry.max_amount,
       approved_count: entry.approved_count,
+      institution_count: entry.institution_count,
       peer_label: peerLabel,
       peer_source: peerSource,
       peer_set_id: peerSetId,
       peer_fallback_reason: peerFallbackReason,
     };
 
-    const confidenceTier = computeConfidenceTier(entry.approved_count);
+    const confidenceTier = computeConfidenceTier(entry.institution_count);
     return { distribution, confidenceTier };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Database error";
@@ -130,18 +132,18 @@ export async function getInstitutionFee(
     const rows = await sql<{ amount: string }[]>`
       SELECT ef.amount::text
       FROM published_fee_catalog ef
-      JOIN institution_sources ct ON ef.institution_id = ct.id
-      WHERE ct.id = ${numericInstitutionId}
+      WHERE ef.institution_id = ${numericInstitutionId}
         AND ef.fee_category = ${feeCategory}
         AND ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
-      ORDER BY
-        ef.created_at DESC
-      LIMIT 1
     `;
 
-    if (rows.length > 0 && rows[0].amount) {
-      return { amount: parseFloat(rows[0].amount) };
+    // The institution's value under the statistics contract: the median of its amounts.
+    const value = valuePerInstitution(
+      rows.map((row) => ({ institution_id: numericInstitutionId, amount: row.amount })),
+    ).get(numericInstitutionId);
+    if (value !== undefined) {
+      return { amount: value };
     }
     return null;
   } catch {
@@ -175,12 +177,21 @@ export async function saveScenario(params: {
     return { error: "Active subscription required" };
   }
 
+  const institutionId = normalizeCanonicalInstitutionId(params.institutionId) ?? "";
+  // The tier is recomputed here from the database; the client's value is never trusted.
+  const recomputed = await getDistributionForCategory(params.feeCategory, {
+    institutionId: institutionId || null,
+    peerSetId: params.peerSetId ?? null,
+  });
+  if ("error" in recomputed) {
+    return { error: recomputed.error };
+  }
+  const confidenceTier = recomputed.confidenceTier;
   // Insufficient tier must not be saved — canSimulate enforces the gate
-  const check = canSimulate(params.confidenceTier);
+  const check = canSimulate(confidenceTier);
   if (!check.allowed) {
     return { error: check.reason };
   }
-  const institutionId = normalizeCanonicalInstitutionId(params.institutionId) ?? "";
 
   try {
     const fallbackSource: HamiltonPersistedContextSource = institutionId ? "manual" : "profile";
@@ -225,7 +236,7 @@ export async function saveScenario(params: {
         ${params.currentValue},
         ${params.proposedValue},
         ${JSON.stringify(params.resultJson)},
-        ${params.confidenceTier},
+        ${confidenceTier},
         'active'
       )
       RETURNING id::text
@@ -404,7 +415,7 @@ export async function getSimulationCategories(peerContext?: SimulationPeerContex
           .replace(/_/g, " ")
           .replace(/\b\w/g, (c) => c.toUpperCase()),
         approved_count: e.approved_count,
-        confidence_tier: computeConfidenceTier(e.approved_count),
+        confidence_tier: computeConfidenceTier(e.institution_count),
       }))
       .sort((a, b) => b.approved_count - a.approved_count);
   } catch {

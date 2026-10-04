@@ -1,5 +1,6 @@
 "use client";
 
+import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -106,6 +107,7 @@ interface AnalyzeWorkspaceProps {
   initialIntent?: string | null;
   /** Pre-populated analysis loaded from hamilton_saved_analyses via ?analysis= searchParam */
   initialAnalysis?: AnalyzeResponse | null;
+  initialAnalysisId?: string | null;
 }
 
 /**
@@ -127,6 +129,7 @@ export function AnalyzeWorkspace({
   selectedInstitution,
   initialIntent,
   initialAnalysis,
+  initialAnalysisId = null,
 }: AnalyzeWorkspaceProps) {
   const [activeTab] = useState<AnalysisFocus>(ANALYSIS_FOCUS_TABS[0]);
   const [parsedResponse, setParsedResponse] = useState<ParsedResponse | null>(() => {
@@ -152,6 +155,8 @@ export function AnalyzeWorkspace({
     return "";
   });
   const [isExporting, setIsExporting] = useState(false);
+  const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
+  const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
 
   // Ref to always have latest activeTab inside async callbacks
   const activeTabRef = useRef<AnalysisFocus>(ANALYSIS_FOCUS_TABS[0]);
@@ -174,8 +179,12 @@ export function AnalyzeWorkspace({
     onFinish: async ({ message }) => {
       const content = extractTextFromMessage(message);
       const parsed = parseAnalyzeResponse(content);
+      // Every $ and % must trace to the tool data Hamilton was given.
+      const check = checkMessageFigures(message.parts as ReadonlyArray<{ type: string; text?: string; output?: unknown }>);
+      setFigureCheck(check);
       setParsedResponse(parsed);
       setIsSaved(false);
+      setSavedAnalysisId(null);
 
       // Auto-save if user context is available
       if (userId) {
@@ -188,7 +197,7 @@ export function AnalyzeWorkspace({
           prompt: lastPromptRef.current,
           responseJson: {
             title: parsed.hamiltonView.slice(0, 80),
-            confidence: { level: "medium", basis: [] },
+            confidence: confidenceFromFigureCheck(check),
             hamiltonView: parsed.hamiltonView,
             whatThisMeans: parsed.whatThisMeans,
             whyItMatters: parsed.whyItMatters,
@@ -196,7 +205,10 @@ export function AnalyzeWorkspace({
             exploreFurther: parsed.exploreFurther,
           } satisfies AnalyzeResponse,
         });
-        if ("id" in result) setIsSaved(true);
+        if ("id" in result) {
+          setIsSaved(true);
+          setSavedAnalysisId(result.id);
+        }
       }
     },
   });
@@ -225,25 +237,13 @@ export function AnalyzeWorkspace({
   );
 
   const handleExportPdf = useCallback(async () => {
-    if (!parsedResponse || isExporting) return;
+    if (!parsedResponse || isExporting || !savedAnalysisId) return;
     setIsExporting(true);
     try {
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "analysis",
-          analysis: {
-            title: parsedResponse.hamiltonView.slice(0, 80),
-            confidence: { level: "medium", basis: [] },
-            hamiltonView: parsedResponse.hamiltonView,
-            whatThisMeans: parsedResponse.whatThisMeans,
-            whyItMatters: parsedResponse.whyItMatters,
-            evidence: { metrics: parsedResponse.evidence },
-            exploreFurther: parsedResponse.exploreFurther,
-          } satisfies AnalyzeResponse,
-          analysisFocus: activeTab,
-        }),
+        body: JSON.stringify({ type: "analysis", analysisId: savedAnalysisId }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -258,7 +258,7 @@ export function AnalyzeWorkspace({
     } finally {
       setIsExporting(false);
     }
-  }, [parsedResponse, isExporting, activeTab]);
+  }, [parsedResponse, isExporting, savedAnalysisId]);
 
   // CTA bar should only show when Hamilton delivered an actual analysis,
   // not an info-request like "I need to identify your institution." Use
@@ -395,6 +395,21 @@ export function AnalyzeWorkspace({
               <WhatThisMeansPanel content={displayedResponse.whatThisMeans} isStreaming={isLoading} />
             )}
           </div>
+
+          {!isLoading && figureCheck && figureCheck.unmatched.length > 0 && (
+            <p
+              role="status"
+              className="text-sm rounded-lg px-4 py-3"
+              style={{
+                backgroundColor: "var(--hamilton-surface-container-low, #fbf3ee)",
+                border: "1px solid rgba(180,83,9,0.35)",
+                color: "var(--hamilton-text-primary)",
+              }}
+            >
+              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to
+              the data Hamilton retrieved for this answer. Treat them as unverified.
+            </p>
+          )}
 
           {/* CTA row — shown after stream completes */}
           <AnalyzeCTABar

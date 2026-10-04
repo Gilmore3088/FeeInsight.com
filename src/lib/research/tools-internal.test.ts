@@ -43,6 +43,7 @@ vi.mock("@/lib/data-store/fee-index", () => ({
   getNationalIndex: vi.fn().mockResolvedValue([]),
   getPeerIndex: vi.fn().mockResolvedValue([]),
   getIndexSnapshot: vi.fn().mockResolvedValue([]),
+  getContractFeeRows: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@/lib/data-store/derived-analytics", () => ({
@@ -366,5 +367,39 @@ describe("queryNationalData", () => {
       expect(result).toHaveProperty("error");
       expect((result as { error: string }).error).toContain("Unknown source");
     });
+  });
+});
+
+describe("rankInstitutions and queryRegulatoryRisk follow the statistics contract", () => {
+  const row = (institution_id: number, amount: number, fee_category = "nsf") => ({
+    institution_id, fee_category, amount, institution_name: `Bank ${institution_id}`,
+    state_code: "GA", charter_type: "bank", asset_size_tier: "community",
+  });
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("ranks by each institution's median, counting a bank with many variants once", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const execute = internalTools.rankInstitutions.execute as any;
+    vi.mocked(feeIndex.getContractFeeRows).mockResolvedValueOnce([
+      row(1, 10), row(2, 20), row(3, 30), row(4, 40),
+      // Bank 5 lists four variants; its median (60) is one value, not four votes.
+      row(5, 50), row(5, 55), row(5, 65), row(5, 70),
+    ] as never);
+
+    const result = await execute({ metric: "above_p75", limit: 10 }, {});
+
+    expect(result.results[0]).toMatchObject({ institution: "Bank 5", matching_fees: 1, total_fees: 1 });
+    expect(result.results.find((r: { institution: string }) => r.institution === "Bank 1")?.matching_fees).toBe(0);
+  });
+
+  it("finds no outliers in a category with fewer than five institutions", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const execute = internalTools.queryRegulatoryRisk.execute as any;
+    vi.mocked(feeIndex.getContractFeeRows).mockResolvedValueOnce([row(1, 10), row(2, 90)] as never);
+
+    const result = await execute({ categories: ["nsf"], limit: 5 }, {});
+
+    expect(JSON.stringify(result)).toContain('"outlier_institution_count":0');
   });
 });

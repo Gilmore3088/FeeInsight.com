@@ -67,6 +67,27 @@ describe("buildSelectedInstitutionFeeDeltas", () => {
     });
   });
 
+  it("collapses an institution's variants to one delta per category at its median, preferring verified rows", () => {
+    const deltas = buildSelectedInstitutionFeeDeltas({
+      selectedFees: [
+        { fee_name: "Overdraft", fee_category: "overdraft", amount: 30, review_status: "approved" },
+        { fee_name: "Overdraft (2nd item)", fee_category: "overdraft", amount: 35, review_status: "approved" },
+        { fee_name: "Overdraft (business)", fee_category: "overdraft", amount: 40, review_status: "approved" },
+        { fee_name: "Overdraft (draft)", fee_category: "overdraft", amount: 99, review_status: "pending" },
+      ],
+      indexEntries,
+      evidencePolicy: "provisional-first",
+    });
+
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]).toMatchObject({
+      fee_category: "overdraft",
+      fee_name: "Overdraft (3 variants)",
+      institution_amount: 35,
+      evidence_tier: "verified",
+    });
+  });
+
   it("excludes provisional rows when the report policy is verified-only", () => {
     const deltas = buildSelectedInstitutionFeeDeltas({
       selectedFees: [

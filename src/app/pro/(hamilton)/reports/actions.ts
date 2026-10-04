@@ -8,12 +8,13 @@ import {
   getInstitutionById,
 } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import {
   getInstitutionPeerRanking,
   getInstitutionRevenueTrend,
 } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
-import { generateSection } from "@/lib/hamilton/generate";
+import { generateVerifiedSection } from "@/lib/hamilton/generate";
 import {
   buildReportPeerCoveragePreview,
   buildSelectedInstitutionFeeDeltas,
@@ -350,7 +351,7 @@ export async function generateReport(
       minUsableCategories: 3,
     });
     const indexData = peerIndex.entries;
-    const allCategories = indexData.filter((e) => e.institution_count >= 5);
+    const allCategories = indexData.filter((e) => e.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN);
 
     // For category_deep_dive, filter to focus category if provided
     const topCategories =
@@ -474,9 +475,9 @@ export async function generateReport(
     // (no shared state, no ordering constraint). Was sequential and took
     // ~28s total; parallel cuts to ~10s (longest single call wins).
     const strategicSectionType = getStrategicSectionType(params.templateType);
-    const [summarySection, strategicSection, recommendationSection] =
+    const verifiedSections =
       await Promise.all([
-        generateSection({
+        generateVerifiedSection({
           type: "executive_summary",
           title: "Executive Summary",
           data: {
@@ -496,7 +497,7 @@ export async function generateReport(
           },
           context: buildExecutiveSummaryContext(params, institutionName, period),
         }),
-        generateSection({
+        generateVerifiedSection({
           type: strategicSectionType,
           title: "Strategic Analysis",
           data: {
@@ -515,7 +516,7 @@ export async function generateReport(
           },
           context: buildStrategicContext(params, institutionName),
         }),
-        generateSection({
+        generateVerifiedSection({
           type: "recommendation",
           title: "Recommended Position",
           // Pass actual peer-anchored fee data so the model can write
@@ -542,6 +543,18 @@ export async function generateReport(
           context: buildRecommendationContext(params, institutionName),
         }),
       ]);
+
+    // Every $ and % in the narrative must trace to the data the model was given.
+    const unverified = verifiedSections.flatMap((result) => (result.status === "needs_review" ? result.unmatched : []));
+    if (unverified.length > 0) {
+      return {
+        success: false,
+        error:
+          `Hamilton could not verify ${unverified.length === 1 ? "this figure" : "these figures"} against the report data: ` +
+          `${[...new Set(unverified)].join(", ")}. The report was not saved; please try again.`,
+      };
+    }
+    const [summarySection, strategicSection, recommendationSection] = verifiedSections.map((result) => result.section);
 
     const snapshotRows = selectedFeeDeltas.slice(0, 5).map((delta) => ({
       label: delta.fee_category.replace(/_/g, " "),

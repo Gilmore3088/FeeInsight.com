@@ -2,8 +2,12 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 /**
  * POST /api/pro/report-pdf
  *
- * Accepts: { report: ReportSummaryResponse, reportType: string }
+ * Accepts: { type: "report", reportId } or { type: "analysis", analysisId }
  * Returns: PDF blob (application/pdf) as download
+ *
+ * The PDF is rendered only from records loaded on the server: the user's own saved
+ * report or analysis, or a published report. Client-supplied report content is never
+ * rendered, so a branded PDF always reflects what Hamilton actually produced.
  *
  * Uses @react-pdf/renderer server-side only.
  * Listed in serverExternalPackages in next.config.ts.
@@ -18,11 +22,16 @@ import type { ReactElement, JSXElementConstructor } from "react";
 import { getCurrentUser } from "@/lib/auth";
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDocument";
-import type {
-  AnalyzeResponse,
-  ReportArtifactMetadata,
-  ReportSummaryResponse,
-} from "@/lib/hamilton/types";
+import { getHamiltonReportById } from "@/lib/hamilton/pro-tables";
+import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { loadPublishedReport } from "@/app/pro/(hamilton)/reports/actions";
+import { getInstitutionById } from "@/lib/data-store";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function recordId(value: unknown): string | null {
+  return typeof value === "string" && UUID_PATTERN.test(value) ? value : null;
+}
 
 async function handlePOST(req: NextRequest): Promise<NextResponse> {
   // Auth check
@@ -51,13 +60,20 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
 
   // ── Analysis branch ──────────────────────────────────────────────────────
   if (pdfType === "analysis") {
-    const analysis = body.analysis as AnalyzeResponse;
-    const analysisFocus = (body.analysisFocus as string) || "Analysis";
-    const institutionName = (body.institutionName as string) || undefined;
-
-    if (!analysis || !analysis.hamiltonView) {
-      return NextResponse.json({ error: "Invalid analysis data" }, { status: 400 });
+    const analysisId = recordId(body.analysisId);
+    if (!analysisId) {
+      return NextResponse.json({ error: "analysisId is required" }, { status: 400 });
     }
+    const record = await loadAnalysisRecord(analysisId);
+    if (!record) {
+      return NextResponse.json({ error: "Analysis not found" }, { status: 404 });
+    }
+    const analysis = record.responseJson;
+    const analysisFocus = record.analysisFocus || "Analysis";
+    const institution = record.institutionId
+      ? await getInstitutionById(Number(record.institutionId)).catch(() => null)
+      : null;
+    const institutionName = institution?.institution_name ?? undefined;
 
     try {
       const element = createElement(AnalysisPdfDocument, {
@@ -90,15 +106,19 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Report branch (default) ──────────────────────────────────────────────
-  const report = body.report as ReportSummaryResponse;
-  const reportType = (body.reportType as string) || "report";
-  const artifactMetadata =
-    body.artifactMetadata && typeof body.artifactMetadata === "object"
-      ? (body.artifactMetadata as ReportArtifactMetadata)
-      : null;
-  if (!report || !report.title) {
-    return NextResponse.json({ error: "Invalid report data" }, { status: 400 });
+  const reportId = recordId(body.reportId);
+  if (!reportId) {
+    return NextResponse.json({ error: "reportId is required" }, { status: 400 });
   }
+  const saved =
+    (await getHamiltonReportById(reportId, user.id).catch(() => null)) ??
+    (await loadPublishedReport(reportId).catch(() => null));
+  if (!saved) {
+    return NextResponse.json({ error: "Report not found" }, { status: 404 });
+  }
+  const report = saved.report_json;
+  const reportType = saved.report_type || "report";
+  const artifactMetadata = saved.artifact_metadata ?? null;
 
   try {
     const element = createElement(PdfDocument, {

@@ -5,7 +5,7 @@
  * Per D-11: signal/alert queries are NOT cached — fresh on every load.
  */
 
-import { getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { getNationalIndexCached, getSourcedInstitutionCount } from "@/lib/data-store/fee-index";
 import { getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { sql } from "@/lib/data-store/connection";
@@ -135,11 +135,8 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
   // Derive confidence from spotlight maturity tiers
   const confidence = deriveConfidence(positioning.map((e) => e.maturityTier));
 
-  // Compute total unique institutions from all entries
-  const totalInstitutions = allEntries.reduce(
-    (sum, e) => sum + e.institution_count,
-    0
-  );
+  // Distinct institutions behind the index (summing per-category counts double-counts).
+  const totalInstitutions = allEntries.length > 0 ? await getSourcedInstitutionCount().catch(() => 0) : 0;
 
   // Build minimal ThesisSummaryPayload — lighter scope, no heavy data sources
   const top10 = allEntries.slice(0, 10);

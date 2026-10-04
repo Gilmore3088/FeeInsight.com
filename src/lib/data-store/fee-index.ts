@@ -60,6 +60,49 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
   ) as IndexRow[];
 }
 
+export interface ContractFeeRow {
+  institution_id: number;
+  fee_category: string;
+  amount: number | null;
+  institution_name: string;
+  state_code: string | null;
+  charter_type: string | null;
+  asset_size_tier: string | null;
+}
+
+/** Approved, sourced published rows (the statistics contract's input), optionally filtered. */
+export async function getContractFeeRows(filters: { categories?: string[]; charter?: string } = {}): Promise<ContractFeeRow[]> {
+  const conditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'approved'", STATS_ROW_FILTER];
+  const params: (string | string[])[] = [];
+  if (filters.categories && filters.categories.length > 0) {
+    params.push(filters.categories);
+    conditions.push(`ef.fee_category = ANY($${params.length}::text[])`);
+  }
+  if (filters.charter) {
+    params.push(filters.charter);
+    conditions.push(`ct.charter_type = $${params.length}`);
+  }
+  return await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ct.institution_name,
+            ct.state_code, ct.charter_type, ct.asset_size_tier
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ${conditions.join(" AND ")}`,
+    params as never[],
+  ) as ContractFeeRow[];
+}
+
+/** Distinct institutions with at least one fee that counts toward statistics. */
+export async function getSourcedInstitutionCount(): Promise<number> {
+  const [row] = await sql.unsafe(
+    `SELECT COUNT(DISTINCT ef.institution_id)::int AS count
+       FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`
+  ) as { count: number }[];
+  return Number(row?.count ?? 0);
+}
+
 export async function getPeerIndex(
   filters: {
     charter_type?: string;

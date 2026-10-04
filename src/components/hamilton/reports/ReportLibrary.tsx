@@ -17,6 +17,7 @@ interface ReportLibraryProps {
     report: ReportSummaryResponse,
     reportType: string,
     artifactMetadata: ReportArtifactMetadata | null,
+    reportId: string,
   ) => void;
 }
 
@@ -83,11 +84,7 @@ export function ReportLibrary({
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          report: report.report_json,
-          reportType: report.report_type,
-          artifactMetadata: report.artifact_metadata ?? null,
-        }),
+        body: JSON.stringify({ type: "report", reportId: report.id }),
       });
       if (!res.ok) throw new Error("PDF generation failed");
       const blob = await res.blob();
@@ -258,6 +255,7 @@ export function ReportLibrary({
                       report.report_json,
                       report.report_type,
                       report.artifact_metadata ?? null,
+                      report.id,
                     )
                   }
                   className="text-primary text-xs uppercase tracking-widest font-bold hover:opacity-70 transition-opacity"

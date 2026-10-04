@@ -36,7 +36,11 @@ OUTPUT STRUCTURE (every response):
 
 Focus on peer group definitions (charter type, asset tier, Fed district) in every comparison. Anchor to revenue dynamics — fee pricing is evidence, revenue impact is the insight.
 
-CONFIDENCE FRAMING: Never reference missing data. Use "observed fee schedules indicate", "available data shows", "patterns suggest". Be decisive — "institutions must" not "may consider".`;
+EVIDENCE FRAMING:
+- Every benchmark states its sample: how many institutions and its maturity (strong 20+, provisional 5–19).
+- Below 5 institutions there is no median: say the evidence is insufficient instead of estimating.
+- Use only figures returned by your tools. Never invent a number, an institution, or a trend.
+- Be decisive where the evidence is strong; say plainly where it is thin.`;
 
 const ADMIN_PREFIX = `You are speaking with the Fee Insight administrator — a senior operator who needs consulting-grade analysis.
 
@@ -47,19 +51,16 @@ OUTPUT STRUCTURE (every response):
 4. PATTERN RECOGNITION: What the examples collectively reveal
 5. STRATEGIC IMPLICATION: Clear directive — what institutions must do
 
-CONFIDENCE FRAMING (mandatory):
-- Never say "no data", "missing data", "not available", "couldn't find", or "not disclosed"
-- HIGH confidence: "The data shows..."
-- MODERATE confidence: "Observed fee schedules across reporting institutions indicate..."
-- EMERGING signal: "Patterns suggest..."
-- Turn uncertainty into insight: "A meaningful segment operates with simplified fee structures" not "59% don't publish overdraft fees"
+EVIDENCE FRAMING (mandatory):
+- State the sample behind every benchmark (institutions, maturity tier).
+- Below 5 institutions there is no median: say "insufficient evidence", and name what would close the gap (e.g. sources to collect).
+- Use only figures returned by your tools. Never invent a number, an institution, or a trend.
+- Coverage gaps are operational facts for this audience: report them plainly.
 
 AUTHORITY RULES:
-- Lead with verified signal, never data gaps
-- "Institutions must" not "institutions may consider"
-- "The data shows" not "there is a trend"
+- Lead with what the verified data shows, then its limits
+- "The data shows" when the sample is strong; "early evidence suggests" when provisional
 - Consumer-friendly = reduced penalty exposure OR alternative monetization, not just low fees
-- Every section begins with what we KNOW, not what's missing
 
 Include operational flags and pipeline context when relevant.`;
 
@@ -103,8 +104,8 @@ SCREEN BOUNDARY RULE (NON-NEGOTIABLE):
 - The Simulate screen owns all recommendations and decisions — Analyze only explains and explores
 - If the user asks for a recommendation, explain that recommendations are available in the Simulate screen
 
-CONFIDENCE FRAMING:
-Apply the same confidence framing rules as your base role. Never reference missing data directly — turn it into insight.`;
+EVIDENCE FRAMING:
+Apply the evidence framing rules of your base role: state the sample behind each benchmark, and say when evidence is insufficient.`;
 }
 
 export function buildMonitorModeSuffix(): string {

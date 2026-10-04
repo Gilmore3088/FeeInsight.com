@@ -43,9 +43,19 @@ vi.mock("@/lib/data-store/institution", () => ({
   getInstitutionFeeScheduleEvidence: mocks.getInstitutionFeeScheduleEvidence,
 }));
 
-vi.mock("@/lib/hamilton/generate", () => ({
-  generateSection: mocks.generateSection,
-}));
+vi.mock("@/lib/hamilton/generate", async () => {
+  // Real figure check over the mocked section text, as generateVerifiedSection does.
+  const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+  return {
+    generateVerifiedSection: async (input: SectionInput) => {
+      const section = await mocks.generateSection(input);
+      const check = checkNarrativeFigures(section.narrative, input.data);
+      return check.unmatched.length > 0
+        ? { status: "needs_review", section, unmatched: check.unmatched, citation: {} }
+        : { status: "ok", section, figuresChecked: check.checked, citation: {} };
+    },
+  };
+});
 
 vi.mock("@/lib/hamilton/peer-index", () => ({
   resolveHamiltonPeerIndex: mocks.resolveHamiltonPeerIndex,
@@ -354,6 +364,32 @@ describe("Hamilton Reports generateReport", () => {
     });
     expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
     expect(mocks.completeHamiltonRefreshJobsForInstitution).not.toHaveBeenCalled();
+  });
+
+  it("refuses to save a report whose narrative states figures the data does not support", async () => {
+    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
+    mocks.getFeesByInstitution.mockResolvedValue([
+      {
+        fee_name: "Domestic wire",
+        fee_category: "wire_transfer",
+        amount: 35,
+        frequency: "per wire",
+        review_status: "pending",
+        extraction_confidence: 0.76,
+        source_url: "https://example.com/fees",
+      },
+    ]);
+    mocks.generateSection.mockImplementation(async (input: SectionInput) => ({
+      narrative: `${input.title}: peers now charge $97 for this fee.`,
+      wordCount: 8,
+      model: "mock",
+      usage: { inputTokens: 10, outputTokens: 8 },
+    }));
+
+    const result = await generateReport(reportParams());
+
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("$97") });
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
   });
 
   it("does not persist profile-name slugs for reports without a selected institution", async () => {

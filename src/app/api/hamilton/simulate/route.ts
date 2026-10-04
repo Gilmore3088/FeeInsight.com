@@ -9,9 +9,11 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  *   feeCategory: string
  *   currentFee: number
  *   proposedFee: number
- *   distributionData: DistributionData (p25/median/p75/min/max/approved_count)
- *   institutionContext: { name?: string; type?: string; assetTier?: string; fedDistrict?: number | null }
- *   peerContext: optional label/source/fallback metadata for the selected peer baseline
+ *   institutionId?: string | null   (the selected Hamilton institution)
+ *   peerSetId?: string | null       (the selected peer baseline)
+ *
+ * The peer distribution, confidence tier and institution profile are loaded on the
+ * server; the client never supplies the numbers the model is given.
  *
  * Response: data stream — plain text prose interpretation
  * Only the interpretation field streams. Structured fields (tradeoffs, recommendedPosition)
@@ -27,7 +29,9 @@ import { getAnthropicLanguageModel } from "@/lib/ai-provider";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { logUsage } from "@/lib/research/history";
-import type { DistributionData } from "@/lib/hamilton/simulation";
+import { getDistributionForCategory } from "@/app/pro/(hamilton)/simulate/actions";
+import { canSimulate } from "@/lib/hamilton/confidence";
+import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 
 export const maxDuration = 30;
@@ -46,6 +50,10 @@ const COST_PER_M_OUTPUT: Record<string, number> = {
   "claude-opus-4-5-20250514": 7500,
 };
 
+function isFeeAmount(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 100_000;
+}
+
 async function handlePOST(request: Request) {
   const user = await getCurrentUser();
   if (!user || !canAccessPremium(user)) {
@@ -53,21 +61,11 @@ async function handlePOST(request: Request) {
   }
 
   let body: {
-    feeCategory: string;
-    currentFee: number;
-    proposedFee: number;
-    distributionData: DistributionData;
-    institutionContext: {
-      name?: string;
-      type?: string;
-      assetTier?: string;
-      fedDistrict?: number | null;
-    };
-    peerContext?: {
-      label?: string | null;
-      source?: string | null;
-      fallbackReason?: string | null;
-    };
+    feeCategory?: unknown;
+    currentFee?: unknown;
+    proposedFee?: unknown;
+    institutionId?: unknown;
+    peerSetId?: unknown;
   };
 
   try {
@@ -76,18 +74,35 @@ async function handlePOST(request: Request) {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { feeCategory, currentFee, proposedFee, distributionData, institutionContext, peerContext } = body;
-
-  if (!feeCategory || typeof currentFee !== "number" || typeof proposedFee !== "number") {
-    return new Response("Missing required fields: feeCategory, currentFee, proposedFee", {
+  const feeCategory = typeof body.feeCategory === "string" ? body.feeCategory : "";
+  const currentFee = Number(body.currentFee);
+  const proposedFee = Number(body.proposedFee);
+  if (!feeCategory || !isFeeAmount(currentFee) || !isFeeAmount(proposedFee)) {
+    return new Response("Missing or invalid fields: feeCategory, currentFee, proposedFee", {
       status: 400,
     });
   }
+  const institutionId = typeof body.institutionId === "string" && body.institutionId ? body.institutionId : null;
+  const peerSetId = typeof body.peerSetId === "string" && body.peerSetId ? body.peerSetId : null;
 
-  const { median_amount, p25_amount, p75_amount, approved_count } = distributionData;
-  const peerLabel = peerContext?.label || distributionData.peer_label || "verified peer baseline";
-  const peerSource = peerContext?.source || distributionData.peer_source || "unknown";
-  const peerFallbackReason = peerContext?.fallbackReason || distributionData.peer_fallback_reason || null;
+  const resolved = await getDistributionForCategory(feeCategory, { institutionId, peerSetId });
+  if ("error" in resolved) {
+    return new Response(resolved.error, { status: 422 });
+  }
+  const gate = canSimulate(resolved.confidenceTier);
+  if (!gate.allowed) {
+    return new Response(gate.reason, { status: 422 });
+  }
+  const distributionData = resolved.distribution;
+  const institution = institutionId && /^\d+$/.test(institutionId)
+    ? await getInstitutionById(Number(institutionId)).catch(() => null)
+    : null;
+
+  const { median_amount, p25_amount, p75_amount } = distributionData;
+  const institutionCount = distributionData.institution_count;
+  const peerLabel = distributionData.peer_label || "verified peer baseline";
+  const peerSource = distributionData.peer_source || "unknown";
+  const peerFallbackReason = distributionData.peer_fallback_reason || null;
   const direction =
     proposedFee > currentFee
       ? "increasing"
@@ -102,18 +117,19 @@ async function handlePOST(request: Request) {
 Your response MUST be plain prose — NO markdown headers, NO bullet points, NO lists.
 Write 3–4 sentences maximum. Reference the percentile positions and peer distribution data provided.
 
-REQUIRED framing — address these dimensions:
+REQUIRED framing — address these dimensions, using only the data provided below:
 - Peer positioning: Where this fee sits relative to P25/median/P75 and what that signals competitively
-- Complaint and attrition risk: At above-P75 positioning, note elevated CFPB complaint exposure and peer migration patterns at similar fee levels
 - Revenue direction: Characterize as revenue-positive, revenue-neutral, or revenue-compressing — do NOT quantify with dollar amounts
-- Regulatory awareness: Note any known regulatory scrutiny for this fee category if relevant
+- Evidence strength: State how many institutions the peer distribution covers and its maturity; if it is provisional, say the read is directional
+
+Do not cite complaint volumes, attrition, migration patterns or regulatory actions: that data is not supplied here.
 
 Do NOT provide concrete dollar revenue projections. No "you'll lose $X million" or "revenue impact: -$500K". Frame revenue impact directionally only.
 
-Tone: Top-tier consulting strategic advisor. Confident, not hedging. Data-grounded, not generic.`;
+Tone: Top-tier consulting strategic advisor. Direct and data-grounded; confident where the sample is strong, explicit about limits where it is not.`;
 
-  const institutionLine = institutionContext.name
-    ? `Institution: ${institutionContext.name}${institutionContext.type ? ` (${institutionContext.type}` : ""}${institutionContext.assetTier ? `, ${institutionContext.assetTier}` : ""}${institutionContext.type ? ")" : ""}`
+  const institutionLine = institution
+    ? `Institution: ${institution.institution_name} (${institution.charter_type === "credit_union" ? "credit union" : "bank"}${institution.asset_size_tier ? `, ${institution.asset_size_tier}` : ""})`
     : "";
 
   const userPrompt = `${institutionLine}
@@ -124,7 +140,7 @@ Proposed fee: $${proposedFee.toFixed(2)} (${direction} by $${changeDollars})
 
 Peer baseline: ${peerLabel} (${peerSource})
 ${peerFallbackReason ? `Peer fallback: ${peerFallbackReason}` : ""}
-Peer distribution (${approved_count} approved observations):
+Peer distribution (${institutionCount} institutions, ${resolved.confidenceTier} evidence):
 - P25: $${p25_amount?.toFixed(2) ?? "N/A"}
 - Median: $${median_amount?.toFixed(2) ?? "N/A"}
 - P75: $${p75_amount?.toFixed(2) ?? "N/A"}

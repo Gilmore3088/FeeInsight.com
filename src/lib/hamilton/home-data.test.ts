@@ -14,6 +14,7 @@ vi.mock("@/lib/data-store/connection", () => ({
 
 vi.mock("@/lib/data-store/fee-index", () => ({
   getNationalIndexCached: vi.fn(),
+  getSourcedInstitutionCount: vi.fn(),
 }));
 
 vi.mock("./generate", () => ({
@@ -96,5 +97,24 @@ describe("Hamilton home signal data", () => {
     expect(sqlCalls[0].values).toEqual([5]);
     expect(sqlCalls[1].values).toEqual([7, 3]);
     expect(sqlCalls[2].values).toEqual([3]);
+  });
+
+  it("gives the thesis the distinct institution count, not the per-category sum", async () => {
+    const feeIndex = await import("@/lib/data-store/fee-index");
+    const generate = await import("./generate");
+    const entry = (fee_category: string, institution_count: number) => ({
+      fee_category, institution_count, median_amount: 30, p25_amount: 25, p75_amount: 35,
+      maturity_tier: "strong", fee_family: null, min_amount: 0, max_amount: 40,
+      observation_count: institution_count, approved_count: institution_count, bank_count: 0, cu_count: 0, last_updated: null,
+    });
+    vi.mocked(feeIndex.getNationalIndexCached).mockResolvedValue([entry("overdraft", 300), entry("nsf", 280)] as never);
+    vi.mocked(feeIndex.getSourcedInstitutionCount).mockResolvedValue(335);
+    vi.mocked(generate.generateGlobalThesis).mockRejectedValue(new Error("offline"));
+
+    const { fetchHomeBriefingData } = await import("./home-data");
+    await fetchHomeBriefingData();
+
+    const payload = vi.mocked(generate.generateGlobalThesis).mock.calls[0][0] as { data: { total_institutions: number } };
+    expect(payload.data.total_institutions).toBe(335);
   });
 });
