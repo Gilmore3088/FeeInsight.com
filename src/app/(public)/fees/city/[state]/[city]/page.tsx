@@ -70,8 +70,7 @@ export default async function CityFeePage({ params }: PageProps) {
 
   const nationalMedians: Record<string, number> = {};
   for (const entry of nationalIndex) {
-    // A missing national median means "not enough data", never $0.
-    if (entry.median_amount != null) nationalMedians[entry.fee_category] = entry.median_amount;
+    nationalMedians[entry.fee_category] = entry.median_amount ?? 0;
   }
 
   const spotlightCategories = ["overdraft", "monthly_maintenance", "nsf", "atm_non_network"];

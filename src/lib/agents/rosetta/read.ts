@@ -150,6 +150,9 @@ function normalizeHttpUrl(value: string | null): string | null {
 
 function normalizeWhitespace(value: string): string {
   return value
+    // Some PDFs embed NUL characters; Postgres text columns reject them
+    // ("invalid byte sequence for encoding UTF8: 0x00"), failing the whole read step.
+    .replaceAll("\u0000", "")
     .replace(/\r/g, "\n")
     .replace(/\t/g, " ")
     .replace(/[ \f\v]+/g, " ")

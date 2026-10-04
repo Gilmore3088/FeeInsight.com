@@ -521,3 +521,157 @@ export async function getOfrData(limit = 20): Promise<{
     return [];
   }
 }
+
+// --- Financial history (regulatory registry) ---
+
+/** Every call-report line the gated Financial profile charts, in stored units. */
+export interface InstitutionFinancialHistoryRow extends InstitutionFinancial {
+  net_income: number | null;
+  net_interest_income: number | null;
+  noninterest_expense: number | null;
+  provision_for_losses: number | null;
+  net_charge_offs: number | null;
+  noncurrent_loans: number | null;
+  total_equity: number | null;
+  loans_real_estate: number | null;
+  loans_commercial: number | null;
+  loans_consumer: number | null;
+  loans_agricultural: number | null;
+  net_charge_off_rate: number | null;
+  noncurrent_loan_rate: number | null;
+  leverage_ratio: number | null;
+  total_capital_ratio: number | null;
+  fetched_at: string | null;
+}
+
+const HISTORY_EXTRA_NUMERIC = [
+  "net_income",
+  "net_interest_income",
+  "noninterest_expense",
+  "provision_for_losses",
+  "net_charge_offs",
+  "noncurrent_loans",
+  "total_equity",
+  "loans_real_estate",
+  "loans_commercial",
+  "loans_consumer",
+  "loans_agricultural",
+  "net_charge_off_rate",
+  "noncurrent_loan_rate",
+  "leverage_ratio",
+  "total_capital_ratio",
+] as const;
+
+/**
+ * Up to `maxQuarters` quarters of call-report history (all sources; callers pick
+ * one row per quarter). Reads only columns added by the regulatory registry
+ * migration, so it must only be called once that migration is applied; callers
+ * wrap it with a fallback.
+ */
+export async function getFinancialHistory(
+  targetId: number,
+  maxQuarters = 68,
+): Promise<InstitutionFinancialHistoryRow[]> {
+  const rowLimit = Math.min(Math.max(Math.floor(maxQuarters), 1), 100) * 3;
+  const rows = [...await sql`
+    SELECT institution_id, report_date, source,
+           total_assets, total_deposits, total_loans,
+           service_charge_income, other_noninterest_income,
+           net_interest_margin, efficiency_ratio,
+           roa, roe, tier1_capital_ratio,
+           branch_count, employee_count, member_count,
+           total_revenue, fee_income_ratio, overdraft_revenue,
+           net_income, net_interest_income, noninterest_expense, provision_for_losses,
+           net_charge_offs, noncurrent_loans, total_equity,
+           loans_real_estate, loans_commercial, loans_consumer, loans_agricultural,
+           net_charge_off_rate, noncurrent_loan_rate, leverage_ratio, total_capital_ratio,
+           fetched_at
+    FROM institution_financial_records
+    WHERE institution_id = ${targetId}
+    ORDER BY report_date DESC
+    LIMIT ${rowLimit}`];
+
+  return rows.map((r: Record<string, unknown>) => {
+    const extra = Object.fromEntries(HISTORY_EXTRA_NUMERIC.map((key) => [key, numOrNull(r[key])]));
+    return {
+      institution_id: Number(r.institution_id),
+      report_date: r.report_date instanceof Date ? r.report_date.toISOString().slice(0, 10) : String(r.report_date),
+      source: String(r.source),
+      total_assets: dollarOrNull(r.total_assets),
+      total_deposits: dollarOrNull(r.total_deposits),
+      total_loans: dollarOrNull(r.total_loans),
+      service_charge_income: dollarOrNull(r.service_charge_income),
+      other_noninterest_income: dollarOrNull(r.other_noninterest_income),
+      net_interest_margin: numOrNull(r.net_interest_margin),
+      efficiency_ratio: numOrNull(r.efficiency_ratio),
+      roa: numOrNull(r.roa),
+      roe: numOrNull(r.roe),
+      tier1_capital_ratio: numOrNull(r.tier1_capital_ratio),
+      branch_count: numOrNull(r.branch_count),
+      employee_count: numOrNull(r.employee_count),
+      member_count: numOrNull(r.member_count),
+      total_revenue: dollarOrNull(r.total_revenue),
+      fee_income_ratio: numOrNull(r.fee_income_ratio),
+      overdraft_revenue: dollarOrNull(r.overdraft_revenue),
+      ...extra,
+      fetched_at: r.fetched_at instanceof Date ? r.fetched_at.toISOString() : r.fetched_at ? String(r.fetched_at) : null,
+    } as InstitutionFinancialHistoryRow;
+  });
+}
+
+/** Peer medians for the institution's charter + asset tier, latest common quarter. */
+export interface PeerFinancialMedians {
+  report_date: string;
+  source: string;
+  peer_count: number;
+  roa: number | null;
+  net_interest_margin: number | null;
+  efficiency_ratio: number | null;
+  net_charge_off_rate: number | null;
+  noncurrent_loan_rate: number | null;
+  tier1_capital_ratio: number | null;
+  /** Fraction (fdic/ncua convention), e.g. 0.05 = 5%. */
+  fee_income_ratio: number | null;
+}
+
+export async function getPeerFinancialMedians(targetId: number): Promise<PeerFinancialMedians | null> {
+  const [row] = await sql`
+    WITH me AS (
+      SELECT s.charter_type, s.asset_size_tier, f.report_date, f.source
+        FROM institution_sources s
+        JOIN institution_financial_records f ON f.institution_id = s.id
+       WHERE s.id = ${targetId} AND f.source IN ('fdic', 'ncua')
+       ORDER BY f.report_date DESC
+       LIMIT 1
+    )
+    SELECT me.report_date, me.source,
+           COUNT(*)::int AS peer_count,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.roa) FILTER (WHERE f.roa <> 0) AS roa,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.net_interest_margin) AS net_interest_margin,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.efficiency_ratio)
+             FILTER (WHERE f.efficiency_ratio BETWEEN 0 AND 200) AS efficiency_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.net_charge_off_rate) AS net_charge_off_rate,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.noncurrent_loan_rate) AS noncurrent_loan_rate,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.tier1_capital_ratio) AS tier1_capital_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS fee_income_ratio
+      FROM me
+      JOIN institution_sources s
+        ON s.charter_type = me.charter_type
+       AND s.asset_size_tier IS NOT DISTINCT FROM me.asset_size_tier
+      JOIN institution_financial_records f
+        ON f.institution_id = s.id AND f.report_date = me.report_date AND f.source = me.source
+     GROUP BY me.report_date, me.source`;
+  if (!row) return null;
+  return {
+    report_date: String(row.report_date),
+    source: String(row.source),
+    peer_count: Number(row.peer_count),
+    roa: numOrNull(row.roa),
+    net_interest_margin: numOrNull(row.net_interest_margin),
+    efficiency_ratio: numOrNull(row.efficiency_ratio),
+    net_charge_off_rate: numOrNull(row.net_charge_off_rate),
+    noncurrent_loan_rate: numOrNull(row.noncurrent_loan_rate),
+    tier1_capital_ratio: numOrNull(row.tier1_capital_ratio),
+    fee_income_ratio: numOrNull(row.fee_income_ratio),
+  };
+}

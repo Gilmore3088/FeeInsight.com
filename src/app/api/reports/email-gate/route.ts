@@ -8,7 +8,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  *   T-16-04 — Email validated server-side before any DB operation
  *   T-16-05 — Slug validated against published_reports (is_public=true)
  *   T-16-06 — artifact_key never returned to client; presigned URL generated server-side
- *   T-16-07 — Duplicate leads silently ignored via ON CONFLICT DO NOTHING
+ *   T-16-07 — A returning lead is updated in place, never duplicated
  */
 
 import { NextResponse } from "next/server";
@@ -16,6 +16,9 @@ import { getSql } from "@/lib/data-store/connection";
 import { generatePresignedUrl } from "@/lib/report-engine/presign";
 
 export const dynamic = "force-dynamic";
+
+const REPORT_DOWNLOAD_SOURCE = "report_download";
+const REPORT_DOWNLOAD_LEAD_NAME = "Report download";
 
 // Strict email validation regex (T-16-04)
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -86,17 +89,35 @@ async function handlePOST(request: Request) {
     );
   }
 
-  // Store lead — failure is non-blocking (T-16-07)
-  // TODO: Phase 17 — add report_leads migration
+  // Store the lead in `leads` (the table the admin leads page reads); failure stays
+  // non-blocking so the download still works. A returning lead gains this source and
+  // report instead of being duplicated, matching /api/leads.
   try {
-    await sql`
-      INSERT INTO report_leads (email, slug, requested_at)
-      VALUES (${email.toLowerCase()}, ${slug.trim()}, now())
-      ON CONFLICT (email, slug) DO NOTHING
-    `;
+    const leadEmail = email.trim().toLowerCase();
+    const useCase = `Downloaded report: ${slug.trim()}`;
+    const existing = await sql<{ id: number }[]>`
+      SELECT id FROM leads WHERE lower(email) = ${leadEmail} LIMIT 1`;
+    if (existing.length > 0) {
+      await sql`
+        UPDATE leads SET
+          source = CASE
+            WHEN source IS NULL OR source = '' THEN ${REPORT_DOWNLOAD_SOURCE}
+            WHEN ${REPORT_DOWNLOAD_SOURCE} = ANY(string_to_array(source, ',')) THEN source
+            ELSE source || ',' || ${REPORT_DOWNLOAD_SOURCE}
+          END,
+          use_case = CASE
+            WHEN use_case IS NULL OR use_case = '' THEN ${useCase}
+            WHEN position(${useCase} in use_case) > 0 THEN use_case
+            ELSE use_case || '; ' || ${useCase}
+          END
+        WHERE lower(email) = ${leadEmail}`;
+    } else {
+      await sql`
+        INSERT INTO leads (name, email, use_case, source)
+        VALUES (${REPORT_DOWNLOAD_LEAD_NAME}, ${leadEmail}, ${useCase}, ${REPORT_DOWNLOAD_SOURCE})`;
+    }
   } catch (err) {
-    // report_leads table may not exist yet; log and continue
-    console.warn("[/api/reports/email-gate] Lead storage failed (table may not exist):", err);
+    console.error("[/api/reports/email-gate] Lead storage failed:", err);
   }
 
   // Generate presigned URL server-side — 1-hour TTL (T-16-06)
@@ -111,17 +132,7 @@ async function handlePOST(request: Request) {
     );
   }
 
-  return NextResponse.json(
-    { downloadUrl },
-    {
-      status: 200,
-      headers: {
-        // Rate limit headers — informational only for v2.0 (T-16-07: accept DoS risk)
-        "X-RateLimit-Limit": "100",
-        "X-RateLimit-Remaining": "99",
-      },
-    }
-  );
+  return NextResponse.json({ downloadUrl }, { status: 200 });
 }
 
 export const POST = withApiRoutePolicy("api.reports.email_gate", "POST", handlePOST);

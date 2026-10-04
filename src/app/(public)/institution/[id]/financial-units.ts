@@ -25,13 +25,13 @@ const THOUSANDS = 1_000;
 const PERCENT = 100;
 const FFIEC_INCOME_OVERSCALE = 1_000;
 const FFIEC_RATIO_OVERSCALE = 1_000;
-const SOURCE_PREFERENCE = ["fdic", "ffiec", "ncua"] as const;
+export const SOURCE_PREFERENCE = ["fdic", "ffiec", "ncua"] as const;
 
 function finite(value: number | null): value is number {
   return value !== null && Number.isFinite(value);
 }
 
-function balanceToDollars(value: number | null, source: string): number | null {
+export function balanceToDollars(value: number | null, source: string): number | null {
   if (!finite(value)) return null;
   return source === "ffiec" ? value : value * THOUSANDS;
 }
@@ -80,7 +80,7 @@ export function normalizeFinancial(record: InstitutionFinancial): NormalizedFina
   };
 }
 
-function sourceRank(source: string): number {
+export function sourceRank(source: string): number {
   const rank = SOURCE_PREFERENCE.indexOf(source.toLowerCase() as (typeof SOURCE_PREFERENCE)[number]);
   return rank === -1 ? SOURCE_PREFERENCE.length : rank;
 }

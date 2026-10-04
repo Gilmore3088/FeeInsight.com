@@ -104,12 +104,26 @@ describe("POST /api/leads", () => {
     expect(update.values).toContain("report");
   });
 
-  it("does not send notifications for newsletter signups", async () => {
+  it("sends the footer newsletter signup the monthly-index confirmation", async () => {
     sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const res = await post({ name: "Newsletter signup", email: "a@b.co", source: "newsletter" });
-    expect(await res.json()).toEqual({ success: true });
+    expect(await res.json()).toEqual({
+      success: true,
+      notifications: { notification: "sent", confirmation: "sent" },
+    });
+    expect(captureNotifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "a@b.co", placement: "national_index" }),
+    );
     expect(reportNotifyMock).not.toHaveBeenCalled();
     expect(contactNotifyMock).not.toHaveBeenCalled();
+  });
+
+  it("matches an existing lead case-insensitively", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([]);
+    await post({ email: "JLGilmore2@Gmail.com", source: "capture_homepage" });
+    expect(issued(0).text).toContain("WHERE lower(email) = lower(?)");
+    expect(issued(1).text).toContain("UPDATE leads SET");
+    expect(issued(1).text).toContain("WHERE lower(email) = lower(?)");
   });
 
   it("stores institution_id and src on use_case and notifies for report requests", async () => {

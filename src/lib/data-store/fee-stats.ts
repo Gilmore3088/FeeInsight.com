@@ -1,118 +1,127 @@
+/**
+ * The statistics contract for every fee median, percentile and count the product shows.
+ *
+ * 1. Only sourced rows count: a published row must trace back to a fetched source
+ *    document. Unsourced legacy rows stay visible on institution pages but are hidden
+ *    from statistics until they are re-sourced.
+ * 2. One value per institution: an institution with several rows for a category
+ *    contributes the median of its own amounts once, so a bank with five copies of a
+ *    fee no longer counts five times. The lowest amount was rejected: tiered or
+ *    mislabeled sub-fees pull it down (overdraft read $20 instead of $28).
+ * 3. $0 counts: a free fee is a real price and pulls the median down.
+ * 4. Minimum sample: no median or percentile below MIN_INSTITUTIONS_FOR_MEDIAN
+ *    institutions; "strong" needs STRONG_INSTITUTION_COUNT.
+ * 5. Unknown charter types count as neither banks nor credit unions.
+ */
 import { computePercentile, computeStats } from "./fees";
 
-/**
- * The statistics contract: the one set of rules every fee index, summary and
- * breakdown follows. Pure and tested; data-store readers feed it rows from
- * `published_fee_catalog` and never compute medians their own way.
- *
- *   1. One value per institution per category: each bank counts once, at the median
- *      of the amounts it lists for that fee (so tiered or reduced variants neither
- *      dominate nor disappear).
- *   2. $0 counts. A free fee is a real price; null and negative amounts are dropped.
- *   3. Provenance is explicit. A row is "sourced" when it traces to a stored source
- *      document (`source_document_id`). A category whose sourced institutions reach
- *      SOURCED_SWITCH_INSTITUTIONS is computed from sourced values only (basis
- *      "sourced"); below that it uses everything and says so (basis "blended").
- *   4. No median below MIN_INSTITUTIONS institutions, only counts.
- */
-
-export const MIN_INSTITUTIONS = 5;
-export const STRONG_INSTITUTIONS = 20;
-/** Sourced institutions needed before a category is computed from sourced data only. */
-export const SOURCED_SWITCH_INSTITUTIONS = 20;
-/** Bump when these rules change; cached and stored statistics carry it. */
+export const MIN_INSTITUTIONS_FOR_MEDIAN = 5;
+export const STRONG_INSTITUTION_COUNT = 20;
+/** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
 export const STATS_METHOD_VERSION = 2;
 
-export type StatsBasis = "sourced" | "blended";
-export type StatsMaturity = "strong" | "provisional" | "insufficient";
+/** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
+export const STATS_ROW_FILTER = "ef.source_document_id IS NOT NULL";
 
-export interface ContractRow {
+export type MaturityTier = "strong" | "provisional" | "insufficient";
+
+export interface StatsInputRow {
   institution_id: number | string;
   amount: number | string | null;
-  /** True when the row traces to a stored source document. */
-  sourced: boolean;
   charter_type?: string | null;
 }
 
-export interface InstitutionValue {
-  institutionId: number;
-  amount: number;
-  sourced: boolean;
-  charterType: string | null;
-}
-
-export interface CategoryStats {
-  median: number | null;
-  p25: number | null;
-  p75: number | null;
-  min: number | null;
-  max: number | null;
-  avg: number | null;
+export interface FeeStatistics {
   institution_count: number;
-  sourced_institution_count: number;
-  legacy_institution_count: number;
+  observation_count: number;
   bank_count: number;
   cu_count: number;
-  basis: StatsBasis;
-  maturity: StatsMaturity;
-  stats_method_version: number;
+  min_amount: number | null;
+  max_amount: number | null;
+  avg_amount: number | null;
+  median_amount: number | null;
+  p25_amount: number | null;
+  p75_amount: number | null;
+  maturity_tier: MaturityTier;
 }
 
-/** A row traces to a source document (the SQL twin is `source_document_id IS NOT NULL`). */
-export function isSourcedRow(row: { source_document_id?: unknown }): boolean {
-  return row.source_document_id != null;
-}
-
-/** One value per institution: the median of its non-negative amounts; sourced if any row is. */
-export function institutionValues(rows: ContractRow[]): InstitutionValue[] {
-  const byInstitution = new Map<number, { amounts: number[]; sourced: boolean; charterType: string | null }>();
-  for (const row of rows) {
-    if (row.amount == null || row.amount === "") continue;
-    const amount = Number(row.amount);
-    if (!Number.isFinite(amount) || amount < 0) continue;
-    const institutionId = Number(row.institution_id);
-    const current = byInstitution.get(institutionId) ?? { amounts: [], sourced: false, charterType: row.charter_type ?? null };
-    current.amounts.push(amount);
-    current.sourced = current.sourced || row.sourced;
-    byInstitution.set(institutionId, current);
-  }
-  return [...byInstitution.entries()].map(([institutionId, value]) => ({
-    institutionId,
-    amount: Math.round(computePercentile([...value.amounts].sort((a, b) => a - b), 50) * 100) / 100,
-    sourced: value.sourced,
-    charterType: value.charterType,
-  }));
-}
-
-export function maturityFor(institutionCount: number): StatsMaturity {
-  if (institutionCount >= STRONG_INSTITUTIONS) return "strong";
-  if (institutionCount >= MIN_INSTITUTIONS) return "provisional";
+export function maturityTier(institutionCount: number): MaturityTier {
+  if (institutionCount >= STRONG_INSTITUTION_COUNT) return "strong";
+  if (institutionCount >= MIN_INSTITUTIONS_FOR_MEDIAN) return "provisional";
   return "insufficient";
 }
 
-/** Statistics for one category (or one slice of it) under the contract. */
-export function categoryStats(rows: ContractRow[]): CategoryStats {
-  const all = institutionValues(rows);
-  const sourced = all.filter((value) => value.sourced);
-  const basis: StatsBasis = sourced.length >= SOURCED_SWITCH_INSTITUTIONS ? "sourced" : "blended";
-  const used = basis === "sourced" ? sourced : all;
-  const maturity = maturityFor(used.length);
-  const stats = computeStats(used.map((value) => value.amount));
-  const enough = maturity !== "insufficient";
+function toAmount(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Each institution's value: the median of its non-negative amounts. Rows with no amount are skipped. */
+export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> {
+  const amounts = new Map<number, number[]>();
+  for (const row of rows) {
+    const amount = toAmount(row.amount);
+    const id = Number(row.institution_id);
+    if (amount === null || !Number.isFinite(id)) continue;
+    const list = amounts.get(id);
+    if (list) list.push(amount);
+    else amounts.set(id, [amount]);
+  }
+  const values = new Map<number, number>();
+  for (const [id, list] of amounts) {
+    values.set(id, computePercentile(list.sort((a, b) => a - b), 50));
+  }
+  return values;
+}
+
+/** Statistics for one group of rows (one category, or one category within a segment). */
+export function summarizeFees(rows: StatsInputRow[]): FeeStatistics {
+  const values = valuePerInstitution(rows);
+  const institutions = new Map<number, string | null | undefined>();
+  for (const row of rows) {
+    const id = Number(row.institution_id);
+    if (Number.isFinite(id) && !institutions.has(id)) institutions.set(id, row.charter_type);
+  }
+  let bankCount = 0;
+  let cuCount = 0;
+  for (const charter of institutions.values()) {
+    if (charter === "bank") bankCount++;
+    else if (charter === "credit_union") cuCount++;
+  }
+
+  const institutionCount = institutions.size;
+  const tier = maturityTier(values.size);
+  const stats = tier === "insufficient" ? null : computeStats([...values.values()]);
   return {
-    median: enough ? stats.median : null,
-    p25: enough ? stats.p25 : null,
-    p75: enough ? stats.p75 : null,
-    min: stats.min,
-    max: stats.max,
-    avg: enough ? stats.avg : null,
-    institution_count: used.length,
-    sourced_institution_count: sourced.length,
-    legacy_institution_count: all.length - sourced.length,
-    bank_count: used.filter((value) => value.charterType === "bank").length,
-    cu_count: used.filter((value) => value.charterType !== "bank").length,
-    basis,
-    maturity,
-    stats_method_version: STATS_METHOD_VERSION,
+    institution_count: institutionCount,
+    observation_count: rows.length,
+    bank_count: bankCount,
+    cu_count: cuCount,
+    min_amount: stats?.min ?? null,
+    max_amount: stats?.max ?? null,
+    avg_amount: stats?.avg ?? null,
+    median_amount: stats?.median ?? null,
+    p25_amount: stats?.p25 ?? null,
+    p75_amount: stats?.p75 ?? null,
+    maturity_tier: tier,
   };
+}
+
+/** Groups rows by a key (category, district, state…) and summarizes each group. */
+export function summarizeFeesBy<T extends StatsInputRow>(
+  rows: T[],
+  keyOf: (row: T) => string | null | undefined,
+): Map<string, FeeStatistics> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    if (key === null || key === undefined) continue;
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  const result = new Map<string, FeeStatistics>();
+  for (const [key, group] of groups) result.set(key, summarizeFees(group));
+  return result;
 }

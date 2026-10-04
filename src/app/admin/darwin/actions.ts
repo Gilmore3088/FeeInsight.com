@@ -7,7 +7,7 @@ import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import type { DarwinStatus } from "./types";
 
 export async function fetchDarwinStatus(): Promise<DarwinStatus> {
-  await requireAuth("view");
+  await requireAuth("operate");
   const backend = getExecutionBackendStatus();
   return {
     pending: 0,
@@ -74,7 +74,7 @@ export async function fetchDarwinReasoning(feeRawId: number): Promise<{
   reasoning_r2_key: string | null;
   created_at: string | null;
 }> {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { sql } = await import("@/lib/data-store/connection");
   const rows = await sql`
     SELECT reasoning_prompt_text, reasoning_output_text, reasoning_r2_key, created_at::text AS created_at
@@ -104,7 +104,7 @@ export async function fetchDarwinReasoning(feeRawId: number): Promise<{
 export async function fetchReasoningFromR2(
   r2Key: string,
 ): Promise<{ prompt: string | null; output: string | null }> {
-  await requireAuth("view");
+  await requireAuth("operate");
   if (!r2Key) return { prompt: null, output: null };
   void r2Key;
   return { prompt: null, output: null };

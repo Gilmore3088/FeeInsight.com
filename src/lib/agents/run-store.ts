@@ -7,6 +7,7 @@ import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
   runPublicDiscoveryAudit,
@@ -261,6 +262,18 @@ async function executeAgenticStep(
   const stateCode = normalizeStateCode(
     stringRunParam(params, ["state_code", "stateCode", "state"]),
   ) ?? undefined;
+
+  // Regulator-data steps (registry-*) share one dispatcher in magellan/registry.
+  if (isRegistryStepKey(step.stepKey)) {
+    return runRegistryStep({
+      stepKey: step.stepKey,
+      runId: run.id,
+      partitionKey: stringRunParam(params, ["partition_key"]),
+      dryRun: run.runKind === "dry_run",
+      db: tx,
+    });
+  }
+
   switch (step.stepKey) {
     case "enhance": {
       const memory = await syncStateLaneProfiles(tx, stateCode);
@@ -514,7 +527,7 @@ async function executeAgenticStep(
         : await refreshFeeIndexCache(tx, { runId: run.id, force: published.publishedFees > 0 });
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories, ${indexRefresh.sourcedCategories} on verified sources.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -526,7 +539,6 @@ async function executeAgenticStep(
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,
           index_categories: indexRefresh?.categories ?? 0,
-          index_sourced_categories: indexRefresh?.sourcedCategories ?? 0,
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
             institution_id: result.institutionId,
@@ -1347,7 +1359,8 @@ export async function executeAgentRun(
         step.stepKey === "fetch" ||
         step.stepKey === "read" ||
         step.stepKey === "public-discovery" ||
-        step.stepKey === "public-audit"
+        step.stepKey === "public-audit" ||
+        isRegistryStepKey(step.stepKey)
           ? await executeAgenticStep(sql, run, step)
           : await withTransaction((tx) => executeAgenticStep(tx, run, step));
       lastResult = await finishAgenticStep(runId, step, outcome);

@@ -5,7 +5,7 @@ import { getFeeCategorySummaries } from "@/lib/data-store";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 
 export async function exportCatalogCsv(): Promise<string> {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const summaries = await getFeeCategorySummaries();
 

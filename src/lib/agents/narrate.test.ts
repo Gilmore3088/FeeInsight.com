@@ -41,8 +41,8 @@ describe("narrateStepFinished", () => {
 
   it("mentions the index refresh after a publish", () => {
     expect(narrateStepFinished("publish", {
-      processed_verified_fees: 20, published_fees: 18, index_refreshed: true, index_categories: 49, index_sourced_categories: 38,
-    }, "GA")).toBe("Published 18 fees in GA: index refreshed (49 categories, 38 on verified sources).");
+      processed_verified_fees: 20, published_fees: 18, index_refreshed: true, index_categories: 49,
+    }, "GA")).toBe("Published 18 fees in GA: index refreshed (49 categories).");
   });
 
   it("describes discovery results", () => {

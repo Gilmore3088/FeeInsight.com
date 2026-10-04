@@ -27,7 +27,7 @@ import type { SectionType, ValidatedSection } from "../hamilton/types";
 import type { ThesisOutput } from "../hamilton/types";
 
 // Cost-efficient pattern-matching model (not the expensive Hamilton writer model — per plan)
-const EDITOR_MODEL = "claude-haiku-4-20250514";
+const EDITOR_MODEL = "claude-haiku-4-5-20251001";
 const MAX_TOKENS = 1000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -89,14 +89,11 @@ async function handleGET(request: NextRequest) {
     bank_count: e.bank_count,
     cu_count: e.cu_count,
     maturity: e.maturity_tier,
-    basis: e.basis,
-    sourced_institution_count: e.sourced_institution_count,
-    legacy_institution_count: e.legacy_institution_count,
   }));
 
   if (format === "csv") {
     const headers =
-      "category,display_name,family,tier,median,p25,p75,min,max,institution_count,bank_count,cu_count,maturity,basis,sourced_institution_count,legacy_institution_count";
+      "category,display_name,family,tier,median,p25,p75,min,max,institution_count,bank_count,cu_count,maturity";
     const rows = data.map((d) =>
       [
         d.category,
@@ -112,9 +109,6 @@ async function handleGET(request: NextRequest) {
         d.bank_count,
         d.cu_count,
         d.maturity,
-        d.basis,
-        d.sourced_institution_count,
-        d.legacy_institution_count,
       ].join(",")
     );
     const csv = [headers, ...rows].join("\n");

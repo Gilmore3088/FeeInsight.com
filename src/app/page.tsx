@@ -3,8 +3,14 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
+import { getNationalIndexCached, type IndexEntry } from "@/lib/data-store";
+import {
+  getInstitutionStateDirectorySummaries,
+  type InstitutionStateDirectorySummary,
+} from "@/lib/data-store/search";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { LandingHero } from "./landing-hero";
+import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -48,7 +54,12 @@ const WEBSITE_JSON_LD = {
 };
 
 export default async function LandingPage() {
-  const summary = await getPublicStatsSummary();
+  const [summary, nationalIndex, stateCoverage] = await Promise.all([
+    getPublicStatsSummary(),
+    // The price strip and coverage map are optional: a failed read hides them, not the page.
+    getNationalIndexCached().catch((): IndexEntry[] => []),
+    getInstitutionStateDirectorySummaries({}).catch((): InstitutionStateDirectorySummary[] => []),
+  ]);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] consumer-brand">
@@ -63,7 +74,8 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main>
         <LandingHero institutionsLabel={summary.institutionsLabel} />
-        <LandingTrustStats summary={summary} />
+        <LandingPriceStrip entries={nationalIndex} institutionsLabel={summary.institutionsLabel} />
+        <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />
       <SearchModal />

@@ -31,14 +31,16 @@ describe("buildDailyBrief", () => {
     const brief = buildDailyBrief({
       health,
       funnel,
-      previousFunnel: { ...funnel, withFeeUrl: 4600, textsRead: 77, sourcedInstitutions: 239 },
+      previous: { funnel: { ...funnel, withFeeUrl: 4600, textsRead: 77, sourcedInstitutions: 239 }, at: "2026-10-02T12:47:05Z" },
+      stepsByAgent: { magellan: 412, knox: 260, rosetta: 260, darwin: 3 },
+      now: new Date("2026-10-03T12:47:00Z"),
       feed24h: [
         { id: 1, at: "2026-10-03T10:00:00Z", agent: "magellan", runId: 1, stateCode: "GA", tone: "ok", text: "Downloaded 25." },
         { id: 2, at: "2026-10-03T10:05:00Z", agent: "knox", runId: 1, stateCode: "GA", tone: "error", text: "Stopped with an error while working on \"extract\": boom" },
       ],
     });
     expect(brief.subject).toBe("Atlas daily brief: pipeline running, 260 institutions published");
-    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 1 failed. Busiest: Magellan (1).");
+    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 1 failed. Busiest: Magellan (412), Rosetta (260), Knox (260).");
     expect(brief.lines[1]).toBe("Since yesterday: +20 fee URLs, +223 documents read, +21 institutions published.");
     expect(brief.lines[2]).toContain("260 of 8,750 institutions have sourced fees");
     expect(brief.lines[3]).toContain("Needs you:");
@@ -46,8 +48,21 @@ describe("buildDailyBrief", () => {
   });
 
   it("is reassuring when nothing is wrong and has no history on the first day", () => {
-    const brief = buildDailyBrief({ health: { ...health, runs_failed_24h: 0 }, funnel, previousFunnel: null, feed24h: [] });
+    const brief = buildDailyBrief({ health: { ...health, runs_failed_24h: 0 }, funnel, previous: null, stepsByAgent: {}, feed24h: [] });
     expect(brief.lines).toContain("Nothing is stuck. Nothing needs you.");
-    expect(brief.lines.some((line) => line.startsWith("Since yesterday"))).toBe(false);
+    expect(brief.lines.some((line) => line.startsWith("Since"))).toBe(false);
+    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 0 failed.");
+  });
+
+  it("names the date when the last brief was not yesterday", () => {
+    const brief = buildDailyBrief({
+      health,
+      funnel,
+      previous: { funnel: { ...funnel, verified: 6400 }, at: "2026-09-30T12:47:05Z" },
+      stepsByAgent: {},
+      feed24h: [],
+      now: new Date("2026-10-03T12:47:00Z"),
+    });
+    expect(brief.lines[1]).toBe("Since the last brief (Sep 30): +100 fees verified.");
   });
 });

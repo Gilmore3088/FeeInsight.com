@@ -67,13 +67,15 @@ export type Permission =
   | "manage_users"
   | "trigger_jobs"
   | "cancel_jobs"
-  | "research";
+  | "research"
+  /** Operator console (/admin pages, actions and APIs): admin and analyst only. */
+  | "operate";
 
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   viewer: ["view"],
   premium: ["view", "research"],
-  analyst: ["view", "approve", "reject", "research"],
-  admin: ["view", "approve", "reject", "edit", "bulk_approve", "manage_users", "trigger_jobs", "cancel_jobs", "research"],
+  analyst: ["view", "approve", "reject", "research", "operate"],
+  admin: ["view", "approve", "reject", "edit", "bulk_approve", "manage_users", "trigger_jobs", "cancel_jobs", "research", "operate"],
 };
 
 function hashPassword(password: string, salt: string): string {
@@ -111,13 +113,15 @@ export async function login(
 
   const sessionId = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_HOURS * 60 * 60 * 1000);
+  // Sign first: a missing cookie secret must fail before a session row exists.
+  const signedSession = signSessionId(sessionId);
 
   await sql`
     INSERT INTO sessions (id, user_id, expires_at) VALUES (${sessionId}, ${row.id}, ${expiresAt})
   `;
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, signSessionId(sessionId), {
+  cookieStore.set(SESSION_COOKIE, signedSession, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

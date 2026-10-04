@@ -1,52 +1,71 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your deposited-item return fee ($18) is 3.6× the $5 peer median, the highest of the 15 peers that publish it.",
   "findings": [
     {
-      "stat": "$33 vs $15",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF fee is an extreme outlier.",
-      "body": "At $33.00, your returned-item fee is 2.2x the $15.00 median of 34 peer banks — the 88th percentile, flagged as an extreme outlier, and $18 over the typical peer. A quarter of the cohort now charges $6.25 or less as the industry retreats from NSF under regulatory scrutiny. This is the single most conspicuous line on your schedule, made more so by how generously you price everything around it."
+      "stat": "$18 vs $5",
+      "stat_label": "deposited-item return fee, yours vs peer median",
+      "headline": "Your deposited-item return fee is well above the market range.",
+      "body": "At $18, it is 3.6× the $5 peer median and the highest of the 15 peers that publish it (middle half of the market: $5–$10). This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism."
     },
     {
-      "stat": "$1 vs $30",
-      "stat_label": "overdraft fee vs peer median",
-      "headline": "You have one of the friendliest overdraft postures in your cohort — untold.",
-      "body": "A $1 overdraft fee against a $30 median (8th percentile, 12 peers), monthly maintenance waived against a $12 median (13th percentile, 15 peers), and no minimum balance fee. These are the exact lines regulators praise and customers compare — and they are competitive advantages currently generating zero marketing value."
+      "stat": "$8 vs $5",
+      "stat_label": "cashier's check fee, yours vs peer median",
+      "headline": "Your cashier's check fee is above the market range.",
+      "body": "At $8, it is $3 above the $5 peer median and the 82nd percentile of 11 peers (middle half of the market: $5–$7). It is infrequent and mostly a perception item."
     },
     {
-      "stat": "$25 vs $15",
-      "stat_label": "outgoing domestic wire vs median",
-      "headline": "You carry quiet premiums on exception activity.",
-      "body": "Outgoing domestic wires ($25 vs a $15 median, 83rd percentile), deposited item returns ($18 vs $12, 80th percentile), and paper statements ($5 vs $3.58, 100th percentile) each run above the cohort. Individually small, together they put your exception-fee stack near the top of the market — the opposite of the story your overdraft and maintenance pricing tells."
+      "stat": "5 of 8",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 8 fee lines where we found both your published amount and at least eight comparable peers, five sit between the peer 25th and 75th percentiles, two above and one below."
     }
   ],
-  "exec_narrative": "Net position: Community Bank of Santa Maria runs the most bifurcated schedule in this analysis. On one side, a $1 overdraft fee, waived monthly maintenance, and no minimum balance fee place it among the most customer-friendly banks in its 76-bank cohort. On the other, a $33 NSF fee flagged as an extreme outlier — more than double the peer median — plus top-quartile wires, deposited item returns, and paper statements. The incoherence is the exposure: the same bounced item costs $1 if paid and $33 if returned. Resolving that contradiction, and then marketing the customer-friendly side, is the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Community Bank of Santa Maria is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in California have published data, so local competitors may price differently. Of 8 rankable lines, five sit inside the middle half of the market, two above it (deposited-item return fee and cashier's check fee), and one below it (outgoing international wire fee). We would suggest two steps, in order of value: (1) review the deposited-item return fee, which sits well above the market range; the peer median of $5 is the reference point; (2) check that the overdraft fee is published where customers can find it.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "NSF / returned item — $33.00",
-      "stat": "Peer median $15.00 · P25 $6.25 · 88th percentile · n=34 · flagged: extreme outlier (>2x median)",
-      "body": "The gap is hard to defend on its own terms — $18 over median on the industry's most examined fee — but the internal contradiction is what makes it urgent: when an item overdraws an account, your customer pays $1 if you cover it and $33 if you return it. Same behavior, 33x the price, based on a back-office decision. Aligning NSF with the overdraft posture would remove the only extreme-outlier flag on the schedule and make the pricing story coherent."
+      "title": "Deposited-item return fee — $18",
+      "stat": "Peer median $5 · middle half $5–$10 · range $3–$12 · 100th percentile · n=15",
+      "body": "Published as “Returned deposited item.” At $18 it is 3.6× the $5 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $5 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "Outgoing domestic wire — $25.00",
-      "stat": "Peer median $15.00 · P75 $25.00 · 83rd percentile · n=12",
-      "body": "At $10 over median, wires sit at the top quartile of the cohort — a friction fee on the business and high-balance customers who move money most. The revenue is modest for the signal it sends to exactly the relationships a community bank works hardest to win."
-    },
-    {
-      "kind": "risk",
-      "title": "Paper statement and deposited item return — small fees, top of cohort",
-      "stat": "Paper statement $5.00 vs $3.58 median (100th percentile, n=14) · Deposited item return $18.00 vs $12.00 (80th percentile, n=15)",
-      "body": "Neither line is large, but both recur or land on no-fault customers, and both price at or near the top of the cohort. Deposit-related penalty fees have drawn specific junk-fee scrutiny. These are candidates for quiet trims that cost little and clean up the schedule's top-heavy exception stack."
+      "title": "Cashier's check fee — $8",
+      "stat": "Peer median $5 · middle half $5–$7 · range $3–$20 · 82nd percentile · n=11",
+      "body": "Published as “Cashier's Checks (Customers).” At $8 it is $3 above the $5 peer median. It is infrequent and mostly a perception item. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $5 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Overdraft, maintenance, and minimum balance — a story nobody is telling",
-      "stat": "Overdraft $1 vs $30 median (P8, n=12) · Monthly maintenance $0 vs $12 median (P13, n=15) · Minimum balance $0",
-      "body": "A $1 overdraft fee is a near-elimination — the posture large banks issue press releases about — and free maintenance against a $12 median is a claim your competitors' own published schedules substantiate. Once the NSF line is brought into coherence, this is one of the strongest publishable fee stories in the cohort. Today it appears nowhere."
+      "title": "Outgoing international wire fee — $40",
+      "stat": "Peer median $50 · middle half $46.25–$61.25 · 25th percentile · n=8",
+      "body": "Published as “Wire Transfer - International Outgoing.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $50 is the reference point."
+    },
+    {
+      "kind": "risk",
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Overdraft fee: published by 17 peers (median $30)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the median has fallen to $15 and a quarter of peers charge $6.25 or less, against your posted $33. Second, published fee schedules have become public documents: scraped, compared, and surfaced automatically, which means both halves of a bifurcated schedule are equally visible — the $1 overdraft that flatters you and the $33 NSF that does not.</p><p>Mid-sized community banks occupy the exposed middle: large enough to be included in fee comparisons and examiner sweeps, without the brand gravity that lets the largest institutions carry premiums quietly. For Community Bank of Santa Maria the highest-leverage move is not a broad repricing but a reconciliation — bring the NSF fee into line with the overdraft posture the bank has already chosen, trim the handful of top-of-cohort exception fees, and then actively market an overdraft and maintenance profile that most peers cannot match.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Community Bank of Santa Maria with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network"
+  ],
+  "summary": {
+    "ranked": 8,
+    "above": [
+      "deposited_item_return",
+      "cashiers_check"
+    ],
+    "below": [
+      "wire_intl_outgoing"
+    ],
+    "gaps": [
+      "overdraft"
+    ],
+    "thin": 1
+  }
 }

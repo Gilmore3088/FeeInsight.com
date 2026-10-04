@@ -4,12 +4,14 @@ import { requireAuth } from "@/lib/auth";
 import { withTransaction } from "@/lib/data-store/connection";
 
 const MAX_ROWS = 500;
+const SINGLE_STATEMENT = { simple: false } as never;
 const BLOCKED_KEYWORDS = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "ATTACH", "DETACH"];
 
 export async function runQuery(
   query: string
 ): Promise<{ success: boolean; columns?: string[]; rows?: Record<string, unknown>[]; count?: number; error?: string; duration?: number }> {
-  await requireAuth("view");
+  // Raw SQL against production: admins only (analysts and public accounts never).
+  await requireAuth("manage_users");
 
   const trimmed = query.trim();
   if (!trimmed) return { success: false, error: "Empty query" };
@@ -27,7 +29,10 @@ export async function runQuery(
   try {
     const rows = await withTransaction(async (tx) => {
       await tx.unsafe("SET TRANSACTION READ ONLY");
-      return tx.unsafe(trimmed) as Promise<Record<string, unknown>[]>;
+      // One statement per call: the extended protocol (simple: false) rejects
+      // "SELECT 1; COMMIT; DELETE ...", which could otherwise escape READ ONLY.
+      // postgres.js honors `simple` at runtime; its typings omit it.
+      return tx.unsafe(trimmed, [], SINGLE_STATEMENT) as unknown as Promise<Record<string, unknown>[]>;
     });
     const duration = Math.round(performance.now() - start);
 

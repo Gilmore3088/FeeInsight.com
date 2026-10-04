@@ -2392,9 +2392,9 @@ export interface NationalIndexRow {
 
 export async function getNationalIndexData(): Promise<NationalIndexRow[]> {
   try {
-    // Through the shared reader: it ignores a stale or old-method cache and recomputes live.
+    // Through the shared reader: it ignores a stale or old-method cache and computes live.
     const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
-    const rows = (await getNationalIndexCached()).map((entry) => ({ ...entry, maturity_tier: entry.maturity_tier }));
+    const rows = await getNationalIndexCached();
 
     const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
 
@@ -2442,7 +2442,7 @@ export async function getMarketData(filters: {
   state_code?: string;
 }): Promise<MarketIndexRow[]> {
   try {
-    // Always load national baseline from cache
+    // National baseline through the shared cached reader
     const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
     const national = await getNationalIndexCached();
 

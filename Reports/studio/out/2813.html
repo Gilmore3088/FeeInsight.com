@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -239,7 +252,7 @@
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">
-    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Aug 16, 2026</span></div>
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
     <div class="title">
       <div class="series">Prepared exclusively for one institution</div>
       <h1>Competitive<br>Fee <em>Position</em></h1>
@@ -247,13 +260,13 @@
         <span class="instname">Riverside Bank of Dublin</span>
       </div>
       <div class="instmeta">Dublin, OH<i>·</i>Bank<i>·</i>Community bank, under $300M</div>
-      <p class="cohortnote">Peer cohort: 35 comparable community banks. Not every peer publishes every fee: 13 publish an NSF fee and 6 an overdraft fee, so those are the comparison sets for those lines.</p>
+      <p class="cohortnote">Compared with 91 banks with under $1B in assets nationwide (a wider size band than usual, because fewer than 40 banks in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
     </div>
-    <div class="ghost">35</div>
+    <div class="ghost">91</div>
     <div class="card">
-      <div><div class="lbl">Peer cohort</div><div class="val">Community banks, under $300M</div></div>
+      <div><div class="lbl">Peer cohort</div><div class="val">Banks, under $1B · nationwide</div></div>
       <div><div class="lbl">Benchmarked against</div>
-        <div class="big">35<small>peer institutions with published fee schedules</small></div></div>
+        <div class="big">91<small>peer institutions with published fee schedules</small></div></div>
       <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
     </div>
   </div>
@@ -263,17 +276,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>Riverside Bank of Dublin</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
-    <div class="finding"><div class="num" style="font-size:18pt">$25 vs $5.48<small>monthly maintenance vs peer median</small></div>
-   <p><b>Your monthly maintenance fee is an extreme outlier.</b>At $25.00, your maintenance fee is 4.6x the $5.48 peer median and 4x the $6.00 national median — the highest in the comparison set and flagged as an extreme outlier. Only four peer banks publish this fee, so the cohort is thin, but the national benchmark tells the same story. A recurring $25 charge is the most visible number on your schedule, twelve times a year.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$30 vs $15<small>your NSF fee vs national median</small></div>
-   <p><b>Your NSF fee matches local peers — and doubles the national benchmark.</b>At $30, NSF sits exactly at the peer median of 13 comparable banks, so locally you are at market. Nationally, the median has fallen to $15 as institutions retire returned-item fees under regulatory scrutiny. Being at local market on a fee the industry is abandoning is a position worth revisiting before the local market moves too.</p></div>
-<div class="finding"><div class="num" style="font-size:24pt">$3 vs $8<small>OD protection transfer vs median</small></div>
-   <p><b>You are below market on service fees — quietly.</b>Overdraft-protection transfers ($3 vs an $8 median), stop payments ($25 vs $30, 44th percentile), and cashier's checks ($4 vs $5) all run below the peer median. Everywhere else — wires, card replacement, deposited item returns — you sit at or within a dollar of market. The schedule is essentially at-market with one large exception at the top.</p></div>
+    <div class="finding"><div class="num" style="font-size:18pt">$10 vs $5<small>deposited-item return fee, yours vs peer median</small></div>
+   <p><b>Your deposited-item return fee is well above the market range.</b>At $10, it is 2× the $5 peer median and the 88th percentile of 16 peers (middle half of the market: $5–$10). This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">2 more<small>lines above the market range</small></div>
+   <p><b>Smaller premiums elsewhere on the schedule.</b>Your card replacement fee ($15 vs a $10 median, n=11) and your incoming wire fee ($20 vs a $10 median, n=13) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">6 of 10<small>comparable lines inside the market range</small></div>
+   <p><b>Most of your schedule is priced with the market.</b>Of the 10 fee lines where we found both your published amount and at least eight comparable peers, six sit between the peer 25th and 75th percentiles, three above and one below.</p></div>
   </div>
-  <p class="narrative drop">Net position: Riverside Bank of Dublin prices almost everything at or slightly below market — penalty fees, wires, and card services all track the medians of its 35-bank cohort — with one dominant exception: a $25 monthly maintenance fee that is more than four times both the peer and national medians and flagged as an extreme outlier. Because maintenance is recurring and universal where most fees are episodic, that single line likely outweighs every other pricing decision on the schedule combined. The three findings above are the agenda for a one-hour pricing conversation.</p>
+  <p class="narrative drop">Riverside Bank of Dublin is compared with 91 banks under $1B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 banks in your own size tier have published data; local competitors may price differently. Of 10 rankable lines, six sit inside the middle half of the market, three above it (deposited-item return fee, card replacement fee and incoming wire fee), and one below it (cashier's check fee). We would suggest one step: review the deposited-item return fee, which sits well above the market range; the peer median of $5 is the reference point.</p>
   <div class="pagefoot"><span>Competitive Fee Position — Riverside Bank of Dublin</span><span>Fee Insight</span></div>
 </div>
 
@@ -281,94 +294,81 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>Riverside Bank of Dublin</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. 35 peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: Community banks, under $300M — 35 institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">Compared with 91 banks with under $1B in assets nationwide (a wider size band than usual, because fewer than 40 banks in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
-      <tr><td>Non-network ATM</td>
+      <tr><td><span class="cat">Non-network ATM</span><span class="feeline">ATM Transactions (Other ATMs)</span></td>
     <td class="r"><b>$2.50</b></td>
-    <td class="r">$1.50</td><td class="r">$2.00</td>
-    <td class="r">$2.50</td><td class="r">$1.75</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:80%"></div></div><span class="small muted"> P80</span></td><td></td></tr>
-<tr><td>Foreign transaction</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">—</td><td class="r">—</td>
-    <td class="r">—</td><td class="r">$4.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Card replacement</td>
+    <td class="r">$1.13</td><td class="r">$2.00</td>
+    <td class="r">$2.81</td><td class="r muted">10</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:70%"></div></div><span class="small muted"> P70</span></td><td></td></tr>
+<tr><td><span class="cat">Card replacement</span><span class="feeline">Debit Card Replacement</span></td>
     <td class="r"><b>$15.00</b></td>
-    <td class="r">$10.00</td><td class="r">$15.00</td>
-    <td class="r">$15.00</td><td class="r">$10.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:86%"></div></div><span class="small muted"> P86</span></td><td></td></tr>
-<tr><td>Cashier's check</td>
+    <td class="r">$5.00</td><td class="r">$10.00</td>
+    <td class="r">$12.50</td><td class="r muted">11</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:91%"></div></div><span class="small muted"> P91</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Cashier's check</span><span class="feeline">Cashier's Check</span></td>
     <td class="r"><b>$4.00</b></td>
-    <td class="r">$4.50</td><td class="r">$5.00</td>
-    <td class="r">$5.00</td><td class="r">$6.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:33%"></div></div><span class="small muted"> P33</span></td><td></td></tr>
-<tr><td>Deposited item return</td>
+    <td class="r">$5.00</td><td class="r">$5.00</td>
+    <td class="r">$7.00</td><td class="r muted">14</td>
+    <td><div class="bar-wrap"><div class="bar lo" style="width:7%"></div></div><span class="small muted"> P7</span></td><td><span class="tag below">below range</span></td></tr>
+<tr><td><span class="cat">Deposited item return</span><span class="feeline">Returned Deposited Item</span></td>
     <td class="r"><b>$10.00</b></td>
-    <td class="r">$10.00</td><td class="r">$10.00</td>
-    <td class="r">$10.00</td><td class="r">$15.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Minimum balance</td>
+    <td class="r">$5.00</td><td class="r">$5.00</td>
+    <td class="r">$10.00</td><td class="r muted">16</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:88%"></div></div><span class="small muted"> P88</span></td><td><span class="tag above">2× median</span></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$7.95</td><td class="r">$7.95</td>
-    <td class="r">$7.95</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Monthly maintenance</td>
-    <td class="r"><b>$25.00</b></td>
-    <td class="r">$3.75</td><td class="r">$5.48</td>
-    <td class="r">$10.71</td><td class="r">$6.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td><span class="tag outlier">outlier</span></td></tr>
-<tr><td>NSF / returned item</td>
+    <td class="r">$5.00</td><td class="r">$6.95</td>
+    <td class="r">$10.00</td><td class="r muted">17</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">NSF / returned item</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$25.00</td><td class="r">$31.00</td>
+    <td class="r">$35.00</td><td class="r muted">28</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">OD protection transfer</span><span class="feeline">Overdraft Transfer Fee</span></td>
+    <td class="r"><b>$3.00</b></td>
+    <td class="r">$5.00</td><td class="r">$5.00</td>
+    <td class="r">$6.50</td><td class="r muted">3</td>
+    <td><span class="small muted">fewer than 8 peers publish it</span></td><td><span class="tag gap">few peers</span></td></tr>
+<tr><td><span class="cat">Overdraft</span><span class="feeline">Insufficient Funds (per paid item)</span></td>
     <td class="r"><b>$30.00</b></td>
-    <td class="r">$25.00</td><td class="r">$30.00</td>
-    <td class="r">$30.00</td><td class="r">$15.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:77%"></div></div><span class="small muted"> P77</span></td><td></td></tr>
-<tr><td>OD protection transfer</td>
+    <td class="r">$27.00</td><td class="r">$30.00</td>
+    <td class="r">$35.00</td><td class="r muted">23</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:65%"></div></div><span class="small muted"> P65</span></td><td></td></tr>
+<tr><td><span class="cat">Paper statement</span><span class="feeline">Paper Statement Fee</span></td>
     <td class="r"><b>$3.00</b></td>
-    <td class="r">$3.00</td><td class="r">$8.00</td>
-    <td class="r">$15.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:40%"></div></div><span class="small muted"> P40</span></td><td></td></tr>
-<tr><td>Overdraft</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$25.00</td><td class="r">$27.50</td>
-    <td class="r">$34.50</td><td class="r">$30.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Paper statement</td>
-    <td class="r"><b>$3.00</b></td>
-    <td class="r">$2.25</td><td class="r">$3.00</td>
-    <td class="r">$5.00</td><td class="r">$3.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:60%"></div></div><span class="small muted"> P60</span></td><td></td></tr>
-<tr><td>Stop payment</td>
+    <td class="r">$2.00</td><td class="r">$3.00</td>
+    <td class="r">$4.16</td><td class="r muted">13</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:69%"></div></div><span class="small muted"> P69</span></td><td></td></tr>
+<tr><td><span class="cat">Stop payment</span><span class="feeline">Stop Payment</span></td>
     <td class="r"><b>$25.00</b></td>
     <td class="r">$25.00</td><td class="r">$30.00</td>
-    <td class="r">$30.00</td><td class="r">$30.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:44%"></div></div><span class="small muted"> P44</span></td><td></td></tr>
-<tr><td>Incoming domestic wire</td>
+    <td class="r">$30.00</td><td class="r muted">21</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:29%"></div></div><span class="small muted"> P29</span></td><td></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span><span class="feeline">Wire Transfer (Incoming)</span></td>
     <td class="r"><b>$20.00</b></td>
-    <td class="r">$12.50</td><td class="r">$15.00</td>
-    <td class="r">$17.50</td><td class="r">$15.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Outgoing domestic wire</td>
+    <td class="r">$10.00</td><td class="r">$10.00</td>
+    <td class="r">$15.00</td><td class="r muted">13</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td><span class="tag above">2× median</span></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Wire Transfer (Outgoing Domestic)</span></td>
     <td class="r"><b>$25.00</b></td>
-    <td class="r">$22.50</td><td class="r">$25.00</td>
-    <td class="r">$25.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Outgoing intl. wire</td>
+    <td class="r">$15.00</td><td class="r">$25.00</td>
+    <td class="r">$25.00</td><td class="r muted">12</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:83%"></div></div><span class="small muted"> P83</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span><span class="feeline">Wire Transfer (Outgoing International)</span></td>
     <td class="r"><b>$40.00</b></td>
-    <td class="r">$40.00</td><td class="r">$40.00</td>
-    <td class="r">$40.00</td><td class="r">$40.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
+    <td class="r">$40.00</td><td class="r">$50.00</td>
+    <td class="r">$60.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:33%"></div></div><span class="small muted"> P33</span></td><td></td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Riverside Bank of Dublin</span><span>Fee Insight</span></div>
@@ -377,21 +377,21 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>Riverside Bank of Dublin</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
     <div class="callout ">
-     <h3>Monthly maintenance — $25.00</h3><div class="stat">Peer median $5.48 · 100th percentile · n=4 · national median $6.00 · flagged: extreme outlier (>2x median)</div><p>Four publishing peers make for a thin local comparison, but the national median of $6 confirms the picture: $25 is a premium-tier maintenance fee on a community-bank schedule. If it funds a genuinely premium account with offset conditions, document and market that. If it is legacy pricing, it is the single most conspicuous line a prospective customer — or a fee survey — will find.</p>
+     <h3>Deposited-item return fee — $10</h3><div class="stat">Peer median $5 · middle half $5–$10 · range $3–$18 · 88th percentile · n=16</div><p>Published as “Returned Deposited Item.” At $10 it is 2× the $5 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $5 is the natural reference point.</p>
    </div>
 <div class="callout ">
-     <h3>NSF / returned item — $30.00</h3><div class="stat">Peer median $30.00 · national median $15.00 · 77th percentile · n=13</div><p>You are at the local median, which is a defensible position today. But the national median is half that, and the direction of travel is one way: large banks have largely eliminated NSF fees and the pressure is migrating down-market. Deciding now whether Riverside follows or holds — rather than waiting for the cohort median to fall around you — keeps this a choice instead of a reaction.</p>
+     <h3>Card replacement fee — $15</h3><div class="stat">Peer median $10 · middle half $5–$12.50 · range $5–$20 · 91st percentile · n=11</div><p>Published as “Debit Card Replacement.” At $15 it is $5 above the $10 peer median. It is a small charge, typically incurred after a lost or compromised card, when customers are least forgiving. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $10 is the reference point.</p>
    </div>
 <div class="callout ">
-     <h3>Incoming domestic wire — $20.00</h3><div class="stat">Peer median $15.00 · 100th percentile · n=3</div><p>Only three peers publish this fee, so read the percentile loosely — but charging the top of the range to receive money is friction aimed at your most attractive customers, and the $5 premium over the median earns little revenue for the signal it sends.</p>
+     <h3>Incoming wire fee — $20</h3><div class="stat">Peer median $10 · middle half $10–$15 · range $5–$20 · 100th percentile · n=13</div><p>Published as “Wire Transfer (Incoming).” At $20 it is 2× the $10 peer median. Charging to receive funds is increasingly uncommon and is noticed by business customers. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $10 is the reference point.</p>
    </div>
 <div class="callout opportunity">
-     <h3>Service fees — priced below market, marketed nowhere</h3><div class="stat">OD protection transfer $3 vs $8 median · Stop payment $25 vs $30 (P44) · Cashier's check $4 vs $5</div><p>Three customer-facing service fees run below the cohort. If deliberate, they are a marketing claim your competitors' own published schedules substantiate — 'lower service fees than most banks in your market.' If not deliberate, they are quiet margin. Today they are neither, because nobody knows about them.</p>
+     <h3>Cashier's check fee — $4</h3><div class="stat">Peer median $5 · middle half $5–$7 · 7th percentile · n=14</div><p>Published as “Cashier's Check.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $5 is the reference point.</p>
    </div>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Riverside Bank of Dublin</span><span>Fee Insight</span></div>
@@ -401,10 +401,10 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>Riverside Bank of Dublin</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings (FDIC Call Reports) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings (FDIC Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     <div class="statcard"><div class="lbl">Total assets</div><div class="val">$269.4M</div></div>
 <div class="statcard"><div class="lbl">Total deposits</div><div class="val">$238.7M</div></div>
@@ -422,17 +422,17 @@
    <td>—</td><td>Below cohort</td></tr>
 <tr><td>Fee intensity (income / assets)</td><td class="r"><b>0.3 bps</b></td><td class="r">0.9 bps</td>
    <td class="r">2.0 bps</td><td class="r">3.2 bps</td>
-   <td>P11</td><td>Light collector</td></tr>
+   <td>P11</td><td>Below cohort</td></tr>
 <tr><td>Fee dependency (share of noninterest income)</td><td class="r"><b>1.0%</b></td><td class="r">2.1%</td>
    <td class="r">4.9%</td><td class="r">10.0%</td>
-   <td>P15</td><td>Diversified</td></tr>
+   <td>P15</td><td>Lower share</td></tr>
 <tr><td>Fee income vs. net income</td><td class="r"><b>0.5%</b></td><td class="r">—</td>
    <td class="r">1.6%</td><td class="r">—</td>
-   <td>—</td><td>Modest</td></tr></tbody>
+   <td>—</td><td>Lower share</td></tr></tbody>
   </table>
-  <p class="narrative" style="margin-top:10pt">Your posted prices average the 77th percentile of the cohort, but your realized fee income sits at only the 11th. <b>You carry the optics of high fees without collecting the revenue</b> — the classic signature of heavy waivers, low incidence, or a mix that never touches the headline fees. Every outlier flagged in this report is reputational cost with little offsetting income; aligning them to market would cost less than it appears.</p>
+  <p class="narrative" style="margin-top:10pt">Across the 10 lines we could rank, your posted prices average the 64th percentile of peers; service-charge income relative to assets sits at the 11th percentile of the same-size cohort. One reading is that waivers, low incidence or account mix limit how often the higher-priced lines are charged. If so, those lines carry comparison risk with limited revenue behind them; your own incidence data would confirm it.</p>
   <p class="small muted" style="margin-top:6pt">Fee-intensity trend (year-end filings): 2024: 0.4 bps → 2025: 0.3 bps · cohort median 2.0 bps.</p>
-  <p class="small muted" style="margin-top:6pt">Deposit footprint (FDIC Summary of Deposits, 2025): 2 branch locations across 1 counties holding $206.6M in deposits.</p>
+  <p class="small muted" style="margin-top:6pt">Deposit footprint (FDIC Summary of Deposits, 2025): 2 branch locations across 1 county holding $206.6M in deposits.</p>
   <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
   Dec 31, 2025 full-year filing). Cohort medians computed across 1,862
   same-charter, same-tier institutions' latest full-year filings.</p>
@@ -443,22 +443,23 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>Riverside Bank of Dublin</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
-    <thead><tr><th>Institution</th><th class="r">Monthly maintenance</th><th class="r">Overdraft</th><th class="r">NSF / returned item</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <thead><tr><th>Institution</th><th class="r">Overdraft</th><th class="r">Non-network ATM</th><th class="r">Deposited item return</th><th class="r">Cashier's check</th><th class="r">Stop payment</th></tr></thead>
     <tbody>
-      <tr class="self"><td>Riverside Bank of Dublin <span class="small muted">(you)</span></td><td class="r">$25.00</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$25.00</td><td class="r">$25.00</td></tr>
-      <tr><td>Angelina Savings Bank, SSB <span class="small muted">(Lufkin, TX)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
-<tr><td>Farmers and Merchants Bank <span class="small muted">(Sylvania, GA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
-<tr><td>BMO Harris Central National Association <span class="small muted">(Roselle, IL)</span></td><td class="r">$5.00</td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td><td class="r">—</td></tr>
-<tr><td>West Central Georgia Bank <span class="small muted">(Thomaston, GA)</span></td><td class="r">$5.95</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Bank of Ontario <span class="small muted">(Ontario, WI)</span></td><td class="r">—</td><td class="r">$25.00</td><td class="r">$25.00</td><td class="r">$25.00</td><td class="r">—</td></tr>
-<tr><td>Jim Thorpe Neighborhood Bank <span class="small muted">(Jim Thorpe, PA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$25.00</td><td class="r">—</td></tr>
-<tr><td>Waycross Bank &amp; Trust <span class="small muted">(Waycross, GA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$10.00</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>First State Bank of Fountain <span class="small muted">(Fountain, MN)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$25.00</td><td class="r">—</td></tr>
+      <tr class="self"><td>Riverside Bank of Dublin <span class="small muted">(you)</span></td><td class="r">$30.00</td><td class="r">$2.50</td><td class="r">$10.00</td><td class="r">$4.00</td><td class="r">$25.00</td></tr>
+      <tr><td>Kentland Bank <span class="small muted">(Kentland, IN)</span></td><td class="r">$30.00</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$5.00</td><td class="r">$30.00</td></tr>
+<tr><td>PB&amp;T Bank <span class="small muted">(Pueblo, CO)</span></td><td class="r">$29.00</td><td class="r">$2.00</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$29.00</td></tr>
+<tr><td>Gateway Bank <span class="small muted">(Mendota Heights, MN)</span></td><td class="r">$30.00</td><td class="r">$1.00</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$30.00</td></tr>
+<tr><td>Angelina Savings Bank, SSB <span class="small muted">(Lufkin, TX)</span></td><td class="r">—</td><td class="r">$1.50</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$30.00</td></tr>
+<tr><td>Community Bank of Santa Maria <span class="small muted">(Santa Maria, CA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$18.00</td><td class="r">$8.00</td><td class="r">$30.00</td></tr>
+<tr><td>First Bank <span class="small muted">(Burkburnett, TX)</span></td><td class="r">—</td><td class="r">$1.00</td><td class="r">—</td><td class="r">$3.00</td><td class="r">$25.00</td></tr>
+<tr><td>Farmers and Merchants Bank <span class="small muted">(Sylvania, GA)</span></td><td class="r">$30.00</td><td class="r">—</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$30.00</td></tr>
+<tr><td>Redwood Capital Bank <span class="small muted">(Eureka, CA)</span></td><td class="r">$35.00</td><td class="r">—</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$25.00</td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Riverside Bank of Dublin</span><span>Fee Insight</span></div>
@@ -467,27 +468,26 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>Riverside Bank of Dublin</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
-  <div class="narrative"><p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the national median has fallen to $15 — half your posted fee, even though your local 13-bank cohort still clusters at $30. Second, published fee schedules have become public documents: scraped, compared, and surfaced in fee surveys, which converts every outlier line — like a $25 maintenance fee against a $6 national median — into a small reputational bet.</p><p>Small community banks compete on relationships and local trust, not brand gravity, and their fee schedules are read accordingly: customers expect neighborly pricing and notice when a line breaks that expectation. For Riverside Bank of Dublin the leverage is unusually concentrated — the schedule is already at or below market almost everywhere, so the work is not a broad repricing but a single decision on the maintenance fee, paired with actually advertising the service fees already priced below the market's own published numbers.</p></div>
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Riverside Bank of Dublin with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      Community banks, under $300M — 35 institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      Aug 16, 2026. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  91 banks with under $1B in assets nationwide (a wider size band than usual, because fewer than 40 banks in your own size tier publish comparable data). For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to Riverside Bank of Dublin in this report
     was extracted from your own published documents:</p>
     <ul>
-      <li>Source URLs available on request.</li>
+      <li>https://www.riverside.bank/Resources/Personal-Services/Fee-Schedule</li>
     </ul>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Riverside Bank of Dublin</span><span>Fee Insight</span></div>
@@ -500,8 +500,8 @@
   <h2>Your complete published fee schedule</h2>
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
-  Riverside Bank of Dublin's published documents (23 lines, as of Aug 16, 2026).
-  This is the schedule your customers — and your competitors — can see.</p>
+  Riverside Bank of Dublin's published documents (23 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -558,22 +558,23 @@
 
 <!-- 8. BACK -->
 <div class="bleed back">
-  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Aug 16, 2026</span></div>
-  <h2>This report is yours,<br><em>with our compliments.</em></h2>
-  <p class="sub">A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking 1,183 institutions nationwide.</p>
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of 1,183 U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
   <div class="cta">
     <div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">hello@bankfeeindex.com</span>
       <p style="margin-top:8pt">feeinsight.com</p>
     </div>
   </div>
-  <div class="colophon"><span>Prepared for Riverside Bank of Dublin</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

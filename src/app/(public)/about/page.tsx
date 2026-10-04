@@ -122,14 +122,10 @@ export default async function AboutPage() {
 
         <p>
           Our national benchmarks include medians, percentile ranges (P25-P75),
-          and institutional coverage counts. Each institution counts once per
-          fee (the median of the amounts it lists), and $0 fees are included. Data maturity
-          is classified by the number of institutions: &ldquo;strong&rdquo; (20+),
-          &ldquo;provisional&rdquo; (5+), or &ldquo;insufficient&rdquo; (fewer
-          than 5, shown without a median). Each figure is labelled &ldquo;Verified
-          sources&rdquo; when it comes only from fees traced to a stored
-          fee-schedule document, or &ldquo;Includes legacy data&rdquo; until 20
-          or more such institutions exist.
+          and institutional coverage counts. Data maturity is classified as
+          &ldquo;strong&rdquo; (10+ approved observations), &ldquo;provisional&rdquo;
+          (10+ total observations), or &ldquo;insufficient&rdquo; to help users
+          assess statistical confidence.
         </p>
 
         <h2
