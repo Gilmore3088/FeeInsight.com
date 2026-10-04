@@ -10,8 +10,8 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
- * re-read backlog drains in fewer runs; reads come from the stored copy, so this does
- * not hit bank websites any harder.
+ * re-read backlog drains in fewer runs. Each document is re-read at most once per
+ * reader version, so a bigger batch does not download any document more often.
  */
 export const STATE_LANE_DOCUMENT_BATCH = 50;
 /**
@@ -76,6 +76,20 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
   },
 ];
 
+/**
+ * Steps an hourly backlog run takes: re-read, re-extract, verify and publish the
+ * documents the state already has. Magellan's discover, fetch and public-discovery
+ * steps stay on the state's full crawl cadence, so backlog runs never search or
+ * crawl bank websites. A re-read downloads a document that is not in the vault once
+ * per reader version; Knox, Darwin and Hamilton work from stored rows only.
+ */
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["read", "extract", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS.filter((step) =>
+  (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key),
+);
+
+export type StateLaneMode = "full" | "backlog";
+
 export interface StateLaneStartInput {
   stateCode: string;
   triggeredBy: string;
@@ -87,6 +101,7 @@ export interface StateLaneStartInput {
 export interface StateLaneStartResult extends StartAgentRunResult {
   stateCode: string;
   idempotencyKey: string;
+  mode: StateLaneMode;
 }
 
 export interface DueStateLaneScheduleResult {
@@ -175,6 +190,35 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
   }
 }
 
+/**
+ * True when the state had a full lane run (the one that crawls bank websites) within
+ * its freshness target, or one is still queued or running. The scheduler then starts
+ * a backlog run instead of crawling again. False when the check fails, which keeps
+ * the lane on its normal full run and daily cadence.
+ */
+export async function stateCrawledWithinFreshness(stateCode: string): Promise<boolean> {
+  try {
+    const [row] = await sql<{ recent: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM public.agent_runs run
+          JOIN public.agent_state_lanes lane ON lane.state_code = ${stateCode}
+         WHERE run.run_kind = 'workflow_lane'
+           AND upper(btrim(run.state_code)) = ${stateCode}
+           AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+           AND (
+             run.status IN ('queued', 'running', 'cancel_requested')
+             OR run.started_at > NOW() - lane.freshness_target_hours * INTERVAL '1 hour'
+           )
+      ) AS recent
+    `;
+    return Boolean(row?.recent);
+  } catch (error) {
+    console.error("stateCrawledWithinFreshness failed:", error);
+    return false;
+  }
+}
+
 async function markLaneScheduled(stateCode: string, runId: number, backlog: boolean): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
@@ -222,7 +266,15 @@ export async function startStateLaneRun(
   if (!stateCode) throw new Error("Invalid state code for state lane run");
 
   await syncStateLaneProfiles(sql, stateCode);
-  const idempotencyKey = `atlas:state-lane:${stateCode}:${laneWindowKey()}`;
+  // Only the scheduler starts backlog runs; a run an admin starts always crawls.
+  const source = input.source ?? "atlas.state_lane_scheduler";
+  const mode: StateLaneMode =
+    source === "atlas.state_lane_scheduler" && (await stateCrawledWithinFreshness(stateCode))
+      ? "backlog"
+      : "full";
+  const idempotencyKey = mode === "backlog"
+    ? `atlas:state-lane-backlog:${stateCode}:${laneWindowKey()}`
+    : `atlas:state-lane:${stateCode}:${laneWindowKey()}`;
   const parsedLimit = Number(input.limit);
   const limit = Number.isFinite(parsedLimit)
     ? Math.min(Math.max(Math.floor(parsedLimit), 1), 500)
@@ -230,26 +282,29 @@ export async function startStateLaneRun(
   const result = await startAgentRun({
     agent: "atlas",
     kind: "workflow_lane",
-    title: `Atlas ${stateCode} state lane`,
+    title: mode === "backlog" ? `Atlas ${stateCode} state lane backlog pass` : `Atlas ${stateCode} state lane`,
     stateCode,
     params: {
       scope: "state",
       state_code: stateCode,
       limit,
-      source: input.source ?? "atlas.state_lane_scheduler",
+      source,
+      lane_mode: mode,
     },
     triggeredBy: input.triggeredBy,
     triggerSource: input.triggerSource ?? "schedule",
     idempotencyKey,
-    steps: STATE_LANE_STEPS,
-    summary: `Atlas state lane accepted for ${stateCode}. All worker selectors are scoped to institution_sources.state_code.`,
+    steps: mode === "backlog" ? STATE_LANE_BACKLOG_STEPS : STATE_LANE_STEPS,
+    summary: mode === "backlog"
+      ? `Atlas backlog pass accepted for ${stateCode}: re-read, re-extract, verify and publish stored documents only. Discovery and fetch wait for the next full lane run.`
+      : `Atlas state lane accepted for ${stateCode}. All worker selectors are scoped to institution_sources.state_code.`,
   });
   if (result.run.status === "blocked") {
     await markLaneLaunchBlocked(stateCode, result.run.id);
   } else {
     await markLaneScheduled(stateCode, result.run.id, await stateHasDocumentBacklog(stateCode));
   }
-  return { ...result, stateCode, idempotencyKey };
+  return { ...result, stateCode, idempotencyKey, mode };
 }
 
 export async function scheduleDueStateLaneRuns({

@@ -452,6 +452,23 @@ describe("Rosetta agentic read", () => {
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });
 
+    it("binds each attempt-log placeholder to the matching parameter", async () => {
+      const db = learningDb([]);
+
+      await runRosettaRead({ runId: 310, db: asReadDb(db), fetchImpl: vi.fn() });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const param = (pattern: RegExp) => {
+        const match = query.match(pattern);
+        expect(match).not.toBeNull();
+        return params[Number(match![1]) - 1];
+      };
+      expect(param(/pa\.strategy_version = \$(\d+)/)).toBe(2);
+      expect(param(/pa\.outcome = ANY\(\$(\d+)::text\[\]\)/)).toEqual(expect.arrayContaining(["scanned_pdf"]));
+      expect(param(/\) < \$(\d+)/)).toBe(REREAD_MAX_KNOX_FEES);
+      expect(param(/current_read\.strategy_version >= \$(\d+)/)).toBe(2);
+    });
+
     it("keeps the earlier text when a re-read fails", async () => {
       const db = learningDb([{ ...htmlCandidate, is_reread: true }]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response("gone", "text/html", 503));
