@@ -1316,7 +1316,7 @@ async function providerStepGate(
 
 export async function executeAgentRun(
   runId: number,
-  options: { maxSteps?: number; allowProviderSteps?: boolean } = {},
+  options: { maxSteps?: number; allowProviderSteps?: boolean; deadlineAt?: number } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
     return {
@@ -1371,6 +1371,9 @@ export async function executeAgentRun(
   let lastResult: AgentRunExecutionResult | null = null;
 
   for (let index = 0; index < maxSteps; index += 1) {
+    // Past the caller's deadline no further step starts; the run stays queued for the
+    // next tick. The first step always runs so a late tick still makes progress.
+    if (index > 0 && options.deadlineAt != null && Date.now() >= options.deadlineAt) break;
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
     const nextStepKey = await peekNextQueuedStepKey(runId);
@@ -1444,6 +1447,7 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId = null,
   maxProviderCallsPerRun = null,
   maxEstimatedCostMicrousd = null,
+  deadlineAt,
 }: {
   runLimit?: number;
   maxStepsPerRun?: number;
@@ -1451,6 +1455,8 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
+  /** Epoch ms after which no new step starts (each run still gets its first step). */
+  deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
   // When provider steps cannot run this tick, skip runs whose next queued step is a
@@ -1492,7 +1498,7 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps }));
+    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt }));
   }
   return { selected: rows.length, results };
 }

@@ -921,6 +921,19 @@ describe("agentic run store", () => {
     expect(combinedTransactionSql()).toContain("step.finished");
   });
 
+  it("starts no further step once the tick deadline has passed", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await expect(
+      executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() - 1 }),
+    ).resolves.toMatchObject({ executedSteps: 1 });
+  });
+
   it("runs the fee-alert dispatch as a visible step while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });

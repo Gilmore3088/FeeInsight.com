@@ -15,6 +15,14 @@ import { assertCronTickBudgetAllowed } from "@/lib/api-hardening/budget";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 300;
+/**
+ * Steps a run may take per tick. State-lane steps finish in seconds, so one step per
+ * run per tick left a day's lanes queued for hours; the deadline below keeps several
+ * steps inside the function's time limit.
+ */
+const DEFAULT_MAX_STEPS_PER_RUN = 5;
+/** No new step starts this long after the tick began, leaving room for one more to finish. */
+const STEP_START_BUDGET_MS = 180_000;
 
 async function isAuthorized(request: NextRequest): Promise<boolean> {
   if (matchesConfiguredCronSecret(request.headers.get("authorization"))) return true;
@@ -30,6 +38,7 @@ function parsePositiveInt(value: string | null, fallback: number, max: number): 
 }
 
 async function handleGET(request: NextRequest) {
+  const tickStartedAt = Date.now();
   if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -69,7 +78,7 @@ async function handleGET(request: NextRequest) {
   }
 
   const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), 2, 10);
-  const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), 1, 5);
+  const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 5);
   const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), 2, 10);
 
   // Recover steps a killed invocation left running before selecting new work.
@@ -122,6 +131,7 @@ async function handleGET(request: NextRequest) {
     budgetPolicyId,
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
+    deadlineAt: tickStartedAt + STEP_START_BUDGET_MS,
   });
   return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
 }
