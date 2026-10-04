@@ -1,0 +1,14 @@
+If you check only three things on your schedule, check these.
+
+Three findings that show up in almost every report
+[ 10-MINUTE SELF-CHECK ]
+[ ] Any fee above 2× the peer median? (Use the medians in the sample report.)
+[ ] NSF above $30? On re-presented items too?
+[ ] Do the fee schedule PDF and the website agree, line by line?
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

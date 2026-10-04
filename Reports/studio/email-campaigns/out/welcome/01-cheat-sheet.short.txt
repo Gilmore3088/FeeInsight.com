@@ -1,0 +1,18 @@
+What 1,232 banks and credit unions actually publish, from overdraft to wires.
+
+The fee cheat sheet we wish every bank had taped to the wall
+* 1,232 — institutions with a published fee schedule in the index
+* 4,011 — verified fee records, each linked to its source document
+* 53 — states and territories covered
+- Median is the typical price. Half of institutions charge more and half charge less.
+- Low 25% / High 25% marks the normal range. A fee above the High 25% column is in the most expensive quarter of the market.
+- Banks vs CUs often differ more than you'd expect. Credit unions charge a lower median overdraft ($25 vs $30) but a higher median NSF ($25 vs $18) and card replacement ($25 vs $10).
+[ DO THIS IN 15 MINUTES ]
+[ ] Open your own fee schedule (or your bank's, if you're a customer).
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

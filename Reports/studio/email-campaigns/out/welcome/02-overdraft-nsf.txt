@@ -1,0 +1,49 @@
+Where overdraft and NSF pricing sit now, and what changed since 2021.
+
+FEE LITERACY · EMAIL 2 OF 5
+
+Overdraft and NSF: the market split in two
+==========================================
+
+In 2021 and 2022 several of the largest U.S. banks cut or dropped overdraft and NSF fees. The rest of the market did not follow in a straight line. It split. Here's what the published schedules show today.
+
+* $29 — median overdraft fee (n=88)
+* 24% — charge $5 or less for overdraft
+* $25 — median NSF fee (n=173)
+
+
+BANKS VS CREDIT UNIONS
+
+Overdraft: banks (median): $30
+Overdraft: credit unions (median): $25
+NSF: banks (median): $18
+NSF: credit unions (median): $25
+Bank Fee Index, October 3, 2026. Banks n=40 (overdraft) / 89 (NSF); credit unions n=48 / 84.
+
+The pattern: banks still anchor overdraft near $30, but more of them have pulled NSF down (bank median $18; a quarter at $7.11 or less). Credit unions are the reverse: lower overdraft, but NSF holds at $25.
+
+
+[ THE RULES THAT SHAPE THESE FEES ]
+- Reg E opt-in (2010): an overdraft fee on ATM and one-time debit card transactions requires the consumer's affirmative opt-in.
+- CFPB Circular 2022-06: overdraft fees on transactions authorized against a positive balance ("authorize positive, settle negative") can be an unfair practice.
+- FDIC FIL-40-2022: charging an NSF fee every time the same item is re-presented carries consumer-compliance risk; the FDIC expects institutions to correct the practice and may require restitution.
+- Truth in Savings (Reg DD): fee schedules must be disclosed. That's why this data is public, and why your competitors can read yours.
+
+
+[ QUESTIONS TO ASK ABOUT YOUR OWN SCHEDULE ]
+[ ] Do we charge NSF on re-presented items? How many times?
+[ ] Is our overdraft fee in the high quarter (above $34)?
+[ ] Do we cap daily overdraft fees? Is the cap on the published schedule?
+[ ] Is there a de minimis threshold (no fee on overdrafts under $X)?
+
+Go deeper: overdraft benchmarks (https://feeinsight.com/fees/overdraft?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf) · NSF benchmarks (https://feeinsight.com/fees/nsf?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf) · the National Fee Index (https://feeinsight.com/research/national-fee-index?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf).
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

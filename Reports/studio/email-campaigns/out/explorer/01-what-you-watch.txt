@@ -1,0 +1,27 @@
+How fee change alerts work, and how to read an institution profile.
+
+ALERTS · 1 OF 3
+
+You're set up. Here's what you'll hear about
+============================================
+
+When a fee schedule you follow changes, we tell you what changed, by how much, and where that puts it against peers. No noise in between.
+
+
+[ HOW TO READ AN INSTITUTION PROFILE ]
+- The fee table: each fee next to the peer median. Arrows mark above or below.
+- Source links: the published document and the date we read it.
+- Peer group: institutions of the same charter type and similar size.
+- Coverage note: which fees the schedule didn't publish. A missing fee isn't a $0 fee.
+
+While you wait for the first alert, a good place to start is your state: state fee benchmarks (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch) and the National Fee Index (https://feeinsight.com/research/national-fee-index?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch).
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

@@ -1,0 +1,14 @@
+Stop payment, returned deposits, card replacement: where the real spread is.
+
+The quiet fees: small line items, wide spread
+1. Card replacement is the widest spread on the sheet. The median is $20, but the high quarter starts at $43.75. Credit unions (median $25) charge well above banks ($10). Check whether you're pricing a standard reissue like a rush order.
+2. Returned deposits penalize the wrong person. The customer who deposited a bad check didn't write it. Median $15; credit unions run higher ($20).
+3. Stop payment almost never drops below $15. Only 3.2% charge $5 or less. Banks sit at $30 vs $20 at credit unions. A lower online stop-payment price is an easy differentiator.
+[ TERM WORTH KNOWING: HEADLINE FEE ]
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

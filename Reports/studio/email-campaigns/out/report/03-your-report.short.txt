@@ -1,0 +1,19 @@
+Your institution, your peers, your named competitors. $300, refreshed quarterly.
+
+The same report, built for your institution
+[ WHAT'S INCLUDED ]
+- Your 15 headline fees against your true peer cohort (charter type + asset size).
+- Outliers flagged with suggested actions.
+- Up to 5 named competitors you choose, side by side.
+- Every figure linked to the published schedule it came from.
+- A board-ready summary page.
+- Quarterly refresh, so it doesn't go stale before the next committee meeting.
+Request your report: https://feeinsight.com/for-institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-report
+$300. Or reply with your institution's name and we'll take it from there.
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

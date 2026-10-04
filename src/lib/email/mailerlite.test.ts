@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildMailerLitePayload, syncLeadToMailerLite } from "./mailerlite";
+import { buildMailerLitePayload, mailerLiteGroupForSource, syncLeadToMailerLite } from "./mailerlite";
 
 describe("MailerLite sync", () => {
   afterEach(() => {
@@ -42,6 +42,25 @@ describe("MailerLite sync", () => {
       email: "a@b.co",
       status: "unsubscribed",
     });
+  });
+
+  it("routes each lead to one group by its highest-intent source", () => {
+    vi.stubEnv("MAILERLITE_GROUP_ID", "news");
+    vi.stubEnv("MAILERLITE_REPORT_GROUP_ID", "report");
+    vi.stubEnv("MAILERLITE_WATCHER_GROUP_ID", "watch");
+    expect(mailerLiteGroupForSource("newsletter,capture_homepage")).toBe("news");
+    expect(mailerLiteGroupForSource("capture_state")).toBe("watch");
+    expect(mailerLiteGroupForSource("newsletter,capture_institution,report")).toBe("report");
+    expect(mailerLiteGroupForSource("capture_report_sample")).toBe("report");
+    expect(mailerLiteGroupForSource(null)).toBe("news");
+  });
+
+  it("falls back to the default group when a routed group is not configured", () => {
+    vi.stubEnv("MAILERLITE_GROUP_ID", "news");
+    vi.stubEnv("MAILERLITE_REPORT_GROUP_ID", "");
+    vi.stubEnv("MAILERLITE_WATCHER_GROUP_ID", "");
+    expect(mailerLiteGroupForSource("report")).toBe("news");
+    expect(mailerLiteGroupForSource("capture_state")).toBe("news");
   });
 
   it("reports provider errors instead of throwing", async () => {
