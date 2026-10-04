@@ -127,6 +127,13 @@ export function narrateStepFinished(
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }
+    case "category-guard": {
+      const failing = n(detail, "failing_fees");
+      if (failing === 0) return `Checked ${count(n(detail, "scanned_fees"), "live fee")}; every one matches its category.`;
+      return detail.dry_run === true
+        ? `Found ${count(failing, "live fee")} filed under the wrong category (dry run, nothing rolled back).`
+        : `Rolled back ${count(n(detail, "rolled_back_fees"), "live fee")} filed under the wrong category.`;
+    }
     case "public-discovery":
     case "public-audit":
       return `Checked ${count(n(detail, "processed_routes"), "Fee Insight page")} ${scope}; ${count(n(detail, "public_findings"), "issue")} found.`;
@@ -264,5 +271,6 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   publish: "hamilton",
   "publish-index": "hamilton",
   "publish-context": "hamilton",
+  "category-guard": "hamilton",
   "public-diagnose": "hamilton",
 };

@@ -5,6 +5,7 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -19,8 +20,12 @@ import {
 
 type SqlTag = typeof sql;
 
-/** The verifier recorded in the attempt log; bump the version when the rules change. */
-export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 2 } as const;
+/**
+ * The verifier recorded in the attempt log; bump the version when the rules change.
+ * v3 added the category guard (src/lib/fee-category-guard.ts): a fee name must support
+ * the category it was filed under.
+ */
+export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } as const;
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
@@ -34,6 +39,7 @@ const VALID_CANONICAL_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 export type DarwinReasonCode =
   | "missing_canonical"
   | "missing_name"
+  | "category_mismatch"
   | "missing_lineage"
   | "invalid_amount"
   | "outside_envelope"
@@ -51,6 +57,7 @@ export type DarwinDecision = "verified" | "rejected" | "needs_review" | "duplica
 export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   missing_canonical: "Missing or invalid canonical hint",
   missing_name: "Missing fee name",
+  category_mismatch: "Fee name does not support its category",
   missing_lineage: "Missing source lineage",
   invalid_amount: "Missing or invalid amount",
   outside_envelope: "Amount outside the category's plausible range",
@@ -177,6 +184,7 @@ function normalizedAmount(value: number | string | null): number | null {
 export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string | null): DarwinReasonCode | null {
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
+  if (!checkFeeCategory(canonicalFeeKey, row.fee_name).ok) return "category_mismatch";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
   const amount = normalizedAmount(row.amount);
   if (amount == null || amount < 0) return "invalid_amount";

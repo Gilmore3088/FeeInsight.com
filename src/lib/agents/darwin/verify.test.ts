@@ -99,6 +99,30 @@ describe("Darwin agentic verification", () => {
     expect(db).not.toHaveBeenCalled();
   });
 
+  it("rejects rows whose name contradicts the hinted category", async () => {
+    const db = createDbMock([
+      {
+        ...rawFee,
+        fee_name: "Overdraft Transfer Fee (Sweep)",
+        amount: "7.50",
+      },
+    ]);
+
+    const result = await runDarwinVerify({
+      runId: 104,
+      db: asVerifyDb(db),
+    });
+
+    expect(result.verifiedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      canonicalFeeKey: "overdraft",
+      reasonCode: "category_mismatch",
+    });
+    const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
   it("skips raw rows without a valid canonical hint", async () => {
     const db = createDbMock([
       {
@@ -153,6 +177,7 @@ describe("Darwin agentic verification", () => {
       expect(verificationReasonCode(row, "overdraft")).toBeNull();
       expect(verificationReasonCode(row, null)).toBe("missing_canonical");
       expect(verificationReasonCode({ ...row, fee_name: " " }, "overdraft")).toBe("missing_name");
+      expect(verificationReasonCode({ ...row, fee_name: "Overdraft Transfer Fee (Sweep)" }, "overdraft")).toBe("category_mismatch");
       expect(verificationReasonCode({ ...row, source_url: null, document_r2_key: null }, "overdraft")).toBe("missing_lineage");
       expect(verificationReasonCode({ ...row, amount: null }, "overdraft")).toBe("invalid_amount");
       expect(verificationReasonCode({ ...row, amount: "-5" }, "overdraft")).toBe("invalid_amount");
@@ -161,10 +186,11 @@ describe("Darwin agentic verification", () => {
     });
 
     it("accepts $0 only when Knox read explicit free-fee language", () => {
-      expect(verificationReasonCode({ ...row, amount: "0" }, "paper_statement")).toBe("invalid_amount");
+      const statement = { ...row, fee_name: "Paper Statement" };
+      expect(verificationReasonCode({ ...statement, amount: "0" }, "paper_statement")).toBe("invalid_amount");
       expect(
         verificationReasonCode(
-          { ...row, amount: "0.00", outlier_flags: ["knox_review:zero", "needs_darwin_verification", "canonical_hint:paper_statement"] },
+          { ...statement, amount: "0.00", outlier_flags: ["knox_review:zero", "needs_darwin_verification", "canonical_hint:paper_statement"] },
           "paper_statement",
         ),
       ).toBeNull();
