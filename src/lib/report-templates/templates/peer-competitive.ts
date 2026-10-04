@@ -115,7 +115,7 @@ export function renderPeerCompetitiveReport(input: PeerCompetitiveReportInput): 
       ? [
           sectionHeader({
             label: "Extended Coverage",
-            title: "Full Fee Schedule — 49-Category Breakdown",
+            title: "Full Fee Schedule — Category Breakdown",
           }),
           dataTable({
             columns: FEATURED_TABLE_COLUMNS,

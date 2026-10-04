@@ -608,7 +608,7 @@ function EmptyState({
           margin: "0 auto 1.25rem",
           fontSize: "1.25rem",
         }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hamilton-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hamilton-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
         </div>
@@ -654,7 +654,7 @@ function EmptyState({
           className="burnished-cta"
         >
           Configure Your Institution
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 12h14M12 5l7 7-7 7" />
           </svg>
         </Link>

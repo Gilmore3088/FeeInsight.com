@@ -88,8 +88,9 @@ export function FloatingChatOverlay({ institutionId = null }: { institutionId?: 
         bottom: "1.5rem",
         right: "1.5rem",
         zIndex: 50,
-        width: "360px",
-        height: "480px",
+        // Never wider or taller than a phone screen allows.
+        width: "min(360px, calc(100vw - 2rem))",
+        height: "min(480px, calc(100vh - 3rem))",
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--hamilton-surface-1, #fff)",

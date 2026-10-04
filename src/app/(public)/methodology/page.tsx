@@ -58,7 +58,7 @@ export default async function MethodologyPage() {
   const institutions = summary.institutionsLabel;
   const jsonLdData = buildJsonLd(institutions);
   return (
-    <main>
+    <div>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdData) }}
@@ -162,7 +162,7 @@ export default async function MethodologyPage() {
         </div>
 
       </div>
-    </main>
+    </div>
   );
 }
 

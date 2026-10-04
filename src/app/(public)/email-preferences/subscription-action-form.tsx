@@ -2,8 +2,15 @@
 
 import { useState } from "react";
 import type { SubscriptionAction } from "@/lib/email/subscription-token";
+import {
+  FEE_ALERT_UNSUBSCRIBE_ACTION,
+  FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  SUBSCRIPTION_API_PATH,
+} from "@/lib/email/subscription-paths";
 
-const COPY: Record<SubscriptionAction, { prompt: string; button: string; done: string }> = {
+type PreferenceAction = SubscriptionAction | typeof FEE_ALERT_UNSUBSCRIBE_ACTION;
+
+const COPY: Record<PreferenceAction, { prompt: string; button: string; done: string }> = {
   confirm: {
     prompt: "Confirm that you want fee updates sent to",
     button: "Confirm my email",
@@ -14,16 +21,24 @@ const COPY: Record<SubscriptionAction, { prompt: string; button: string; done: s
     button: "Unsubscribe",
     done: "Unsubscribed. We won't send updates to",
   },
+  [FEE_ALERT_UNSUBSCRIBE_ACTION]: {
+    prompt: "Stop all fee-change alerts for your saved institutions to",
+    button: "Stop fee alerts",
+    done: "Done. Fee-change alerts are off for",
+  },
 };
 
 export function SubscriptionActionForm({
   action,
   email,
   token,
+  uid,
 }: {
-  action: SubscriptionAction;
+  action: PreferenceAction;
   email: string;
   token: string;
+  /** Account id, signed into fee-alert links. */
+  uid?: string;
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [error, setError] = useState("");
@@ -32,10 +47,11 @@ export function SubscriptionActionForm({
   async function submit() {
     setStatus("loading");
     try {
-      const resp = await fetch("/api/leads/subscription", {
+      const isFeeAlert = action === FEE_ALERT_UNSUBSCRIBE_ACTION;
+      const resp = await fetch(isFeeAlert ? FEE_ALERT_UNSUBSCRIBE_API_PATH : SUBSCRIPTION_API_PATH, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, email, token }),
+        body: JSON.stringify(isFeeAlert ? { action, uid, email, token } : { action, email, token }),
       });
       if (resp.ok) {
         setStatus("done");

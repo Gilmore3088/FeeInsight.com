@@ -3,6 +3,7 @@ import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
+import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/agents/public-discovery";
 import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
+import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import type {
@@ -506,6 +508,52 @@ async function executeAgenticStep(
         },
       };
     }
+    case "guide-draft": {
+      const category = stringRunParam(params, [
+        "fee_category",
+        "primary_category",
+        "category",
+      ]);
+      if (!category) {
+        return {
+          status: "skipped",
+          summary: "Guide draft skipped: no fee category supplied.",
+          detail: { reason: "missing_fee_category" },
+        };
+      }
+      const drafted = await runGuideDraft({
+        runId: run.id,
+        primaryCategory: category,
+        slug: stringRunParam(params, ["guide_slug", "slug"]) ?? undefined,
+        dryRun: run.runKind === "dry_run",
+        db: tx,
+      });
+      const detail = {
+        guide_slug: drafted.slug,
+        primary_category: drafted.primaryCategory,
+        draft_status: drafted.status,
+        word_count: drafted.wordCount,
+        issue_count: drafted.issues.length,
+        issues: drafted.issues.slice(0, 10),
+        published_guide_preserved: drafted.publishedGuidePreserved,
+        dry_run: drafted.dryRun,
+      };
+      if (drafted.status === "drafted") {
+        return {
+          status: "completed",
+          summary: `Guide draft for ${drafted.primaryCategory} saved for human review (${drafted.wordCount.toLocaleString()} words). Publishing requires a recorded approval.`,
+          detail,
+        };
+      }
+      return {
+        status: "skipped",
+        summary:
+          drafted.status === "skipped"
+            ? `Guide draft skipped: ${drafted.primaryCategory} has no published benchmark to write about.`
+            : `Guide draft rejected on ${drafted.issues.length.toLocaleString()} validation issue(s); the published guide was left untouched.`,
+        detail,
+      };
+    }
     case "publish":
     case "publish-index":
     case "publish-context": {
@@ -631,6 +679,14 @@ async function executeAgenticStep(
           lines: result.brief.lines,
           funnel: result.funnel,
         },
+      };
+    }
+    case "fee-alert-dispatch": {
+      const result = await runFeeAlertDispatch({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeFeeAlertDispatch(result),
+        detail: { ...result },
       };
     }
     case "assemble":

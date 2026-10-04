@@ -118,7 +118,7 @@ export function HamiltonLeftRail({
             style={{ color: "var(--hamilton-text-tertiary)" }}
             aria-label="Expand sidebar"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
               strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 3l4 4-4 4" />
             </svg>
@@ -134,7 +134,7 @@ export function HamiltonLeftRail({
               style={{ color: "var(--hamilton-text-tertiary)" }}
               aria-label="Collapse sidebar"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
                 strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 3L5 7l4 4" />
               </svg>
@@ -174,7 +174,7 @@ export function HamiltonLeftRail({
             {/* SIMULATE screen: Strategy Terminal nav */}
             {isSimulateScreen && (
               <section>
-                <nav className="space-y-4">
+                <nav aria-label="Scenario tools" className="space-y-4">
                   <Link
                     href={withCurrentContext("/pro/simulate")}
                     className="flex items-center gap-3 no-underline font-label text-[10px] uppercase tracking-widest font-bold"
@@ -390,7 +390,7 @@ export function HamiltonLeftRail({
 
           {/* Settings / Support footer */}
           <div className="mt-auto pt-6 border-t" style={{ borderColor: "rgba(216,194,184,0.2)" }}>
-            <nav className="space-y-5">
+            <nav aria-label="Settings and support" className="space-y-5">
               <Link
                 href={withCurrentContext("/pro/settings")}
                 className="flex items-center gap-3 no-underline transition-colors"

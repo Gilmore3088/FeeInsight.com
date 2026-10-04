@@ -9,7 +9,7 @@
  *   1. Cover page
  *   2. Executive Summary (Hamilton narrative — overview of findings)
  *   3. Page break
- *   4. National Index Table (Hamilton narrative + 49-category data table)
+ *   4. National Index Table (Hamilton narrative + full category data table)
  *   5. Charter Analysis (Hamilton narrative — only when charter_split data exists)
  *   6. Methodology footnote
  */
@@ -66,7 +66,7 @@ export function renderNationalOverviewReport(input: NationalOverviewReportInput)
   // Section 1: Cover page
   const cover = coverPage({
     title: "National Fee Index",
-    subtitle: `49 Fee Categories — ${data.total_institutions.toLocaleString()} Institutions`,
+    subtitle: `Full Fee Catalog — ${data.total_institutions.toLocaleString()} Institutions`,
     report_date: new Date(data.report_date).toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",
@@ -86,11 +86,11 @@ export function renderNationalOverviewReport(input: NationalOverviewReportInput)
   // Section 3: Page break before data-heavy sections
   const break1 = pageBreak();
 
-  // Section 4: National Index Table — Hamilton narrative + full 49-category table
+  // Section 4: National Index Table — Hamilton narrative + full category table
   const nationalTable = [
     sectionHeader({
       label: "National Fee Index",
-      title: "49-Category Benchmark — Medians, Distributions, Coverage",
+      title: "Full-Catalog Benchmark — Medians, Distributions, Coverage",
     }),
     hamiltonNarrativeBlock(narratives.national_index.narrative),
     dataTable({

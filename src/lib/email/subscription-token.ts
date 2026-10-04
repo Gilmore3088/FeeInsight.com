@@ -10,8 +10,14 @@ export type SubscriptionAction = "confirm" | "unsubscribe";
 
 export const SUBSCRIPTION_ACTIONS: readonly SubscriptionAction[] = ["confirm", "unsubscribe"];
 
-export const EMAIL_PREFERENCES_PATH = "/email-preferences";
-export const SUBSCRIPTION_API_PATH = "/api/leads/subscription";
+import {
+  EMAIL_PREFERENCES_PATH,
+  FEE_ALERT_UNSUBSCRIBE_ACTION,
+  FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  SUBSCRIPTION_API_PATH,
+} from "./subscription-paths";
+
+export { EMAIL_PREFERENCES_PATH, FEE_ALERT_UNSUBSCRIBE_ACTION, FEE_ALERT_UNSUBSCRIBE_API_PATH, SUBSCRIPTION_API_PATH };
 
 export function isSubscriptionAction(value: unknown): value is SubscriptionAction {
   return value === "confirm" || value === "unsubscribe";
@@ -26,10 +32,18 @@ export function normalizeSubscriptionEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function sign(action: string, subject: string, secret: string) {
+  return createHmac("sha256", secret).update(`${action}:${subject}`).digest("base64url");
+}
+
+function safeEqual(expected: string, token: string) {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export function signSubscriptionToken(action: SubscriptionAction, email: string, secret: string) {
-  return createHmac("sha256", secret)
-    .update(`${action}:${normalizeSubscriptionEmail(email)}`)
-    .digest("base64url");
+  return sign(action, normalizeSubscriptionEmail(email), secret);
 }
 
 export function verifySubscriptionToken(
@@ -39,9 +53,40 @@ export function verifySubscriptionToken(
   secret: string,
 ): boolean {
   if (!secret || !token) return false;
-  const expected = Buffer.from(signSubscriptionToken(action, email, secret));
-  const actual = Buffer.from(token);
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
+  return safeEqual(signSubscriptionToken(action, email, secret), token);
+}
+
+/**
+ * Fee-change alerts belong to an account, not a lead, so their unsubscribe link signs the
+ * user id together with the address. The action is deliberately not a SubscriptionAction:
+ * /api/leads/subscription rejects it, and /api/alerts/unsubscribe accepts only it.
+ */
+
+function feeAlertSubject(userId: number, email: string) {
+  return `${userId}:${normalizeSubscriptionEmail(email)}`;
+}
+
+export function signFeeAlertUnsubscribeToken(userId: number, email: string, secret: string) {
+  return sign(FEE_ALERT_UNSUBSCRIBE_ACTION, feeAlertSubject(userId, email), secret);
+}
+
+export function verifyFeeAlertUnsubscribeToken(userId: number, email: string, token: string, secret: string): boolean {
+  if (!secret || !token || !Number.isInteger(userId) || userId <= 0) return false;
+  return safeEqual(signFeeAlertUnsubscribeToken(userId, email, secret), token);
+}
+
+/** The page link (a button, so prefetching scanners change nothing) and the RFC 8058 target. */
+export function feeAlertUnsubscribeUrls(userId: number, email: string, secret: string): { page: string; oneClick: string } {
+  const query = new URLSearchParams({
+    action: FEE_ALERT_UNSUBSCRIBE_ACTION,
+    uid: String(userId),
+    email: normalizeSubscriptionEmail(email),
+    token: signFeeAlertUnsubscribeToken(userId, email, secret),
+  }).toString();
+  return {
+    page: `${siteBase()}${EMAIL_PREFERENCES_PATH}?${query}`,
+    oneClick: `${siteBase()}${FEE_ALERT_UNSUBSCRIBE_API_PATH}?${query}`,
+  };
 }
 
 function siteBase() {

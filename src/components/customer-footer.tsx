@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProLock } from "@/components/public/pro-lock";
 import { EmailSignup } from "./public/email-signup";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 
@@ -100,7 +101,8 @@ export function CustomerFooter() {
               <li>
                 <Link href="/research/fee-revenue-analysis" className={FOOTER_LINK_CLASS}>
                   Fee-to-Revenue Analysis
-                </Link>
+                </Link>{" "}
+                <ProLock className="ml-1 align-middle" />
               </li>
               <li>
                 <Link href="/research" className={FOOTER_LINK_CLASS}>

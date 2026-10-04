@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Clock3, FileText, type LucideIcon } from "lucide-react";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
+import { SearchModal } from "@/components/public/search-modal";
 import { getPublicInstitutionById } from "@/lib/data-store";
 import { SubmitForm } from "./submit-form";
 
@@ -51,7 +52,7 @@ export default async function SubmitFeesPage({ searchParams }: PageProps) {
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
       <ConsumerNav />
-      <main className="overflow-x-hidden bg-[#FAF7F2] text-[#1A1815]">
+      <main id="main-content" className="overflow-x-hidden bg-[#FAF7F2] text-[#1A1815]">
         <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
           <Link
             href={backHref}
@@ -135,6 +136,7 @@ export default async function SubmitFeesPage({ searchParams }: PageProps) {
         </div>
       </main>
       <CustomerFooter />
+      <SearchModal />
     </div>
   );
 }

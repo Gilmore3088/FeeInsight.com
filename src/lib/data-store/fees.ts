@@ -14,6 +14,8 @@ export interface FeeCategorySummary {
   p75_amount: number | null;
   bank_count: number;
   cu_count: number;
+  /** Institutions publishing this fee at $0. Consumer guides cite it directly. */
+  zero_count: number;
 }
 
 export interface FeeInstance {
@@ -99,6 +101,16 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     charter_type: string;
   }[];
 
+  // Institutions listing a $0 fee per category (the guides cite "N charge nothing").
+  const zeroInstitutions = new Map<string, Set<number>>();
+  for (const row of rows) {
+    if (row.amount !== null && Number(row.amount) === 0) {
+      const set = zeroInstitutions.get(row.fee_category) ?? new Set<number>();
+      set.add(Number(row.institution_id));
+      zeroInstitutions.set(row.fee_category, set);
+    }
+  }
+
   const results: FeeCategorySummary[] = [];
   for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
     results.push({
@@ -113,11 +125,70 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
       median_amount: stats.median_amount,
       p25_amount: stats.p25_amount,
       p75_amount: stats.p75_amount,
+      zero_count: zeroInstitutions.get(category)?.size ?? 0,
     });
   }
 
   results.sort((a, b) => b.institution_count - a.institution_count);
   return results;
+}
+
+export interface FeeExtreme {
+  id: number;
+  institution_id: number;
+  institution_name: string;
+  amount: number;
+}
+
+/**
+ * The cheapest and most expensive institutions for one fee category.
+ *
+ * The guide sidebar needs ten names. Fetching every row for the category to take two
+ * five-row slices is the wrong shape for that, so this bounds the work in Postgres.
+ */
+export async function getCheapestAndMostExpensive(
+  category: string,
+  limit = 5,
+): Promise<{ cheapest: FeeExtreme[]; mostExpensive: FeeExtreme[] }> {
+  const bounded = Math.max(1, Math.min(25, Math.trunc(limit)));
+
+  const [cheapestRows, expensiveRows] = await Promise.all([
+    sql`
+      SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount
+      FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ${category}
+        AND ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+      ORDER BY ef.amount ASC, ct.institution_name ASC
+      LIMIT ${bounded}
+    `,
+    sql`
+      SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount
+      FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ${category}
+        AND ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+      ORDER BY ef.amount DESC, ct.institution_name ASC
+      LIMIT ${bounded}
+    `,
+  ]);
+
+  const normalize = (rows: unknown[]): FeeExtreme[] =>
+    (rows as FeeExtreme[]).map((r) => ({
+      id: Number(r.id),
+      institution_id: Number(r.institution_id),
+      institution_name: r.institution_name,
+      amount: Number(r.amount),
+    }));
+
+  return {
+    cheapest: normalize(cheapestRows),
+    mostExpensive: normalize(expensiveRows),
+  };
 }
 
 export async function getFeeCategoryDetail(category: string): Promise<{
