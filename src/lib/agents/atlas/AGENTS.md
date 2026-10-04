@@ -21,3 +21,22 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not reintroduce `ops_jobs`, Modal call IDs, Supabase Edge Function product endpoints, or request-time DDL.
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
+
+## State lanes: cadence and state experts
+
+- `state-lane-scheduler.ts`: one full pass per state per UTC calendar month. The first
+  full pass of each calendar quarter is a re-check (`recheck: 'quarterly'` in the run
+  params; the `discover` and `fetch` steps read it and Magellan re-validates every link
+  and re-searches dead and needs-human banks). Between full passes a lane runs hourly
+  catch-up passes (read, extract, classify, publish) only while the state has free work
+  left (`stateHasDocumentBacklog`); otherwise it sleeps until next month.
+- Idempotency keys (they only dedupe active runs): `atlas:state-lane:<ST>:<YYYY-MM>`,
+  `atlas:state-lane-recheck:<ST>:<YYYY>-Q<n>`, `atlas:state-lane-backlog:<ST>:<YYYY-MM-DDTHH>`.
+- State experts (`state-expert/`): one design, 55 memories (`state_memory`). The roster
+  (`roster.ts`) names a historical banking or finance figure per state, DC and territory.
+  The `state-expert` step (right after `enhance`, full passes only, free) refreshes the
+  state's regulator, common platforms, best finder/reader strategies (`pipeline_attempts`)
+  and peer levels (p25/median/p75 per canonical fee and asset-size tier from
+  `published_fee_catalog`). `stateExpertHints(stateCode)` gives Magellan/Rosetta a
+  preferred strategy order; `hamilton/state-expert-summary.ts` gives the report engine
+  the expert's summary. Darwin's peer check reads the peer levels.

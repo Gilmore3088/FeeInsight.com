@@ -37,6 +37,13 @@ export function narrateStepFinished(
   switch (stepKey) {
     case "enhance":
       return `Checked institution records ${scope}: ${count(n(detail, "total_institutions"), "institution")}, ${count(n(detail, "backlog_missing_urls"), "missing fee URL")}.`;
+    case "state-expert": {
+      if (typeof detail.expert_name !== "string") return `State expert had nothing to refresh ${scope}.`;
+      return `${detail.expert_name} refreshed the ${String(detail.state_code ?? stateCode ?? "state")} memory: ${count(n(detail, "institutions"), "institution")}, ${count(n(detail, "published_fees"), "published fee")}, peer levels for ${count(n(detail, "fee_categories_with_peers"), "fee category", "fee categories")}${joinParts([
+        typeof detail.top_platform === "string" && `most common platform ${detail.top_platform}`,
+        typeof detail.top_reader_strategy === "string" && `best reader ${detail.top_reader_strategy}`,
+      ]).replace(/^: /, ", ")}.`;
+    }
     case "discover-paid":
     case "read-paid":
     case "extract-paid": {
@@ -247,6 +254,7 @@ function shorten(message: string, max = 140): string {
 /** Which crew member a step key belongs to, for steps recorded without an agent. */
 export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
+  "state-expert": "atlas",
   "daily-brief": "atlas",
   discover: "magellan",
   "discover-paid": "magellan",

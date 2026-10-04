@@ -2873,3 +2873,19 @@ CREATE INDEX IF NOT EXISTS institution_additional_sources_status_idx
 -- 20270106020000_rosetta_table_rows.sql
 ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS table_rows jsonb;
 ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS reader text;
+-- 20270106040000_state_memory.sql
+CREATE TABLE IF NOT EXISTS public.state_memory (  state_code text PRIMARY KEY,
+  expert_name text NOT NULL,
+  expert_bio text NOT NULL,
+  regulator jsonb DEFAULT '{}'::jsonb NOT NULL,
+  platforms jsonb DEFAULT '[]'::jsonb NOT NULL,
+  strategies jsonb DEFAULT '{}'::jsonb NOT NULL,
+  peer_levels jsonb DEFAULT '[]'::jsonb NOT NULL,
+  institution_count integer DEFAULT 0 NOT NULL,
+  published_fee_count integer DEFAULT 0 NOT NULL,
+  last_agent_run_id bigint,
+  refreshed_at timestamp with time zone DEFAULT now() NOT NULL,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  updated_at timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT state_memory_state_code_check CHECK (((state_code = upper(state_code)) AND ((length(state_code) >= 2) AND (length(state_code) <= 3))))
+);

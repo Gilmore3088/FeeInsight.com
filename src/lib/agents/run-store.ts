@@ -25,6 +25,7 @@ import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
+import { runStateExpertStep } from "./state-expert/step";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -225,6 +226,11 @@ function numericRunParam(
   return undefined;
 }
 
+/** The lane's re-check mode (`recheck: 'quarterly'`), or null for a normal pass. */
+export function laneRecheckParam(params: Record<string, unknown>): "quarterly" | null {
+  return params.recheck === "quarterly" ? "quarterly" : null;
+}
+
 function stringRunParam(
   params: Record<string, unknown>,
   keys: string[],
@@ -303,8 +309,19 @@ async function executeAgenticStep(
         },
       };
     }
+    case "state-expert": {
+      return runStateExpertStep({
+        db: tx,
+        runId: run.id,
+        stateCode,
+        dryRun: run.runKind === "dry_run",
+      });
+    }
     case "discover":
     case "rescue": {
+      // A quarterly re-check run asks discovery to re-validate every link and re-search
+      // dead and needs-human banks; Magellan reads `recheck` from the run params.
+      const recheck = laneRecheckParam(params);
       const discovery = await runMagellanDiscovery({
         runId: run.id,
         stepId: step.id,
@@ -334,6 +351,7 @@ async function executeAgenticStep(
           second_documents_found: discovery.secondDocuments?.found ?? 0,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
+          recheck,
           sample_results: discovery.results.slice(0, 10).map((result) => ({
             institution_id: result.institutionId,
             outcome: result.outcome,
@@ -348,6 +366,7 @@ async function executeAgenticStep(
       };
     }
     case "fetch": {
+      const recheck = laneRecheckParam(params);
       const fetched = await runMagellanFetch({
         runId: run.id,
         stepId: step.id,
@@ -372,6 +391,7 @@ async function executeAgenticStep(
           fetched_bytes: fetched.bytes,
           fetch_limit: fetched.limit,
           dry_run: fetched.dryRun,
+          recheck,
           outcomes: fetched.outcomes,
           learning_log: fetched.learning,
           sample_results: fetched.results.slice(0, 10).map((result) => ({
@@ -1240,10 +1260,10 @@ async function updateStateLaneTerminalStatus(
                WHEN ${status} = 'failed' THEN lane.failure_count + 1
                ELSE lane.failure_count
              END,
-             next_run_after = CASE
-               WHEN ${status} = 'completed' THEN NOW() + (lane.freshness_target_hours * INTERVAL '1 hour')
-               ELSE NOW() + INTERVAL '1 hour'
-             END,
+             -- Check back within the hour either way: the scheduler then decides whether
+             -- the state is due a monthly full pass, has a backlog to catch up on, or is
+             -- idle until next month (state-lane-scheduler.ts).
+             next_run_after = NOW() + INTERVAL '1 hour',
              lease_token = NULL,
              lease_expires_at = NULL,
              updated_at = NOW()

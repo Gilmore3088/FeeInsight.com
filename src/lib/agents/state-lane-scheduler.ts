@@ -7,6 +7,7 @@ import type {
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
+import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -15,16 +16,30 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
  */
 export const STATE_LANE_DOCUMENT_BATCH = 50;
 /**
- * While a state still has documents waiting for a re-read or re-extraction, its lane
- * runs again this soon after the previous run instead of once a day.
+ * Cadence. Each state gets one full pass a month (the state expert refreshes its memory,
+ * Magellan discovers and fetches, every later step runs). The first full pass of each
+ * calendar quarter is a re-check (`recheck: 'quarterly'` in the run params): discovery
+ * re-validates every link and re-searches dead and needs-human banks. Between full
+ * passes, a lane runs hourly catch-up passes only while the state has free work left
+ * (documents to re-read or re-extract, raw rows Darwin has not decided); otherwise it
+ * sleeps until next month. Windows are UTC calendar months and quarters.
+ *
+ * While a state still has a free-work backlog, its lane runs again this soon.
  */
 export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
+
+export type StateLaneRecheck = "quarterly";
 
 export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
   {
     key: "enhance",
     agent: "atlas",
     title: "Refresh state source memory and lane health",
+  },
+  {
+    key: "state-expert",
+    agent: "atlas",
+    title: "State expert: refresh the state's memory (regulator, platforms, strategies, peer levels)",
   },
   {
     key: "discover",
@@ -111,18 +126,25 @@ export interface StateLaneStartInput {
   triggerSource?: AgentRunTriggerSource;
   source?: "atlas.state_lane_scheduler" | "admin.state_lane";
   limit?: number;
+  /** Admin runs only: ask for a quarterly re-check pass. The scheduler decides its own. */
+  recheck?: StateLaneRecheck | null;
+  /** The scheduler's cadence check, when it already made one. */
+  cadence?: StateLaneCadence;
 }
 
 export interface StateLaneStartResult extends StartAgentRunResult {
   stateCode: string;
   idempotencyKey: string;
   mode: StateLaneMode;
+  recheck: StateLaneRecheck | null;
 }
 
 export interface DueStateLaneScheduleResult {
   selected: number;
   scheduled: number;
   reused: number;
+  /** Lanes with no full pass due and no backlog: put to sleep until next month. */
+  idle: number;
   failed: Array<{ stateCode: string; error: string }>;
   results: Array<{
     stateCode: string;
@@ -133,9 +155,40 @@ export interface DueStateLaneScheduleResult {
   }>;
 }
 
-/** One lane run per state per hour at most; backlog runs come back after an hour. */
-function laneWindowKey(date = new Date()): string {
+/** Hourly window: one catch-up run per state per hour at most. */
+export function hourWindowKey(date = new Date()): string {
   return date.toISOString().slice(0, 13);
+}
+
+/** Monthly window (UTC) for the full pass. */
+export function monthWindowKey(date = new Date()): string {
+  return date.toISOString().slice(0, 7);
+}
+
+/** Quarterly window (UTC) for the re-check pass, e.g. `2026-Q4`. */
+export function quarterWindowKey(date = new Date()): string {
+  return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+}
+
+/** Start of the next UTC calendar month: when an idle lane's next full pass is due. */
+export function nextMonthStart(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+}
+
+/**
+ * Idempotency key for a lane run. Keys only dedupe runs that are still active, so the
+ * window just has to cover one run: a full pass per state per month, a re-check per
+ * quarter, a catch-up pass per hour.
+ */
+export function laneIdempotencyKey(
+  stateCode: string,
+  mode: StateLaneMode,
+  recheck: StateLaneRecheck | null,
+  date = new Date(),
+): string {
+  if (mode === "backlog") return `atlas:state-lane-backlog:${stateCode}:${hourWindowKey(date)}`;
+  if (recheck === "quarterly") return `atlas:state-lane-recheck:${stateCode}:${quarterWindowKey(date)}`;
+  return `atlas:state-lane:${stateCode}:${monthWindowKey(date)}`;
 }
 
 function boundedLaneLimit(value: unknown): number {
@@ -196,6 +249,22 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                )
              )
            )
+      ) OR EXISTS (
+        -- Raw rows Darwin has not decided under the current rules (the rows its
+        -- verify step selects), so a large extraction drains hourly, not next month.
+        SELECT 1
+          FROM raw_fee_observations fr
+          JOIN institution_sources inst ON inst.id = fr.institution_id
+         WHERE fr.source = 'knox'
+           AND fr.outlier_flags ? 'needs_darwin_verification'
+           AND upper(btrim(inst.state_code)) = ${stateCode}
+           AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+                AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
+                AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+           )
       ) AS backlog
     `;
     return Boolean(row?.backlog);
@@ -205,32 +274,47 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
   }
 }
 
+export interface StateLaneCadence {
+  /** No full pass started (and not failed) this UTC calendar month. */
+  fullDue: boolean;
+  /** No quarterly re-check pass started (and not failed) this UTC calendar quarter. */
+  recheckDue: boolean;
+}
+
 /**
- * True when the state had a full lane run (the one that crawls bank websites) within
- * its freshness target, or one is still queued or running. The scheduler then starts
- * a backlog run instead of crawling again. False when the check fails, which keeps
- * the lane on its normal full run and daily cadence.
+ * Which passes a state is due. A full pass that is queued, running or completed this
+ * month counts; a failed or cancelled one does not, so the lane tries again. When the
+ * check fails the lane takes a full pass (no re-check), the safe default.
  */
-export async function stateCrawledWithinFreshness(stateCode: string): Promise<boolean> {
+export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
   try {
-    const [row] = await sql<{ recent: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1
-          FROM public.agent_runs run
-          JOIN public.agent_state_lanes lane ON lane.state_code = ${stateCode}
-         WHERE run.run_kind = 'workflow_lane'
-           AND upper(btrim(run.state_code)) = ${stateCode}
-           AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
-           AND (
-             run.status IN ('queued', 'running', 'cancel_requested')
-             OR run.started_at > NOW() - lane.freshness_target_hours * INTERVAL '1 hour'
-           )
-      ) AS recent
+    const [row] = await sql<{ full_this_month: boolean; recheck_this_quarter: boolean }[]>`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('month', NOW(), 'UTC')
+        ) AS full_this_month,
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.params_json->>'recheck' = 'quarterly'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
+        ) AS recheck_this_quarter
     `;
-    return Boolean(row?.recent);
+    return {
+      fullDue: !row?.full_this_month,
+      recheckDue: !row?.recheck_this_quarter,
+    };
   } catch (error) {
-    console.error("stateCrawledWithinFreshness failed:", error);
-    return false;
+    console.error("stateLaneCadence failed:", error);
+    return { fullDue: true, recheckDue: false };
   }
 }
 
@@ -239,10 +323,22 @@ async function markLaneScheduled(stateCode: string, runId: number, backlog: bool
     UPDATE public.agent_state_lanes
        SET last_agent_run_id = ${runId},
            last_run_at = NOW(),
-           next_run_after = NOW() + CASE
-             WHEN ${backlog} THEN ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-             ELSE freshness_target_hours * INTERVAL '1 hour'
+           next_run_after = CASE
+             WHEN ${backlog} THEN NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+             ELSE ${nextMonthStart().toISOString()}::timestamptz
            END,
+           lease_token = NULL,
+           lease_expires_at = NULL,
+           updated_at = NOW()
+     WHERE state_code = ${stateCode}
+  `;
+}
+
+/** Nothing due and no backlog: the lane sleeps until next month's full pass. */
+async function markLaneIdle(stateCode: string): Promise<void> {
+  await sql`
+    UPDATE public.agent_state_lanes
+       SET next_run_after = ${nextMonthStart().toISOString()}::timestamptz,
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()
@@ -283,13 +379,15 @@ export async function startStateLaneRun(
   await syncStateLaneProfiles(sql, stateCode);
   // Only the scheduler starts backlog runs; a run an admin starts always crawls.
   const source = input.source ?? "atlas.state_lane_scheduler";
-  const mode: StateLaneMode =
-    source === "atlas.state_lane_scheduler" && (await stateCrawledWithinFreshness(stateCode))
-      ? "backlog"
-      : "full";
-  const idempotencyKey = mode === "backlog"
-    ? `atlas:state-lane-backlog:${stateCode}:${laneWindowKey()}`
-    : `atlas:state-lane:${stateCode}:${laneWindowKey()}`;
+  const scheduled = source === "atlas.state_lane_scheduler";
+  const cadence = scheduled ? input.cadence ?? (await stateLaneCadence(stateCode)) : null;
+  const mode: StateLaneMode = cadence && !cadence.fullDue ? "backlog" : "full";
+  const recheck: StateLaneRecheck | null = mode !== "full"
+    ? null
+    : cadence
+      ? (cadence.recheckDue ? "quarterly" : null)
+      : (input.recheck === "quarterly" ? "quarterly" : null);
+  const idempotencyKey = laneIdempotencyKey(stateCode, mode, recheck);
   const parsedLimit = Number(input.limit);
   const limit = Number.isFinite(parsedLimit)
     ? Math.min(Math.max(Math.floor(parsedLimit), 1), 500)
@@ -297,7 +395,11 @@ export async function startStateLaneRun(
   const result = await startAgentRun({
     agent: "atlas",
     kind: "workflow_lane",
-    title: mode === "backlog" ? `Atlas ${stateCode} state lane backlog pass` : `Atlas ${stateCode} state lane`,
+    title: mode === "backlog"
+      ? `Atlas ${stateCode} state lane backlog pass`
+      : recheck
+        ? `Atlas ${stateCode} state lane (quarterly re-check)`
+        : `Atlas ${stateCode} state lane`,
     stateCode,
     params: {
       scope: "state",
@@ -305,6 +407,7 @@ export async function startStateLaneRun(
       limit,
       source,
       lane_mode: mode,
+      ...(recheck ? { recheck } : {}),
     },
     triggeredBy: input.triggeredBy,
     triggerSource: input.triggerSource ?? "schedule",
@@ -312,14 +415,14 @@ export async function startStateLaneRun(
     steps: mode === "backlog" ? STATE_LANE_BACKLOG_STEPS : STATE_LANE_STEPS,
     summary: mode === "backlog"
       ? `Atlas backlog pass accepted for ${stateCode}: re-read, re-extract, verify and publish stored documents only. Discovery and fetch wait for the next full lane run.`
-      : `Atlas state lane accepted for ${stateCode}. All worker selectors are scoped to institution_sources.state_code.`,
+      : `Atlas state lane accepted for ${stateCode}${recheck ? " as the quarterly re-check: discovery re-validates every link and re-searches dead and needs-human banks" : ""}. All worker selectors are scoped to institution_sources.state_code.`,
   });
   if (result.run.status === "blocked") {
     await markLaneLaunchBlocked(stateCode, result.run.id);
   } else {
     await markLaneScheduled(stateCode, result.run.id, await stateHasDocumentBacklog(stateCode));
   }
-  return { ...result, stateCode, idempotencyKey, mode };
+  return { ...result, stateCode, idempotencyKey, mode, recheck };
 }
 
 export async function scheduleDueStateLaneRuns({
@@ -364,6 +467,7 @@ export async function scheduleDueStateLaneRuns({
         selected: 0,
         scheduled: 0,
         reused: 0,
+        idle: 0,
         failed: [],
         results: [],
       };
@@ -375,6 +479,7 @@ export async function scheduleDueStateLaneRuns({
     selected: dueRows.length,
     scheduled: 0,
     reused: 0,
+    idle: 0,
     failed: [],
     results: [],
   };
@@ -382,11 +487,18 @@ export async function scheduleDueStateLaneRuns({
   for (const row of dueRows) {
     const stateCode = String(row.state_code);
     try {
+      const cadence = await stateLaneCadence(stateCode);
+      if (!cadence.fullDue && !(await stateHasDocumentBacklog(stateCode))) {
+        await markLaneIdle(stateCode);
+        output.idle += 1;
+        continue;
+      }
       const result = await startStateLaneRun({
         stateCode,
         triggeredBy,
         triggerSource: "schedule",
         source: "atlas.state_lane_scheduler",
+        cadence,
       });
       output.scheduled += 1;
       if (result.reused) output.reused += 1;
