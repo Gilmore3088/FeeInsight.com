@@ -1,0 +1,114 @@
+import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, usableName } from "@/lib/agents/knox/rules";
+
+/**
+ * Layout helpers shared by Knox's pass 2 specialists (`table-rows.ts`, `families.ts`).
+ * Pure. The pass 1 line rules read one line at a time; these helpers let the
+ * specialists pair a name with a price across lines and inside a PDF flattened to one
+ * long line, without loosening what counts as a fee.
+ */
+
+/** Words that qualify a price right after it: "$5 per item", "$3/month", "$10 each". */
+export const QUALIFIER =
+  /^\s*(?:\/\s*[a-z.]+(?:\s+[a-z]+)?|(?:per|each|a|an)\s+(?:[a-z]+(?:\/[a-z]+)?)(?:\s+(?:item|check|request|transfer|wire|card|copy|page|day|month|year))?|each|monthly|annually|daily|one-time(?: fee)?|\(each\))?\s*[*+†‡¹²³⁴⁵⁶⁷⁸⁹]*/i;
+
+/** A price or an explicit free word at the start of a line. */
+export const LEADING_VALUE = /^\(?\s*(\$\s*\d[\d,]*(?:\.\d{1,2})?|free|none|no charge|n\/c)(?![\w])\)?/i;
+
+/** Explicit free words read as a $0 price. */
+export const ZERO_WORD = /^(?:free|none|no charge|n\/c)$/i;
+
+/** Agreement prose, not a fee name: addressed to the reader or written as a rule. */
+const PROSE = /\b(you|your|we|will|may|must|shall|would|could|should)\b/i;
+const LEADERS = /(?:\.\s?){3,}|…+|_{3,}|…+/g;
+const MAX_NAME_WORDS = 14;
+
+/** A cleaned fee name, or null when the text reads as prose or is too long to be one. */
+export function cleanFeeName(raw: string): string | null {
+  let name = nameFrom(raw.replace(LEADERS, " "))
+    // A footnote digit glued to a word ("Excessive transaction fee5"), not a box size ("10X10").
+    .replace(/([a-z]{3,}|\))\d{1,2}$/i, "$1")
+    .replace(/[=*+†‡¹²³⁴⁵⁶⁷⁸⁹]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (name.split(" ").length > MAX_NAME_WORDS) {
+    const tail = name.split(/[.;:!?]\s+/).pop() ?? name;
+    name = tail.trim();
+  }
+  if (name.split(" ").length > MAX_NAME_WORDS || PROSE.test(name) || !usableName(name)) return null;
+  return name;
+}
+
+/**
+ * A run of ALL-CAPS words glued in front of a mixed-case name in flattened text
+ * ("SHARE DRAFT - CHECKING Checking Account Monthly Fee") is a section heading.
+ */
+export function splitCapsHeading(name: string): { heading: string | null; name: string } {
+  // Two or more long capitalized words: "SHARE DRAFT", not an acronym pair like "ATM PIN".
+  const runs = [...name.matchAll(/(?:\b[A-Z][A-Z0-9&/'()-]*\s+(?:-\s+)?){2,}(?=[A-Z][a-z])/g)].filter(
+    (run) => (run[0].match(/\b[A-Z]{4,}/g) ?? []).length >= 2,
+  );
+  const last = runs.at(-1);
+  if (!last) return { heading: null, name };
+  const end = (last.index ?? 0) + last[0].length;
+  return { heading: last[0].replace(/[\s-]+$/, "").trim(), name: name.slice(end).trim() };
+}
+
+const TITLE_CONNECTORS = new Set(["of", "and", "or", "on", "for", "to", "the", "a", "&", "-", "–", "/"]);
+
+/**
+ * The Title Case phrase that ends a name, when lowercase words of an earlier clause sit
+ * in front of it: in flattened text "if account closed within 30 days Account
+ * Reconciliation" is the end of one fee's terms and the start of the next fee's name.
+ * Returns null when the whole name is one title (or there is no title at the end).
+ */
+export function titleTail(name: string): string | null {
+  const words = name.split(" ");
+  let start = words.length;
+  while (start > 0) {
+    const word = words[start - 1];
+    const lead = word.replace(/^[^A-Za-z0-9]+/, "");
+    if (lead === "" || /^[A-Z0-9]/.test(lead) || TITLE_CONNECTORS.has(word.toLowerCase())) start -= 1;
+    else break;
+  }
+  while (start < words.length && TITLE_CONNECTORS.has(words[start].toLowerCase())) start += 1;
+  if (start === 0 || words.length - start < 2) return null;
+  return words.slice(start).join(" ");
+}
+
+/** A short title line: a section heading such as "Wire Transfers". */
+export function looksLikeHeading(line: string): boolean {
+  const words = line.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 6 && /[a-z]/i.test(line) && !/[.!?]$/.test(line) && !PROSE.test(line) && !line.includes("$");
+}
+
+/**
+ * A row name that only makes sense under its section heading: a direction, a unit or
+ * a customer type ("Incoming Domestic" under "Wire Transfers", "Per Item" under
+ * "Overdraft Fees"). Only such names borrow the heading, so a heading never lends its
+ * category to an unrelated fee below it.
+ */
+const COMPOSABLE_WORDS = new Set(
+  (
+    "domestic international foreign intl incoming outgoing in out per each item items presentment occurrence " +
+    "transfer transfers wire request paid returned unpaid consumer business personal member members non " +
+    "nonmember customer first additional subsequent thereafter day month fee"
+  ).split(" "),
+);
+
+export function composableTail(name: string): boolean {
+  const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter(Boolean);
+  return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
+}
+
+/**
+ * A pass 2 specialist emits a fee only when Darwin's own checks would accept it: the
+ * name supports the category (the category guard) and the amount sits inside the
+ * category's plausible range. Pass 1 keeps its older behavior and lets Darwin judge.
+ */
+export function passesDarwinChecks(canonicalKey: string, feeName: string, amount: number): boolean {
+  if (!checkFeeCategory(canonicalKey, feeName).ok) return false;
+  if (amount === 0) return true;
+  return amount > 0 && amount <= MAX_REASONABLE_FEE_AMOUNT && withinAmountEnvelope(canonicalKey, amount);
+}

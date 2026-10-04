@@ -33,6 +33,44 @@ Knox owns conservative raw fee extraction.
   recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
+## Extraction Passes
+
+Knox reads one whole document at a time. The free team runs first; the paid pass runs
+only on what the free team could not read.
+
+- Pass 1, free (`extract.rules`, `rules.ts`): line rules. A threshold, cap or rate base
+  ("balances below $2,500", "up to $29", "maximum of $175") is never read as the fee. New
+  patterns map only to existing canonical keys and each has a fixture in `rules.test.ts`.
+- Pass 2, free and heavier (`specialists.ts` runs the team and merges its finds):
+  - `extract.table` (`table-rows.ts`): pairs table cells, a name line with the price on
+    the next line, and dot-leader rows whose price slid onto the next line. A heading is
+    borrowed only by a bare direction or unit ("Wire Transfers" + "Incoming Domestic").
+    `tableRowsFromText` is the only adapter over Rosetta's output (today the " | " cell
+    lines in `normalized_text`); re-point it when Rosetta stores structured rows.
+  - `extract.family.<family>` (`families.ts`): one expert each for overdraft/NSF, wires,
+    ATM/card, account maintenance/statements, checks, and the remaining services. They
+    read price windows across a document, including PDFs flattened to one line: tiers
+    ("2nd and subsequent items"), daily caps (`od_daily_cap` / `nsf_daily_cap`), waivers,
+    ranges and FREE/NONE.
+  - Every pass 2 row must pass Darwin's category guard and amount envelope before it is
+    kept. A later specialist adds a fee only when no earlier one has the same fee.
+    Pass 2 rows carry `knox_specialist:<strategy>`.
+  - Each specialist is logged in `pipeline_attempts` as its own strategy, with
+    `foldIntoPlaybook: false`. The team total is logged as `extract.rules`, which drives the
+    router and the re-extract gate.
+- Pass 3, paid (`extract-paid` step, `paid-extract.ts`, `extract.paid`). It selects up to
+  `PAID_PASS_ITEMS_PER_RUN` texts that have:
+  - at least 15 priced lines;
+  - fewer than 5 Knox fees after the current free version;
+  - no earlier paid attempt for the same `text_hash`.
+
+  It makes one `paidModelCall` per document and keeps a returned row only when:
+  - its amount appears in the text, on its source line or next to its name;
+  - its canonical key exists.
+
+  Kept rows go in like rule rows, with `knox_paid_extraction` added. A budget, stop or
+  circuit error ends the pass cleanly, and each attempt records its cost.
+
 ## Boundaries
 
 - Do not write `verified_fee_observations` or `published_fee_records`.
