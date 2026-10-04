@@ -1,10 +1,16 @@
 import { sql } from "./data-store/connection";
-import { getAutomationControl, getPipelineControl, type AutomationControlState } from "./automation-control";
+import {
+  findOpenProviderCreditFailure,
+  getAutomationControl,
+  getPipelineControl,
+  type AutomationControlState,
+} from "./automation-control";
 import { getJobFreshness, getSourceSubmissionCounts } from "./admin-queries";
 import { getKnoxReviewCounts } from "./data-store/knox-reviews";
 import type { AdminAgent, AgentRunStatus } from "./agents/types";
 import { toISO } from "./pg-helpers";
 import { hasAnthropicApiKey } from "./ai-provider";
+import { formatAdminDateTime } from "./admin-time";
 
 export interface CoverageMetric {
   value: number;
@@ -149,22 +155,11 @@ function operatorError(error: unknown): string {
   return message.replace(/\s+/g, " ").slice(0, 500);
 }
 
-function isCreditFailureMessage(value: string | null | undefined): boolean {
-  const message = String(value ?? "").toLowerCase();
-  return message.includes("credit balance is too low") ||
-    message.includes("insufficient credits") ||
-    message.includes("purchase credits") ||
-    message.includes("plans & billing");
-}
-
-function buildProviderReadiness(
+export function buildProviderReadiness(
   automation: AutomationControlState,
-  apiUsage: ApiUsageOverview,
+  creditFailure: { createdAt: string } | null,
 ): ProviderReadiness {
   const apiKeyConfigured = hasAnthropicApiKey();
-  const creditFailure = apiUsage.recentFailures.find((failure) =>
-    failure.provider === "anthropic" && isCreditFailureMessage(failure.error),
-  );
 
   if (!apiKeyConfigured) {
     return {
@@ -463,7 +458,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     getJobFreshness(),
   ]);
 
-  const [knoxCounts, sourceSubmissionCounts, automation, pipeline, apiUsage, agentHealth] = await Promise.all([
+  const [knoxCounts, sourceSubmissionCounts, automation, pipeline, apiUsage, agentHealth, openCreditFailure] = await Promise.all([
     getKnoxReviewCounts(),
     getSourceSubmissionCounts(),
     getAutomationControl().catch((error) => {
@@ -488,6 +483,12 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     }),
     getApiUsageOverview(),
     getAgentFailureOverview(),
+    // Same 24h window + "billing resolved" rule the resume guard uses, so the
+    // circuit alert and the resume button can never disagree.
+    findOpenProviderCreditFailure("anthropic").catch((error) => {
+      console.error("Atlas provider credit failure query failed", error);
+      return null;
+    }),
   ]);
 
   const coverage = coverageRows[0] ?? {};
@@ -499,7 +500,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
   const activeJobs = jobs.filter((job) =>
     ["queued", "running", "cancel_requested"].includes(job.status),
   );
-  const provider = buildProviderReadiness(automation, apiUsage);
+  const provider = buildProviderReadiness(automation, openCreditFailure);
   const trustReview: TrustReviewOverview = {
     sourceSubmissionsPending: sourceSubmissionCounts.pending,
     totalPending: sourceSubmissionCounts.pending,
@@ -571,7 +572,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       owner,
       title: `${schedule.display_name} ${schedule.status === "failed" ? "failed" : "is overdue"}`,
       detail: schedule.last_completed_at
-        ? `Last marker: ${schedule.last_completed_at}`
+        ? `Last successful run: ${formatAdminDateTime(schedule.last_completed_at)}`
         : "No successful completion marker has been recorded.",
       href: owner === "atlas" ? "/admin" : `/admin/${owner}`,
       action: `Open ${owner}`,

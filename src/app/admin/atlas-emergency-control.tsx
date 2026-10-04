@@ -164,7 +164,7 @@ export function AtlasEmergencyControl({
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Automation safety</p>
-            <p className="admin-meta mt-1">Provider calls are permitted. {activeJobCount} run{activeJobCount === 1 ? "" : "s"} active.</p>
+            <p className="admin-meta mt-1">Provider stop is off: paid provider steps may run when the budget policy allows. {activeJobCount} run{activeJobCount === 1 ? "" : "s"} active.</p>
           </div>
           <button
             type="button"

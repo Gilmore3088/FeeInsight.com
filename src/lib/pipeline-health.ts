@@ -58,6 +58,7 @@ export async function getPipelineHealth(): Promise<PipelineHealth> {
     overdue_state_lanes: Number(row.overdue_state_lanes ?? 0),
     last_published_at: isoOrNull(row.last_published_at),
     hours_since_last_publish: minutesSincePublish === null ? null : Math.floor(minutesSincePublish / 60),
+    minutes_since_last_publish: minutesSincePublish,
     provider_failure_count_24h: Number(row.provider_failures ?? 0),
     runs_completed_24h: Number(row.runs_completed_24h ?? 0),
     runs_failed_24h: Number(row.runs_failed_24h ?? 0),
