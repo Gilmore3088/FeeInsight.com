@@ -1,6 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
-
-import { getAnthropicMessagesClient } from "@/lib/ai-provider";
+import { getAnthropicMessagesClient, type Anthropic } from "@/lib/ai-provider";
 import type { sql } from "@/lib/data-store/connection";
 import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-provider-usage";
 
