@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
-import { getDataCoverageSummary } from "@/lib/data-store/financial";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { getDataCoverageSummaryCached } from "@/lib/data-store/public-cached-reads";
 
 export const metadata: Metadata = {
   title: "Data Sources & Coverage — Methodology",
@@ -111,7 +111,7 @@ function formatCount(n: number): string {
 }
 
 export default async function DataSourcesPage() {
-  const coverage = await getDataCoverageSummary();
+  const coverage = await getDataCoverageSummaryCached();
 
   const coverageMap: Record<string, number> = {
     fdic_financials: coverage.fdic_financials,

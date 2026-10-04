@@ -4,8 +4,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getNationalIndexCached,
-  getPeerIndex,
-  getDistrictStats,
   getBeigeBookHeadline,
   getLatestBeigeBook,
 } from "@/lib/data-store";
@@ -22,6 +20,7 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { SITE_URL } from "@/lib/constants";
+import { getPeerIndexCached, getDistrictStatsCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -80,11 +79,13 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const user = await getCurrentUser();
   const showFullDistrict = canAccessFullDistrict(user);
 
-  const stats = await getDistrictStats(districtId);
-  const districtIndex = await getPeerIndex({ fed_districts: [districtId] });
-  const nationalIndex = await getNationalIndexCached();
-  const beigeHeadline = await getBeigeBookHeadline(districtId);
-  const beigeSections = await getLatestBeigeBook(districtId);
+  const [stats, districtIndex, nationalIndex, beigeHeadline, beigeSections] = await Promise.all([
+    getDistrictStatsCached(districtId),
+    getPeerIndexCached({ fed_districts: [districtId] }),
+    getNationalIndexCached(),
+    getBeigeBookHeadline(districtId),
+    getLatestBeigeBook(districtId),
+  ]);
 
   // States in this district
   const districtStates = Object.entries(STATE_TO_DISTRICT)

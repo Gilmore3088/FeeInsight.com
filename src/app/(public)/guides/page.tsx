@@ -19,13 +19,13 @@ import { ProLock } from "@/components/public/pro-lock";
 import Link from "next/link";
 import { guideCategories, type Guide } from "@/lib/guides";
 import { loadConsumerGuides, loadProfessionalGuides } from "@/lib/guides/source";
-import { getStats, getDataFreshness } from "@/lib/data-store";
 import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
+import { getStatsCached, getDataFreshnessCached } from "@/lib/data-store/public-cached-reads";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -198,8 +198,8 @@ export default async function GuidesIndexPage() {
   const [allSummaries, stats, freshness, consumerGuides, professionalGuides] =
     await Promise.all([
       getCachedFeeCategorySummaries(),
-      getStats(),
-      getDataFreshness(),
+      getStatsCached(),
+      getDataFreshnessCached(),
       loadConsumerGuides(),
       loadProfessionalGuides(),
     ]);

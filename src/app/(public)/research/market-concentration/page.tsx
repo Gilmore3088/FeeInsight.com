@@ -1,14 +1,12 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
-import {
-  getMarketConcentration,
-} from "@/lib/data-store/financial";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
+import { getMarketConcentrationCached } from "@/lib/data-store/public-cached-reads";
 
 export const metadata: Metadata = {
   title: "Market Concentration & Bank Fees - HHI Analysis by Metro Area",
@@ -45,21 +43,23 @@ export default async function MarketConcentrationPage() {
     );
   }
 
-  const mostConcentrated = await getMarketConcentration({
-    sort: "hhi_desc",
-    limit: 30,
-    minInstitutions: 5,
-  });
-  const leastConcentrated = await getMarketConcentration({
-    sort: "hhi_asc",
-    limit: 20,
-    minInstitutions: 10,
-  });
-  const largestMarkets = await getMarketConcentration({
-    sort: "deposits_desc",
-    limit: 20,
-    minInstitutions: 5,
-  });
+  const [mostConcentrated, leastConcentrated, largestMarkets] = await Promise.all([
+    getMarketConcentrationCached({
+      sort: "hhi_desc",
+      limit: 30,
+      minInstitutions: 5,
+    }),
+    getMarketConcentrationCached({
+      sort: "hhi_asc",
+      limit: 20,
+      minInstitutions: 10,
+    }),
+    getMarketConcentrationCached({
+      sort: "deposits_desc",
+      limit: 20,
+      minInstitutions: 5,
+    }),
+  ]);
 
   const totalMarkets = mostConcentrated.length + leastConcentrated.length;
   const highlyConcentrated = mostConcentrated.filter((m) => m.hhi >= 2500).length;

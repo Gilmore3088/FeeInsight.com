@@ -5,7 +5,6 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import {
   getCityInstitutions,
-  getCityFeeAverages,
   getNationalIndexCached,
 } from "@/lib/data-store";
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
@@ -13,6 +12,7 @@ import { formatAmount, formatAssets } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
+import { getCityFeeAveragesCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
   params: Promise<{ state: string; city: string }>;
@@ -65,7 +65,7 @@ export default async function CityFeePage({ params }: PageProps) {
   const institutions = await loadCityInstitutions(cityName, stateCode);
   if (institutions.length === 0) notFound();
 
-  const cityAverages = await getCityFeeAverages(cityName, stateCode);
+  const cityAverages = await getCityFeeAveragesCached(cityName, stateCode);
   const nationalIndex = await getNationalIndexCached();
 
   const nationalMedians: Record<string, number> = {};
