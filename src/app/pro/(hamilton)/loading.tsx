@@ -1,5 +1,5 @@
 import { HamiltonPageSkeleton } from "@/components/hamilton/layout/HamiltonPageSkeleton";
 
-export default function ProLoading() {
+export default function HamiltonLoading() {
   return <HamiltonPageSkeleton />;
 }

@@ -7,6 +7,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonInstitutionContext, parseInstitutionId } from "@/lib/hamilton/institution-context";
 import { createWatchlistEntryFromInstitution, type WatchlistEntry } from "@/lib/hamilton/monitor-data";
@@ -26,6 +27,7 @@ export async function addToWatchlist(
 ): Promise<WatchlistActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Sign in before changing your watchlist." };
+  if (!canAccessPremium(user)) return { ok: false, error: "An active Hamilton subscription is required." };
 
   const parsedId = parseInstitutionId(institutionId);
   if (!parsedId) {
@@ -116,6 +118,7 @@ export async function removeFromWatchlist(
 ): Promise<WatchlistActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Sign in before changing your watchlist." };
+  if (!canAccessPremium(user)) return { ok: false, error: "An active Hamilton subscription is required." };
 
   const parsedId = parseInstitutionId(institutionId);
   if (!parsedId) {

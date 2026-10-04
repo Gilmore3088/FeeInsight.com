@@ -102,7 +102,10 @@ function deriveConfidence(
  * Calls generateGlobalThesis() with a monthly_pulse scope — lighter than quarterly.
  * Returns thesis: null on API failure so page can render empty state gracefully.
  */
-export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
+export async function fetchHomeBriefingData(
+  options: { includeThesis?: boolean } = {},
+): Promise<HomeBriefingData> {
+  const includeThesis = options.includeThesis ?? true;
   // getNationalIndexCached hits the DB. During build-time ISR prerender (revalidate=86400)
   // the DB can be unreachable; degrade to an empty briefing — the page already renders an
   // "Analysis unavailable" state for null data — instead of crashing the build. Normal
@@ -160,7 +163,9 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
 
   let thesis: ThesisOutput | null = null;
   try {
-    thesis = await generateGlobalThesis({ scope: "monthly_pulse", data: thesisSummary });
+    thesis = includeThesis && allEntries.length > 0
+      ? await generateGlobalThesis({ scope: "monthly_pulse", data: thesisSummary })
+      : null;
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     let errorType: "missing_key" | "rate_limit" | "api_error" = "api_error";
@@ -206,6 +211,25 @@ export async function fetchHomeBriefingData(): Promise<HomeBriefingData> {
     totalInstitutions,
     recommendedCategory,
   };
+}
+
+/** Raised inside the 24h cache so a failed briefing is never stored. */
+export class HomeBriefingUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`Hamilton briefing unavailable: ${reason}`);
+    this.name = "HomeBriefingUnavailableError";
+  }
+}
+
+/**
+ * The cacheable briefing: complete or nothing. Throwing (instead of returning a
+ * null thesis or an empty index) keeps unstable_cache from pinning an outage for a day.
+ */
+export async function fetchCacheableHomeBriefing(): Promise<HomeBriefingData> {
+  const data = await fetchHomeBriefingData();
+  if (data.positioning.length === 0) throw new HomeBriefingUnavailableError("fee index unavailable");
+  if (!data.thesis) throw new HomeBriefingUnavailableError("thesis generation failed");
+  return data;
 }
 
 // ---------------------------------------------------------------------------

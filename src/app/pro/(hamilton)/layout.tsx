@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { HamiltonPageSkeleton } from "@/components/hamilton/layout/HamiltonPageSkeleton";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
@@ -32,7 +33,7 @@ export default function HamiltonLayout({
   // Next.js 16 streaming emitted it after the body painted, breaking icons on
   // first render — see audit C-1 2026-04-17).
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<HamiltonPageSkeleton />}>
       <HamiltonLayoutInner>{children}</HamiltonLayoutInner>
     </Suspense>
   );

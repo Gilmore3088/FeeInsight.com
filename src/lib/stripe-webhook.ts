@@ -39,12 +39,16 @@ function customerIdOf(value: string | { id: string } | null | undefined): string
 async function endSubscription(tx: Tx, customerId: string): Promise<void> {
   await tx`
     UPDATE users
-    SET subscription_status = 'canceled', role = 'viewer'
+    SET subscription_status = 'canceled', past_due_since = NULL, role = 'viewer'
     WHERE stripe_customer_id = ${customerId} AND role IN ('viewer', 'premium')
   `;
 }
 
-/** Applies one verified, not-yet-seen Stripe event inside the caller's transaction. */
+/**
+ * Applies one verified, not-yet-seen Stripe event inside the caller's transaction.
+ * `past_due_since` starts the 7-day payment grace window on the first failure (never
+ * reset by later failures) and clears whenever the subscription is active or ends.
+ */
 export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
@@ -61,14 +65,14 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<voi
       const activated = Number.isInteger(userId) && userId > 0
         ? await tx<Array<{ id: number; email: string | null }>>`
             UPDATE users
-            SET subscription_status = 'active', role = 'premium', stripe_customer_id = ${customerId}
+            SET subscription_status = 'active', past_due_since = NULL, role = 'premium', stripe_customer_id = ${customerId}
             WHERE id = ${userId} AND role NOT IN ('admin', 'analyst')
             RETURNING id, email
           `
         : email
           ? await tx<Array<{ id: number; email: string | null }>>`
               UPDATE users
-              SET subscription_status = 'active', role = 'premium', stripe_customer_id = ${customerId}
+              SET subscription_status = 'active', past_due_since = NULL, role = 'premium', stripe_customer_id = ${customerId}
               WHERE (email = ${email} OR username = ${email}) AND role NOT IN ('admin', 'analyst')
               RETURNING id, email
             `
@@ -92,12 +96,18 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<voi
         ? await tx<Array<{ id: number; email: string | null }>>`
             UPDATE users
             SET subscription_status = 'active',
+                past_due_since = NULL,
                 role = CASE WHEN role = 'viewer' THEN 'premium' ELSE role END
             WHERE stripe_customer_id = ${customerId}
             RETURNING id, email
           `
         : await tx<Array<{ id: number; email: string | null }>>`
-            UPDATE users SET subscription_status = ${status}
+            UPDATE users
+            SET subscription_status = ${status},
+                past_due_since = CASE
+                  WHEN ${status} = 'past_due' THEN COALESCE(past_due_since, NOW())
+                  ELSE NULL
+                END
             WHERE stripe_customer_id = ${customerId}
             RETURNING id, email
           `;
@@ -121,7 +131,9 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<voi
       const customerId = customerIdOf(invoice.customer as string | { id: string } | null);
       if (customerId) {
         await tx`
-          UPDATE users SET subscription_status = 'past_due'
+          UPDATE users
+          SET subscription_status = 'past_due',
+              past_due_since = COALESCE(past_due_since, NOW())
           WHERE stripe_customer_id = ${customerId}
         `;
       }

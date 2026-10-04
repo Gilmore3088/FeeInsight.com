@@ -17,6 +17,7 @@ import {
   type InstitutionWorkspaceMembershipRole,
 } from "@/lib/hamilton/institution-membership";
 import {
+  getSavedPeerSets,
   savePeerSet,
   deletePeerSet,
 } from "@/lib/data-store/saved-peers";
@@ -125,6 +126,9 @@ export async function updateWorkspaceInstitution(
   const user = await getCurrentUser();
   if (!user) {
     return { success: false, error: "Not authenticated" };
+  }
+  if (!canAccessPremium(user)) {
+    return { success: false, error: "An active Hamilton subscription is required." };
   }
 
   const parsed = WorkspaceInstitutionSchema.safeParse({
@@ -605,9 +609,16 @@ const PeerSetSchema = z.object({
   fed_districts: z.array(z.coerce.number().int().min(1).max(12)).optional(),
 });
 
+const MAX_SAVED_PEER_SETS = 10;
+
 export async function createPeerSet(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
+  const existing = await getSavedPeerSets(String(user.id));
+  if (existing.length >= MAX_SAVED_PEER_SETS) {
+    return { success: false, error: `You can save up to ${MAX_SAVED_PEER_SETS} peer sets. Remove one to add another.` };
+  }
 
   const raw = {
     name: formData.get("name"),
@@ -638,6 +649,7 @@ export async function createPeerSet(formData: FormData) {
 export async function removePeerSet(id: number) {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
 
   await deletePeerSet(id, String(user.id));
   revalidatePath("/pro/settings");
