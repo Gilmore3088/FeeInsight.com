@@ -220,7 +220,8 @@ async function selectVerifiedFees(
   if (minInstitutionFees > 1) {
     // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
     // the rest of the queue; the exact count (with every publish rule) runs after.
-    params.push(minConfidence, minInstitutionFees);
+    const confidenceParam = `$${params.push(minConfidence)}`;
+    const minFeesParam = `$${params.push(minInstitutionFees)}`;
     filters.push(`AND (
            SELECT COUNT(DISTINCT depth.canonical_fee_key)
              FROM (
@@ -234,9 +235,9 @@ async function selectVerifiedFees(
                 WHERE pv.institution_id = fv.institution_id
                   AND pv.review_status IN ('verified', 'approved')
                   AND pv.outlier_flags ? 'agentic_darwin_verified'
-                  AND COALESCE(pv.extraction_confidence, 0) >= $${params.length - 1}
+                  AND COALESCE(pv.extraction_confidence, 0) >= ${confidenceParam}
              ) depth
-         ) >= $${params.length}`);
+         ) >= ${minFeesParam}`);
   }
   if (institutionId) {
     params.push(institutionId);
@@ -250,13 +251,14 @@ async function selectVerifiedFees(
   if (learning) {
     // A row this rule version already decided on (published, skipped as identical, or
     // rejected) is never selected again, so skipped rows cannot starve the batch.
-    params.push(HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version);
+    const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
+    const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
-              AND pa.strategy = $${params.length - 1}
-              AND pa.strategy_version = $${params.length}
+              AND pa.strategy = ${strategyParam}
+              AND pa.strategy_version = ${versionParam}
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(

@@ -219,13 +219,14 @@ async function selectRawFees(
   if (learning) {
     // A row this rule version already rejected is never selected again, so rejected
     // rows cannot starve the batch.
-    params.push(DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version);
+    const strategyParam = `$${params.push(DARWIN_VERIFY_STRATEGY.strategy)}`;
+    const versionParam = `$${params.push(DARWIN_VERIFY_STRATEGY.version)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-              AND pa.strategy = $${params.length - 1}
-              AND pa.strategy_version = $${params.length}
+              AND pa.strategy = ${strategyParam}
+              AND pa.strategy_version = ${versionParam}
          )`);
   }
   return db.unsafe<RawFeeRow[]>(

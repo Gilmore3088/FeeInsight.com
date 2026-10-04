@@ -4,8 +4,8 @@
  * Postgres database that has the production schema, with the bank websites served by
  * a stubbed fetch. Skipped unless E2E_DATABASE_URL points at such a throwaway database.
  *
- * The database needs the production public schema (tables, constraints, views) plus the
- * agent_registry rows for the six agents and state_vt; the test seeds its own banks.
+ * Load tests/e2e/production-schema.sql (the production schema plus reference rows) into
+ * an empty database first; the test seeds its own banks. CI does this on every push.
  * Never point it at a shared database: it deletes every VT institution first.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
