@@ -80,7 +80,7 @@ interface ReportWorkspaceProps {
   savedReports: HamiltonReportLibraryItem[];
   initialReport?: Pick<
     HamiltonReportLibraryItem,
-    "report_type" | "report_json" | "artifact_metadata"
+    "id" | "report_type" | "report_json" | "artifact_metadata"
   > | null;
   initialScenarioId: string | null;
   selectedInstitution?: HamiltonSelectedInstitutionContext | null;
@@ -140,6 +140,7 @@ export function ReportWorkspace({
   );
   const [generatedReportMetadata, setGeneratedReportMetadata] =
     useState<ReportArtifactMetadata | null>(initialReport?.artifact_metadata ?? null);
+  const [generatedReportId, setGeneratedReportId] = useState<string | null>(initialReport?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [peerSetId, setPeerSetId] = useState<string | null>(initialPeerSetId ?? null);
   const [peerCoveragePreview, setPeerCoveragePreview] =
@@ -219,6 +220,7 @@ export function ReportWorkspace({
   function handlePeerSetChange(nextPeerSetId: string | null) {
     setPeerSetId(nextPeerSetId);
     setGeneratedReport(null);
+    setGeneratedReportId(null);
     setGeneratedReportType("");
     setGeneratedReportMetadata(null);
     setError(null);
@@ -232,8 +234,10 @@ export function ReportWorkspace({
     report: ReportSummaryResponse,
     reportType: string,
     artifactMetadata: ReportArtifactMetadata | null,
+    reportId: string,
   ) {
     setGeneratedReport(report);
+    setGeneratedReportId(reportId);
     setGeneratedReportType(reportType);
     setGeneratedReportMetadata(artifactMetadata);
     setError(null);
@@ -252,6 +256,7 @@ export function ReportWorkspace({
     setIsGenerating(true);
     setError(null);
     setGeneratedReport(null);
+    setGeneratedReportId(null);
     setGeneratedReportMetadata(null);
 
     const today = new Date().toISOString().split("T")[0];
@@ -278,6 +283,7 @@ export function ReportWorkspace({
 
     if (result.success) {
       setGeneratedReport(result.report);
+      setGeneratedReportId(result.reportId);
       setGeneratedReportType(selectedTemplate);
       setGeneratedReportMetadata(result.artifactMetadata);
     } else {
@@ -286,17 +292,13 @@ export function ReportWorkspace({
   }
 
   async function handleExportPdf() {
-    if (!generatedReport) return;
+    if (!generatedReport || !generatedReportId) return;
     setIsPdfExporting(true);
     try {
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          report: generatedReport,
-          reportType: generatedReportType,
-          artifactMetadata: generatedReportMetadata,
-        }),
+        body: JSON.stringify({ type: "report", reportId: generatedReportId }),
       });
       if (!res.ok) throw new Error("PDF generation failed");
       const blob = await res.blob();

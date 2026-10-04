@@ -164,4 +164,12 @@ describe("getHamilton", () => {
     const config = await getHamilton("consumer");
     expect(config.model).toBe("claude-opus-4-5-20250514");
   });
+  it("pro and admin prompts require stating the evidence and never hide gaps", async () => {
+    const pro = await getHamilton("pro");
+    const admin = await getHamilton("admin");
+    for (const agent of [pro, admin]) {
+      expect(agent.systemPrompt).not.toMatch(/Never reference missing data|Never say "no data"/);
+      expect(agent.systemPrompt).toMatch(/insufficient/);
+    }
+  });
 });

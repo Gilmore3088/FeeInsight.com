@@ -8,6 +8,7 @@ import {
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
 import type { InstitutionDetail } from "@/lib/data-store/types";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 
 export interface HamiltonPeerFilters {
   charter_type?: string;
@@ -129,7 +130,7 @@ export function hasUsablePeerIndex(
   minUsableCategories = 3,
 ): boolean {
   return entries.filter(
-    (entry) => entry.median_amount !== null && entry.institution_count >= 5,
+    (entry) => entry.median_amount !== null && entry.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN,
   ).length >= minUsableCategories;
 }
 

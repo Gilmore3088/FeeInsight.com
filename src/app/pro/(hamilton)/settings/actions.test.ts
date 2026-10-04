@@ -413,3 +413,10 @@ describe("Hamilton Settings workspace access actions", () => {
     });
   });
 });
+
+describe("settings server actions surface", () => {
+  it("does not expose getSavedPeerSets(userId) as a callable server action", async () => {
+    const actions = await import("./actions");
+    expect("getSavedPeerSets" in actions).toBe(false);
+  });
+});

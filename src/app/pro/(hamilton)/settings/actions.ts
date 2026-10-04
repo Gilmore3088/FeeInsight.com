@@ -17,7 +17,6 @@ import {
   type InstitutionWorkspaceMembershipRole,
 } from "@/lib/hamilton/institution-membership";
 import {
-  getSavedPeerSets,
   savePeerSet,
   deletePeerSet,
 } from "@/lib/data-store/saved-peers";
@@ -644,8 +643,6 @@ export async function removePeerSet(id: number) {
   revalidatePath("/pro/settings");
   return { success: true };
 }
-
-export { getSavedPeerSets };
 
 // ─── Intelligence Snapshot (SET-05) ───────────────────────────────────────────
 

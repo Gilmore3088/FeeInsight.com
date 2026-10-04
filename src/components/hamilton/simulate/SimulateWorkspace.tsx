@@ -162,7 +162,7 @@ export function SimulateWorkspace({
       // Use institution's actual fee if available, otherwise the selected peer median.
       const instFee = institutionId ? await getInstitutionFee(institutionId, feeCategory) : null;
       const hasInstFee = instFee !== null;
-      const startingFee = hasInstFee ? Math.round(instFee.amount) : result.distribution.median_amount;
+      const startingFee = hasInstFee ? instFee.amount : result.distribution.median_amount;
       setUsingInstitutionFee(hasInstFee);
       setCurrentFee(startingFee);
       setProposedFee(startingFee);
@@ -220,17 +220,12 @@ export function SimulateWorkspace({
           feeCategory: selectedCategory,
           currentFee,
           proposedFee: proposed,
-          distributionData: distribution,
-          institutionContext,
-          peerContext: {
-            label: distribution.peer_label,
-            source: distribution.peer_source,
-            fallbackReason: distribution.peer_fallback_reason,
-          },
+          institutionId: institutionId ?? null,
+          peerSetId: activePeerSetId,
         },
       });
     },
-    [distribution, selectedCategory, currentFee, institutionContext, complete]
+    [distribution, selectedCategory, currentFee, institutionId, activePeerSetId, complete]
   );
 
   const handleInputChange = useCallback(
@@ -250,16 +245,11 @@ export function SimulateWorkspace({
         feeCategory: selectedCategory,
         currentFee,
         proposedFee,
-        distributionData: distribution,
-        institutionContext,
-        peerContext: {
-          label: distribution.peer_label,
-          source: distribution.peer_source,
-          fallbackReason: distribution.peer_fallback_reason,
-        },
+        institutionId: institutionId ?? null,
+        peerSetId: activePeerSetId,
       },
     });
-  }, [distribution, selectedCategory, currentFee, proposedFee, institutionContext, complete]);
+  }, [distribution, selectedCategory, currentFee, proposedFee, institutionId, activePeerSetId, complete]);
 
   // ─── Save Scenario ────────────────────────────────────────────────────────
   const handleSave = useCallback(async (): Promise<string | null> => {
@@ -557,8 +547,13 @@ export function SimulateWorkspace({
               className="font-headline text-2xl"
               style={{ color: "rgb(120 113 108)" }}
             >
-              {formatDollar(currentFee)}
+              {hasDistribution ? formatDollar(currentFee) : "—"}
             </div>
+            {!hasDistribution && (
+              <span className="text-xs mt-1" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+                Select a category
+              </span>
+            )}
           </div>
 
           {/* Active Simulation Target */}
@@ -570,7 +565,7 @@ export function SimulateWorkspace({
               <FeeSlider
                 min={distribution!.min_amount}
                 max={distribution!.max_amount}
-                step={1}
+                step={0.25}
                 currentFee={currentFee}
                 proposedFee={proposedFee}
                 median={distribution!.median_amount}

@@ -61,7 +61,7 @@ export function FeeSlider({
           </span>
           <input
             type="number"
-            value={Math.round(proposedFee)}
+            value={Number(proposedFee.toFixed(2))}
             min={min}
             max={max}
             step={step}

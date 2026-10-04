@@ -340,3 +340,40 @@ describe("generateSection word count range (SECTION-03)", () => {
     expect(result.wordCount).toBeGreaterThan(200);
   });
 });
+
+describe("generateVerifiedSection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = "test-key-12345";
+  });
+
+  const reply = (text: string) => ({ content: [{ type: "text", text }], usage: { input_tokens: 10, output_tokens: 10 } });
+
+  it("accepts a narrative whose figures trace to the data", async () => {
+    mockCreate.mockResolvedValueOnce(reply("Overdraft sits at $35, $5 above the $30 peer median (16.7% higher)."));
+    const { generateVerifiedSection } = await import("./generate");
+    const result = await generateVerifiedSection({ type: "overview", title: "T", data: { amount: 35, median: 30 } });
+    expect(result.status).toBe("ok");
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("regenerates once naming the bad figure, then flags needs_review if it persists", async () => {
+    mockCreate
+      .mockResolvedValueOnce(reply("Peers charge $42 on average."))
+      .mockResolvedValueOnce(reply("Peers still charge $42."));
+    const { generateVerifiedSection } = await import("./generate");
+    const result = await generateVerifiedSection({ type: "overview", title: "T", data: { median: 30 } });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCreate.mock.calls[1][0].messages[0].content).toContain("FIGURE CHECK FAILED");
+    expect(result).toMatchObject({ status: "needs_review", unmatched: ["$42"] });
+  });
+
+  it("passes after a corrected retry", async () => {
+    mockCreate
+      .mockResolvedValueOnce(reply("Peers charge $42."))
+      .mockResolvedValueOnce(reply("The peer median is $30."));
+    const { generateVerifiedSection } = await import("./generate");
+    const result = await generateVerifiedSection({ type: "overview", title: "T", data: { median: 30 } });
+    expect(result.status).toBe("ok");
+  });
+});

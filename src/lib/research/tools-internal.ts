@@ -44,7 +44,8 @@ import {
   getOfrData,
 } from "@/lib/data-store/financial";
 import { getDistrictComplaintSummary, getNationalComplaintSummary } from "@/lib/data-store/complaints";
-import { getIndexSnapshot, getPeerIndex } from "@/lib/data-store/fee-index";
+import { getContractFeeRows, getIndexSnapshot, getPeerIndex } from "@/lib/data-store/fee-index";
+import { institutionPositions } from "@/lib/data-store/fee-stats";
 import {
   getRevenueConcentration,
   getFeeDependencyTrend,
@@ -266,59 +267,30 @@ export const rankInstitutions = tool({
       .enum(["bank", "credit_union"])
       .optional()
       .describe("Filter by charter type"),
-    limit: z.number().optional().default(10).describe("Number of results"),
+    limit: z.number().int().min(1).max(50).optional().default(10).describe("Number of results (max 50)"),
   }),
   execute: async ({ metric, charter, limit }) => {
     const charterClause = charter ? sql`AND ct.charter_type = ${charter}` : sql``;
-    const n = limit ?? 10;
+    const n = Math.min(limit ?? 10, 50);
 
     if (metric === "above_p75" || metric === "below_p25") {
-      const benchmarks = await sql`
-        SELECT fee_category, amount
-        FROM published_fee_catalog
-        WHERE fee_category IS NOT NULL AND amount > 0
-        ORDER BY fee_category, amount
-      ` as { fee_category: string; amount: number }[];
-
-      const pctMap: Record<string, { p25: number; p75: number }> = {};
-      const grouped: Record<string, number[]> = {};
-      for (const r of benchmarks) {
-        if (!grouped[r.fee_category]) grouped[r.fee_category] = [];
-        grouped[r.fee_category].push(r.amount);
-      }
-      for (const [cat, amounts] of Object.entries(grouped)) {
-        const sorted = amounts.sort((a, b) => a - b);
-        pctMap[cat] = {
-          p25: sorted[Math.floor(sorted.length * 0.25)],
-          p75: sorted[Math.floor(sorted.length * 0.75)],
-        };
-      }
-
-      const threshold = metric === "above_p75" ? "p75" : "p25";
-      const comparison = metric === "above_p75" ? ">" : "<";
-
-      const instFees = await sql`
-        SELECT ct.id, ct.institution_name, ct.state_code, ct.charter_type, ct.asset_size_tier,
-               ef.fee_category, ef.amount
-        FROM published_fee_catalog ef
-        JOIN institution_sources ct ON ef.institution_id = ct.id
-        WHERE ef.fee_category IS NOT NULL AND ef.amount > 0
-          ${charterClause}
-      ` as { id: number; institution_name: string; state_code: string; charter_type: string; asset_size_tier: string; fee_category: string; amount: number }[];
-
+      // Statistics contract: one value per institution per category, sourced rows,
+      // $0 included, no percentiles below the minimum sample.
+      const rows = await getContractFeeRows({ charter });
+      const names = new Map(rows.map((r) => [r.institution_id, r]));
       const counts: Record<number, { name: string; state: string; charter: string; tier: string; count: number; total: number; categories: string[] }> = {};
-      for (const r of instFees) {
-        if (!counts[r.id]) counts[r.id] = { name: r.institution_name, state: r.state_code, charter: r.charter_type, tier: r.asset_size_tier, count: 0, total: 0, categories: [] };
-        counts[r.id].total++;
-        const pct = pctMap[r.fee_category];
-        if (pct) {
-          const pass = comparison === ">" ? r.amount > pct[threshold] : r.amount < pct[threshold];
-          if (pass) {
-            counts[r.id].count++;
-            if (!counts[r.id].categories.includes(r.fee_category)) {
-              counts[r.id].categories.push(r.fee_category);
-            }
-          }
+      for (const position of institutionPositions(rows)) {
+        const info = names.get(position.institution_id);
+        if (!info) continue;
+        const entry = (counts[position.institution_id] ??= {
+          name: info.institution_name, state: info.state_code ?? "", charter: info.charter_type ?? "", tier: info.asset_size_tier ?? "",
+          count: 0, total: 0, categories: [],
+        });
+        entry.total++;
+        const pass = metric === "above_p75" ? position.value > position.p75 : position.value < position.p25;
+        if (pass) {
+          entry.count++;
+          entry.categories.push(position.fee_category);
         }
       }
 
@@ -837,37 +809,17 @@ export const queryRegulatoryRisk = tool({
     // 1. Fee outlier signals — institutions above P75 in regulated categories
     const feeOutlierSignals = await (async () => {
       try {
-        const fees = await sql`
-          SELECT ef.fee_category, ef.amount, ct.institution_name, ct.state_code
-          FROM published_fee_catalog ef
-          JOIN institution_sources ct ON ef.institution_id = ct.id
-          WHERE ef.fee_category = ANY(${targetCategories}::text[])
-            AND ef.amount > 0
-            AND ef.review_status = 'approved'
-          ORDER BY ef.fee_category, ef.amount DESC
-        ` as { fee_category: string; amount: number; institution_name: string; state_code: string }[];
-
-        // Compute P75 per category
-        const grouped: Record<string, number[]> = {};
-        for (const r of fees) {
-          if (!grouped[r.fee_category]) grouped[r.fee_category] = [];
-          grouped[r.fee_category].push(r.amount);
-        }
-        const p75Map: Record<string, number> = {};
-        for (const [cat, amounts] of Object.entries(grouped)) {
-          const sorted = [...amounts].sort((a, b) => a - b);
-          p75Map[cat] = sorted[Math.floor(sorted.length * 0.75)] ?? 0;
-        }
-
-        const outliers = fees.filter((r) => r.amount > (p75Map[r.fee_category] ?? 0));
-        const uniqueInstitutions = [...new Set(outliers.map((r) => r.institution_name))];
+        // Statistics contract: each institution's value vs. the category p75.
+        const rows = await getContractFeeRows({ categories: targetCategories });
+        const names = new Map(rows.map((r) => [r.institution_id, r.institution_name]));
+        const outliers = institutionPositions(rows).filter((position) => position.value > position.p75);
+        const uniqueInstitutions = [...new Set(outliers.map((position) => names.get(position.institution_id) ?? String(position.institution_id)))];
+        const categoriesWithOutliers = [...new Set(outliers.map((position) => position.fee_category))];
 
         return {
           outlier_institution_count: uniqueInstitutions.length,
           top_institutions: uniqueInstitutions.slice(0, n),
-          categories_with_outliers: Object.keys(p75Map).filter((cat) =>
-            fees.some((r) => r.fee_category === cat && r.amount > (p75Map[cat] ?? 0))
-          ),
+          categories_with_outliers: categoriesWithOutliers,
         };
       } catch {
         return { outlier_institution_count: 0, top_institutions: [], categories_with_outliers: [] };
