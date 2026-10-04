@@ -23,6 +23,8 @@ import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
+import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
@@ -873,6 +875,40 @@ async function executeAgenticStep(
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
         detail: { ...result },
+      };
+    }
+    case "score-answer-key": {
+      const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const score = result.score;
+      return {
+        status: "completed",
+        summary: summarizeAnswerKeyScore(result),
+        detail: {
+          schema_ready: result.schemaReady,
+          score_run_id: result.scoreRunId,
+          scorer_version: score?.scorerVersion ?? null,
+          banks_scored: score?.banksScored ?? 0,
+          fees_expected: score?.feesExpected ?? 0,
+          precision: score?.overall.precision ?? null,
+          recall: score?.overall.recall ?? null,
+          by_stage: score?.byStage ?? {},
+          by_document_type: score?.byDocumentType ?? {},
+          by_category: score?.byCategory ?? {},
+          dry_run: result.dryRun,
+        },
+      };
+    }
+    case "scoreboard-snapshot": {
+      const result = await runScoreboardSnapshot({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      return {
+        status: "completed",
+        summary: summarizeScoreboard(result),
+        detail: {
+          schema_ready: result.schemaReady,
+          stored: result.stored,
+          snapshot_date: result.snapshotDate,
+          ...result.numbers,
+        },
       };
     }
     case "assemble":
