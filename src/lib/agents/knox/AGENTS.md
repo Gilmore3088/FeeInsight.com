@@ -20,9 +20,11 @@ Knox owns conservative raw fee extraction.
   minimum balance come last. On a line, the first amount is the fee; a later amount is
   another fee only when words naming one sit just before it.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
-  and a `waivable` flag. $0/free, ranges, percentages and priced lines no rule recognizes
-  are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and without
-  `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
+  and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
+  name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
+  can verify it as a real $0 price. Ranges, percentages and priced lines no rule
+  recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
+  without `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
 ## Boundaries
 

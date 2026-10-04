@@ -1,12 +1,21 @@
-import { createHash } from "crypto";
-
 import { sql } from "@/lib/data-store/connection";
 import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
+import {
+  isExplicitZeroFee,
+  withinAmountEnvelope,
+  ZERO_FEE_VERIFIED_FLAG,
+} from "@/lib/agents/darwin/envelopes";
+import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
+
+/** The publisher recorded in the attempt log; bump the version when the rules change. */
+export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
@@ -62,6 +71,10 @@ export interface HamiltonPublishResult {
   previousAmount: number | null;
   amountDelta: number | null;
   movementDirection: "increase" | "decrease" | null;
+  /** The live row this publish replaced (closed with rolled_back_reason 'superseded'). */
+  supersededFeePublishedId: number | null;
+  /** True once the change was written to fee_change_records. */
+  changeRecorded: boolean;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -70,6 +83,7 @@ export interface RunHamiltonPublishOptions {
   institutionId?: number;
   stateCode?: string;
   minConfidence?: number;
+  stepId?: number;
   dryRun?: boolean;
   db?: SqlTag;
 }
@@ -79,6 +93,12 @@ export interface RunHamiltonPublishResult {
   processedVerifiedFees: number;
   publishedFees: number;
   skippedFees: number;
+  /** Live rows closed because the same fee was published at a new amount. */
+  supersededFees: number;
+  /** Published rows that are explicit $0 (free) fees. */
+  zeroFeesPublished: number;
+  learning: boolean;
+  outcomes: Partial<Record<AttemptOutcome, number>>;
   limit: number;
   minConfidence: number;
   dryRun: boolean;
@@ -111,20 +131,6 @@ function parseFlags(value: unknown): string[] {
   return [];
 }
 
-function stableUuid(value: string): string {
-  const hex = createHash("sha256").update(value).digest("hex");
-  const variant = ((Number.parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80)
-    .toString(16)
-    .padStart(2, "0");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    `4${hex.slice(13, 16)}`,
-    `${variant}${hex.slice(18, 20)}`,
-    hex.slice(20, 32),
-  ].join("-");
-}
-
 function normalizedAmount(value: number | string | null): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
@@ -151,18 +157,30 @@ function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string |
   if (!VALID_CANONICAL_KEYS.has(row.canonical_fee_key)) return "Invalid canonical fee key";
   if (!row.fee_name?.trim()) return "Missing fee name";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
+  if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   const amount = normalizedAmount(row.amount);
-  if (amount == null || amount <= 0) return "Missing or invalid amount";
-  if (amount > 2_500) return "Amount outside deterministic publish range";
+  if (amount == null || amount < 0) return "Missing or invalid amount";
+  if (amount === 0) {
+    // $0 is a real price (a free fee) only when Darwin verified it as one.
+    if (!isExplicitZeroFee(amount, flags, ZERO_FEE_VERIFIED_FLAG)) return "Missing or invalid amount";
+  } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
+    return "Amount outside the category's plausible range";
+  }
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
     return "Below publish confidence threshold";
   }
   return null;
 }
 
+/** The attempt-log fingerprint for one verified row. */
+export function verifiedFeeFingerprint(feeVerifiedId: number | string): string {
+  return `verified:${feeVerifiedId}`;
+}
+
 async function selectVerifiedFees(
   db: SqlTag,
   limit: number,
+  learning: boolean,
   institutionId?: number,
   stateCode?: string,
 ): Promise<VerifiedFeeRow[]> {
@@ -176,6 +194,18 @@ async function selectVerifiedFees(
   if (normalizedState) {
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  if (learning) {
+    // A row this rule version already decided on (published, skipped as identical, or
+    // rejected) is never selected again, so skipped rows cannot starve the batch.
+    params.push(HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version);
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
+              AND pa.strategy = $${params.length - 1}
+              AND pa.strategy_version = $${params.length}
+         )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
     `
@@ -225,9 +255,9 @@ async function insertPublishedFee(
   const institutionId = Number(options.row.institution_id);
   const confidence = normalizedConfidence(options.row.extraction_confidence);
   const amount = normalizedAmount(options.row.amount);
-  const publishEventId = stableUuid(
-    `hamilton:${options.runId}:${feeVerifiedId}:${options.row.canonical_fee_key}`,
-  );
+  // The publish gate is Darwin's verification, so its event id is the handshake id;
+  // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
+  const publishEventId = options.row.verified_by_agent_event_id;
   const inserted = await db`
     INSERT INTO published_fee_records (
       lineage_ref,
@@ -274,7 +304,7 @@ async function selectPriorPublishedFee(
   row: VerifiedFeeRow,
 ): Promise<PriorPublishedFeeRow | null> {
   try {
-    const rows = await db<PriorPublishedFeeRow[]>`
+    const rows = await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fee_published_id,
              amount,
              fee_name,
@@ -287,12 +317,77 @@ async function selectPriorPublishedFee(
          AND rolled_back_at IS NULL
        ORDER BY published_at DESC, fee_published_id DESC
        LIMIT 1
-    `;
+    `);
     return rows[0] ?? null;
   } catch (error) {
     console.error("selectPriorPublishedFee failed:", error);
     return null;
   }
+}
+
+/**
+ * Close the prior live row for this fee after a new amount is published, so the
+ * catalog holds one current price per fee, and record the change in
+ * fee_change_records. The closed row stays in published_fee_records as history.
+ */
+async function supersedePriorFee(
+  db: SqlTag,
+  options: {
+    batchId: string;
+    row: VerifiedFeeRow;
+    prior: PriorPublishedFeeRow;
+    feePublishedId: number;
+  },
+): Promise<{ superseded: boolean; changeRecorded: boolean }> {
+  const priorId = Number(options.prior.fee_published_id);
+  const previousAmount = normalizedAmount(options.prior.amount);
+  const newAmount = normalizedAmount(options.row.amount);
+  const closed = await db`
+    UPDATE published_fee_records
+       SET rolled_back_at = NOW(),
+           rolled_back_by_batch_id = ${options.batchId},
+           rolled_back_reason = ${`superseded by #${options.feePublishedId}`}
+     WHERE fee_published_id = ${priorId}
+       AND rolled_back_at IS NULL
+    RETURNING fee_published_id
+  `;
+  if (closed.length === 0) return { superseded: false, changeRecorded: false };
+
+  // Same vocabulary as FeeChangeEvent in data-store/fee-changes.ts.
+  const changeType = newAmount != null && previousAmount != null && newAmount < previousAmount ? "decrease" : "increase";
+  // The change log is history, not the price itself: if it cannot be written the
+  // savepoint keeps the supersede, and the result says the change was not recorded.
+  const changeRecorded = await inSavepoint(db, async (scope) => {
+    await scope`
+      INSERT INTO fee_change_records (
+        institution_id,
+        fee_category,
+        canonical_fee_key,
+        previous_amount,
+        old_amount,
+        new_amount,
+        change_type,
+        detected_at,
+        changed_at
+      )
+      VALUES (
+        ${Number(options.row.institution_id)},
+        ${options.row.canonical_fee_key},
+        ${options.row.canonical_fee_key},
+        ${previousAmount},
+        ${previousAmount},
+        ${newAmount},
+        ${changeType},
+        NOW(),
+        NOW()
+      )
+    `;
+    return true;
+  }).catch((error) => {
+    console.error("recordFeeChange failed:", error);
+    return false;
+  });
+  return { superseded: true, changeRecorded };
 }
 
 function institutionLabel(row: Pick<VerifiedFeeRow, "institution_id" | "institution_name">): string {
@@ -404,7 +499,7 @@ async function recordPublicationSignals(
 
   for (const [institutionId, group] of grouped) {
     const count = group.feePublishedIds.length;
-    await recordHamiltonMonitorSignal(
+    await inSavepoint(db, (scope) => recordHamiltonMonitorSignal(
       {
         institutionId,
         signalType: "hamilton_publication_completed",
@@ -426,8 +521,8 @@ async function recordPublicationSignals(
           provider_call_queued: false,
         },
       },
-      db,
-    ).catch((error) => {
+      scope,
+    )).catch((error) => {
       console.error("recordHamiltonPublicationSignal failed:", error);
     });
   }
@@ -436,7 +531,7 @@ async function recordPublicationSignals(
     const count = group.movements.length;
     const increases = group.movements.filter((movement) => movement.direction === "increase").length;
     const severity = increases > 0 ? "high" : "medium";
-    await recordHamiltonMonitorSignal(
+    await inSavepoint(db, (scope) => recordHamiltonMonitorSignal(
       {
         institutionId,
         signalType: "hamilton_fee_movement_detected",
@@ -456,8 +551,8 @@ async function recordPublicationSignals(
           provider_call_queued: false,
         },
       },
-      db,
-    ).catch((error) => {
+      scope,
+    )).catch((error) => {
       console.error("recordHamiltonFeeMovementSignal failed:", error);
     });
   }
@@ -490,38 +585,56 @@ async function flagMovedGuidesStale(
   if (moved.size === 0) return;
 
   try {
-    for (const [category, change] of moved) {
-      const reason = `Published median moved ${(change * 100).toFixed(0)}% in run ${runId}`;
-      const rows = (await db`
-        UPDATE consumer_guides
-           SET stale_since = COALESCE(stale_since, NOW()),
-               stale_reason = ${reason},
-               updated_at = NOW()
-         WHERE status = 'published'
-           AND primary_category = ${category}
-           AND stale_since IS NULL
-        RETURNING id, slug
-      `) as unknown as { id: number; slug: string }[];
+    // A savepoint, so a missing guides table rolls back only this block and not the
+    // fee rows this step already wrote in the run transaction.
+    await inSavepoint(db, async (scope) => {
+      for (const [category, change] of moved) {
+        const reason = `Published median moved ${(change * 100).toFixed(0)}% in run ${runId}`;
+        const rows = (await scope`
+          UPDATE consumer_guides
+             SET stale_since = COALESCE(stale_since, NOW()),
+                 stale_reason = ${reason},
+                 updated_at = NOW()
+           WHERE status = 'published'
+             AND primary_category = ${category}
+             AND stale_since IS NULL
+          RETURNING id, slug
+        `) as unknown as { id: number; slug: string }[];
 
-      if (rows.length > 0) {
-        await db`
-          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
-          VALUES (
-            ${runId}, 'guide.flagged_stale', 'completed',
-            ${`Flagged ${rows.length} guide(s) for re-check after a ${(change * 100).toFixed(0)}% move in ${category}`},
-            ${JSON.stringify({
-              fee_category: category,
-              movement_fraction: change,
-              guides: rows.map((r) => r.slug),
-            })}::jsonb
-          )
-        `;
+        if (rows.length > 0) {
+          await scope`
+            INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+            VALUES (
+              ${runId}, 'guide.flagged_stale', 'completed',
+              ${`Flagged ${rows.length} guide(s) for re-check after a ${(change * 100).toFixed(0)}% move in ${category}`},
+              ${JSON.stringify({
+                fee_category: category,
+                movement_fraction: change,
+                guides: rows.map((r) => r.slug),
+              })}::jsonb
+            )
+          `;
+        }
       }
-    }
+    });
   } catch {
     // The guides tables may not exist yet in an environment mid-migration. Flagging a
     // guide for review must never fail a publish that has already written fee rows.
   }
+}
+
+const NO_MOVEMENT = {
+  previousFeePublishedId: null,
+  previousAmount: null,
+  amountDelta: null,
+  movementDirection: null,
+} as const;
+
+function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome {
+  if (result.status === "published") return "ok";
+  return result.reason === "Identical fee already published" || result.reason === "Duplicate published row"
+    ? "unchanged"
+    : "rejected";
 }
 
 export async function runHamiltonPublish(
@@ -531,76 +644,108 @@ export async function runHamiltonPublish(
   const limit = boundedLimit(options.limit);
   const minConfidence = boundedConfidence(options.minConfidence);
   const dryRun = Boolean(options.dryRun);
+  const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
-  const rows = await selectVerifiedFees(db, limit, options.institutionId, options.stateCode);
+  const rows = await selectVerifiedFees(db, limit, learning, options.institutionId, options.stateCode);
   const rowByVerifiedFeeId = new Map(rows.map((row) => [Number(row.fee_verified_id), row]));
   const results: HamiltonPublishResult[] = [];
 
   for (const row of rows) {
-    const skipReason = publishSkipReason(row, minConfidence);
-    if (skipReason) {
-      results.push({
-        feeVerifiedId: Number(row.fee_verified_id),
-        institutionId: Number(row.institution_id),
-        feeName: row.fee_name,
-        amount: normalizedAmount(row.amount),
-        canonicalFeeKey: row.canonical_fee_key,
-        status: "skipped",
-        reason: skipReason,
-        feePublishedId: null,
-        previousFeePublishedId: null,
-        previousAmount: null,
-        amountDelta: null,
-        movementDirection: null,
-      });
-      continue;
-    }
-
-    const priorPublishedFee = dryRun ? null : await selectPriorPublishedFee(db, row);
-    // Content-level dedupe: re-verification mints a new fee_verified_id, so the
-    // lineage guard alone lets identical fee lines pile up in the catalog.
-    if (
-      priorPublishedFee &&
-      normalizedAmount(priorPublishedFee.amount) === normalizedAmount(row.amount)
-    ) {
-      results.push({
-        feeVerifiedId: Number(row.fee_verified_id),
-        institutionId: Number(row.institution_id),
-        feeName: row.fee_name,
-        amount: normalizedAmount(row.amount),
-        canonicalFeeKey: row.canonical_fee_key,
-        status: "skipped",
-        reason: "Identical fee already published",
-        feePublishedId: null,
-        previousFeePublishedId: Number(priorPublishedFee.fee_published_id),
-        previousAmount: normalizedAmount(priorPublishedFee.amount),
-        amountDelta: null,
-        movementDirection: null,
-      });
-      continue;
-    }
-    const feePublishedId = dryRun
-      ? null
-      : await insertPublishedFee(db, { runId: options.runId, batchId, row });
-    const movement = feePublishedId
-      ? movementFor(priorPublishedFee, row)
-      : {
-          previousFeePublishedId: null,
-          previousAmount: null,
-          amountDelta: null,
-          movementDirection: null,
-        };
-    results.push({
+    const base = {
       feeVerifiedId: Number(row.fee_verified_id),
       institutionId: Number(row.institution_id),
       feeName: row.fee_name,
       amount: normalizedAmount(row.amount),
       canonicalFeeKey: row.canonical_fee_key,
-      status: feePublishedId || dryRun ? "published" : "skipped",
-      reason: feePublishedId || dryRun ? null : "Duplicate published row",
-      feePublishedId,
-      ...movement,
-    });
+      supersededFeePublishedId: null,
+      changeRecorded: false,
+    };
+    let result: HamiltonPublishResult;
+    const skipReason = publishSkipReason(row, minConfidence);
+    // Dry runs read the prior live row too, so they report the same skips, movements
+    // and supersedes a real run would.
+    const priorPublishedFee = skipReason ? null : await selectPriorPublishedFee(db, row);
+    if (skipReason) {
+      result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
+    } else if (
+      // Content-level dedupe: re-verification mints a new fee_verified_id, so the
+      // lineage guard alone lets identical fee lines pile up in the catalog.
+      priorPublishedFee &&
+      normalizedAmount(priorPublishedFee.amount) === normalizedAmount(row.amount)
+    ) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: "Identical fee already published",
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+        previousFeePublishedId: Number(priorPublishedFee.fee_published_id),
+        previousAmount: normalizedAmount(priorPublishedFee.amount),
+      };
+    } else if (dryRun) {
+      result = {
+        ...base,
+        status: "published",
+        reason: null,
+        feePublishedId: null,
+        ...movementFor(priorPublishedFee, row),
+        supersededFeePublishedId:
+          priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
+      };
+    } else {
+      // Insert and supersede succeed or fail together: never two live prices for one
+      // fee, and never a closed row without its replacement.
+      const written = await inSavepoint(db, async (scope) => {
+        const feePublishedId = await insertPublishedFee(scope, { runId: options.runId, batchId, row });
+        if (!feePublishedId || !priorPublishedFee) {
+          return { feePublishedId, superseded: false, changeRecorded: false };
+        }
+        const supersede = await supersedePriorFee(scope, {
+          batchId,
+          row,
+          prior: priorPublishedFee,
+          feePublishedId,
+        });
+        return { feePublishedId, ...supersede };
+      });
+      const { feePublishedId } = written;
+      result = {
+        ...base,
+        status: feePublishedId ? "published" : "skipped",
+        reason: feePublishedId ? null : "Duplicate published row",
+        feePublishedId,
+        ...(feePublishedId ? movementFor(priorPublishedFee, row) : NO_MOVEMENT),
+        supersededFeePublishedId:
+          written.superseded && priorPublishedFee ? Number(priorPublishedFee.fee_published_id) : null,
+        changeRecorded: written.changeRecorded,
+      };
+    }
+    results.push(result);
+
+    if (learning) {
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        stage: "publish",
+        strategy: HAMILTON_PUBLISH_STRATEGY.strategy,
+        version: HAMILTON_PUBLISH_STRATEGY.version,
+        fingerprint: verifiedFeeFingerprint(result.feeVerifiedId),
+        outcome: attemptOutcome(result),
+        yieldCount: result.status === "published" ? 1 : 0,
+        costMicrousd: 0,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        detail: {
+          fee_verified_id: result.feeVerifiedId,
+          fee_published_id: result.feePublishedId,
+          canonical_fee_key: result.canonicalFeeKey,
+          amount: result.amount,
+          reason: result.reason,
+          previous_fee_published_id: result.previousFeePublishedId,
+          superseded_fee_published_id: result.supersededFeePublishedId,
+          change_recorded: result.changeRecorded,
+        },
+      });
+    }
   }
 
   if (!dryRun) {
@@ -614,11 +759,16 @@ export async function runHamiltonPublish(
     }
   }
 
+  const published = results.filter((result) => result.status === "published");
   return {
     selectedVerifiedFees: rows.length,
     processedVerifiedFees: results.length,
-    publishedFees: results.filter((result) => result.status === "published").length,
-    skippedFees: results.filter((result) => result.status === "skipped").length,
+    publishedFees: published.length,
+    skippedFees: results.length - published.length,
+    supersededFees: results.filter((result) => result.supersededFeePublishedId != null).length,
+    zeroFeesPublished: published.filter((result) => result.amount === 0).length,
+    learning,
+    outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     limit,
     minConfidence,
     dryRun,

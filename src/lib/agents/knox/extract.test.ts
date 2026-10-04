@@ -87,7 +87,7 @@ describe("Knox agentic extraction", () => {
     expect(JSON.stringify(db.mock.calls)).not.toContain("No fee for e-statements");
   });
 
-  it("stores held rows for review without sending them to Darwin", async () => {
+  it("sends free fees to Darwin and holds ranges for review", async () => {
     const db = createDbMock([
       { ...textArtifact, normalized_text: ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n") },
     ]);
@@ -100,7 +100,7 @@ describe("Knox agentic extraction", () => {
     const flags = inserts.map((call) => call.slice(1).find((value) => typeof value === "string" && value.startsWith("[")) as string);
     expect(flags).toEqual([
       JSON.stringify(["needs_darwin_verification", "canonical_hint:overdraft"]),
-      JSON.stringify(["knox_review:zero", "canonical_hint:paper_statement"]),
+      JSON.stringify(["knox_review:zero", "needs_darwin_verification", "canonical_hint:paper_statement"]),
       JSON.stringify(["knox_review:range", "canonical_hint:check_printing", "amount_max:40"]),
     ]);
   });

@@ -65,10 +65,16 @@ describe("narrateStepFinished", () => {
     }, "GA")).toBe("Pulled 312 fees from 18 documents in GA: 9 lines set aside.");
     expect(narrateStepFinished("classify", {
       processed_raw_fees: 100, verified_fee_observations: 91, skipped_raw_fees: 9,
-    }, "GA")).toBe("Verified 91 fees of 100 checked in GA: 9 held for review.");
+    }, "GA")).toBe("Verified 91 fees of 100 checked in GA: 9 not verified.");
+    expect(narrateStepFinished("verify", {
+      processed_raw_fees: 10, verified_fee_observations: 8, verified_free_fees: 2, skipped_raw_fees: 2,
+    }, "GA")).toBe("Verified 8 fees of 10 checked in GA: 2 of them free ($0), 2 not verified.");
     expect(narrateStepFinished("publish", {
       processed_verified_fees: 91, published_fees: 1, skipped_verified_fees: 90,
     }, "GA")).toBe("Published 1 fee in GA: 90 already published or not eligible.");
+    expect(narrateStepFinished("publish", {
+      processed_verified_fees: 5, published_fees: 3, superseded_fees: 1, published_free_fees: 1, skipped_verified_fees: 2,
+    }, "GA")).toBe("Published 3 fees in GA: 1 replaced an older price, 1 free ($0), 2 already published or not eligible.");
   });
 
   it("says plainly when there was nothing to do", () => {

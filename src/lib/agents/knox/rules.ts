@@ -192,7 +192,7 @@ function detectFrequency(segment: string): string | null {
   return null;
 }
 
-function confidenceFor(segment: string): number {
+export function confidenceFor(segment: string): number {
   let confidence = 0.82;
   if (/\bfee\b/i.test(segment)) confidence += 0.06;
   if (/\bcharge\b/i.test(segment)) confidence += 0.03;

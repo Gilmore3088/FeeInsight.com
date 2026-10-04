@@ -86,7 +86,7 @@ export function narrateStepFinished(
       if (processed === 0) return `Had no new documents to pull fees from ${scope}.`;
       return `Pulled ${count(n(detail, "inserted_raw_fee_observations"), "fee")} from ${count(processed, "document")} ${scope}${joinParts([
         n(detail, "skipped_fee_candidates") > 0 && `${n(detail, "skipped_fee_candidates")} lines set aside`,
-        n(detail, "held_for_review") > 0 && `${n(detail, "held_for_review")} free, range or percentage fees held for review`,
+        n(detail, "held_for_review") > 0 && `${n(detail, "held_for_review")} free, range or percentage fees recorded separately (free fees go on to Darwin)`,
         n(detail, "skipped_known_inputs") > 0 && `${n(detail, "skipped_known_inputs")} documents already done`,
       ])}.`;
     }
@@ -95,7 +95,8 @@ export function narrateStepFinished(
       const processed = n(detail, "processed_raw_fees");
       if (processed === 0) return `Had no new fees to check ${scope}.`;
       return `Verified ${count(n(detail, "verified_fee_observations"), "fee")} of ${processed.toLocaleString("en-US")} checked ${scope}${joinParts([
-        n(detail, "skipped_raw_fees") > 0 && `${n(detail, "skipped_raw_fees")} held for review`,
+        n(detail, "verified_free_fees") > 0 && `${n(detail, "verified_free_fees")} of them free ($0)`,
+        n(detail, "skipped_raw_fees") > 0 && `${n(detail, "skipped_raw_fees")} not verified`,
       ])}.`;
     }
     case "publish":
@@ -104,6 +105,8 @@ export function narrateStepFinished(
       const processed = n(detail, "processed_verified_fees");
       if (processed === 0) return `Had nothing new to publish ${scope}.`;
       return `Published ${count(n(detail, "published_fees"), "fee")} ${scope}${joinParts([
+        n(detail, "superseded_fees") > 0 && `${n(detail, "superseded_fees")} replaced an older price`,
+        n(detail, "published_free_fees") > 0 && `${n(detail, "published_free_fees")} free ($0)`,
         n(detail, "skipped_verified_fees") > 0 && `${n(detail, "skipped_verified_fees")} already published or not eligible`,
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;

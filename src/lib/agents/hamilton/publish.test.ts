@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runHamiltonPublish } from "./publish";
+import { HAMILTON_PUBLISH_STRATEGY, runHamiltonPublish } from "./publish";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -18,6 +18,9 @@ function createDbMock(
     if (text.includes("INSERT INTO published_fee_records")) {
       return Promise.resolve([{ fee_published_id: nextPublishedId++ }]);
     }
+    if (text.includes("UPDATE published_fee_records")) {
+      return Promise.resolve(priorPublishedRows.slice(0, 1).map((row) => ({ fee_published_id: row.fee_published_id })));
+    }
     if (text.includes("FROM published_fee_records")) {
       return Promise.resolve(priorPublishedRows);
     }
@@ -28,6 +31,13 @@ function createDbMock(
     return Promise.resolve([]);
   });
   return db;
+}
+
+/** Statements that change data: inserts and updates, signals excluded. */
+function writes(db: DbMock): string[] {
+  return db.mock.calls
+    .map((call) => templateText(call[0]))
+    .filter((text) => /INSERT INTO|UPDATE /.test(text) && !text.includes("hamilton_signals"));
 }
 
 function asPublishDb(db: DbMock): NonNullable<Parameters<typeof runHamiltonPublish>[0]["db"]> {
@@ -168,7 +178,7 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     expect(db.unsafe).toHaveBeenCalledTimes(1);
-    expect(db).not.toHaveBeenCalled();
+    expect(writes(db)).toEqual([]);
   });
 
   it("skips rows below the publish confidence threshold", async () => {
@@ -194,7 +204,7 @@ describe("Hamilton agentic publish", () => {
       status: "skipped",
       reason: "Below publish confidence threshold",
     });
-    expect(db).not.toHaveBeenCalled();
+    expect(writes(db)).toEqual([]);
   });
 
   it("skips rows with blocking review flags", async () => {
@@ -213,7 +223,7 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(0);
     expect(result.skippedFees).toBe(1);
     expect(result.results[0].reason).toBe("Blocking flag: needs_human");
-    expect(db).not.toHaveBeenCalled();
+    expect(writes(db)).toEqual([]);
   });
 
   it("filters publish candidates by state lane", async () => {
@@ -228,5 +238,134 @@ describe("Hamilton agentic publish", () => {
     const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
     expect(unsafeSql).toContain("JOIN institution_sources inst ON inst.id = fv.institution_id");
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
+  });
+
+  it("closes the prior live row and records the change when an amount moves", async () => {
+    const db = createDbMock([verifiedFee], [priorPublishedFee]);
+
+    const result = await runHamiltonPublish({ runId: 108, db: asPublishDb(db) });
+
+    expect(result).toMatchObject({ publishedFees: 1, supersededFees: 1 });
+    expect(result.results[0]).toMatchObject({
+      feePublishedId: 1201,
+      supersededFeePublishedId: 601,
+      changeRecorded: true,
+    });
+
+    const update = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
+    expect(templateText(update?.[0])).toContain("rolled_back_at = NOW()");
+    expect(templateText(update?.[0])).toContain("rolled_back_at IS NULL");
+    expect(update?.slice(1)).toEqual(expect.arrayContaining(["agentic-run-108", "superseded by #1201", 601]));
+
+    const change = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO fee_change_records"));
+    expect(change?.slice(1)).toEqual(expect.arrayContaining([42, "overdraft", 30, 35, "increase"]));
+  });
+
+  it("runs insert and supersede inside a savepoint when given a transaction", async () => {
+    const db = createDbMock([verifiedFee], [priorPublishedFee]);
+    const savepoint = vi.fn((work: (scope: unknown) => Promise<unknown>) => work(db));
+    Object.assign(db, { savepoint });
+
+    await runHamiltonPublish({ runId: 109, db: asPublishDb(db) });
+
+    // Prior-row read, insert + supersede, change record, and each signal.
+    expect(savepoint.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("reports the supersede in a dry run without writing", async () => {
+    const db = createDbMock([verifiedFee], [priorPublishedFee]);
+
+    const result = await runHamiltonPublish({ runId: 110, dryRun: true, db: asPublishDb(db) });
+
+    expect(result.results[0]).toMatchObject({
+      status: "published",
+      feePublishedId: null,
+      supersededFeePublishedId: 601,
+      movementDirection: "increase",
+    });
+    expect(writes(db)).toEqual([]);
+  });
+
+  it("publishes a free fee Darwin verified as $0", async () => {
+    const db = createDbMock([
+      { ...verifiedFee, canonical_fee_key: "paper_statement", amount: "0.00", outlier_flags: ["agentic_darwin_verified", "zero_fee"] },
+    ]);
+
+    const result = await runHamiltonPublish({ runId: 111, db: asPublishDb(db) });
+
+    expect(result).toMatchObject({ publishedFees: 1, zeroFeesPublished: 1 });
+  });
+
+  it("does not publish $0 without the free-fee flag, or an amount outside its category's range", async () => {
+    const db = createDbMock([
+      { ...verifiedFee, amount: "0.00" },
+      { ...verifiedFee, fee_verified_id: 802, amount: "350.00" },
+    ]);
+
+    const result = await runHamiltonPublish({ runId: 112, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(0);
+    expect(result.results.map((row) => row.reason)).toEqual([
+      "Missing or invalid amount",
+      "Amount outside the category's plausible range",
+    ]);
+  });
+
+  it("records Darwin's verification event as the publish handshake id", async () => {
+    const db = createDbMock([verifiedFee]);
+
+    await runHamiltonPublish({ runId: 113, db: asPublishDb(db) });
+
+    const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO published_fee_records"));
+    // Darwin's event id lands in both verified_by_agent_event_id and the handshake column.
+    const values = insert?.slice(1) ?? [];
+    expect(values.filter((value) => value === verifiedFee.verified_by_agent_event_id)).toHaveLength(2);
+  });
+
+  describe("with the learning core", () => {
+    function learningDb(rows: Array<Record<string, unknown>>, prior: Array<Record<string, unknown>> = []): DbMock {
+      const db = createDbMock(rows, prior);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("learning_schema_ready")) {
+          return Promise.resolve([{ learning_schema_ready: true }]);
+        }
+        return base(strings, ...values);
+      });
+      return db;
+    }
+
+    function attemptValues(db: DbMock): unknown[][] {
+      return db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))
+        .map((call) => call.slice(1));
+    }
+
+    it("logs each decision so skipped rows are never selected again", async () => {
+      const db = learningDb([
+        verifiedFee,
+        { ...verifiedFee, fee_verified_id: 803, extraction_confidence: "0.5" },
+      ]);
+
+      const result = await runHamiltonPublish({ runId: 501, stepId: 7, db: asPublishDb(db) });
+
+      expect(result).toMatchObject({ learning: true, outcomes: { ok: 1, rejected: 1 } });
+      const attempts = attemptValues(db);
+      expect(attempts[0]).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
+      expect(attempts[1]).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("FROM pipeline_attempts pa");
+      expect(query).toContain("'verified:' || fv.fee_verified_id::text");
+      expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
+    });
+
+    it("logs an identical re-verified row as unchanged", async () => {
+      const db = learningDb([verifiedFee], [{ ...priorPublishedFee, amount: "35.00" }]);
+
+      const result = await runHamiltonPublish({ runId: 502, db: asPublishDb(db) });
+
+      expect(result.outcomes).toEqual({ unchanged: 1 });
+    });
   });
 });

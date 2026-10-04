@@ -7,6 +7,7 @@ import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
+  confidenceFor,
   extractCandidatesFromText,
   type ExtractedFeeCandidate,
   type HeldFeeCandidate,
@@ -264,12 +265,16 @@ async function insertHeldCandidate(
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
+  // A free fee with a category is a real price ($0) Darwin can verify; the other
+  // shapes (ranges, percentages, unclassified lines) wait for review.
+  const toDarwin = held.shape === "zero" && Boolean(held.canonicalHint);
   const flags = [`knox_review:${held.shape}`];
+  if (toDarwin) flags.push("needs_darwin_verification");
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
   const conditions =
-    `Knox held for review (${held.shape}) from Rosetta artifact #${documentTextId}. ` +
+    `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     `excerpt="${held.excerpt.slice(0, 180)}"`;
   const inserted = await db`
@@ -292,7 +297,7 @@ async function insertHeldCandidate(
       ${sourceDocumentId},
       ${null},
       ${options.row.source_url},
-      ${0.5},
+      ${toDarwin ? confidenceFor(held.excerpt) : 0.5},
       ${agentEventId}::uuid,
       ${held.feeName},
       ${held.amount},
