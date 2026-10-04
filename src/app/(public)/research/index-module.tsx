@@ -28,7 +28,7 @@ export function IndexModule({ summary }: { summary: PublicStatsSummary }) {
               and credit unions.
             </p>
           </div>
-          <svg
+          <svg aria-hidden="true"
             className="mt-1 h-8 w-8 shrink-0 text-[#C44B2E]/40 group-hover:text-[#C44B2E]/60 transition-colors"
             fill="none"
             viewBox="0 0 24 24"
@@ -74,7 +74,7 @@ export function IndexModule({ summary }: { summary: PublicStatsSummary }) {
           <span className="text-[12px] font-semibold text-[#A93D25] transition-colors">
             Open the index
           </span>
-          <svg className="h-4 w-4 text-[#A93D25] group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <svg aria-hidden="true" className="h-4 w-4 text-[#A93D25] group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
           </svg>
         </div>

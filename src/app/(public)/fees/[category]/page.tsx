@@ -11,10 +11,10 @@ import {
   getDisplayName,
   getFeeFamily,
   getFamilyColor,
-  getFeeTier,
   FEE_FAMILIES,
   DISPLAY_NAMES,
 } from "@/lib/fee-taxonomy";
+import { loadGuidesForCategory } from "@/lib/guides/source";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -109,9 +109,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const name = getDisplayName(category);
   const family = getFeeFamily(category);
   const familyColor = family ? getFamilyColor(family) : null;
-  const tier = getFeeTier(category);
-  const detail = await getFeeCategoryDetail(category);
-  const freshness = await getDataFreshness();
+  const [detail, freshness] = await Promise.all([
+    getFeeCategoryDetail(category),
+    getDataFreshness(),
+  ]);
+
+  // Close the loop the other way: a reader on a fee page can reach the guide that
+  // explains it. Consumer guides are public, so this link is never a dead end.
+  const consumerGuides = await loadGuidesForCategory(category, "consumer");
 
   // N and M share one basis: verified fees with a stated amount, and the
   // distinct institutions those fees came from.
@@ -136,7 +141,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       />
 
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
         <Link href="/" className="hover:text-[#1A1815] transition-colors">
           Home
         </Link>
@@ -157,9 +162,6 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             {family}
           </span>
         )}
-        <span className="rounded-full bg-[#E8DFD1]/40 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#6B6255]">
-          {tier}
-        </span>
       </div>
 
       <h1
@@ -220,13 +222,129 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* Premium gate */}
-      {!isPro && (
-        <div className="mt-8">
-          <UpgradeGate message={`Detailed ${name} breakdown by charter, tier, and state`} />
-        </div>
+      {/* Guide to this fee — free for everyone */}
+      {consumerGuides.length > 0 && (
+        <section className="mt-8 rounded-xl border border-[#E8DFD1] bg-white/70 px-5 py-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#C44B2E]/70">
+            New to this fee?
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="text-[14px] text-[#5A5347]">
+              Read the plain-language guide to {name.toLowerCase()} — what it is, who
+              charges the most, and how to avoid it. Free to read.
+            </p>
+            {consumerGuides.slice(0, 2).map((guide) => (
+              <Link
+                key={guide.slug}
+                href={`/guides/${guide.slug}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
+              >
+                {guide.title}
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
 
+      {/* The reader's own bank — the question every fee page is really being asked */}
+      <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#C44B2E]/15 bg-gradient-to-r from-[#FFFDF9] to-[#FAF7F2] px-5 py-4">
+        <p className="text-[14px] text-[#5A5347]">
+          See what <span className="font-medium text-[#1A1815]">your</span> bank charges for{" "}
+          {name.replace(/\s*\([^)]*\)/g, "").toLowerCase()}, next to the national median.
+        </p>
+        <Link
+          href={`/institutions?fee=${category}`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
+        >
+          Find your institution
+        </Link>
+      </section>
+
+      {/* Fed district */}
+      {detail.by_fed_district.length > 0 && (
+        <section className="mt-10">
+          <h2
+            className="text-[16px] font-medium text-[#1A1815]"
+            style={SERIF}
+          >
+            By Federal Reserve District
+          </h2>
+          <WarmTable headers={["District", "Median", "Range", "Count"]}>
+            {detail.by_fed_district.map((row) => {
+              const distNum = parseInt(
+                row.dimension_value.replace("District ", "")
+              );
+              const distName =
+                DISTRICT_NAMES[distNum] ?? row.dimension_value;
+              return (
+                <tr
+                  key={row.dimension_value}
+                  className="hover:bg-[#FAF7F2]/60 transition-colors"
+                >
+                  <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                    {distName}{" "}
+                    <span className="text-[#6B6255]">
+                      ({row.dimension_value})
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                    {money(row.median_amount)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                    {money(row.min_amount)} &ndash;{" "}
+                    {money(row.max_amount)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                    {row.count.toLocaleString()}
+                  </td>
+                </tr>
+              );
+            })}
+          </WarmTable>
+        </section>
+      )}
+
+      {/* Related fees */}
+      {familyMembers.length > 0 && (
+        <section className="mt-10">
+          <div className="flex items-center gap-3 mb-4">
+            <h2
+              className="text-[16px] font-medium text-[#1A1815]"
+              style={SERIF}
+            >
+              Related Fees in {family}
+            </h2>
+            <span className="h-px flex-1 bg-[#E8DFD1]" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {familyMembers.map((cat) => (
+              <Link
+                key={cat}
+                href={`/fees/${cat}`}
+                className="rounded-full border border-[#E8DFD1] px-3.5 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+              >
+                {getDisplayName(cat)}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Methodology */}
+      <section className="mt-12 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 p-6">
+        <h3 className={EYEBROW}>
+          Methodology
+        </h3>
+        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+          Based on {verifiedFeeCount.toLocaleString()} verified fees from{" "}
+          {institutionCount.toLocaleString()} US banks and credit unions, read from their published
+          fee schedules. Fees the software is not sure about are held for a person to check and are
+          not counted here. Institutions are identified via FDIC and NCUA regulatory databases.
+        </p>
+      </section>
+
+      {/* Professional breakdowns: below everything that is free, so nothing free sits behind
+          the gate. */}
       {/* Bank vs. Credit Union */}
       {isPro && detail.by_charter_type.length > 0 && (
         <section className="mt-10">
@@ -295,50 +413,6 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Fed district */}
-      {detail.by_fed_district.length > 0 && (
-        <section className="mt-10">
-          <h2
-            className="text-[16px] font-medium text-[#1A1815]"
-            style={SERIF}
-          >
-            By Federal Reserve District
-          </h2>
-          <WarmTable headers={["District", "Median", "Range", "Count"]}>
-            {detail.by_fed_district.map((row) => {
-              const distNum = parseInt(
-                row.dimension_value.replace("District ", "")
-              );
-              const distName =
-                DISTRICT_NAMES[distNum] ?? row.dimension_value;
-              return (
-                <tr
-                  key={row.dimension_value}
-                  className="hover:bg-[#FAF7F2]/60 transition-colors"
-                >
-                  <td className="px-4 py-2.5 font-medium text-[#1A1815]">
-                    {distName}{" "}
-                    <span className="text-[#6B6255]">
-                      ({row.dimension_value})
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
-                    {money(row.median_amount)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                    {money(row.min_amount)} &ndash;{" "}
-                    {money(row.max_amount)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                    {row.count.toLocaleString()}
-                  </td>
-                </tr>
-              );
-            })}
-          </WarmTable>
-        </section>
-      )}
-
       {/* State breakdown */}
       {isPro && detail.by_state.length > 0 && (
         <section className="mt-10">
@@ -378,44 +452,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Related fees */}
-      {familyMembers.length > 0 && (
-        <section className="mt-10">
-          <div className="flex items-center gap-3 mb-4">
-            <h2
-              className="text-[16px] font-medium text-[#1A1815]"
-              style={SERIF}
-            >
-              Related Fees in {family}
-            </h2>
-            <span className="h-px flex-1 bg-[#E8DFD1]" />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {familyMembers.map((cat) => (
-              <Link
-                key={cat}
-                href={`/fees/${cat}`}
-                className="rounded-full border border-[#E8DFD1] px-3.5 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
-              >
-                {getDisplayName(cat)}
-              </Link>
-            ))}
-          </div>
-        </section>
+      {!isPro && (
+        <div className="mt-10">
+          <UpgradeGate
+            audience="consumer"
+            message={`${name} by charter, asset size and state`}
+          />
+        </div>
       )}
-
-      {/* Methodology */}
-      <section className="mt-12 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 p-6">
-        <h3 className={EYEBROW}>
-          Methodology
-        </h3>
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
-          Based on {verifiedFeeCount.toLocaleString()} verified fees from{" "}
-          {institutionCount.toLocaleString()} US banks and credit unions, read from their published
-          fee schedules. Fees the software is not sure about are held for a person to check and are
-          not counted here. Institutions are identified via FDIC and NCUA regulatory databases.
-        </p>
-      </section>
 
       {/* JSON-LD */}
       <script

@@ -115,7 +115,7 @@ export default async function StateReportPage({ params }: PageProps) {
       />
 
       {/* Breadcrumb — sticky on mobile */}
-      <nav className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-4 sticky top-14 z-30 -mx-6 px-6 py-2 bg-[#FAF7F2]/95 backdrop-blur-sm sm:static sm:mx-0 sm:px-0 sm:py-0 sm:bg-transparent sm:backdrop-blur-none">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-4 sticky top-14 z-30 -mx-6 px-6 py-2 bg-[#FAF7F2]/95 backdrop-blur-sm sm:static sm:mx-0 sm:px-0 sm:py-0 sm:bg-transparent sm:backdrop-blur-none">
         <Link href="/" className="hover:text-[#1A1815] transition-colors">Home</Link>
         <span className="text-[#D4C9BA]">/</span>
         <Link href="/research" className="hover:text-[#1A1815] transition-colors">Research</Link>
@@ -129,7 +129,7 @@ export default async function StateReportPage({ params }: PageProps) {
           State Fee Report
         </span>
       </div>
-      <h1 className="mt-1 font-[Newsreader] text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]">
+      <h1 className="mt-1 font-[family-name:var(--font-newsreader)] text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]">
         {stateName} Bank & Credit Union Fees
       </h1>
       <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
@@ -188,7 +188,7 @@ export default async function StateReportPage({ params }: PageProps) {
       {/* Charter breakdown */}
       {stateIndex.length > 0 && (
         <section className="mt-8">
-          <h2 className="font-[Newsreader] text-sm font-bold text-[#1A1815]">
+          <h2 className="font-[family-name:var(--font-newsreader)] text-sm font-bold text-[#1A1815]">
             Bank vs. Credit Union — {stateName}
           </h2>
           <p className="mt-1 text-[13px] text-[#6B6255]">
@@ -239,7 +239,7 @@ export default async function StateReportPage({ params }: PageProps) {
       {/* Fee comparison table */}
       {comparisons.length > 0 && (
         <section className="mt-8">
-          <h2 className="font-[Newsreader] text-sm font-bold text-[#1A1815]">
+          <h2 className="font-[family-name:var(--font-newsreader)] text-sm font-bold text-[#1A1815]">
             Fee Benchmarks — {stateName} vs. National
           </h2>
           <p className="mt-1 text-[13px] text-[#6B6255]">
@@ -361,7 +361,7 @@ export default async function StateReportPage({ params }: PageProps) {
 
       {/* Methodology */}
       <section className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-5 py-4">
-        <h2 className="font-[Newsreader] text-xs font-semibold uppercase tracking-wider text-[#6B6255]">
+        <h2 className="font-[family-name:var(--font-newsreader)] text-xs font-semibold uppercase tracking-wider text-[#6B6255]">
           Methodology
         </h2>
         <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">

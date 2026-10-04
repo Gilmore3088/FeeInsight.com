@@ -72,7 +72,7 @@ export default async function LandingPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
       />
       <ConsumerNav />
-      <main>
+      <main id="main-content">
         <LandingHero institutionsLabel={summary.institutionsLabel} />
         <LandingPriceStrip entries={nationalIndex} institutionsLabel={summary.institutionsLabel} />
         <LandingTrustStats summary={summary} states={stateCoverage} />

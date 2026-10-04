@@ -24,7 +24,7 @@ const PRO_BULLETS = [
   "Unlimited peer sets by charter, size and district",
   "FDIC/NCUA financial context on every peer",
   "Scenarios, board-ready reports, monitoring",
-  "CSV and API exports",
+  "CSV exports (API access on request)",
 ];
 
 interface ResearchSidebarProps {
@@ -36,7 +36,7 @@ export function ResearchSidebar({ spotlightFees, categoriesLabel }: ResearchSide
   return (
     <aside className="hidden xl:block">
       <div className="sticky top-24 space-y-5">
-        <nav className={CARD}>
+        <nav aria-label="Research sections" className={CARD}>
           <p className={EYEBROW}>Research</p>
           <ul className="space-y-1.5">
             {SECTION_LINKS.map((item) => (

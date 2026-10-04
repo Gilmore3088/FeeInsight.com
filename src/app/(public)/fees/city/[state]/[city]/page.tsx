@@ -103,7 +103,7 @@ export default async function CityFeePage({ params }: PageProps) {
 
       <div className="max-w-5xl mx-auto px-6 py-14">
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
           <Link href="/fees" className="hover:text-[#1A1815] transition-colors">Fees</Link>
           <span className="text-[#D4C9BA]">/</span>
           <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-[#1A1815] transition-colors">{stateName}</Link>

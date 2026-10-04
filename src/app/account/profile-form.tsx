@@ -119,13 +119,14 @@ export function ProfileForm({ user }: ProfileFormProps) {
       </div>
       <div className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-[#1A1815] mb-1">Institution / Company</label>
-          <input name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
+          <label htmlFor="profile-institution-name" className="block text-xs font-medium text-[#1A1815] mb-1">Institution / Company</label>
+          <input id="profile-institution-name" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
+            <label htmlFor="profile-institution-type" className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
             <select
+              id="profile-institution-type"
               name="institution_type"
               defaultValue={user.institution_type || ""}
               onChange={(e) => setShowBankFields(e.target.value === "bank" || e.target.value === "credit_union")}
@@ -137,8 +138,8 @@ export function ProfileForm({ user }: ProfileFormProps) {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
-            <select name="job_role" defaultValue={user.job_role || ""} className={selectClass}>
+            <label htmlFor="profile-job-role" className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
+            <select id="profile-job-role" name="job_role" defaultValue={user.job_role || ""} className={selectClass}>
               {JOB_ROLES.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
@@ -148,16 +149,16 @@ export function ProfileForm({ user }: ProfileFormProps) {
         {showBankFields && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[#1A1815] mb-1">Asset size</label>
-              <select name="asset_tier" defaultValue={user.asset_tier || ""} className={selectClass}>
+              <label htmlFor="profile-asset-tier" className="block text-xs font-medium text-[#1A1815] mb-1">Asset size</label>
+              <select id="profile-asset-tier" name="asset_tier" defaultValue={user.asset_tier || ""} className={selectClass}>
                 {ASSET_TIERS.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#1A1815] mb-1">State</label>
-              <select name="state_code" defaultValue={user.state_code || ""} className={selectClass}>
+              <label htmlFor="profile-state-code" className="block text-xs font-medium text-[#1A1815] mb-1">State</label>
+              <select id="profile-state-code" name="state_code" defaultValue={user.state_code || ""} className={selectClass}>
                 <option value="">Select...</option>
                 {US_STATES.map((s) => (
                   <option key={s} value={s}>{s}</option>

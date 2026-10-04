@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { Search } from "lucide-react";
 
 interface Result {
@@ -32,7 +33,7 @@ interface InstitutionSearchBarProps {
   placeholder?: string;
 }
 
-export function InstitutionSearchBar({
+function InstitutionSearchBarInner({
   autoFocus = false,
   ariaLabel = "Search institutions",
   variant = "light",
@@ -82,9 +83,28 @@ export function InstitutionSearchBar({
     }, 250);
   }
 
+  // A fee focus (?fee=overdraft) arrives from a consumer guide. Carry it through both
+  // the typeahead selection and an Enter-key search, so the reader lands on the fee they
+  // came for rather than on a generic page.
+  const searchParams = useSearchParams();
+  const fee = searchParams?.get("fee") ?? "";
+
   function handleSelect(id: number) {
     setShowResults(false);
-    router.push(`/institution/${id}`);
+    router.push(fee ? `/institution/${id}?fee=${encodeURIComponent(fee)}#fee-${fee}` : `/institution/${id}`);
+  }
+
+  // Enter runs a full search rather than doing nothing. Previously the only way to a
+  // result list was clicking a suggestion or hand-editing ?q= into the URL.
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    const q = query.trim();
+    if (q.length < 2) return;
+    e.preventDefault();
+    setShowResults(false);
+    const params = new URLSearchParams({ q });
+    if (fee) params.set("fee", fee);
+    router.push(`/institutions?${params.toString()}`);
   }
 
   return (
@@ -100,6 +120,7 @@ export function InstitutionSearchBar({
           aria-label={ariaLabel}
           value={query}
           onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setShowResults(true)}
           placeholder={placeholder}
           autoFocus={autoFocus}
@@ -163,5 +184,19 @@ export function InstitutionSearchBar({
         </div>
       )}
     </div>
+  );
+}
+
+
+/**
+ * `useSearchParams()` inside a client component makes a statically prerendered parent
+ * bail out to client rendering unless it sits under a Suspense boundary. The home page
+ * hero is prerendered, so the boundary lives here rather than at every call site.
+ */
+export function InstitutionSearchBar(props: Parameters<typeof InstitutionSearchBarInner>[0]) {
+  return (
+    <Suspense fallback={<div className="h-[46px] w-full max-w-xl rounded-md border border-[#D5CBBF] bg-[#FFFDF9]" aria-hidden="true" />}>
+      <InstitutionSearchBarInner {...props} />
+    </Suspense>
   );
 }
