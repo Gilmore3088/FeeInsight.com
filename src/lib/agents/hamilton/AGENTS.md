@@ -44,6 +44,15 @@ Hamilton owns publication and analysis surfaces.
 - Not yet built: closing a row when a fee line disappears from a newer copy of its
   document.
 
+## Outlier Rollback
+
+Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
+rows whose positive amount is outside the Darwin range for their category
+(`darwin/envelopes.ts`): `rolled_back_reason = 'amount_outside_category_range'`, the run's
+batch id, and a `hamilton.outliers_rolled_back` run event. Explicit $0 fees are left alone.
+Clearing `rolled_back_at` restores a row a human confirms is real; widen its range in the
+same change so the next run does not roll it back again.
+
 ## Boundaries
 
 - Public Hamilton must be consumer-safe and cannot expose admin-only operational details.
