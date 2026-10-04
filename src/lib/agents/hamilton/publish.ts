@@ -7,6 +7,7 @@ import {
 } from "@/lib/agents/darwin/envelopes";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -260,6 +261,7 @@ async function selectVerifiedFees(
   }
   return db.unsafe<VerifiedFeeRow[]>(
     `
+      WITH eligible AS (
       SELECT fv.fee_verified_id,
              fv.fee_raw_id,
              fv.institution_id,
@@ -274,7 +276,9 @@ async function selectVerifiedFees(
              fv.amount,
              fv.frequency,
              fr.agent_event_id AS raw_agent_event_id,
-             inst.institution_name
+             inst.institution_name,
+             COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
+             fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         JOIN institution_sources inst ON inst.id = fv.institution_id
@@ -287,8 +291,9 @@ async function selectVerifiedFees(
             WHERE fp.lineage_ref = fv.fee_verified_id
               AND fp.rolled_back_at IS NULL
          )
-       ORDER BY fv.created_at ASC, fv.fee_verified_id ASC
-       LIMIT $1
+      )
+      ${WHOLE_DOCUMENT_BATCH}
+       ORDER BY eligible.batch_created_at ASC, eligible.fee_verified_id ASC
     `,
     params,
   );

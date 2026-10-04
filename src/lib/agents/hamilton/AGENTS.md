@@ -46,6 +46,9 @@ Hamilton owns publication and analysis surfaces.
   where Knox's later finds bring the institution to the minimum. The step detail lists
   them as `held_thin_institutions`. The gate applies to new publishes only; it does not
   close rows already live.
+- Batches take whole source documents (`agents/document-batch.ts`), oldest first, so a
+  document's fees publish together; Darwin batches the same way. A batch can exceed the
+  limit by one document.
 - Dry runs read the prior live row and report the same skips, movements and supersedes
   as a real run, without writing.
 - Not yet built: closing a row when a fee line disappears from a newer copy of its

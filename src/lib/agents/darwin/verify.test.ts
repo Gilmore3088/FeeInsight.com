@@ -253,5 +253,16 @@ describe("Darwin agentic verification", () => {
 
       expect(String(db.unsafe.mock.calls[0][0])).toContain("fr.outlier_flags ? 'needs_darwin_verification'");
     });
+
+    it("takes whole source documents, never part of one", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
+
+      const query = String(db.unsafe.mock.calls[0][0]);
+      expect(query).toContain("COALESCE(fr.source_document_id::text, 'row:' || fr.fee_raw_id::text) AS batch_document_key");
+      expect(query).toContain("WHERE rows_before < $1");
+      expect(query).not.toMatch(/LIMIT \$1/);
+    });
   });
 });

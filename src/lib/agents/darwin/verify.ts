@@ -4,6 +4,7 @@ import { sql } from "@/lib/data-store/connection";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
+import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -229,6 +230,7 @@ async function selectRawFees(
   }
   return db.unsafe<RawFeeRow[]>(
     `
+      WITH eligible AS (
       SELECT fr.fee_raw_id,
              fr.institution_id,
              fr.source_url,
@@ -239,7 +241,9 @@ async function selectRawFees(
              fr.frequency,
              fr.outlier_flags,
              fr.conditions,
-             inst.institution_name
+             inst.institution_name,
+             COALESCE(fr.source_document_id::text, 'row:' || fr.fee_raw_id::text) AS batch_document_key,
+             fr.created_at AS batch_created_at
         FROM raw_fee_observations fr
         JOIN institution_sources inst ON inst.id = fr.institution_id
        WHERE fr.source = 'knox'
@@ -250,8 +254,9 @@ async function selectRawFees(
              FROM verified_fee_observations fv
             WHERE fv.fee_raw_id = fr.fee_raw_id
          )
-       ORDER BY fr.created_at ASC, fr.fee_raw_id ASC
-       LIMIT $1
+      )
+      ${WHOLE_DOCUMENT_BATCH}
+       ORDER BY eligible.batch_created_at ASC, eligible.fee_raw_id ASC
     `,
     params,
   );

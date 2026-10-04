@@ -361,6 +361,9 @@ describe("Hamilton agentic publish", () => {
       expect(writes(db)).toEqual([]);
       const selectSql = String(db.unsafe.mock.calls[0][0]);
       expect(selectSql).toContain("COUNT(DISTINCT depth.canonical_fee_key)");
+      // Whole source documents move together.
+      expect(selectSql).toContain("AS batch_document_key");
+      expect(selectSql).toContain("WHERE rows_before < $1");
     });
 
     it("counts pending rows outside the batch, but not ones a publish rule would skip", async () => {
