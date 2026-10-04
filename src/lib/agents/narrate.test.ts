@@ -39,6 +39,12 @@ describe("narrateStepFinished", () => {
     }, "GA")).toBe("Checked 5 fee schedules in GA: 2 new, 3 unchanged, 4 saved to the vault.");
   });
 
+  it("mentions the index refresh after a publish", () => {
+    expect(narrateStepFinished("publish", {
+      processed_verified_fees: 20, published_fees: 18, index_refreshed: true, index_categories: 49,
+    }, "GA")).toBe("Published 18 fees in GA: index refreshed (49 categories).");
+  });
+
   it("describes discovery results", () => {
     expect(narrateStepFinished("discover", {
       processed_institutions: 25, discovered_fee_urls: 7, retry_after: 2, dead_institutions: 1, needs_human: 0,

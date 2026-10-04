@@ -103,6 +103,7 @@ export function narrateStepFinished(
       if (processed === 0) return `Had nothing new to publish ${scope}.`;
       return `Published ${count(n(detail, "published_fees"), "fee")} ${scope}${joinParts([
         n(detail, "skipped_verified_fees") > 0 && `${n(detail, "skipped_verified_fees")} already published or not eligible`,
+        detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }
     case "public-discovery":

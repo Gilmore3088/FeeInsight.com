@@ -2392,15 +2392,9 @@ export interface NationalIndexRow {
 
 export async function getNationalIndexData(): Promise<NationalIndexRow[]> {
   try {
-    const rows = await sql`
-      SELECT fee_category, fee_family,
-             median_amount, p25_amount, p75_amount,
-             min_amount, max_amount,
-             institution_count, observation_count, approved_count,
-             bank_count, cu_count, maturity_tier
-      FROM fee_index_cache
-      ORDER BY institution_count DESC
-    `;
+    // Through the shared reader: it ignores a stale or old-method cache and computes live.
+    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
+    const rows = await getNationalIndexCached();
 
     const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
 
@@ -2448,12 +2442,9 @@ export async function getMarketData(filters: {
   state_code?: string;
 }): Promise<MarketIndexRow[]> {
   try {
-    // Always load national baseline from cache
-    const national = await sql`
-      SELECT fee_category, median_amount, institution_count
-      FROM fee_index_cache
-      ORDER BY institution_count DESC
-    `;
+    // National baseline through the shared cached reader
+    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
+    const national = await getNationalIndexCached();
 
     const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
 
@@ -2572,10 +2563,8 @@ export async function getPeerIndexData(filters: {
   fed_district?: number;
 }): Promise<PeerIndexRow[]> {
   try {
-    const national = await sql`
-      SELECT fee_category, median_amount, institution_count
-      FROM fee_index_cache
-    `;
+    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
+    const national = await getNationalIndexCached();
 
     const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
 
