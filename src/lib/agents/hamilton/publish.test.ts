@@ -59,6 +59,36 @@ const priorPublishedFee = {
 };
 
 describe("Hamilton agentic publish", () => {
+  it("rejects verified rows filed under the wrong category instead of publishing them", async () => {
+    const db = createDbMock([
+      { ...verifiedFee, fee_name: "Continuous Overdraft Fee (per day)", amount: "3.00" },
+    ]);
+
+    const result = await runHamiltonPublish({ runId: 105, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      reason: expect.stringContaining("Category guard (name_contradicts)"),
+    });
+    const writes = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(writes).not.toContain("INSERT INTO published_fee_records");
+    expect(writes).toContain("UPDATE verified_fee_observations");
+    expect(JSON.stringify(db.mock.calls)).toContain("category_guard:name_contradicts");
+  });
+
+  it("only reports category rejections on a dry run", async () => {
+    const db = createDbMock([{ ...verifiedFee, fee_name: "Stop Payment Fee" }]);
+
+    const result = await runHamiltonPublish({ runId: 106, dryRun: true, db: asPublishDb(db) });
+
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      reason: expect.stringContaining("Category guard (name_unsupported)"),
+    });
+    expect(db).not.toHaveBeenCalled();
+  });
+
   it("publishes eligible Darwin-verified rows to published_fee_records", async () => {
     const db = createDbMock([verifiedFee]);
 

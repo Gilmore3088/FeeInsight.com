@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { sql } from "@/lib/data-store/connection";
 import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
+import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
@@ -158,6 +159,33 @@ function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string |
     return "Below publish confidence threshold";
   }
   return null;
+}
+
+/** The verified-row flag a category-guard rejection leaves behind. */
+export function categoryGuardFlag(code: CategoryGuardCode): string {
+  return `category_guard:${code}`;
+}
+
+/**
+ * Retire a verified row the category guard rejects, so Hamilton's publish selection
+ * (verified/approved rows without a live published row) never picks it up again.
+ */
+export async function rejectVerifiedFeeForCategory(
+  db: SqlTag,
+  feeVerifiedId: number,
+  code: CategoryGuardCode,
+): Promise<void> {
+  const flag = categoryGuardFlag(code);
+  await db`
+    UPDATE verified_fee_observations
+       SET review_status = 'rejected',
+           outlier_flags = CASE
+             WHEN outlier_flags @> ${JSON.stringify([flag])}::jsonb THEN outlier_flags
+             ELSE outlier_flags || ${JSON.stringify([flag])}::jsonb
+           END
+     WHERE fee_verified_id = ${feeVerifiedId}
+       AND review_status IN ('verified', 'approved')
+  `;
 }
 
 async function selectVerifiedFees(
@@ -537,7 +565,16 @@ export async function runHamiltonPublish(
   const results: HamiltonPublishResult[] = [];
 
   for (const row of rows) {
-    const skipReason = publishSkipReason(row, minConfidence);
+    let skipReason = publishSkipReason(row, minConfidence);
+    if (!skipReason) {
+      const category = checkFeeCategory(row.canonical_fee_key, row.fee_name, row.amount);
+      if (!category.ok) {
+        skipReason = `Category guard (${category.code}): ${category.reason}`;
+        if (!dryRun) {
+          await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
+        }
+      }
+    }
     if (skipReason) {
       results.push({
         feeVerifiedId: Number(row.fee_verified_id),

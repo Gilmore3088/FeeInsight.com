@@ -4,13 +4,17 @@ import { sql } from "@/lib/data-store/connection";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
 
-/** The verifier recorded in the attempt log; bump the version when the rules change. */
-export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 1 } as const;
+/**
+ * The verifier recorded in the attempt log; bump the version when the rules change.
+ * v2 added the category guard (src/lib/fee-category-guard.ts).
+ */
+export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 2 } as const;
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
@@ -125,6 +129,8 @@ function verificationSkipReason(row: RawFeeRow, canonicalFeeKey: string | null):
   const amount = normalizedAmount(row.amount);
   if (amount == null || amount <= 0) return "Missing or invalid amount";
   if (amount > 2_500) return "Amount outside deterministic verification range";
+  const category = checkFeeCategory(canonicalFeeKey, row.fee_name, amount);
+  if (!category.ok) return `Category guard (${category.code}): ${category.reason}`;
   return null;
 }
 

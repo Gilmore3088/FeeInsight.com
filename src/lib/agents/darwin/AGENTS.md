@@ -11,10 +11,13 @@ Darwin owns verification and classification.
 
 ## Current Implementation (2026-10-02)
 
-Today `darwin/verify.ts` checks only: a valid canonical hint, a non-empty fee name, and
-0 < amount <= $2,500 (one global bound). It does not yet check per-category amount
-envelopes, duplicates, or source lineage, and skipped rows are not recorded as terminal
-rows. Those checks are scheduled in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`
+Today `darwin/verify.ts` checks: a valid canonical hint, a non-empty fee name,
+0 < amount <= $2,500 (one global bound), and the category guard
+(`src/lib/fee-category-guard.ts`, `verify.rules` v2): for the 13 report categories the
+fee name must name the hinted category, must not describe a different fee, and the
+amount must sit in that category's plausible band. Other categories have no per-category
+envelope yet. It does not check duplicates or source lineage, and skipped rows are not
+recorded as terminal rows. Those checks are scheduled in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`
 (Phase 1F). Do not describe Darwin as performing them until they ship.
 
 ## Required Behavior (target contract)

@@ -99,6 +99,30 @@ describe("Darwin agentic verification", () => {
     expect(db).not.toHaveBeenCalled();
   });
 
+  it("rejects rows whose name contradicts the hinted category", async () => {
+    const db = createDbMock([
+      {
+        ...rawFee,
+        fee_name: "Overdraft Transfer Fee (Sweep)",
+        amount: "7.50",
+      },
+    ]);
+
+    const result = await runDarwinVerify({
+      runId: 104,
+      db: asVerifyDb(db),
+    });
+
+    expect(result.verifiedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      canonicalFeeKey: "overdraft",
+      reason: expect.stringContaining("Category guard (name_contradicts)"),
+    });
+    const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
   it("skips raw rows without a valid canonical hint", async () => {
     const db = createDbMock([
       {
