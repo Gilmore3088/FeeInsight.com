@@ -1,5 +1,6 @@
 /**
- * PositioningEvidence — Fee positioning stat cards: Market Median / P25 / P75 / Maturity.
+ * PositioningEvidence — the national benchmark for the lead spotlight category:
+ * median / P25–P75 / maturity. The institution's own position is InstitutionPositionCard.
  * Renders exclusively from the entries prop — no hardcoded defaults.
  * Server component — no "use client".
  */
@@ -63,7 +64,7 @@ export function PositioningEvidence({
           marginBottom: "2rem",
         }}
       >
-        Positioning Evidence
+        National Benchmark
       </h3>
 
       {entries.length === 0 ? (
@@ -77,7 +78,7 @@ export function PositioningEvidence({
             margin: 0,
           }}
         >
-          Configure your institution in Settings to see positioning data
+          The national fee index is unavailable right now.
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3 md:gap-12">
@@ -94,7 +95,7 @@ export function PositioningEvidence({
                 marginBottom: "0.5rem",
               }}
             >
-              Market Median
+              National Median
             </span>
             <span
               className="font-headline"

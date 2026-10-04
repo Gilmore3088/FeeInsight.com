@@ -6,7 +6,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { SettingsForm } from "./SettingsForm";
 import { PeerSetManager } from "./PeerSetManager";
 import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
 import {
@@ -246,32 +245,17 @@ export default async function SettingsPage({
 
       {/* Selected Hamilton Institution */}
       <div style={cardStyle} className="mb-6">
-        <p style={sectionLabelStyle} className="mb-1">Selected Hamilton Institution</p>
+        <p style={sectionLabelStyle} className="mb-1">Your Institution</p>
         <p className="text-xs mb-5" style={{ color: "var(--hamilton-text-tertiary)" }}>
-          This institution anchors Analyze, Reports, Scenarios, and Watchlist when no URL-specific institution is supplied.
+          {selectedInstitution
+            ? "Your Briefing, Analyze, Reports, Scenarios and Watchlist start from this institution."
+            : "Choose your institution so Hamilton can compare your fees with your peers."}
         </p>
         <WorkspaceInstitutionForm
           selectedInstitution={selectedInstitution}
           selectedSource={selectedSource === "artifact" ? "manual" : selectedSource}
           selectedClaim={selectedClaim}
           selectedMembership={selectedMembership}
-        />
-      </div>
-
-      {/* Institution Profile */}
-      <div style={cardStyle} className="mb-6">
-        <p style={sectionLabelStyle} className="mb-1">Institution Profile</p>
-        <p className="text-xs mb-5" style={{ color: "var(--hamilton-text-tertiary)" }}>
-          This profile powers all Hamilton screens. Configure it to unlock personalized benchmarks and analysis.
-        </p>
-        <SettingsForm
-          initialValues={{
-            institution_name: user.institution_name,
-            institution_type: user.institution_type,
-            asset_tier: user.asset_tier,
-            state_code: user.state_code,
-            fed_district: user.fed_district ?? null,
-          }}
         />
       </div>
 

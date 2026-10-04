@@ -441,10 +441,13 @@ export function SimulateWorkspace({
   const benchmarkPosture = distribution
     ? `${distribution.approved_count} approved peer rows · ${peerSourceLabel(distribution.peer_source)}`
     : "Choose a category to load the approved-row peer baseline.";
+  const institutionHasNoFee = Boolean(distribution && institutionId && !usingInstitutionFee);
   const currentPointPosture = distribution
     ? usingInstitutionFee
-      ? "Current point uses the selected institution's approved fee row."
-      : "Current point starts from the peer median because no approved selected-institution fee row is available."
+      ? "Current point is your institution's verified fee (its median if it lists several)."
+      : institutionId
+        ? "Your institution has no published fee in this category, so the current point is the peer median, not your fee."
+        : "No institution selected, so the current point is the peer median."
     : "No selected category loaded.";
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -554,6 +557,11 @@ export function SimulateWorkspace({
             {!hasDistribution && (
               <span className="text-xs mt-1" style={{ color: "var(--hamilton-on-surface-variant)" }}>
                 Select a category
+              </span>
+            )}
+            {institutionHasNoFee && (
+              <span role="note" className="text-xs mt-1" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+                Your institution has no published fee in this category.
               </span>
             )}
           </div>

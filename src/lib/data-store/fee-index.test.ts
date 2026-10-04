@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { buildIndexEntries, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
+import { buildIndexEntries, getInstitutionFeeValues, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 import { sql } from "./connection";
 
@@ -101,5 +101,29 @@ describe("getNationalIndexCached", () => {
     const [entry] = await getNationalIndexCached();
     expect(entry).toMatchObject({ fee_category: "overdraft", median_amount: 30, institution_count: 5 });
     expect(db.unsafe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getInstitutionFeeValues", () => {
+  beforeEach(() => {
+    db.unsafe.mockReset();
+  });
+
+  it("returns the institution's median per category from approved, sourced rows", async () => {
+    db.unsafe.mockResolvedValueOnce([
+      { fee_category: "wire_transfer", amount: "30.00" },
+      { fee_category: "wire_transfer", amount: "35.50" },
+      { fee_category: "wire_transfer", amount: "40.00" },
+      { fee_category: "overdraft", amount: 0 },
+      { fee_category: "nsf", amount: null },
+    ]);
+
+    const values = await getInstitutionFeeValues(2945, ["wire_transfer", "overdraft", "nsf"]);
+
+    expect(Object.fromEntries(values)).toEqual({ wire_transfer: 35.5, overdraft: 0 });
+    const [query, params] = db.unsafe.mock.calls[0];
+    expect(query).toContain("source_document_id IS NOT NULL");
+    expect(query).toContain("review_status = 'approved'");
+    expect(params).toEqual([2945, ["wire_transfer", "overdraft", "nsf"]]);
   });
 });

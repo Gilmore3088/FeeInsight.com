@@ -5,6 +5,7 @@ import { sql } from "@/lib/data-store/connection";
 import { canAccessPremium } from "@/lib/access";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getSpotlightCategories, getDisplayName } from "@/lib/fee-taxonomy";
+import { getNationalIndexCached } from "@/lib/data-store/fee-index";
 import {
   acceptPendingWorkspaceInvitationsForUser,
   getPendingWorkspaceInvitationsForEmail,
@@ -19,24 +20,19 @@ export const metadata: Metadata = {
   title: "Welcome",
 };
 
+/** National medians for the spotlight categories under the statistics contract (no median below the minimum sample). */
 async function getSpotlightMedians(): Promise<{ category: string; displayName: string; median: number }[]> {
-  const spotlight = getSpotlightCategories();
+  const spotlight = new Set(getSpotlightCategories());
   try {
-    const rows = await sql`
-      SELECT fee_category, ROUND(AVG(amount)::numeric, 2) as median
-      FROM published_fee_catalog
-      WHERE fee_category IN ${sql(spotlight)}
-        AND review_status = 'approved'
-        AND amount > 0
-      GROUP BY fee_category
-      ORDER BY median DESC
-    ` as { fee_category: string; median: number }[];
-
-    return rows.map((r) => ({
-      category: r.fee_category,
-      displayName: getDisplayName(r.fee_category),
-      median: Number(r.median),
-    }));
+    const index = await getNationalIndexCached();
+    return index
+      .filter((entry) => spotlight.has(entry.fee_category) && entry.median_amount !== null)
+      .map((entry) => ({
+        category: entry.fee_category,
+        displayName: getDisplayName(entry.fee_category),
+        median: entry.median_amount as number,
+      }))
+      .sort((a, b) => b.median - a.median);
   } catch {
     return [];
   }

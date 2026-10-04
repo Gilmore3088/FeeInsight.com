@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { updateProfile } from "../actions";
+import { saveOnboardingProfile } from "../actions";
+import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import type {
   InstitutionWorkspaceInvitation,
   InstitutionWorkspaceMembership,
@@ -25,23 +26,12 @@ interface WelcomeStepsProps {
   workspaceMemberships: InstitutionWorkspaceMembership[];
 }
 
-const INSTITUTION_TYPES = [
+const ORGANIZATION_TYPES = [
   { value: "", label: "Select..." },
-  { value: "bank", label: "Bank" },
-  { value: "credit_union", label: "Credit Union" },
   { value: "fintech", label: "Fintech / Vendor" },
   { value: "consulting", label: "Consulting / Advisory" },
   { value: "regulatory", label: "Regulatory / Government" },
   { value: "other", label: "Other" },
-];
-
-const ASSET_TIERS = [
-  { value: "", label: "Select..." },
-  { value: "micro", label: "Under $100M" },
-  { value: "community", label: "$100M - $1B" },
-  { value: "midsize", label: "$1B - $10B" },
-  { value: "regional", label: "$10B - $250B" },
-  { value: "mega", label: "Over $250B" },
 ];
 
 const JOB_ROLES = [
@@ -53,13 +43,6 @@ const JOB_ROLES = [
   { value: "analyst", label: "Analyst / Research" },
   { value: "developer", label: "Developer / Engineer" },
   { value: "other", label: "Other" },
-];
-
-const US_STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN",
-  "IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH",
-  "NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT",
-  "VT","VA","WA","WV","WI","WY",
 ];
 
 const TOOLS = [
@@ -102,8 +85,11 @@ export function WelcomeSteps({
 }: WelcomeStepsProps) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
-  const [showBankFields, setShowBankFields] = useState(
-    user.institution_type === "bank" || user.institution_type === "credit_union"
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedInstitution, setSavedInstitution] = useState<string | null>(null);
+  const [pickedInstitution, setPickedInstitution] = useState(false);
+  const [notAnInstitution, setNotAnInstitution] = useState(
+    !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
   );
 
   const inputClass = "w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent";
@@ -111,9 +97,16 @@ export function WelcomeSteps({
   async function handleProfileSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
+    setSaveError(null);
     const formData = new FormData(e.currentTarget);
-    await updateProfile(formData);
+    if (notAnInstitution) formData.delete("institution_id");
+    const result = await saveOnboardingProfile(formData);
     setSaving(false);
+    if (!result.success) {
+      setSaveError(result.error ?? "Failed to save your profile.");
+      return;
+    }
+    setSavedInstitution(result.institutionName ?? null);
     setStep(2);
   }
 
@@ -188,52 +181,68 @@ export function WelcomeSteps({
             Welcome to Fee Insight, {userName.split(" ")[0]}!
           </h1>
           <p className="text-sm text-[#6B6255] mb-6">
-            Tell us about your organization so we can personalize your experience.
+            Which institution do you work for? Hamilton compares its fees with its peers.
           </p>
 
           <form onSubmit={handleProfileSave} className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-6 space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-[#1A1815] mb-1">Institution / Company</label>
-              <input name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
-                <select name="institution_type" defaultValue={user.institution_type || ""} onChange={(e) => setShowBankFields(e.target.value === "bank" || e.target.value === "credit_union")} className={inputClass}>
-                  {INSTITUTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
-                <select name="job_role" defaultValue={user.job_role || ""} className={inputClass}>
-                  {JOB_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-              </div>
-            </div>
-            {showBankFields && (
+            {notAnInstitution ? (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[#1A1815] mb-1">Asset size</label>
-                  <select name="asset_tier" defaultValue={user.asset_tier || ""} className={inputClass}>
-                    {ASSET_TIERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
+                  <label htmlFor="welcome_organization" className="block text-xs font-medium text-[#1A1815] mb-1">Organization</label>
+                  <input id="welcome_organization" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="Your company" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-[#1A1815] mb-1">State</label>
-                  <select name="state_code" defaultValue={user.state_code || ""} className={inputClass}>
-                    <option value="">Select...</option>
-                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  <label htmlFor="welcome_organization_type" className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
+                  <select id="welcome_organization_type" name="institution_type" defaultValue={user.institution_type || ""} className={inputClass}>
+                    {ORGANIZATION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
               </div>
+            ) : (
+              <InstitutionPicker
+                inputId="welcome_institution"
+                label="Your bank or credit union"
+                help="Choose your institution from the list."
+                initialName={null}
+                onSelect={(result) => setPickedInstitution(result !== null)}
+                labelClassName="block text-xs font-medium text-[#1A1815] mb-1"
+                labelStyle={{}}
+                inputClassName={inputClass}
+                inputStyle={{}}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setNotAnInstitution((value) => !value)}
+              className="text-xs font-medium text-[#C44B2E] underline-offset-2 hover:underline"
+            >
+              {notAnInstitution ? "I work at a bank or credit union" : "I don't work at a bank or credit union"}
+            </button>
+            <div>
+              <label htmlFor="welcome_job_role" className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
+              <select id="welcome_job_role" name="job_role" defaultValue={user.job_role || ""} className={inputClass}>
+                {JOB_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            {saveError && (
+              <p role="alert" className="text-sm text-[#B42318]">{saveError}</p>
             )}
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || (!notAnInstitution && !pickedInstitution)}
               className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 transition-colors"
             >
               {saving ? "Saving..." : "Continue"}
             </button>
+            {!notAnInstitution && (
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="w-full text-center text-xs font-medium text-[#6B6255] hover:text-[#1A1815]"
+              >
+                Can&apos;t find it? Skip for now; you can choose it later in Settings.
+              </button>
+            )}
           </form>
         </div>
       )}
@@ -248,7 +257,8 @@ export function WelcomeSteps({
             Your fee intelligence
           </h1>
           <p className="text-sm text-[#6B6255] mb-6">
-            Here are the national median fees across key categories. With your account, you can drill into all 49 categories with peer filters.
+            {savedInstitution ? `${savedInstitution} is saved as your institution. ` : ""}
+            Here are the national median fees across key categories (each institution counted once). With your account, you can drill into all 49 categories with peer filters.
           </p>
 
           <div className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] overflow-hidden mb-6">
