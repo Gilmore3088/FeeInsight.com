@@ -162,7 +162,10 @@ describe("registry SOD worker", () => {
 
     const result = await runRegistryFdicSod({ runId: 4, partitionKey: "2025", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
 
-    expect(new URL(String(fetchImpl.mock.calls[0][0])).searchParams.get("filters")).toBe("YEAR:2025");
+    const sodUrl = new URL(String(fetchImpl.mock.calls[0][0]));
+    expect(sodUrl.searchParams.get("filters")).toBe("YEAR:2025");
+    // The SOD index cannot sort on ID (HTTP 400); UNINUMBR is unique per branch, so paging is stable.
+    expect(sodUrl.searchParams.get("sort_by")).toBe("UNINUMBR");
     expect(result).toMatchObject({ branches: 2, institutions: 1, upsertedBranches: 2, matchedBranches: 2, totalDeposits: 267588 });
     expect(statements.find((s) => s.text.includes("ON CONFLICT (cert, year, branch_number)"))).toBeDefined();
   });

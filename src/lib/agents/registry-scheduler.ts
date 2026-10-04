@@ -219,3 +219,14 @@ export async function scheduleDueRegistryRuns({
     throw error;
   }
 }
+
+/** The oldest queued registry run, if any (one is normally in flight at a time). */
+export async function findQueuedRegistryRunId(): Promise<number | null> {
+  const [row] = await sql<{ id: number }[]>`
+    SELECT id FROM agent_runs
+     WHERE status = 'queued' AND params_json->>'source' = ${REGISTRY_RUN_SOURCE}
+     ORDER BY started_at ASC
+     LIMIT 1
+  `;
+  return row ? Number(row.id) : null;
+}

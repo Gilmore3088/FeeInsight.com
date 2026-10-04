@@ -404,7 +404,7 @@ export const FDIC_SOD_FIELDS = [
 export async function fetchFdicSodForYear(year: number, options: RegistryFetchOptions = {}): Promise<FdicPage> {
   return fetchAllPages(
     "sod",
-    { filters: `YEAR:${year}`, fields: FDIC_SOD_FIELDS.join(","), sort_by: "ID", sort_order: "ASC" },
+    { filters: `YEAR:${year}`, fields: FDIC_SOD_FIELDS.join(","), sort_by: "UNINUMBR", sort_order: "ASC" },
     { timeoutMs: 120_000, ...options },
   );
 }
