@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import sanitizeHtml from "sanitize-html";
 
-import { sql } from "@/lib/data-store/connection";
+import { sql, stripNulChars } from "@/lib/data-store/connection";
 import {
   normalizeStateCode,
   readStrategyFromDocumentType,
@@ -149,10 +149,8 @@ function normalizeHttpUrl(value: string | null): string | null {
 }
 
 function normalizeWhitespace(value: string): string {
-  return value
-    // Some PDFs embed NUL characters; Postgres text columns reject them
-    // ("invalid byte sequence for encoding UTF8: 0x00"), failing the whole read step.
-    .replaceAll("\u0000", "")
+  // Postgres text rejects NUL; drop it here so the hash and char count match what is stored.
+  return stripNulChars(value)
     .replace(/\r/g, "\n")
     .replace(/\t/g, " ")
     .replace(/[ \f\v]+/g, " ")

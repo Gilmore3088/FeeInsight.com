@@ -157,6 +157,35 @@ describe("Rosetta agentic read", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("Monthly maintenance fee $7");
   });
 
+  it("strips NUL characters from PDF text before it is stored", async () => {
+    const db = createDbMock([
+      {
+        ...htmlCandidate,
+        source_document_id: 503,
+        document_url: "https://testbank.example/fees-with-nul.pdf",
+      },
+    ]);
+    const pdfBytes = new Uint8Array([37, 80, 68, 70]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response(pdfBytes, "application/pdf"));
+    const cleanText = `Schedule of Fees\n\n${"Overdraft fee $35 per item. ".repeat(10).trim()}`;
+    const pdfTextExtractor = vi.fn().mockResolvedValueOnce({
+      totalPages: 1,
+      text: cleanText.replace("Overdraft", "Over\u0000draft").replace("Schedule", "\u0000Schedule"),
+    });
+
+    const result = await runRosettaRead({ runId: 104, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+    expect(result.results[0]).toMatchObject({
+      status: "completed",
+      charCount: cleanText.length,
+      textHash: createHash("sha256").update(cleanText).digest("hex"),
+    });
+    const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"));
+    expect(insert).toBeDefined();
+    const storedText = insert!.slice(1).find((value) => typeof value === "string" && value.startsWith("Schedule of Fees"));
+    expect(storedText).toBe(cleanText);
+  });
+
   it("routes scanned PDFs to OCR after embedded text extraction is empty", async () => {
     const db = createDbMock([
       {

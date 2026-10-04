@@ -34,7 +34,12 @@ export function CrewCommandBar() {
     setText("");
     startTransition(async () => {
       const reply = await askCrew(said);
-      setHistory((previous) => [{ id: ++nextId.current, said, reply }, ...previous].slice(0, 6));
+      // Updates after an await need their own startTransition (React 19), so the reply
+      // and the end of `pending` commit together. Otherwise the reply can render while
+      // its Confirm button is still disabled, and a quick click is silently dropped.
+      startTransition(() => {
+        setHistory((previous) => [{ id: ++nextId.current, said, reply }, ...previous].slice(0, 6));
+      });
     });
   }
 
@@ -43,10 +48,12 @@ export function CrewCommandBar() {
     const commandText = exchange.reply.confirm.commandText;
     startTransition(async () => {
       const reply = await confirmCrewCommand(commandText);
-      setHistory((previous) => [
-        { id: ++nextId.current, said: `Confirmed: ${exchange.said}`, reply },
-        ...previous.map((item) => (item.id === exchange.id ? { ...item, confirmed: true } : item)),
-      ].slice(0, 6));
+      startTransition(() => {
+        setHistory((previous) => [
+          { id: ++nextId.current, said: `Confirmed: ${exchange.said}`, reply },
+          ...previous.map((item) => (item.id === exchange.id ? { ...item, confirmed: true } : item)),
+        ].slice(0, 6));
+      });
     });
   }
 
