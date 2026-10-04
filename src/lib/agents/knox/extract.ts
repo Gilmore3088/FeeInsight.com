@@ -27,6 +27,13 @@ export const KNOX_EXTRACT_STRATEGY = { strategy: "extract.rules", version: 2 } a
 /** Below this share of the institution's usual fee count, an extraction is `low_yield`. */
 const LOW_YIELD_RATIO = 0.5;
 
+/**
+ * A text Knox found fewer fees than this in is extracted again whenever the rules
+ * version moves, so documents already on file are re-reviewed with each improvement.
+ * Matches Rosetta's re-read threshold (REREAD_MAX_KNOX_FEES). The raw-row dedupe index
+ * (document, fee name, amount) keeps fees found the first time from being inserted twice.
+ */
+export const KNOX_REEXTRACT_MAX_FEES = 5;
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
 
@@ -133,7 +140,19 @@ async function selectTextArtifacts(
   }
   let playbookColumns = "";
   let playbookJoin = "";
+  // Without the attempt log there is no rules version to compare, so never re-extract.
+  let thinTextReextract = "";
   if (learning) {
+    // A thin text an older rules version extracted is extracted again; the
+    // attempt-log filter below stops a second pass with the same version.
+    params.push(KNOX_REEXTRACT_MAX_FEES);
+    thinTextReextract = `
+           OR (
+             SELECT COUNT(*)
+               FROM raw_fee_observations thin
+              WHERE thin.source = 'knox'
+                AND thin.source_document_id = adt.source_document_id
+           ) < $${params.length}`;
     // Same text + same extractor version = same answer: never extract it twice.
     params.push(KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version);
     playbookColumns = `,
@@ -169,7 +188,7 @@ async function selectTextArtifacts(
          AND adt.normalized_text IS NOT NULL
          AND adt.char_count > 0
          ${filters.join("\n         ")}
-         AND NOT EXISTS (
+         AND (NOT EXISTS (
            -- This exact text was already extracted. Rows from an older text of the same
            -- document (before a Rosetta re-read) do not count, so a changed text is
            -- extracted again.
@@ -181,7 +200,7 @@ async function selectTextArtifacts(
                 adt.text_hash IS NULL
                 OR position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
               )
-         )
+         )${thinTextReextract})
          AND NOT EXISTS (
            -- The same text under another document id was already extracted.
            SELECT 1
