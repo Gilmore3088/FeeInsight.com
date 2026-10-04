@@ -37,6 +37,16 @@ export function narrateStepFinished(
   switch (stepKey) {
     case "enhance":
       return `Checked institution records ${scope}: ${count(n(detail, "total_institutions"), "institution")}, ${count(n(detail, "backlog_missing_urls"), "missing fee URL")}.`;
+    case "discover-paid":
+    case "read-paid":
+    case "extract-paid": {
+      const job = stepKey === "discover-paid" ? "find fee schedules" : stepKey === "read-paid" ? "read documents" : "extract fees";
+      const processed = n(detail, "processed");
+      const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
+      if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
+      if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
+      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? ", stopped at the budget cap" : ""}.`;
+    }
     case "discover":
     case "rescue": {
       const processed = n(detail, "processed_institutions");
@@ -235,6 +245,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "daily-brief": "atlas",
   discover: "magellan",
+  "discover-paid": "magellan",
   rescue: "magellan",
   fetch: "magellan",
   "public-discovery": "magellan",
@@ -250,7 +261,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-fred": "magellan",
   "registry-state-regulators": "magellan",
   read: "rosetta",
+  "read-paid": "rosetta",
   extract: "knox",
+  "extract-paid": "knox",
   review: "knox",
   classify: "darwin",
   verify: "darwin",

@@ -32,6 +32,11 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     title: "Find and verify missing fee schedule URLs",
   },
   {
+    key: "discover-paid",
+    agent: "magellan",
+    title: "Paid last pass: find fee schedules the free finders missed",
+  },
+  {
     key: "fetch",
     agent: "magellan",
     title: "Fetch state source documents",
@@ -43,10 +48,20 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     input: { read_limit: STATE_LANE_DOCUMENT_BATCH },
   },
   {
+    key: "read-paid",
+    agent: "rosetta",
+    title: "Paid last pass: read scans and pages the free readers could not",
+  },
+  {
     key: "extract",
     agent: "knox",
     title: "Extract fee observations from normalized source text",
     input: { extract_limit: STATE_LANE_DOCUMENT_BATCH },
+  },
+  {
+    key: "extract-paid",
+    agent: "knox",
+    title: "Paid last pass: extract fees the rules missed in dense documents",
   },
   {
     key: "classify",

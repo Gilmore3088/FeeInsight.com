@@ -93,7 +93,8 @@ export interface AgentRunEventSnapshot {
  * provider budget policy and the global (provider) automation stop. Every other step
  * is deterministic and is paused only by the separate pipeline control.
  */
-export const PROVIDER_STEP_KEYS: readonly string[] = [];
+/** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
+export const PROVIDER_STEP_KEYS: readonly string[] = ["discover-paid", "read-paid", "extract-paid"];
 
 export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);

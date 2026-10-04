@@ -158,6 +158,11 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     for (const step of summary.filter((s) => ["discover", "fetch", "read", "extract", "classify", "publish"].includes(s.key))) {
       expect(step, step.key).toMatchObject({ status: "completed" });
     }
+    // With no paid budget configured, each paid last pass is skipped and the free steps
+    // behind it still run.
+    for (const key of ["discover-paid", "read-paid", "extract-paid"]) {
+      expect(summary.find((s) => s.key === key), key).toMatchObject({ status: "skipped" });
+    }
     const published = (name: string) =>
       Object.fromEntries(
         catalog
