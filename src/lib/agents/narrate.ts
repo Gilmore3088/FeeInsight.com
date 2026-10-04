@@ -108,6 +108,7 @@ export function narrateStepFinished(
       return `Published ${count(n(detail, "published_fees"), "fee")} ${scope}${joinParts([
         n(detail, "superseded_fees") > 0 && `${n(detail, "superseded_fees")} replaced an older price`,
         n(detail, "published_free_fees") > 0 && `${n(detail, "published_free_fees")} free ($0)`,
+        n(detail, "duplicate_collapses") > 0 && `${n(detail, "duplicate_collapses")} duplicate copies closed`,
         n(detail, "skipped_verified_fees") > 0 && `${n(detail, "skipped_verified_fees")} already published or not eligible`,
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;

@@ -2,6 +2,7 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
+import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
@@ -348,6 +349,7 @@ async function executeAgenticStep(
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
           unchanged_documents: fetched.unchanged,
+          reused_documents: fetched.reusedDocuments,
           stored_documents: fetched.storedDocuments,
           vault: fetched.vault,
           failed_fetches: fetched.failed,
@@ -573,6 +575,12 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      const duplicateCollapses = await collapsePublishedDuplicates(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
@@ -592,15 +600,19 @@ async function executeAgenticStep(
         ? null
         : await refreshFeeIndexCache(tx, {
             runId: run.id,
-            force: published.publishedFees > 0 || outlierRollbacks.length > 0,
+            force: published.publishedFees > 0 || outlierRollbacks.length > 0 || duplicateCollapses.length > 0,
           });
       const outlierNote =
         outlierRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
           : "";
+      const duplicateNote =
+        duplicateCollapses.length > 0
+          ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
+          : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -615,6 +627,15 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
             reason: rollback.reason,
+          })),
+          duplicate_collapses: duplicateCollapses.length,
+          duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            kept_fee_published_id: row.keptFeePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            fee_name: row.feeName,
+            amount: row.amount,
           })),
           published_free_fees: published.zeroFeesPublished,
           outcomes: published.outcomes,
