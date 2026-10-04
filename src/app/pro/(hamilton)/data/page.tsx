@@ -77,7 +77,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
   }
 
   return (
-    <main id="main-content">
+    <div>
     <div className="mx-auto max-w-7xl px-6 py-14">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
@@ -323,6 +323,6 @@ export default async function ProDataPage({ searchParams }: PageProps) {
         </div>
       </div>
     </div>
-    </main>
+    </div>
   );
 }
