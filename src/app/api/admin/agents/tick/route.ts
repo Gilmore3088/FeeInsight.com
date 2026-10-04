@@ -21,6 +21,12 @@ export const maxDuration = 300;
  * steps inside the function's time limit.
  */
 const DEFAULT_MAX_STEPS_PER_RUN = 5;
+/**
+ * Runs advanced side by side per tick, one per state lane. Each holds a connection for
+ * its step's transaction, so this stays below the database pool size
+ * (DATABASE_POOL_MAX, default 5) with room for queries made outside those transactions.
+ */
+const DEFAULT_RUN_LIMIT = 3;
 /** No new step starts this long after the tick began, leaving room for one more to finish. */
 const STEP_START_BUDGET_MS = 180_000;
 
@@ -77,7 +83,7 @@ async function handleGET(request: NextRequest) {
     });
   }
 
-  const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), 2, 10);
+  const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), DEFAULT_RUN_LIMIT, 10);
   const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 5);
   const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), 2, 10);
 

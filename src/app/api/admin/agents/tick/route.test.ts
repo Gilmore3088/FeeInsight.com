@@ -163,12 +163,13 @@ describe("/api/admin/agents/tick", () => {
     });
   });
 
-  it("lets each run take several steps per tick by default, bounded by a deadline", async () => {
+  it("runs several state lanes side by side, several steps each, bounded by a deadline", async () => {
     const { GET } = await import("./route");
     const before = Date.now();
     await GET(request("https://feeinsight.com/api/admin/agents/tick"));
 
     const call = executeQueuedAgentRunsMock.mock.calls.at(-1)?.[0];
+    expect(call.runLimit).toBe(3);
     expect(call.maxStepsPerRun).toBe(5);
     expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 180_000);
     expect(call.deadlineAt).toBeLessThan(before + 300_000);
