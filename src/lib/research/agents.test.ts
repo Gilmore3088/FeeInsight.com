@@ -87,12 +87,12 @@ describe("getHamilton", () => {
     expect(toolNames).not.toContain("queryNationalData");
   });
 
-  it("pro: returns Sonnet model, public + non-ops internal tools, maxSteps=4", async () => {
+  it("pro: returns the Hamilton model, public + non-ops internal tools, maxSteps=4", async () => {
     const config = await getHamilton("pro");
 
-    expect(config.model).toBe("claude-sonnet-4-6");
+    expect(config.model).toBe("claude-opus-5-5");
     expect(config.maxSteps).toBe(4);
-    expect(config.maxTokens).toBe(4096);
+    expect(config.maxTokens).toBe(16000);
     expect(config.requiresAuth).toBe(true);
     expect(config.requiredRole).toBe("premium");
 
@@ -106,12 +106,12 @@ describe("getHamilton", () => {
     expect(toolNames).toContain("rankInstitutions");
   });
 
-  it("admin: returns Sonnet model, all tools, maxSteps=4", async () => {
+  it("admin: returns the Hamilton model, all tools, maxSteps=4", async () => {
     const config = await getHamilton("admin");
 
-    expect(config.model).toBe("claude-sonnet-4-6");
+    expect(config.model).toBe("claude-opus-5-5");
     expect(config.maxSteps).toBe(4);
-    expect(config.maxTokens).toBe(12000);
+    expect(config.maxTokens).toBe(16000);
     expect(config.requiresAuth).toBe(true);
     expect(config.requiredRole).toBe("admin");
 
@@ -170,6 +170,14 @@ describe("getHamilton", () => {
     for (const agent of [pro, admin]) {
       expect(agent.systemPrompt).not.toMatch(/Never reference missing data|Never say "no data"/);
       expect(agent.systemPrompt).toMatch(/insufficient/);
+    }
+  });
+  it("HAMILTON_MODEL overrides the Pro and admin model", async () => {
+    process.env.HAMILTON_MODEL = "claude-sonnet-5-5";
+    try {
+      expect((await getHamilton("pro")).model).toBe("claude-sonnet-5-5");
+    } finally {
+      delete process.env.HAMILTON_MODEL;
     }
   });
 });

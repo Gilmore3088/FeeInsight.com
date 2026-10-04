@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import { getHamiltonModel } from "@/lib/ai-provider";
 import { publicTools } from "./tools";
 import { internalTools } from "./tools-internal";
 import { getPublicStats } from "../data-store";
@@ -209,8 +210,9 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
           "Deep analytical queries combining fee data, peer comparisons, financial metrics, and geographic analysis.",
         systemPrompt,
         tools: proTools,
-        model: process.env.BFI_MODEL_PRO || "claude-sonnet-4-6",
-        maxTokens: 4096,
+        model: process.env.BFI_MODEL_PRO || getHamiltonModel(),
+        // Opus 5.5 always thinks first; thinking counts toward this cap.
+        maxTokens: 16000,
         maxSteps: 4,
         requiresAuth: true,
         requiredRole: "premium",
@@ -233,8 +235,8 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
           "Full analytical access with operational context, data quality signals, and pipeline management.",
         systemPrompt,
         tools: adminTools,
-        model: process.env.BFI_MODEL_ADMIN || "claude-sonnet-4-6",
-        maxTokens: 12000,
+        model: process.env.BFI_MODEL_ADMIN || getHamiltonModel(),
+        maxTokens: 16000,
         maxSteps: 4,
         requiresAuth: true,
         requiredRole: "admin",

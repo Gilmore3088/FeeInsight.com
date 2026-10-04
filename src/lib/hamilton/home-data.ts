@@ -10,6 +10,7 @@ import { getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { sql } from "@/lib/data-store/connection";
 import { generateGlobalThesis } from "./generate";
+import { recordProRequest } from "@/lib/agents/run-store";
 import type { ThesisOutput, ThesisSummaryPayload } from "./types";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 
@@ -166,6 +167,16 @@ export async function fetchHomeBriefingData(
     thesis = includeThesis && allEntries.length > 0
       ? await generateGlobalThesis({ scope: "monthly_pulse", data: thesisSummary })
       : null;
+    if (thesis) {
+      await recordProRequest({
+        operation: "thesis",
+        title: "Hamilton briefing thesis",
+        status: "completed",
+        summary: "Generated the monthly briefing thesis.",
+        userId: null,
+        detail: { model: thesis.model, input_tokens: thesis.usage?.inputTokens ?? 0, output_tokens: thesis.usage?.outputTokens ?? 0 },
+      });
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     let errorType: "missing_key" | "rate_limit" | "api_error" = "api_error";
@@ -174,6 +185,13 @@ export async function fetchHomeBriefingData(
     } else if (errorMessage.includes("rate_limit") || errorMessage.includes("429")) {
       errorType = "rate_limit";
     }
+    await recordProRequest({
+      operation: "thesis",
+      title: "Hamilton briefing thesis",
+      status: "failed",
+      summary: `Thesis generation failed (${errorType}).`,
+      userId: null,
+    });
     console.warn("[Hamilton] Thesis generation failed", {
       timestamp: new Date().toISOString(),
       errorType,
@@ -256,6 +274,8 @@ async function fetchRecentSignals(
 ): Promise<SignalEntry[]> {
   try {
     const scopedInstitutionIds = normalizeHomeInstitutionScope(institutionIds);
+    // No selected or watched institution: no signals (never another customer's activity).
+    if (scopedInstitutionIds.length === 0) return [];
     const rows = scopedInstitutionIds.length > 0
       ? await sql`
           SELECT

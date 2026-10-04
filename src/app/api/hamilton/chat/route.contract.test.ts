@@ -8,6 +8,11 @@ const providerUsageMocks = vi.hoisted(() => ({
   recordProviderUsageMock: vi.fn(async () => {}),
 }));
 
+vi.mock("@/lib/hamilton/quota", () => ({
+  checkProAiQuota: async () => ({ allowed: true, used: 0, limit: 50, resetsAt: "" }),
+  quotaExceededMessage: () => "quota",
+}));
+
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
   return {
@@ -19,12 +24,14 @@ vi.mock("ai", async () => {
 });
 
 vi.mock("@/lib/ai-provider", () => ({
+  getHamiltonModel: () => "claude-opus-5-5",
   getAnthropicLanguageModel: (model: string) => ({ model }),
   hasAnthropicApiKey: () => true,
   MISSING_ANTHROPIC_API_KEY_MESSAGE: "Missing Anthropic API key",
 }));
 
 vi.mock("@/lib/ai-provider-usage", () => ({
+  estimateAnthropicCostMicrousd: () => 0,
   guardProviderCall: providerUsageMocks.guardProviderCallMock,
   recordProviderUsage: providerUsageMocks.recordProviderUsageMock,
 }));

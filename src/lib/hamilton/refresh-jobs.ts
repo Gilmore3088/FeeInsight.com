@@ -159,11 +159,28 @@ export async function completeHamiltonRefreshJobsForInstitution(
   const institutionId = normalizeInstitutionId(options.institutionId);
   if (!institutionId || options.jobTypes.length === 0) return 0;
 
+  // A subscriber finishing the work clears it for themselves only: the job is shared
+  // by everyone watching the institution.
+  if (options.completedByUserId) {
+    const rows = await db<{ job_id: string }[]>`
+      INSERT INTO hamilton_refresh_job_completions (job_id, user_id, completed_at)
+      SELECT j.id, ${options.completedByUserId}, NOW()
+        FROM hamilton_refresh_jobs j
+       WHERE j.institution_id = ${institutionId}
+         AND j.job_type = ANY(${options.jobTypes}::text[])
+         AND j.status = 'queued'
+      ON CONFLICT (job_id, user_id) DO NOTHING
+      RETURNING job_id
+    `;
+    return rows.length;
+  }
+
+  // System completion (no user) closes the shared job for everyone.
   const rows = await db<{ id: string }[]>`
     UPDATE hamilton_refresh_jobs
        SET status = 'completed',
            completed_at = NOW(),
-           completed_by_user_id = ${options.completedByUserId ?? null},
+           completed_by_user_id = NULL,
            updated_at = NOW()
      WHERE institution_id = ${institutionId}
        AND job_type = ANY(${options.jobTypes}::text[])
@@ -177,6 +194,8 @@ export async function completeHamiltonRefreshJobsForInstitution(
 export async function fetchQueuedHamiltonRefreshJobs(
   options: {
     institutionIds?: string[];
+    /** Hide jobs this user already completed. */
+    userId?: number | null;
     limit?: number;
     db?: SqlClient;
   } = {},
@@ -197,6 +216,11 @@ export async function fetchQueuedHamiltonRefreshJobs(
           FROM hamilton_refresh_jobs
          WHERE status = 'queued'
            AND institution_id = ANY(${institutionIds}::text[])
+           AND NOT EXISTS (
+             SELECT 1 FROM hamilton_refresh_job_completions c
+              WHERE c.job_id = hamilton_refresh_jobs.id
+                AND c.user_id = ${options.userId ?? -1}
+           )
          ORDER BY priority DESC, created_at DESC
          LIMIT ${limit}
       `

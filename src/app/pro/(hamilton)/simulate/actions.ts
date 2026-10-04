@@ -248,7 +248,7 @@ export async function saveScenario(params: {
     if (Number.isInteger(numericInstitutionId) && numericInstitutionId > 0) {
       await completeHamiltonRefreshJobsForInstitution({
         institutionId: numericInstitutionId,
-        jobTypes: ["scenario_refresh"],
+        jobTypes: ["scenario_refresh", "watchlist_review"],
         completedByUserId: user.id,
       }).catch(() => {});
     }

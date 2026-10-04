@@ -1,4 +1,5 @@
 import { sql } from "./data-store/connection";
+import { anthropicPriceFor } from "@/lib/ai-provider";
 import {
   assertAutomationEnabled,
   EmergencyStopActiveError,
@@ -54,12 +55,6 @@ interface AnthropicUsageShape {
   inputTokens?: number | null;
   outputTokens?: number | null;
 }
-
-const ANTHROPIC_RATES_MICROUSD_PER_TOKEN = [
-  { match: "haiku", input: 0.8, output: 4 },
-  { match: "sonnet", input: 3, output: 15 },
-  { match: "opus", input: 15, output: 75 },
-] as const;
 
 function nonNegative(value: unknown): number {
   const parsed = Number(value ?? 0);
@@ -165,9 +160,8 @@ export function estimateAnthropicCostMicrousd(
   model: string,
   usage: ProviderUsage,
 ): number | null {
-  const rate = ANTHROPIC_RATES_MICROUSD_PER_TOKEN.find((candidate) =>
-    model.toLowerCase().includes(candidate.match),
-  );
+  // USD per million tokens equals micro-USD per token.
+  const rate = anthropicPriceFor(model);
   if (!rate) return null;
   const input = nonNegative(usage.inputTokens);
   const output = nonNegative(usage.outputTokens);

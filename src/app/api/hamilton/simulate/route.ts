@@ -23,9 +23,11 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  * Cost: daily circuit breaker ($50 shared with other Hamilton routes)
  */
 
+import { recordProRequest } from "@/lib/agents/run-store";
+import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { streamText } from "ai";
-import { guardProviderCall, recordProviderUsage } from "@/lib/ai-provider-usage";
-import { getAnthropicLanguageModel } from "@/lib/ai-provider";
+import { guardProviderCall, recordProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { getAnthropicLanguageModel, getHamiltonModel } from "@/lib/ai-provider";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { logUsage } from "@/lib/research/history";
@@ -36,19 +38,7 @@ import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 
 export const maxDuration = 30;
 
-const HAMILTON_MODEL = "claude-sonnet-4-5-20250929";
-
-const COST_PER_M_INPUT: Record<string, number> = {
-  "claude-haiku-4-5-20251001": 80,
-  "claude-sonnet-4-5-20250929": 300,
-  "claude-opus-4-5-20250514": 1500,
-};
-
-const COST_PER_M_OUTPUT: Record<string, number> = {
-  "claude-haiku-4-5-20251001": 400,
-  "claude-sonnet-4-5-20250929": 1500,
-  "claude-opus-4-5-20250514": 7500,
-};
+const HAMILTON_MODEL = getHamiltonModel();
 
 function isFeeAmount(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 100_000;
@@ -58,6 +48,10 @@ async function handlePOST(request: Request) {
   const user = await getCurrentUser();
   if (!user || !canAccessPremium(user)) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  const quota = await checkProAiQuota(user);
+  if (!quota.allowed) {
+    return new Response(quotaExceededMessage(quota), { status: 429 });
   }
 
   let body: {
@@ -171,14 +165,13 @@ Provide a concise strategic interpretation of this fee change. What does this po
     model: getAnthropicLanguageModel(HAMILTON_MODEL),
     system: systemPrompt,
     prompt: userPrompt,
-    maxOutputTokens: 300,
-    onFinish: async ({ usage }) => {
-      const inputRate = COST_PER_M_INPUT[HAMILTON_MODEL] ?? 300;
-      const outputRate = COST_PER_M_OUTPUT[HAMILTON_MODEL] ?? 1500;
-      const inputTokens = usage?.inputTokens ?? 0;
-      const outputTokens = usage?.outputTokens ?? 0;
+    // Opus 5.5 always thinks first; thinking counts toward this cap.
+    maxOutputTokens: 4000,
+    onFinish: async ({ totalUsage }) => {
+      const inputTokens = totalUsage?.inputTokens ?? 0;
+      const outputTokens = totalUsage?.outputTokens ?? 0;
       const costCents = Math.round(
-        (inputTokens * inputRate + outputTokens * outputRate) / 1_000_000
+        (estimateAnthropicCostMicrousd(HAMILTON_MODEL, { inputTokens, outputTokens }) ?? 0) / 10_000,
       );
       if (!providerFailed) {
         await recordProviderUsage(
@@ -191,9 +184,26 @@ Provide a concise strategic interpretation of this fee change. What does this po
       logUsage(user.id, null, "hamilton-simulate", inputTokens, outputTokens, costCents).catch(
         () => {}
       );
+      await recordProRequest({
+        operation: "simulate_interpretation",
+        title: `Hamilton simulate: ${feeCategory}`,
+        status: providerFailed ? "failed" : "completed",
+        summary: `Interpreted a ${feeCategory} change from $${currentFee.toFixed(2)} to $${proposedFee.toFixed(2)}.`,
+        userId: user.id,
+        institutionId,
+        detail: { model: HAMILTON_MODEL, input_tokens: inputTokens, output_tokens: outputTokens, cost_cents: costCents },
+      });
     },
     onError: async ({ error }) => {
       providerFailed = true;
+      await recordProRequest({
+        operation: "simulate_interpretation",
+        title: `Hamilton simulate: ${feeCategory}`,
+        status: "failed",
+        summary: `Interpretation failed: ${error instanceof Error ? error.message : String(error)}`,
+        userId: user.id,
+        institutionId,
+      });
       await recordProviderUsage(providerContext, "failed", {}, {
         latencyMs: Date.now() - providerStartedAt,
         error: error instanceof Error ? error.message : String(error),

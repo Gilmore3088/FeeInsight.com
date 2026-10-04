@@ -15,6 +15,11 @@ import {
 } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
+import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
+import { recordProRequest } from "@/lib/agents/run-store";
+import { logUsage } from "@/lib/research/history";
+import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { getHamiltonModel } from "@/lib/ai-provider";
 import type { SectionInput } from "@/lib/hamilton/types";
 import {
   buildReportPeerCoveragePreview,
@@ -459,7 +464,7 @@ export async function generateReport(
       });
       await completeHamiltonRefreshJobsForInstitution({
         institutionId: selectedInstitution.id,
-        jobTypes: ["report_refresh"],
+        jobTypes: ["report_refresh", "watchlist_review"],
         completedByUserId: user.id,
       }).catch(() => {});
       return { success: true, reportId, report, artifactMetadata };
@@ -561,6 +566,43 @@ export async function generateReport(
 
     // Sections are independent: run them together, retry only a section that failed,
     // so one provider hiccup never discards (and re-bills) the sections that worked.
+    // Paid model calls from here on: enforce the daily quota, and record the outcome
+    // (one usage row per report, one pro_request run in the ledger) however it ends.
+    const quota = await checkProAiQuota(user);
+    if (!quota.allowed) return { success: false, error: quotaExceededMessage(quota) };
+    const ledgerBase = {
+      userId: user.id,
+      institutionId: selectedInstitution?.id ?? null,
+      title: `Hamilton report: ${reportTitle}`,
+    };
+    const recordReportOutcome = async (
+      status: "completed" | "failed",
+      summary: string,
+      sections: VerifiedSectionOutput[],
+      extra: Record<string, unknown> = {},
+    ) => {
+      const inputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.inputTokens ?? 0), 0);
+      const outputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.outputTokens ?? 0), 0);
+      const model = sections[0]?.section.model ?? getHamiltonModel();
+      const costMicrousd = estimateAnthropicCostMicrousd(model, { inputTokens, outputTokens }) ?? 0;
+      await logUsage(user.id, null, "hamilton-report", inputTokens, outputTokens, Math.round(costMicrousd / 10_000)).catch(() => {});
+      await recordProRequest({
+        ...ledgerBase,
+        operation: "report",
+        status,
+        summary,
+        detail: {
+          template: params.templateType,
+          model,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          estimated_cost_microusd: costMicrousd,
+          sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
+          ...extra,
+        },
+      });
+    };
+
     const settled = await Promise.allSettled(sectionInputs.map((input) => generateVerifiedSection(input)));
     const verifiedSections: VerifiedSectionOutput[] = [];
     for (const [index, outcome] of settled.entries()) {
@@ -571,6 +613,7 @@ export async function generateReport(
       try {
         verifiedSections.push(await generateVerifiedSection(sectionInputs[index]));
       } catch {
+        await recordReportOutcome("failed", `Section "${sectionInputs[index].title}" failed after a retry.`, verifiedSections);
         return {
           success: false,
           error: `Hamilton couldn't write the ${sectionInputs[index].title} section right now. Please try again in a minute.`,
@@ -581,6 +624,9 @@ export async function generateReport(
     // Every $ and % in the narrative must trace to the data the model was given.
     const unverified = verifiedSections.flatMap((result) => (result.status === "needs_review" ? result.unmatched : []));
     if (unverified.length > 0) {
+      await recordReportOutcome("failed", "Report not saved: figures could not be traced to the data.", verifiedSections, {
+        unverified_figures: [...new Set(unverified)],
+      });
       return {
         success: false,
         error:
@@ -648,6 +694,7 @@ export async function generateReport(
         selectedInstitutionData?.can_generate_verified_benchmark_conclusions ?? false,
     });
     if (!artifactQuality.ok) {
+      await recordReportOutcome("failed", `Report failed the quality gate: ${artifactQuality.error}`, verifiedSections);
       return { success: false, error: artifactQuality.error };
     }
 
@@ -686,11 +733,12 @@ export async function generateReport(
     if (selectedInstitution) {
       await completeHamiltonRefreshJobsForInstitution({
         institutionId: selectedInstitution.id,
-        jobTypes: ["report_refresh"],
+        jobTypes: ["report_refresh", "watchlist_review"],
         completedByUserId: user.id,
       }).catch(() => {});
     }
 
+    await recordReportOutcome("completed", `Report saved (${reportId}).`, verifiedSections, { report_id: reportId });
     return { success: true, reportId, report, artifactMetadata };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
