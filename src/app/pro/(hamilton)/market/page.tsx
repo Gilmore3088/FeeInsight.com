@@ -19,7 +19,6 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAmount } from "@/lib/format";
 import { timeAgo } from "@/lib/format";
-import { ProReferenceWorkflowBanner } from "@/components/pro/reference-workflow-banner";
 
 export const metadata: Metadata = {
   title: "Market Intelligence",
@@ -75,7 +74,7 @@ export default async function ProMarketPage() {
     : null;
 
   return (
-    <main id="main-content">
+    <div>
     <div className="mx-auto max-w-7xl px-6 py-14">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
@@ -96,8 +95,6 @@ export default async function ProMarketPage() {
         <span className="ml-2 text-warm-500">Updated {lastUpdated}</span>
       </p>
 
-      <ProReferenceWorkflowBanner userId={user.id} surface="market" />
-
       {/* Fee ticker strip */}
       <div className="mt-6 flex items-center gap-4 overflow-x-auto scrollbar-none rounded-xl border border-warm-200/80 bg-white/70 backdrop-blur-sm px-5 py-3">
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.15em] text-terra">
@@ -107,11 +104,14 @@ export default async function ProMarketPage() {
         {spotlightEntries.map((entry) => (
           <Link
             key={entry!.fee_category}
-            href={`/fees/${entry!.fee_category}`}
+            href={`/pro/simulate?category=${entry!.fee_category}`}
             className="shrink-0 flex items-center gap-2 text-[11px] hover:text-terra transition-colors no-underline"
           >
             <span className="text-warm-600">{getDisplayName(entry!.fee_category)}</span>
             <span className="font-semibold text-warm-900 tabular-nums">{formatAmount(entry!.median_amount)}</span>
+            <span className="text-warm-500 tabular-nums" title={`${entry!.maturity_tier} evidence`}>
+              n={entry!.institution_count}
+            </span>
           </Link>
         ))}
       </div>
@@ -283,7 +283,7 @@ export default async function ProMarketPage() {
               {spotlightEntries.slice(0, 4).map((entry) => (
                 <Link
                   key={entry!.fee_category}
-                  href={`/fees/${entry!.fee_category}`}
+                  href={`/pro/simulate?category=${entry!.fee_category}`}
                   className="block group no-underline"
                 >
                   <span className="text-[11px] text-warm-500 group-hover:text-terra transition-colors">
@@ -296,7 +296,9 @@ export default async function ProMarketPage() {
                     >
                       {formatAmount(entry!.median_amount)}
                     </span>
-                    <span className="text-[10px] text-warm-500">median</span>
+                    <span className="text-[10px] text-warm-500">
+                      median · {entry!.institution_count} institutions · {entry!.maturity_tier}
+                    </span>
                   </div>
                 </Link>
               ))}
@@ -349,6 +351,6 @@ export default async function ProMarketPage() {
         </div>
       </div>
     </div>
-    </main>
+    </div>
   );
 }

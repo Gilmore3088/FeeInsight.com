@@ -131,7 +131,7 @@ export function AnalyzeWorkspace({
   initialAnalysis,
   initialAnalysisId = null,
 }: AnalyzeWorkspaceProps) {
-  const [activeTab] = useState<AnalysisFocus>(ANALYSIS_FOCUS_TABS[0]);
+  const [activeTab, setActiveTab] = useState<AnalysisFocus>(() => focusForIntent(initialIntent));
   const [parsedResponse, setParsedResponse] = useState<ParsedResponse | null>(() => {
     if (!initialAnalysis) return null;
     return {
@@ -157,15 +157,16 @@ export function AnalyzeWorkspace({
   const [isExporting, setIsExporting] = useState(false);
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Ref to always have latest activeTab inside async callbacks
-  const activeTabRef = useRef<AnalysisFocus>(ANALYSIS_FOCUS_TABS[0]);
+  const activeTabRef = useRef<AnalysisFocus>(activeTab);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   // Track the last prompt submitted for saving alongside the response
   const lastPromptRef = useRef<string>("");
 
-  const { messages, sendMessage, status, setMessages } = useChat({
+  const { messages, sendMessage, status, setMessages, error: chatError, clearError } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/research/hamilton",
       body: () => ({
@@ -215,6 +216,21 @@ export function AnalyzeWorkspace({
 
   const isLoading = status === "streaming" || status === "submitted";
 
+  // A failed request must never lose the question: put it back in the input.
+  useEffect(() => {
+    if (chatError && lastPromptRef.current) {
+      setInput((current) => current || lastPromptRef.current);
+    }
+  }, [chatError]);
+
+  const handleRetry = useCallback(() => {
+    const prompt = lastPromptRef.current;
+    if (!prompt) return;
+    clearError();
+    setInput("");
+    sendMessage({ text: prompt });
+  }, [clearError, sendMessage]);
+
   const handleAnalysisSubmit = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
@@ -237,15 +253,23 @@ export function AnalyzeWorkspace({
   );
 
   const handleExportPdf = useCallback(async () => {
-    if (!parsedResponse || isExporting || !savedAnalysisId) return;
+    if (!parsedResponse || isExporting) return;
+    if (!savedAnalysisId) {
+      setExportError("This analysis is still being saved. Try the export again in a moment.");
+      return;
+    }
     setIsExporting(true);
+    setExportError(null);
     try {
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "analysis", analysisId: savedAnalysisId }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setExportError("The PDF couldn't be created. Please try again.");
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -255,6 +279,8 @@ export function AnalyzeWorkspace({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    } catch {
+      setExportError("The PDF couldn't be created. Check your connection and try again.");
     } finally {
       setIsExporting(false);
     }
@@ -278,6 +304,23 @@ export function AnalyzeWorkspace({
 
   return (
     <div className="@container flex flex-col gap-6 pb-56">
+      {chatError && !isLoading && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm"
+          style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#7f1d1d" }}
+        >
+          <span>Hamilton couldn&apos;t finish this analysis. Your question is back in the box below.</span>
+          <button type="button" onClick={handleRetry} className="font-semibold underline">
+            Retry
+          </button>
+        </div>
+      )}
+      {exportError && (
+        <p role="alert" className="text-sm" style={{ color: "#7f1d1d" }}>
+          {exportError}
+        </p>
+      )}
       {/* Analysis prompt title when active */}
       {displayedResponse && (
         <div className="flex items-center gap-4 mb-2">
@@ -440,7 +483,7 @@ export function AnalyzeWorkspace({
 
       {/* Explore Further + floating input — always at bottom */}
       <div
-        className="@container fixed bottom-0 left-0 right-0 z-20 px-4 @lg:px-8 @xl:px-12 py-10"
+        className="@container fixed bottom-0 left-0 lg:left-72 right-0 z-20 px-4 @lg:px-8 @xl:px-12 py-10"
         style={{
           background: "linear-gradient(to top, var(--hamilton-surface) 60%, transparent)",
         }}
@@ -451,6 +494,25 @@ export function AnalyzeWorkspace({
             onPromptSelect={handleExploreFurther}
             isVisible={analysisComplete}
           />
+
+          <div role="tablist" aria-label="Analysis focus" className="flex flex-wrap gap-2">
+            {ANALYSIS_FOCUS_TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={tab === activeTab}
+                onClick={() => setActiveTab(tab)}
+                className="rounded-full px-3 py-1 text-xs font-medium"
+                style={{
+                  backgroundColor: tab === activeTab ? "var(--hamilton-primary)" : "var(--hamilton-surface-container-low)",
+                  color: tab === activeTab ? "#fff" : "var(--hamilton-text-secondary)",
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
           <AnalysisInputBar
             value={input}
@@ -463,6 +525,21 @@ export function AnalyzeWorkspace({
       </div>
     </div>
   );
+}
+
+/** The focus tab a deep link asks for (?intent=benchmark → Peer Position, etc.). */
+function focusForIntent(intent: string | null | undefined): AnalysisFocus {
+  switch (intent) {
+    case "benchmark":
+    case "peer":
+      return "Peer Position";
+    case "risk":
+      return "Risk";
+    case "trend":
+      return "Trend";
+    default:
+      return ANALYSIS_FOCUS_TABS[0];
+  }
 }
 
 function ContextStat({ label, value }: { label: string; value: string }) {

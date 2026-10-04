@@ -15,6 +15,7 @@ import {
 } from "@/lib/agents/document-vault";
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
 import {
   detectFormat,
   documentTypeForFormat,
@@ -131,6 +132,8 @@ export interface RunRosettaReadResult {
   /** Earlier texts re-checked with the fee-page check this run, and how many failed it. */
   triagedTexts: number;
   triagedWrongDocuments: number;
+  /** Institutions whose learned format was filled in from an earlier text. */
+  formatsBackfilled: number;
   /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
   sentBackToMagellan: number;
   chars: number;
@@ -504,8 +507,10 @@ async function selectCandidates(
   let rereadable = "FALSE";
   if (learning) {
     // Skip inputs that already failed permanently with the current reader version.
-    params.push(ROSETTA_READ_VERSION, PERMANENT_OUTCOMES);
-    const versionParam = `$${params.length - 1}`;
+    // Capture each placeholder as it is pushed: later pushes must not shift earlier ones.
+    params.push(ROSETTA_READ_VERSION);
+    const versionParam = `$${params.length}`;
+    params.push(PERMANENT_OUTCOMES);
     const permanentParam = `$${params.length}`;
     // Only an answer settles a re-read; a timeout or 5xx leaves it eligible next run.
     params.push([...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES]);
@@ -959,6 +964,9 @@ export async function runRosettaRead(
         stateCode: options.stateCode,
       })
     : { checked: 0, wrong: 0, sentBack: 0 };
+  const formats = learning
+    ? await backfillPlaybookFormats(db, { dryRun, institutionId: options.institutionId })
+    : { updated: 0, byFormat: {} };
 
   return {
     selected: rows.length,
@@ -976,6 +984,7 @@ export async function runRosettaRead(
     tableRows: results.reduce((total, result) => total + result.tableRows, 0),
     triagedTexts: triage.checked,
     triagedWrongDocuments: triage.wrong,
+    formatsBackfilled: formats.updated,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,
     dryRun,

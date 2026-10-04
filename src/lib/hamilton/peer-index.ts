@@ -1,6 +1,9 @@
+import { cache } from "react";
 import {
   getNationalIndex,
+  getNationalIndexCached,
   getPeerIndex,
+  getPeerIndexes,
   type IndexEntry,
 } from "@/lib/data-store/fee-index";
 import {
@@ -136,9 +139,11 @@ export function hasUsablePeerIndex(
 
 async function resolveNationalIndex(
   fallbackReason: string | null,
+  approvedOnly = true,
 ): Promise<HamiltonPeerIndexContext> {
   return {
-    entries: await getNationalIndex(true),
+    // The approved national index is cached (fee_index_cache, refreshed on publish).
+    entries: approvedOnly ? await getNationalIndexCached() : await getNationalIndex(false),
     label: "Verified national index",
     source: "national",
     filters: null,
@@ -146,6 +151,15 @@ async function resolveNationalIndex(
     fallbackReason,
   };
 }
+
+/**
+ * Every default candidate's index from one query, memoized per request (keyed on the
+ * serialized candidates, since cache() compares arguments by identity).
+ */
+const loadCandidateIndexes = cache(
+  (candidatesKey: string, approvedOnly: boolean): Promise<IndexEntry[][]> =>
+    getPeerIndexes(JSON.parse(candidatesKey) as HamiltonPeerFilters[], approvedOnly),
+);
 
 export async function resolveHamiltonPeerIndex(
   params: ResolveHamiltonPeerIndexParams,
@@ -173,13 +187,14 @@ export async function resolveHamiltonPeerIndex(
           fallbackReason: null,
         };
       }
-      return resolveNationalIndex(`Saved peer set "${savedPeerSet.name}" is too sparse for this analysis.`);
+      return resolveNationalIndex(`Saved peer set "${savedPeerSet.name}" is too sparse for this analysis.`, approvedOnly);
     }
   }
 
   const candidates = buildInstitutionPeerFilterCandidates(params.selectedInstitution);
-  for (const filters of candidates) {
-    const entries = await getPeerIndex(filters, approvedOnly);
+  const candidateIndexes = await loadCandidateIndexes(JSON.stringify(candidates), approvedOnly);
+  for (const [index, filters] of candidates.entries()) {
+    const entries = candidateIndexes[index] ?? [];
     if (hasUsablePeerIndex(entries, minUsableCategories)) {
       return {
         entries,
@@ -196,5 +211,6 @@ export async function resolveHamiltonPeerIndex(
     params.selectedInstitution
       ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
       : null,
+    approvedOnly,
   );
 }

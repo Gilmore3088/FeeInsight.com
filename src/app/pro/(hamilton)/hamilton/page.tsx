@@ -2,7 +2,12 @@ import { Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchHomeBriefingData, fetchHomeBriefingSignals } from "@/lib/hamilton/home-data";
+import {
+  fetchCacheableHomeBriefing,
+  fetchHomeBriefingData,
+  fetchHomeBriefingSignals,
+  type HomeBriefingData,
+} from "@/lib/hamilton/home-data";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
@@ -12,17 +17,58 @@ import { WhatChangedCard } from "@/components/hamilton/home/WhatChangedCard";
 import { PriorityAlertsCard } from "@/components/hamilton/home/PriorityAlertsCard";
 import { MonitorFeedPreview } from "@/components/hamilton/home/MonitorFeedPreview";
 import { RecommendedActionCard } from "@/components/hamilton/home/RecommendedActionCard";
+import { InstitutionPositionCard } from "@/components/hamilton/home/InstitutionPositionCard";
+import {
+  fetchInstitutionPositioning,
+  type InstitutionPositioning,
+} from "@/lib/hamilton/institution-position";
+import { parseInstitutionId } from "@/lib/hamilton/institution-context";
 import type { HomeBriefingSignals } from "@/lib/hamilton/home-data";
 
 export const dynamic = "force-dynamic";
 
 const getCachedHomeBriefing = unstable_cache(
-  fetchHomeBriefingData,
+  fetchCacheableHomeBriefing,
   ["hamilton-home-briefing"],
   { revalidate: 86400 },
 );
 
-export const metadata: Metadata = { title: "Executive Briefing" };
+/** The cached briefing, or (when it can't be built) the data view without the AI thesis, uncached. */
+async function loadHomeBriefing(): Promise<{ data: HomeBriefingData; unavailable: boolean }> {
+  try {
+    return { data: await getCachedHomeBriefing(), unavailable: false };
+  } catch {
+    const data = await fetchHomeBriefingData({ includeThesis: false }).catch(() => ({
+      thesis: null,
+      confidence: "low" as const,
+      positioning: [],
+      spotlightCount: 0,
+      totalInstitutions: 0,
+    }));
+    return { data, unavailable: true };
+  }
+}
+
+/** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
+const getCachedInstitutionPositioning = unstable_cache(
+  fetchInstitutionPositioning,
+  ["hamilton-home-briefing-institution"],
+  { revalidate: 3600 },
+);
+
+async function loadInstitutionPositioning(
+  selectedInstitutionId: string | null,
+): Promise<{ positioning: InstitutionPositioning | null; unavailable: boolean }> {
+  const institutionId = parseInstitutionId(selectedInstitutionId);
+  if (!institutionId) return { positioning: null, unavailable: false };
+  try {
+    return { positioning: await getCachedInstitutionPositioning(institutionId), unavailable: false };
+  } catch {
+    return { positioning: null, unavailable: true };
+  }
+}
+
+export const metadata: Metadata = { title: "Benchmark" };
 
 interface HamiltonHomePageProps {
   searchParams: Promise<{
@@ -38,9 +84,7 @@ interface HamiltonHomePageProps {
 function SignalsSkeleton() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div
-        style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "2rem" }}
-      >
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
         <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
         <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
       </div>
@@ -80,13 +124,7 @@ async function BriefingSignals({
   return (
     <>
       {/* Second Row: WhatChanged (8 col) + PriorityAlerts (4 col) */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr",
-          gap: "2rem",
-        }}
-      >
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
         <WhatChangedCard
           signals={signals.whatChanged}
           selectedInstitutionId={selectedInstitutionId}
@@ -128,8 +166,10 @@ export default async function HamiltonHomePage({
   searchParams,
 }: HamiltonHomePageProps) {
   const params = await searchParams;
-  const data = await getCachedHomeBriefing();
+  const { data, unavailable: briefingUnavailable } = await loadHomeBriefing();
   const selectedInstitutionId = await resolveSelectedInstitutionId(params);
+  const { positioning, unavailable: positioningUnavailable } =
+    await loadInstitutionPositioning(selectedInstitutionId);
   const reportsHref = hrefWithInstitutionContext(
     "/pro/reports?intent=executive-briefing",
     selectedInstitutionId,
@@ -138,7 +178,7 @@ export default async function HamiltonHomePage({
 
   return (
     <div>
-      {/* Page header — "Executive Briefing" + subtitle pills */}
+      {/* Page header — "Benchmark" (the nav label) + subtitle pills */}
       <header
         style={{
           display: "flex",
@@ -162,7 +202,7 @@ export default async function HamiltonHomePage({
               marginBottom: "0.5rem",
             }}
           >
-            Executive Briefing
+            Benchmark
           </h1>
           <span
             className="font-label"
@@ -176,6 +216,14 @@ export default async function HamiltonHomePage({
           >
             {data.thesis ? "Analysis current" : "Analysis unavailable"}
           </span>
+          {briefingUnavailable && (
+            <p role="status" style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)" }}>
+              Hamilton&apos;s written briefing is temporarily unavailable; the fee data below is current.{" "}
+              <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
+                Try again
+              </Link>
+            </p>
+          )}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", flexShrink: 1 }}>
@@ -216,10 +264,22 @@ export default async function HamiltonHomePage({
         <HamiltonViewCard
           thesis={data.thesis}
           confidence={data.confidence}
+          priority={positioning?.priority ?? null}
           selectedInstitutionId={selectedInstitutionId}
         />
 
-        {/* Row 2: Positioning Evidence — full width */}
+        {/* Row 2: the selected institution against its benchmark */}
+        {positioning && <InstitutionPositionCard positioning={positioning} />}
+        {positioningUnavailable && (
+          <p role="status" style={{ fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)", margin: 0 }}>
+            Your institution&apos;s position is temporarily unavailable.{" "}
+            <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
+              Try again
+            </Link>
+          </p>
+        )}
+
+        {/* National benchmark for the lead spotlight category */}
         <PositioningEvidence
           entries={data.positioning}
           selectedInstitutionId={selectedInstitutionId}
@@ -227,8 +287,9 @@ export default async function HamiltonHomePage({
 
         {/* Row 3: Recommended Action — full width */}
         <RecommendedActionCard
-          recommendedCategory={data.recommendedCategory}
-          thesisExists={data.thesis !== null}
+          topGap={positioning?.topGap ?? null}
+          benchmarkLabel={positioning?.benchmarkLabel ?? null}
+          institutionName={positioning?.institutionName ?? null}
           selectedInstitutionId={selectedInstitutionId}
         />
 

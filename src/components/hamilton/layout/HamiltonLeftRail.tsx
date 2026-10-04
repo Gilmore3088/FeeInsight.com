@@ -1,5 +1,7 @@
 "use client";
 
+import { CONTACT_EMAIL } from "@/lib/constants";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -25,18 +27,19 @@ interface RecentScenario {
 interface HamiltonLeftRailProps {
   savedAnalyses?: SavedAnalysis[];
   recentScenarios?: RecentScenario[];
-  pinnedInstitutions?: string[];
+  pinnedInstitutions?: Array<{ id: string; name: string }>;
   peerSets?: Array<{ id: number; name: string }>;
   selectedInstitutionId?: string | null;
 }
 
-function deriveScreen(pathname: string): HamiltonScreen {
+function deriveScreen(pathname: string): HamiltonScreen | null {
   for (const item of HAMILTON_NAV) {
     if (pathname === item.href || pathname.startsWith(item.href + "/")) {
       return item.label as HamiltonScreen;
     }
   }
-  return "Monitor";
+  // Settings and reference pages have no primary workspace action.
+  return null;
 }
 
 /**
@@ -53,15 +56,16 @@ export function HamiltonLeftRail({
   selectedInstitutionId,
 }: HamiltonLeftRailProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  // Below lg the rail is a drawer opened from the "Workspace" button.
+  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentScreen = deriveScreen(pathname);
-  const config = LEFT_RAIL_CONFIG[currentScreen];
+  const config = currentScreen ? LEFT_RAIL_CONFIG[currentScreen] : null;
   const activeInstitutionId = searchParams.get("instId") ?? selectedInstitutionId;
-  const primaryActionHref = hrefWithInstitutionContext(
-    getPrimaryActionHref(currentScreen),
-    activeInstitutionId,
-  );
+  const primaryActionHref = currentScreen
+    ? hrefWithInstitutionContext(getPrimaryActionHref(currentScreen), activeInstitutionId)
+    : null;
 
   const isSimulateScreen = currentScreen === "Scenario";
   const withCurrentContext = (href: string) =>
@@ -82,8 +86,23 @@ export function HamiltonLeftRail({
     );
 
   return (
+    <>
+    <button
+      type="button"
+      onClick={() => setMobileOpen((open) => !open)}
+      aria-expanded={mobileOpen}
+      aria-controls="hamilton-left-rail"
+      className="fixed left-3 top-16 z-50 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm lg:hidden"
+      style={{ backgroundColor: "var(--hamilton-surface)", borderColor: "var(--hamilton-border)", color: "var(--hamilton-text-primary)" }}
+    >
+      {mobileOpen ? "Close" : "Workspace"}
+    </button>
     <aside
-      className="hidden lg:flex lg:flex-col shrink-0 border-r transition-all duration-200"
+      id="hamilton-left-rail"
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a")) setMobileOpen(false);
+      }}
+      className={`${mobileOpen ? "fixed inset-y-0 left-0 z-40 flex flex-col overflow-y-auto pt-24 shadow-xl" : "hidden"} lg:static lg:z-auto lg:flex lg:flex-col lg:pt-0 lg:shadow-none shrink-0 border-r transition-all duration-200`}
       style={{
         width: isCollapsed ? "48px" : "288px",
         backgroundColor: "var(--hamilton-surface-container-low)",
@@ -122,14 +141,14 @@ export function HamiltonLeftRail({
             </button>
           </div>
 
-          {/* Screen title — "Strategy Terminal" on Simulate, else screen label */}
+          {/* Screen title — "Scenario" on Simulate, else screen label */}
           {isSimulateScreen ? (
             <div className="mb-8">
               <div className="font-headline text-lg" style={{ color: "var(--hamilton-on-surface)" }}>
-                Strategy Terminal
+                Scenario
               </div>
             </div>
-          ) : (
+          ) : config?.primaryAction && primaryActionHref ? (
             <div className="mb-10">
               <Link
                 href={primaryActionHref}
@@ -141,10 +160,10 @@ export function HamiltonLeftRail({
                   <circle cx="12" cy="12" r="10" />
                   <path d="M12 8v8M8 12h8" />
                 </svg>
-                {config.primaryAction || "New Analysis"}
+                {config.primaryAction}
               </Link>
             </div>
-          )}
+          ) : null}
 
           {/* Scrollable section area */}
           <div className="flex-1 overflow-y-auto space-y-10" style={{
@@ -166,35 +185,27 @@ export function HamiltonLeftRail({
                     </svg>
                     Current Workspace
                   </Link>
-                  <div className="flex items-center gap-3 w-full text-left font-label text-[10px] uppercase tracking-widest" style={{ color: "rgb(120 113 108)" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                    Scenario Archive
-                  </div>
+                  <h4 className="font-label text-[10px] uppercase tracking-widest" style={{ color: "rgb(120 113 108)" }}>
+                    Saved scenarios
+                  </h4>
                   {recentScenarios.length > 0 && (
                     <ul className="ml-7 space-y-1.5">
                       {recentScenarios.map((s) => (
                         <li key={s.id}>
                           <Link href={hrefForScenario(s)} className="block text-xs truncate no-underline" style={{ color: "var(--hamilton-text-secondary)" }}>
-                            {s.fee_category}
+                            {getDisplayName(s.fee_category)}
                           </Link>
                         </li>
                       ))}
                     </ul>
                   )}
-                  <div className="flex items-center gap-3 w-full text-left font-label text-[10px] uppercase tracking-widest" style={{ color: "rgb(120 113 108)" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-                    </svg>
-                    Global Templates
-                  </div>
-                  <div className="flex items-center gap-3 w-full text-left font-label text-[10px] uppercase tracking-widest" style={{ color: "rgb(120 113 108)" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                    </svg>
-                    Audit Trail
-                  </div>
+                  <Link
+                    href={withCurrentContext("/pro/reports")}
+                    className="flex items-center gap-3 no-underline font-label text-[10px] uppercase tracking-widest"
+                    style={{ color: "rgb(120 113 108)" }}
+                  >
+                    Reports from these scenarios
+                  </Link>
                 </nav>
 
                 {/* NEW SCENARIO button */}
@@ -274,7 +285,7 @@ export function HamiltonLeftRail({
                               <circle cx="12" cy="12" r="10" />
                               <path d="M12 6v6l4 2" />
                             </svg>
-                            <span className="truncate">{s.fee_category}</span>
+                            <span className="truncate">{getDisplayName(s.fee_category)}</span>
                           </Link>
                         </li>
                       ))}
@@ -311,10 +322,10 @@ export function HamiltonLeftRail({
                     </span>
                     {pinnedInstitutions.length > 0 ? (
                       <div className="space-y-3.5">
-                        {pinnedInstitutions.map((instId) => (
+                        {pinnedInstitutions.map((institution) => (
                           <Link
-                            key={instId}
-                            href={hrefWithInstitutionContext("/pro/analyze", instId)}
+                            key={institution.id}
+                            href={hrefWithInstitutionContext("/pro/analyze", institution.id)}
                             className="flex items-center gap-3 no-underline group"
                           >
                             <div
@@ -324,10 +335,10 @@ export function HamiltonLeftRail({
                                 color: "var(--hamilton-text-primary)",
                               }}
                             >
-                              {instId.substring(0, 2).toUpperCase()}
+                              {institution.name.replace(/[^A-Za-z ]/g, "").split(" ").filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase()}
                             </div>
                             <span className="text-[11px] truncate" style={{ color: "var(--hamilton-text-secondary)" }}>
-                              {instId}
+                              {institution.name}
                             </span>
                           </Link>
                         ))}
@@ -349,8 +360,9 @@ export function HamiltonLeftRail({
                       <ul className="space-y-3.5">
                         {peerSets.map((set) => (
                           <li key={set.id}>
-                            <span
-                              className="flex items-center gap-3 text-[11px]"
+                            <Link
+                              href={withCurrentContext(`/pro/simulate?peerSetId=${set.id}`)}
+                              className="flex items-center gap-3 text-[11px] no-underline"
                               style={{ color: "var(--hamilton-text-secondary)" }}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -361,7 +373,7 @@ export function HamiltonLeftRail({
                                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
                               </svg>
                               {set.name}
-                            </span>
+                            </Link>
                           </li>
                         ))}
                       </ul>
@@ -393,7 +405,7 @@ export function HamiltonLeftRail({
                 <span className="text-[10px] uppercase tracking-widest font-bold">Settings</span>
               </Link>
               <a
-                href="mailto:hello@bankfeeindex.com"
+                href={`mailto:${CONTACT_EMAIL}`}
                 className="flex items-center gap-3 no-underline transition-colors"
                 style={{ color: "var(--hamilton-text-tertiary)" }}
               >
@@ -409,5 +421,6 @@ export function HamiltonLeftRail({
         </div>
       )}
     </aside>
+    </>
   );
 }

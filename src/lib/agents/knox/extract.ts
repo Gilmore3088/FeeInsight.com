@@ -23,7 +23,7 @@ type SqlTag = typeof sql;
  * waived fees are kept, and $0, range, percentage and unrecognized priced lines are held
  * for review instead of dropped.
  */
-export const KNOX_EXTRACT_STRATEGY = { strategy: "extract.rules", version: 2 } as const;
+export const KNOX_EXTRACT_STRATEGY = { strategy: "extract.rules", version: 3 } as const;
 /** Below this share of the institution's usual fee count, an extraction is `low_yield`. */
 const LOW_YIELD_RATIO = 0.5;
 

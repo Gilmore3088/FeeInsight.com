@@ -14,6 +14,8 @@ import {
   type InstitutionQualitySignal,
   type InstitutionQualityStatus,
 } from "@/lib/institution-quality";
+import { describePlaybook } from "@/lib/agents/learning/notes";
+import { playbookFromRow } from "@/lib/agents/learning/playbook";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -795,5 +797,43 @@ export async function getInstitutionAgentResults(
   } catch (e) {
     console.error("getInstitutionAgentResults failed:", e);
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// What the pipeline has learned about this institution (its playbook)
+// ---------------------------------------------------------------------------
+
+export interface InstitutionLearnedNotes {
+  formatLabel: string | null;
+  lines: string[];
+  nextStep: string | null;
+  lastLearnedAt: string | null;
+}
+
+export async function getInstitutionLearnedNotes(id: number): Promise<InstitutionLearnedNotes | null> {
+  try {
+    const [row] = await sql`
+      SELECT format, best_strategy, strategy_stats, do_not_retry, expected_fee_count,
+             cost_to_date_microusd, source_kind, read_strategy, locked_by_correction,
+             COALESCE(jsonb_array_length(
+               CASE WHEN jsonb_typeof(rejected_source_urls) = 'array' THEN rejected_source_urls ELSE '[]'::jsonb END
+             ), 0)::int AS rejected_url_count,
+             last_learned_at
+        FROM institution_source_profiles
+       WHERE institution_id = ${id}
+    `;
+    if (!row) return null;
+    const notes = describePlaybook({
+      playbook: playbookFromRow(row),
+      sourceKind: (row.source_kind as string | null) ?? null,
+      readStrategy: (row.read_strategy as string | null) ?? null,
+      lockedByCorrection: Boolean(row.locked_by_correction),
+      rejectedUrlCount: Number(row.rejected_url_count ?? 0),
+    });
+    return { ...notes, lastLearnedAt: row.last_learned_at ? toDateStr(row.last_learned_at) : null };
+  } catch (error) {
+    console.error("getInstitutionLearnedNotes failed:", error);
+    return null;
   }
 }

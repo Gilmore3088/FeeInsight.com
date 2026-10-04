@@ -8,6 +8,7 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sendWorkspaceInviteEmail } from "@/lib/email/workspace-invite";
 import { getHamiltonInstitutionContext } from "@/lib/hamilton/institution-context";
 import { setHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
+import { adoptInstitution } from "@/lib/hamilton/adopt-institution";
 import {
   getActiveInstitutionMembership,
   createInstitutionWorkspaceInvitation,
@@ -17,22 +18,10 @@ import {
   type InstitutionWorkspaceMembershipRole,
 } from "@/lib/hamilton/institution-membership";
 import {
+  getSavedPeerSets,
   savePeerSet,
   deletePeerSet,
 } from "@/lib/data-store/saved-peers";
-
-const ProfileSchema = z.object({
-  institution_name: z.string().min(1).max(200).trim(),
-  institution_type: z.enum(["bank", "credit_union"]).nullable(),
-  asset_tier: z.enum(["a", "b", "c", "d", "e", "f"]).nullable(),
-  state_code: z.string().length(2).toUpperCase().nullable(),
-  fed_district: z.coerce.number().int().min(1).max(12).nullable(),
-});
-
-export type ProfileFormState = {
-  success: boolean;
-  error?: string;
-};
 
 export type WorkspaceInstitutionState = {
   success: boolean;
@@ -67,53 +56,6 @@ export type WorkspaceAccessActionState = {
   message?: string;
 };
 
-export async function updateInstitutionProfile(
-  _prev: ProfileFormState,
-  formData: FormData
-): Promise<ProfileFormState> {
-  const user = await getCurrentUser();
-  if (!user) {
-    return { success: false, error: "Not authenticated" };
-  }
-
-  const raw = {
-    institution_name: formData.get("institution_name"),
-    institution_type: formData.get("institution_type") || null,
-    asset_tier: formData.get("asset_tier") || null,
-    state_code: formData.get("state_code") || null,
-    fed_district: formData.get("fed_district") || null,
-  };
-
-  const parsed = ProfileSchema.safeParse(raw);
-  if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    return {
-      success: false,
-      error: firstIssue
-        ? `${firstIssue.path.join(".")}: ${firstIssue.message}`
-        : "Invalid input",
-    };
-  }
-
-  const { institution_name, institution_type, asset_tier, state_code, fed_district } =
-    parsed.data;
-
-  await sql`
-    UPDATE users
-    SET
-      institution_name = ${institution_name},
-      institution_type = ${institution_type},
-      asset_tier       = ${asset_tier},
-      state_code       = ${state_code},
-      fed_district     = ${fed_district}
-    WHERE id = ${user.id}
-  `;
-
-  revalidatePath("/pro");
-
-  return { success: true };
-}
-
 const WorkspaceInstitutionSchema = z.object({
   institution_id: z.coerce.number().int().positive(),
 });
@@ -126,6 +68,9 @@ export async function updateWorkspaceInstitution(
   if (!user) {
     return { success: false, error: "Not authenticated" };
   }
+  if (!canAccessPremium(user)) {
+    return { success: false, error: "An active Hamilton subscription is required." };
+  }
 
   const parsed = WorkspaceInstitutionSchema.safeParse({
     institution_id: formData.get("institution_id"),
@@ -134,19 +79,16 @@ export async function updateWorkspaceInstitution(
     return { success: false, error: "Enter a valid institution ID." };
   }
 
-  const { institution, error } = await getHamiltonInstitutionContext(
-    parsed.data.institution_id,
-  );
-  if (!institution) {
-    return { success: false, error: error ?? "Institution not found." };
-  }
-
-  await setHamiltonWorkspaceContext({
+  const institution = await adoptInstitution({
     userId: user.id,
-    institutionId: institution.id,
+    institutionId: parsed.data.institution_id,
+    setWorkspace: true,
     source: "manual",
     intent: "settings",
   });
+  if (!institution) {
+    return { success: false, error: "Institution not found." };
+  }
 
   revalidatePath("/pro");
   revalidatePath("/pro/settings");
@@ -605,9 +547,16 @@ const PeerSetSchema = z.object({
   fed_districts: z.array(z.coerce.number().int().min(1).max(12)).optional(),
 });
 
+const MAX_SAVED_PEER_SETS = 10;
+
 export async function createPeerSet(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
+  const existing = await getSavedPeerSets(String(user.id));
+  if (existing.length >= MAX_SAVED_PEER_SETS) {
+    return { success: false, error: `You can save up to ${MAX_SAVED_PEER_SETS} peer sets. Remove one to add another.` };
+  }
 
   const raw = {
     name: formData.get("name"),
@@ -638,6 +587,7 @@ export async function createPeerSet(formData: FormData) {
 export async function removePeerSet(id: number) {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
 
   await deletePeerSet(id, String(user.id));
   revalidatePath("/pro/settings");

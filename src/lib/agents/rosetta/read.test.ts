@@ -452,21 +452,24 @@ describe("Rosetta agentic read", () => {
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });
 
-    it("binds each attempt-log placeholder to the matching parameter", async () => {
+    it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {
+      // A drifted `$${params.length - k}` once cast REREAD_MAX_KNOX_FEES to text[] and made
+      // every read fail with "operator does not exist: bigint < text[]".
       const db = learningDb([]);
 
-      await runRosettaRead({ runId: 310, db: asReadDb(db), fetchImpl: vi.fn() });
+      await runRosettaRead({ runId: 309, db: asReadDb(db), fetchImpl: vi.fn() });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      const param = (pattern: RegExp) => {
-        const match = query.match(pattern);
-        expect(match).not.toBeNull();
-        return params[Number(match![1]) - 1];
-      };
-      expect(param(/pa\.strategy_version = \$(\d+)/)).toBe(2);
-      expect(param(/pa\.outcome = ANY\(\$(\d+)::text\[\]\)/)).toEqual(expect.arrayContaining(["scanned_pdf"]));
-      expect(param(/\) < \$(\d+)/)).toBe(REREAD_MAX_KNOX_FEES);
-      expect(param(/current_read\.strategy_version >= \$(\d+)/)).toBe(2);
+      const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
+      for (const [, n] of query.matchAll(/\$(\d+)::text\[\]/g)) {
+        expect(Array.isArray(valueAt(n))).toBe(true);
+      }
+      for (const [, n] of query.matchAll(/strategy_version (?:=|>=) \$(\d+)/g)) {
+        expect(typeof valueAt(n)).toBe("number");
+      }
+      for (const [, n] of query.matchAll(/\) < \$(\d+)/g)) {
+        expect(valueAt(n)).toBe(REREAD_MAX_KNOX_FEES);
+      }
     });
 
     it("keeps the earlier text when a re-read fails", async () => {

@@ -15,6 +15,7 @@ describe("Knox extract.rules v2", () => {
 
   it("files an overdraft or returned-item service charge under overdraft or NSF, not maintenance", () => {
     expect(classifyFeeText("Overdraft service charge")).toBe("overdraft");
+    expect(classifyFeeText("Cashier\u2019s check")).toBe("cashiers_check");
     expect(classifyFeeText("Returned item service charge")).toBe("nsf");
     expect(classifyFeeText("Monthly service charge")).toBe("monthly_maintenance");
     expect(classifyFeeText("Inactive account monthly fee")).toBe("dormant_account");

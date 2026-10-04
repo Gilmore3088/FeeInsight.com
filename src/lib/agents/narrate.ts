@@ -66,9 +66,12 @@ export function narrateStepFinished(
     case "read": {
       const processed = n(detail, "processed_documents");
       if (processed === 0) {
+        const formatsNote = n(detail, "formats_backfilled") > 0
+          ? ` Noted the document type for ${count(n(detail, "formats_backfilled"), "institution")} read earlier.`
+          : "";
         return n(detail, "wrong_documents") > 0
-          ? `Re-checked earlier pages ${scope}: ${count(n(detail, "wrong_documents"), "page")} not a fee schedule${n(detail, "sent_back_to_magellan") > 0 ? `, ${n(detail, "sent_back_to_magellan")} sent back to Magellan` : ""}.`
-          : `Had no new documents to read ${scope}.`;
+          ? `Re-checked earlier pages ${scope}: ${count(n(detail, "wrong_documents"), "page")} not a fee schedule${n(detail, "sent_back_to_magellan") > 0 ? `, ${n(detail, "sent_back_to_magellan")} sent back to Magellan` : ""}.${formatsNote}`
+          : `Had no new documents to read ${scope}.${formatsNote}`;
       }
       return `Read ${count(n(detail, "text_artifacts"), "document")} ${scope}${joinParts([
         n(detail, "needs_ocr") > 0 && `${n(detail, "needs_ocr")} are scans that need OCR`,
@@ -79,6 +82,7 @@ export function narrateStepFinished(
         n(detail, "sent_back_to_magellan") > 0 && `${n(detail, "sent_back_to_magellan")} sent back to Magellan to find the real fee page`,
         n(detail, "read_from_vault") > 0 && `${n(detail, "read_from_vault")} read from our stored copy`,
         n(detail, "reread_documents") > 0 && `${n(detail, "reread_documents")} re-read with the new table reader`,
+        n(detail, "formats_backfilled") > 0 && `document type noted for ${n(detail, "formats_backfilled")} institutions read earlier`,
       ])}.`;
     }
     case "extract": {
