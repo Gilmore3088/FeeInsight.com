@@ -6,12 +6,8 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
-import {
-  confidenceFor,
-  extractCandidatesFromText,
-  type ExtractedFeeCandidate,
-  type HeldFeeCandidate,
-} from "@/lib/agents/knox/rules";
+import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
+import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
@@ -21,9 +17,10 @@ type SqlTag = typeof sql;
  * Version 2 (rules.ts): `$1500` parses as $1,500, specific categories win over monthly
  * maintenance, a later amount on a line is a fee only when words naming one precede it,
  * waived fees are kept, and $0, range, percentage and unrecognized priced lines are held
- * for review instead of dropped.
+ * for review instead of dropped. Version 4: new phrasings, thresholds are never fees,
+ * and the pass 2 specialists (specialists.ts) run with the rules on every document.
  */
-export const KNOX_EXTRACT_STRATEGY = { strategy: "extract.rules", version: 3 } as const;
+export const KNOX_EXTRACT_STRATEGY = KNOX_RULES_STRATEGY;
 /** Below this share of the institution's usual fee count, an extraction is `low_yield`. */
 const LOW_YIELD_RATIO = 0.5;
 
@@ -37,6 +34,12 @@ export const KNOX_REEXTRACT_MAX_FEES = 5;
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
 
+
+/** The columns of an `agent_source_texts` row that Knox's writers need. */
+export type KnoxTextRow = Pick<
+  TextArtifactRow,
+  "document_text_id" | "source_document_id" | "institution_id" | "source_url" | "text_hash"
+>;
 
 interface TextArtifactRow {
   document_text_id: number | string;
@@ -225,7 +228,7 @@ async function selectTextArtifacts(
  * After a re-read, rows Knox took from the document's older text stop going to Darwin:
  * the new text replaces them. Rows Darwin already verified are left as they are.
  */
-async function retireRowsFromOlderText(db: SqlTag, row: TextArtifactRow): Promise<number> {
+export async function retireRowsFromOlderText(db: SqlTag, row: KnoxTextRow): Promise<number> {
   if (!row.text_hash) return 0;
   const retired = await db`
     UPDATE raw_fee_observations fr
@@ -243,12 +246,16 @@ async function retireRowsFromOlderText(db: SqlTag, row: TextArtifactRow): Promis
   return retired.length;
 }
 
-async function insertCandidate(
+export async function insertCandidate(
   db: SqlTag,
   options: {
     runId: number;
-    row: TextArtifactRow;
+    row: KnoxTextRow;
     candidate: ExtractedFeeCandidate;
+    /** Flags beyond the rule path's, e.g. `knox_paid_extraction`. */
+    extraFlags?: string[];
+    /** How the fee was read, for the `conditions` audit text. */
+    method?: string;
   },
 ): Promise<boolean> {
   const documentTextId = Number(options.row.document_text_id);
@@ -259,8 +266,12 @@ async function insertCandidate(
   );
   const flags = ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
   if (options.candidate.waivable) flags.push("waivable");
+  if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
+    flags.push(`knox_specialist:${options.candidate.strategy}`);
+  }
+  flags.push(...(options.extraFlags ?? []));
   const conditions =
-    `Knox deterministic extraction from Rosetta artifact #${documentTextId}. ` +
+    `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
   const inserted = await db`
@@ -302,12 +313,13 @@ async function insertCandidate(
  * A row kept for review: the evidence is stored with its shape, but without the
  * `needs_darwin_verification` flag, so Darwin never verifies it as an exact amount.
  */
-async function insertHeldCandidate(
+export async function insertHeldCandidate(
   db: SqlTag,
   options: {
     runId: number;
-    row: TextArtifactRow;
+    row: KnoxTextRow;
     held: HeldFeeCandidate;
+    extraFlags?: string[];
   },
 ): Promise<boolean> {
   const documentTextId = Number(options.row.document_text_id);
@@ -324,6 +336,7 @@ async function insertHeldCandidate(
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
+  flags.push(...(options.extraFlags ?? []));
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -491,6 +504,16 @@ function countHeldShapes(held: HeldFeeCandidate[]): Partial<Record<HeldFeeCandid
   return counts;
 }
 
+function specialistDetail(row: TextArtifactRow, run: SpecialistRun): Record<string, unknown> {
+  return {
+    document_text_id: Number(row.document_text_id),
+    pass: run.pass,
+    found: run.found,
+    added: run.added,
+    held_found: run.heldFound,
+  };
+}
+
 function extractionOutcome(extracted: number, expectedFeeCount: number | null): AttemptOutcome {
   if (extracted === 0) return "no_candidates";
   if (expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
@@ -526,7 +549,7 @@ export async function runKnoxExtract(
     }
 
     const startedAt = Date.now();
-    const { candidates, held } = extractCandidatesFromText(row.normalized_text);
+    const { candidates, held, runs } = runFreeSpecialists(row.normalized_text);
     let inserted = 0;
     let heldInserted = 0;
     if (!dryRun) {
@@ -553,6 +576,27 @@ export async function runKnoxExtract(
       attemptOutcome,
     });
     if (learning) {
+      // Each pass 2 specialist is its own strategy in the attempt log. They run beside
+      // the rules on the same document, so they do not fold into the playbook; the
+      // rules attempt below carries the document's total.
+      for (const run of runs.filter((entry) => entry.pass === 2)) {
+        await recordAttempt(db, {
+          institutionId: Number(row.institution_id),
+          sourceDocumentId: Number(row.source_document_id),
+          stage: "extract",
+          strategy: run.strategy,
+          version: run.version,
+          fingerprint: row.text_hash,
+          outcome: run.found > 0 ? "ok" : "no_candidates",
+          yieldCount: run.found,
+          costMicrousd: 0,
+          durationMs: null,
+          runId: options.runId,
+          stepId: options.stepId ?? null,
+          foldIntoPlaybook: false,
+          detail: specialistDetail(row, run),
+        });
+      }
       await recordAttempt(db, {
         institutionId: Number(row.institution_id),
         sourceDocumentId: Number(row.source_document_id),
@@ -571,6 +615,8 @@ export async function runKnoxExtract(
           inserted,
           held_for_review: held.length,
           held_shapes: countHeldShapes(held),
+          rules_found: runs.find((entry) => entry.pass === 1)?.found ?? 0,
+          specialists: Object.fromEntries(runs.filter((entry) => entry.pass === 2).map((entry) => [entry.strategy, entry.added])),
           expected_fee_count: playbook.expectedFeeCount,
           router: decision.reason,
         },

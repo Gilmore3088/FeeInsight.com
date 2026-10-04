@@ -99,6 +99,25 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
   },
 };
 
+/**
+ * A fee page with no table and no line that carries both a name and a "$" price: names and
+ * prices on separate lines, a heading the bare directions under it belong to, and a dot
+ * leader with no "$". Only Knox's pass 2 specialists (extract.table, extract.family.*) read it.
+ */
+const STACKED_FEES = `
+  <h1>Fees and Service Charges</h1>
+  <p>Courtesy Pay</p><p>$31.00</p>
+  <p>Card Replacement</p><p>$10.00</p>
+  <h2>Wire Transfers</h2>
+  <p>Incoming Domestic</p><p>$14.00</p>
+  <p>Outgoing Domestic</p><p>$26.00</p>
+  <p>Stop Payment .................. 33.00</p>`;
+
+SITE["https://www.otter-creek-test-bank.com/fees"] = {
+  type: "text/html",
+  body: page("Fees | Otter Creek Test Bank", STACKED_FEES),
+};
+
 function stubFetch() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -125,7 +144,8 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       VALUES
         ('Green Mountain Test Bank', 'https://www.greenmountain-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Burlington', 900000, 'E2E-1', 'e2e', 'active'),
         ('Lakeside Test Bank', 'https://www.lakeside-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Rutland', 700000, 'E2E-3', 'e2e', 'active'),
-        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active')
+        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active'),
+        ('Otter Creek Test Bank', 'https://www.otter-creek-test-bank.com/', 'https://www.otter-creek-test-bank.com/fees', 'bank', 'Vermont', ${STATE}, 'Middlebury', 500000, 'E2E-4', 'e2e', 'active')
     `;
   });
 
@@ -196,6 +216,14 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       atm_non_network: 2.5,
       wire_domestic_incoming: 12,
       account_research: 25,
+    });
+    // Stacked name/price lines and a "$"-less dot leader: read only by the pass 2 specialists.
+    expect(published("Otter Creek Test Bank")).toEqual({
+      overdraft: 31,
+      card_replacement: 10,
+      wire_domestic_incoming: 14,
+      wire_domestic_outgoing: 26,
+      stop_payment: 33,
     });
   }, 120_000);
 });

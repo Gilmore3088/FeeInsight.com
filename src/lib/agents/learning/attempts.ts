@@ -16,6 +16,12 @@ export interface AttemptRecord extends AttemptFacts {
   runId?: number | null;
   stepId?: number | null;
   detail?: Record<string, unknown>;
+  /**
+   * False records the attempt without folding it into the playbook. Used for the
+   * specialists that run beside a stage's main strategy on the same document (Knox's
+   * pass 2), so their per-specialist yields do not reset the expected fee count.
+   */
+  foldIntoPlaybook?: boolean;
 }
 
 export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise<void> {
@@ -33,6 +39,7 @@ export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise
       ${attempt.runId ?? null}, ${attempt.stepId ?? null}, ${JSON.stringify(attempt.detail ?? {})}::jsonb
     )
   `;
+  if (attempt.foldIntoPlaybook === false) return;
   const playbook = await loadPlaybook(db, attempt.institutionId);
   await persistPlaybook(db, attempt.institutionId, applyAttempt(playbook, attempt));
 }

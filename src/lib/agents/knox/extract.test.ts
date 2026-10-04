@@ -218,7 +218,7 @@ describe("Knox agentic extraction", () => {
       const result = await runKnoxExtract({ runId: 106, stepId: 11, db: asExtractDb(db) });
 
       expect(result).toMatchObject({ learning: true, insertedFees: 3, outcomes: { ok: 1 } });
-      expect(attemptValues(db)[0]).toEqual(
+      expect(attemptValues(db).at(-1)).toEqual(
         expect.arrayContaining([42, 501, "extract", KNOX_EXTRACT_STRATEGY.strategy, "text-hash", "ok", 3, 106, 11]),
       );
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
@@ -230,13 +230,47 @@ describe("Knox agentic extraction", () => {
       expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
     });
 
+    it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {
+      const db = learningDb([
+        {
+          ...textArtifact,
+          normalized_text: ["Stop Payment", "$30.00 per item", "Wire Transfers", "Incoming Domestic", "$15.00"].join("\n"),
+        },
+      ]);
+
+      const result = await runKnoxExtract({ runId: 110, stepId: 12, db: asExtractDb(db) });
+
+      expect(result.results[0].candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint, fee.strategy])).toEqual([
+        ["Stop Payment", 30, "stop_payment", "extract.table"],
+        ["Wire Transfers: Incoming Domestic", 15, "wire_domestic_incoming", "extract.table"],
+      ]);
+      const strategies = attemptValues(db).map((values) => values[3]);
+      expect(strategies).toEqual([
+        "extract.table",
+        "extract.family.overdraft_nsf",
+        "extract.family.wires",
+        "extract.family.atm_card",
+        "extract.family.account",
+        "extract.family.checks",
+        "extract.family.services",
+        KNOX_EXTRACT_STRATEGY.strategy,
+      ]);
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["extract.table", 1, "text-hash", "ok", 2, 0]));
+      // Only the rules attempt (the document's total) updates the playbook.
+      expect(db.mock.calls.filter((call) => templateText(call[0]).includes("do_not_retry = "))).toHaveLength(1);
+      const insertFlags = db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"))
+        .map((call) => String(call[11]));
+      expect(insertFlags[0]).toContain("knox_specialist:extract.table");
+    });
+
     it("flags a yield far below the institution's usual fee count as low_yield", async () => {
       const db = learningDb([{ ...textArtifact, expected_fee_count: 40 }]);
 
       const result = await runKnoxExtract({ runId: 107, db: asExtractDb(db) });
 
       expect(result.results[0].attemptOutcome).toBe("low_yield");
-      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["low_yield"]));
+      expect(attemptValues(db).at(-1)).toEqual(expect.arrayContaining(["low_yield"]));
     });
 
     it("records no_candidates so the same text is not retried with this version", async () => {
