@@ -72,7 +72,7 @@ interface DiscoveryCandidateRow {
   profile_consecutive_failures?: number | string | null;
 }
 
-type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_after" | "failure";
+export type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_after" | "failure";
 
 /** Where discovery stopped for a bank, in one word (logged on every attempt). */
 export type DiscoveryCode =
@@ -81,6 +81,7 @@ export type DiscoveryCode =
   | "unreachable"
   | "blocked"
   | (typeof FOUND_CODES)[FinderKey]
+  | "found_paid_search"
   | "js_homepage"
   | "no_fee_links"
   | "candidates_failed"
@@ -99,7 +100,7 @@ export interface FinderRunSummary {
   trail: TrailEntry[];
 }
 
-interface CandidateDiscoveryResult {
+export interface CandidateDiscoveryResult {
   institutionId: number;
   institutionName: string;
   stateCode: string | null;
@@ -510,7 +511,8 @@ async function selectCandidates(
   `;
 }
 
-async function recordDiscoveryResult(
+/** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
+export async function recordDiscoveryResult(
   db: SqlTag,
   result: CandidateDiscoveryResult,
 ): Promise<void> {

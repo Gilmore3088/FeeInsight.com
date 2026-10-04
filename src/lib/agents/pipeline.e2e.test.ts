@@ -93,6 +93,52 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
       "Member FDIC. Equal Housing Lender.",
     ]),
   },
+  // Only in the site map: the homepage has no fee link and no guessed path matches.
+  "https://www.maple-test-bank.com/": {
+    type: "text/html",
+    body: page("Maple Test Bank", `<a href="/about">About</a> <a href="/contact">Contact</a>`),
+  },
+  "https://www.maple-test-bank.com/sitemap.xml": {
+    type: "application/xml",
+    body: `<?xml version="1.0"?><urlset>
+      <url><loc>https://www.maple-test-bank.com/about</loc></url>
+      <url><loc>https://www.maple-test-bank.com/legal/disclosures/schedule-of-fees</loc></url>
+    </urlset>`,
+  },
+  "https://www.maple-test-bank.com/legal/disclosures/schedule-of-fees": {
+    type: "text/html",
+    body: page("Schedule of Fees | Maple Test Bank", FEE_TABLE.replace("$32.00", "$27.00")),
+  },
+  // Only through a hub page: the homepage links to Disclosures, which links to the PDF.
+  "https://www.birch-test-bank.com/": {
+    type: "text/html",
+    body: page("Birch Test Bank", `<a href="/about">About</a> <a href="/resources/disclosures">Disclosures</a>`),
+  },
+  "https://www.birch-test-bank.com/resources/disclosures": {
+    type: "text/html",
+    body: page("Disclosures | Birch Test Bank", `<ul>
+      <li><a href="/resources/privacy-notice.pdf">Privacy Notice</a></li>
+      <li><a href="/resources/documents/consumer-schedule-of-fees.pdf">Consumer Schedule of Fees</a></li>
+    </ul>`),
+  },
+  "https://www.birch-test-bank.com/resources/documents/consumer-schedule-of-fees.pdf": {
+    type: "application/pdf",
+    body: feePdf([
+      "Birch Test Bank Schedule of Fees",
+      "Overdraft fee per item $36.00",
+      "Returned item NSF fee $36.00",
+      "Monthly maintenance fee $6.00",
+      "Stop payment request $31.00",
+      "Outgoing domestic wire transfer $29.00",
+      "Cashier's check $9.00",
+      "Paper statement fee $2.00",
+      "Foreign ATM withdrawal $2.50",
+      "Incoming domestic wire transfer $12.00",
+      "Account research per hour $25.00",
+      "Fees are subject to change. See your account agreement for details.",
+      "Member FDIC. Equal Housing Lender.",
+    ]),
+  },
   "https://www.champlain-test-cu.org/fees": {
     type: "text/html",
     body: page("Fee Schedule | Champlain Test Credit Union", FEE_TABLE.replace("$32.00", "$29.00")),
@@ -125,6 +171,8 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       VALUES
         ('Green Mountain Test Bank', 'https://www.greenmountain-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Burlington', 900000, 'E2E-1', 'e2e', 'active'),
         ('Lakeside Test Bank', 'https://www.lakeside-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Rutland', 700000, 'E2E-3', 'e2e', 'active'),
+        ('Maple Test Bank', 'https://www.maple-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Stowe', 500000, 'E2E-4', 'e2e', 'active'),
+        ('Birch Test Bank', 'https://www.birch-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Barre', 450000, 'E2E-5', 'e2e', 'active'),
         ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active')
     `;
   });
@@ -197,5 +245,41 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       wire_domestic_incoming: 12,
       account_research: 25,
     });
+    // Found only in the site map (pass 1, discover.sitemap), read from HTML.
+    expect(published("Maple Test Bank")).toEqual({ ...tableFees, overdraft: 27 });
+    // Found only one click deep through the Disclosures hub page (discover.hub_pages), read from a PDF.
+    expect(published("Birch Test Bank")).toEqual({
+      overdraft: 36,
+      nsf: 36,
+      monthly_maintenance: 6,
+      stop_payment: 31,
+      wire_domestic_outgoing: 29,
+      cashiers_check: 9,
+      paper_statement: 2,
+      atm_non_network: 2.5,
+      wire_domestic_incoming: 12,
+      account_research: 25,
+    });
+
+    // Every specialist that ran is in the attempt log with its own strategy and outcome.
+    const tries = await sql`
+      SELECT inst.institution_name, pa.strategy, pa.outcome, pa.detail->>'code' AS code
+        FROM pipeline_attempts pa
+        JOIN institution_sources inst ON inst.id = pa.institution_id
+       WHERE inst.state_code = ${STATE} AND pa.stage = 'discover'
+       ORDER BY pa.id
+    `;
+    const triesFor = (name: string) =>
+      tries.filter((row) => row.institution_name === name).map((row) => [String(row.strategy), String(row.outcome)]);
+    expect(triesFor("Maple Test Bank")).toEqual([
+      ["discover.homepage_links", "no_candidates"],
+      ["discover.sitemap", "ok"],
+    ]);
+    expect(triesFor("Birch Test Bank")).toEqual([
+      ["discover.homepage_links", "no_candidates"],
+      ["discover.sitemap", "no_candidates"],
+      ["discover.hub_pages", "ok"],
+    ]);
+    expect(tries.find((row) => row.institution_name === "Birch Test Bank" && row.strategy === "discover.hub_pages")?.code).toBe("found_deep");
   }, 120_000);
 });

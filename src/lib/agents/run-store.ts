@@ -307,6 +307,7 @@ async function executeAgenticStep(
     case "rescue": {
       const discovery = await runMagellanDiscovery({
         runId: run.id,
+        stepId: step.id,
         mode: step.stepKey === "rescue" ? "rescue" : "discover",
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
@@ -324,14 +325,24 @@ async function executeAgenticStep(
           retry_after: discovery.retryAfter,
           failures: discovery.failures,
           attempted_urls: discovery.attemptedUrls,
+          discovery_codes: discovery.codes,
+          found_by: discovery.foundBy,
+          method_version: discovery.methodVersion,
+          learning_log: discovery.learning,
+          second_documents_status: discovery.secondDocuments?.status ?? null,
+          second_documents_checked: discovery.secondDocuments?.checked ?? 0,
+          second_documents_found: discovery.secondDocuments?.found ?? 0,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           sample_results: discovery.results.slice(0, 10).map((result) => ({
             institution_id: result.institutionId,
             outcome: result.outcome,
+            code: result.code,
+            found_by: result.foundBy,
             url: result.url,
             confidence: result.confidence,
             reason: result.reason,
+            platform: result.platform,
           })),
         },
       };

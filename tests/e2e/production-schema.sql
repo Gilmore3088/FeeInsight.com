@@ -2848,3 +2848,25 @@ ON CONFLICT DO NOTHING;
 INSERT INTO automation_control (control_key, enabled, reason, changed_by, changed_at, revision) VALUES
  ('global', true, 'e2e', 'e2e', now(), 1), ('pipeline', true, NULL, 'e2e', now(), 1)
 ON CONFLICT DO NOTHING;
+-- 20270106010000_magellan_find_team.sql
+CREATE TABLE IF NOT EXISTS public.institution_additional_sources (
+  id BIGSERIAL PRIMARY KEY,
+  institution_id BIGINT NOT NULL REFERENCES public.institution_sources(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  document_type TEXT,
+  document_role TEXT NOT NULL DEFAULT 'consumer_supplement',
+  status TEXT NOT NULL DEFAULT 'found',
+  found_by_strategy TEXT NOT NULL,
+  strategy_version INTEGER NOT NULL DEFAULT 1,
+  agent_run_id BIGINT,
+  reason TEXT,
+  found_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT institution_additional_sources_role_check
+    CHECK (document_role IN ('business', 'other_services', 'consumer_supplement')),
+  CONSTRAINT institution_additional_sources_status_check
+    CHECK (status IN ('found', 'fetched', 'rejected')),
+  CONSTRAINT institution_additional_sources_unique UNIQUE (institution_id, url)
+);
+CREATE INDEX IF NOT EXISTS institution_additional_sources_status_idx
+  ON public.institution_additional_sources (status, found_at);

@@ -618,6 +618,8 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
       const identity = urlIdentity(link.url);
       if (!sameSite(url, ctx.site) || isDocumentPath(url) || queued.has(identity)) continue;
       if (/\.(jpe?g|png|gif|svg|css|js|zip|xml|ico|mp4)$/i.test(url.pathname)) continue;
+      const lower = `${link.label} ${url.pathname}`.toLowerCase().replace(/[-_/]+/g, " ");
+      if (NEGATIVE_LINK_PHRASES.some((phrase) => lower.includes(phrase))) continue;
       queued.add(identity);
       queue.push({ link, depth, weight: hubWeight(link) });
     }
