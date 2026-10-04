@@ -10,6 +10,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
+
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
 
@@ -93,6 +95,19 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
       "Member FDIC. Equal Housing Lender.",
     ]),
   },
+  // A scanner's PDF: page images only, no text objects. Rosetta's free OCR reads it.
+  "https://www.ottercreek-test-bank.com/fee-schedule.pdf": {
+    type: "application/pdf",
+    body: scannedFeePdf([
+      "OTTER CREEK TEST BANK",
+      "SCHEDULE OF FEES",
+      "OVERDRAFT FEE PER ITEM          $33.00",
+      "MONTHLY MAINTENANCE FEE         $9.00",
+      "STOP PAYMENT                    $31.00",
+      "OUTGOING DOMESTIC WIRE          $27.00",
+      "PAPER STATEMENT FEE             $4.00",
+    ]),
+  },
   "https://www.champlain-test-cu.org/fees": {
     type: "text/html",
     body: page("Fee Schedule | Champlain Test Credit Union", FEE_TABLE.replace("$32.00", "$29.00")),
@@ -125,7 +140,8 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       VALUES
         ('Green Mountain Test Bank', 'https://www.greenmountain-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Burlington', 900000, 'E2E-1', 'e2e', 'active'),
         ('Lakeside Test Bank', 'https://www.lakeside-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Rutland', 700000, 'E2E-3', 'e2e', 'active'),
-        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active')
+        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active'),
+        ('Otter Creek Test Bank', 'https://www.ottercreek-test-bank.com/', 'https://www.ottercreek-test-bank.com/fee-schedule.pdf', 'bank', 'Vermont', ${STATE}, 'Middlebury', 300000, 'E2E-4', 'e2e', 'active')
     `;
   });
 
@@ -197,5 +213,40 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       wire_domestic_incoming: 12,
       account_research: 25,
     });
+    // A scanned PDF with no text layer: free OCR (pass 2) read it in the same read step,
+    // and Knox extracted its fees like any other text.
+    expect(published("Otter Creek Test Bank")).toEqual({
+      overdraft: 33,
+      monthly_maintenance: 9,
+      stop_payment: 31,
+      wire_domestic_outgoing: 27,
+      paper_statement: 4,
+    });
+
+    // The HTML fee table was also stored as structured rows for Knox (table_rows contract).
+    const texts = await sql`
+      SELECT inst.institution_name, adt.status, adt.reader, adt.table_rows
+        FROM agent_source_texts adt
+        JOIN institution_sources inst ON inst.id = adt.institution_id
+       WHERE inst.state_code = ${STATE} AND adt.status = 'completed'
+    `;
+    const byName = Object.fromEntries(texts.map((row) => [String(row.institution_name), row]));
+    const greenRows = (byName["Green Mountain Test Bank"].table_rows as { version: number; rows: Array<Record<string, unknown>> });
+    expect(byName["Green Mountain Test Bank"].reader).toBe("read.html_dom");
+    expect(greenRows.version).toBe(1);
+    expect(greenRows.rows[0]).toMatchObject({ cells: ["Service", "Fee"], header: true, origin: "html_table" });
+    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (per item)", "$32.00"], header: false, origin: "html_table" });
+    expect(greenRows.rows).toHaveLength(10);
+    expect(byName["Otter Creek Test Bank"].reader).toBe("read.ocr_tesseract");
+    const attempts = await sql`
+      SELECT pa.strategy, pa.outcome
+        FROM pipeline_attempts pa
+        JOIN institution_sources inst ON inst.id = pa.institution_id
+       WHERE inst.institution_name = 'Otter Creek Test Bank' AND pa.stage = 'read'
+       ORDER BY pa.id
+    `;
+    expect(attempts.map((row) => `${row.strategy}:${row.outcome}`)).toEqual(
+      expect.arrayContaining(["read.pdf_layout:scanned_pdf", "read.ocr_tesseract:ok"]),
+    );
   }, 120_000);
 });

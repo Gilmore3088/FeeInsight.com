@@ -2848,3 +2848,6 @@ ON CONFLICT DO NOTHING;
 INSERT INTO automation_control (control_key, enabled, reason, changed_by, changed_at, revision) VALUES
  ('global', true, 'e2e', 'e2e', now(), 1), ('pipeline', true, NULL, 'e2e', now(), 1)
 ON CONFLICT DO NOTHING;
+-- 20270106020000_rosetta_table_rows.sql
+ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS table_rows jsonb;
+ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS reader text;

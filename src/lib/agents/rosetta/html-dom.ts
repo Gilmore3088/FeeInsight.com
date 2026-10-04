@@ -1,5 +1,7 @@
 import { parseDocument } from "htmlparser2";
 
+import type { SourceTableRow } from "./table-rows";
+
 /**
  * `read.html_dom`: HTML to text through a parsed DOM instead of tag stripping.
  *
@@ -35,6 +37,8 @@ export interface HtmlDomExtraction {
   text: string;
   /** Data-table rows written as one line each; layout tables are not counted. */
   tableRows: number;
+  /** The same rows as cells (plus definition-list pairs), for `agent_source_texts.table_rows`. */
+  rows: SourceTableRow[];
 }
 
 function isElement(node: DomNode): node is DomNode & DomElement {
@@ -87,6 +91,8 @@ function collapse(value: string): string {
 class TextWriter {
   private readonly parts: string[] = [];
   tableRows = 0;
+  readonly rows: SourceTableRow[] = [];
+  tables = 0;
 
   write(value: string): void {
     this.parts.push(value);
@@ -165,17 +171,33 @@ function writeTable(table: DomElement, out: TextWriter): void {
       if (caption) out.line(caption);
     }
   }
+  const headRows = new Set(
+    elementChildren(table)
+      .filter((child) => child.name === "thead")
+      .flatMap((head) => elementChildren(head).filter((row) => row.name === "tr")),
+  );
+  const tableIndex = out.tables;
+  out.tables += 1;
   for (const row of rows) {
-    const cells = cellsOf(row).map(inlineText).filter((cell) => cell.length > 0);
+    const rowCells = cellsOf(row);
+    const cells = rowCells.map(inlineText).filter((cell) => cell.length > 0);
     if (cells.length === 0) continue;
     out.line(cells.join(CELL_SEPARATOR));
     out.tableRows += 1;
+    out.rows.push({
+      table: tableIndex,
+      page: null,
+      cells,
+      header: headRows.has(row) || rowCells.every((cell) => cell.name === "th"),
+      origin: "html_table",
+    });
   }
   out.break();
 }
 
-function writeDefinitionList(list: DomElement, out: TextWriter): void {
+function writeDefinitionList(list: DomElement, out: TextWriter, tableIndex?: number): void {
   out.break();
+  const listIndex = tableIndex ?? out.tables++;
   let term: string | null = null;
   const flushTerm = () => {
     if (term) out.line(term);
@@ -190,13 +212,14 @@ function writeDefinitionList(list: DomElement, out: TextWriter): void {
       const description = inlineText(child);
       if (term && description) {
         out.line(`${term}${CELL_SEPARATOR}${description}`);
+        out.rows.push({ table: listIndex, page: null, cells: [term, description], header: false, origin: "html_definition_list" });
         term = null;
       } else if (description) {
         out.line(description);
       }
     } else if (name === "div") {
       // <dl><div><dt/><dd/></div></dl> is valid HTML; read the group the same way.
-      writeDefinitionList(child, out);
+      writeDefinitionList(child, out, listIndex);
     }
   }
   flushTerm();
@@ -208,5 +231,5 @@ export function extractHtmlDomText(html: string): HtmlDomExtraction {
   const document = parseDocument(html, { decodeEntities: true, lowerCaseTags: true });
   const out = new TextWriter();
   walk(document.children, out);
-  return { text: out.toString(), tableRows: out.tableRows };
+  return { text: out.toString(), tableRows: out.tableRows, rows: out.rows };
 }
