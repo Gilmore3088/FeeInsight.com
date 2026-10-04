@@ -2,6 +2,7 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
+import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -393,6 +394,8 @@ async function executeAgenticStep(
           wrong_documents: read.wrongDocuments + read.triagedWrongDocuments,
           sent_back_to_magellan: read.sentBackToMagellan,
           read_from_vault: read.readFromVault,
+          reread_documents: read.reread,
+          table_rows: read.tableRows,
           triaged_texts: read.triagedTexts,
           outcomes: read.outcomes,
           learning_log: read.learning,
@@ -434,6 +437,8 @@ async function executeAgenticStep(
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
           skipped_fee_candidates: extraction.skippedFees,
+          held_for_review: extraction.heldForReview,
+          replaced_older_rows: extraction.retiredOlderRows,
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
@@ -477,6 +482,8 @@ async function executeAgenticStep(
           processed_raw_fees: verification.processedRawFees,
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
+          verified_free_fees: verification.zeroFeesVerified,
+          reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
           learning_log: verification.learning,
           verify_limit: verification.limit,
@@ -488,6 +495,8 @@ async function executeAgenticStep(
             amount: result.amount,
             canonical_fee_key: result.canonicalFeeKey,
             status: result.status,
+            decision: result.decision,
+            reason_code: result.reasonCode,
             reason: result.reason,
             fee_verified_id: result.feeVerifiedId,
           })),
@@ -557,32 +566,69 @@ async function executeAgenticStep(
     case "publish":
     case "publish-index":
     case "publish-context": {
+      const institutionId = numericRunParam(params, ["institution_id"]);
+      const outlierRollbacks = await rollBackPublishedOutliers(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const published = await runHamiltonPublish({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["publish_limit", "limit", "size"]),
-        institutionId: numericRunParam(params, ["institution_id"]),
+        institutionId,
         stateCode,
         minConfidence: numericRunParam(params, [
           "publish_min_confidence",
           "min_confidence",
           "confidence_threshold",
         ]),
+        minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
       const indexRefresh = published.dryRun
         ? null
-        : await refreshFeeIndexCache(tx, { runId: run.id, force: published.publishedFees > 0 });
+        : await refreshFeeIndexCache(tx, {
+            runId: run.id,
+            force: published.publishedFees > 0 || outlierRollbacks.length > 0,
+          });
+      const outlierNote =
+        outlierRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
+          : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
           published_fees: published.publishedFees,
           skipped_verified_fees: published.skippedFees,
+          superseded_fees: published.supersededFees,
+          outlier_rollbacks: outlierRollbacks.length,
+          outlier_rollback_samples: outlierRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            reason: rollback.reason,
+          })),
+          published_free_fees: published.zeroFeesPublished,
+          outcomes: published.outcomes,
+          learning_log: published.learning,
           publish_limit: published.limit,
           publish_min_confidence: published.minConfidence,
+          publish_min_institution_fees: published.minInstitutionFees,
+          held_thin_fees: published.heldFees,
+          held_thin_institutions: published.heldInstitutions.slice(0, 25).map((entry) => ({
+            institution_id: entry.institutionId,
+            institution_name: entry.institutionName,
+            fee_count: entry.feeCount,
+            held_rows: entry.heldRows,
+          })),
           publish_batch_id: published.batchId,
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,
@@ -596,6 +642,7 @@ async function executeAgenticStep(
             status: result.status,
             reason: result.reason,
             fee_published_id: result.feePublishedId,
+            superseded_fee_published_id: result.supersededFeePublishedId,
           })),
         },
       };

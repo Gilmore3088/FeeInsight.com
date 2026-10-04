@@ -25,6 +25,7 @@
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "geist": "^1.7.0",
+    "htmlparser2": "8.0.2",
     "lucide-react": "^0.564.0",
     "next": "16.1.6",
     "postgres": "^3.4.8",

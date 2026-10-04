@@ -1,5 +1,4 @@
 import { createHash } from "crypto";
-import sanitizeHtml from "sanitize-html";
 
 import { sql, stripNulChars } from "@/lib/data-store/connection";
 import {
@@ -31,6 +30,8 @@ import {
 } from "@/lib/agents/learning/outcomes";
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
+import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
+import { layoutDocumentText, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -57,6 +58,8 @@ interface ReadCandidateRow {
   best_strategy?: unknown;
   strategy_stats?: unknown;
   do_not_retry?: unknown;
+  /** True when an older reader version already produced a text for these bytes. */
+  is_reread?: boolean | null;
 }
 
 /** `known_failure` is the router's skip: nothing is fetched again or written. */
@@ -88,6 +91,10 @@ interface ReadResult {
   /** True when the bytes came from our stored copy instead of a new download. */
   fromVault: boolean;
   pageCheck: FeePageScore | null;
+  /** HTML data-table rows written as one line each. */
+  tableRows: number;
+  /** Read again because an older reader version's text yielded no Knox fees. */
+  reread: boolean;
   durationMs: number;
 }
 
@@ -117,6 +124,10 @@ export interface RunRosettaReadResult {
   /** Read, but not a fee schedule: Knox skips them and Magellan looks again. */
   wrongDocuments: number;
   readFromVault: number;
+  /** Texts from an older reader version read again with the current one. */
+  reread: number;
+  /** HTML data-table rows written as one line each across this run. */
+  tableRows: number;
   /** Earlier texts re-checked with the fee-page check this run, and how many failed it. */
   triagedTexts: number;
   triagedWrongDocuments: number;
@@ -158,23 +169,14 @@ function normalizeWhitespace(value: string): string {
     .split("\n")
     .map((line) => line.trim())
     .join("\n")
+    // Lines that were only spaces are empty now; collapse the runs they leave.
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-function extractHtmlText(html: string): string {
-  const withoutDeadBlocks = html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<svg\b[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<\/(p|div|section|article|main|header|footer|li|tr|td|th|h[1-6])>/gi, "\n");
-  return normalizeWhitespace(
-    sanitizeHtml(withoutDeadBlocks, {
-      allowedTags: [],
-      allowedAttributes: {},
-      disallowedTagsMode: "discard",
-    }),
-  );
+function extractHtmlText(html: string): { text: string; tableRows: number } {
+  const extracted = extractHtmlDomText(html);
+  return { text: normalizeWhitespace(extracted.text), tableRows: extracted.tableRows };
 }
 
 function hashText(value: string): string {
@@ -201,7 +203,7 @@ async function withTimeout<T>(
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<PdfTextExtraction> {
-  const { extractText, getDocumentProxy } = await import("unpdf");
+  const { getDocumentProxy } = await import("unpdf");
   return withTimeout(
     (async () => {
       const pdf = await getDocumentProxy(bytes, {
@@ -214,8 +216,18 @@ async function extractPdfText(bytes: Uint8Array): Promise<PdfTextExtraction> {
           throw new Error(`PDF has too many pages for Rosetta text read: ${totalPages}`);
         }
 
-        const extracted = await extractText(pdf, { mergePages: true });
-        return { text: extracted.text, totalPages: extracted.totalPages };
+        // Lines rebuilt from item positions keep a fee name and its amount together.
+        const pages: PdfTextItem[][] = [];
+        for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+          const page = await pdf.getPage(pageNumber);
+          const content = await page.getTextContent();
+          const items: PdfTextItem[] = [];
+          for (const item of content.items) {
+            if ("str" in item) items.push(item);
+          }
+          pages.push(items);
+        }
+        return { text: layoutDocumentText(pages), totalPages };
       } finally {
         await pdf.destroy?.();
       }
@@ -242,11 +254,24 @@ async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Respon
   }
 }
 
-/** Read strategies by detected format. Bump ROSETTA_READ_VERSION when any of them changes. */
-export const ROSETTA_READ_VERSION = 1;
+/**
+ * Read strategies by detected format. Bump ROSETTA_READ_VERSION when any of them changes.
+ * Version 2: HTML through a parsed DOM (one line per table row) and PDF lines rebuilt
+ * from item positions. Completed texts from an older version that Knox found nothing
+ * in are read again once.
+ */
+export const ROSETTA_READ_VERSION = 2;
+const PAGE_CHECK_STRATEGY = "read.page_check";
+const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+/**
+ * An older text with fewer Knox fees than this is read again with the current reader.
+ * A real fee schedule lists far more; one or two fees usually means the table was
+ * flattened and most rows were lost.
+ */
+export const REREAD_MAX_KNOX_FEES = 5;
 const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
-  pdf: [{ strategy: "read.pdf_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["pdf_text"] }],
-  html: [{ strategy: "read.html_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["html_static"] }],
+  pdf: [{ strategy: "read.pdf_layout", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["pdf_text"] }],
+  html: [{ strategy: "read.html_dom", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["html_static"] }],
   text: [{ strategy: "read.plain_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["text"] }],
   docx: [],
   other: [],
@@ -286,6 +311,8 @@ async function readCandidate(
     routerReason: null,
     fromVault: false,
     pageCheck: null,
+    tableRows: 0,
+    reread: row.is_reread === true,
   };
   const finish = (
     fields: Partial<ReadResult> & Pick<ReadResult, "status" | "error" | "attemptOutcome">,
@@ -430,7 +457,14 @@ async function readCandidate(
   }
 
   const raw = new TextDecoder("utf-8").decode(bytes);
-  const normalizedText = format === "html" ? extractHtmlText(raw) : normalizeWhitespace(raw);
+  let normalizedText: string;
+  if (format === "html") {
+    const extracted = extractHtmlText(raw);
+    normalizedText = extracted.text;
+    base.tableRows = extracted.tableRows;
+  } else {
+    normalizedText = normalizeWhitespace(raw);
+  }
   if (normalizedText.length === 0) {
     return finish(
       {
@@ -466,14 +500,50 @@ async function selectCandidates(
     filters.push(`AND upper(btrim(ct.state_code)) = $${params.length}`);
   }
   let playbookColumns = "";
+  // Without the attempt log there is no reader version to compare, so never re-read.
+  let rereadable = "FALSE";
   if (learning) {
     // Skip inputs that already failed permanently with the current reader version.
     params.push(ROSETTA_READ_VERSION, PERMANENT_OUTCOMES);
+    const versionParam = `$${params.length - 1}`;
+    // Only an answer settles a re-read; a timeout or 5xx leaves it eligible next run.
+    params.push([...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES]);
+    const settledParam = `$${params.length}`;
+    // A completed text from an older reader that Knox found few or no fees in gets one
+    // read with the current reader; Knox then re-extracts it if the text changed.
+    params.push(REREAD_MAX_KNOX_FEES);
+    const rereadMaxParam = `$${params.length}`;
+    rereadable = `(
+                adt.status = 'completed'
+                AND (
+                  SELECT COUNT(*) FROM raw_fee_observations fr
+                   WHERE fr.source = 'knox'
+                     AND fr.source_document_id = adt.source_document_id
+                     AND fr.outlier_flags ? 'needs_darwin_verification'
+                ) < ${rereadMaxParam}
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts current_read
+                   WHERE current_read.stage = 'read'
+                     AND current_read.strategy <> '${PAGE_CHECK_STRATEGY}'
+                     AND current_read.institution_id = adt.institution_id
+                     AND current_read.input_fingerprint = adt.source_hash
+                     AND current_read.strategy_version >= ${versionParam}
+                     AND current_read.outcome = ANY(${settledParam}::text[])
+                )
+              )`;
     playbookColumns = `,
              profile.format,
              profile.best_strategy,
              profile.strategy_stats,
-             profile.do_not_retry`;
+             profile.do_not_retry,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts prior
+                WHERE prior.status = 'completed'
+                  AND (
+                    (prior.source_document_id = cr.id AND prior.source_hash IS NOT DISTINCT FROM cr.content_hash)
+                    OR (cr.content_hash IS NOT NULL AND prior.institution_id = cr.institution_id AND prior.source_hash = cr.content_hash)
+                  )
+             ) AS is_reread`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -517,8 +587,9 @@ async function selectCandidates(
                 -- The same bytes stored under another document id were already read.
                 OR (cr.content_hash IS NOT NULL AND adt.institution_id = cr.institution_id AND adt.source_hash = cr.content_hash)
               )
+              AND NOT ${rereadable}
          )
-       ORDER BY cr.crawled_at DESC NULLS LAST, cr.id DESC
+       ORDER BY ${learning ? "is_reread ASC, " : ""}cr.crawled_at DESC NULLS LAST, cr.id DESC
        LIMIT $1
     `,
     params,
@@ -688,7 +759,6 @@ async function sendBackToMagellan(
 }
 
 export const ROSETTA_TRIAGE_LIMIT = 100;
-const PAGE_CHECK_STRATEGY = "read.page_check";
 
 /**
  * Re-checks texts read before the fee-page check existed (no download). A text Knox
@@ -726,8 +796,10 @@ async function triageEarlierTexts(
              adt.text_hash,
              adt.normalized_text,
              EXISTS (
+               -- Rows Knox only held for review do not prove this is a fee page.
                SELECT 1 FROM raw_fee_observations fr
                 WHERE fr.source = 'knox' AND fr.source_document_id = adt.source_document_id
+                  AND fr.outlier_flags ? 'needs_darwin_verification'
              ) AS has_knox_fees
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id
@@ -815,7 +887,10 @@ export async function runRosettaRead(
     );
     results.push(result);
     if (dryRun || result.status === "known_failure") continue;
-    await recordReadResult(db, options.runId, result, normalizedText);
+    // A re-read replaces the earlier text only with a better answer; otherwise the old
+    // text stays and only the attempt is logged.
+    const keepEarlierText = result.reread && result.status !== "completed" && result.status !== "wrong_document";
+    if (!keepEarlierText) await recordReadResult(db, options.runId, result, normalizedText);
     if (result.status === "wrong_document") {
       if (
         await sendBackToMagellan(db, {
@@ -849,6 +924,8 @@ export async function runRosettaRead(
           content_type: result.contentType,
           router: result.routerReason,
           from_vault: result.fromVault,
+          table_rows: result.tableRows,
+          reread: result.reread,
           page_check: result.pageCheck,
           error: result.error,
         },
@@ -894,6 +971,8 @@ export async function runRosettaRead(
     wrongDocuments: results.filter((result) => result.status === "wrong_document").length,
     sentBackToMagellan: sentBack + triage.sentBack,
     readFromVault: results.filter((result) => result.fromVault).length,
+    reread: results.filter((result) => result.reread).length,
+    tableRows: results.reduce((total, result) => total + result.tableRows, 0),
     triagedTexts: triage.checked,
     triagedWrongDocuments: triage.wrong,
     chars: results.reduce((total, result) => total + result.charCount, 0),

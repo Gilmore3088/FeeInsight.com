@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_VERIFY_STRATEGY, runDarwinVerify } from "./verify";
+import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, verificationReasonCode, type RawFeeRow } from "./verify";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -128,6 +128,7 @@ describe("Darwin agentic verification", () => {
     expect(insertSql).toContain("INSERT INTO hamilton_signals");
     expect(JSON.stringify(db.mock.calls)).toContain("darwin_verification_needs_review");
     expect(JSON.stringify(db.mock.calls)).toContain("verification_needs_review");
+    expect(JSON.stringify(db.mock.calls)).toContain("missing_canonical");
     expect(JSON.stringify(db.mock.calls)).toContain("Missing or invalid canonical hint");
   });
 
@@ -143,6 +144,69 @@ describe("Darwin agentic verification", () => {
     const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
     expect(unsafeSql).toContain("JOIN institution_sources inst ON inst.id = fr.institution_id");
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
+  });
+
+  describe("reason codes", () => {
+    const row = rawFee as unknown as RawFeeRow;
+
+    it("gives every failed rule its own code", () => {
+      expect(verificationReasonCode(row, "overdraft")).toBeNull();
+      expect(verificationReasonCode(row, null)).toBe("missing_canonical");
+      expect(verificationReasonCode({ ...row, fee_name: " " }, "overdraft")).toBe("missing_name");
+      expect(verificationReasonCode({ ...row, source_url: null, document_r2_key: null }, "overdraft")).toBe("missing_lineage");
+      expect(verificationReasonCode({ ...row, amount: null }, "overdraft")).toBe("invalid_amount");
+      expect(verificationReasonCode({ ...row, amount: "-5" }, "overdraft")).toBe("invalid_amount");
+      expect(verificationReasonCode({ ...row, amount: "350.00" }, "overdraft")).toBe("outside_envelope");
+      expect(verificationReasonCode({ ...row, amount: "350.00" }, "safe_deposit_box")).toBeNull();
+    });
+
+    it("accepts $0 only when Knox read explicit free-fee language", () => {
+      expect(verificationReasonCode({ ...row, amount: "0" }, "paper_statement")).toBe("invalid_amount");
+      expect(
+        verificationReasonCode(
+          { ...row, amount: "0.00", outlier_flags: ["knox_review:zero", "needs_darwin_verification", "canonical_hint:paper_statement"] },
+          "paper_statement",
+        ),
+      ).toBeNull();
+    });
+  });
+
+  it("verifies a free fee and marks it zero_fee for Hamilton", async () => {
+    const db = createDbMock([
+      {
+        ...rawFee,
+        fee_name: "Paper statement",
+        amount: "0.00",
+        outlier_flags: ["knox_review:zero", "needs_darwin_verification", "canonical_hint:paper_statement"],
+      },
+    ]);
+
+    const result = await runDarwinVerify({ runId: 105, db: asVerifyDb(db) });
+
+    expect(result).toMatchObject({ verifiedFees: 1, zeroFeesVerified: 1 });
+    const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
+    expect(insert?.slice(1)).toContain(JSON.stringify(["agentic_darwin_verified", "zero_fee"]));
+  });
+
+  it("sends out-of-range amounts to review with the category's range in the signal", async () => {
+    const db = createDbMock([{ ...rawFee, amount: "350.00" }]);
+
+    const result = await runDarwinVerify({ runId: 106, db: asVerifyDb(db) });
+
+    expect(result.results[0]).toMatchObject({ status: "skipped", decision: "needs_review", reasonCode: "outside_envelope" });
+    expect(result.reasonCounts).toEqual({ outside_envelope: 1 });
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("amount_envelopes");
+    expect(calls).toContain("outside_envelope");
+  });
+
+  it("verifies the same fee line once per batch", async () => {
+    const db = createDbMock([rawFee, { ...rawFee, fee_raw_id: 802 }]);
+
+    const result = await runDarwinVerify({ runId: 107, db: asVerifyDb(db) });
+
+    expect(result).toMatchObject({ verifiedFees: 1, skippedFees: 1, reasonCounts: { duplicate_in_batch: 1 } });
+    expect(result.results[1]).toMatchObject({ decision: "duplicate" });
   });
 
   describe("with the learning core", () => {
@@ -188,6 +252,17 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 402, db: asVerifyDb(db) });
 
       expect(String(db.unsafe.mock.calls[0][0])).toContain("fr.outlier_flags ? 'needs_darwin_verification'");
+    });
+
+    it("takes whole source documents, never part of one", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
+
+      const query = String(db.unsafe.mock.calls[0][0]);
+      expect(query).toContain("COALESCE(fr.source_document_id::text, 'row:' || fr.fee_raw_id::text) AS batch_document_key");
+      expect(query).toContain("WHERE rows_before < $1");
+      expect(query).not.toMatch(/LIMIT \$1/);
     });
   });
 });

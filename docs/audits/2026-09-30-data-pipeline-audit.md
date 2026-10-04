@@ -23,6 +23,9 @@ Tracked in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`.
 | R-H4 crawler User-Agent (`FeeInsightBot/1.0 (<Agent>; +https://feeinsight.com/contact)`) | Fixed in Phase 0; no separate `/bot` page, by owner decision |
 | Learning core L1–L3 (attempt log, playbook, router); content idempotency for fetch, read and extract (R-D4, part 1); byte-based format detection and the OCR flip-flop | Fixed in Phase 1a (`src/lib/agents/learning/`). Existing duplicates and the unique index come in a later dedupe workflow. |
 | R-D2 statistics contract (per-institution dedupe, $0 included, n≥5 for a median, ≥20 for "strong", sourced rows only per R-D5) | Fixed in Phase 1g in TypeScript (`src/lib/data-store/fee-stats.ts`). Materializing it into `fee_index_cache` after each publish is still open. |
+| Table rows split from their amounts (HTML tables, PDF columns) | Fixed in Phase 1D: `read.html_dom` and `read.pdf_layout` (Rosetta version 2), with a one-time re-read of older texts that yielded fewer than 5 Knox fees; Knox re-extracts a text that changed and retires the older text's unverified rows |
+| Knox regex losses (`$1500` as $150, service charges filed as maintenance, waived/$0/range/percentage rows dropped) | Fixed in Phase 1E (`knox/rules.ts`, extract.rules version 2). Range and percentage rows are held for review; free fees go on to Darwin (Phase 1F) |
+| Darwin and Hamilton rejected every $0 fee; one global $2,500 bound; skipped rows re-selected forever; changed fees left two live prices; fabricated publish event id | Fixed in Phase 1F: verify.rules version 2 (reason codes, per-category ranges, lineage and batch-duplicate checks, explicit $0) and publish.rules version 2 ($0 publishing, supersede plus `fee_change_records`, Darwin's event id, savepoints, attempt log, dry-run parity). Closing rows when a fee line disappears is still open |
 | Everything else | Phases 1–3 |
 
 ---
