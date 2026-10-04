@@ -842,6 +842,7 @@ describe("agentic run store", () => {
         db: txMock,
       }),
     );
+    expect(combinedTransactionSql()).toContain("pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))");
     expect(txMock.unsafe).not.toHaveBeenCalledWith(
       expect.stringContaining("FROM published_fee_records"),
     );

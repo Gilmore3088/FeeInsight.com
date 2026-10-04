@@ -568,6 +568,10 @@ async function executeAgenticStep(
     case "publish":
     case "publish-index":
     case "publish-context": {
+      // Lanes run side by side, and the outlier and duplicate sweeps below touch every
+      // state's live rows. One publish step at a time keeps two sweeps from locking the
+      // same rows in opposite orders; the lock ends with this step's transaction.
+      await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
       const institutionId = numericRunParam(params, ["institution_id"]);
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
@@ -1553,8 +1557,9 @@ export async function executeQueuedAgentRuns({
      ORDER BY r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
-  const results: AgentRunExecutionResult[] = [];
-  for (const row of rows) {
+  // Runs advance side by side (different states in parallel). Each step claims its run
+  // under a row lock, so two runs never share a step.
+  const results = await Promise.all(rows.map(async (row): Promise<AgentRunExecutionResult> => {
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -1566,8 +1571,8 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt }));
-  }
+    return executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt });
+  }));
   return { selected: rows.length, results };
 }
 
