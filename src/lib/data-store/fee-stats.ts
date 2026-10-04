@@ -15,15 +15,15 @@
  */
 import { computePercentile, computeStats } from "./fees";
 
-export const MIN_INSTITUTIONS_FOR_MEDIAN = 5;
-export const STRONG_INSTITUTION_COUNT = 20;
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
+
+export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
 export const STATS_METHOD_VERSION = 2;
 
 /** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
 export const STATS_ROW_FILTER = "ef.source_document_id IS NOT NULL";
 
-export type MaturityTier = "strong" | "provisional" | "insufficient";
 
 export interface StatsInputRow {
   institution_id: number | string;
@@ -45,11 +45,6 @@ export interface FeeStatistics {
   maturity_tier: MaturityTier;
 }
 
-export function maturityTier(institutionCount: number): MaturityTier {
-  if (institutionCount >= STRONG_INSTITUTION_COUNT) return "strong";
-  if (institutionCount >= MIN_INSTITUTIONS_FOR_MEDIAN) return "provisional";
-  return "insufficient";
-}
 
 function toAmount(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
