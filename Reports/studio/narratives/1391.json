@@ -1,46 +1,72 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your stop-payment fee ($25 vs a $30 median) and two other lines sit below the market range.",
   "findings": [
     {
-      "stat": "$30 vs $15",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF fee is double the peer median.",
-      "body": "At $30.00, your returned-item fee is 2x the median of 34 peer banks — the 82nd percentile. A quarter of your cohort now charges $6.25 or less as the industry retreats from NSF fees under regulatory scrutiny. It is the one conspicuous line on an otherwise customer-friendly schedule."
+      "stat": "3 lines",
+      "stat_label": "priced below the market range",
+      "headline": "Several lines are priced below the market.",
+      "body": "Your stop-payment fee ($25 vs a $30 median), cashier's check fee ($3 vs a $6 median) and incoming wire fee ($5 vs a $12.50 median) each sit below the peer 25th percentile. These are customer-favorable positions that peers' published schedules can verify."
     },
     {
-      "stat": "$0.25",
-      "stat_label": "paper statement vs $3.58 median",
-      "headline": "You are the cheapest bank in the room — quietly.",
-      "body": "Paper statements ($0.25 vs a $3.58 median, 7th percentile), cashier's checks ($3 vs $5.50, 8th percentile — the cohort minimum), incoming domestic wires ($5 vs $12.50, 17th percentile), and card replacement ($5 vs $10) all sit at or near the bottom of your cohort. That is a genuine low-fee story no one is telling."
+      "stat": "2 of 5",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 5 fee lines where we found both your published amount and at least eight comparable peers, two sit between the peer 25th and 75th percentiles and three below."
     },
     {
-      "stat": "3 gaps",
-      "stat_label": "core fees missing from schedule",
-      "headline": "Three benchmark categories are invisible to comparison.",
-      "body": "Overdraft, monthly maintenance, and deposited-item-return fees did not appear in your published schedule data. In an era when fee schedules are scraped and compared, an unpublished fee reads as either a hidden fee or a missed chance to show pricing that — given the rest of your schedule — is probably competitive."
+      "stat": "1 fee",
+      "stat_label": "not found in your published schedule",
+      "headline": "Some headline fees are not in the schedule we found.",
+      "body": "We did not find a monthly maintenance fee in your published documents, although 10 or more peers publish one. If you charge it, the amount may sit in a separate disclosure; customers comparing schedules online will not see it."
     }
   ],
-  "exec_narrative": "Net position: First Bank runs a barbell. One side is a $30 NSF fee at double the median of 34 comparable banks — the 82nd percentile and the single line most likely to draw attention. The other side is a service-fee stack priced at or near the cohort floor: paper statements, cashier's checks, incoming wires, and card replacement all sit in the bottom third of peers, several at the literal minimum. Three core categories are missing from the published data entirely. The pricing conversation writes itself: decide the NSF fee deliberately, publish the missing lines, and start taking credit for the low-fee posture you already have.",
+  "exec_narrative": "First Bank is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Texas have published data, so local competitors may price differently. Of 5 rankable lines, two sit inside the middle half of the market and three below it (stop-payment fee, cashier's check fee and incoming wire fee). We would suggest one step: check that the monthly maintenance fee is published where customers can find it.",
   "callouts": [
     {
-      "kind": "risk",
-      "title": "NSF / returned item — $30.00",
-      "stat": "Peer median $15.00 · P25 $6.25 · 82nd percentile · n=34",
-      "body": "Your NSF fee is exactly double the peer median, and the distribution is moving away from you — a quarter of comparable banks now charge $6.25 or less as institutions retire returned-item fees ahead of regulatory and reputational pressure. Whether the answer is a cut, a cap, or a documented rationale, this line deserves a decision rather than a default, because it is the fee most likely to appear in a local fee survey next to your name."
+      "kind": "opportunity",
+      "title": "Stop-payment fee — $25",
+      "stat": "Peer median $30 · middle half $29.75–$31.25 · 17th percentile · n=12",
+      "body": "Published as “Stop Payment - all items.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $30 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Service fees — a bottom-decile stack, marketed nowhere",
-      "stat": "Paper statement $0.25 vs $3.58 (P7) · Cashier's check $3 vs $5.50 (P8) · Incoming wire $5 vs $12.50 (P17) · Card replacement $5 vs $10 (P31)",
-      "body": "Four consumer-facing service fees sit at or near the bottom of your cohort — two at the cohort minimum. Competitors' own published schedules substantiate a 'lower everyday fees than most banks' claim. If deliberate, this belongs in your marketing; if not deliberate, it is margin available without touching the NSF headline."
+      "title": "Cashier's check fee — $3",
+      "stat": "Peer median $6 · middle half $5–$7.50 · 0th percentile · n=11",
+      "body": "Published as “Cashier's check.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $6 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "Unpublished fees — overdraft, maintenance, deposited item return",
-      "stat": "3 of 15 benchmark categories flagged as data gaps · peer medians $30.00 / $12.00 / $12.00",
-      "body": "The categories missing from your published data include overdraft — the most scrutinized consumer fee in banking. Peers publish these lines and get compared on them; you don't and can't. Publishing converts an information gap into a transparency point, and given how the rest of your schedule prices, the comparison would likely flatter you."
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Monthly maintenance fee: published by 10 peers (median $8.75)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
+    },
+    {
+      "kind": "opportunity",
+      "title": "Lines with too few peers to rank",
+      "stat": "Non-network ATM fee $1 (n=5, median $2.25) · Card replacement fee $5 (n=6, median $10)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($15) sits at half your posted fee and a quarter of peers charge $6.25 or less. Second, published fee schedules have become marketing documents: they are public, scraped, and compared, which turns every outlier line into a small reputational bet and every unpublished line into an open question.</p><p>Mid-sized community banks sit in an exposed middle: large enough to show up in comparisons and examiner conversations, without the brand gravity that lets the largest institutions price premiums quietly. In that position, the highest-leverage moves are surgical — resolve the one conspicuous outlier, close the publication gaps, and actively advertise a service-fee stack that already prices at the bottom of the cohort.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing First Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return",
+    "nsf",
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 5,
+    "above": [],
+    "below": [
+      "stop_payment",
+      "cashiers_check",
+      "wire_domestic_incoming"
+    ],
+    "gaps": [
+      "monthly_maintenance"
+    ],
+    "thin": 2
+  }
 }

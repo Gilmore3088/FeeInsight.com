@@ -63,7 +63,7 @@ export default async function ProDistrictsPage() {
           return (
             <Link
               key={m.district}
-              href={`/pro/districts/${m.district}`}
+              href={`/research/district/${m.district}`}
               className="group rounded-xl border border-warm-200/80 bg-white/70 backdrop-blur-sm p-5 hover:shadow-md hover:border-warm-300 transition-all duration-200 no-underline"
             >
               {/* District header */}

@@ -1,52 +1,70 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your outgoing domestic wire fee ($35) is $10 above the $25 peer median, the highest of the 10 peers that publish it.",
   "findings": [
     {
-      "stat": "$32 vs $12",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF fee is an extreme outlier.",
-      "body": "At $32.00, your returned-item fee is 2.7x the median of 35 peer banks — the 89th percentile. A quarter of your peers now charge $5 or less, reflecting the industry-wide move away from NSF fees under regulatory scrutiny. This is the single most visible line on your fee schedule."
+      "stat": "$35 vs $25",
+      "stat_label": "outgoing domestic wire fee, yours vs peer median",
+      "headline": "Your outgoing domestic wire fee is above the market range.",
+      "body": "At $35, it is $10 above the $25 peer median and the highest of the 10 peers that publish it (middle half of the market: $21.25–$28.75). Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions."
     },
     {
-      "stat": "P94",
-      "stat_label": "incoming domestic wire percentile",
-      "headline": "You charge a quiet premium on exception activity.",
-      "body": "Incoming domestic wires ($20 vs a $15 median) sit at the 94th percentile, and overdraft-protection transfers run double the peer median ($10 vs $5). Individually small, together these place your penalty-and-exception fee stack in the top quartile of your cohort."
+      "stat": "$7.50 vs $10",
+      "stat_label": "card replacement fee, yours vs peer median",
+      "headline": "Your card replacement fee is priced below the market.",
+      "body": "Your card replacement fee ($7.50 vs a $10 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify."
     },
     {
-      "stat": "-10%",
-      "stat_label": "stop payment vs peer median",
-      "headline": "You are below market on service fees — and nobody knows.",
-      "body": "Stop payments ($27 vs $30 median, 27th percentile) and card replacement ($7.50 vs $10.00 median) are priced below most peers. That is either unclaimed margin or an untold customer-friendly story; today it is neither, because it is invisible."
+      "stat": "2 more",
+      "stat_label": "lines above the market range",
+      "headline": "Smaller premiums elsewhere on the schedule.",
+      "body": "Your stop-payment fee ($35 vs a $31 median, n=16) and your incoming wire fee ($20 vs a $14.50 median, n=16) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison."
     }
   ],
-  "exec_narrative": "Net position: Bank of the Pacific prices core account services at market (monthly maintenance and overdraft are within a dollar of the peer median) while carrying a distinctly top-quartile posture on penalty and exception fees — led by an NSF fee that qualifies as an extreme statistical outlier against 35 comparable banks. The exposure is asymmetrical: the outlier fees invite attention, while the below-market service fees earn no credit. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Bank of the Pacific is compared with 68 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Washington have published data, so local competitors may price differently. Of 12 rankable lines, eight sit inside the middle half of the market, three above it (outgoing domestic wire fee, stop-payment fee and incoming wire fee), and one below it (card replacement fee). We would suggest one step: review the outgoing domestic wire fee, which sits above the market range; the peer median of $25 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "NSF / returned item — $32.00",
-      "stat": "Peer median $12.00 · P25 $5.00 · 89th percentile · n=35 · flagged: extreme outlier (>2x median)",
-      "body": "The peer distribution tells the story: a quarter of comparable banks now charge $5 or less, and the median has fallen to $12 as institutions retire NSF fees ahead of regulatory and reputational pressure. A $32 NSF fee is increasingly conspicuous — in examiner conversations, in local-press fee surveys, and on comparison sites. Whether the right answer is a cut, a cap, or a documented rationale, this line item deserves a decision rather than a default."
+      "title": "Outgoing domestic wire fee — $35",
+      "stat": "Peer median $25 · middle half $21.25–$28.75 · range $15–$35 · 100th percentile · n=10",
+      "body": "Published as “Outgoing domestic wire transfer (branch).” At $35 it is $10 above the $25 peer median. Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "Incoming domestic wire — $20.00",
-      "stat": "Peer median $15.00 · P75 $15.00 · 94th percentile · n=17",
-      "body": "Charging above the 75th percentile to RECEIVE money is a friction fee on your most attractive customers — businesses and high-balance households move wires. At $5 over median it earns little revenue but sits at the very top of the cohort."
+      "title": "Stop-payment fee — $35",
+      "stat": "Peer median $31 · middle half $30–$34.25 · range $20–$40 · 81st percentile · n=16",
+      "body": "Published as “Stop payment and renewals (branch).” At $35 it is $4 above the $31 peer median. It is infrequent, but it appears in most side-by-side schedule comparisons. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $31 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "OD protection transfer — $10.00",
-      "stat": "Peer median $5.00 · 83rd percentile · n=23",
-      "body": "Customers who enroll in overdraft protection are doing exactly what institutions ask of them; charging double the peer median for the transfer undercuts the message. This fee is also increasingly waived outright among competitors."
+      "title": "Incoming wire fee — $20",
+      "stat": "Peer median $14.50 · middle half $10–$15 · range $10–$25 · 94th percentile · n=16",
+      "body": "Published as “Incoming wire transfer.” At $20 it is $5.50 above the $14.50 peer median. Charging to receive funds is increasingly uncommon and is noticed by business customers. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $14.50 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Service fees — priced below market, marketed nowhere",
-      "stat": "Stop payment $27 vs $30 median (P27) · Card replacement $7.50 vs $10.00 median (P28)",
-      "body": "Two consumer-facing service fees run meaningfully below your cohort. If deliberate, they belong in your marketing: 'lower service fees than most banks in your market' is a claim your competitors' own published schedules substantiate. If not deliberate, they are margin available without touching a single headline fee."
+      "title": "Card replacement fee — $7.50",
+      "stat": "Peer median $10 · middle half $9–$10 · 18th percentile · n=11",
+      "body": "Published as “Replacement card.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $10 is the reference point."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($12) now sits at less than half your posted fee and a quarter of peers charge $5 or less. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet.</p><p>Community-scale institutions ($1B–$10B) occupy the exposed middle: large enough to be included in comparisons, without the brand gravity that lets money-center banks charge premiums quietly. In that position, the highest-leverage moves are usually not across-the-board cuts but surgical ones — retiring or capping the one or two conspicuous outliers while actively advertising the fees already priced below market.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Bank of the Pacific with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "monthly_maintenance"
+  ],
+  "summary": {
+    "ranked": 12,
+    "above": [
+      "wire_domestic_outgoing",
+      "stop_payment",
+      "wire_domestic_incoming"
+    ],
+    "below": [
+      "card_replacement"
+    ],
+    "gaps": [],
+    "thin": 0
+  }
 }

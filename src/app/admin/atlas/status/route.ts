@@ -91,7 +91,7 @@ function mapEvent(event: AgentRunEventSnapshot) {
 
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user || !hasPermission(user, "view")) {
+  if (!user || !hasPermission(user, "operate")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -72,7 +72,7 @@ async function handlePOST(request: NextRequest) {
       );
     }
 
-    const [existing] = await sql`SELECT id FROM leads WHERE email = ${email}`;
+    const [existing] = await sql`SELECT id FROM leads WHERE lower(email) = lower(${email})`;
 
     if (existing) {
       // Fill gaps only: never overwrite a qualified lead's name/company/role/use_case,
@@ -96,13 +96,13 @@ async function handlePOST(request: NextRequest) {
             ELSE source || ',' || ${source}
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
-        WHERE email = ${email}`;
+        WHERE lower(email) = lower(${email})`;
       if (placement && useCase) {
         // Capture attribution accumulates too: a returning lead signing up from a new
         // placement keeps its earlier use_case and gains this placement's context.
         await sql`
           UPDATE leads SET use_case = use_case || '; ' || ${useCase}
-          WHERE email = ${email}
+          WHERE lower(email) = lower(${email})
             AND use_case IS NOT NULL
             AND position(${useCase} in use_case) = 0`;
       }

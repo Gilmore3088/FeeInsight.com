@@ -1,46 +1,62 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your NSF / returned-item fee ($7 vs a $29 median) and one other line sit below the market range.",
   "findings": [
     {
-      "stat": "$5 vs $25",
-      "stat_label": "card replacement vs peer median",
-      "headline": "You are priced at or below market almost everywhere.",
-      "body": "Card replacement runs $5.00 against a $25.00 peer median (31st percentile), monthly maintenance $1.00 against $7.50 (25th percentile), and deposited-item returns $3.00 against a $25.00 median. Across the published schedule, Redwood prices at or under comparable large credit unions on nearly every line. That is the finding: the schedule is an asset, and it is currently a silent one."
+      "stat": "2 lines",
+      "stat_label": "priced below the market range",
+      "headline": "Several lines are priced below the market.",
+      "body": "Your NSF / returned-item fee ($7 vs a $29 median) and overdraft fee ($14 vs a $28.50 median) each sit below the peer 25th percentile. Below-market returned-item pricing is a position many institutions are moving toward. If the pricing is deliberate, it is worth stating plainly in account marketing."
     },
     {
-      "stat": "$7 vs $15",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF posture is ahead of the retreat.",
-      "body": "At $7.00 against a $15.00 median (40th percentile among the five peers with published data), your NSF fee already sits below the market that regulatory and reputational pressure is pushing downward. Peers still working out how to exit NSF pricing are headed toward where you already are — a position worth claiming publicly before it becomes ordinary."
+      "stat": "2 of 4",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 4 fee lines where we found both your published amount and at least eight comparable peers, two sit between the peer 25th and 75th percentiles and two below."
     },
     {
-      "stat": "$22 vs $15",
-      "stat_label": "stop payment vs peer median",
-      "headline": "The one exception: stop payment.",
-      "body": "Your $22.00 stop-payment fee is the highest among the three peers with published data, against a $15.00 median. The sample is thin, so treat the percentile as directional — but on a schedule priced below market nearly everywhere else, this is the single line above it, and the only candidate for the outlier label."
+      "stat": "16th",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is a smaller contributor than at most peers.",
+      "body": "Service-charge income was 19.2 basis points of assets in your latest full-year filing, against a 41.5 bps median for 448 same-size credit unions."
     }
   ],
-  "exec_narrative": "Net position: Redwood Credit Union is priced at market or below almost everywhere — card replacement, monthly maintenance, deposited-item returns, and NSF all sit under their peer medians, and wires and minimum-balance fees hold at or below the middle of the cohort. The lone exception is a $22 stop-payment fee at the top of a small comparison set. One caveat: peer samples in this large-credit-union cohort are thin (one to thirteen institutions per category), so percentiles are directional rather than precise. The strategic agenda is therefore short: decide the one exception, and convert the rest of the schedule from a quiet fact into a marketed advantage.",
+  "exec_narrative": "Redwood Credit Union is compared with 38 credit unions $300M–$10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 4 rankable lines, two sit inside the middle half of the market and two below it (NSF / returned-item fee and overdraft fee). We would suggest one step: state the below-market NSF / returned-item fee in account marketing, where peers' published schedules make it verifiable.",
   "callouts": [
     {
       "kind": "opportunity",
-      "title": "Everyday fees — below market across the schedule",
-      "stat": "Card replacement $5.00 vs $25.00 median (P31) · Monthly maintenance $1.00 vs $7.50 median (P25) · Deposited item return $3.00 vs $25.00 median",
-      "body": "Three consumer-facing fees price at a fraction of the cohort, and nothing on the schedule contradicts them. 'Lower fees than comparable credit unions' is a claim your peers' own published schedules substantiate — verifiable by any member in minutes. The below-market position is already paid for; the only missing piece is telling members it exists."
+      "title": "NSF / returned-item fee — $7",
+      "stat": "Peer median $29 · middle half $20–$30 · 0th percentile · n=9",
+      "body": "Published as “Non-Sufficient Funds (NSF) Fee.” Below-market returned-item pricing is a position many institutions are moving toward. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $29 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "NSF / returned item — $7.00",
-      "stat": "Peer median $15.00 · 40th percentile · n=5",
-      "body": "The industry retreat from NSF fees is the most visible fee story of the decade, and you are already on the right side of it at less than half the peer median. This is a limited-time marketing asset: as more peers cut or eliminate the fee, the differentiation shrinks. Claiming the position now — in member communications and comparison contexts — captures value that waiting forfeits."
+      "title": "Overdraft fee — $14",
+      "stat": "Peer median $28.50 · middle half $23.75–$29.25 · 13th percentile · n=8",
+      "body": "Published as “Overdraft/Non-Sufficient Fund Overdraft Pay Advantage Fee.” A below-market overdraft fee is a claim peers' own published schedules can substantiate. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $28.50 is the reference point."
     },
     {
-      "kind": "risk",
-      "title": "Stop payment — $22.00",
-      "stat": "Peer median $15.00 · peer max $22.00 · n=3",
-      "body": "Only three peers publish this fee, so the evidence is directional — but you hold the top of that small set, $7 over the median, on a service members request in moments of stress. On an otherwise below-market schedule this is the one line that invites a question. A move toward $15 would cost little and make the schedule's story unqualified; holding at $22 merely warrants a conscious decision."
+      "kind": "opportunity",
+      "title": "Lines with too few peers to rank",
+      "stat": "Cashier's check fee $6 (n=5, median $5) · Deposited-item return fee $22 (n=3, median $15) · Paper statement fee $2 (n=5, median $3) · Stop-payment fee $22 (n=7, median $30) · Outgoing international wire fee $45 (n=3, median $50)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF and penalty pricing: the largest institutions have eliminated returned-item fees under regulatory and reputational pressure, and the movement has spread across the industry — a shift your own $7 NSF fee anticipates rather than follows. Second, published fee schedules have become marketing documents in practice: public, scraped, and compared, which means a below-market schedule is only an advantage to the extent members and prospects can find out about it.</p><p>Large community credit unions occupy the exposed middle of that landscape: big enough to appear in every comparison and fee survey, without the brand gravity that lets money-center banks price premiums quietly. For most institutions in that position the work is defensive — retiring conspicuous outliers. Your position inverts it: with one modest exception, the schedule already wins the comparison, so the highest-leverage move is offense — putting the fee story in front of members and prospects while the differentiation is still wide.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Redwood Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "monthly_maintenance"
+  ],
+  "summary": {
+    "ranked": 4,
+    "above": [],
+    "below": [
+      "nsf",
+      "overdraft"
+    ],
+    "gaps": [],
+    "thin": 5
+  }
 }

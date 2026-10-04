@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, ClipboardCheck, Clock3, Database, FileText, type LucideIcon } from "lucide-react";
+import { InfoTip } from "@/components/public/info-tip";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { NO_VERDICT_LABEL, type RatingResult } from "@/lib/institution-rating";
 import { formatFeeAmount } from "@/lib/format";
@@ -88,17 +89,19 @@ export function FeeProfileSummary({
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
             {factsOnly ? "Headline fees vs. national median" : "Verified Fee Profile"}
           </p>
-          <h2 className="mt-2 text-xl font-semibold text-[#1A1815]">
-            {factsOnly ? "How the headline fees compare" : rating.label}
-          </h2>
+          <div className="mt-2 flex items-center gap-1.5">
+            <h2 className="text-xl font-semibold text-[#1A1815]">
+              {factsOnly ? "How the headline fees compare" : rating.label}
+            </h2>
+            {factsOnly && (
+              <InfoTip label="About this comparison">
+                Each figure below is the published fee set against the national median. The commissioned
+                report benchmarks every fee against a verified peer set instead.
+              </InfoTip>
+            )}
+          </div>
           {!factsOnly && (
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#5A5347]">{interpretation}</p>
-          )}
-          {factsOnly && (
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#5A5347]">
-              Each figure below is the published fee set against the national median. The commissioned
-              report benchmarks every fee against a verified peer set instead.
-            </p>
           )}
         </div>
         {overdraftAmount !== null && (

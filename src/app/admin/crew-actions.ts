@@ -14,7 +14,7 @@ function errorReply(error: unknown): CrewReply {
 
 /** Answer a crew command. Writes only come back as a proposal to confirm. */
 export async function askCrew(text: string): Promise<CrewReply> {
-  await requireAuth("view");
+  await requireAuth("operate");
   const commandText = String(text ?? "").slice(0, MAX_COMMAND_LENGTH);
   try {
     return await answerCrewCommand(parseCrewCommand(commandText), commandText);

@@ -17,6 +17,7 @@ const {
   runMagellanFetchMock,
   runPublicDiscoveryAuditMock,
   runRosettaReadMock,
+  runRegistryStepMock,
 } = vi.hoisted(() => {
   const tx = vi.fn() as TxMock;
   tx.unsafe = vi.fn();
@@ -36,6 +37,7 @@ const {
     runMagellanFetchMock: vi.fn(),
     runPublicDiscoveryAuditMock: vi.fn(),
     runRosettaReadMock: vi.fn(),
+    runRegistryStepMock: vi.fn(),
   };
 });
 
@@ -82,6 +84,11 @@ vi.mock("@/lib/agents/magellan/discovery", () => ({
 
 vi.mock("@/lib/agents/magellan/fetch", () => ({
   runMagellanFetch: runMagellanFetchMock,
+}));
+
+vi.mock("@/lib/agents/magellan/registry", () => ({
+  isRegistryStepKey: (key: string) => key.startsWith("registry-"),
+  runRegistryStep: runRegistryStepMock,
 }));
 
 vi.mock("@/lib/agents/public-discovery", () => ({
@@ -503,6 +510,53 @@ describe("agentic run store", () => {
     expect(txMock.unsafe).not.toHaveBeenCalledWith(
       expect.stringContaining("fee_schedule_url IS NOT NULL"),
     );
+  });
+
+  it("runs a registry partition step outside a transaction with its partition key", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    runRegistryStepMock.mockResolvedValue({
+      status: "completed",
+      summary: "Magellan pulled 4,400 FDIC call reports for 2026Q2.",
+      detail: { partition_key: "2026Q2", parsed_rows: 4400 },
+    });
+    const registryStepRows = [
+      {
+        ...queuedStepRows[0],
+        step_key: "registry-fdic-financials",
+        title: "Pull FDIC call-report financials 2026Q2",
+        input_payload: { partition_key: "2026Q2" },
+      },
+    ];
+    const registryRunRow = {
+      ...runRow,
+      agent_name: "magellan",
+      params_json: { source: "magellan.registry", partition_key: "2026Q2" },
+    };
+    installSqlMocks({ finalRun: registryRunRow, finalSteps: registryStepRows });
+    installTxMocks(registryStepRows, registryRunRow);
+
+    await startAgentRun({
+      agent: "magellan",
+      kind: "workflow",
+      title: "Magellan registry",
+      params: { source: "magellan.registry", partition_key: "2026Q2" },
+      triggeredBy: "test",
+      steps: [{ key: "registry-fdic-financials", agent: "magellan", title: "Pull FDIC call-report financials" }],
+    });
+    const transactionsBefore = withTransactionMock.mock.calls.length;
+    await executeAgentRun(101);
+
+    expect(runRegistryStepMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stepKey: "registry-fdic-financials",
+        runId: 101,
+        partitionKey: "2026Q2",
+        dryRun: false,
+        db: sqlMock,
+      }),
+    );
+    // prepare + finish each open a transaction; the network step itself does not.
+    expect(withTransactionMock.mock.calls.length - transactionsBefore).toBe(2);
   });
 
   it("passes state lane scope into worker execution", async () => {

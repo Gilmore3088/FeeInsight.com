@@ -49,6 +49,12 @@ async function handlePOST(req: Request) {
 
           console.log(`[stripe-webhook] checkout.session.completed: customer=${customerId}, email=${email}, metadata=${JSON.stringify(session.metadata)}`);
 
+          // Pro is a subscription; a completed one-time payment must never grant it.
+          if (session.mode !== "subscription") {
+            console.warn(`[stripe-webhook] ignoring non-subscription checkout (mode=${session.mode})`);
+            break;
+          }
+
           if (customerId && email) {
             const activatedUsers = await tx<Array<{ id: number; email: string | null }>>`
               UPDATE users

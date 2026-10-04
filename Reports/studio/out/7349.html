@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -239,7 +252,7 @@
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">
-    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Aug 16, 2026</span></div>
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
     <div class="title">
       <div class="series">Prepared exclusively for one institution</div>
       <h1>Competitive<br>Fee <em>Position</em></h1>
@@ -247,13 +260,13 @@
         <span class="instname">Dfcu Financial Federal Credit Union</span>
       </div>
       <div class="instmeta">Dearborn, MI<i>·</i>Credit Union<i>·</i>Community credit union, $1B–$10B</div>
-      <p class="cohortnote">Peer cohort: 41 comparable community credit unions. Not every peer publishes every fee: 5 publish an NSF fee and 2 an overdraft fee, so those are the comparison sets for those lines.</p>
+      <p class="cohortnote">Compared with 38 credit unions with $300M–$10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
     </div>
-    <div class="ghost">41</div>
+    <div class="ghost">38</div>
     <div class="card">
-      <div><div class="lbl">Peer cohort</div><div class="val">Community credit unions, $1B–$10B</div></div>
+      <div><div class="lbl">Peer cohort</div><div class="val">Credit unions, $300M–$10B · nationwide</div></div>
       <div><div class="lbl">Benchmarked against</div>
-        <div class="big">41<small>peer institutions with published fee schedules</small></div></div>
+        <div class="big">38<small>peer institutions with published fee schedules</small></div></div>
       <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
     </div>
   </div>
@@ -263,17 +276,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>Dfcu Financial Federal Credit Union</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
-    <div class="finding"><div class="num" style="font-size:18pt">$32 vs $15<small>NSF fee vs peer median</small></div>
-   <p><b>Your NSF fee is the highest in your peer set.</b>At $32.00, your NSF fee tops every one of the five comparable large credit unions with published data — more than double the $15 median, and flagged as an extreme outlier. One peer in the set has eliminated the fee entirely. The contrast is sharpened by the rest of your schedule, which is otherwise notably member-friendly: this is the one line that tells a different story.</p></div>
-<div class="finding"><div class="num" style="font-size:24pt">$0<small>two fees fully waived</small></div>
-   <p><b>You waive fees your peers still charge.</b>Non-network ATM transactions ($0 against a $1.00 peer median) and minimum-balance charges ($0 against a $4.00 median) are waived outright on your schedule. These are exactly the small, frequent frictions members notice — and exactly the claims that comparison-minded members verify against published schedules. Today neither waiver appears anywhere in your marketing.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$5 vs $25<small>card replacement vs peer median</small></div>
-   <p><b>Your service-fee stack runs well below market.</b>Card replacement ($5.00 vs a $25.00 median, 31st percentile), overdraft-protection transfers ($5.00 vs a $20.00 median), and stop payments ($10.00 vs $15.00, 33rd percentile) all price under most comparable credit unions. Combined with the waived fees above, this is a coherent member-value posture — undermined only by the NSF outlier, and unclaimed as a story.</p></div>
+    <div class="finding"><div class="num" style="font-size:18pt">$32 vs $24<small>NSF / returned-item fee, yours vs peer median</small></div>
+   <p><b>Your NSF / returned-item fee is above the market range.</b>At $32, it is $8 above the $24 peer median and the 89th percentile of 9 peers (middle half of the market: $20–$29). Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">3 of 4<small>comparable lines inside the market range</small></div>
+   <p><b>Most of your schedule is priced with the market.</b>Of the 4 fee lines where we found both your published amount and at least eight comparable peers, three sit between the peer 25th and 75th percentiles, one above.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">19th<small>percentile, fee income relative to assets</small></div>
+   <p><b>Fee income is a smaller contributor than at most peers.</b>Service-charge income was 21.0 basis points of assets in your latest full-year filing, against a 41.5 bps median for 448 same-size credit unions. That gives room to adjust the lines flagged in this report at limited revenue cost.</p></div>
   </div>
-  <p class="narrative drop">Net position: Dfcu Financial runs one of the more member-friendly published schedules in its cohort — two fees waived outright, a service-fee stack below market — with a single glaring exception: a $32 NSF fee that is the highest among the five comparable large credit unions with published data and more than double their median. One caveat on the data: peer samples in this cohort are thin (four to thirteen institutions for most categories), so percentiles should be read as directional. The strategic question is coherence: either the NSF fee comes into line with the rest of the schedule, or the member-value story stays untellable because its biggest counterexample sits on page one of the fee schedule.</p>
+  <p class="narrative drop">Dfcu Financial Federal Credit Union is compared with 38 credit unions $300M–$10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 4 rankable lines, three sit inside the middle half of the market, one above it (NSF / returned-item fee). We would suggest one step: review the NSF / returned-item fee, which sits above the market range; the peer median of $24 is the reference point.</p>
   <div class="pagefoot"><span>Competitive Fee Position — Dfcu Financial Federal Credit Union</span><span>Fee Insight</span></div>
 </div>
 
@@ -281,94 +294,81 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>Dfcu Financial Federal Credit Union</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. 41 peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: Community credit unions, $1B–$10B — 41 institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">Compared with 38 credit unions with $300M–$10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
-      <tr><td>Non-network ATM</td>
-    <td class="r"><b>$0.00</b></td>
-    <td class="r">$0.75</td><td class="r">$1.00</td>
-    <td class="r">$1.38</td><td class="r">$1.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:25%"></div></div><span class="small muted"> P25</span></td><td><span class="tag waived">waived</span></td></tr>
-<tr><td>Foreign transaction</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">—</td><td class="r">—</td>
-    <td class="r">—</td><td class="r">$1.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Card replacement</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$5.00</td><td class="r">$25.00</td>
-    <td class="r">$45.00</td><td class="r">$28.75</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:31%"></div></div><span class="small muted"> P31</span></td><td></td></tr>
-<tr><td>Cashier's check</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$4.00</td><td class="r">$6.00</td>
-    <td class="r">$8.00</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Deposited item return</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$14.00</td><td class="r">$25.00</td>
-    <td class="r">$37.50</td><td class="r">$20.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Minimum balance</td>
-    <td class="r"><b>$0.00</b></td>
-    <td class="r">$2.25</td><td class="r">$4.00</td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:25%"></div></div><span class="small muted"> P25</span></td><td><span class="tag waived">waived</span></td></tr>
-<tr><td>Monthly maintenance</td>
-    <td class="r"><b>$10.00</b></td>
-    <td class="r">$3.96</td><td class="r">$7.50</td>
-    <td class="r">$25.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:58%"></div></div><span class="small muted"> P58</span></td><td></td></tr>
-<tr><td>NSF / returned item</td>
-    <td class="r"><b>$32.00</b></td>
-    <td class="r">$7.00</td><td class="r">$15.00</td>
-    <td class="r">$24.00</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td><span class="tag outlier">outlier</span></td></tr>
-<tr><td>OD protection transfer</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$5.00</td><td class="r">$20.00</td>
-    <td class="r">$20.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:40%"></div></div><span class="small muted"> P40</span></td><td></td></tr>
-<tr><td>Overdraft</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$8.50</td><td class="r">$15.00</td>
-    <td class="r">$21.50</td><td class="r">$25.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Paper statement</td>
+      <tr><td><span class="cat">Non-network ATM</span><span class="feeline">Other ATM - ATM Monetary Transaction</span></td>
     <td class="r"><b>$2.00</b></td>
-    <td class="r">$2.00</td><td class="r">$2.00</td>
-    <td class="r">$4.00</td><td class="r">$2.75</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:67%"></div></div><span class="small muted"> P67</span></td><td></td></tr>
-<tr><td>Stop payment</td>
-    <td class="r"><b>$10.00</b></td>
-    <td class="r">$12.50</td><td class="r">$15.00</td>
-    <td class="r">$18.50</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:33%"></div></div><span class="small muted"> P33</span></td><td></td></tr>
-<tr><td>Incoming domestic wire</td>
-    <td class="r"><b>$0.00</b></td>
-    <td class="r">$0.00</td><td class="r">$0.00</td>
-    <td class="r">$0.00</td><td class="r">$10.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Outgoing domestic wire</td>
-    <td class="r"><b>$25.00</b></td>
-    <td class="r">$20.00</td><td class="r">$25.00</td>
-    <td class="r">$25.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:80%"></div></div><span class="small muted"> P80</span></td><td></td></tr>
-<tr><td>Outgoing intl. wire</td>
+    <td class="r">$1.13</td><td class="r">$2.50</td>
+    <td class="r">$4.13</td><td class="r muted">10</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:40%"></div></div><span class="small muted"> P40</span></td><td></td></tr>
+<tr><td><span class="cat">Card replacement</span><span class="feeline">ATM/Debit Card Replacement Fee</span></td>
+    <td class="r"><b>$5.00</b></td>
+    <td class="r">$5.00</td><td class="r">$7.50</td>
+    <td class="r">$10.00</td><td class="r muted">10</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
+<tr><td><span class="cat">Cashier's check</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$46.25</td><td class="r">$47.50</td>
-    <td class="r">$48.75</td><td class="r">$42.50</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
+    <td class="r">$2.75</td><td class="r">$5.00</td>
+    <td class="r">$5.75</td><td class="r muted">6</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Deposited item return</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$15.00</td><td class="r">$18.50</td>
+    <td class="r">$25.25</td><td class="r muted">4</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$6.46</td><td class="r">$7.73</td>
+    <td class="r">$9.96</td><td class="r muted">8</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">NSF / returned item</span><span class="feeline">Non-Sufficient Funds Fee</span></td>
+    <td class="r"><b>$32.00</b></td>
+    <td class="r">$20.00</td><td class="r">$24.00</td>
+    <td class="r">$29.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:89%"></div></div><span class="small muted"> P89</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">OD protection transfer</span><span class="feeline">Overdraft Transfer Fee</span></td>
+    <td class="r"><b>$5.00</b></td>
+    <td class="r">$2.75</td><td class="r">$3.50</td>
+    <td class="r">$4.25</td><td class="r muted">2</td>
+    <td><span class="small muted">fewer than 8 peers publish it</span></td><td><span class="tag gap">few peers</span></td></tr>
+<tr><td><span class="cat">Overdraft</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$20.00</td><td class="r">$28.00</td>
+    <td class="r">$29.00</td><td class="r muted">9</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">Paper statement</span><span class="feeline">Paper Statement Processing Fee</span></td>
+    <td class="r"><b>$2.00</b></td>
+    <td class="r">$3.00</td><td class="r">$3.00</td>
+    <td class="r">$5.00</td><td class="r muted">5</td>
+    <td><span class="small muted">fewer than 8 peers publish it</span></td><td><span class="tag gap">few peers</span></td></tr>
+<tr><td><span class="cat">Stop payment</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$20.00</td><td class="r">$26.00</td>
+    <td class="r">$35.00</td><td class="r muted">8</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span><span class="feeline">Wire Transfer Fee - Domestic Incoming · $0 option</span></td>
+    <td class="r"><b>$0.00</b></td>
+    <td class="r">$10.00</td><td class="r">$10.00</td>
+    <td class="r">$10.00</td><td class="r muted">3</td>
+    <td><span class="small muted">fewer than 8 peers publish it</span></td><td><span class="tag gap">few peers</span></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Wire Transfer Fee - Domestic Outgoing</span></td>
+    <td class="r"><b>$25.00</b></td>
+    <td class="r">$20.00</td><td class="r">$20.00</td>
+    <td class="r">$25.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:89%"></div></div><span class="small muted"> P89</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$43.75</td><td class="r">$47.50</td>
+    <td class="r">$50.00</td><td class="r muted">4</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Dfcu Financial Federal Credit Union</span><span>Fee Insight</span></div>
@@ -377,18 +377,15 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>Dfcu Financial Federal Credit Union</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
     <div class="callout ">
-     <h3>NSF / returned item — $32.00</h3><div class="stat">Peer median $15.00 · P25 $7.00 · 100th percentile · n=5 · flagged: extreme outlier (>2x median)</div><p>The peer set is small, but its shape is unambiguous: the median is $15, a quarter of the set charges $7 or less, and one comparable credit union has retired the fee altogether. At $32 you hold the top of the distribution during an industry-wide retreat from NSF fees. For an institution whose other fees signal member value, this line is the outlier in both senses — statistical and strategic. It warrants a decision: cut, cap, or a documented rationale.</p>
+     <h3>NSF / returned-item fee — $32</h3><div class="stat">Peer median $24 · middle half $20–$29 · range $7–$35 · 89th percentile · n=9</div><p>Published as “Non-Sufficient Funds Fee.” At $32 it is $8 above the $24 peer median. Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them. A penalty fee offers little service to differentiate on, so the peer median of $24 is the natural reference point.</p>
    </div>
 <div class="callout opportunity">
-     <h3>Waived fees — $0 where peers charge</h3><div class="stat">ATM non-network $0.00 vs $1.00 median · Minimum balance $0.00 vs $4.00 median</div><p>Two fees your peers still charge, you have eliminated. These waivers are verifiable in your published schedule and directly comparable against peers' — which makes them low-risk marketing claims with real substance. A member choosing between large credit unions can confirm the difference in five minutes; today, nothing invites them to look.</p>
-   </div>
-<div class="callout opportunity">
-     <h3>Service fees — priced below market, marketed nowhere</h3><div class="stat">Card replacement $5.00 vs $25.00 median (P31) · OD protection transfer $5.00 vs $20.00 median · Stop payment $10.00 vs $15.00 median (P33)</div><p>Three consumer-facing service fees run at a fraction of the cohort median. If deliberate, they complete a member-value narrative that spans the whole schedule and deserves to be told. If not deliberate, they are margin available without touching a headline fee. The one move to avoid is the current default: below market, and invisible.</p>
+     <h3>Lines with too few peers to rank</h3><div class="stat">Overdraft-protection transfer fee $5 (n=2, median $3.50) · Paper statement fee $2 (n=5, median $3) · Incoming wire fee $0 (n=3, median $10)</div><p>Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional.</p>
    </div>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Dfcu Financial Federal Credit Union</span><span>Fee Insight</span></div>
@@ -398,17 +395,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>Dfcu Financial Federal Credit Union</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings (NCUA Call Reports) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings (NCUA Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     <div class="statcard"><div class="lbl">Total assets</div><div class="val">$8.03B</div></div>
 <div class="statcard"><div class="lbl">Total deposits</div><div class="val">$7.21B</div></div>
 <div class="statcard"><div class="lbl">Members</div><div class="val">243,022</div><div class="cmp">39 branches</div></div>
 <div class="statcard"><div class="lbl">Service-charge income</div><div class="val">$16.3M</div><div class="cmp">5.2% of revenue</div></div>
 <div class="statcard"><div class="lbl">Fee-income intensity</div><div class="val">21.0 bps</div><div class="cmp">cohort median <b>41.5 bps</b> of assets</div></div>
-<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">10 of 15</div><div class="cmp">featured categories published</div></div>
+<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">7 of 13</div><div class="cmp">featured categories published</div></div>
   </div>
   <h3 class="sub">Fee economics vs. your cohort</h3>
   <table>
@@ -419,13 +416,13 @@
    <td>—</td><td>Above cohort</td></tr>
 <tr><td>Fee intensity (income / assets)</td><td class="r"><b>21.0 bps</b></td><td class="r">26.0 bps</td>
    <td class="r">41.5 bps</td><td class="r">59.2 bps</td>
-   <td>P19</td><td>Light collector</td></tr>
+   <td>P19</td><td>Below cohort</td></tr>
 <tr><td>Fee dependency (share of noninterest income)</td><td class="r"><b>24.6%</b></td><td class="r">22.4%</td>
    <td class="r">26.9%</td><td class="r">30.8%</td>
    <td>P36</td><td>In line</td></tr>
 </tbody>
   </table>
-  <p class="narrative" style="margin-top:10pt">Your posted prices (56th percentile) and realized fee income (19th percentile) sit near the cohort middle — <b>fee strategy is neither a risk nor an engine today</b>, which makes the individual outliers in this report the whole story.</p>
+  <p class="narrative" style="margin-top:10pt">Across the 4 lines we could rank, your posted prices average the 67th percentile of peers; service-charge income relative to assets sits at the 19th percentile of the same-size cohort. One reading is that waivers, low incidence or account mix limit how often the higher-priced lines are charged. If so, those lines carry comparison risk with limited revenue behind them; your own incidence data would confirm it.</p>
   
   
   <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
@@ -438,22 +435,21 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>Dfcu Financial Federal Credit Union</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
-    <thead><tr><th>Institution</th><th class="r">Monthly maintenance</th><th class="r">Overdraft</th><th class="r">NSF / returned item</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <thead><tr><th>Institution</th><th class="r">NSF / returned item</th><th class="r">Non-network ATM</th><th class="r">Card replacement</th><th class="r">Outgoing domestic wire</th><th class="r">Paper statement</th></tr></thead>
     <tbody>
-      <tr class="self"><td>Dfcu Financial Federal Credit Union <span class="small muted">(you)</span></td><td class="r">$10.00</td><td class="r">—</td><td class="r">$32.00</td><td class="r">$10.00</td><td class="r">$25.00</td></tr>
-      <tr><td>Redwood Credit Union <span class="small muted">(SANTA ROSA, CA)</span></td><td class="r">$1.00</td><td class="r">—</td><td class="r">$7.00</td><td class="r">$22.00</td><td class="r">$20.00</td></tr>
-<tr><td>Chevron Federal Credit Union <span class="small muted">(Concord, CA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$15.00</td><td class="r">—</td></tr>
-<tr><td>Credit Human Federal Credit Union <span class="small muted">(San Antonio, TX)</span></td><td class="r">$50.00</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Pennsylvania State Employees Federal Credit Union <span class="small muted">(HARRISBURG, PA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$0.00</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Northrop Grumman Federal Credit Union <span class="small muted">(Gardena, CA)</span></td><td class="r">—</td><td class="r">$2.00</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Atlantic Regional Federal Credit Union <span class="small muted">(South Portland, ME)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>4Front Federal Credit Union <span class="small muted">(Traverse City, MI)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Florida Federal Credit Union <span class="small muted">(GAINESVILLE, FL)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
+      <tr class="self"><td>Dfcu Financial Federal Credit Union <span class="small muted">(you)</span></td><td class="r">$32.00</td><td class="r">$2.00</td><td class="r">$5.00</td><td class="r">$25.00</td><td class="r">$2.00</td></tr>
+      <tr><td>Sag-Aftra Federal Credit Union <span class="small muted">(Burbank, CA)</span></td><td class="r">$10.00</td><td class="r">$2.50</td><td class="r">$10.00</td><td class="r">$30.00</td><td class="r">$3.00</td></tr>
+<tr><td>First Credit Union <span class="small muted">(Chandler, AZ)</span></td><td class="r">$20.00</td><td class="r">$4.50</td><td class="r">$5.00</td><td class="r">$20.00</td><td class="r">—</td></tr>
+<tr><td>Emblem Credit Union <span class="small muted">(GADSDEN, AL)</span></td><td class="r">$20.00</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$20.00</td><td class="r">$3.00</td></tr>
+<tr><td>Redwood Credit Union <span class="small muted">(SANTA ROSA, CA)</span></td><td class="r">$7.00</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$20.00</td><td class="r">$2.00</td></tr>
+<tr><td>Union Square Credit Union <span class="small muted">(Wichita Falls, TX)</span></td><td class="r">—</td><td class="r">$3.00</td><td class="r">$5.00</td><td class="r">—</td><td class="r">$5.00</td></tr>
+<tr><td>Tampa Bay Federal Credit Union <span class="small muted">(Tampa, FL)</span></td><td class="r">$35.00</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$25.00</td><td class="r">—</td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Dfcu Financial Federal Credit Union</span><span>Fee Insight</span></div>
@@ -462,27 +458,26 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>Dfcu Financial Federal Credit Union</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
-  <div class="narrative"><p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: the largest institutions have largely eliminated returned-item fees, and the pressure has migrated across the industry — visible even in your small peer set, where the median has fallen to $15 and one comparable credit union charges nothing. Second, published fee schedules have become marketing documents: public, scraped, and compared, which converts every outlier line into a reputational bet and every waiver into a verifiable claim.</p><p>Large community credit unions occupy the exposed middle of that landscape: big enough to appear in every comparison and press survey, without the brand gravity that lets money-center banks price premiums quietly. What credit unions at your scale do have is the member-ownership story — and your schedule already substantiates it almost everywhere. In that position the highest-leverage move is rarely an across-the-board cut; it is resolving the single conspicuous outlier so the rest of the schedule can be advertised without an asterisk.</p></div>
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Dfcu Financial Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      Community credit unions, $1B–$10B — 41 institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      Aug 16, 2026. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  38 credit unions with $300M–$10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data). For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to Dfcu Financial Federal Credit Union in this report
     was extracted from your own published documents:</p>
     <ul>
-      <li>Source URLs available on request.</li>
+      <li>https://www.dfcufinancial.com/getmedia/331fd7f5-02a6-45fc-baa4-7814375136fb/Fee-Schedule.pdf</li>
     </ul>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Dfcu Financial Federal Credit Union</span><span>Fee Insight</span></div>
@@ -495,8 +490,8 @@
   <h2>Your complete published fee schedule</h2>
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
-  Dfcu Financial Federal Credit Union's published documents (34 lines, as of Aug 16, 2026).
-  This is the schedule your customers — and your competitors — can see.</p>
+  Dfcu Financial Federal Credit Union's published documents (34 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -575,22 +570,23 @@
 
 <!-- 8. BACK -->
 <div class="bleed back">
-  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Aug 16, 2026</span></div>
-  <h2>This report is yours,<br><em>with our compliments.</em></h2>
-  <p class="sub">A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking 1,183 institutions nationwide.</p>
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of 1,183 U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
   <div class="cta">
     <div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">hello@bankfeeindex.com</span>
       <p style="margin-top:8pt">feeinsight.com</p>
     </div>
   </div>
-  <div class="colophon"><span>Prepared for Dfcu Financial Federal Credit Union</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

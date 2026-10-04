@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { STATS_ROW_FILTER } from "./fee-stats";
 import type { IndexEntry } from "./fee-index";
 
 export interface MarketIndexEntry extends IndexEntry {
@@ -123,7 +124,8 @@ export async function getFeesForCategory(
   const conditions = [
     "ef.fee_category = $1",
     "ef.amount IS NOT NULL",
-    "ef.amount > 0",
+    "ef.amount >= 0",
+    STATS_ROW_FILTER,
     approvedOnly
       ? "ef.review_status = 'approved'"
       : "ef.review_status != 'rejected'",
@@ -188,7 +190,8 @@ export async function getSegmentOutliers(
     "ef.fee_category IS NOT NULL",
     "ef.review_status = 'approved'",
     "ef.amount IS NOT NULL",
-    "ef.amount > 0",
+    "ef.amount >= 0",
+    STATS_ROW_FILTER,
   ];
   const params: (string | number)[] = [];
   let paramIdx = 0;

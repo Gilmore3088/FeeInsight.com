@@ -263,4 +263,70 @@ describe("Magellan agentic fetch", () => {
       expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["fetch", "timeout"]));
     });
   });
+
+  describe("with the document vault", () => {
+    const body = "%PDF-1.7 schedule of fees";
+    const bodyHash = createHash("sha256").update(body).digest("hex");
+
+    function vaultDb(previous: Record<string, unknown> | null): DbMock {
+      return vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("vault_schema_ready")) return Promise.resolve([{ vault_schema_ready: true }]);
+        if (text.includes("FROM institution_sources")) {
+          return Promise.resolve([{ id: 46, institution_name: "Vault Bank", fee_schedule_url: "https://vault.example/fees.pdf", consecutive_failures: 0 }]);
+        }
+        if (text.includes("FROM source_documents")) return Promise.resolve(previous ? [previous] : []);
+        if (text.includes("INSERT INTO source_documents")) return Promise.resolve([{ id: 2001 }]);
+        return Promise.resolve([]);
+      });
+    }
+
+    function fakeVault() {
+      return {
+        configured: true,
+        store: vi.fn(async (_bytes: Uint8Array, hash: string) => ({ status: "stored" as const, key: `${hash.slice(0, 2)}/${hash}` })),
+        read: vi.fn(),
+        presign: vi.fn(),
+      };
+    }
+
+    it("saves new documents to the vault and records the key", async () => {
+      const db = vaultDb(null);
+      const vault = fakeVault();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body, "application/pdf"));
+
+      const result = await runMagellanFetch({ runId: 501, db: asFetchDb(db), fetchImpl, vault });
+
+      expect(vault.store).toHaveBeenCalledWith(expect.any(Uint8Array), bodyHash, "application/pdf");
+      expect(result).toMatchObject({ succeeded: 1, storedDocuments: 1, vault: "on" });
+      expect(result.results[0]).toMatchObject({ vaultStatus: "stored", body: null });
+      const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_r2_key"));
+      expect(update).toEqual(expect.arrayContaining([`${bodyHash.slice(0, 2)}/${bodyHash}`, 2001]));
+    });
+
+    it("stores an unchanged document once if the vault does not have it yet", async () => {
+      const db = vaultDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null, document_r2_key: null });
+      const vault = fakeVault();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body, "application/pdf"));
+
+      const result = await runMagellanFetch({ runId: 502, db: asFetchDb(db), fetchImpl, vault });
+
+      expect(result).toMatchObject({ unchanged: 1, storedDocuments: 1 });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).not.toContain("INSERT INTO source_documents");
+      expect(db.mock.calls.find((call) => templateText(call[0]).includes("SET document_r2_key"))).toEqual(expect.arrayContaining([900]));
+    });
+
+    it("does not store an unchanged document twice", async () => {
+      const db = vaultDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null, document_r2_key: `${bodyHash.slice(0, 2)}/${bodyHash}` });
+      const vault = fakeVault();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body, "application/pdf"));
+
+      const result = await runMagellanFetch({ runId: 503, db: asFetchDb(db), fetchImpl, vault });
+
+      expect(vault.store).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ unchanged: 1, storedDocuments: 0 });
+    });
+  });
 });

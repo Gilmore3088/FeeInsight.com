@@ -1,46 +1,63 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your NSF / returned-item fee ($35) is $8.75 above the $26.25 peer median, the 97th percentile of 60 peers.",
   "findings": [
     {
-      "stat": "$5 vs $24.50",
-      "stat_label": "overdraft fee vs peer median",
-      "headline": "Your overdraft fee is one-fifth the peer median.",
-      "body": "At $5.00, your overdraft fee sits at the 17th percentile of 6 comparable credit unions, against a $24.50 median and a $30 maximum. That is a genuinely member-friendly price on the industry's most scrutinized fee — and one of the strongest competitive claims a credit union can make right now, if members actually hear about it."
+      "stat": "$35 vs $26.25",
+      "stat_label": "NSF / returned-item fee, yours vs peer median",
+      "headline": "Your NSF / returned-item fee is above the market range.",
+      "body": "At $35, it is $8.75 above the $26.25 peer median and the 97th percentile of 60 peers (middle half of the market: $20–$30). Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them."
     },
     {
-      "stat": "$10 vs $35",
-      "stat_label": "card replacement vs peer median",
-      "headline": "Your service fees run far below comparable credit unions.",
-      "body": "Card replacement ($10 vs a $35 median, 26th percentile of 23 peers) and stop payments ($5 vs a $25 median, 17th percentile) are priced at a fraction of what comparable credit unions charge. Together with the $5 overdraft, this is a schedule built around the member — either by design or by drift. If by design, it is an untold story; if by drift, it is margin left unexamined."
+      "stat": "$35 vs $25",
+      "stat_label": "stop-payment fee, yours vs peer median",
+      "headline": "Your stop-payment fee is above the market range.",
+      "body": "At $35, it is $10 above the $25 peer median and the 96th percentile of 70 peers (middle half of the market: $20–$30). It is infrequent, but it appears in most side-by-side schedule comparisons."
     },
     {
-      "stat": "$35 vs $32",
-      "stat_label": "deposited item return vs peer median",
-      "headline": "You are priced at or below market almost everywhere — with one exception.",
-      "body": "Across the schedule, your fees sit at or under the peer median. The exception is the deposited-item return fee: $35 against a $32 median, tied for the highest in a small 5-peer sample. It is a modest $3 gap, but it is the only line where your schedule tops the cohort — worth a deliberate look precisely because it breaks an otherwise member-friendly pattern."
+      "stat": "7 of 9",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 9 fee lines where we found both your published amount and at least eight comparable peers, seven sit between the peer 25th and 75th percentiles, two above."
     }
   ],
-  "exec_narrative": "Net position: Tampa Bay Federal Credit Union prices at or below market on nearly every published fee — most dramatically on overdraft ($5 vs a $24.50 peer median), stop payments ($5 vs $25), and card replacement ($10 vs $35). NSF sits at the cohort midpoint ($15 vs a $17.50 median). The one line above market is the $35 deposited-item return fee, a $3 gap at the top of a small peer sample. The strategic question here is not what to cut; it is whether a schedule this member-friendly should remain a secret, and whether the below-market prices are intentional positioning or unpriced drift.",
+  "exec_narrative": "Tampa Bay Federal Credit Union is compared with 141 credit unions under $10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 9 rankable lines, seven sit inside the middle half of the market, two above it (NSF / returned-item fee and stop-payment fee). We would suggest two steps, in order of value: (1) review the NSF / returned-item fee, which sits above the market range; the peer median of $26.25 is the reference point; (2) check that the overdraft fee is published where customers can find it.",
   "callouts": [
     {
-      "kind": "opportunity",
-      "title": "Overdraft — $5.00, one-fifth the peer median",
-      "stat": "Peer median $24.50 · P75 $29.00 · 17th percentile · n=6",
-      "body": "Overdraft pricing is the most publicly scrutinized line on any fee schedule, and yours is among the lowest in your cohort. Comparable credit unions charge up to $30. This belongs in member communications and new-member marketing: it is a concrete, verifiable proof point of the credit-union difference, substantiated by your peers' own published schedules."
-    },
-    {
-      "kind": "opportunity",
-      "title": "Service fees — stop payment $5, card replacement $10",
-      "stat": "Stop payment $5 vs $25 median (P17, n=6) · Card replacement $10 vs $35 median (P26, n=23)",
-      "body": "Both fees run at a fraction of the cohort. If these prices are deliberate, they are marketing assets going unused. If they have simply not been revisited, note that even a move to $10 and $20 respectively would still leave you below the peer median — the rare case where a price review can raise revenue without surrendering the member-friendly position."
+      "kind": "risk",
+      "title": "NSF / returned-item fee — $35",
+      "stat": "Peer median $26.25 · middle half $20–$30 · range $5–$40 · 97th percentile · n=60",
+      "body": "Published as “Share Fee (ACH or Check Returned NSF).” At $35 it is $8.75 above the $26.25 peer median. Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them. A penalty fee offers little service to differentiate on, so the peer median of $26.25 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "Deposited item return — $35.00",
-      "stat": "Peer median $32.00 · peer max $35.00 · n=5",
-      "body": "This is the one fee where you sit at the top of the cohort, tied with the highest peer in a 5-institution sample. The dollar gap is small, but the fee lands on members whose deposited check bounced through no fault of their own — a category that draws junk-fee framing quickly. Given that everything else on your schedule tells a member-first story, this line is worth aligning with the rest of it."
+      "title": "Stop-payment fee — $35",
+      "stat": "Peer median $25 · middle half $20–$30 · range $10–$43 · 96th percentile · n=70",
+      "body": "Published as “Stop Payment.” At $35 it is $10 above the $25 peer median. It is infrequent, but it appears in most side-by-side schedule comparisons. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point."
+    },
+    {
+      "kind": "risk",
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Overdraft fee: published by 32 peers (median $29.50)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the industry-wide retreat from NSF and overdraft fees: regulatory and reputational pressure that began with the largest banks has migrated to community institutions, compressing penalty-fee medians across the market — a trend your $5 overdraft and $15 NSF already sit comfortably inside. Second, published fee schedules have become marketing documents: fees are public, scraped, and compared, which means every below-market line on your schedule is a competitive claim you can prove — and every above-market line, however small, is visible to anyone who looks.</p><p>Mid-sized credit unions occupy an exposed middle: large enough to appear in fee comparisons alongside banks and larger credit unions, without the marketing budgets that let bigger institutions shape their own narrative. For an institution priced the way you are, the highest-leverage move is not a pricing change at all — it is telling the story. A member-first fee schedule that members have never seen compared to the alternatives is doing only half its job; the single above-market exception is a quick fix that makes the story airtight.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Tampa Bay Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network"
+  ],
+  "summary": {
+    "ranked": 9,
+    "above": [
+      "nsf",
+      "stop_payment"
+    ],
+    "below": [],
+    "gaps": [
+      "overdraft"
+    ],
+    "thin": 0
+  }
 }

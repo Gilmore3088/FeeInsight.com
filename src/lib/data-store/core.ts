@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { summarizeFeesBy } from "./fee-stats";
 import { VALID_US_CODES } from "../us-states";
 import {
   classifyInstitutionQuality,
@@ -488,39 +489,22 @@ export interface CategoryMedian {
 }
 
 export async function getCategoryMedians(): Promise<Record<string, CategoryMedian>> {
-  const rows = await sql<{ fee_category: string; amount: number }[]>`
-    SELECT fee_category, amount
+  const rows = await sql<{ fee_category: string; amount: number; institution_id: number }[]>`
+    SELECT fee_category, amount, institution_id
     FROM published_fee_catalog
     WHERE fee_category IS NOT NULL
       AND amount IS NOT NULL
-      AND amount > 0
-    ORDER BY fee_category, amount
+      AND source_document_id IS NOT NULL
   `;
 
-  const grouped = new Map<string, number[]>();
-  for (const row of rows) {
-    if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, []);
-    }
-    grouped.get(row.fee_category)!.push(Number(row.amount));
-  }
-
   const result: Record<string, CategoryMedian> = {};
-  for (const [cat, amounts] of grouped) {
-    if (amounts.length < 5) continue;
-    const sorted = amounts.sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    const median =
-      sorted.length % 2 === 0
-        ? (sorted[mid - 1] + sorted[mid]) / 2
-        : sorted[mid];
-    const q1 = Math.floor(sorted.length / 4);
-    const q3 = Math.floor((3 * sorted.length) / 4);
-    result[cat] = {
-      median,
-      p25: sorted[q1],
-      p75: sorted[q3],
-      count: sorted.length,
+  for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
+    if (stats.median_amount === null || stats.p25_amount === null || stats.p75_amount === null) continue;
+    result[category] = {
+      median: stats.median_amount,
+      p25: stats.p25_amount,
+      p75: stats.p75_amount,
+      count: stats.institution_count,
     };
   }
 

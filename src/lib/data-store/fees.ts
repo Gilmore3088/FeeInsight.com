@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { summarizeFeesBy, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
 
 export interface FeeCategorySummary {
@@ -84,16 +85,13 @@ export function computeStats(amounts: number[]): {
 }
 
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
-  const grouped = new Map<
-    string,
-    { amounts: number[]; banks: Set<number>; cus: Set<number>; total: number }
-  >();
-
   const rows = await sql`
     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
-    WHERE ef.fee_category IS NOT NULL AND ef.review_status = 'approved'
+    WHERE ef.fee_category IS NOT NULL
+      AND ef.review_status = 'approved'
+      AND ef.source_document_id IS NOT NULL
   ` as {
     fee_category: string;
     amount: number | null;
@@ -101,38 +99,20 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     charter_type: string;
   }[];
 
-  for (const row of rows) {
-    if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, { amounts: [], banks: new Set(), cus: new Set(), total: 0 });
-    }
-    const entry = grouped.get(row.fee_category)!;
-    entry.total++;
-    const amt = row.amount !== null ? Number(row.amount) : null;
-    if (amt !== null && amt > 0) {
-      entry.amounts.push(amt);
-    }
-    if (row.charter_type === "bank") {
-      entry.banks.add(Number(row.institution_id));
-    } else {
-      entry.cus.add(Number(row.institution_id));
-    }
-  }
-
   const results: FeeCategorySummary[] = [];
-  for (const [category, data] of grouped.entries()) {
-    const stats = computeStats(data.amounts);
+  for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
     results.push({
       fee_category: category,
-      institution_count: new Set([...data.banks, ...data.cus]).size,
-      total_observations: data.total,
-      bank_count: data.banks.size,
-      cu_count: data.cus.size,
-      min_amount: stats.min,
-      max_amount: stats.max,
-      avg_amount: stats.avg,
-      median_amount: stats.median,
-      p25_amount: stats.p25,
-      p75_amount: stats.p75,
+      institution_count: stats.institution_count,
+      total_observations: stats.observation_count,
+      bank_count: stats.bank_count,
+      cu_count: stats.cu_count,
+      min_amount: stats.min_amount,
+      max_amount: stats.max_amount,
+      avg_amount: stats.avg_amount,
+      median_amount: stats.median_amount,
+      p25_amount: stats.p25_amount,
+      p75_amount: stats.p75_amount,
     });
   }
 
@@ -153,12 +133,12 @@ export async function getFeeCategoryDetail(category: string): Promise<{
            ef.amount, ef.frequency, ef.conditions,
            ct.charter_type, ct.state_code, ct.asset_size_tier,
            ct.asset_size, ef.review_status, ef.extraction_confidence,
-           ef.canonical_fee_key, ef.variant_type
+           ef.canonical_fee_key, ef.variant_type, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
     ORDER BY ef.amount DESC NULLS LAST
-  ` as FeeInstance[];
+  ` as (FeeInstance & { source_document_id: number | string | null })[];
 
   // Normalize numeric fields (Postgres NUMERIC returns strings)
   const fees: FeeInstance[] = rawFees.map((f) => ({
@@ -170,74 +150,50 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     extraction_confidence: Number(f.extraction_confidence ?? 0),
   }));
 
-  // Compute dimensional breakdowns
-  function buildBreakdown(
-    dimFn: (f: FeeInstance) => string | null
+  // Breakdowns follow the statistics contract: sourced rows only, one value per institution.
+  const sourcedFees = fees.filter((_, index) => rawFees[index].source_document_id !== null);
+
+  function buildBreakdown<T extends StatsInputRow>(
+    rows: T[],
+    dimFn: (row: T) => string | null
   ): DimensionBreakdown[] {
-    const groups = new Map<string, number[]>();
-    for (const fee of fees) {
-      const dim = dimFn(fee) ?? "Unknown";
-      if (!groups.has(dim)) groups.set(dim, []);
-      if (fee.amount !== null && fee.amount > 0) {
-        groups.get(dim)!.push(fee.amount);
-      }
-    }
     const result: DimensionBreakdown[] = [];
-    for (const [value, amounts] of groups.entries()) {
-      const s = computeStats(amounts);
+    for (const [value, stats] of summarizeFeesBy(rows, (row) => dimFn(row) ?? "Unknown")) {
       result.push({
         dimension_value: value,
-        count: amounts.length,
-        min_amount: s.min,
-        max_amount: s.max,
-        avg_amount: s.avg,
-        median_amount: s.median,
+        count: stats.institution_count,
+        min_amount: stats.min_amount,
+        max_amount: stats.max_amount,
+        avg_amount: stats.avg_amount,
+        median_amount: stats.median_amount,
       });
     }
     return result.sort((a, b) => b.count - a.count);
   }
 
-  const by_charter_type = buildBreakdown((f) => f.charter_type === "bank" ? "Bank" : "Credit Union");
-  const by_asset_tier = buildBreakdown((f) => f.asset_size_tier);
+  const by_charter_type = buildBreakdown(sourcedFees, (f) =>
+    f.charter_type === "bank" ? "Bank" : f.charter_type === "credit_union" ? "Credit Union" : null
+  );
+  const by_asset_tier = buildBreakdown(sourcedFees, (f) => f.asset_size_tier);
 
-  // For fed district, re-query with actual district numbers
   const districtRows = await sql`
-    SELECT ct.fed_district, ef.amount
+    SELECT ct.fed_district, ef.amount, ef.institution_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category}
       AND ef.review_status = 'approved'
+      AND ef.source_document_id IS NOT NULL
       AND ct.fed_district IS NOT NULL
-  ` as { fed_district: number; amount: number | null }[];
+  ` as { fed_district: number; amount: number | null; institution_id: number }[];
 
-  const districtGroups = new Map<number, number[]>();
-  for (const row of districtRows) {
-    const dist = Number(row.fed_district);
-    const amt = row.amount !== null ? Number(row.amount) : null;
-    if (!districtGroups.has(dist)) districtGroups.set(dist, []);
-    if (amt !== null && amt > 0) {
-      districtGroups.get(dist)!.push(amt);
-    }
-  }
-  const by_fed_district_real: DimensionBreakdown[] = [];
-  for (const [district, amounts] of districtGroups.entries()) {
-    const s = computeStats(amounts);
-    by_fed_district_real.push({
-      dimension_value: `District ${district}`,
-      count: amounts.length,
-      min_amount: s.min,
-      max_amount: s.max,
-      avg_amount: s.avg,
-      median_amount: s.median,
-    });
-  }
+  const by_fed_district_real = buildBreakdown(districtRows, (row) => `District ${Number(row.fed_district)}`);
   by_fed_district_real.sort((a, b) => {
     const numA = parseInt(a.dimension_value.replace("District ", ""));
     const numB = parseInt(b.dimension_value.replace("District ", ""));
     return numA - numB;
   });
 
-  const by_state = buildBreakdown((f) => f.state_code);
+  const by_state = buildBreakdown(sourcedFees, (f) => f.state_code);
 
   // Fee change events
   const change_events = await sql`

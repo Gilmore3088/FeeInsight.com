@@ -1,52 +1,54 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your monthly maintenance fee ($17) is 2.3× the $7.50 peer median, the highest of the 9 peers that publish it.",
   "findings": [
     {
-      "stat": "$30 vs $15",
-      "stat_label": "NSF fee vs peer median",
-      "headline": "Your NSF fee is double the peer median.",
-      "body": "At $30.00, your NSF fee is twice the $15 median of 34 comparable banks — the 82nd percentile. A quarter of those peers now charge $6.25 or less, reflecting the industry-wide move away from returned-item fees under regulatory scrutiny. This is the most visible penalty fee on your schedule, and the market beneath it is falling."
+      "stat": "$17 vs $7.50",
+      "stat_label": "monthly maintenance fee, yours vs peer median",
+      "headline": "Your monthly maintenance fee is well above the market range.",
+      "body": "At $17, it is 2.3× the $7.50 peer median and the highest of the 9 peers that publish it (middle half of the market: $3–$10). Maintenance fees are the line account shoppers compare first, before any penalty fee."
     },
     {
-      "stat": "P80",
-      "stat_label": "monthly maintenance percentile",
-      "headline": "Core account fees carry a quiet premium.",
-      "body": "Monthly maintenance runs $17.00 against a $12.00 median — the 80th percentile of 15 peers, above the cohort's 75th-percentile mark of $16. Incoming domestic wires add to the pattern at $15.00 versus a $12.50 median (83rd percentile). Neither gap is dramatic alone, but together they price your everyday relationship fees in the top quintile of the cohort."
+      "stat": "7 of 8",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 8 fee lines where we found both your published amount and at least eight comparable peers, seven sit between the peer 25th and 75th percentiles, one above."
     },
     {
-      "stat": "$0.08 vs $12",
-      "stat_label": "deposited item return vs median",
-      "headline": "You nearly give one fee away — and hide two others.",
-      "body": "Your deposited-item return fee is eight cents against a $12.00 peer median — the 7th percentile, effectively a waiver that earns you no credit because it is nowhere promoted. Meanwhile two consumer-facing categories, card replacement and paper statements, are absent from your published schedule entirely. Customers reading your schedule see the premiums but not the generosity."
+      "stat": "15th",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is a smaller contributor than at most peers.",
+      "body": "Service-charge income was 0.6 basis points of assets in your latest full-year filing, against a 1.7 bps median for 1,427 same-size banks. That gives room to adjust the lines flagged in this report at limited revenue cost."
     }
   ],
-  "exec_narrative": "Net position: Gateway Bank prices its most visible fees — NSF and monthly maintenance — in the top quintile of 76 comparable mid-size banks, while quietly holding a near-zero deposited-item return fee that earns no marketing credit and leaving two categories unpublished altogether. Transaction fees are otherwise near market: outgoing domestic wires match the pattern of peers, international wires sit below the median, and overdraft matches the $30 peer median. The exposure is concentrated in exactly the lines customers and examiners look at first. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Gateway Bank is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Minnesota have published data, so local competitors may price differently. Of 8 rankable lines, seven sit inside the middle half of the market, one above it (monthly maintenance fee). We would suggest one step: review the monthly maintenance fee, which sits well above the market range; the peer median of $7.50 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "NSF / returned item — $30.00",
-      "stat": "Peer median $15.00 · P25 $6.25 · 82nd percentile · n=34",
-      "body": "The peer distribution tells the story: the median has fallen to $15 and a quarter of comparable banks charge $6.25 or less as institutions retire NSF fees ahead of regulatory and reputational pressure. A fee at double the median is increasingly conspicuous — in examiner conversations, in local fee surveys, and on comparison sites. Whether the right answer is a cut, a cap, or a documented rationale, this line deserves a decision rather than a default."
-    },
-    {
-      "kind": "risk",
-      "title": "Monthly maintenance — $17.00",
-      "stat": "Peer median $12.00 · P75 $16.00 · 80th percentile · n=15",
-      "body": "This is the fee every account holder sees every month, and yours sits above the cohort's 75th percentile. A $5-over-median maintenance fee is the kind of recurring gap that drives silent attrition rather than complaints — customers do not call about it; they leave over it. If waiver thresholds offset it in practice, that logic should be visible; if not, the price point warrants review."
+      "title": "Monthly maintenance fee — $17",
+      "stat": "Peer median $7.50 · middle half $3–$10 · range $0–$15 · 100th percentile · n=9",
+      "body": "Published as “Account Maintenance.” At $17 it is 2.3× the $7.50 peer median. Maintenance fees are the line account shoppers compare first, before any penalty fee. If the account carries waivers, the waiver terms matter more than the headline price; make sure they are as visible as the fee."
     },
     {
       "kind": "opportunity",
-      "title": "Deposited item return — $0.08",
-      "stat": "Peer median $12.00 · 7th percentile · n=15",
-      "body": "At eight cents you have effectively waived a fee peers charge $12 for — and one that customers experience as especially unfair elsewhere, since it punishes them for someone else's bad check. This is a ready-made fairness story: 'we do not charge you when a deposited check bounces' is a claim your competitors' published schedules make credible. Today it is invisible."
-    },
-    {
-      "kind": "opportunity",
-      "title": "Unpublished categories — card replacement, paper statement",
-      "stat": "Both absent from published schedule · flagged: data gap · peer medians $10.00 and $3.58",
-      "body": "Two everyday consumer fees do not appear in your published schedule. In a market where fee schedules are scraped and compared, an unpublished fee reads either as free or as hidden — and only one of those interpretations helps you. Publishing them costs nothing if they are at or below the peer medians, and closes a transparency gap examiners and comparison sites increasingly notice."
+      "title": "Lines with too few peers to rank",
+      "stat": "Non-network ATM fee $1 (n=5, median $2.25)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($15) is half your posted fee and a quarter of peers charge $6.25 or less. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet and every unpublished line into an open question.</p><p>Mid-size community banks occupy the exposed middle: large enough to be included in comparisons, without the brand gravity that lets money-center banks charge premiums quietly. In that position, the highest-leverage moves are usually not across-the-board cuts but surgical ones — bringing the one or two conspicuous fees toward the cohort center, publishing the missing lines, and actively advertising the fee you have already all but waived.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Gateway Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return"
+  ],
+  "summary": {
+    "ranked": 8,
+    "above": [
+      "monthly_maintenance"
+    ],
+    "below": [],
+    "gaps": [],
+    "thin": 1
+  }
 }

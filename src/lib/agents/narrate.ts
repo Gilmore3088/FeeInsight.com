@@ -54,21 +54,30 @@ export function narrateStepFinished(
         return `Checked ${count(processed, "fee schedule")} ${scope}: ${n(detail, "fetched_documents").toLocaleString("en-US")} new, ${n(detail, "unchanged_documents").toLocaleString("en-US")} unchanged${joinParts([
           n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
           n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
+          n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
         ]).replace(/^: /, ", ")}.`;
       }
       return `Downloaded ${count(n(detail, "fetched_documents"), "fee schedule")} ${scope}${joinParts([
         n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
         n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
+        n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
       ])}.`;
     }
     case "read": {
       const processed = n(detail, "processed_documents");
-      if (processed === 0) return `Had no new documents to read ${scope}.`;
+      if (processed === 0) {
+        return n(detail, "wrong_documents") > 0
+          ? `Re-checked earlier pages ${scope}: ${count(n(detail, "wrong_documents"), "page")} not a fee schedule${n(detail, "sent_back_to_magellan") > 0 ? `, ${n(detail, "sent_back_to_magellan")} sent back to Magellan` : ""}.`
+          : `Had no new documents to read ${scope}.`;
+      }
       return `Read ${count(n(detail, "text_artifacts"), "document")} ${scope}${joinParts([
         n(detail, "needs_ocr") > 0 && `${n(detail, "needs_ocr")} are scans that need OCR`,
         n(detail, "failed_reads") > 0 && `${n(detail, "failed_reads")} failed`,
         n(detail, "empty_documents") > 0 && `${n(detail, "empty_documents")} were empty`,
         n(detail, "skipped_known_failures") > 0 && `${n(detail, "skipped_known_failures")} skipped (failed before, unchanged since)`,
+        n(detail, "wrong_documents") > 0 && `${n(detail, "wrong_documents")} were not fee pages`,
+        n(detail, "sent_back_to_magellan") > 0 && `${n(detail, "sent_back_to_magellan")} sent back to Magellan to find the real fee page`,
+        n(detail, "read_from_vault") > 0 && `${n(detail, "read_from_vault")} read from our stored copy`,
       ])}.`;
     }
     case "extract": {
@@ -102,10 +111,64 @@ export function narrateStepFinished(
     case "public-cluster":
     case "public-diagnose":
       return null;
+    case "registry-fdic-universe":
+    case "registry-fdic-financials":
+    case "registry-ncua-financials":
+    case "registry-fdic-sod":
+    case "registry-cfpb":
+    case "registry-sec-links":
+    case "registry-sec-filings":
+    case "registry-beige-book":
+    case "registry-fred":
+    case "registry-state-regulators":
+      return narrateRegistryStep(stepKey, detail);
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
         : `Wrote the daily brief but did not email it (${String(detail.delivery_status ?? "unknown")}).`;
+    default:
+      return null;
+  }
+}
+
+/** One sentence for a regulator-data (registry-*) step. */
+function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
+  const partition = String(detail.partition_key ?? "");
+  switch (stepKey) {
+    case "registry-fdic-universe":
+      return `Synced ${count(n(detail, "active_institutions"), "FDIC-insured bank")}${joinParts([
+        n(detail, "inserted_institutions") > 0 && `${n(detail, "inserted_institutions")} added`,
+        n(detail, "deactivated_institutions") > 0 && `${n(detail, "deactivated_institutions")} marked closed or merged`,
+      ])}.`;
+    case "registry-fdic-financials":
+    case "registry-ncua-financials": {
+      const agency = stepKey === "registry-fdic-financials" ? "FDIC" : "NCUA";
+      if (detail.empty) return `Checked for ${partition || "new"} ${agency} call reports; not published yet.`;
+      return `Loaded ${count(n(detail, "parsed_rows"), `${agency} call report`)} for ${partition || "the quarter"}${joinParts([
+        n(detail, "unmatched_rows") > 0 && `${n(detail, "unmatched_rows")} not yet matched to an institution`,
+        n(detail, "inserted_institutions") > 0 && `${n(detail, "inserted_institutions")} new credit unions`,
+        n(detail, "deactivated_institutions") > 0 && `${n(detail, "deactivated_institutions")} credit unions marked inactive`,
+      ])}.`;
+    }
+    case "registry-fdic-sod":
+      if (detail.empty) return `Checked for ${partition} branch deposit data; not published yet.`;
+      return `Mapped ${count(n(detail, "branches"), "bank branch", "bank branches")} for ${partition}.`;
+    case "registry-cfpb":
+      return `Recorded ${count(n(detail, "complaints"), "CFPB complaint")} for ${partition} across ${count(n(detail, "institutions"), "institution")}${joinParts([
+        n(detail, "review_companies") > 0 && `${n(detail, "review_companies")} company names need review`,
+      ])}.`;
+    case "registry-sec-links":
+      return `Linked ${count(n(detail, "accepted_links"), "SEC filer")} to bank holding companies${joinParts([
+        n(detail, "review_links") > 0 && `${n(detail, "review_links")} need review`,
+      ])}.`;
+    case "registry-sec-filings":
+      return `Refreshed SEC filings for ${count(n(detail, "ciks"), "holding company", "holding companies")}: ${count(n(detail, "filings"), "filing")}.`;
+    case "registry-beige-book":
+      return detail.empty ? null : `Loaded the ${String(detail.release_date ?? partition)} Beige Book (${count(n(detail, "sections"), "section")}).`;
+    case "registry-fred":
+      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
+    case "registry-state-regulators":
+      return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
     default:
       return null;
   }
@@ -157,6 +220,16 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   fetch: "magellan",
   "public-discovery": "magellan",
   "public-audit": "magellan",
+  "registry-fdic-universe": "magellan",
+  "registry-fdic-financials": "magellan",
+  "registry-ncua-financials": "magellan",
+  "registry-fdic-sod": "magellan",
+  "registry-cfpb": "magellan",
+  "registry-sec-links": "magellan",
+  "registry-sec-filings": "magellan",
+  "registry-beige-book": "magellan",
+  "registry-fred": "magellan",
+  "registry-state-regulators": "magellan",
   read: "rosetta",
   extract: "knox",
   review: "knox",

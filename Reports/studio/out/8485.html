@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -239,7 +252,7 @@
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">
-    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Aug 16, 2026</span></div>
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
     <div class="title">
       <div class="series">Prepared exclusively for one institution</div>
       <h1>Competitive<br>Fee <em>Position</em></h1>
@@ -247,13 +260,13 @@
         <span class="instname">First Credit Union</span>
       </div>
       <div class="instmeta">Chandler, AZ<i>·</i>Credit Union<i>·</i>Community credit union, $300M–$1B</div>
-      <p class="cohortnote">Peer cohort: 41 comparable community credit unions. Not every peer publishes every fee: 6 publish an NSF fee and 6 an overdraft fee, so those are the comparison sets for those lines.</p>
+      <p class="cohortnote">Compared with 141 credit unions with under $10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
     </div>
-    <div class="ghost">41</div>
+    <div class="ghost">141</div>
     <div class="card">
-      <div><div class="lbl">Peer cohort</div><div class="val">Community credit unions, $300M–$1B</div></div>
+      <div><div class="lbl">Peer cohort</div><div class="val">Credit unions, under $10B · nationwide</div></div>
       <div><div class="lbl">Benchmarked against</div>
-        <div class="big">41<small>peer institutions with published fee schedules</small></div></div>
+        <div class="big">141<small>peer institutions with published fee schedules</small></div></div>
       <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
     </div>
   </div>
@@ -263,17 +276,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>First Credit Union</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
-    <div class="finding"><div class="num" style="font-size:18pt">$5 vs $35<small>card replacement vs peer median</small></div>
-   <p><b>Your card replacement fee is $30 below market — and invisible.</b>At $5.00 against a $35.00 median across 23 comparable credit unions (17th percentile), card replacement is your single largest gap in either direction — and it favors your members. This is the kind of everyday, relatable fee that prospective members actually compare. Today it is an unclaimed marketing asset.</p></div>
-<div class="finding"><div class="num" style="font-size:24pt">$5 vs $2<small>OD protection transfer vs median</small></div>
-   <p><b>Your small exception fees sit at the top of the cohort.</b>The overdraft-protection transfer ($5 vs a $2 median) is flagged as an extreme outlier at the 100th percentile, and the non-network ATM fee ($4.50 vs a $3.00 median) also tops its cohort. Both comparison sets are small — three publishing peers each — and your OD transfer matches the $5 national median, so the dollars are modest. But these are the fees members hit most often, and topping the local range on both sends the wrong signal.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$3.50 vs $5<small>monthly maintenance vs peer median</small></div>
-   <p><b>Core account pricing is at or below market almost everywhere.</b>Monthly maintenance ($3.50 vs $5.00, 17th percentile), overdraft ($20 vs $24.50 median), stop payment ($20 vs $25 median), and outgoing domestic wires ($20 vs $25, 29th percentile) all run at or below the cohort. The headline fees members worry about are competitively priced; the exceptions are confined to small-dollar convenience lines.</p></div>
+    <div class="finding"><div class="num" style="font-size:18pt">$4.50 vs $2<small>non-network ATM fee, yours vs peer median</small></div>
+   <p><b>Your non-network ATM fee is well above the market range.</b>At $4.50, it is 2.3× the $2 peer median and the 86th percentile of 21 peers (middle half of the market: $1–$2.50). It recurs for every customer who banks outside your ATM footprint.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">2 lines<small>priced below the market range</small></div>
+   <p><b>Several lines are priced below the market.</b>Your NSF / returned-item fee ($20 vs a $27.75 median) and overdraft fee ($20 vs a $30 median) each sit below the peer 25th percentile. Below-market returned-item pricing is a position many institutions are moving toward. If the pricing is deliberate, it is worth stating plainly in account marketing.</p></div>
+<div class="finding"><div class="num" style="font-size:18pt">$35 vs $25<small>deposited-item return fee, yours vs peer median</small></div>
+   <p><b>Your deposited-item return fee is above the market range.</b>At $35, it is $10 above the $25 peer median and the 96th percentile of 26 peers (middle half of the market: $15–$30). This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism.</p></div>
   </div>
-  <p class="narrative drop">Net position: First Credit Union prices its core schedule at or below the market of 41 comparable credit unions — maintenance, overdraft, stop payment, and wires all sit at or under the median, and card replacement runs $30 below it. The exposure is confined to small-dollar convenience fees: an overdraft-protection transfer flagged as an extreme outlier and a non-network ATM fee at the top of its range, both against thin comparison sets. The asymmetry is the story — the below-market lines earn no credit while the two small outliers are the only lines a fee comparison will flag. The three findings above are the agenda for a one-hour pricing conversation.</p>
+  <p class="narrative drop">First Credit Union is compared with 141 credit unions under $10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 9 rankable lines, five sit inside the middle half of the market, two above it (non-network ATM fee and deposited-item return fee), and two below it (NSF / returned-item fee and overdraft fee). We would suggest two steps, in order of value: (1) review the non-network ATM fee, which sits well above the market range; the peer median of $2 is the reference point; (2) state the below-market NSF / returned-item fee in account marketing, where peers' published schedules make it verifiable.</p>
   <div class="pagefoot"><span>Competitive Fee Position — First Credit Union</span><span>Fee Insight</span></div>
 </div>
 
@@ -281,94 +294,81 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>First Credit Union</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. 41 peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: Community credit unions, $300M–$1B — 41 institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">Compared with 141 credit unions with under $10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
-      <tr><td>Non-network ATM</td>
+      <tr><td><span class="cat">Non-network ATM</span><span class="feeline">Out-of-Network ATM Usage</span></td>
     <td class="r"><b>$4.50</b></td>
-    <td class="r">$1.75</td><td class="r">$3.00</td>
-    <td class="r">$3.75</td><td class="r">$1.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Foreign transaction</td>
+    <td class="r">$1.00</td><td class="r">$2.00</td>
+    <td class="r">$2.50</td><td class="r muted">21</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:86%"></div></div><span class="small muted"> P86</span></td><td><span class="tag above">2× median</span></td></tr>
+<tr><td><span class="cat">Card replacement</span><span class="feeline">Visa Card Replacement</span></td>
+    <td class="r"><b>$5.00</b></td>
+    <td class="r">$5.00</td><td class="r">$10.00</td>
+    <td class="r">$10.00</td><td class="r muted">42</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:40%"></div></div><span class="small muted"> P40</span></td><td></td></tr>
+<tr><td><span class="cat">Cashier's check</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">—</td><td class="r">—</td>
-    <td class="r">—</td><td class="r">$1.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Card replacement</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$17.50</td><td class="r">$35.00</td>
-    <td class="r">$50.00</td><td class="r">$28.75</td>
-    <td><div class="bar-wrap"><div class="bar lo" style="width:17%"></div></div><span class="small muted"> P17</span></td><td></td></tr>
-<tr><td>Cashier's check</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Deposited item return</td>
+    <td class="r">$3.00</td><td class="r">$5.00</td>
+    <td class="r">$5.00</td><td class="r muted">30</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Deposited item return</span><span class="feeline">Deposit Item Returned for NSF</span></td>
     <td class="r"><b>$35.00</b></td>
-    <td class="r">$25.00</td><td class="r">$32.00</td>
-    <td class="r">$35.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Minimum balance</td>
+    <td class="r">$15.00</td><td class="r">$25.00</td>
+    <td class="r">$30.00</td><td class="r muted">26</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:96%"></div></div><span class="small muted"> P96</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$3.00</td><td class="r">$3.00</td>
-    <td class="r">$6.50</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Monthly maintenance</td>
-    <td class="r"><b>$3.50</b></td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td class="r">$8.75</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar lo" style="width:17%"></div></div><span class="small muted"> P17</span></td><td></td></tr>
-<tr><td>NSF / returned item</td>
+    <td class="r">$4.75</td><td class="r">$5.00</td>
+    <td class="r">$7.61</td><td class="r muted">24</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">NSF / returned item</span><span class="feeline">Non-Sufficient Funds - Overdraft</span></td>
     <td class="r"><b>$20.00</b></td>
-    <td class="r">$15.00</td><td class="r">$17.50</td>
-    <td class="r">$27.13</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:67%"></div></div><span class="small muted"> P67</span></td><td></td></tr>
-<tr><td>OD protection transfer</td>
+    <td class="r">$23.00</td><td class="r">$27.75</td>
+    <td class="r">$30.00</td><td class="r muted">60</td>
+    <td><div class="bar-wrap"><div class="bar lo" style="width:25%"></div></div><span class="small muted"> P25</span></td><td><span class="tag below">below range</span></td></tr>
+<tr><td><span class="cat">OD protection transfer</span><span class="feeline">Overdraft Transfers</span></td>
     <td class="r"><b>$5.00</b></td>
-    <td class="r">$1.50</td><td class="r">$2.00</td>
-    <td class="r">$3.50</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td><span class="tag outlier">outlier</span></td></tr>
-<tr><td>Overdraft</td>
+    <td class="r">$3.00</td><td class="r">$5.00</td>
+    <td class="r">$10.00</td><td class="r muted">17</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:65%"></div></div><span class="small muted"> P65</span></td><td></td></tr>
+<tr><td><span class="cat">Overdraft</span><span class="feeline">Overdraft Payment Service</span></td>
     <td class="r"><b>$20.00</b></td>
-    <td class="r">$12.50</td><td class="r">$24.50</td>
-    <td class="r">$29.00</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
-<tr><td>Paper statement</td>
-    <td class="r"><b>$3.00</b></td>
-    <td class="r">$1.00</td><td class="r">$3.00</td>
-    <td class="r">$3.00</td><td class="r">$2.75</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:80%"></div></div><span class="small muted"> P80</span></td><td></td></tr>
-<tr><td>Stop payment</td>
+    <td class="r">$22.50</td><td class="r">$30.00</td>
+    <td class="r">$34.00</td><td class="r muted">31</td>
+    <td><div class="bar-wrap"><div class="bar lo" style="width:26%"></div></div><span class="small muted"> P26</span></td><td><span class="tag below">below range</span></td></tr>
+<tr><td><span class="cat">Paper statement</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$2.00</td><td class="r">$3.00</td>
+    <td class="r">$5.00</td><td class="r muted">14</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Stop payment</span><span class="feeline">Stop Payment</span></td>
     <td class="r"><b>$20.00</b></td>
     <td class="r">$20.00</td><td class="r">$25.00</td>
-    <td class="r">$33.75</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
-<tr><td>Incoming domestic wire</td>
+    <td class="r">$30.00</td><td class="r muted">70</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:44%"></div></div><span class="small muted"> P44</span></td><td></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$10.00</td><td class="r">$10.00</td>
-    <td class="r">$10.00</td><td class="r">$10.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Outgoing domestic wire</td>
+    <td class="r">$5.00</td><td class="r">$10.00</td>
+    <td class="r">$10.00</td><td class="r muted">16</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Wire Transfer - Outgoing Domestic</span></td>
     <td class="r"><b>$20.00</b></td>
-    <td class="r">$22.50</td><td class="r">$25.00</td>
-    <td class="r">$41.50</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:29%"></div></div><span class="small muted"> P29</span></td><td></td></tr>
-<tr><td>Outgoing intl. wire</td>
+    <td class="r">$15.00</td><td class="r">$20.00</td>
+    <td class="r">$25.00</td><td class="r muted">47</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:62%"></div></div><span class="small muted"> P62</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span><span class="feeline">Wire Transfer - Outgoing International</span></td>
     <td class="r"><b>$40.00</b></td>
-    <td class="r">$42.50</td><td class="r">$45.00</td>
-    <td class="r">$47.50</td><td class="r">$42.50</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
+    <td class="r">$33.75</td><td class="r">$47.50</td>
+    <td class="r">$50.00</td><td class="r muted">20</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:45%"></div></div><span class="small muted"> P45</span></td><td></td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — First Credit Union</span><span>Fee Insight</span></div>
@@ -377,21 +377,21 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>First Credit Union</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
     <div class="callout ">
-     <h3>OD protection transfer — $5.00</h3><div class="stat">Peer median $2.00 · 100th percentile · n=3 · flagged: extreme outlier (>2x median)</div><p>Three publishing peers make a thin cohort, and $5 matches the national median — so this is not indefensible. But members who enroll in overdraft protection are doing exactly what credit unions ask of them, and charging 2.5x the local median for the transfer undercuts that message. At these dollar amounts, moving to the $2 median costs little and removes the only extreme-outlier flag on your schedule.</p>
+     <h3>Non-network ATM fee — $4.50</h3><div class="stat">Peer median $2 · middle half $1–$2.50 · range $0.50–$10 · 86th percentile · n=21</div><p>Published as “Out-of-Network ATM Usage.” At $4.50 it is 2.3× the $2 peer median. It recurs for every customer who banks outside your ATM footprint. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $2 is the reference point.</p>
    </div>
 <div class="callout ">
-     <h3>Non-network ATM — $4.50</h3><div class="stat">Peer median $3.00 · 100th percentile · n=3 · national median $1.00</div><p>This is the top of a small local range and 4.5x the national median on the fee members encounter most frequently in daily life. ATM charges are the classic comparison-site line item; a mid-sized credit union carrying the highest posted fee in its cohort should have a deliberate reason, such as network reimbursements elsewhere in the account, and should say so.</p>
+     <h3>Deposited-item return fee — $35</h3><div class="stat">Peer median $25 · middle half $15–$30 · range $5–$40 · 96th percentile · n=26</div><p>Published as “Deposit Item Returned for NSF.” At $35 it is $10 above the $25 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $25 is the natural reference point.</p>
    </div>
 <div class="callout opportunity">
-     <h3>Card replacement — $5.00 vs a $35.00 median</h3><div class="stat">Peer median $35.00 · P25 $17.50 · 17th percentile · n=23</div><p>Against your most reliable comparison set, you charge one-seventh the median to replace a card — a fee every member understands and many will eventually pay. Competitors' own published schedules substantiate the claim. If deliberate, put it in member acquisition materials; if not, it is a documented choice waiting to be made either way.</p>
+     <h3>NSF / returned-item fee — $20</h3><div class="stat">Peer median $27.75 · middle half $23–$30 · 25th percentile · n=60</div><p>Published as “Non-Sufficient Funds - Overdraft.” Below-market returned-item pricing is a position many institutions are moving toward. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $27.75 is the reference point.</p>
    </div>
 <div class="callout opportunity">
-     <h3>Core pricing — at or below market, unmarketed</h3><div class="stat">Monthly maintenance $3.50 vs $5.00 (P17) · Overdraft $20 vs $24.50 median · Stop payment $20 vs $25 median</div><p>The fees that drive account-opening decisions — maintenance and overdraft — both run below the cohort median. Combined with the card replacement gap, First Credit Union has a genuinely member-friendly pricing story on the lines that matter most. It appears nowhere in the market's view of you unless you publish it.</p>
+     <h3>Overdraft fee — $20</h3><div class="stat">Peer median $30 · middle half $22.50–$34 · 26th percentile · n=31</div><p>Published as “Overdraft Payment Service.” A below-market overdraft fee is a claim peers' own published schedules can substantiate. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $30 is the reference point.</p>
    </div>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — First Credit Union</span><span>Fee Insight</span></div>
@@ -401,17 +401,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>First Credit Union</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings (NCUA Call Reports) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings (NCUA Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     <div class="statcard"><div class="lbl">Total assets</div><div class="val">$785.8M</div></div>
 <div class="statcard"><div class="lbl">Total deposits</div><div class="val">$688.4M</div></div>
 <div class="statcard"><div class="lbl">Members</div><div class="val">44,401</div><div class="cmp">9 branches</div></div>
 <div class="statcard"><div class="lbl">Service-charge income</div><div class="val">$3.4M</div><div class="cmp">7.4% of revenue</div></div>
 <div class="statcard"><div class="lbl">Fee-income intensity</div><div class="val">43.5 bps</div><div class="cmp">cohort median <b>49.5 bps</b> of assets</div></div>
-<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">12 of 15</div><div class="cmp">featured categories published</div></div>
+<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">9 of 13</div><div class="cmp">featured categories published</div></div>
   </div>
   <h3 class="sub">Fee economics vs. your cohort</h3>
   <table>
@@ -428,7 +428,7 @@
    <td>P62</td><td>In line</td></tr>
 </tbody>
   </table>
-  <p class="narrative" style="margin-top:10pt">Your posted prices (63th percentile) and realized fee income (43th percentile) sit near the cohort middle — <b>fee strategy is neither a risk nor an engine today</b>, which makes the individual outliers in this report the whole story.</p>
+  <p class="narrative" style="margin-top:10pt">Across the 9 lines we could rank, your posted prices average the 54th percentile of peers; service-charge income relative to assets sits at the 43rd percentile of the same-size cohort. Neither is far from the middle of the market, so the individual lines flagged in § 02 are where the decisions are.</p>
   
   
   <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
@@ -441,22 +441,23 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>First Credit Union</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
-    <thead><tr><th>Institution</th><th class="r">Monthly maintenance</th><th class="r">Overdraft</th><th class="r">NSF / returned item</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <thead><tr><th>Institution</th><th class="r">NSF / returned item</th><th class="r">Overdraft</th><th class="r">Deposited item return</th><th class="r">Non-network ATM</th><th class="r">Card replacement</th></tr></thead>
     <tbody>
-      <tr class="self"><td>First Credit Union <span class="small muted">(you)</span></td><td class="r">$3.50</td><td class="r">$20.00</td><td class="r">$20.00</td><td class="r">$20.00</td><td class="r">$20.00</td></tr>
-      <tr><td>Tampa Bay Federal Credit Union <span class="small muted">(Tampa, FL)</span></td><td class="r">$5.00</td><td class="r">$5.00</td><td class="r">$15.00</td><td class="r">$5.00</td><td class="r">$25.00</td></tr>
-<tr><td>Emblem Credit Union <span class="small muted">(GADSDEN, AL)</span></td><td class="r">$10.00</td><td class="r">—</td><td class="r">$15.00</td><td class="r">$20.00</td><td class="r">$20.00</td></tr>
-<tr><td>Union Square Credit Union <span class="small muted">(Wichita Falls, TX)</span></td><td class="r">—</td><td class="r">$30.00</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Holy Rosary Federal Credit Union <span class="small muted">(Rochester, NH)</span></td><td class="r">—</td><td class="r">$29.00</td><td class="r">$15.00</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Lookout Federal Credit Union <span class="small muted">(Pocatello, ID)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>First Alliance Federal Credit Union <span class="small muted">(Rochester, MN)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$30.00</td><td class="r">—</td></tr>
-<tr><td>Garden Savings Federal Credit Union <span class="small muted">(PARSIPPANY, NJ)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td></tr>
-<tr><td>Idb Global Federal Credit Union <span class="small muted">(WASHINGTON, DC)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td><td class="r">—</td></tr>
+      <tr class="self"><td>First Credit Union <span class="small muted">(you)</span></td><td class="r">$20.00</td><td class="r">$20.00</td><td class="r">$35.00</td><td class="r">$4.50</td><td class="r">$5.00</td></tr>
+      <tr><td>Coopers Cave Federal Credit Union <span class="small muted">(Glens Falls, NY)</span></td><td class="r">$40.00</td><td class="r">$30.00</td><td class="r">$40.00</td><td class="r">$1.00</td><td class="r">$10.00</td></tr>
+<tr><td>Peoples Federal Credit Union <span class="small muted">(Nitro, WV)</span></td><td class="r">$25.00</td><td class="r">—</td><td class="r">$25.00</td><td class="r">—</td><td class="r">$10.00</td></tr>
+<tr><td>Advantage Financial Federal Credit Union <span class="small muted">(WASHINGTON, DC)</span></td><td class="r">$30.00</td><td class="r">$33.00</td><td class="r">$33.00</td><td class="r">—</td><td class="r">$5.00</td></tr>
+<tr><td>Redwood Credit Union <span class="small muted">(SANTA ROSA, CA)</span></td><td class="r">$7.00</td><td class="r">$14.00</td><td class="r">$22.00</td><td class="r">—</td><td class="r">$5.00</td></tr>
+<tr><td>Tampa Bay Federal Credit Union <span class="small muted">(Tampa, FL)</span></td><td class="r">$35.00</td><td class="r">—</td><td class="r">$15.00</td><td class="r">—</td><td class="r">$10.00</td></tr>
+<tr><td>Sag-Aftra Federal Credit Union <span class="small muted">(Burbank, CA)</span></td><td class="r">$10.00</td><td class="r">$25.00</td><td class="r">—</td><td class="r">$2.50</td><td class="r">$10.00</td></tr>
+<tr><td>Georgia Heritage Federal Credit Union <span class="small muted">(SAVANNAH, GA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$2.00</td><td class="r">$10.00</td></tr>
+<tr><td>Wellspring Federal Credit Union <span class="small muted">(Bridge City, TX)</span></td><td class="r">$25.00</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$5.00</td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — First Credit Union</span><span>Fee Insight</span></div>
@@ -465,22 +466,21 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>First Credit Union</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
-  <div class="narrative"><p>Two currents define the fee landscape your schedule competes in. First, the industry-wide retreat from penalty and junk fees: NSF and overdraft charges are being cut or capped under regulatory and reputational pressure, and schedules are increasingly judged by their small print — the convenience and exception fees — rather than the headline lines alone. Second, published fee schedules have become public documents: scraped, compared, and surfaced to prospective members, which converts every top-of-range line into a small reputational bet and every below-market line into an unclaimed asset.</p><p>Mid-sized credit unions occupy the exposed middle: large enough to appear in regional fee comparisons, without the brand gravity that lets the largest institutions price convenience fees quietly. In that position, First Credit Union's profile is favorable but unfinished — the core schedule already undercuts the market, so the highest-leverage moves are surgical: retire or justify the two small top-of-cohort exception fees, and actively advertise the maintenance, overdraft, and card-replacement pricing that peers' own published schedules prove is below market.</p></div>
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing First Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      Community credit unions, $300M–$1B — 41 institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      Aug 16, 2026. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  141 credit unions with under $10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data). For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to First Credit Union in this report
     was extracted from your own published documents:</p>
@@ -498,8 +498,8 @@
   <h2>Your complete published fee schedule</h2>
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
-  First Credit Union's published documents (32 lines, as of Aug 16, 2026).
-  This is the schedule your customers — and your competitors — can see.</p>
+  First Credit Union's published documents (32 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -574,22 +574,23 @@
 
 <!-- 8. BACK -->
 <div class="bleed back">
-  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Aug 16, 2026</span></div>
-  <h2>This report is yours,<br><em>with our compliments.</em></h2>
-  <p class="sub">A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking 1,183 institutions nationwide.</p>
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of 1,183 U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
   <div class="cta">
     <div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">hello@bankfeeindex.com</span>
       <p style="margin-top:8pt">feeinsight.com</p>
     </div>
   </div>
-  <div class="colophon"><span>Prepared for First Credit Union</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

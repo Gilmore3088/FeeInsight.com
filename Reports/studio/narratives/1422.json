@@ -1,52 +1,42 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "All 6 of your fee lines with enough peer data sit inside the middle half of the market.",
   "findings": [
     {
-      "stat": "$25 vs $12",
-      "stat_label": "deposited item return vs median",
-      "headline": "Your deposited item return fee is an extreme outlier.",
-      "body": "At $25.00 — more than double the $12.00 median of 15 peer banks and tied for the cohort maximum at the 100th percentile — this fee is flagged as an extreme outlier. It also lands on the wrong customer: a deposited item return charges your customer for someone else's bad check. That combination of top-of-market price and no-fault incidence makes it the most defensible line to cut on the schedule."
+      "stat": "6 of 6",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Your schedule is priced in line with the market.",
+      "body": "Of the 6 fee lines where we found both your published amount and at least eight comparable peers, six sit between the peer 25th and 75th percentiles. No line stands out as a pricing risk; the opportunity is in how the schedule is presented, not in what it charges."
     },
     {
-      "stat": "$29 vs $15",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF fee is nearly double the peer median.",
-      "body": "Across 34 comparable banks the NSF median has fallen to $15, and a quarter of peers now charge $6.25 or less. Your $29 is close to the cohort's top cluster (75th percentile: $30). As the most examined fee in the industry continues its retreat, the dollar gap — not the percentile — is the number to manage: you charge nearly twice what the typical peer does."
-    },
-    {
-      "stat": "$20 vs $40",
-      "stat_label": "international wire vs peer median",
-      "headline": "You charge half the market rate on international wires — quietly.",
-      "body": "At $20 against a $40 median (11th percentile, 9 peers), international wires are your largest below-market line, and everything else on the schedule sits within a dollar or two of the median — overdraft $29 vs $30, stop payment $29 vs $30, card replacement exactly at $10. The schedule is at-market with two penalty exceptions above and one service exception below."
+      "stat": "50th",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is in line with peers.",
+      "body": "Service-charge income was 1.7 basis points of assets in your latest full-year filing, against a 1.7 bps median for 1,427 same-size banks."
     }
   ],
-  "exec_narrative": "Net position: PB&T Bank prices its core schedule at market — overdraft, stop payment, card replacement, cashier's checks, and domestic wires all sit within a dollar or two of the medians of its 76-bank cohort. The exposure is concentrated in two penalty lines: a deposited item return fee flagged as an extreme outlier at the cohort maximum, and an NSF fee at nearly double the peer median. On the other side of the ledger, international wires run at half the market rate with no marketing attached, and the monthly maintenance fee is absent from the published schedule entirely. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "PB&T Bank is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Colorado have published data, so local competitors may price differently. All 6 rankable lines sit inside the middle half of the market. This is a conventional, defensible schedule. No change is indicated by the published data; the value of this report is in confirming that position and tracking peers as they move.",
   "callouts": [
     {
-      "kind": "risk",
-      "title": "Deposited item return — $25.00",
-      "stat": "Peer median $12.00 · P75 $16.50 · 100th percentile · n=15 · flagged: extreme outlier (>2x median)",
-      "body": "This is the cohort maximum on a fee charged to the party who did nothing wrong — your customer deposited a check that someone else failed to cover. Regulators have singled out exactly this fee category in junk-fee guidance for that reason. At more than double the median, it earns modest revenue for outsized examiner and reputational exposure; it deserves a deliberate decision, and the defensible answers are a cut or a documented rationale."
-    },
-    {
-      "kind": "risk",
-      "title": "NSF / returned item — $29.00",
-      "stat": "Peer median $15.00 · P25 $6.25 · 65th percentile · n=34",
-      "body": "The cohort has split: a cluster of peers still charges $30, but the median has fallen to $15 and a quarter of the market is at $6.25 or under. The direction of travel is one way. Deciding now where PB&T lands — follow the median, hold with the top cluster, or stage a reduction — keeps this a pricing choice rather than a reaction to the next round of scrutiny."
-    },
-    {
-      "kind": "risk",
-      "title": "Monthly maintenance — not found on published schedule",
-      "stat": "Peer median $12.00 · n=15 · no published value (data gap)",
-      "body": "Fifteen peers publish a maintenance fee; yours could not be verified. Unpublished fees read as hidden fees to comparison tools and cautious shoppers, whatever the actual price. If accounts are genuinely free, that is a marketing claim going unmade; if not, the schedule should say what the number is."
-    },
-    {
       "kind": "opportunity",
-      "title": "International wire — $20.00 vs a $40.00 median",
-      "stat": "Peer median $40.00 · P25 $35.00 · 11th percentile · n=9",
-      "body": "You charge half the market rate on a fee that matters to exactly the business and internationally connected customers most banks court hardest. If deliberate, it belongs in commercial and relationship-banking materials — peers' own published schedules substantiate the claim. If legacy pricing, it is margin available without touching any penalty line."
+      "title": "Lines with too few peers to rank",
+      "stat": "Non-network ATM fee $2 (n=5, median $2.25) · Card replacement fee $10 (n=6, median $7.50)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF and penalty fees: large banks have largely eliminated returned-item charges, and the pressure has migrated down-market — visible in your own cohort, where the NSF median has fallen to $15 and a quarter of peers charge $6.25 or less. Deposit-related penalty fees, including deposited item returns, have drawn the same junk-fee scrutiny. Second, published fee schedules have become public documents: scraped, compared, and surfaced automatically, which converts every outlier line into a small reputational bet and every unpublished line into an assumed one.</p><p>Mid-sized community banks occupy the exposed middle: large enough to be swept into fee comparisons and examiner attention, without the brand gravity that lets money-center banks carry premiums quietly. In that position the highest-leverage moves are surgical, not sweeping — PB&T's core schedule is already at market, so the work is retiring or justifying the two conspicuous penalty outliers, publishing the missing maintenance line, and taking public credit for the international wire pricing that already undercuts the market by half.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing PB&T Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return",
+    "monthly_maintenance",
+    "nsf"
+  ],
+  "summary": {
+    "ranked": 6,
+    "above": [],
+    "below": [],
+    "gaps": [],
+    "thin": 2
+  }
 }

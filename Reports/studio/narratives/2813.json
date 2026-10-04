@@ -1,52 +1,71 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your deposited-item return fee ($10) is 2× the $5 peer median, the 88th percentile of 16 peers.",
   "findings": [
     {
-      "stat": "$25 vs $5.48",
-      "stat_label": "monthly maintenance vs peer median",
-      "headline": "Your monthly maintenance fee is an extreme outlier.",
-      "body": "At $25.00, your maintenance fee is 4.6x the $5.48 peer median and 4x the $6.00 national median — the highest in the comparison set and flagged as an extreme outlier. Only four peer banks publish this fee, so the cohort is thin, but the national benchmark tells the same story. A recurring $25 charge is the most visible number on your schedule, twelve times a year."
+      "stat": "$10 vs $5",
+      "stat_label": "deposited-item return fee, yours vs peer median",
+      "headline": "Your deposited-item return fee is well above the market range.",
+      "body": "At $10, it is 2× the $5 peer median and the 88th percentile of 16 peers (middle half of the market: $5–$10). This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism."
     },
     {
-      "stat": "$30 vs $15",
-      "stat_label": "your NSF fee vs national median",
-      "headline": "Your NSF fee matches local peers — and doubles the national benchmark.",
-      "body": "At $30, NSF sits exactly at the peer median of 13 comparable banks, so locally you are at market. Nationally, the median has fallen to $15 as institutions retire returned-item fees under regulatory scrutiny. Being at local market on a fee the industry is abandoning is a position worth revisiting before the local market moves too."
+      "stat": "2 more",
+      "stat_label": "lines above the market range",
+      "headline": "Smaller premiums elsewhere on the schedule.",
+      "body": "Your card replacement fee ($15 vs a $10 median, n=11) and your incoming wire fee ($20 vs a $10 median, n=13) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison."
     },
     {
-      "stat": "$3 vs $8",
-      "stat_label": "OD protection transfer vs median",
-      "headline": "You are below market on service fees — quietly.",
-      "body": "Overdraft-protection transfers ($3 vs an $8 median), stop payments ($25 vs $30, 44th percentile), and cashier's checks ($4 vs $5) all run below the peer median. Everywhere else — wires, card replacement, deposited item returns — you sit at or within a dollar of market. The schedule is essentially at-market with one large exception at the top."
+      "stat": "6 of 10",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 10 fee lines where we found both your published amount and at least eight comparable peers, six sit between the peer 25th and 75th percentiles, three above and one below."
     }
   ],
-  "exec_narrative": "Net position: Riverside Bank of Dublin prices almost everything at or slightly below market — penalty fees, wires, and card services all track the medians of its 35-bank cohort — with one dominant exception: a $25 monthly maintenance fee that is more than four times both the peer and national medians and flagged as an extreme outlier. Because maintenance is recurring and universal where most fees are episodic, that single line likely outweighs every other pricing decision on the schedule combined. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Riverside Bank of Dublin is compared with 91 banks under $1B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 banks in your own size tier have published data; local competitors may price differently. Of 10 rankable lines, six sit inside the middle half of the market, three above it (deposited-item return fee, card replacement fee and incoming wire fee), and one below it (cashier's check fee). We would suggest one step: review the deposited-item return fee, which sits well above the market range; the peer median of $5 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Monthly maintenance — $25.00",
-      "stat": "Peer median $5.48 · 100th percentile · n=4 · national median $6.00 · flagged: extreme outlier (>2x median)",
-      "body": "Four publishing peers make for a thin local comparison, but the national median of $6 confirms the picture: $25 is a premium-tier maintenance fee on a community-bank schedule. If it funds a genuinely premium account with offset conditions, document and market that. If it is legacy pricing, it is the single most conspicuous line a prospective customer — or a fee survey — will find."
+      "title": "Deposited-item return fee — $10",
+      "stat": "Peer median $5 · middle half $5–$10 · range $3–$18 · 88th percentile · n=16",
+      "body": "Published as “Returned Deposited Item.” At $10 it is 2× the $5 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $5 is the natural reference point."
     },
     {
       "kind": "risk",
-      "title": "NSF / returned item — $30.00",
-      "stat": "Peer median $30.00 · national median $15.00 · 77th percentile · n=13",
-      "body": "You are at the local median, which is a defensible position today. But the national median is half that, and the direction of travel is one way: large banks have largely eliminated NSF fees and the pressure is migrating down-market. Deciding now whether Riverside follows or holds — rather than waiting for the cohort median to fall around you — keeps this a choice instead of a reaction."
+      "title": "Card replacement fee — $15",
+      "stat": "Peer median $10 · middle half $5–$12.50 · range $5–$20 · 91st percentile · n=11",
+      "body": "Published as “Debit Card Replacement.” At $15 it is $5 above the $10 peer median. It is a small charge, typically incurred after a lost or compromised card, when customers are least forgiving. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $10 is the reference point."
     },
     {
       "kind": "risk",
-      "title": "Incoming domestic wire — $20.00",
-      "stat": "Peer median $15.00 · 100th percentile · n=3",
-      "body": "Only three peers publish this fee, so read the percentile loosely — but charging the top of the range to receive money is friction aimed at your most attractive customers, and the $5 premium over the median earns little revenue for the signal it sends."
+      "title": "Incoming wire fee — $20",
+      "stat": "Peer median $10 · middle half $10–$15 · range $5–$20 · 100th percentile · n=13",
+      "body": "Published as “Wire Transfer (Incoming).” At $20 it is 2× the $10 peer median. Charging to receive funds is increasingly uncommon and is noticed by business customers. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $10 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Service fees — priced below market, marketed nowhere",
-      "stat": "OD protection transfer $3 vs $8 median · Stop payment $25 vs $30 (P44) · Cashier's check $4 vs $5",
-      "body": "Three customer-facing service fees run below the cohort. If deliberate, they are a marketing claim your competitors' own published schedules substantiate — 'lower service fees than most banks in your market.' If not deliberate, they are quiet margin. Today they are neither, because nobody knows about them."
+      "title": "Cashier's check fee — $4",
+      "stat": "Peer median $5 · middle half $5–$7 · 7th percentile · n=14",
+      "body": "Published as “Cashier's Check.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $5 is the reference point."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the national median has fallen to $15 — half your posted fee, even though your local 13-bank cohort still clusters at $30. Second, published fee schedules have become public documents: scraped, compared, and surfaced in fee surveys, which converts every outlier line — like a $25 maintenance fee against a $6 national median — into a small reputational bet.</p><p>Small community banks compete on relationships and local trust, not brand gravity, and their fee schedules are read accordingly: customers expect neighborly pricing and notice when a line breaks that expectation. For Riverside Bank of Dublin the leverage is unusually concentrated — the schedule is already at or below market almost everywhere, so the work is not a broad repricing but a single decision on the maintenance fee, paired with actually advertising the service fees already priced below the market's own published numbers.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Riverside Bank of Dublin with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "monthly_maintenance",
+    "nsf"
+  ],
+  "summary": {
+    "ranked": 10,
+    "above": [
+      "deposited_item_return",
+      "card_replacement",
+      "wire_domestic_incoming"
+    ],
+    "below": [
+      "cashiers_check"
+    ],
+    "gaps": [],
+    "thin": 1
+  }
 }
