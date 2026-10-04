@@ -78,6 +78,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
   }
 
   return (
+    <main id="main-content">
     <div className="mx-auto max-w-7xl px-6 py-14">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
@@ -138,7 +139,9 @@ export default async function ProDataPage({ searchParams }: PageProps) {
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
           </svg>
+          <label htmlFor="pro-data-q" className="sr-only">Search institutions by name</label>
           <input
+            id="pro-data-q"
             type="text"
             name="q"
             defaultValue={query}
@@ -147,7 +150,9 @@ export default async function ProDataPage({ searchParams }: PageProps) {
           />
         </div>
 
+        <label htmlFor="pro-data-state" className="sr-only">Filter by state</label>
         <select
+          id="pro-data-state"
           name="state"
           defaultValue={stateCode}
           className="rounded-xl border border-warm-200 bg-white px-3 py-2.5 text-[13px] text-warm-900 focus:outline-none focus:ring-2 focus:ring-terra/30"
@@ -160,7 +165,9 @@ export default async function ProDataPage({ searchParams }: PageProps) {
             ))}
         </select>
 
+        <label htmlFor="pro-data-charter" className="sr-only">Filter by charter type</label>
         <select
+          id="pro-data-charter"
           name="charter"
           defaultValue={charterType}
           className="rounded-xl border border-warm-200 bg-white px-3 py-2.5 text-[13px] text-warm-900 focus:outline-none focus:ring-2 focus:ring-terra/30"
@@ -319,5 +326,6 @@ export default async function ProDataPage({ searchParams }: PageProps) {
         </div>
       </div>
     </div>
+    </main>
   );
 }

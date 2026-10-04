@@ -223,7 +223,7 @@ export async function getDataQualityStats(): Promise<DataQualityStats> {
         AND ct.website_url IS NOT NULL
         AND (ct.document_type IS NULL OR ct.document_type != 'offline')`;
 
-    // Freeform fees (not in 49-category taxonomy)
+    // Freeform fees (not in the fee taxonomy)
     const [freeformRow] = await sql`
       SELECT COUNT(*) as cnt FROM published_fee_catalog
       WHERE fee_category NOT IN (

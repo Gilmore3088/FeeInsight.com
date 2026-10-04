@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -462,6 +463,67 @@ async function recordPublicationSignals(
   }
 }
 
+/**
+ * Fraction of the prior amount a fee must move before the guides explaining it are
+ * worth re-checking. Token binding keeps the *figures* correct on their own; this
+ * catches the surrounding argument going stale — "credit unions charge meaningfully
+ * less" can stop being true even while every number on the page is current.
+ */
+export const GUIDE_STALENESS_MOVEMENT_THRESHOLD = 0.1;
+
+async function flagMovedGuidesStale(
+  db: SqlTag,
+  runId: number,
+  results: HamiltonPublishResult[],
+): Promise<void> {
+  const moved = new Map<string, number>();
+  for (const result of results) {
+    if (result.status !== "published") continue;
+    const key = result.canonicalFeeKey;
+    const previous = result.previousAmount;
+    const current = result.amount;
+    if (!key || previous === null || current === null || previous === 0) continue;
+    const change = Math.abs(current - previous) / Math.abs(previous);
+    if (change < GUIDE_STALENESS_MOVEMENT_THRESHOLD) continue;
+    moved.set(key, Math.max(moved.get(key) ?? 0, change));
+  }
+  if (moved.size === 0) return;
+
+  try {
+    for (const [category, change] of moved) {
+      const reason = `Published median moved ${(change * 100).toFixed(0)}% in run ${runId}`;
+      const rows = (await db`
+        UPDATE consumer_guides
+           SET stale_since = COALESCE(stale_since, NOW()),
+               stale_reason = ${reason},
+               updated_at = NOW()
+         WHERE status = 'published'
+           AND primary_category = ${category}
+           AND stale_since IS NULL
+        RETURNING id, slug
+      `) as unknown as { id: number; slug: string }[];
+
+      if (rows.length > 0) {
+        await db`
+          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          VALUES (
+            ${runId}, 'guide.flagged_stale', 'completed',
+            ${`Flagged ${rows.length} guide(s) for re-check after a ${(change * 100).toFixed(0)}% move in ${category}`},
+            ${JSON.stringify({
+              fee_category: category,
+              movement_fraction: change,
+              guides: rows.map((r) => r.slug),
+            })}::jsonb
+          )
+        `;
+      }
+    }
+  } catch {
+    // The guides tables may not exist yet in an environment mid-migration. Flagging a
+    // guide for review must never fail a publish that has already written fee rows.
+  }
+}
+
 export async function runHamiltonPublish(
   options: RunHamiltonPublishOptions,
 ): Promise<RunHamiltonPublishResult> {
@@ -543,6 +605,13 @@ export async function runHamiltonPublish(
 
   if (!dryRun) {
     await recordPublicationSignals(db, options.runId, batchId, results, rowByVerifiedFeeId);
+
+    // Public benchmark reads are cached between publishes. Drop the cache so readers
+    // see the rows this run just published. Never allowed to fail a publish.
+    if (results.some((result) => result.status === "published")) {
+      invalidateFeeSummaryCache();
+      await flagMovedGuidesStale(db, options.runId, results);
+    }
   }
 
   return {

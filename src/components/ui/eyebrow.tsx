@@ -25,8 +25,8 @@ interface EyebrowProps {
   children: ReactNode;
 }
 
-/* warm-500 (#A09788) is reserved for rules and disabled states — eyebrows are
-   text at or below 14px, so #7A7062 (warm-600) is the floor for every tone. */
+/* warm-500 (#A09788) is reserved for rules and disabled states. Eyebrows are text at
+   or below 14px, so warm-600 (#6B6255, 5.6:1 on parchment) is the floor for every tone. */
 const TONE: Record<Tone, string> = {
   default: "text-warm-600",
   subtle: "text-warm-600",

@@ -6,9 +6,11 @@ import { ManageBillingButton } from "./manage-billing-button";
 import { PremiumBadge } from "@/components/upgrade-gate";
 import { LogoutButton } from "./logout-button";
 import { ProfileForm } from "./profile-form";
+import { AlertsPanel } from "./alerts-panel";
+import { SubscriptionStatusNotice } from "./subscription-status-notice";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
-import { CustomerNav } from "@/components/customer-nav";
+import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
@@ -156,7 +158,8 @@ export default async function AccountPage({
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
-      <CustomerNav />
+      <ConsumerNav />
+      <main id="main-content">
 
       <div className="mx-auto max-w-4xl px-6 py-14">
         {params.success && (
@@ -194,6 +197,11 @@ export default async function AccountPage({
           <LogoutButton />
         </div>
 
+        <SubscriptionStatusNotice user={user} />
+
+        {/* ── Saved institutions and fee alerts: what a free account is for, so it comes first ── */}
+        <AlertsPanel userId={user.id} />
+
         {/* ── Subscription Status ── */}
         {!isPro && (
           <div className="rounded-xl border-2 border-[#C44B2E] bg-white/70 backdrop-blur-sm p-6 mb-8 relative overflow-hidden">
@@ -209,7 +217,7 @@ export default async function AccountPage({
                 <p className="text-[13px] text-[#6B6255] mt-1">
                   {pendingWorkspaceInvitations.length > 0
                     ? "Activate Pro to accept delegated Hamilton workspace access for your invited institution."
-                    : "All 49 fee categories, peer benchmarks, Hamilton analysis, data exports, and report workflows."}
+                    : "The full fee catalog, peer benchmarks, Hamilton analysis, data exports, and report workflows."}
                 </p>
                 {pendingWorkspaceInvitations.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -229,7 +237,7 @@ export default async function AccountPage({
                 className="mt-4 md:mt-0 inline-flex items-center gap-2 rounded-full bg-[#C44B2E] px-6 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-[#C44B2E]/15 hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all flex-shrink-0 no-underline"
               >
                 View Plans
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
               </a>
@@ -248,11 +256,6 @@ export default async function AccountPage({
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 uppercase">
                   Active
                 </span>
-                {user.subscription_status === "past_due" && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 uppercase">
-                    Past Due
-                  </span>
-                )}
               </div>
               {user.stripe_customer_id && <ManageBillingButton />}
             </div>
@@ -264,7 +267,7 @@ export default async function AccountPage({
           <div className="rounded-xl border border-[#E8DFD1] bg-white/70 backdrop-blur-sm p-5 mb-8">
             <div className="flex items-start gap-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#C44B2E]/8 text-[#C44B2E]">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
                 </svg>
               </div>
@@ -530,6 +533,7 @@ export default async function AccountPage({
           </div>
         </div>
       </div>
+      </main>
       <CustomerFooter />
       <SearchModal />
     </div>

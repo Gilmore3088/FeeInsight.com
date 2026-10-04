@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { CustomerFooter } from "@/components/customer-footer";
-import { CustomerNav } from "@/components/customer-nav";
+import { ConsumerNav } from "@/components/consumer-nav";
 import { SearchModal } from "@/components/public/search-modal";
 import { canAccessPremium } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
@@ -96,9 +96,9 @@ export default async function WorkspaceInvitePage() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
-      <CustomerNav />
+      <ConsumerNav />
 
-      <main className="mx-auto max-w-3xl px-4 py-12">
+      <main id="main-content" className="mx-auto max-w-3xl px-4 py-12">
         <div className="rounded-xl border border-[#E8DFD1] bg-[#FFFDF9] p-6 shadow-sm">
           <div className="mb-6">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#A93D25]">

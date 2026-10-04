@@ -91,6 +91,7 @@ export default async function SubscribePage({
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
       <ConsumerNav />
+      <main id="main-content">
 
       <div className="mx-auto max-w-5xl px-6 py-14">
         {params.success && (
@@ -177,6 +178,7 @@ export default async function SubscribePage({
           </p>
         )}
       </div>
+      </main>
       <CustomerFooter />
       <SearchModal />
     </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
+import { formatAmount } from "@/lib/format";
 import { getCharterLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { hasVerifiedFees } from "./directory-sort";
 
@@ -12,6 +13,44 @@ function statusChip(row: InstitutionSearchResult): { label: string; className: s
     return { label: "Under review", className: "border-amber-200 bg-amber-50 text-amber-900" };
   }
   return { label: getPublicStatusLabel("unavailable"), className: "border-[#E0D7C9] bg-white text-[#6B6255]" };
+}
+
+/**
+ * A fee the reader arrived to compare (`?fee=overdraft` from a consumer guide). When set,
+ * every row shows that fee's published amount next to the national median and links to
+ * the highlighted row on the profile.
+ */
+export interface FeeFocus {
+  category: string;
+  /** Display name with any abbreviation stripped, e.g. "Overdraft" not "Overdraft (OD)". */
+  label: string;
+  median: number | null;
+}
+
+export function institutionHref(id: number, focus?: FeeFocus | null): string {
+  return focus ? `/institution/${id}?fee=${focus.category}#fee-${focus.category}` : `/institution/${id}`;
+}
+
+function deltaLabel(amount: number, median: number | null): string | null {
+  if (median === null) return null;
+  if (amount > median) return `${formatAmount(amount - median)} above median`;
+  if (amount < median) return `${formatAmount(median - amount)} below median`;
+  return "at the median";
+}
+
+/** The focused fee's amount for one row; "Not published" is explicit, never $0. */
+function FocusAmount({ row, focus, align = "right" }: { row: InstitutionSearchResult; focus: FeeFocus; align?: "right" | "left" }) {
+  const amount = row.focus_fee_amount;
+  if (amount === null || amount === undefined) {
+    return <span className="text-[11px] text-[#6B6255]">Not published</span>;
+  }
+  const delta = deltaLabel(amount, focus.median);
+  return (
+    <span className={`block tabular-nums ${align === "right" ? "text-right" : ""}`}>
+      <span className="font-semibold text-[#1A1815]">{formatAmount(amount)}</span>
+      {delta && <span className="block text-[10px] text-[#6B6255]">{delta}</span>}
+    </span>
+  );
 }
 
 function locationLabel(row: InstitutionSearchResult): string {
@@ -52,7 +91,13 @@ function FeeCount({ row }: { row: InstitutionSearchResult }) {
 
 const TH_CLASS = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]";
 
-export function InstitutionResultsTable({ rows }: { rows: InstitutionSearchResult[] }) {
+export function InstitutionResultsTable({
+  rows,
+  focus = null,
+}: {
+  rows: InstitutionSearchResult[];
+  focus?: FeeFocus | null;
+}) {
   return (
     <div className="hidden overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8] sm:block">
       <div className="overflow-x-auto">
@@ -62,6 +107,7 @@ export function InstitutionResultsTable({ rows }: { rows: InstitutionSearchResul
               <th className={TH_CLASS}>Institution</th>
               <th className={TH_CLASS}>Location</th>
               <th className={`hidden md:table-cell ${TH_CLASS}`}>Type</th>
+              {focus && <th className={`text-right ${TH_CLASS}`}>{focus.label}</th>}
               <th className={`text-right ${TH_CLASS}`}>Fees</th>
               <th className={`hidden md:table-cell ${TH_CLASS}`}>Status</th>
             </tr>
@@ -71,7 +117,7 @@ export function InstitutionResultsTable({ rows }: { rows: InstitutionSearchResul
               <tr key={row.id} className="fi-row-interaction border-b border-[#E0D7C9] last:border-0">
                 <td className="px-4 py-3">
                   <Link
-                    href={`/institution/${row.id}`}
+                    href={institutionHref(row.id, focus)}
                     className="group flex min-w-0 items-center gap-2 break-words font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
                   >
                     <span className="min-w-0 break-words">{row.institution_name}</span>
@@ -90,6 +136,11 @@ export function InstitutionResultsTable({ rows }: { rows: InstitutionSearchResul
                     </span>
                   )}
                 </td>
+                {focus && (
+                  <td className="px-4 py-3 text-right">
+                    <FocusAmount row={row} focus={focus} />
+                  </td>
+                )}
                 <td className="px-4 py-3 text-right">
                   <FeeCount row={row} />
                 </td>
@@ -105,13 +156,19 @@ export function InstitutionResultsTable({ rows }: { rows: InstitutionSearchResul
   );
 }
 
-export function InstitutionMobileCards({ rows }: { rows: InstitutionSearchResult[] }) {
+export function InstitutionMobileCards({
+  rows,
+  focus = null,
+}: {
+  rows: InstitutionSearchResult[];
+  focus?: FeeFocus | null;
+}) {
   return (
     <div className="grid gap-2 sm:hidden">
       {rows.map((row) => (
         <Link
           key={row.id}
-          href={`/institution/${row.id}`}
+          href={institutionHref(row.id, focus)}
           className="fi-row-interaction block border border-[#E0D7C9] bg-[#FDFBF8] px-3 py-3"
         >
           <div className="flex min-w-0 items-start justify-between gap-3">
@@ -128,7 +185,14 @@ export function InstitutionMobileCards({ rows }: { rows: InstitutionSearchResult
               </div>
             </div>
             <div className="shrink-0 text-right text-sm">
-              <FeeCount row={row} />
+              {focus ? (
+                <>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]">{focus.label}</p>
+                  <FocusAmount row={row} focus={focus} />
+                </>
+              ) : (
+                <FeeCount row={row} />
+              )}
             </div>
           </div>
         </Link>

@@ -1,46 +1,33 @@
 "use server";
 
-import { getStripe } from "@/lib/stripe";
-import { hashPassword } from "@/lib/passwords";
-import { withTransaction } from "@/lib/data-store/connection";
-import { cookies } from "next/headers";
-import crypto from "crypto";
+import { createUserWithSession } from "@/lib/auth";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
 
-const SESSION_TTL_HOURS = 24;
-
-function getCookieSecret(): string {
-  const secret = process.env.BFI_COOKIE_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
-    throw new Error("BFI_COOKIE_SECRET must be set in production");
-  }
-  return secret || "dev-secret-change-in-production";
-}
-
-function signSessionId(sessionId: string): string {
-  const sig = crypto
-    .createHmac("sha256", getCookieSecret())
-    .update(sessionId)
-    .digest("hex");
-  return `${sessionId}.${sig}`;
-}
-
-export async function register(
-  formData: FormData,
-  redirectTo?: string,
-): Promise<{
+export interface RegisterResult {
   success: boolean;
   error?: string;
   redirect?: string;
-}> {
+  /** Set when the email already has an account: where "Sign in instead" should go. */
+  loginHref?: string;
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function optionalString(value: FormDataEntryValue | null): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Creates a free account and signs the reader in.
+ *
+ * The user row comes first and Stripe is not called at all: a free signup must not fail
+ * because a payment provider is unavailable. A Stripe customer is created only when the
+ * user reaches checkout (see `ensureStripeCustomer`).
+ */
+export async function register(formData: FormData, redirectTo?: string): Promise<RegisterResult> {
   const email = formData.get("email");
   const password = formData.get("password");
-  const name = formData.get("name");
-  const institutionName = formData.get("institution_name") as string | null;
-  const institutionType = formData.get("institution_type") as string | null;
-  const assetTier = formData.get("asset_tier") as string | null;
-  const stateCode = formData.get("state_code") as string | null;
-  const jobRole = formData.get("job_role") as string | null;
+  const name = optionalString(formData.get("name"));
 
   if (typeof email !== "string" || !email.trim()) {
     return { success: false, error: "Email is required" };
@@ -48,77 +35,36 @@ export async function register(
   if (typeof password !== "string" || password.length < 8) {
     return { success: false, error: "Password must be at least 8 characters" };
   }
-  if (typeof name !== "string" || !name.trim()) {
-    return { success: false, error: "Name is required" };
-  }
 
   const trimmedEmail = email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+  if (!EMAIL_PATTERN.test(trimmedEmail)) {
     return { success: false, error: "Invalid email format" };
   }
 
-  const hashedPw = await hashPassword(password);
+  const destination = sanitizeInternalRedirect(redirectTo, "/account");
+  const result = await createUserWithSession({
+    email: trimmedEmail,
+    password,
+    // The consumer form does not ask for a name; the email's local part stands in and can
+    // be changed on /account.
+    displayName: name ?? trimmedEmail.split("@")[0],
+    institutionName: optionalString(formData.get("institution_name")),
+    institutionType: optionalString(formData.get("institution_type")),
+    assetTier: optionalString(formData.get("asset_tier")),
+    stateCode: optionalString(formData.get("state_code")),
+    jobRole: optionalString(formData.get("job_role")),
+  });
 
-  let stripeCustomer;
-  try {
-    const stripe = getStripe();
-    stripeCustomer = await stripe.customers.create({
-      email: trimmedEmail,
-      name: name.trim(),
-    });
-  } catch (e) {
-    console.error("[register] Stripe customer creation failed:", e);
-    return { success: false, error: "Registration failed. Please try again." };
-  }
-
-  const sessionId = crypto.randomBytes(32).toString("hex");
-  const expiresDate = new Date(Date.now() + SESSION_TTL_HOURS * 60 * 60 * 1000);
-  const expiresAt = expiresDate.toISOString();
-
-  try {
-    try {
-      await withTransaction(async (tx) => {
-        const [insertRow] = await tx`
-          INSERT INTO users (username, email, password_hash, display_name, role,
-           stripe_customer_id, subscription_status, is_active, created_at,
-           institution_name, institution_type, asset_tier, state_code, job_role)
-          VALUES (${trimmedEmail}, ${trimmedEmail}, ${hashedPw}, ${name.trim()}, 'viewer',
-                  ${stripeCustomer.id}, 'none', ${true}, NOW(),
-                  ${institutionName?.trim() || null}, ${institutionType || null},
-                  ${assetTier || null}, ${stateCode || null}, ${jobRole || null})
-          RETURNING id
-        `;
-
-        await tx`
-          INSERT INTO sessions (id, user_id, expires_at)
-          VALUES (${sessionId}, ${insertRow.id}, ${expiresAt})
-        `;
-      });
-    } catch (e: unknown) {
-      try {
-        const stripe = getStripe();
-        await stripe.customers.del(stripeCustomer.id);
-      } catch { /* best effort cleanup */ }
-
-      if (e instanceof Error && (e.message.includes("unique") || e.message.includes("duplicate"))) {
-        return { success: false, error: "An account with this email already exists" };
-      }
-      throw e;
+  if (!result.ok) {
+    if (result.code === "duplicate") {
+      return {
+        success: false,
+        error: "An account with this email already exists.",
+        loginHref: `/login?from=${encodeURIComponent(destination)}`,
+      };
     }
-
-    const cookieStore = await cookies();
-    cookieStore.set("fsh_session", signSessionId(sessionId), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: SESSION_TTL_HOURS * 60 * 60,
-      path: "/",
-    });
-
-    const destination = sanitizeInternalRedirect(redirectTo, "/account");
-    return { success: true, redirect: resolvePostLoginRedirect(destination, "viewer") };
-  } catch (e) {
-    console.error("[register] Error:", e);
-    return { success: false, error: "Registration failed. Please try again." };
+    return { success: false, error: result.message };
   }
+
+  return { success: true, redirect: resolvePostLoginRedirect(destination, "viewer") };
 }

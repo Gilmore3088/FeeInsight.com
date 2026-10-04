@@ -1,6 +1,7 @@
 /**
  * /reports/[slug] — ISR-cached report landing page.
- * Executive summary + 2 chart placeholders publicly visible.
+ * Publicly: title, type, date and a pointer to the PDF. Not indexed until reports carry
+ * a written summary on the page.
  * Full PDF download behind email gate (no login required).
  *
  * OG metadata per D-06/D-07: og:type=article, article:published_time, article:author.
@@ -99,6 +100,8 @@ export async function generateMetadata({
   return {
     title: `${report.title}`,
     description,
+    // No on-page summary yet, so this page adds nothing a search result should land on.
+    robots: { index: false, follow: true },
     alternates: {
       canonical: `${SITE_URL}/reports/${slug}`,
     },
@@ -132,11 +135,11 @@ export default async function ReportPage({
   const typeLabel = humanType(report.report_type);
 
   return (
-    <main>
+    <div>
       <div style={{ maxWidth: "720px", margin: "0 auto", padding: "64px 24px 96px" }}>
 
         {/* Breadcrumb */}
-        <nav style={{ marginBottom: "32px", fontSize: "13px", color: "#A09788" }}>
+        <nav aria-label="Breadcrumb" style={{ marginBottom: "32px", fontSize: "13px", color: "#6B6255" }}>
           <Link href="/reports" style={{ color: "#5A5347", textDecoration: "none" }}>
             Research Reports
           </Link>
@@ -173,54 +176,21 @@ export default async function ReportPage({
             {report.title}
           </h1>
 
-          <p style={{ fontSize: "13px", color: "#A09788" }}>
+          <p style={{ fontSize: "13px", color: "#6B6255" }}>
             {RESEARCH_IMPRINT} &middot; Published {formatDate(report.published_at)}
           </p>
         </div>
 
-        {/* Executive Summary (publicly visible) */}
+        {/* What this page is. Until a report has a written summary and real charts, say so
+            plainly rather than showing placeholder text and empty chart boxes. */}
         <section style={{ marginBottom: "48px" }}>
-          <h2 style={{
-            fontSize: "22px",
-            fontWeight: 600,
-            color: "#1A1815",
-            marginBottom: "16px",
-            fontFamily: "var(--font-newsreader), Georgia, serif",
-            letterSpacing: "-0.01em",
-            lineHeight: 1.3,
-          }}>
-            Executive Summary
-          </h2>
-          <p style={{ fontSize: "15px", color: "#5A5347", lineHeight: 1.75, fontStyle: "italic" }}>
-            {"Hamilton's executive summary for this report will appear here."}
+          <p style={{ fontSize: "15px", color: "#5A5347", lineHeight: 1.75 }}>
+            This {typeLabel.toLowerCase()} is delivered as a PDF. Download it below, or{" "}
+            <Link href="/for-institutions#report" style={{ color: "#A93D25", textDecoration: "underline" }}>
+              request a competitive fee report for your own institution
+            </Link>
+            .
           </p>
-        </section>
-
-        {/* Chart placeholders (publicly visible, per D-03: 2 key charts) */}
-        <section style={{ marginBottom: "56px" }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "16px",
-          }}>
-            {[1, 2].map((n) => (
-              <div
-                key={n}
-                style={{
-                  background: "#F5F0E8",
-                  borderRadius: "8px",
-                  height: "192px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <span style={{ fontSize: "12px", color: "#A09788", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  Chart {n} — available in full report
-                </span>
-              </div>
-            ))}
-          </div>
         </section>
 
         {/* Email gate — full PDF download */}
@@ -246,7 +216,7 @@ export default async function ReportPage({
         </section>
 
         {/* Methodology link */}
-        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #E8DFD1", fontSize: "12px", color: "#A09788" }}>
+        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #E8DFD1", fontSize: "12px", color: "#6B6255" }}>
           <p>
             Data collected and verified by the Bank Fee Index.{" "}
             <a href="/methodology" style={{ color: "#5A5347", textDecoration: "underline" }}>
@@ -257,6 +227,6 @@ export default async function ReportPage({
         </div>
 
       </div>
-    </main>
+    </div>
   );
 }

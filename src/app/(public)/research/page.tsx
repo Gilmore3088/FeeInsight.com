@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AudiencePaths } from "@/components/public/audience-paths";
 import {
   getStatesWithFeeData,
   getDistrictMetrics,
@@ -108,51 +109,7 @@ export default async function ResearchHubPage() {
           <span>12 Fed districts</span>
         </div>
 
-        {/* Start here paths */}
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Link
-            href="/guides"
-            className="group rounded-xl border border-[#E8DFD1] bg-white/70 backdrop-blur-sm px-4 py-3.5 transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5 no-underline"
-          >
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
-              I&apos;m a Consumer
-            </p>
-            <p className="mt-1 text-[13px] font-semibold text-[#1A1815] group-hover:text-[#A93D25] transition-colors">
-              Understand &amp; reduce my fees
-            </p>
-            <p className="mt-0.5 text-[11px] text-[#6B6255]">
-              Plain-language guides with real data
-            </p>
-          </Link>
-          <Link
-            href="/research/national-fee-index"
-            className="group rounded-xl border border-[#E8DFD1] bg-white/70 backdrop-blur-sm px-4 py-3.5 transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5 no-underline"
-          >
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
-              I&apos;m a Researcher
-            </p>
-            <p className="mt-1 text-[13px] font-semibold text-[#1A1815] group-hover:text-[#A93D25] transition-colors">
-              National benchmarks &amp; data
-            </p>
-            <p className="mt-0.5 text-[11px] text-[#6B6255]">
-              Medians, percentiles, geographic analysis
-            </p>
-          </Link>
-          <Link
-            href="/subscribe"
-            className="group rounded-xl border border-[#E8DFD1] bg-white/70 backdrop-blur-sm px-4 py-3.5 transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5 no-underline"
-          >
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
-              I&apos;m a Professional
-            </p>
-            <p className="mt-1 text-[13px] font-semibold text-[#1A1815] group-hover:text-[#A93D25] transition-colors">
-              Peer benchmarking &amp; API
-            </p>
-            <p className="mt-0.5 text-[11px] text-[#6B6255]">
-              Peer sets, exports, the Hamilton workspace
-            </p>
-          </Link>
-        </div>
+        <AudiencePaths className="mt-6" />
       </div>
 
       {/* -- Two-column layout -- */}

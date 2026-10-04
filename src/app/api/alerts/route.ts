@@ -2,6 +2,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
+import { addAlertSubscription, normalizeAlertCategories, removeAlertSubscription } from "@/lib/data-store/alerts";
 
 /**
  * GET /api/alerts
@@ -31,8 +32,8 @@ async function handleGET() {
 
     return NextResponse.json({ subscriptions: [...rows] });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[api/alerts] GET failed:", err);
+    return NextResponse.json({ error: "Could not load your alerts." }, { status: 500 });
   }
 }
 
@@ -69,30 +70,32 @@ async function handlePOST(request: NextRequest) {
       );
     }
 
-    // Validate fee_categories if provided
-    if (fee_categories !== undefined) {
-      if (!Array.isArray(fee_categories) || fee_categories.some((c: unknown) => typeof c !== "string")) {
-        return NextResponse.json(
-          { error: "fee_categories must be an array of strings" },
-          { status: 400 },
-        );
-      }
+    // Categories must come from the fee taxonomy; saving more adds to what is followed.
+    const normalized = normalizeAlertCategories(fee_categories);
+    if (!normalized.ok) {
+      return NextResponse.json({ error: normalized.error }, { status: 400 });
     }
 
-    const categories = fee_categories?.length ? fee_categories : null;
-
-    const [row] = await sql`
-      SELECT upsert_institution_fee_alert_subscription(
-        ${user.id},
-        ${institution_id},
-        ${categories}
-      ) as id
-    `;
-
-    return NextResponse.json({ id: Number(row.id) }, { status: 201 });
+    const saved = await addAlertSubscription(user.id, institution_id, normalized.categories);
+    return NextResponse.json({ id: saved.id, fee_categories: saved.fee_categories }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[api/alerts] POST failed:", err);
+    return NextResponse.json({ error: "Could not save this alert." }, { status: 500 });
+  }
+}
+
+/** institution_id from `?institution_id=` or a JSON body, so DELETE works without a body. */
+async function readInstitutionId(request: NextRequest): Promise<number | null> {
+  const fromQuery = request.nextUrl.searchParams.get("institution_id");
+  if (fromQuery !== null) {
+    const parsed = Number(fromQuery);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  try {
+    const body = await request.json();
+    return typeof body?.institution_id === "number" && body.institution_id > 0 ? body.institution_id : null;
+  } catch {
+    return null;
   }
 }
 
@@ -108,24 +111,15 @@ async function handleDELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { institution_id } = body;
-
-    if (!institution_id || typeof institution_id !== "number") {
+    const institution_id = await readInstitutionId(request);
+    if (institution_id === null) {
       return NextResponse.json(
         { error: "institution_id is required and must be a number" },
         { status: 400 },
       );
     }
 
-    const [row] = await sql`
-      SELECT deactivate_institution_fee_alert_subscription(
-        ${user.id},
-        ${institution_id}
-      ) as affected_count
-    `;
-
-    if (Number(row.affected_count) === 0) {
+    if (!(await removeAlertSubscription(user.id, institution_id))) {
       return NextResponse.json(
         { error: "Subscription not found" },
         { status: 404 },
@@ -134,8 +128,8 @@ async function handleDELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[api/alerts] DELETE failed:", err);
+    return NextResponse.json({ error: "Could not remove this alert." }, { status: 500 });
   }
 }
 
