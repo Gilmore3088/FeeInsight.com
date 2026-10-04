@@ -619,7 +619,8 @@ async function recordPublicationSignals(
       {
         institutionId,
         signalType: "hamilton_publication_completed",
-        severity: "high",
+        // Routine bookkeeping, not a competitive event: never escalates Monitor status.
+        severity: "low",
         title: `${group.institutionName} - ${rowCountLabel(count)} published`,
         body:
           `Hamilton published ${rowCountLabel(count)} into the verified fee catalog. ` +
@@ -652,6 +653,7 @@ async function recordPublicationSignals(
         institutionId,
         signalType: "hamilton_fee_movement_detected",
         severity,
+        alertWatchers: true,
         title: `${group.institutionName} - ${count} published fee movement${count === 1 ? "" : "s"} detected`,
         body:
           `Hamilton detected ${count} published fee movement${count === 1 ? "" : "s"} against prior live catalog rows. ` +

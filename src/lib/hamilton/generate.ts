@@ -6,6 +6,7 @@
 import {
   extractAnthropicText,
   getAnthropicMessagesClient,
+  getHamiltonModel,
 } from "@/lib/ai-provider";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
@@ -17,8 +18,10 @@ import {
 import { checkNarrativeFigures } from "./figure-check";
 import type { SectionInput, SectionOutput, ThesisInput, ThesisOutput } from "./types";
 
-const MODEL = "claude-sonnet-4-20250514";
-const MAX_TOKENS = 1500;
+const MODEL = getHamiltonModel();
+// Opus 5.5 always thinks before answering and thinking counts toward max_tokens, so
+// the cap leaves room for it; the voice prompt keeps the narrative itself short.
+const MAX_TOKENS = 8000;
 const REQUEST_TIMEOUT_MS = 60_000;
 const THESIS_TIMEOUT_MS = 90_000;
 

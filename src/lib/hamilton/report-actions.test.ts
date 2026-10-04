@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   getHamiltonReportById: vi.fn(),
   getHamiltonScenarioById: vi.fn(),
   completeHamiltonRefreshJobsForInstitution: vi.fn(),
+  checkProAiQuota: vi.fn(),
+  recordProRequest: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
 }));
 
@@ -41,6 +43,19 @@ vi.mock("@/lib/data-store/call-reports", () => ({
 
 vi.mock("@/lib/data-store/institution", () => ({
   getInstitutionFeeScheduleEvidence: mocks.getInstitutionFeeScheduleEvidence,
+}));
+
+vi.mock("@/lib/hamilton/quota", () => ({
+  checkProAiQuota: mocks.checkProAiQuota,
+  quotaExceededMessage: (quota: { limit: number }) => `You've used all ${quota.limit} Hamilton AI requests for today.`,
+}));
+
+vi.mock("@/lib/agents/run-store", () => ({
+  recordProRequest: mocks.recordProRequest,
+}));
+
+vi.mock("@/lib/research/history", () => ({
+  logUsage: async () => undefined,
 }));
 
 vi.mock("@/lib/hamilton/generate", async () => {
@@ -132,6 +147,8 @@ function reportParams() {
 describe("Hamilton Reports generateReport", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
+    mocks.recordProRequest.mockResolvedValue(1);
 
     mocks.getCurrentUser.mockResolvedValue({
       id: 7,
@@ -265,6 +282,9 @@ describe("Hamilton Reports generateReport", () => {
     if (!result.success) throw new Error(result.error);
 
     expect(mocks.generateSection).toHaveBeenCalledTimes(3);
+    expect(mocks.recordProRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "report", status: "completed", userId: expect.any(Number) }),
+    );
     const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
     for (const input of calls) {
       expect(input.context).toContain("Provisional rows are directional only");
@@ -364,6 +384,19 @@ describe("Hamilton Reports generateReport", () => {
     });
     expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
     expect(mocks.completeHamiltonRefreshJobsForInstitution).not.toHaveBeenCalled();
+  });
+
+  it("stops before any model call when the daily quota is used up", async () => {
+    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
+    mocks.getFeesByInstitution.mockResolvedValue([
+      { fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" },
+    ]);
+    mocks.checkProAiQuota.mockResolvedValue({ allowed: false, used: 50, limit: 50, resetsAt: "" });
+
+    const result = await generateReport(reportParams());
+
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("50 Hamilton AI requests") });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
   });
 
   it("refuses to save a report whose narrative states figures the data does not support", async () => {

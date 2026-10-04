@@ -95,7 +95,7 @@ describe("Simulate actions institution identity", () => {
     expect(mocks.sql.mock.calls[0][2]).toBe("2945");
     expect(mocks.completeHamiltonRefreshJobsForInstitution).toHaveBeenCalledWith({
       institutionId: 2945,
-      jobTypes: ["scenario_refresh"],
+      jobTypes: ["scenario_refresh", "watchlist_review"],
       completedByUserId: 7,
     });
   });

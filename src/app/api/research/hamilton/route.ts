@@ -6,6 +6,7 @@ import {
   ProviderCircuitOpenError,
   recordProviderUsage,
   trackAnthropicRequest,
+  estimateAnthropicCostMicrousd,
 } from "@/lib/ai-provider-usage";
 import {
   getAnthropicLanguageModel,
@@ -15,7 +16,7 @@ import {
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, type HamiltonRole } from "@/lib/research/agents";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
-import { checkAdminRateLimit } from "@/lib/research/rate-limit";
+import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { logUsage } from "@/lib/research/history";
 import {
   detectSkill,
@@ -37,27 +38,9 @@ import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 export const maxDuration = 30;
 
 // Cost per 1M tokens (in cents) for estimation
-const COST_PER_M_INPUT: Record<string, number> = {
-  "claude-haiku-4-5-20251001": 80,
-  "claude-sonnet-4-5-20250929": 300,
-  "claude-opus-4-5-20250514": 1500,
-};
-const COST_PER_M_OUTPUT: Record<string, number> = {
-  "claude-haiku-4-5-20251001": 400,
-  "claude-sonnet-4-5-20250929": 1500,
-  "claude-opus-4-5-20250514": 7500,
-};
-
-function estimateCostCents(
-  model: string,
-  inputTokens: number,
-  outputTokens: number
-): number {
-  const inputRate = COST_PER_M_INPUT[model] ?? 300;
-  const outputRate = COST_PER_M_OUTPUT[model] ?? 1500;
-  return Math.round(
-    (inputTokens * inputRate + outputTokens * outputRate) / 1_000_000
-  );
+/** Cents for the research_usage log, from the shared price map. */
+function estimateCostCents(model: string, inputTokens: number, outputTokens: number): number {
+  return Math.round((estimateAnthropicCostMicrousd(model, { inputTokens, outputTokens }) ?? 0) / 10_000);
 }
 
 async function handlePOST(request: Request) {
@@ -93,28 +76,15 @@ async function handlePOST(request: Request) {
     }
   }
 
-  // Auth enforcement based on resolved role
-  if (role === "admin") {
-    // Admin/analyst — rate limit by user
-    const rateResult = checkAdminRateLimit(
-      user!.id,
-      user!.role as "premium" | "analyst" | "admin"
-    );
-    if (!rateResult.allowed) {
+  // Auth enforcement based on resolved role, then the per-user daily quota (Postgres).
+  if (role === "pro" && !canAccessPremium(user)) {
+    return Response.json({ error: "Active subscription required" }, { status: 403 });
+  }
+  if (role === "admin" || role === "pro") {
+    const quota = await checkProAiQuota(user!);
+    if (!quota.allowed) {
       return Response.json(
-        { error: "Rate limit exceeded", resetAt: rateResult.resetAt },
-        { status: 429 }
-      );
-    }
-  } else if (role === "pro") {
-    // Pro — check active subscription
-    if (!canAccessPremium(user)) {
-      return Response.json({ error: "Active subscription required" }, { status: 403 });
-    }
-    const rateResult = checkAdminRateLimit(user!.id, "premium");
-    if (!rateResult.allowed) {
-      return Response.json(
-        { error: "Rate limit exceeded", resetAt: rateResult.resetAt },
+        { error: quotaExceededMessage(quota), resetAt: quota.resetsAt, used: quota.used, limit: quota.limit },
         { status: 429 }
       );
     }
@@ -270,8 +240,9 @@ async function handlePOST(request: Request) {
         }),
       );
 
-      const inputTokens = result.usage?.inputTokens ?? 0;
-      const outputTokens = result.usage?.outputTokens ?? 0;
+      // totalUsage spans every tool step; usage is only the last step.
+      const inputTokens = result.totalUsage?.inputTokens ?? 0;
+      const outputTokens = result.totalUsage?.outputTokens ?? 0;
       const costCents = estimateCostCents(agent.model, inputTokens, outputTokens);
       try {
         await logUsage(
@@ -315,10 +286,11 @@ async function handlePOST(request: Request) {
       tools: agent.tools,
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
-      onFinish: async ({ usage }) => {
+      onFinish: async ({ totalUsage }) => {
         try {
-          const inputTokens = usage?.inputTokens ?? 0;
-          const outputTokens = usage?.outputTokens ?? 0;
+          // totalUsage spans every tool step; usage is only the last step.
+          const inputTokens = totalUsage?.inputTokens ?? 0;
+          const outputTokens = totalUsage?.outputTokens ?? 0;
           const costCents = estimateCostCents(agent.model, inputTokens, outputTokens);
           if (!providerFailed && providerStartedAt !== null) {
             await recordProviderUsage(

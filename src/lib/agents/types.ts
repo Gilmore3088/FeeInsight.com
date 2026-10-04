@@ -26,7 +26,9 @@ export type AgentRunKind =
   | "state_agent"
   | "report"
   | "manual_repair"
-  | "dry_run";
+  | "dry_run"
+  /** A paid Pro AI request recorded after it finishes; never executed by the tick. */
+  | "pro_request";
 
 export type AgentRunTriggerSource = "schedule" | "admin" | "api" | "agent";
 

@@ -83,20 +83,20 @@ describe("Hamilton home signal data", () => {
     expect(sqlCalls[2].values).toEqual([["2945"], 3]);
   });
 
-  it("uses global signal queries when no canonical institution is selected", async () => {
+  it("shows no signals (and runs no signal query) when no canonical institution is selected", async () => {
     const { fetchHomeBriefingSignals } = await import("./home-data");
 
-    queuedRows = [[], [], []];
+    queuedRows = [[]];
 
-    await fetchHomeBriefingSignals(7, {
+    const signals = await fetchHomeBriefingSignals(7, {
       institutionIds: ["legacy-name", "0", "-1"],
     });
 
-    expect(sqlCalls).toHaveLength(3);
-    expect(sqlCalls.every((call) => !call.text.includes("ANY"))).toBe(true);
-    expect(sqlCalls[0].values).toEqual([5]);
-    expect(sqlCalls[1].values).toEqual([7, 3]);
-    expect(sqlCalls[2].values).toEqual([3]);
+    expect(signals.whatChanged).toEqual([]);
+    expect(signals.monitorFeed).toEqual([]);
+    // Only the user's own priority alerts are read; never another customer's signals.
+    expect(sqlCalls).toHaveLength(1);
+    expect(sqlCalls[0].values).toEqual([7, 3]);
   });
 
   it("gives the thesis the distinct institution count, not the per-category sum", async () => {
