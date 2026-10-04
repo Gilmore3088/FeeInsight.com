@@ -452,6 +452,26 @@ describe("Rosetta agentic read", () => {
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });
 
+    it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {
+      // A drifted `$${params.length - k}` once cast REREAD_MAX_KNOX_FEES to text[] and made
+      // every read fail with "operator does not exist: bigint < text[]".
+      const db = learningDb([]);
+
+      await runRosettaRead({ runId: 309, db: asReadDb(db), fetchImpl: vi.fn() });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
+      for (const [, n] of query.matchAll(/\$(\d+)::text\[\]/g)) {
+        expect(Array.isArray(valueAt(n))).toBe(true);
+      }
+      for (const [, n] of query.matchAll(/strategy_version (?:=|>=) \$(\d+)/g)) {
+        expect(typeof valueAt(n)).toBe("number");
+      }
+      for (const [, n] of query.matchAll(/\) < \$(\d+)/g)) {
+        expect(valueAt(n)).toBe(REREAD_MAX_KNOX_FEES);
+      }
+    });
+
     it("keeps the earlier text when a re-read fails", async () => {
       const db = learningDb([{ ...htmlCandidate, is_reread: true }]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response("gone", "text/html", 503));
