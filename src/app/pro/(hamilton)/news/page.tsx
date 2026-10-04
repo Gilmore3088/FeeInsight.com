@@ -61,7 +61,7 @@ export default async function NewsPage({
   const sourceCounts = await getSourceCounts(since);
 
   return (
-    <main id="main-content">
+    <div>
     <div className="mx-auto max-w-7xl px-6 py-10">
       {/* Header */}
       <div className="flex items-center gap-2 mb-1">
@@ -97,6 +97,6 @@ export default async function NewsPage({
         canRefreshFeeds={user?.role === "admin" || user?.role === "analyst"}
       />
     </div>
-    </main>
+    </div>
   );
 }
