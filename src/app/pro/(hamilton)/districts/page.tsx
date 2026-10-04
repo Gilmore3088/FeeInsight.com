@@ -25,7 +25,7 @@ export default async function ProDistrictsPage() {
   const stats = await getPublicStats();
 
   return (
-    <main id="main-content">
+    <div>
     <div className="mx-auto max-w-7xl px-6 py-10">
       {/* Terracotta label */}
       <div className="flex items-center gap-2 mb-4">
@@ -147,6 +147,6 @@ export default async function ProDistrictsPage() {
         })}
       </div>
     </div>
-    </main>
+    </div>
   );
 }
