@@ -509,6 +509,7 @@ async function selectCandidates(
     // Skip inputs that already failed permanently with the current reader version.
     params.push(ROSETTA_READ_VERSION, PERMANENT_OUTCOMES);
     const versionParam = `$${params.length - 1}`;
+    const permanentParam = `$${params.length}`;
     // Only an answer settles a re-read; a timeout or 5xx leaves it eligible next run.
     params.push([...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES]);
     const settledParam = `$${params.length}`;
@@ -553,8 +554,8 @@ async function selectCandidates(
             WHERE pa.stage = 'read'
               AND pa.institution_id = cr.institution_id
               AND pa.input_fingerprint = cr.content_hash
-              AND pa.strategy_version = $${params.length - 1}
-              AND pa.outcome = ANY($${params.length}::text[])
+              AND pa.strategy_version = ${versionParam}
+              AND pa.outcome = ANY(${permanentParam}::text[])
          )`);
   }
   const vaultColumns = vaultSchema
