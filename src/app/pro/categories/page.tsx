@@ -59,6 +59,7 @@ export default async function ProCategoriesPage() {
   const familyNames = Object.keys(FEE_FAMILIES);
 
   return (
+    <main id="main-content">
     <div className="mx-auto max-w-7xl px-6 py-10">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
@@ -205,5 +206,6 @@ export default async function ProCategoriesPage() {
         })}
       </div>
     </div>
+    </main>
   );
 }

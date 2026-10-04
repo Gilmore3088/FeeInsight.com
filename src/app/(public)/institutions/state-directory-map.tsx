@@ -12,21 +12,35 @@ interface StateDirectoryMapProps {
   selectedStateCode?: string;
   query?: string;
   charterType?: string;
+  /** Fee focus (`?fee=`) arriving from a consumer guide; every link keeps it. */
+  feeCategory?: string;
 }
 
 function buildHref({
   stateCode,
   query,
   charterType,
+  feeCategory,
 }: {
   stateCode: string;
   query?: string;
   charterType?: string;
+  feeCategory?: string;
 }): string {
   const params = new URLSearchParams({ state: stateCode });
   if (query) params.set("q", query);
   if (charterType) params.set("charter", charterType);
+  if (feeCategory) params.set("fee", feeCategory);
   return `/institutions?${params.toString()}`;
+}
+
+/** The "all states" link: drops the state but keeps the other filters. */
+function clearStateHref({ charterType, feeCategory }: { charterType?: string; feeCategory?: string }): string {
+  const params = new URLSearchParams();
+  if (charterType) params.set("charter", charterType);
+  if (feeCategory) params.set("fee", feeCategory);
+  const search = params.toString();
+  return search ? `/institutions?${search}` : "/institutions";
 }
 
 function getFill({
@@ -68,6 +82,7 @@ export function StateDirectoryMap({
   selectedStateCode = "",
   query = "",
   charterType = "",
+  feeCategory = "",
 }: StateDirectoryMapProps) {
   const [hoveredState, setHoveredState] = useState<string | null>(null);
   const summariesByState = useMemo(
@@ -107,7 +122,7 @@ export function StateDirectoryMap({
             </div>
             {selectedStateCode && (
               <Link
-                href={charterType ? `/institutions?charter=${charterType}` : "/institutions"}
+                href={clearStateHref({ charterType, feeCategory })}
                 className="text-xs font-semibold text-[#A93D25] transition-colors hover:text-[#A93D25]"
               >
                 Clear state
@@ -129,7 +144,7 @@ export function StateDirectoryMap({
                 return (
                   <Link
                     key={state.id}
-                    href={buildHref({ stateCode: state.id, query, charterType })}
+                    href={buildHref({ stateCode: state.id, query, charterType, feeCategory })}
                     aria-label={`${state.name}: ${formatStateCounts(summary)}`}
                     prefetch={false}
                   >
@@ -182,7 +197,7 @@ export function StateDirectoryMap({
                   </p>
                 </div>
                 <Link
-                  href={charterType ? `/institutions?charter=${charterType}` : "/institutions"}
+                  href={clearStateHref({ charterType, feeCategory })}
                   prefetch={false}
                   className="text-xs font-semibold opacity-80 transition-opacity hover:opacity-100"
                 >
@@ -194,7 +209,7 @@ export function StateDirectoryMap({
                 {topStates.map((summary) => (
                   <Link
                     key={summary.state_code}
-                    href={buildHref({ stateCode: summary.state_code, query, charterType })}
+                    href={buildHref({ stateCode: summary.state_code, query, charterType, feeCategory })}
                     prefetch={false}
                     className="flex min-h-12 items-center justify-between border border-[#E0D7C9] bg-[#FFFDF9] px-3 text-sm text-[#1A1815] transition-colors hover:border-[#C44B2E]"
                   >
@@ -232,7 +247,7 @@ export function StateDirectoryMap({
               </div>
               {focusSummary.state_code !== selectedStateCode && (
                 <Link
-                  href={buildHref({ stateCode: focusSummary.state_code, query, charterType })}
+                  href={buildHref({ stateCode: focusSummary.state_code, query, charterType, feeCategory })}
                   prefetch={false}
                   className="mt-5 inline-flex min-h-9 items-center gap-2 rounded-md bg-[#C44B2E] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#A93D25]"
                 >
@@ -246,7 +261,7 @@ export function StateDirectoryMap({
               {topStates.slice(0, 5).map((summary) => (
                 <Link
                   key={summary.state_code}
-                  href={buildHref({ stateCode: summary.state_code, query, charterType })}
+                  href={buildHref({ stateCode: summary.state_code, query, charterType, feeCategory })}
                   prefetch={false}
                   className="group flex items-center justify-between gap-3 border-b border-[#E0D7C9] py-2 text-sm"
                 >

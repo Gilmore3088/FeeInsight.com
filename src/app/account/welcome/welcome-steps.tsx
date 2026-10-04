@@ -100,7 +100,8 @@ export function WelcomeSteps({
   pendingWorkspaceInvitations,
   workspaceMemberships,
 }: WelcomeStepsProps) {
-  const [step, setStep] = useState(1);
+  // Someone who already told us their organization (at signup or earlier) skips that step.
+  const [step, setStep] = useState(user.institution_name ? 2 : 1);
   const [saving, setSaving] = useState(false);
   const [showBankFields, setShowBankFields] = useState(
     user.institution_type === "bank" || user.institution_type === "credit_union"
@@ -193,19 +194,19 @@ export function WelcomeSteps({
 
           <form onSubmit={handleProfileSave} className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-6 space-y-4">
             <div>
-              <label className="block text-xs font-medium text-[#1A1815] mb-1">Institution / Company</label>
-              <input name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
+              <label htmlFor="welcome-institution-name" className="block text-xs font-medium text-[#1A1815] mb-1">Institution / Company</label>
+              <input id="welcome-institution-name" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
-                <select name="institution_type" defaultValue={user.institution_type || ""} onChange={(e) => setShowBankFields(e.target.value === "bank" || e.target.value === "credit_union")} className={inputClass}>
+                <label htmlFor="welcome-institution-type" className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
+                <select id="welcome-institution-type" name="institution_type" defaultValue={user.institution_type || ""} onChange={(e) => setShowBankFields(e.target.value === "bank" || e.target.value === "credit_union")} className={inputClass}>
                   {INSTITUTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
-                <select name="job_role" defaultValue={user.job_role || ""} className={inputClass}>
+                <label htmlFor="welcome-job-role" className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
+                <select id="welcome-job-role" name="job_role" defaultValue={user.job_role || ""} className={inputClass}>
                   {JOB_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
               </div>
@@ -213,14 +214,14 @@ export function WelcomeSteps({
             {showBankFields && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[#1A1815] mb-1">Asset size</label>
-                  <select name="asset_tier" defaultValue={user.asset_tier || ""} className={inputClass}>
+                  <label htmlFor="welcome-asset-tier" className="block text-xs font-medium text-[#1A1815] mb-1">Asset size</label>
+                  <select id="welcome-asset-tier" name="asset_tier" defaultValue={user.asset_tier || ""} className={inputClass}>
                     {ASSET_TIERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-[#1A1815] mb-1">State</label>
-                  <select name="state_code" defaultValue={user.state_code || ""} className={inputClass}>
+                  <label htmlFor="welcome-state-code" className="block text-xs font-medium text-[#1A1815] mb-1">State</label>
+                  <select id="welcome-state-code" name="state_code" defaultValue={user.state_code || ""} className={inputClass}>
                     <option value="">Select...</option>
                     {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
@@ -248,7 +249,7 @@ export function WelcomeSteps({
             Your fee intelligence
           </h1>
           <p className="text-sm text-[#6B6255] mb-6">
-            Here are the national median fees across key categories. With your account, you can drill into all 49 categories with peer filters.
+            Here are the national median fees across key categories. With your account, you can drill into the full fee catalog with peer filters.
           </p>
 
           <div className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] overflow-hidden mb-6">
@@ -310,7 +311,7 @@ export function WelcomeSteps({
                   href={href}
                   className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-4 no-underline transition-colors hover:border-[#C44B2E]/30 hover:bg-white"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-[#C44B2E] mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-[#C44B2E] mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d={tool.icon} />
                   </svg>
                   <h3 className="text-sm font-medium text-[#1A1815] mb-1">
@@ -338,7 +339,7 @@ export function WelcomeSteps({
       {step === 4 && (
         <div className="text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 mb-4">
-            <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-emerald-600" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-emerald-600" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6L9 17l-5-5" />
             </svg>
           </div>

@@ -27,7 +27,7 @@ export function CatalogSidebar({ familyOrder, byFamily, spotlightFees, statesLab
     <aside className="hidden xl:block space-y-5 sticky top-20 self-start">
       <div className={CARD}>
         <p className={EYEBROW}>Jump to Family</p>
-        <nav className="mt-3 space-y-1">
+        <nav aria-label="Fee families" className="mt-3 space-y-1">
           {familyOrder.map((familyName) => {
             const cats = byFamily.get(familyName);
             if (!cats || cats.length === 0) return null;

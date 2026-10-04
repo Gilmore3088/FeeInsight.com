@@ -94,14 +94,14 @@ export interface PaidItemFee {
   kind: "overdraft" | "nsf";
 }
 
-function isPaidItemOverdraft(fee: RatingInput): boolean {
-  if (NON_PAID_ITEM_OVERDRAFT_PATTERN.test(fee.fee_name)) return false;
-  return fee.fee_category === "overdraft" || OVERDRAFT_NAME_PATTERN.test(fee.fee_name);
+function isPaidItemCandidate(fee: RatingInput): boolean {
+  return !NON_PAID_ITEM_OVERDRAFT_PATTERN.test(fee.fee_name);
 }
 
-function isNsfFee(fee: RatingInput): boolean {
-  return fee.fee_category === "nsf" || NSF_NAME_PATTERN.test(fee.fee_name);
-}
+const overdraftByCategory = (fee: RatingInput) => isPaidItemCandidate(fee) && fee.fee_category === "overdraft";
+const overdraftByName = (fee: RatingInput) => isPaidItemCandidate(fee) && OVERDRAFT_NAME_PATTERN.test(fee.fee_name);
+const nsfByCategory = (fee: RatingInput) => fee.fee_category === "nsf";
+const nsfByName = (fee: RatingInput) => NSF_NAME_PATTERN.test(fee.fee_name);
 
 /**
  * The verified paid-item overdraft fee, falling back to the NSF / returned-item fee.
@@ -116,7 +116,14 @@ export function detectPaidItemFee(fees: RatingInput[]): PaidItemFee | null {
     }
     return null;
   };
-  return pick(isPaidItemOverdraft, "overdraft") ?? pick(isNsfFee, "nsf");
+  // Within each kind a category match beats a name match, whatever the row order, so the
+  // bullet names the same row as the profile's overdraft callout (which picks by category).
+  return (
+    pick(overdraftByCategory, "overdraft") ??
+    pick(overdraftByName, "overdraft") ??
+    pick(nsfByCategory, "nsf") ??
+    pick(nsfByName, "nsf")
+  );
 }
 
 function overdraftColor(amount: number): "green" | "yellow" | "red" {

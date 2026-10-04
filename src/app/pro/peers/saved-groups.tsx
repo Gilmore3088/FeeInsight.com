@@ -93,7 +93,7 @@ export function SavedGroups({
             className="flex items-center justify-center h-4 w-4 rounded-full text-warm-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
             aria-label={`Delete ${g.name}`}
           >
-            <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <svg aria-hidden="true" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -107,7 +107,7 @@ export function SavedGroups({
           onClick={() => setShowSave(true)}
           className="flex items-center gap-1 rounded-full border border-dashed border-warm-300 px-3 py-1 text-[11px] font-medium text-warm-500 hover:border-terra/40 hover:text-terra transition-colors"
         >
-          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg aria-hidden="true" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>

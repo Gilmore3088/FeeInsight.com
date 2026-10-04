@@ -71,7 +71,8 @@ export default function RootLayout({
       </head>
       <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         {children}
-        <Analytics />
+        {/* Vercel injects /_vercel/insights only on its own platform; elsewhere the script 404s. */}
+        {process.env.VERCEL ? <Analytics /> : null}
         {PLAUSIBLE_DOMAIN && (
           <Script
             defer

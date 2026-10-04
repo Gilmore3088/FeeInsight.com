@@ -15,7 +15,7 @@ function HamiltonTabs() {
 
   return (
     <div className="border-b border-gray-100 dark:border-white/[0.05] mb-6">
-      <nav className="flex gap-0 -mb-px">
+      <nav aria-label="Hamilton admin sections" className="flex gap-0 -mb-px">
         {TABS.map((tab) => {
           const isActive = pathname.startsWith(tab.href);
           return (

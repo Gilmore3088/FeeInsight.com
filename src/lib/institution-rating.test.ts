@@ -117,6 +117,19 @@ describe("computeInstitutionRating", () => {
     expect(result.bullets.some((b) => /aligned with the national median/.test(b))).toBe(true);
   });
 
+  it("prefers the overdraft-category row over an earlier row that only mentions overdraft", () => {
+    const fees = [
+      { id: 1, fee_name: "Overdraft Item Fee (Business)", amount: 38, fee_category: "business_overdraft", conditions: null },
+      { id: 2, fee_name: "Paid Item Fee", amount: 32, fee_category: "overdraft", conditions: null },
+    ];
+    expect(detectPaidItemFee(fees)).toEqual({ amount: 32, conditions: null, kind: "overdraft" });
+  });
+
+  it("still falls back to a name match when no row has the overdraft category", () => {
+    const fees = [{ id: 1, fee_name: "Overdraft Item Fee", amount: 30, fee_category: null, conditions: null }];
+    expect(detectPaidItemFee(fees)).toEqual({ amount: 30, conditions: null, kind: "overdraft" });
+  });
+
   it("returns null (no verdict) when no paid-item overdraft or NSF fee is verified", () => {
     const fees = [
       { id: 1, fee_name: "monthly_maintenance", amount: 5, fee_category: "monthly_maintenance", conditions: null },

@@ -34,7 +34,7 @@ export default async function ForInstitutionsPage() {
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
       <ConsumerNav />
-      <main>
+      <main id="main-content">
         <section className="bg-warm-900 relative overflow-hidden">
           <div className="mx-auto max-w-6xl px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
             <div className="max-w-2xl">
