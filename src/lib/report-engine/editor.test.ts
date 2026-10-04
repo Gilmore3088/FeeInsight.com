@@ -79,7 +79,7 @@ function makeApprovedResponse(usage = { input_tokens: 150, output_tokens: 30 }) 
       },
     ],
     usage,
-    model: "claude-haiku-4-20250514",
+    model: "claude-haiku-4-5-20251001",
   };
 }
 
@@ -108,7 +108,7 @@ describe("runEditorReview", () => {
         },
       ],
       usage: { input_tokens: 200, output_tokens: 80 },
-      model: "claude-haiku-4-20250514",
+      model: "claude-haiku-4-5-20251001",
     });
 
     const sections: ValidatedSection[] = [makeSection("overview")];
@@ -132,7 +132,7 @@ describe("runEditorReview", () => {
         },
       ],
       usage: { input_tokens: 150, output_tokens: 30 },
-      model: "claude-haiku-4-20250514",
+      model: "claude-haiku-4-5-20251001",
     });
 
     const sections: ValidatedSection[] = [makeSection("findings")];
@@ -166,7 +166,7 @@ describe("runEditorReview", () => {
         },
       ],
       usage: { input_tokens: 180, output_tokens: 60 },
-      model: "claude-haiku-4-20250514",
+      model: "claude-haiku-4-5-20251001",
     });
 
     const sections: ValidatedSection[] = [
@@ -207,7 +207,7 @@ describe("Editor v2 — new checks", () => {
         },
       ],
       usage: { input_tokens: 250, output_tokens: 90 },
-      model: "claude-haiku-4-20250514",
+      model: "claude-haiku-4-5-20251001",
     });
 
     const sections: ValidatedSection[] = [makeSection("trend_analysis")];
@@ -253,7 +253,7 @@ describe("Editor v2 — new checks", () => {
         },
       ],
       usage: { input_tokens: 200, output_tokens: 70 },
-      model: "claude-haiku-4-20250514",
+      model: "claude-haiku-4-5-20251001",
     });
 
     const sections: ValidatedSection[] = [makeSection("trend_analysis")];
@@ -294,7 +294,7 @@ describe("Editor v2 — new checks", () => {
         },
       ],
       usage: { input_tokens: 200, output_tokens: 70 },
-      model: "claude-haiku-4-20250514",
+      model: "claude-haiku-4-5-20251001",
     });
 
     const sections: ValidatedSection[] = [makeSection("findings")];

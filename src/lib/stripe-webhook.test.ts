@@ -63,7 +63,7 @@ describe("applyStripeEvent", () => {
   it("activates checkout by the user id it was started for", async () => {
     await applyStripeEvent(
       tx as never,
-      event("checkout.session.completed", { customer: "cus_9", metadata: { user_id: "7", email: "a@b.com" } }),
+      event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7", email: "a@b.com" } }),
     );
     const [sql] = issued();
     expect(sql).toContain("WHERE id = ?");
@@ -71,7 +71,15 @@ describe("applyStripeEvent", () => {
   });
 
   it("falls back to the email for older sessions", async () => {
-    await applyStripeEvent(tx as never, event("checkout.session.completed", { customer: "cus_9", customer_email: "a@b.com" }));
+    await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_9", customer_email: "a@b.com" }));
     expect(issued()[0]).toContain("WHERE (email = ? OR username = ?)");
+  });
+
+  it("never grants Pro for a one-time payment checkout", async () => {
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "payment", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    expect(tx).not.toHaveBeenCalled();
   });
 });

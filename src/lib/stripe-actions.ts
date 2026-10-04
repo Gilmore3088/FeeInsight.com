@@ -7,6 +7,17 @@ import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
+/** The Stripe prices that unlock Pro. Shared with the webhook's grant check. */
+function proPriceIds(): string[] {
+  return [process.env.STRIPE_PRO_PRICE_ID, process.env.STRIPE_ANNUAL_PRICE_ID].filter(
+    (id): id is string => Boolean(id),
+  );
+}
+
+function isProPriceId(priceId: string): boolean {
+  return proPriceIds().includes(priceId);
+}
+
 export async function createCheckoutSession(
   priceId: string,
   mode: "subscription" | "payment" = "subscription",
@@ -16,6 +27,11 @@ export async function createCheckoutSession(
   if (!user) throw new Error("Not authenticated");
 
   if (!priceId) throw new Error("Price ID is required");
+  // This is a public server action: only the configured Pro prices, only as a
+  // subscription. Any other price (or a one-time payment) would otherwise reach
+  // the webhook, which grants Pro on checkout completion.
+  if (!isProPriceId(priceId)) throw new Error("Unknown price");
+  if (mode !== "subscription") throw new Error("Pro is sold as a subscription");
 
   const stripe = getStripe();
   const origin = (await headers()).get("origin") || process.env.NEXT_PUBLIC_SITE_URL;

@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -239,7 +252,7 @@
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">
-    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Aug 16, 2026</span></div>
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
     <div class="title">
       <div class="series">Prepared exclusively for one institution</div>
       <h1>Competitive<br>Fee <em>Position</em></h1>
@@ -247,13 +260,13 @@
         <span class="instname">Bank of the Pacific</span>
       </div>
       <div class="instmeta">Aberdeen, WA<i>·</i>Bank<i>·</i>Community bank, $1B–$10B</div>
-      <p class="cohortnote">Peer cohort: 86 comparable community banks. Not every peer publishes every fee: 35 publish an NSF fee and 12 an overdraft fee, so those are the comparison sets for those lines.</p>
+      <p class="cohortnote">Compared with 68 banks with $1B–$10B in assets nationwide that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
     </div>
-    <div class="ghost">86</div>
+    <div class="ghost">68</div>
     <div class="card">
-      <div><div class="lbl">Peer cohort</div><div class="val">Community banks, $1B–$10B</div></div>
+      <div><div class="lbl">Peer cohort</div><div class="val">Community banks, $1B–$10B · nationwide</div></div>
       <div><div class="lbl">Benchmarked against</div>
-        <div class="big">86<small>peer institutions with published fee schedules</small></div></div>
+        <div class="big">68<small>peer institutions with published fee schedules</small></div></div>
       <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
     </div>
   </div>
@@ -263,17 +276,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>Bank of the Pacific</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
-    <div class="finding"><div class="num" style="font-size:18pt">$32 vs $12<small>your NSF fee vs peer median</small></div>
-   <p><b>Your NSF fee is an extreme outlier.</b>At $32.00, your returned-item fee is 2.7x the median of 35 peer banks — the 89th percentile. A quarter of your peers now charge $5 or less, reflecting the industry-wide move away from NSF fees under regulatory scrutiny. This is the single most visible line on your fee schedule.</p></div>
-<div class="finding"><div class="num" style="font-size:24pt">P94<small>incoming domestic wire percentile</small></div>
-   <p><b>You charge a quiet premium on exception activity.</b>Incoming domestic wires ($20 vs a $15 median) sit at the 94th percentile, and overdraft-protection transfers run double the peer median ($10 vs $5). Individually small, together these place your penalty-and-exception fee stack in the top quartile of your cohort.</p></div>
-<div class="finding"><div class="num" style="font-size:24pt">-10%<small>stop payment vs peer median</small></div>
-   <p><b>You are below market on service fees — and nobody knows.</b>Stop payments ($27 vs $30 median, 27th percentile) and card replacement ($7.50 vs $10.00 median) are priced below most peers. That is either unclaimed margin or an untold customer-friendly story; today it is neither, because it is invisible.</p></div>
+    <div class="finding"><div class="num" style="font-size:18pt">$35 vs $25<small>outgoing domestic wire fee, yours vs peer median</small></div>
+   <p><b>Your outgoing domestic wire fee is above the market range.</b>At $35, it is $10 above the $25 peer median and the highest of the 10 peers that publish it (middle half of the market: $21.25–$28.75). Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions.</p></div>
+<div class="finding"><div class="num" style="font-size:18pt">$7.50 vs $10<small>card replacement fee, yours vs peer median</small></div>
+   <p><b>Your card replacement fee is priced below the market.</b>Your card replacement fee ($7.50 vs a $10 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">2 more<small>lines above the market range</small></div>
+   <p><b>Smaller premiums elsewhere on the schedule.</b>Your stop-payment fee ($35 vs a $31 median, n=16) and your incoming wire fee ($20 vs a $14.50 median, n=16) also sit above the peer 75th percentile. Individually modest, together they shape how the schedule reads in a side-by-side comparison.</p></div>
   </div>
-  <p class="narrative drop">Net position: Bank of the Pacific prices core account services at market (monthly maintenance and overdraft are within a dollar of the peer median) while carrying a distinctly top-quartile posture on penalty and exception fees — led by an NSF fee that qualifies as an extreme statistical outlier against 35 comparable banks. The exposure is asymmetrical: the outlier fees invite attention, while the below-market service fees earn no credit. The three findings above are the agenda for a one-hour pricing conversation.</p>
+  <p class="narrative drop">Bank of the Pacific is compared with 68 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in Washington have published data, so local competitors may price differently. Of 12 rankable lines, eight sit inside the middle half of the market, three above it (outgoing domestic wire fee, stop-payment fee and incoming wire fee), and one below it (card replacement fee). We would suggest one step: review the outgoing domestic wire fee, which sits above the market range; the peer median of $25 is the reference point.</p>
   <div class="pagefoot"><span>Competitive Fee Position — Bank of the Pacific</span><span>Fee Insight</span></div>
 </div>
 
@@ -281,94 +294,81 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>Bank of the Pacific</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. 86 peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: Community banks, $1B–$10B — 86 institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">Compared with 68 banks with $1B–$10B in assets nationwide that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
-      <tr><td>Non-network ATM</td>
+      <tr><td><span class="cat">Non-network ATM</span><span class="feeline">Non-Bank of the Pacific ATM transfers</span></td>
     <td class="r"><b>$2.00</b></td>
-    <td class="r">$1.00</td><td class="r">$2.00</td>
-    <td class="r">$2.00</td><td class="r">$1.75</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:92%"></div></div><span class="small muted"> P92</span></td><td></td></tr>
-<tr><td>Foreign transaction</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$2.00</td><td class="r">$2.00</td>
-    <td class="r">$3.00</td><td class="r">$4.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Card replacement</td>
+    <td class="r">$1.88</td><td class="r">$2.00</td>
+    <td class="r">$2.25</td><td class="r muted">8</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:75%"></div></div><span class="small muted"> P75</span></td><td></td></tr>
+<tr><td><span class="cat">Card replacement</span><span class="feeline">Replacement card</span></td>
     <td class="r"><b>$7.50</b></td>
-    <td class="r">$7.63</td><td class="r">$10.00</td>
-    <td class="r">$21.25</td><td class="r">$10.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:28%"></div></div><span class="small muted"> P28</span></td><td></td></tr>
-<tr><td>Cashier's check</td>
+    <td class="r">$9.00</td><td class="r">$10.00</td>
+    <td class="r">$10.00</td><td class="r muted">11</td>
+    <td><div class="bar-wrap"><div class="bar lo" style="width:18%"></div></div><span class="small muted"> P18</span></td><td><span class="tag below">below range</span></td></tr>
+<tr><td><span class="cat">Cashier's check</span><span class="feeline">Cashier's checks</span></td>
     <td class="r"><b>$7.00</b></td>
-    <td class="r">$5.00</td><td class="r">$8.00</td>
-    <td class="r">$10.00</td><td class="r">$6.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:44%"></div></div><span class="small muted"> P44</span></td><td></td></tr>
-<tr><td>Deposited item return</td>
+    <td class="r">$5.00</td><td class="r">$6.50</td>
+    <td class="r">$9.25</td><td class="r muted">8</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
+<tr><td><span class="cat">Deposited item return</span><span class="feeline">Return deposited item fee</span></td>
     <td class="r"><b>$10.00</b></td>
-    <td class="r">$10.00</td><td class="r">$15.00</td>
-    <td class="r">$20.00</td><td class="r">$15.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:41%"></div></div><span class="small muted"> P41</span></td><td></td></tr>
-<tr><td>Minimum balance</td>
+    <td class="r">$8.00</td><td class="r">$10.00</td>
+    <td class="r">$11.50</td><td class="r muted">22</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:73%"></div></div><span class="small muted"> P73</span></td><td></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">—</td><td class="r">—</td>
-    <td class="r">—</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Monthly maintenance</td>
-    <td class="r"><b>$10.00</b></td>
-    <td class="r">$2.00</td><td class="r">$10.00</td>
-    <td class="r">$15.00</td><td class="r">$6.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:55%"></div></div><span class="small muted"> P55</span></td><td></td></tr>
-<tr><td>NSF / returned item</td>
+    <td class="r">$5.00</td><td class="r">$6.00</td>
+    <td class="r">$10.00</td><td class="r muted">5</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">NSF / returned item</span><span class="feeline">NSF (returned item) fee</span></td>
     <td class="r"><b>$32.00</b></td>
-    <td class="r">$5.00</td><td class="r">$12.00</td>
-    <td class="r">$30.00</td><td class="r">$15.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:89%"></div></div><span class="small muted"> P89</span></td><td><span class="tag outlier">outlier</span></td></tr>
-<tr><td>OD protection transfer</td>
-    <td class="r"><b>$10.00</b></td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td class="r">$10.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:83%"></div></div><span class="small muted"> P83</span></td><td></td></tr>
-<tr><td>Overdraft</td>
-    <td class="r"><b>$32.00</b></td>
-    <td class="r">$17.50</td><td class="r">$31.00</td>
-    <td class="r">$33.25</td><td class="r">$30.00</td>
+    <td class="r">$31.50</td><td class="r">$32.00</td>
+    <td class="r">$35.00</td><td class="r muted">12</td>
     <td><div class="bar-wrap"><div class="bar " style="width:58%"></div></div><span class="small muted"> P58</span></td><td></td></tr>
-<tr><td>Paper statement</td>
+<tr><td><span class="cat">OD protection transfer</span><span class="feeline">Overdraft transfer fee</span></td>
+    <td class="r"><b>$10.00</b></td>
+    <td class="r">$5.00</td><td class="r">$6.50</td>
+    <td class="r">$10.00</td><td class="r muted">10</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:90%"></div></div><span class="small muted"> P90</span></td><td></td></tr>
+<tr><td><span class="cat">Overdraft</span><span class="feeline">Overdraft (paid item) fee</span></td>
+    <td class="r"><b>$32.00</b></td>
+    <td class="r">$30.00</td><td class="r">$32.00</td>
+    <td class="r">$34.50</td><td class="r muted">15</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:53%"></div></div><span class="small muted"> P53</span></td><td></td></tr>
+<tr><td><span class="cat">Paper statement</span><span class="feeline">Monthly paper statement fee</span></td>
     <td class="r"><b>$3.00</b></td>
-    <td class="r">$2.00</td><td class="r">$3.00</td>
-    <td class="r">$4.25</td><td class="r">$3.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:69%"></div></div><span class="small muted"> P69</span></td><td></td></tr>
-<tr><td>Stop payment</td>
-    <td class="r"><b>$27.00</b></td>
-    <td class="r">$28.50</td><td class="r">$30.00</td>
-    <td class="r">$33.50</td><td class="r">$30.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:27%"></div></div><span class="small muted"> P27</span></td><td></td></tr>
-<tr><td>Incoming domestic wire</td>
-    <td class="r"><b>$20.00</b></td>
-    <td class="r">$10.00</td><td class="r">$15.00</td>
-    <td class="r">$15.00</td><td class="r">$15.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:94%"></div></div><span class="small muted"> P94</span></td><td></td></tr>
-<tr><td>Outgoing domestic wire</td>
-    <td class="r"><b>$20.00</b></td>
-    <td class="r">$15.00</td><td class="r">$20.00</td>
-    <td class="r">$25.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:60%"></div></div><span class="small muted"> P60</span></td><td></td></tr>
-<tr><td>Outgoing intl. wire</td>
+    <td class="r">$2.00</td><td class="r">$2.00</td>
+    <td class="r">$3.00</td><td class="r muted">11</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:82%"></div></div><span class="small muted"> P82</span></td><td></td></tr>
+<tr><td><span class="cat">Stop payment</span><span class="feeline">Stop payment and renewals (branch)</span></td>
     <td class="r"><b>$35.00</b></td>
-    <td class="r">$26.25</td><td class="r">$35.00</td>
-    <td class="r">$47.50</td><td class="r">$40.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:60%"></div></div><span class="small muted"> P60</span></td><td></td></tr>
+    <td class="r">$30.00</td><td class="r">$31.00</td>
+    <td class="r">$34.25</td><td class="r muted">16</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:81%"></div></div><span class="small muted"> P81</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span><span class="feeline">Incoming wire transfer</span></td>
+    <td class="r"><b>$20.00</b></td>
+    <td class="r">$10.00</td><td class="r">$14.50</td>
+    <td class="r">$15.00</td><td class="r muted">16</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:94%"></div></div><span class="small muted"> P94</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Outgoing domestic wire transfer (branch)</span></td>
+    <td class="r"><b>$35.00</b></td>
+    <td class="r">$21.25</td><td class="r">$25.00</td>
+    <td class="r">$28.75</td><td class="r muted">10</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span><span class="feeline">Outgoing international wire transfer (branch)</span></td>
+    <td class="r"><b>$50.00</b></td>
+    <td class="r">$36.00</td><td class="r">$40.00</td>
+    <td class="r">$50.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:89%"></div></div><span class="small muted"> P89</span></td><td></td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Bank of the Pacific</span><span>Fee Insight</span></div>
@@ -377,21 +377,21 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>Bank of the Pacific</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
     <div class="callout ">
-     <h3>NSF / returned item — $32.00</h3><div class="stat">Peer median $12.00 · P25 $5.00 · 89th percentile · n=35 · flagged: extreme outlier (>2x median)</div><p>The peer distribution tells the story: a quarter of comparable banks now charge $5 or less, and the median has fallen to $12 as institutions retire NSF fees ahead of regulatory and reputational pressure. A $32 NSF fee is increasingly conspicuous — in examiner conversations, in local-press fee surveys, and on comparison sites. Whether the right answer is a cut, a cap, or a documented rationale, this line item deserves a decision rather than a default.</p>
+     <h3>Outgoing domestic wire fee — $35</h3><div class="stat">Peer median $25 · middle half $21.25–$28.75 · range $15–$35 · 100th percentile · n=10</div><p>Published as “Outgoing domestic wire transfer (branch).” At $35 it is $10 above the $25 peer median. Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point.</p>
    </div>
 <div class="callout ">
-     <h3>Incoming domestic wire — $20.00</h3><div class="stat">Peer median $15.00 · P75 $15.00 · 94th percentile · n=17</div><p>Charging above the 75th percentile to RECEIVE money is a friction fee on your most attractive customers — businesses and high-balance households move wires. At $5 over median it earns little revenue but sits at the very top of the cohort.</p>
+     <h3>Stop-payment fee — $35</h3><div class="stat">Peer median $31 · middle half $30–$34.25 · range $20–$40 · 81st percentile · n=16</div><p>Published as “Stop payment and renewals (branch).” At $35 it is $4 above the $31 peer median. It is infrequent, but it appears in most side-by-side schedule comparisons. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $31 is the reference point.</p>
    </div>
 <div class="callout ">
-     <h3>OD protection transfer — $10.00</h3><div class="stat">Peer median $5.00 · 83rd percentile · n=23</div><p>Customers who enroll in overdraft protection are doing exactly what institutions ask of them; charging double the peer median for the transfer undercuts the message. This fee is also increasingly waived outright among competitors.</p>
+     <h3>Incoming wire fee — $20</h3><div class="stat">Peer median $14.50 · middle half $10–$15 · range $10–$25 · 94th percentile · n=16</div><p>Published as “Incoming wire transfer.” At $20 it is $5.50 above the $14.50 peer median. Charging to receive funds is increasingly uncommon and is noticed by business customers. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $14.50 is the reference point.</p>
    </div>
 <div class="callout opportunity">
-     <h3>Service fees — priced below market, marketed nowhere</h3><div class="stat">Stop payment $27 vs $30 median (P27) · Card replacement $7.50 vs $10.00 median (P28)</div><p>Two consumer-facing service fees run meaningfully below your cohort. If deliberate, they belong in your marketing: 'lower service fees than most banks in your market' is a claim your competitors' own published schedules substantiate. If not deliberate, they are margin available without touching a single headline fee.</p>
+     <h3>Card replacement fee — $7.50</h3><div class="stat">Peer median $10 · middle half $9–$10 · 18th percentile · n=11</div><p>Published as “Replacement card.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $10 is the reference point.</p>
    </div>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Bank of the Pacific</span><span>Fee Insight</span></div>
@@ -401,10 +401,10 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>Bank of the Pacific</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings (FDIC Call Reports) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings (FDIC Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     <div class="statcard"><div class="lbl">Total assets</div><div class="val">$1.29B</div></div>
 <div class="statcard"><div class="lbl">Total deposits</div><div class="val">$1.14B</div></div>
@@ -422,15 +422,15 @@
    <td>—</td><td>In line</td></tr>
 <tr><td>Fee intensity (income / assets)</td><td class="r"><b>2.5 bps</b></td><td class="r">0.9 bps</td>
    <td class="r">1.5 bps</td><td class="r">2.1 bps</td>
-   <td>P83</td><td>Fee-reliant</td></tr>
+   <td>P83</td><td>Above cohort</td></tr>
 <tr><td>Fee dependency (share of noninterest income)</td><td class="r"><b>5.2%</b></td><td class="r">1.3%</td>
    <td class="r">2.5%</td><td class="r">4.1%</td>
-   <td>P82</td><td>Concentrated</td></tr>
+   <td>P82</td><td>Higher share</td></tr>
 <tr><td>Fee income vs. net income</td><td class="r"><b>2.4%</b></td><td class="r">—</td>
    <td class="r">1.3%</td><td class="r">—</td>
-   <td>—</td><td>Earnings-exposed</td></tr></tbody>
+   <td>—</td><td>Higher share</td></tr></tbody>
   </table>
-  <p class="narrative" style="margin-top:10pt">Your posted prices (62th percentile) and realized fee income (83th percentile) are both top-of-cohort. <b>Fees are a genuine earnings engine here</b> — which cuts both ways: repricing decisions carry real revenue consequences, and regulatory or competitive pressure on fee income lands harder on you than on peers.</p>
+  <p class="narrative" style="margin-top:10pt">Across the 12 lines we could rank, your posted prices average the 72nd percentile of peers; service-charge income relative to assets sits at the 83rd percentile of the same-size cohort. Both sit above the middle of the market, so fee income is a meaningful contributor and any repricing should be modeled against actual incidence first.</p>
   <p class="small muted" style="margin-top:6pt">Fee-intensity trend (year-end filings): 2024: 2.6 bps → 2025: 2.5 bps · cohort median 1.5 bps.</p>
   <p class="small muted" style="margin-top:6pt">Deposit footprint (FDIC Summary of Deposits, 2025): 20 branch locations across 9 counties holding $1.07B in deposits.</p>
   <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
@@ -443,22 +443,23 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>Bank of the Pacific</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
-    <thead><tr><th>Institution</th><th class="r">Monthly maintenance</th><th class="r">Overdraft</th><th class="r">NSF / returned item</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <thead><tr><th>Institution</th><th class="r">NSF / returned item</th><th class="r">Overdraft</th><th class="r">Deposited item return</th><th class="r">Outgoing domestic wire</th><th class="r">Stop payment</th></tr></thead>
     <tbody>
-      <tr class="self"><td>Bank of the Pacific <span class="small muted">(you)</span></td><td class="r">$10.00</td><td class="r">$32.00</td><td class="r">$32.00</td><td class="r">$27.00</td><td class="r">$20.00</td></tr>
-      <tr><td>HomeTrust Bank <span class="small muted">(Asheville, NC)</span></td><td class="r">$2.00</td><td class="r">$33.00</td><td class="r">$5.00</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
-<tr><td>Lawrence Bank <span class="small muted">(Nashville, TN)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$15.00</td><td class="r">$34.00</td><td class="r">$15.00</td></tr>
-<tr><td>Hanmi Bank <span class="small muted">(Los Angeles, CA)</span></td><td class="r">—</td><td class="r">$25.00</td><td class="r">$0.00</td><td class="r">$15.00</td><td class="r">$5.00</td></tr>
-<tr><td>Forbright Bank <span class="small muted">(Potomac, MD)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
-<tr><td>Fidelity Bank <span class="small muted">(New Orleans, LA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td><td class="r">$40.00</td><td class="r">$25.00</td></tr>
-<tr><td>Burke &amp; Herbert Bank &amp; Trust Company <span class="small muted">(Alexandria, VA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$20.00</td><td class="r">$32.00</td><td class="r">$30.00</td></tr>
-<tr><td>Farm Bureau Bank FSB <span class="small muted">(Reno, NV)</span></td><td class="r">$20.00</td><td class="r">$5.00</td><td class="r">$30.00</td><td class="r">—</td><td class="r">$10.00</td></tr>
-<tr><td>Marquette Savings Bank <span class="small muted">(Erie, PA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$5.00</td><td class="r">$36.00</td></tr>
+      <tr class="self"><td>Bank of the Pacific <span class="small muted">(you)</span></td><td class="r">$32.00</td><td class="r">$32.00</td><td class="r">$10.00</td><td class="r">$35.00</td><td class="r">$35.00</td></tr>
+      <tr><td>HomeTrust Bank <span class="small muted">(Asheville, NC)</span></td><td class="r">$35.00</td><td class="r">$35.00</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$30.00</td></tr>
+<tr><td>Fidelity Bank <span class="small muted">(New Orleans, LA)</span></td><td class="r">$35.00</td><td class="r">—</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$40.00</td></tr>
+<tr><td>Forbright Bank <span class="small muted">(Potomac, MD)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$7.50</td><td class="r">$25.00</td><td class="r">$30.00</td></tr>
+<tr><td>Hanmi Bank <span class="small muted">(Los Angeles, CA)</span></td><td class="r">—</td><td class="r">$35.00</td><td class="r">$12.00</td><td class="r">$35.00</td><td class="r">$30.00</td></tr>
+<tr><td>Lawrence Bank <span class="small muted">(Nashville, TN)</span></td><td class="r">—</td><td class="r">$33.00</td><td class="r">—</td><td class="r">$20.00</td><td class="r">$34.00</td></tr>
+<tr><td>Burke &amp; Herbert Bank &amp; Trust Company <span class="small muted">(Alexandria, VA)</span></td><td class="r">$32.00</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$30.00</td><td class="r">$32.00</td></tr>
+<tr><td>Apex Bank <span class="small muted">(Camden, TN)</span></td><td class="r">$33.00</td><td class="r">$33.00</td><td class="r">$10.00</td><td class="r">$30.00</td><td class="r">$33.00</td></tr>
+<tr><td>Farm Bureau Bank FSB <span class="small muted">(Reno, NV)</span></td><td class="r">$30.00</td><td class="r">$30.00</td><td class="r">$12.00</td><td class="r">$25.00</td><td class="r">—</td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Bank of the Pacific</span><span>Fee Insight</span></div>
@@ -467,22 +468,21 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>Bank of the Pacific</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
-  <div class="narrative"><p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($12) now sits at less than half your posted fee and a quarter of peers charge $5 or less. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet.</p><p>Community-scale institutions ($1B–$10B) occupy the exposed middle: large enough to be included in comparisons, without the brand gravity that lets money-center banks charge premiums quietly. In that position, the highest-leverage moves are usually not across-the-board cuts but surgical ones — retiring or capping the one or two conspicuous outliers while actively advertising the fees already priced below market.</p></div>
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Bank of the Pacific with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      Community banks, $1B–$10B — 86 institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      Aug 16, 2026. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  68 banks with $1B–$10B in assets nationwide. For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to Bank of the Pacific in this report
     was extracted from your own published documents:</p>
@@ -500,8 +500,8 @@
   <h2>Your complete published fee schedule</h2>
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
-  Bank of the Pacific's published documents (39 lines, as of Aug 16, 2026).
-  This is the schedule your customers — and your competitors — can see.</p>
+  Bank of the Pacific's published documents (39 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -590,22 +590,23 @@
 
 <!-- 8. BACK -->
 <div class="bleed back">
-  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Aug 16, 2026</span></div>
-  <h2>This report is yours,<br><em>with our compliments.</em></h2>
-  <p class="sub">A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking 1,183 institutions nationwide.</p>
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of 1,183 U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
   <div class="cta">
     <div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">hello@bankfeeindex.com</span>
       <p style="margin-top:8pt">feeinsight.com</p>
     </div>
   </div>
-  <div class="colophon"><span>Prepared for Bank of the Pacific</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

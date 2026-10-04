@@ -140,7 +140,7 @@ export default async function ProMarketPage() {
                   .map(([districtId, headline]) => (
                     <Link
                       key={districtId}
-                      href={`/pro/districts/${districtId}`}
+                      href={`/research/district/${districtId}`}
                       className="flex items-start gap-3 px-5 py-3 hover:bg-warm-100/60 transition-colors no-underline"
                     >
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warm-200/40 text-[10px] font-bold text-warm-600 mt-0.5">

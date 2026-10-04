@@ -62,14 +62,9 @@ supabase/.temp/
 .superpowers/
 .pytest_cache/
 .ruff_cache/
-Reports/
-
-# Studio: track source, ignore generated packs/PDFs
-!reports/
-!reports/studio/
-reports/*.pdf
-reports/v3.1/
-reports/v4.2/
-reports/studio/packs/
-reports/studio/out/*.pdf
-reports/studio/out/_superseded*/
+# Studio: track source, ignore generated packs/PDFs (path case matters on Linux)
+Reports/*
+!Reports/studio/
+Reports/studio/packs/
+Reports/studio/out/*.pdf
+Reports/studio/out/_superseded*/

@@ -4,11 +4,10 @@
  * Never throws; every branch resolves to a delivery result so the lead is stored
  * regardless of email health.
  */
-import { CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import {
   escapeHtml,
   getResendApiKey,
-  getTransactionalFromAddress,
   sendResendEmail,
   type EmailDeliveryResult,
 } from "./resend";
@@ -28,16 +27,49 @@ export interface LeadEmailContent {
   cta?: { label: string; href: string };
 }
 
-const FROM_NOT_CONFIGURED =
-  "REPORT_REQUEST_EMAIL_FROM, WORKSPACE_INVITE_EMAIL_FROM, TRANSACTIONAL_EMAIL_FROM, " +
-  "or EMAIL_FROM is not configured.";
+const FROM_ENV_VARS = [
+  "REPORT_REQUEST_EMAIL_FROM",
+  "WORKSPACE_INVITE_EMAIL_FROM",
+  "TRANSACTIONAL_EMAIL_FROM",
+  "EMAIL_FROM",
+] as const;
+
+/** Used when no From env var is set, so only RESEND_API_KEY is required to send. */
+export const DEFAULT_LEAD_FROM = `${SITE_NAME} <${CONTACT_EMAIL}>`;
+
+const BARE_EMAIL = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
+const NAME_THEN_BARE_EMAIL = /^(.*\S)\s+([^\s<>@]+@[^\s<>@]+\.[^\s<>@]+)$/;
+
+/**
+ * Resend accepts "email@domain" or "Name <email@domain>". A value typed as
+ * "Fee Insight hello@domain" (brackets forgotten) is repaired instead of rejected.
+ */
+export function normalizeFromAddress(value: string): string {
+  const trimmed = value.trim().replace(/^["']|["']$/g, "").trim();
+  if (!trimmed || trimmed.includes("<") || BARE_EMAIL.test(trimmed)) return trimmed;
+  const match = NAME_THEN_BARE_EMAIL.exec(trimmed);
+  return match ? `${match[1]} <${match[2]}>` : trimmed;
+}
+
+export interface LeadEmailConfig {
+  apiKeyConfigured: boolean;
+  from: string;
+  /** Env var the From address came from, or "default". */
+  fromSource: (typeof FROM_ENV_VARS)[number] | "default";
+}
+
+export function describeLeadEmailConfig(): LeadEmailConfig {
+  for (const name of FROM_ENV_VARS) {
+    const value = (process.env[name] || "").trim();
+    if (value) {
+      return { apiKeyConfigured: Boolean(getResendApiKey()), from: normalizeFromAddress(value), fromSource: name };
+    }
+  }
+  return { apiKeyConfigured: Boolean(getResendApiKey()), from: DEFAULT_LEAD_FROM, fromSource: "default" };
+}
 
 export function getLeadNotificationFromAddress() {
-  return (
-    (process.env.REPORT_REQUEST_EMAIL_FROM || "").trim() ||
-    (process.env.WORKSPACE_INVITE_EMAIL_FROM || "").trim() ||
-    getTransactionalFromAddress()
-  );
+  return describeLeadEmailConfig().from;
 }
 
 export function adminLeadsUrl() {
@@ -92,10 +124,6 @@ export async function sendLeadNotificationPair(input: {
       status: "not_configured",
       reason: "RESEND_API_KEY is not configured.",
     };
-    return { notification: result, confirmation: result };
-  }
-  if (!from) {
-    const result: EmailDeliveryResult = { status: "not_configured", reason: FROM_NOT_CONFIGURED };
     return { notification: result, confirmation: result };
   }
 

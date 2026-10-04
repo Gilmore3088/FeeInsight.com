@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -239,7 +252,7 @@
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">
-    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Aug 16, 2026</span></div>
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
     <div class="title">
       <div class="series">Prepared exclusively for one institution</div>
       <h1>Competitive<br>Fee <em>Position</em></h1>
@@ -247,13 +260,13 @@
         <span class="instname">Tampa Bay Federal Credit Union</span>
       </div>
       <div class="instmeta">Tampa, FL<i>·</i>Credit Union<i>·</i>Community credit union, $300M–$1B</div>
-      <p class="cohortnote">Peer cohort: 41 comparable community credit unions. Not every peer publishes every fee: 6 publish an NSF fee and 6 an overdraft fee, so those are the comparison sets for those lines.</p>
+      <p class="cohortnote">Compared with 141 credit unions with under $10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
     </div>
-    <div class="ghost">41</div>
+    <div class="ghost">141</div>
     <div class="card">
-      <div><div class="lbl">Peer cohort</div><div class="val">Community credit unions, $300M–$1B</div></div>
+      <div><div class="lbl">Peer cohort</div><div class="val">Credit unions, under $10B · nationwide</div></div>
       <div><div class="lbl">Benchmarked against</div>
-        <div class="big">41<small>peer institutions with published fee schedules</small></div></div>
+        <div class="big">141<small>peer institutions with published fee schedules</small></div></div>
       <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
     </div>
   </div>
@@ -263,17 +276,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>Tampa Bay Federal Credit Union</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
-    <div class="finding"><div class="num" style="font-size:18pt">$5 vs $24.50<small>overdraft fee vs peer median</small></div>
-   <p><b>Your overdraft fee is one-fifth the peer median.</b>At $5.00, your overdraft fee sits at the 17th percentile of 6 comparable credit unions, against a $24.50 median and a $30 maximum. That is a genuinely member-friendly price on the industry's most scrutinized fee — and one of the strongest competitive claims a credit union can make right now, if members actually hear about it.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$10 vs $35<small>card replacement vs peer median</small></div>
-   <p><b>Your service fees run far below comparable credit unions.</b>Card replacement ($10 vs a $35 median, 26th percentile of 23 peers) and stop payments ($5 vs a $25 median, 17th percentile) are priced at a fraction of what comparable credit unions charge. Together with the $5 overdraft, this is a schedule built around the member — either by design or by drift. If by design, it is an untold story; if by drift, it is margin left unexamined.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$35 vs $32<small>deposited item return vs peer median</small></div>
-   <p><b>You are priced at or below market almost everywhere — with one exception.</b>Across the schedule, your fees sit at or under the peer median. The exception is the deposited-item return fee: $35 against a $32 median, tied for the highest in a small 5-peer sample. It is a modest $3 gap, but it is the only line where your schedule tops the cohort — worth a deliberate look precisely because it breaks an otherwise member-friendly pattern.</p></div>
+    <div class="finding"><div class="num" style="font-size:13pt">$35 vs $26.25<small>NSF / returned-item fee, yours vs peer median</small></div>
+   <p><b>Your NSF / returned-item fee is above the market range.</b>At $35, it is $8.75 above the $26.25 peer median and the 97th percentile of 60 peers (middle half of the market: $20–$30). Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them.</p></div>
+<div class="finding"><div class="num" style="font-size:18pt">$35 vs $25<small>stop-payment fee, yours vs peer median</small></div>
+   <p><b>Your stop-payment fee is above the market range.</b>At $35, it is $10 above the $25 peer median and the 96th percentile of 70 peers (middle half of the market: $20–$30). It is infrequent, but it appears in most side-by-side schedule comparisons.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">7 of 9<small>comparable lines inside the market range</small></div>
+   <p><b>Most of your schedule is priced with the market.</b>Of the 9 fee lines where we found both your published amount and at least eight comparable peers, seven sit between the peer 25th and 75th percentiles, two above.</p></div>
   </div>
-  <p class="narrative drop">Net position: Tampa Bay Federal Credit Union prices at or below market on nearly every published fee — most dramatically on overdraft ($5 vs a $24.50 peer median), stop payments ($5 vs $25), and card replacement ($10 vs $35). NSF sits at the cohort midpoint ($15 vs a $17.50 median). The one line above market is the $35 deposited-item return fee, a $3 gap at the top of a small peer sample. The strategic question here is not what to cut; it is whether a schedule this member-friendly should remain a secret, and whether the below-market prices are intentional positioning or unpriced drift.</p>
+  <p class="narrative drop">Tampa Bay Federal Credit Union is compared with 141 credit unions under $10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 9 rankable lines, seven sit inside the middle half of the market, two above it (NSF / returned-item fee and stop-payment fee). We would suggest two steps, in order of value: (1) review the NSF / returned-item fee, which sits above the market range; the peer median of $26.25 is the reference point; (2) check that the overdraft fee is published where customers can find it.</p>
   <div class="pagefoot"><span>Competitive Fee Position — Tampa Bay Federal Credit Union</span><span>Fee Insight</span></div>
 </div>
 
@@ -281,94 +294,81 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>Tampa Bay Federal Credit Union</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. 41 peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: Community credit unions, $300M–$1B — 41 institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">Compared with 141 credit unions with under $10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data) that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
-      <tr><td>Non-network ATM</td>
-    <td class="r"><b>$0.50</b></td>
-    <td class="r">$1.75</td><td class="r">$3.00</td>
-    <td class="r">$3.75</td><td class="r">$1.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:33%"></div></div><span class="small muted"> P33</span></td><td></td></tr>
-<tr><td>Foreign transaction</td>
+      <tr><td><span class="cat">Non-network ATM</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">—</td><td class="r">—</td>
-    <td class="r">—</td><td class="r">$1.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Card replacement</td>
+    <td class="r">$1.00</td><td class="r">$2.00</td>
+    <td class="r">$2.88</td><td class="r muted">22</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">Card replacement</span><span class="feeline">ATM or MasterMoney Debit Replacement Card</span></td>
     <td class="r"><b>$10.00</b></td>
-    <td class="r">$17.50</td><td class="r">$35.00</td>
-    <td class="r">$50.00</td><td class="r">$28.75</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:26%"></div></div><span class="small muted"> P26</span></td><td></td></tr>
-<tr><td>Cashier's check</td>
+    <td class="r">$5.00</td><td class="r">$10.00</td>
+    <td class="r">$10.00</td><td class="r muted">42</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:76%"></div></div><span class="small muted"> P76</span></td><td></td></tr>
+<tr><td><span class="cat">Cashier's check</span><span class="feeline">Official Check</span></td>
     <td class="r"><b>$5.00</b></td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Deposited item return</td>
-    <td class="r"><b>$35.00</b></td>
-    <td class="r">$25.00</td><td class="r">$32.00</td>
-    <td class="r">$35.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Minimum balance</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$3.00</td><td class="r">$3.00</td>
-    <td class="r">$6.50</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Monthly maintenance</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td class="r">$8.75</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:67%"></div></div><span class="small muted"> P67</span></td><td></td></tr>
-<tr><td>NSF / returned item</td>
+    <td class="r">$3.00</td><td class="r">$5.00</td>
+    <td class="r">$5.00</td><td class="r muted">29</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:79%"></div></div><span class="small muted"> P79</span></td><td></td></tr>
+<tr><td><span class="cat">Deposited item return</span><span class="feeline">Check Deposit Returned NSF</span></td>
     <td class="r"><b>$15.00</b></td>
-    <td class="r">$15.00</td><td class="r">$17.50</td>
-    <td class="r">$27.13</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
-<tr><td>OD protection transfer</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$1.50</td><td class="r">$2.00</td>
-    <td class="r">$3.50</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Overdraft</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$12.50</td><td class="r">$24.50</td>
-    <td class="r">$29.00</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar lo" style="width:17%"></div></div><span class="small muted"> P17</span></td><td></td></tr>
-<tr><td>Paper statement</td>
-    <td class="r"><b>$3.00</b></td>
-    <td class="r">$1.00</td><td class="r">$3.00</td>
-    <td class="r">$3.00</td><td class="r">$2.75</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:80%"></div></div><span class="small muted"> P80</span></td><td></td></tr>
-<tr><td>Stop payment</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$20.00</td><td class="r">$25.00</td>
-    <td class="r">$33.75</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar lo" style="width:17%"></div></div><span class="small muted"> P17</span></td><td></td></tr>
-<tr><td>Incoming domestic wire</td>
-    <td class="r"><b>$10.00</b></td>
-    <td class="r">$10.00</td><td class="r">$10.00</td>
-    <td class="r">$10.00</td><td class="r">$10.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Outgoing domestic wire</td>
-    <td class="r"><b>$25.00</b></td>
-    <td class="r">$22.50</td><td class="r">$25.00</td>
-    <td class="r">$41.50</td><td class="r">$20.00</td>
+    <td class="r">$15.00</td><td class="r">$25.00</td>
+    <td class="r">$32.25</td><td class="r muted">26</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:31%"></div></div><span class="small muted"> P31</span></td><td></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span><span class="feeline">Single Service Account Monthly Fee</span></td>
+    <td class="r"><b>$6.95</b></td>
+    <td class="r">$4.50</td><td class="r">$5.00</td>
+    <td class="r">$7.73</td><td class="r muted">23</td>
     <td><div class="bar-wrap"><div class="bar " style="width:57%"></div></div><span class="small muted"> P57</span></td><td></td></tr>
-<tr><td>Outgoing intl. wire</td>
+<tr><td><span class="cat">NSF / returned item</span><span class="feeline">Share Fee (ACH or Check Returned NSF)</span></td>
+    <td class="r"><b>$35.00</b></td>
+    <td class="r">$20.00</td><td class="r">$26.25</td>
+    <td class="r">$30.00</td><td class="r muted">60</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:97%"></div></div><span class="small muted"> P97</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">OD protection transfer</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$3.00</td><td class="r">$5.00</td>
+    <td class="r">$9.25</td><td class="r muted">18</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Overdraft</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$20.00</td><td class="r">$29.50</td>
+    <td class="r">$33.50</td><td class="r muted">32</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Paper statement</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$2.00</td><td class="r">$3.00</td>
+    <td class="r">$5.00</td><td class="r muted">14</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Stop payment</span><span class="feeline">Stop Payment</span></td>
+    <td class="r"><b>$35.00</b></td>
+    <td class="r">$20.00</td><td class="r">$25.00</td>
+    <td class="r">$30.00</td><td class="r muted">70</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:96%"></div></div><span class="small muted"> P96</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span><span class="feeline">Incoming Domestic Funds/Wire Transfer</span></td>
+    <td class="r"><b>$10.00</b></td>
+    <td class="r">$5.00</td><td class="r">$10.00</td>
+    <td class="r">$10.00</td><td class="r muted">15</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:80%"></div></div><span class="small muted"> P80</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Outgoing Domestic Funds/Wire Transfer</span></td>
+    <td class="r"><b>$25.00</b></td>
+    <td class="r">$15.00</td><td class="r">$20.00</td>
+    <td class="r">$25.00</td><td class="r muted">47</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:83%"></div></div><span class="small muted"> P83</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span><span class="feeline">Outgoing International Funds/Wire Transfer</span></td>
     <td class="r"><b>$50.00</b></td>
-    <td class="r">$42.50</td><td class="r">$45.00</td>
-    <td class="r">$47.50</td><td class="r">$42.50</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
+    <td class="r">$33.75</td><td class="r">$42.50</td>
+    <td class="r">$50.00</td><td class="r muted">20</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:90%"></div></div><span class="small muted"> P90</span></td><td></td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Tampa Bay Federal Credit Union</span><span>Fee Insight</span></div>
@@ -377,18 +377,18 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>Tampa Bay Federal Credit Union</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
-    <div class="callout opportunity">
-     <h3>Overdraft — $5.00, one-fifth the peer median</h3><div class="stat">Peer median $24.50 · P75 $29.00 · 17th percentile · n=6</div><p>Overdraft pricing is the most publicly scrutinized line on any fee schedule, and yours is among the lowest in your cohort. Comparable credit unions charge up to $30. This belongs in member communications and new-member marketing: it is a concrete, verifiable proof point of the credit-union difference, substantiated by your peers' own published schedules.</p>
-   </div>
-<div class="callout opportunity">
-     <h3>Service fees — stop payment $5, card replacement $10</h3><div class="stat">Stop payment $5 vs $25 median (P17, n=6) · Card replacement $10 vs $35 median (P26, n=23)</div><p>Both fees run at a fraction of the cohort. If these prices are deliberate, they are marketing assets going unused. If they have simply not been revisited, note that even a move to $10 and $20 respectively would still leave you below the peer median — the rare case where a price review can raise revenue without surrendering the member-friendly position.</p>
+    <div class="callout ">
+     <h3>NSF / returned-item fee — $35</h3><div class="stat">Peer median $26.25 · middle half $20–$30 · range $5–$40 · 97th percentile · n=60</div><p>Published as “Share Fee (ACH or Check Returned NSF).” At $35 it is $8.75 above the $26.25 peer median. Returned-item fees remain under regulatory and competitive pressure, and a number of large institutions have eliminated them. A penalty fee offers little service to differentiate on, so the peer median of $26.25 is the natural reference point.</p>
    </div>
 <div class="callout ">
-     <h3>Deposited item return — $35.00</h3><div class="stat">Peer median $32.00 · peer max $35.00 · n=5</div><p>This is the one fee where you sit at the top of the cohort, tied with the highest peer in a 5-institution sample. The dollar gap is small, but the fee lands on members whose deposited check bounced through no fault of their own — a category that draws junk-fee framing quickly. Given that everything else on your schedule tells a member-first story, this line is worth aligning with the rest of it.</p>
+     <h3>Stop-payment fee — $35</h3><div class="stat">Peer median $25 · middle half $20–$30 · range $10–$43 · 96th percentile · n=70</div><p>Published as “Stop Payment.” At $35 it is $10 above the $25 peer median. It is infrequent, but it appears in most side-by-side schedule comparisons. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $25 is the reference point.</p>
+   </div>
+<div class="callout ">
+     <h3>Fees we could not find in your published schedule</h3><div class="stat">Overdraft fee: published by 32 peers (median $29.50)</div><p>Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place.</p>
    </div>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Tampa Bay Federal Credit Union</span><span>Fee Insight</span></div>
@@ -398,17 +398,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>Tampa Bay Federal Credit Union</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings (NCUA Call Reports) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings (NCUA Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     <div class="statcard"><div class="lbl">Total assets</div><div class="val">$493.0M</div></div>
 <div class="statcard"><div class="lbl">Total deposits</div><div class="val">$421.5M</div></div>
 <div class="statcard"><div class="lbl">Members</div><div class="val">37,133</div><div class="cmp">5 branches</div></div>
 <div class="statcard"><div class="lbl">Service-charge income</div><div class="val">$2.6M</div><div class="cmp">8.3% of revenue</div></div>
 <div class="statcard"><div class="lbl">Fee-income intensity</div><div class="val">54.6 bps</div><div class="cmp">cohort median <b>49.5 bps</b> of assets</div></div>
-<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">12 of 15</div><div class="cmp">featured categories published</div></div>
+<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">9 of 13</div><div class="cmp">featured categories published</div></div>
   </div>
   <h3 class="sub">Fee economics vs. your cohort</h3>
   <table>
@@ -425,7 +425,7 @@
    <td>P72</td><td>In line</td></tr>
 </tbody>
   </table>
-  <p class="narrative" style="margin-top:10pt">Your posted prices (62th percentile) and realized fee income (59th percentile) sit near the cohort middle — <b>fee strategy is neither a risk nor an engine today</b>, which makes the individual outliers in this report the whole story.</p>
+  <p class="narrative" style="margin-top:10pt">Across the 9 lines we could rank, your posted prices average the 77th percentile of peers; service-charge income relative to assets sits at the 59th percentile of the same-size cohort. Neither is far from the middle of the market, so the individual lines flagged in § 02 are where the decisions are.</p>
   
   
   <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
@@ -438,22 +438,23 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>Tampa Bay Federal Credit Union</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
-    <thead><tr><th>Institution</th><th class="r">Monthly maintenance</th><th class="r">Overdraft</th><th class="r">NSF / returned item</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <thead><tr><th>Institution</th><th class="r">NSF / returned item</th><th class="r">Monthly maintenance</th><th class="r">Deposited item return</th><th class="r">Cashier's check</th><th class="r">Stop payment</th></tr></thead>
     <tbody>
-      <tr class="self"><td>Tampa Bay Federal Credit Union <span class="small muted">(you)</span></td><td class="r">$5.00</td><td class="r">$5.00</td><td class="r">$15.00</td><td class="r">$5.00</td><td class="r">$25.00</td></tr>
-      <tr><td>First Credit Union <span class="small muted">(Chandler, AZ)</span></td><td class="r">$3.50</td><td class="r">$20.00</td><td class="r">$20.00</td><td class="r">$20.00</td><td class="r">$20.00</td></tr>
-<tr><td>Emblem Credit Union <span class="small muted">(GADSDEN, AL)</span></td><td class="r">$10.00</td><td class="r">—</td><td class="r">$15.00</td><td class="r">$20.00</td><td class="r">$20.00</td></tr>
-<tr><td>Union Square Credit Union <span class="small muted">(Wichita Falls, TX)</span></td><td class="r">—</td><td class="r">$30.00</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Holy Rosary Federal Credit Union <span class="small muted">(Rochester, NH)</span></td><td class="r">—</td><td class="r">$29.00</td><td class="r">$15.00</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>Lookout Federal Credit Union <span class="small muted">(Pocatello, ID)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>
-<tr><td>First Alliance Federal Credit Union <span class="small muted">(Rochester, MN)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$30.00</td><td class="r">—</td></tr>
-<tr><td>Garden Savings Federal Credit Union <span class="small muted">(PARSIPPANY, NJ)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td></tr>
-<tr><td>Idb Global Federal Credit Union <span class="small muted">(WASHINGTON, DC)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td><td class="r">—</td></tr>
+      <tr class="self"><td>Tampa Bay Federal Credit Union <span class="small muted">(you)</span></td><td class="r">$35.00</td><td class="r">$6.95</td><td class="r">$15.00</td><td class="r">$5.00</td><td class="r">$35.00</td></tr>
+      <tr><td>Tampa Postal Federal Credit Union <span class="small muted">(TAMPA, FL)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$3.00</td><td class="r">$20.00</td></tr>
+<tr><td>Emblem Credit Union <span class="small muted">(GADSDEN, AL)</span></td><td class="r">$20.00</td><td class="r">$10.00</td><td class="r">—</td><td class="r">$2.00</td><td class="r">$20.00</td></tr>
+<tr><td>Georgia Heritage Federal Credit Union <span class="small muted">(SAVANNAH, GA)</span></td><td class="r">—</td><td class="r">$2.00</td><td class="r">—</td><td class="r">$5.00</td><td class="r">$33.00</td></tr>
+<tr><td>Peoples Federal Credit Union <span class="small muted">(Nitro, WV)</span></td><td class="r">$25.00</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$5.00</td><td class="r">$25.00</td></tr>
+<tr><td>Advantage Financial Federal Credit Union <span class="small muted">(WASHINGTON, DC)</span></td><td class="r">$30.00</td><td class="r">—</td><td class="r">$33.00</td><td class="r">$5.00</td><td class="r">$15.00</td></tr>
+<tr><td>Bay Cities Credit Union <span class="small muted">(Hayward, CA)</span></td><td class="r">—</td><td class="r">$5.00</td><td class="r">$25.00</td><td class="r">$5.00</td><td class="r">$30.00</td></tr>
+<tr><td>Jessop Community Federal Credit Union <span class="small muted">(Washington, PA)</span></td><td class="r">$25.00</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$10.00</td><td class="r">$20.00</td></tr>
+<tr><td>Coopers Cave Federal Credit Union <span class="small muted">(Glens Falls, NY)</span></td><td class="r">$40.00</td><td class="r">—</td><td class="r">$40.00</td><td class="r">$10.00</td><td class="r">$43.00</td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Tampa Bay Federal Credit Union</span><span>Fee Insight</span></div>
@@ -462,27 +463,26 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>Tampa Bay Federal Credit Union</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
-  <div class="narrative"><p>Two currents define the fee landscape your schedule competes in. First, the industry-wide retreat from NSF and overdraft fees: regulatory and reputational pressure that began with the largest banks has migrated to community institutions, compressing penalty-fee medians across the market — a trend your $5 overdraft and $15 NSF already sit comfortably inside. Second, published fee schedules have become marketing documents: fees are public, scraped, and compared, which means every below-market line on your schedule is a competitive claim you can prove — and every above-market line, however small, is visible to anyone who looks.</p><p>Mid-sized credit unions occupy an exposed middle: large enough to appear in fee comparisons alongside banks and larger credit unions, without the marketing budgets that let bigger institutions shape their own narrative. For an institution priced the way you are, the highest-leverage move is not a pricing change at all — it is telling the story. A member-first fee schedule that members have never seen compared to the alternatives is doing only half its job; the single above-market exception is a quick fix that makes the story airtight.</p></div>
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Tampa Bay Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      Community credit unions, $300M–$1B — 41 institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      Aug 16, 2026. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  141 credit unions with under $10B in assets nationwide (a wider size band than usual, because fewer than 40 credit unions in your own size tier publish comparable data). For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to Tampa Bay Federal Credit Union in this report
     was extracted from your own published documents:</p>
     <ul>
-      <li>Source URLs available on request.</li>
+      <li>https://www.tampabayfederal.com/service-fees</li>
     </ul>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Tampa Bay Federal Credit Union</span><span>Fee Insight</span></div>
@@ -495,8 +495,8 @@
   <h2>Your complete published fee schedule</h2>
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
-  Tampa Bay Federal Credit Union's published documents (45 lines, as of Aug 16, 2026).
-  This is the schedule your customers — and your competitors — can see.</p>
+  Tampa Bay Federal Credit Union's published documents (45 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -597,22 +597,23 @@
 
 <!-- 8. BACK -->
 <div class="bleed back">
-  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Aug 16, 2026</span></div>
-  <h2>This report is yours,<br><em>with our compliments.</em></h2>
-  <p class="sub">A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking 1,183 institutions nationwide.</p>
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of 1,183 U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
   <div class="cta">
     <div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">hello@bankfeeindex.com</span>
       <p style="margin-top:8pt">feeinsight.com</p>
     </div>
   </div>
-  <div class="colophon"><span>Prepared for Tampa Bay Federal Credit Union</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

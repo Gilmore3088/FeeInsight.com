@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -263,7 +276,7 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>{{INSTITUTION_NAME}}</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
     {{EXEC_FINDINGS}}
@@ -276,17 +289,14 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>{{INSTITUTION_NAME}}</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. {{COHORT_SIZE}} peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: {{COHORT_LABEL}} — {{COHORT_SIZE}} institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">{{COHORT_NOTE}} Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
       {{POSITION_ROWS}}
@@ -298,8 +308,8 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>{{INSTITUTION_NAME}}</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
     {{CALLOUTS}}
@@ -311,10 +321,10 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>{{INSTITUTION_NAME}}</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings ({{FIN_SOURCE_LABEL}}) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings ({{FIN_SOURCE_LABEL}}) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     {{FIN_CARDS}}
   </div>
@@ -337,10 +347,11 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>{{INSTITUTION_NAME}}</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
     <thead><tr><th>Institution</th>{{PEER_HEAD}}</tr></thead>
     <tbody>
@@ -354,22 +365,13 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>{{INSTITUTION_NAME}}</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
   <div class="narrative">{{CONTEXT_NARRATIVE}}</div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      {{COHORT_LABEL}} — {{COHORT_SIZE}} institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      {{PULL_DATE}}. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">{{METHOD_TEXT}}</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to {{INSTITUTION_NAME}} in this report
     was extracted from your own published documents:</p>
@@ -388,7 +390,7 @@
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
   {{INSTITUTION_NAME}}'s published documents ({{ALL_FEES_COUNT}} lines, as of {{PULL_DATE}}).
-  This is the schedule your customers — and your competitors — can see.</p>
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -406,7 +408,6 @@
   <div class="cta">
     {{BACK_CTA}}
   </div>
-  <div class="colophon"><span>Prepared for {{INSTITUTION_NAME}}</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

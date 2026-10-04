@@ -290,11 +290,11 @@ export default async function InstitutionDetailPage({
         )}
       </div>
 
-      {/* Crawl History */}
+      {/* Source documents: every version we downloaded, our stored copy, and what each yielded */}
       <div className="admin-card overflow-hidden">
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
           <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.08em]">
-            Crawl History ({crawlHistory.length})
+            Source documents ({crawlHistory.length})
           </h2>
         </div>
         {crawlHistory.length > 0 ? (
@@ -304,9 +304,12 @@ export default async function InstitutionDetailPage({
                 <tr className="text-left">
                   <th>Date</th>
                   <th className="text-center">Status</th>
+                  <th>Version</th>
+                  <th>Fee page?</th>
                   <th>Document URL</th>
+                  <th>Our copy</th>
                   <th className="text-right">Fees</th>
-                  <th>Error</th>
+                  <th>Note</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,6 +323,12 @@ export default async function InstitutionDetailPage({
                     </td>
                     <td className="text-center">
                       <CrawlStatusBadge status={cr.status} />
+                    </td>
+                    <td className="font-mono text-[11px] text-gray-500" title={cr.content_hash ?? undefined}>
+                      {cr.content_hash ? cr.content_hash.slice(0, 8) : "-"}
+                    </td>
+                    <td>
+                      <ReadStatusLabel status={cr.read_status} />
                     </td>
                     <td className="text-gray-500 max-w-[200px] truncate">
                       {cr.document_url ? (
@@ -336,16 +345,30 @@ export default async function InstitutionDetailPage({
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
+                    <td>
+                      {cr.stored ? (
+                        <a
+                          href={`/api/admin/documents/${cr.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          View
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="text-right tabular-nums text-gray-700 dark:text-gray-300">
-                      {cr.fees_extracted}
+                      {cr.knox_fees || cr.fees_extracted}
                     </td>
                     <td className="text-gray-500 max-w-[200px] truncate">
-                      {cr.error_message ? (
+                      {cr.error_message || cr.read_note ? (
                         <span
-                          className="text-red-600 dark:text-red-400"
-                          title={cr.error_message}
+                          className={cr.error_message ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}
+                          title={cr.error_message ?? cr.read_note ?? undefined}
                         >
-                          {truncate(cr.error_message, 50)}
+                          {truncate(cr.error_message ?? cr.read_note ?? "", 50)}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>
@@ -965,4 +988,17 @@ function CrawlStatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function ReadStatusLabel({ status }: { status: string | null }) {
+  if (!status) return <span className="text-gray-400">not read</span>;
+  const label: Record<string, { text: string; tone: string }> = {
+    completed: { text: "Yes", tone: "text-emerald-700 dark:text-emerald-400" },
+    wrong_document: { text: "No, wrong page", tone: "text-red-600 dark:text-red-400" },
+    needs_ocr: { text: "Scan (needs OCR)", tone: "text-amber-700 dark:text-amber-400" },
+    empty: { text: "Empty page", tone: "text-amber-700 dark:text-amber-400" },
+    failed: { text: "Read failed", tone: "text-red-600 dark:text-red-400" },
+  };
+  const entry = label[status] ?? { text: status, tone: "text-gray-500" };
+  return <span className={`text-[11px] font-medium ${entry.tone}`}>{entry.text}</span>;
 }

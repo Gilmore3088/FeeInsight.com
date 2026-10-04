@@ -70,13 +70,15 @@ export type Permission =
   | "manage_users"
   | "trigger_jobs"
   | "cancel_jobs"
-  | "research";
+  | "research"
+  /** Operator console (/admin pages, actions and APIs): admin and analyst only. */
+  | "operate";
 
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   viewer: ["view"],
   premium: ["view", "research"],
-  analyst: ["view", "approve", "reject", "research"],
-  admin: ["view", "approve", "reject", "edit", "bulk_approve", "manage_users", "trigger_jobs", "cancel_jobs", "research"],
+  analyst: ["view", "approve", "reject", "research", "operate"],
+  admin: ["view", "approve", "reject", "edit", "bulk_approve", "manage_users", "trigger_jobs", "cancel_jobs", "research", "operate"],
 };
 
 type SqlClient = typeof sql;
@@ -102,10 +104,12 @@ export async function issueSession(
 ): Promise<{ sessionId: string; signed: string; expiresAt: Date }> {
   const sessionId = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  // Sign first: a missing cookie secret must fail before a session row exists.
+  const signed = signSessionId(sessionId);
   await db`
     INSERT INTO sessions (id, user_id, expires_at) VALUES (${sessionId}, ${userId}, ${expiresAt})
   `;
-  return { sessionId, signed: signSessionId(sessionId), expiresAt };
+  return { sessionId, signed, expiresAt };
 }
 
 export async function setSessionCookie(signed: string): Promise<void> {

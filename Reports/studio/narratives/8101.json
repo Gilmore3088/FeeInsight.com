@@ -1,46 +1,72 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your monthly maintenance fee ($10) is 2× the $5 peer median, the 87th percentile of 23 peers.",
   "findings": [
     {
-      "stat": "$10 vs $3",
-      "stat_label": "minimum balance fee vs peers",
-      "headline": "Your minimum-balance fee is an extreme outlier.",
-      "body": "At $10.00, your minimum-balance fee is more than 3x the $3.00 median and the highest in the peer group — flagged as an extreme outlier in our data. The sample is small (3 comparable credit unions publish this fee), so the percentile deserves caution, but the direction is clear: you charge the most, on a fee that lands on your lowest-balance members."
-    },
-    {
       "stat": "$10 vs $5",
-      "stat_label": "monthly maintenance vs peer median",
-      "headline": "The cost of simply holding an account runs double the median.",
-      "body": "Monthly maintenance is $10.00 against a $5.00 median — the 83rd percentile of 6 comparable credit unions, above the $8.75 75th-percentile mark. Combined with the minimum-balance fee, the two charges tied to just keeping an account open are the only place your schedule prices above market, and they stack on the same members."
+      "stat_label": "monthly maintenance fee, yours vs peer median",
+      "headline": "Your monthly maintenance fee is well above the market range.",
+      "body": "At $10, it is 2× the $5 peer median and the 87th percentile of 23 peers (middle half of the market: $4.50–$7.50). Maintenance fees are the line account shoppers compare first, before any penalty fee."
     },
     {
-      "stat": "$15 vs $25",
-      "stat_label": "NSF vs national median",
-      "headline": "Everywhere else, you are at or below market — quietly.",
-      "body": "NSF runs $15 against a $17.50 peer median and a $25.00 national median. Card replacement is $10 versus a $35 median (26th percentile of 23 peers), cashier's checks $2 versus $5 — the cohort minimum — and paper statements $1 versus $3. On transaction and penalty fees, this is a genuinely member-friendly schedule that no one is talking about."
+      "stat": "2 lines",
+      "stat_label": "priced below the market range",
+      "headline": "Several lines are priced below the market.",
+      "body": "Your NSF / returned-item fee ($20 vs a $27.75 median) and cashier's check fee ($2 vs a $5 median) each sit below the peer 25th percentile. Below-market returned-item pricing is a position many institutions are moving toward. If the pricing is deliberate, it is worth stating plainly in account marketing."
+    },
+    {
+      "stat": "5 of 8",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 8 fee lines where we found both your published amount and at least eight comparable peers, five sit between the peer 25th and 75th percentiles, one above and two below."
     }
   ],
-  "exec_narrative": "Net position: Emblem Credit Union prices penalty and service fees at or below comparable credit unions — NSF under both the peer and national medians, card replacement at less than a third of the going rate, cashier's checks at the cohort minimum — while concentrating its entire above-market posture on the two fees for holding an account: a $10 minimum-balance fee flagged as an extreme outlier and a $10 monthly maintenance fee at double the median. That combination inverts the usual story; it is gentlest on members who make mistakes and hardest on members with small balances. The account-holding fees deserve a deliberate decision, and the member-friendly pricing everywhere else deserves an audience.",
+  "exec_narrative": "Emblem Credit Union is compared with 141 credit unions under $10B in assets nationwide that publish fee schedules in the Bank Fee Index. The size band is wider than usual because fewer than 40 credit unions in your own size tier have published data; local competitors may price differently. Of 8 rankable lines, five sit inside the middle half of the market, one above it (monthly maintenance fee), and two below it (NSF / returned-item fee and cashier's check fee). We would suggest three steps, in order of value: (1) review the monthly maintenance fee, which sits well above the market range; the peer median of $5 is the reference point; (2) state the below-market NSF / returned-item fee in account marketing, where peers' published schedules make it verifiable; (3) check that the non-network ATM and overdraft fees are published where customers can find them.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Minimum balance fee — $10.00",
-      "stat": "Peer median $3.00 · peer max $10.00 · 100th percentile · n=3 · flagged: extreme outlier (>2x median)",
-      "body": "You hold the top of the distribution on a fee that, by construction, is paid by members with the least money. Only 3 comparable credit unions publish this fee, so the benchmark is thin — but at more than 3x the median, thinness is not the issue. Whether the answer is a cut, a lower threshold, or a documented rationale, an extreme-outlier flag on a low-balance-member fee is the line most worth a decision."
-    },
-    {
-      "kind": "risk",
-      "title": "Monthly maintenance — $10.00",
-      "stat": "Peer median $5.00 · P75 $8.75 · 83rd percentile · n=6",
-      "body": "Double the median and above the 75th percentile, and it compounds the minimum-balance exposure: the same small-balance member can face both charges on the same account. Several peers charge $3.50–$5.00. Because this fee recurs monthly, it is also the largest annualized gap on your schedule — roughly $60 a year per affected member versus the median peer."
+      "title": "Monthly maintenance fee — $10",
+      "stat": "Peer median $5 · middle half $4.50–$7.50 · range $0–$25 · 87th percentile · n=23",
+      "body": "Published as “Monthly Service Fee.” At $10 it is 2× the $5 peer median. Maintenance fees are the line account shoppers compare first, before any penalty fee. If the account carries waivers, the waiver terms matter more than the headline price; make sure they are as visible as the fee."
     },
     {
       "kind": "opportunity",
-      "title": "Penalty and service fees — below market, unmarketed",
-      "stat": "NSF $15 vs $17.50 peer / $25.00 national median · Card replacement $10 vs $35 (P26, n=23) · Cashier's check $2 vs $5 (cohort minimum) · Paper statement $1 vs $3",
-      "body": "On the fees members fear most — NSF, card replacement — you undercut comparable credit unions decisively, and your NSF fee is $10 under the national median. That is a story your peers' own published schedules substantiate, and it currently appears in no member communication. Rebalancing the account-holding fees would let you tell it without an asterisk."
+      "title": "NSF / returned-item fee — $20",
+      "stat": "Peer median $27.75 · middle half $23–$30 · 25th percentile · n=60",
+      "body": "Published as “Insufficient Funds.” Below-market returned-item pricing is a position many institutions are moving toward. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $27.75 is the reference point."
+    },
+    {
+      "kind": "opportunity",
+      "title": "Cashier's check fee — $2",
+      "stat": "Peer median $5 · middle half $3–$5 · 21st percentile · n=29",
+      "body": "Published as “Cashier's Checks.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $5 is the reference point."
+    },
+    {
+      "kind": "risk",
+      "title": "Fees we could not find in your published schedule",
+      "stat": "Non-network ATM fee: published by 22 peers (median $2) · Overdraft fee: published by 32 peers (median $29.50)",
+      "body": "Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the industry-wide retreat from penalty pricing: NSF and overdraft fees have been falling across consumer finance under regulatory and reputational pressure — a shift your $15 NSF fee, below both peer and national medians, is already ahead of. Second, published fee schedules have become marketing documents: public, scraped, and compared, which means an extreme-outlier flag on any line is a small reputational bet, and a below-market line unadvertised is an asset left idle.</p><p>Mid-sized credit unions occupy an exposed middle: large enough to show up in fee comparisons alongside banks and bigger credit unions, without the marketing reach to shape the narrative afterward. For an institution already member-friendly on penalties and services, the highest-leverage move is narrow — rework the two account-holding fees that concentrate cost on small-balance members, then lead member communications with the pricing the rest of the schedule already earns.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Emblem Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "deposited_item_return"
+  ],
+  "summary": {
+    "ranked": 8,
+    "above": [
+      "monthly_maintenance"
+    ],
+    "below": [
+      "nsf",
+      "cashiers_check"
+    ],
+    "gaps": [
+      "atm_non_network",
+      "overdraft"
+    ],
+    "thin": 0
+  }
 }

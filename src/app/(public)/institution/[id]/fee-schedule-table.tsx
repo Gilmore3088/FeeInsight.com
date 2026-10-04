@@ -15,6 +15,81 @@ export interface DisplayFee {
   sourceUrl: string | null;
 }
 
+/** National 25th / 50th / 75th percentile for one fee category. */
+export interface FeeBenchmark {
+  p25: number;
+  median: number;
+  p75: number;
+}
+
+export type FeeBenchmarks = Record<string, FeeBenchmark>;
+
+type Position = "below" | "within" | "above";
+
+const POSITION_DOT: Record<Position, string> = {
+  below: "bg-emerald-600",
+  within: "bg-[#8A8072]",
+  above: "bg-amber-600",
+};
+
+const POSITION_TEXT: Record<Position, string> = {
+  below: "Below the typical range",
+  within: "Within the typical range",
+  above: "Above the typical range",
+};
+
+function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
+  if (!benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  return benchmarks[fee.feeCategory] ?? null;
+}
+
+/**
+ * A tiny bar: the shaded band is where most institutions fall nationally, the tick is
+ * the national median, the dot is this fee. Dot color says below / within / above.
+ */
+function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenchmark }) {
+  const position: Position =
+    amount < benchmark.p25 ? "below" : amount > benchmark.p75 ? "above" : "within";
+  const scaleMax = Math.max(benchmark.p75 * 1.5, amount * 1.1, 1);
+  const pct = (n: number) => `${Math.min(100, Math.max(0, (n / scaleMax) * 100))}%`;
+  const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)}–${formatFeeAmount(benchmark.p75)} nationally)`;
+
+  return (
+    <span className="mt-1 inline-flex w-16 flex-col" title={description}>
+      <span className="sr-only">{description}</span>
+      <span aria-hidden="true" className="relative block h-2.5 w-16">
+        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[#E0D7C9]" />
+        <span
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[#E0D7C9]"
+          style={{ left: pct(benchmark.p25), width: `calc(${pct(benchmark.p75)} - ${pct(benchmark.p25)})` }}
+        />
+        <span
+          className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-[#8A8072]"
+          style={{ left: pct(benchmark.median) }}
+        />
+        <span
+          className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${POSITION_DOT[position]}`}
+          style={{ left: pct(amount) }}
+        />
+      </span>
+    </span>
+  );
+}
+
+function PositionLegend() {
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#F0EBE3] px-4 py-2 text-[11px] text-[#6B6255]">
+      <span>vs. U.S. typical range:</span>
+      {(["below", "within", "above"] as const).map((position) => (
+        <span key={position} className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className={`h-2 w-2 rounded-full ${POSITION_DOT[position]}`} />
+          {position === "within" ? "Typical" : position === "below" ? "Lower" : "Higher"}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 interface FeeGroup {
   family: string;
   rows: DisplayFee[];
@@ -132,19 +207,30 @@ export function FeeScheduleTable({
   disclosureUrl,
   focusCategory = null,
   medians = new Map(),
+  benchmarks,
 }: {
   fees: DisplayFee[];
   disclosureUrl: string | null;
   focusCategory?: string | null;
   /** National medians by fee category, for the "vs national median" column. */
   medians?: Map<string, number | null>;
+  /** National percentiles by fee category; verified fees with a match get a position bar. */
+  benchmarks?: FeeBenchmarks;
 }) {
   const groups = groupFeesByFamily(fees);
   const isFocused = (fee: DisplayFee) => focusCategory !== null && fee.feeCategory === focusCategory;
+  const anyBenchmarked = fees.some((fee) => benchmarkFor(fee, benchmarks) !== null);
 
   return (
     <>
-      <FeeScheduleStack groups={groups} disclosureUrl={disclosureUrl} isFocused={isFocused} medians={medians} />
+      {anyBenchmarked && <PositionLegend />}
+      <FeeScheduleStack
+        groups={groups}
+        disclosureUrl={disclosureUrl}
+        isFocused={isFocused}
+        medians={medians}
+        benchmarks={benchmarks}
+      />
       <div className="hidden sm:block">
         <p className="border-b border-[#F0EBE3] px-4 py-1.5 text-xs text-[#6B6255] lg:hidden">
           Swipe for source and notes &rarr;
@@ -179,6 +265,7 @@ export function FeeScheduleTable({
                     mixedGroup={group.verifiedCount > 0}
                     focused={isFocused(fee)}
                     medians={medians}
+                    benchmark={benchmarkFor(fee, benchmarks)}
                   />
                 ))}
               </tbody>
@@ -219,12 +306,14 @@ function FeeRow({
   mixedGroup,
   focused = false,
   medians,
+  benchmark,
 }: {
   fee: DisplayFee;
   disclosureUrl: string | null;
   mixedGroup: boolean;
   focused?: boolean;
   medians: Map<string, number | null>;
+  benchmark: FeeBenchmark | null;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
   const amount = formatFeeAmount(fee.amount);
@@ -243,6 +332,11 @@ function FeeRow({
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
         {amount ?? "\u2014"}
+        {benchmark && fee.amount !== null && (
+          <span className="flex justify-end">
+            <FeePosition amount={fee.amount} benchmark={benchmark} />
+          </span>
+        )}
       </td>
       <td className="px-4 py-2.5 align-top">
         <MedianCell fee={fee} medians={medians} />
@@ -264,11 +358,13 @@ function FeeScheduleStack({
   disclosureUrl,
   isFocused,
   medians,
+  benchmarks,
 }: {
   groups: FeeGroup[];
   disclosureUrl: string | null;
   isFocused: (fee: DisplayFee) => boolean;
   medians: Map<string, number | null>;
+  benchmarks?: FeeBenchmarks;
 }) {
   return (
     <div className="sm:hidden">
@@ -284,6 +380,7 @@ function FeeScheduleStack({
               const basis = getFrequencyLabel(fee.frequency);
               const showUnderReview = group.verifiedCount > 0 && fee.status === "provisional";
               const focused = isFocused(fee);
+              const benchmark = benchmarkFor(fee, benchmarks);
               return (
                 <li
                   key={fee.id}
@@ -295,8 +392,13 @@ function FeeScheduleStack({
                       {fee.feeName}
                       {showUnderReview && <UnderReviewChip />}
                     </span>
-                    <span className="shrink-0 text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
-                      {formatFeeAmount(fee.amount) ?? "\u2014"}
+                    <span className="flex shrink-0 flex-col items-end">
+                      <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+                        {formatFeeAmount(fee.amount) ?? "\u2014"}
+                      </span>
+                      {benchmark && fee.amount !== null && (
+                        <FeePosition amount={fee.amount} benchmark={benchmark} />
+                      )}
                     </span>
                   </div>
                   {fee.status === "verified" && fee.feeCategory && medians.has(fee.feeCategory) && (

@@ -126,6 +126,7 @@ describe("Hamilton Reports generateReport", () => {
     mocks.getCurrentUser.mockResolvedValue({
       id: 7,
       role: "premium",
+      subscription_status: "active",
       institution_name: "Fallback Bank",
     });
     mocks.getInstitutionById.mockResolvedValue(selectedInstitution());
@@ -156,6 +157,16 @@ describe("Hamilton Reports generateReport", () => {
       model: "mock",
       usage: { inputTokens: 10, outputTokens: 8 },
     }));
+  });
+
+  it("refuses free accounts before any provider call", async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 8, role: "viewer", subscription_status: null });
+    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
+
+    const result = await generateReport(reportParams());
+
+    expect(result).toEqual({ success: false, error: "Pro subscription required" });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
   });
 
   it("returns a readiness report and skips provider generation when selected-institution evidence is empty", async () => {

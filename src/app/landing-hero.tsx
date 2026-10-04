@@ -7,6 +7,9 @@ import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { AudiencePaths } from "@/components/public/audience-paths";
 
+// Display form of the site domain for the "powered by" line under the product name.
+const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
+
 interface LandingHeroProps {
   institutionsLabel: string;
 }
@@ -22,19 +25,24 @@ const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 export function LandingHero({ institutionsLabel }: LandingHeroProps) {
   return (
     <section className="border-b border-[#E0D7C9] bg-[#FAF7F2]">
-      <div className="mx-auto max-w-6xl px-6 py-12 lg:py-16">
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)] lg:items-center">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12 lg:py-16">
+        <div className="grid gap-8 sm:gap-10 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)] lg:items-center">
           <div className="min-w-0">
+            {/* One line at every width: the size scales with the viewport instead of wrapping. */}
             <h1
-              className="max-w-3xl text-5xl font-normal leading-[0.98] text-[#1A1815] sm:text-6xl"
+              className="whitespace-nowrap text-[clamp(2rem,10vw,3.75rem)] font-normal leading-none tracking-[-0.01em] text-[#1A1815]"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
               The {PRODUCT_NAME}
             </h1>
-            <p className="mt-4 max-w-xl text-base leading-relaxed text-[#5A5347]">
+            <p className="mt-2.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#8A8072]">
+              <span aria-hidden="true" className="h-px w-5 bg-[#C44B2E]/60" />
+              Powered by <span className="text-[#5A5347]">{SITE_DOMAIN_DISPLAY}</span>
+            </p>
+            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-[#5A5347] sm:text-base">
               Look up what {institutionsLabel} banks and credit unions charge — every fee sourced.
             </p>
-            <div className="mt-6 max-w-2xl" role="search" aria-label="Search for a bank or credit union">
+            <div className="mt-5 max-w-2xl sm:mt-6" role="search" aria-label="Search for a bank or credit union">
               <InstitutionSearchBar />
             </div>
             <Link
@@ -45,7 +53,12 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             </Link>
           </div>
 
-          <ReportCard />
+          {/* Bank/CU staff lane: a full card beside the hero on desktop, one slim row on phones
+              so consumers reach the search and prices first. */}
+          <div className="hidden lg:block">
+            <ReportCard />
+          </div>
+          <ReportBanner />
         </div>
         <AudiencePaths compact className="mt-10" />
       </div>
@@ -53,24 +66,66 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
   );
 }
 
+/** A tiny drawn report page (title rule + bars, one highlighted) standing in for a thumbnail. */
+function ReportThumbnail() {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-12 w-10 shrink-0 flex-col gap-1 rounded-sm border border-[#E0D7C9] bg-white p-1.5 shadow-sm"
+    >
+      <span className="h-1 w-5 rounded-full bg-[#1A1815]" />
+      <span className="mt-0.5 h-1 w-6 rounded-full bg-[#D5CBBF]" />
+      <span className="h-1 w-4 rounded-full bg-[#C44B2E]" />
+      <span className="h-1 w-5 rounded-full bg-[#D5CBBF]" />
+      <span className="h-1 w-3 rounded-full bg-[#D5CBBF]" />
+    </span>
+  );
+}
+
+function ReportBanner() {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-3 lg:hidden">
+      <TrackLink
+        event="see_sample_report"
+        eventProps={{ placement: "home_banner" }}
+        href={SAMPLE_REPORT_HREF}
+        aria-label="View the sample report"
+      >
+        <ReportThumbnail />
+      </TrackLink>
+      <Link href={REPORT_LANE_HREF} className="group flex min-w-0 flex-1 items-center justify-between gap-2">
+        <span className="min-w-0">
+          <span className="block text-[11px] text-[#6B6255]">Work at a bank or credit union?</span>
+          <span className="block text-sm font-semibold text-[#1A1815] group-hover:text-[#A93D25]">
+            See your fees vs. competitors
+          </span>
+        </span>
+        <span aria-hidden="true" className="shrink-0 text-lg text-[#C44B2E]">→</span>
+      </Link>
+    </div>
+  );
+}
+
 function ReportCard() {
   return (
-    <div className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-5">
+    <div className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-5 sm:p-6">
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
         For banks and credit unions
       </p>
       <h2 className="mt-2 text-lg font-semibold leading-snug text-[#1A1815]">
         See how your fees compare to your competitors.
       </h2>
-      <p className="mt-4 text-sm text-[#5A5347]">Get a free sample report by email:</p>
+      <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">
+        Get a free sample report by email.
+      </p>
       <LeadCapture
         placement="homepage"
         variant="inline"
-        className="mt-2"
+        className="mt-4"
         headline="Get a free sample report by email"
         buttonLabel="Send it"
       />
-      <p className="mt-3 text-xs text-[#6B6255]">
+      <p className="mt-4 flex flex-wrap items-center gap-x-2 border-t border-[#EDE6DA] pt-3 text-xs text-[#6B6255]">
         <TrackLink
           event="see_sample_report"
           eventProps={{ placement: "home_card" }}
@@ -79,7 +134,7 @@ function ReportCard() {
         >
           View sample
         </TrackLink>
-        <span className="mx-2 text-[#D5CBBF]">·</span>
+        <span aria-hidden="true" className="text-[#D5CBBF]">·</span>
         <Link href={REPORT_LANE_HREF} className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
           Get yours free
         </Link>

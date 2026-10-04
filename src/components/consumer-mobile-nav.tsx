@@ -44,7 +44,7 @@ export function ConsumerMobileNav() {
 
           <DialogPrimitive.Content
             aria-describedby={undefined}
-            className="fixed top-0 right-0 z-50 h-full w-[min(18rem,calc(100vw-1rem))] bg-[#FAF7F2] border-l border-[#E8DFD1] shadow-xl animate-in slide-in-from-right duration-200 motion-reduce:animate-none focus:outline-none"
+            className="fixed top-0 right-0 z-50 flex h-dvh w-[min(18rem,calc(100vw-1rem))] flex-col bg-[#FAF7F2] border-l border-[#E8DFD1] shadow-xl animate-in slide-in-from-right duration-200 motion-reduce:animate-none focus:outline-none"
           >
             <div className="flex h-14 items-center justify-between border-b border-[#E8DFD1] pl-6 pr-3">
               <DialogPrimitive.Title
@@ -60,7 +60,7 @@ export function ConsumerMobileNav() {
               </DialogPrimitive.Close>
             </div>
 
-            <nav className="px-4 py-4" aria-label="Mobile navigation">
+            <nav className="flex-1 overflow-y-auto px-4 py-4" aria-label="Mobile navigation">
               <button
                 type="button"
                 onClick={() => {
@@ -119,7 +119,7 @@ export function ConsumerMobileNav() {
               </div>
             </nav>
 
-            <div className="absolute bottom-0 left-0 right-0 border-t border-[#E8DFD1] px-6 py-4">
+            <div className="border-t border-[#E8DFD1] px-6 py-4">
               <div className="flex items-center gap-2 text-[#6B6255]">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-[#C44B2E]/50" stroke="currentColor" strokeWidth="1.5">
                   <rect x="4" y="13" width="4" height="8" rx="1" />

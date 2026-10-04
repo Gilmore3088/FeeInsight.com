@@ -3,6 +3,14 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution, getNationalIndexCached } from "@/lib/data-store";
+import { getFinancialHistory, getPeerFinancialMedians } from "@/lib/data-store/financial";
+import {
+  getBranchFootprint,
+  getComplaintTrend,
+  getHoldingCompanyProfile,
+  getRegulatorInfo,
+} from "@/lib/data-store/registry-profile";
+import { canAccessPremium } from "@/lib/access";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -11,6 +19,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
+import { InfoTip } from "@/components/public/info-tip";
 import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
@@ -18,9 +27,11 @@ import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-li
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
-import { FeeScheduleTable } from "./fee-schedule-table";
+import { FeeScheduleTable, type FeeBenchmarks } from "./fee-schedule-table";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { FinancialContext } from "./financial-context";
+import { buildFinancialSeries, toPeerMedianPoints } from "./financial-history";
+import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
 import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
@@ -35,7 +46,7 @@ import {
 } from "./profile-data";
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
-import { ProfileSidebar, type KeyFact } from "./profile-sidebar";
+import { ProfileSidebar } from "./profile-sidebar";
 import { FeeProfileSummary, StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
 
@@ -122,6 +133,20 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       .filter((category): category is string => Boolean(category))
       .map((category) => [category, getDisplayName(category).replace(/\s*\([^)]*\)/g, "")]),
   );
+  // Financial history is Pro-only; free users never receive it in the RSC payload.
+  const isPro = canAccessPremium(user);
+  const [financialHistory, peerMedians, footprint, complaints, holdingCompany] = isPro
+    ? await Promise.all([
+        getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
+        getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
+        getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
+        getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
+        getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
+      ])
+    : [[], null, null, null, null];
+  const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
+  const financialSeries = buildFinancialSeries(financialHistory);
+  const peerMedianPoints = toPeerMedianPoints(peerMedians);
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
   const catalogRows = toDisplayFees(visibleFees);
@@ -147,6 +172,16 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       .filter((entry) => entry.maturity_tier !== "insufficient")
       .map((entry) => [entry.fee_category, entry.median_amount]),
   );
+  const feeBenchmarks: FeeBenchmarks = {};
+  for (const entry of nationalIndex) {
+    if (entry.maturity_tier === "insufficient") continue;
+    if (entry.p25_amount == null || entry.median_amount == null || entry.p75_amount == null) continue;
+    feeBenchmarks[entry.fee_category] = {
+      p25: entry.p25_amount,
+      median: entry.median_amount,
+      p75: entry.p75_amount,
+    };
+  }
   const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
   const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
@@ -174,13 +209,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const districtName = inst.fed_district ? DISTRICT_NAMES[inst.fed_district] ?? null : null;
   const segmentLabel = getSegmentLabel(inst.asset_size_tier, inst.charter_type);
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
-  const freshnessLine = [
-    collectedOn ? `Fee schedule collected ${collectedOn}` : null,
-    financialsAsOf ? `Financials as of ${financialsAsOf}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ") || null;
-
   const links = buildPublicInstitutionProfileLinks({
     institutionId: instId,
     institutionName: inst.institution_name,
@@ -188,14 +216,17 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   });
   const needsSource = status === "unavailable" || status === "under_review";
 
-  const facts: KeyFact[] = [
-    { label: "Charter", value: charterLabel },
-    { label: "Location", value: locationLabel ?? "N/A" },
-    { label: "Segment", value: segmentLabel ?? "N/A" },
-    { label: "Fed district", value: districtName ?? "N/A" },
-    { label: "Fee schedule collected", value: collectedOn ?? "Not yet" },
-    { label: "Financials as of", value: financialsAsOf ?? "N/A" },
-  ];
+  const regulatorFacts: Array<{ label: string; value: string }> = [];
+  if (regulator?.primary_regulator) regulatorFacts.push({ label: "Primary regulator", value: regulator.primary_regulator });
+  if (regulator?.charter_agency === "State" && regulator.state_agency_name) {
+    regulatorFacts.push({ label: "Chartered by", value: regulator.state_agency_name });
+  }
+  if (regulator?.holding_company_name) {
+    regulatorFacts.push({ label: "Holding company", value: toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name });
+  }
+  if (regulator?.regulatory_status === "inactive") {
+    regulatorFacts.push({ label: "Status", value: regulator.closed_date ? `Closed or merged ${regulator.closed_date}` : "Closed or merged" });
+  }
 
   return (
     <>
@@ -218,7 +249,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             districtName={districtName}
             websiteUrl={inst.website_url}
             feeScheduleUrl={inst.fee_schedule_url}
-            freshnessLine={freshnessLine}
+            collectedOn={collectedOn}
+            financialsAsOf={financialsAsOf}
           />
 
           <StatusNotice
@@ -233,14 +265,11 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               {/* The answer first: what this institution charges. */}
               <section className="border border-[#E0D7C9] bg-white">
                 <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Fee Schedule</p>
-                      <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
-                    </div>
-                    <p className="text-sm text-[#6B6255]">
-                      Verified fees come from {inst.institution_name}&rsquo;s own schedule. Fees under review are shown but not yet confirmed.
-                    </p>
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
+                    <InfoTip label="About verified fees">
+                      Verified fees power benchmarks; fees under review do not.
+                    </InfoTip>
                   </div>
                 </div>
 
@@ -252,6 +281,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                       disclosureUrl={inst.fee_schedule_url}
                       focusCategory={focusFeeCategory}
                       medians={nationalMedians}
+                      benchmarks={feeBenchmarks}
                     />
                   </>
                 ) : (
@@ -301,7 +331,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 verifiedCount={verifiedCount}
                 underReviewCount={underReviewCount}
                 assetsDollars={assetsDollars}
-                financialsAsOf={financialsAsOf}
               />
 
               {thinProfile ? (
@@ -320,10 +349,24 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               )}
 
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
+
+              {(isPro
+                ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany)
+                : latestFinancial !== null) && (
+                <FinancialProfileSection
+                  isPro={isPro}
+                  points={financialSeries}
+                  peers={peerMedianPoints}
+                  charterLabel={charterLabel}
+                  footprint={footprint}
+                  complaints={complaints}
+                  holdingCompany={holdingCompany}
+                />
+              )}
             </div>
 
             <ProfileSidebar
-              facts={facts}
+              regulatorFacts={regulatorFacts}
               links={links}
               isAuthenticated={Boolean(user)}
               showAddSource={needsSource}

@@ -1,52 +1,56 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your deposited-item return fee ($15 vs a $30 median) sits below the market range.",
   "findings": [
     {
-      "stat": "$35 vs $25",
-      "stat_label": "overdraft fee vs peer median",
-      "headline": "Your overdraft fee is the highest in the cohort.",
-      "body": "At $35.00, your overdraft fee tops all 27 comparable credit unions with published data — the 100th percentile, $10 over the $25 median and above the cohort's 75th-percentile mark of $34. It sits oddly beside one of the lowest NSF fees in the same cohort: the two penalty fees on your schedule tell opposite stories."
+      "stat": "$15 vs $30",
+      "stat_label": "deposited-item return fee, yours vs peer median",
+      "headline": "Your deposited-item return fee is priced below the market.",
+      "body": "Your deposited-item return fee ($15 vs a $30 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify. If the pricing is deliberate, it is worth stating plainly in account marketing."
     },
     {
-      "stat": "$5 vs $25",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "You already made the NSF move — and nobody knows.",
-      "body": "Your $5 NSF fee sits at the 11th percentile of 66 comparable credit unions, $20 under the median. The retreat from NSF fees that peers are still being pressured into, you have substantially completed. That is a credible, verifiable member-value claim — currently made nowhere."
+      "stat": "4 of 5",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 5 fee lines where we found both your published amount and at least eight comparable peers, four sit between the peer 25th and 75th percentiles and one below."
     },
     {
-      "stat": "$30 vs $20",
-      "stat_label": "stop payment vs peer median",
-      "headline": "Smaller exception fees cluster near the top.",
-      "body": "Stop payments run $30.00 against a $20.00 median (82nd percentile, 66 peers), and paper statements run $5.00 against a $2.75 median — the top of 28 peers. Individually modest, these lines reinforce the same top-of-cohort posture as the overdraft fee and dilute the goodwill the $5 NSF fee should be earning."
+      "stat": "69th",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is a larger contributor than at most peers.",
+      "body": "Service-charge income was 59.4 basis points of assets in your latest full-year filing, against a 37.2 bps median for 3,325 same-size credit unions. Pricing changes carry more revenue weight here than for a typical peer, so any change should be modeled against actual incidence."
     }
   ],
-  "exec_narrative": "Net position: Brockport Federal Credit Union's schedule is internally contradictory. It contains the most member-friendly NSF line in the cohort ($5 against a $25 median) alongside the cohort's highest overdraft fee ($35) and top-of-cohort paper-statement and stop-payment pricing. Everyday fees are otherwise at or below market — deposited-item returns and overdraft-protection transfers price under their medians — and three categories (non-network ATM, monthly maintenance, international wires) are absent from the published schedule. The strategic question is which story the institution wants to tell, because right now the schedule tells both. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Brockport Federal Credit Union is compared with 32 credit unions of similar size in New York that publish fee schedules in the Bank Fee Index. Of 5 rankable lines, four sit inside the middle half of the market and one below it (deposited-item return fee). We would suggest one step: state the below-market deposited-item return fee in account marketing, where peers' published schedules make it verifiable.",
   "callouts": [
     {
-      "kind": "risk",
-      "title": "Overdraft — $35.00",
-      "stat": "Peer median $25.00 · P75 $34.00 · 100th percentile · n=27",
-      "body": "Holding the cohort maximum on overdraft while charging a near-lowest NSF fee is a hard position to explain — to members, to examiners, or in a fee survey. Overdraft is where junk-fee scrutiny has concentrated most heavily, and a fee at the very top of the peer distribution is the first line a reviewer will circle. A cut toward the $25 median would make the schedule's fairness story coherent; holding requires a rationale the current schedule does not suggest."
-    },
-    {
-      "kind": "risk",
-      "title": "Stop payment — $30.00",
-      "stat": "Peer median $20.00 · P75 $30.00 · 82nd percentile · n=66",
-      "body": "At $10 over the median, this fee sits at the cohort's 75th-percentile boundary on a service members request in moments of stress. The revenue is modest; the visibility is not. This is a candidate for a quiet move toward the $20 center."
-    },
-    {
-      "kind": "risk",
-      "title": "Paper statement — $5.00",
-      "stat": "Peer median $2.75 · 100th percentile · n=28",
-      "body": "You share the top of the cohort on a small recurring fee that lands disproportionately on members least likely to bank digitally. If the intent is to steer members to e-statements, peers accomplish that at $2.75 or less. A small dollar amount, but a monthly reminder — and recurring fees are remembered differently than one-time ones."
+      "kind": "opportunity",
+      "title": "Deposited-item return fee — $15",
+      "stat": "Peer median $30 · middle half $20–$33.50 · 13th percentile · n=8",
+      "body": "Published as “Deposited item returned.” This is a customer-favorable position. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $30 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "NSF — $5.00, a story going untold",
-      "stat": "Peer median $25.00 · 11th percentile · n=66",
-      "body": "A $5 NSF fee against a $25 peer median is the strongest member-value fact on your schedule, and it is verifiable in every peer's published fee catalog. Paired with a decision on the overdraft line, it becomes the anchor of a coherent fairness narrative. On its own, undercut by the cohort-topping overdraft fee beside it, it earns a fraction of its potential credit."
+      "title": "Lines with too few peers to rank",
+      "stat": "Incoming wire fee $10 (n=5, median $5)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from penalty pricing: the largest institutions have eliminated NSF fees and trimmed overdraft programs under regulatory and reputational pressure, and that pressure has migrated down-market — your own $5 NSF fee is evidence the move is possible at any scale. Second, published fee schedules have become public documents in practice: scraped, compared, and surfaced in searches, which converts every top-of-cohort line into a small reputational bet and every below-market line into an unclaimed asset.</p><p>Small community credit unions compete on relationship and trust, which makes internal coherence the most valuable property a fee schedule can have — members forgive fees they understand and resent ones that feel arbitrary, and the current pairing of the cohort's lowest NSF posture with its highest overdraft fee is genuinely hard to explain. The highest-leverage moves at your scale are surgical: resolve the overdraft outlier, trim the top-of-cohort statement and stop-payment lines, publish the missing categories, and then tell the NSF story loudly.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Brockport Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "monthly_maintenance",
+    "nsf"
+  ],
+  "summary": {
+    "ranked": 5,
+    "above": [],
+    "below": [
+      "deposited_item_return"
+    ],
+    "gaps": [],
+    "thin": 1
+  }
 }

@@ -142,9 +142,20 @@
   th:last-child, td:last-child { padding-right:0; }
   /* "You" column carries a paper tint so the eye lands there first */
   table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
-  table.position td:first-child, table.position td:nth-child(7) { white-space:nowrap; }
-  table.position th:nth-child(7) { width:1.6in; }
-  table.position td { padding:4pt 6pt; }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
   table.position th:nth-child(2) { color:var(--terra); }
 
   /* Percentile track with median tick */
@@ -155,12 +166,14 @@
   .bar { background:var(--muted); height:5pt; }
   .bar.hi { background:var(--terra); }
   .bar.lo { background:var(--good); }
-  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:6pt; color:var(--text2); white-space:nowrap; }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
   .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
     text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
-  .tag.outlier { color:var(--terra); background:var(--terra-soft); }
-  .tag.waived { color:var(--good); background:var(--good-soft); }
+  .tag.above { color:var(--terra); background:var(--terra-soft); }
+  .tag.below { color:var(--good); background:var(--good-soft); }
   .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
 
   /* ---------- 4. Callouts: two-column ledger entries ---------- */
   .callouts { margin-top:4pt; }
@@ -239,7 +252,7 @@
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">
-    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Aug 16, 2026</span></div>
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
     <div class="title">
       <div class="series">Prepared exclusively for one institution</div>
       <h1>Competitive<br>Fee <em>Position</em></h1>
@@ -247,13 +260,13 @@
         <span class="instname">Brockport Federal Credit Union</span>
       </div>
       <div class="instmeta">Brockport, NY<i>·</i>Credit Union<i>·</i>Community credit union, under $300M</div>
-      <p class="cohortnote">Peer cohort: 182 comparable community credit unions. Not every peer publishes every fee: 66 publish an NSF fee and 27 an overdraft fee, so those are the comparison sets for those lines.</p>
+      <p class="cohortnote">Compared with 32 credit unions with under $300M in assets in New York that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
     </div>
-    <div class="ghost">182</div>
+    <div class="ghost">32</div>
     <div class="card">
-      <div><div class="lbl">Peer cohort</div><div class="val">Community credit unions, under $300M</div></div>
+      <div><div class="lbl">Peer cohort</div><div class="val">Community credit unions, under $300M · in New York</div></div>
       <div><div class="lbl">Benchmarked against</div>
-        <div class="big">182<small>peer institutions with published fee schedules</small></div></div>
+        <div class="big">32<small>peer institutions with published fee schedules</small></div></div>
       <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
     </div>
   </div>
@@ -263,17 +276,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">01 · Executive summary</span><span>Brockport Federal Credit Union</span></div>
   <div class="kicker">In brief</div>
-  <h2>Three things your fee schedule says about you</h2>
+  <h2>Summary of findings</h2>
   <hr class="rule">
   <div class="findings">
-    <div class="finding"><div class="num" style="font-size:18pt">$35 vs $25<small>overdraft fee vs peer median</small></div>
-   <p><b>Your overdraft fee is the highest in the cohort.</b>At $35.00, your overdraft fee tops all 27 comparable credit unions with published data — the 100th percentile, $10 over the $25 median and above the cohort's 75th-percentile mark of $34. It sits oddly beside one of the lowest NSF fees in the same cohort: the two penalty fees on your schedule tell opposite stories.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$5 vs $25<small>your NSF fee vs peer median</small></div>
-   <p><b>You already made the NSF move — and nobody knows.</b>Your $5 NSF fee sits at the 11th percentile of 66 comparable credit unions, $20 under the median. The retreat from NSF fees that peers are still being pressured into, you have substantially completed. That is a credible, verifiable member-value claim — currently made nowhere.</p></div>
-<div class="finding"><div class="num" style="font-size:18pt">$30 vs $20<small>stop payment vs peer median</small></div>
-   <p><b>Smaller exception fees cluster near the top.</b>Stop payments run $30.00 against a $20.00 median (82nd percentile, 66 peers), and paper statements run $5.00 against a $2.75 median — the top of 28 peers. Individually modest, these lines reinforce the same top-of-cohort posture as the overdraft fee and dilute the goodwill the $5 NSF fee should be earning.</p></div>
+    <div class="finding"><div class="num" style="font-size:18pt">$15 vs $30<small>deposited-item return fee, yours vs peer median</small></div>
+   <p><b>Your deposited-item return fee is priced below the market.</b>Your deposited-item return fee ($15 vs a $30 median) sits below the peer 25th percentile. It is a customer-favorable position that peers' published schedules can verify. If the pricing is deliberate, it is worth stating plainly in account marketing.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">4 of 5<small>comparable lines inside the market range</small></div>
+   <p><b>Most of your schedule is priced with the market.</b>Of the 5 fee lines where we found both your published amount and at least eight comparable peers, four sit between the peer 25th and 75th percentiles and one below.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">69th<small>percentile, fee income relative to assets</small></div>
+   <p><b>Fee income is a larger contributor than at most peers.</b>Service-charge income was 59.4 basis points of assets in your latest full-year filing, against a 37.2 bps median for 3,325 same-size credit unions. Pricing changes carry more revenue weight here than for a typical peer, so any change should be modeled against actual incidence.</p></div>
   </div>
-  <p class="narrative drop">Net position: Brockport Federal Credit Union's schedule is internally contradictory. It contains the most member-friendly NSF line in the cohort ($5 against a $25 median) alongside the cohort's highest overdraft fee ($35) and top-of-cohort paper-statement and stop-payment pricing. Everyday fees are otherwise at or below market — deposited-item returns and overdraft-protection transfers price under their medians — and three categories (non-network ATM, monthly maintenance, international wires) are absent from the published schedule. The strategic question is which story the institution wants to tell, because right now the schedule tells both. The three findings above are the agenda for a one-hour pricing conversation.</p>
+  <p class="narrative drop">Brockport Federal Credit Union is compared with 32 credit unions of similar size in New York that publish fee schedules in the Bank Fee Index. Of 5 rankable lines, four sit inside the middle half of the market and one below it (deposited-item return fee). We would suggest one step: state the below-market deposited-item return fee in account marketing, where peers' published schedules make it verifiable.</p>
   <div class="pagefoot"><span>Competitive Fee Position — Brockport Federal Credit Union</span><span>Fee Insight</span></div>
 </div>
 
@@ -281,94 +294,81 @@
 <div class="page">
   <div class="runhead"><span class="sec">02 · Competitive position</span><span>Brockport Federal Credit Union</span></div>
   <div class="kicker">The position map</div>
-  <h2>Your fees vs. 182 peer institutions</h2>
+  <h2>Your published fees against the peer range</h2>
   <hr class="rule">
-  <p class="lede">Peer cohort: Community credit unions, under $300M — 182 institutions with published
-  fee schedules. Not every peer publishes every fee, so each category compares against the
-  peers that publish that line (per-category n noted in § 03). Percentile = share of peers
-  charging the same or less; the tick marks the median. Terracotta bars sit above the 80th
-  percentile, green at or below the 20th.</p>
+  <p class="lede">Compared with 32 credit unions with under $300M in assets in New York that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
   <table class="position" style="margin-top:12pt">
     <thead><tr>
       <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
-      <th class="r">P75</th><th class="r">National</th><th>Percentile</th><th></th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
     </tr></thead>
     <tbody>
-      <tr><td>Non-network ATM</td>
+      <tr><td><span class="cat">Non-network ATM</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$0.00</td><td class="r">$1.00</td>
-    <td class="r">$1.75</td><td class="r">$1.00</td>
-    <td><span class="small muted">not published</span></td><td><span class="tag gap">no data</span></td></tr>
-<tr><td>Foreign transaction</td>
+    <td class="r">$1.00</td><td class="r">$1.38</td>
+    <td class="r">$2.00</td><td class="r muted">8</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">Card replacement</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$0.50</td><td class="r">$1.00</td>
-    <td class="r">$1.00</td><td class="r">$1.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Card replacement</td>
-    <td class="r"><b>$30.00</b></td>
-    <td class="r">$7.00</td><td class="r">$25.00</td>
-    <td class="r">$45.00</td><td class="r">$28.75</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:56%"></div></div><span class="small muted"> P56</span></td><td></td></tr>
-<tr><td>Cashier's check</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$2.00</td><td class="r">$4.00</td>
-    <td class="r">$5.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:90%"></div></div><span class="small muted"> P90</span></td><td></td></tr>
-<tr><td>Deposited item return</td>
-    <td class="r"><b>$15.00</b></td>
-    <td class="r">$10.00</td><td class="r">$20.00</td>
-    <td class="r">$30.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:48%"></div></div><span class="small muted"> P48</span></td><td></td></tr>
-<tr><td>Minimum balance</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$5.00</td><td class="r">$5.50</td>
-    <td class="r">$12.75</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td></td></tr>
-<tr><td>Monthly maintenance</td>
-    <td class="r"><b>—</b></td>
-    <td class="r">$0.25</td><td class="r">$3.50</td>
-    <td class="r">$7.50</td><td class="r">$5.00</td>
-    <td><span class="small muted">not published</span></td><td><span class="tag gap">no data</span></td></tr>
-<tr><td>NSF / returned item</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$20.00</td><td class="r">$25.00</td>
-    <td class="r">$30.00</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar lo" style="width:11%"></div></div><span class="small muted"> P11</span></td><td></td></tr>
-<tr><td>OD protection transfer</td>
-    <td class="r"><b>$3.00</b></td>
-    <td class="r">$2.00</td><td class="r">$5.00</td>
-    <td class="r">$10.00</td><td class="r">$5.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:46%"></div></div><span class="small muted"> P46</span></td><td></td></tr>
-<tr><td>Overdraft</td>
-    <td class="r"><b>$35.00</b></td>
-    <td class="r">$17.50</td><td class="r">$25.00</td>
-    <td class="r">$34.00</td><td class="r">$25.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Paper statement</td>
-    <td class="r"><b>$5.00</b></td>
-    <td class="r">$1.75</td><td class="r">$2.75</td>
-    <td class="r">$5.00</td><td class="r">$2.75</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
-<tr><td>Stop payment</td>
-    <td class="r"><b>$30.00</b></td>
-    <td class="r">$15.00</td><td class="r">$20.00</td>
-    <td class="r">$30.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar hi" style="width:82%"></div></div><span class="small muted"> P82</span></td><td></td></tr>
-<tr><td>Incoming domestic wire</td>
-    <td class="r"><b>$10.00</b></td>
     <td class="r">$5.00</td><td class="r">$10.00</td>
-    <td class="r">$12.00</td><td class="r">$10.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:69%"></div></div><span class="small muted"> P69</span></td><td></td></tr>
-<tr><td>Outgoing domestic wire</td>
+    <td class="r">$12.00</td><td class="r muted">17</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Cashier's check</span><span class="feeline">Certified Check</span></td>
+    <td class="r"><b>$5.00</b></td>
+    <td class="r">$3.00</td><td class="r">$3.00</td>
+    <td class="r">$5.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:78%"></div></div><span class="small muted"> P78</span></td><td></td></tr>
+<tr><td><span class="cat">Deposited item return</span><span class="feeline">Deposited item returned</span></td>
+    <td class="r"><b>$15.00</b></td>
+    <td class="r">$20.00</td><td class="r">$30.00</td>
+    <td class="r">$33.50</td><td class="r muted">8</td>
+    <td><div class="bar-wrap"><div class="bar lo" style="width:13%"></div></div><span class="small muted"> P13</span></td><td><span class="tag below">below range</span></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$1.00</td><td class="r">$3.50</td>
+    <td class="r">$5.00</td><td class="r muted">5</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">NSF / returned item</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$20.00</td><td class="r">$25.00</td>
+    <td class="r">$30.00</td><td class="r muted">22</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">OD protection transfer</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$4.50</td><td class="r">$7.50</td>
+    <td class="r">$10.00</td><td class="r muted">8</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Overdraft</span><span class="feeline">Overdraft charge</span></td>
+    <td class="r"><b>$35.00</b></td>
+    <td class="r">$20.00</td><td class="r">$30.00</td>
+    <td class="r">$35.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:100%"></div></div><span class="small muted"> P100</span></td><td></td></tr>
+<tr><td><span class="cat">Paper statement</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$2.50</td><td class="r">$3.00</td>
+    <td class="r">$4.00</td><td class="r muted">3</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Stop payment</span><span class="feeline">Stop Payment on Share Draft or Electronic Pa…</span></td>
+    <td class="r"><b>$30.00</b></td>
+    <td class="r">$17.50</td><td class="r">$25.00</td>
+    <td class="r">$32.50</td><td class="r muted">27</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:74%"></div></div><span class="small muted"> P74</span></td><td></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span><span class="feeline">Wire Transfer Incoming</span></td>
+    <td class="r"><b>$10.00</b></td>
+    <td class="r">$0.00</td><td class="r">$5.00</td>
+    <td class="r">$10.00</td><td class="r muted">5</td>
+    <td><span class="small muted">fewer than 8 peers publish it</span></td><td><span class="tag gap">few peers</span></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Wire Transfer Outgoing</span></td>
     <td class="r"><b>$20.00</b></td>
     <td class="r">$15.00</td><td class="r">$20.00</td>
-    <td class="r">$25.00</td><td class="r">$20.00</td>
-    <td><div class="bar-wrap"><div class="bar " style="width:70%"></div></div><span class="small muted"> P70</span></td><td></td></tr>
-<tr><td>Outgoing intl. wire</td>
+    <td class="r">$26.00</td><td class="r muted">20</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:60%"></div></div><span class="small muted"> P60</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span></td>
     <td class="r"><b>—</b></td>
-    <td class="r">$31.25</td><td class="r">$40.00</td>
-    <td class="r">$50.00</td><td class="r">$42.50</td>
-    <td><span class="small muted">not published</span></td><td><span class="tag gap">no data</span></td></tr>
+    <td class="r">$28.75</td><td class="r">$45.00</td>
+    <td class="r">$51.25</td><td class="r muted">8</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Brockport Federal Credit Union</span><span>Fee Insight</span></div>
@@ -377,21 +377,15 @@
 <!-- 4. CALLOUTS -->
 <div class="page">
   <div class="runhead"><span class="sec">03 · What stands out</span><span>Brockport Federal Credit Union</span></div>
-  <div class="kicker">Divergences</div>
-  <h2>Where you diverge from your market</h2>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
   <hr class="rule">
   <div class="callouts">
-    <div class="callout ">
-     <h3>Overdraft — $35.00</h3><div class="stat">Peer median $25.00 · P75 $34.00 · 100th percentile · n=27</div><p>Holding the cohort maximum on overdraft while charging a near-lowest NSF fee is a hard position to explain — to members, to examiners, or in a fee survey. Overdraft is where junk-fee scrutiny has concentrated most heavily, and a fee at the very top of the peer distribution is the first line a reviewer will circle. A cut toward the $25 median would make the schedule's fairness story coherent; holding requires a rationale the current schedule does not suggest.</p>
-   </div>
-<div class="callout ">
-     <h3>Stop payment — $30.00</h3><div class="stat">Peer median $20.00 · P75 $30.00 · 82nd percentile · n=66</div><p>At $10 over the median, this fee sits at the cohort's 75th-percentile boundary on a service members request in moments of stress. The revenue is modest; the visibility is not. This is a candidate for a quiet move toward the $20 center.</p>
-   </div>
-<div class="callout ">
-     <h3>Paper statement — $5.00</h3><div class="stat">Peer median $2.75 · 100th percentile · n=28</div><p>You share the top of the cohort on a small recurring fee that lands disproportionately on members least likely to bank digitally. If the intent is to steer members to e-statements, peers accomplish that at $2.75 or less. A small dollar amount, but a monthly reminder — and recurring fees are remembered differently than one-time ones.</p>
+    <div class="callout opportunity">
+     <h3>Deposited-item return fee — $15</h3><div class="stat">Peer median $30 · middle half $20–$33.50 · 13th percentile · n=8</div><p>Published as “Deposited item returned.” This is a customer-favorable position. If it is a deliberate choice, it belongs in account marketing; if it is an old price that was never revisited, the median of $30 is the reference point.</p>
    </div>
 <div class="callout opportunity">
-     <h3>NSF — $5.00, a story going untold</h3><div class="stat">Peer median $25.00 · 11th percentile · n=66</div><p>A $5 NSF fee against a $25 peer median is the strongest member-value fact on your schedule, and it is verifiable in every peer's published fee catalog. Paired with a decision on the overdraft line, it becomes the anchor of a coherent fairness narrative. On its own, undercut by the cohort-topping overdraft fee beside it, it earns a fraction of its potential credit.</p>
+     <h3>Lines with too few peers to rank</h3><div class="stat">Incoming wire fee $10 (n=5, median $5)</div><p>Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional.</p>
    </div>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Brockport Federal Credit Union</span><span>Fee Insight</span></div>
@@ -401,17 +395,17 @@
 <div class="page">
   <div class="runhead"><span class="sec">04 · The revenue lens</span><span>Brockport Federal Credit Union</span></div>
   <div class="kicker">Posted price vs. realized income</div>
-  <h2>What fees actually mean<br>to your bottom line</h2>
+  <h2>Fee income in context</h2>
   <hr class="rule">
-  <p class="lede">Public regulatory filings (NCUA Call Reports) joined with your fee
-  position — the comparison your fee schedule never shows you.</p>
+  <p class="lede">Public regulatory filings (NCUA Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
   <div class="statgrid">
     <div class="statcard"><div class="lbl">Total assets</div><div class="val">$15.6M</div></div>
 <div class="statcard"><div class="lbl">Total deposits</div><div class="val">$14.5M</div></div>
 <div class="statcard"><div class="lbl">Members</div><div class="val">1,187</div><div class="cmp">1 branches</div></div>
 <div class="statcard"><div class="lbl">Service-charge income</div><div class="val">$92,000</div><div class="cmp">9.3% of revenue</div></div>
 <div class="statcard"><div class="lbl">Fee-income intensity</div><div class="val">59.4 bps</div><div class="cmp">cohort median <b>37.2 bps</b> of assets</div></div>
-<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">10 of 15</div><div class="cmp">featured categories published</div></div>
+<div class="statcard"><div class="lbl">Fee schedule</div><div class="val">6 of 13</div><div class="cmp">featured categories published</div></div>
   </div>
   <h3 class="sub">Fee economics vs. your cohort</h3>
   <table>
@@ -422,13 +416,13 @@
    <td>—</td><td>In line</td></tr>
 <tr><td>Fee intensity (income / assets)</td><td class="r"><b>59.4 bps</b></td><td class="r">13.5 bps</td>
    <td class="r">37.2 bps</td><td class="r">67.7 bps</td>
-   <td>P69</td><td>Fee-reliant</td></tr>
+   <td>P69</td><td>Above cohort</td></tr>
 <tr><td>Fee dependency (share of noninterest income)</td><td class="r"><b>44.0%</b></td><td class="r">27.3%</td>
    <td class="r">35.9%</td><td class="r">46.4%</td>
    <td>P69</td><td>In line</td></tr>
 </tbody>
   </table>
-  <p class="narrative" style="margin-top:10pt">Your posted prices (67th percentile) and realized fee income (69th percentile) are both top-of-cohort. <b>Fees are a genuine earnings engine here</b> — which cuts both ways: repricing decisions carry real revenue consequences, and regulatory or competitive pressure on fee income lands harder on you than on peers.</p>
+  <p class="narrative" style="margin-top:10pt">Across the 5 lines we could rank, your posted prices average the 65th percentile of peers; service-charge income relative to assets sits at the 69th percentile of the same-size cohort. Both sit above the middle of the market, so fee income is a meaningful contributor and any repricing should be modeled against actual incidence first.</p>
   
   
   <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
@@ -441,22 +435,23 @@
 <div class="page">
   <div class="runhead"><span class="sec">05 · The named comparison</span><span>Brockport Federal Credit Union</span></div>
   <div class="kicker">Peer by peer</div>
-  <h2>How specific peers price<br>the headline fees</h2>
+  <h2>How named peers price<br>the same lines</h2>
   <hr class="rule">
-  <p class="lede">All figures from each institution's published fee schedule (public
-  documents), extracted and verified by the Bank Fee Index pipeline.</p>
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
   <table style="margin-top:12pt">
-    <thead><tr><th>Institution</th><th class="r">Monthly maintenance</th><th class="r">Overdraft</th><th class="r">NSF / returned item</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <thead><tr><th>Institution</th><th class="r">Overdraft</th><th class="r">Deposited item return</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th><th class="r">Cashier's check</th></tr></thead>
     <tbody>
-      <tr class="self"><td>Brockport Federal Credit Union <span class="small muted">(you)</span></td><td class="r">—</td><td class="r">$35.00</td><td class="r">$5.00</td><td class="r">$30.00</td><td class="r">$20.00</td></tr>
-      <tr><td>Georgia Heritage Federal Credit Union <span class="small muted">(SAVANNAH, GA)</span></td><td class="r">$0.00</td><td class="r">—</td><td class="r">$33.00</td><td class="r">$33.00</td><td class="r">$10.00</td></tr>
-<tr><td>Bay Cities Credit Union <span class="small muted">(Hayward, CA)</span></td><td class="r">$0.00</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$20.00</td><td class="r">$20.00</td></tr>
-<tr><td>Coopers Cave Federal Credit Union <span class="small muted">(Glens Falls, NY)</span></td><td class="r">$1.00</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$43.00</td><td class="r">$25.00</td></tr>
-<tr><td>Lockport Schools &amp; Community Federal Credit Union <span class="small muted">(LOCKPORT, NY)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$25.00</td><td class="r">$30.00</td></tr>
-<tr><td>O And R Utilities Employees Federal Credit Union <span class="small muted">(Monroe, NY)</span></td><td class="r">$0.00</td><td class="r">—</td><td class="r">$29.00</td><td class="r">$29.00</td><td class="r">$29.00</td></tr>
-<tr><td>Academic Federal Credit Union <span class="small muted">(BRIARCLIFF MANO, NY)</span></td><td class="r">$0.00</td><td class="r">$15.00</td><td class="r">$30.00</td><td class="r">$3.00</td><td class="r">$15.00</td></tr>
-<tr><td>Peoples Federal Credit Union <span class="small muted">(Nitro, WV)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$25.00</td><td class="r">$15.00</td></tr>
-<tr><td>New Covenant Dominion Federal Credit Union <span class="small muted">(Bronx, NY)</span></td><td class="r">$3.50</td><td class="r">—</td><td class="r">$15.00</td><td class="r">$25.00</td><td class="r">$30.00</td></tr>
+      <tr class="self"><td>Brockport Federal Credit Union <span class="small muted">(you)</span></td><td class="r">$35.00</td><td class="r">$15.00</td><td class="r">$30.00</td><td class="r">$20.00</td><td class="r">$5.00</td></tr>
+      <tr><td>Circuit Federal Credit Union <span class="small muted">(CHEEKTOWAGA, NY)</span></td><td class="r">$35.00</td><td class="r">$35.00</td><td class="r">$35.00</td><td class="r">$40.00</td><td class="r">$2.00</td></tr>
+<tr><td>Coopers Cave Federal Credit Union <span class="small muted">(Glens Falls, NY)</span></td><td class="r">$30.00</td><td class="r">$40.00</td><td class="r">$43.00</td><td class="r">$25.00</td><td class="r">$10.00</td></tr>
+<tr><td>New Covenant Dominion Federal Credit Union <span class="small muted">(Bronx, NY)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$30.00</td><td class="r">$3.00</td></tr>
+<tr><td>Rome Federal Credit Union <span class="small muted">(Rome, NY)</span></td><td class="r">$30.00</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$20.00</td><td class="r">$3.00</td></tr>
+<tr><td>Chen-Del-O Federal Credit Union <span class="small muted">(FRANKLIN, NY)</span></td><td class="r">—</td><td class="r">$30.00</td><td class="r">$35.00</td><td class="r">$20.00</td><td class="r">—</td></tr>
+<tr><td>Cattaraugus County Employees Federal Credit Union <span class="small muted">(Little Valley, NY)</span></td><td class="r">—</td><td class="r">$20.00</td><td class="r">$15.00</td><td class="r">$15.00</td><td class="r">—</td></tr>
+<tr><td>Tompkins Employees Federal Credit Union <span class="small muted">(Ithaca, NY)</span></td><td class="r">—</td><td class="r">$30.00</td><td class="r">$30.00</td><td class="r">—</td><td class="r">$3.00</td></tr>
+<tr><td>Niagara-Wheatfield Federal Credit Union <span class="small muted">(SANBORN, NY)</span></td><td class="r">—</td><td class="r">$15.00</td><td class="r">$25.00</td><td class="r">$25.00</td><td class="r">—</td></tr>
     </tbody>
   </table>
   <div class="pagefoot"><span>Competitive Fee Position — Brockport Federal Credit Union</span><span>Fee Insight</span></div>
@@ -465,27 +460,26 @@
 <!-- 6. CONTEXT + METHODOLOGY -->
 <div class="page">
   <div class="runhead"><span class="sec">06 · Market context</span><span>Brockport Federal Credit Union</span></div>
-  <div class="kicker">The bigger picture</div>
-  <h2>What is moving in your market</h2>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
   <hr class="rule">
-  <div class="narrative"><p>Two currents define the fee landscape your schedule competes in. First, the retreat from penalty pricing: the largest institutions have eliminated NSF fees and trimmed overdraft programs under regulatory and reputational pressure, and that pressure has migrated down-market — your own $5 NSF fee is evidence the move is possible at any scale. Second, published fee schedules have become public documents in practice: scraped, compared, and surfaced in searches, which converts every top-of-cohort line into a small reputational bet and every below-market line into an unclaimed asset.</p><p>Small community credit unions compete on relationship and trust, which makes internal coherence the most valuable property a fee schedule can have — members forgive fees they understand and resent ones that feel arbitrary, and the current pairing of the cohort's lowest NSF posture with its highest overdraft fee is genuinely hard to explain. The highest-leverage moves at your scale are surgical: resolve the overdraft outlier, trim the top-of-cohort statement and stop-payment lines, publish the missing categories, and then tell the NSF story loudly.</p></div>
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Brockport Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
   <div class="method" style="margin-top:22pt">
     <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
-    <p style="margin-top:6pt">
-      Fee data is drawn exclusively from institutions' published fee schedules — public
-      documents — collected and verified through the Bank Fee Index agentic pipeline
-      (discovery, extraction, independent verification, publication). Peer cohort:
-      Community credit unions, under $300M — 182 institutions with published data. Percentiles are
-      computed within-cohort per fee category; a category is flagged an outlier when it
-      exceeds 2× the peer median (extreme) or P75 + 1.5×IQR (statistical). Data pulled
-      Aug 16, 2026. Figures reflect the lowest published consumer-facing amount per
-      category and may not capture account-specific waivers.
-    </p>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  32 credit unions with under $300M in assets in New York. For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
     <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
     <p style="margin-top:4pt">Every figure attributed to Brockport Federal Credit Union in this report
     was extracted from your own published documents:</p>
     <ul>
-      <li>Source URLs available on request.</li>
+      <li>https://www.brockportfcu.org/rates.php?e=142</li>
     </ul>
   </div>
   <div class="pagefoot"><span>Competitive Fee Position — Brockport Federal Credit Union</span><span>Fee Insight</span></div>
@@ -498,8 +492,8 @@
   <h2>Your complete published fee schedule</h2>
   <hr class="rule">
   <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
-  Brockport Federal Credit Union's published documents (33 lines, as of Aug 16, 2026).
-  This is the schedule your customers — and your competitors — can see.</p>
+  Brockport Federal Credit Union's published documents (33 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
   <table class="appendix" style="margin-top:12pt">
     <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
     <tbody>
@@ -576,22 +570,23 @@
 
 <!-- 8. BACK -->
 <div class="bleed back">
-  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Aug 16, 2026</span></div>
-  <h2>This report is yours,<br><em>with our compliments.</em></h2>
-  <p class="sub">A Competitive Fee Position Report retails for $300, delivered in 48 hours. It was produced from source-verified fee data — the same index tracking 1,183 institutions nationwide.</p>
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of 1,183 U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
   <div class="cta">
     <div>
-      <h4>Refresh it every quarter — $300 per refresh.</h4>
-      <p>Or go deeper with Fee Insight Advisory — custom competitor sets, a board-ready deck,
-      pricing-change modeling against your own filings.</p>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
     </div>
     <div>
-      <p>Reply to the email this arrived with, or write</p>
+      <h4>Contact</h4>
       <span class="mail">hello@bankfeeindex.com</span>
       <p style="margin-top:8pt">feeinsight.com</p>
     </div>
   </div>
-  <div class="colophon"><span>Prepared for Brockport Federal Credit Union</span><span>Set in Newsreader &amp; IBM Plex</span></div>
 </div>
 
 </body>

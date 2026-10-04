@@ -1,82 +1,130 @@
 import Link from "next/link";
+import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import { US_STATES } from "@/lib/us-map-paths";
 
 interface LandingTrustStatsProps {
   summary: PublicStatsSummary;
+  /** Per-state counts for the coverage map; an empty list hides the map. */
+  states: InstitutionStateDirectorySummary[];
 }
 
-export function LandingTrustStats({ summary }: LandingTrustStatsProps) {
-  // Palette: warm-*/terra tokens from globals.css @theme. Works in any route,
-  // no .consumer-brand wrapper required (older slate-* utilities still work
-  // via the wrapper for compatibility with older surfaces).
+const SOURCES = ["FDIC", "NCUA", "Federal Reserve", "Published fee schedules"];
+
+const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+
+/** Same ramp as the institutions directory map, so coverage reads the same everywhere. */
+function coverageFill(verified: number, max: number): string {
+  if (verified <= 0) return "#EDE5D8";
+  const intensity = verified / max;
+  if (intensity > 0.72) return "#C44B2E";
+  if (intensity > 0.5) return "#D46F54";
+  if (intensity > 0.28) return "#E8A08E";
+  if (intensity > 0.12) return "#F4C9BF";
+  return "#F8DDD6";
+}
+
+/**
+ * Coverage band: a US map shaded by verified institutions per state, two headline
+ * numbers, and provenance as small tags. The map does the talking.
+ */
+export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
+  const byState = new Map(states.map((s) => [s.state_code, s]));
+  const maxVerified = Math.max(...states.map((s) => s.verified_institution_count), 1);
+
   return (
     <section className="border-t border-warm-300 bg-warm-150/60">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <dl className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
-              {summary.institutionsLabel}
-            </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
-              Institutions with verified fees
-            </dt>
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center lg:gap-10">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
+              Where we track fees
+            </h2>
+            {states.length > 0 && (
+              <>
+                <svg
+                  viewBox="0 0 960 600"
+                  className="mt-4 h-auto w-full"
+                  role="img"
+                  aria-label={`Map of U.S. states shaded by institutions with verified fees; ${summary.statesLabel} states covered`}
+                >
+                  {US_STATES.map((state) => {
+                    const verified = byState.get(state.id)?.verified_institution_count ?? 0;
+                    const label = `${state.name}: ${verified.toLocaleString("en-US")} ${verified === 1 ? "institution" : "institutions"} with verified fees`;
+                    return (
+                      <Link
+                        key={state.id}
+                        href={`/institutions?state=${state.id}`}
+                        aria-label={label}
+                        prefetch={false}
+                      >
+                        <path
+                          d={state.d}
+                          fill={coverageFill(verified, maxVerified)}
+                          stroke="#FAF7F2"
+                          strokeWidth={1.2}
+                          className="cursor-pointer transition-[filter] duration-150 hover:brightness-90"
+                        >
+                          <title>{label}</title>
+                        </path>
+                      </Link>
+                    );
+                  })}
+                </svg>
+                <div
+                  aria-hidden="true"
+                  className="mt-2 flex items-center justify-center gap-2 text-[11px] text-warm-600"
+                >
+                  <span>Fewer</span>
+                  <span className="flex">
+                    {["#F8DDD6", "#F4C9BF", "#E8A08E", "#D46F54", "#C44B2E"].map((c) => (
+                      <span key={c} className="h-2 w-5" style={{ backgroundColor: c }} />
+                    ))}
+                  </span>
+                  <span>More verified</span>
+                </div>
+              </>
+            )}
           </div>
 
-          <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
-              {summary.categoriesLabel}
-            </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
-              Fee categories
-            </dt>
-          </div>
+          <dl className="grid grid-cols-2 gap-4 lg:grid-cols-1 lg:gap-6">
+            <div>
+              <dd className="text-3xl font-bold tabular-nums text-warm-900 sm:text-4xl">
+                {summary.institutionsLabel}
+              </dd>
+              <dt className="mt-1 text-[12px] text-warm-600">Institutions verified</dt>
+            </div>
+            <div>
+              <dd className="text-3xl font-bold tabular-nums text-warm-900 sm:text-4xl">
+                {summary.categoriesLabel}
+              </dd>
+              <dt className="mt-1 text-[12px] text-warm-600">Fee types tracked</dt>
+            </div>
+          </dl>
+        </div>
 
-          <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
-              {summary.statesLabel}
-            </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
-              U.S. states covered
-            </dt>
-          </div>
-
-          <div>
-            <dd className="text-[28px] font-bold text-warm-900 tabular-nums">
-              {summary.observationsLabel}
-            </dd>
-            <dt className="text-[12px] font-normal text-warm-600 uppercase tracking-wide mt-1">
-              Verified fee observations
-            </dt>
-          </div>
-        </dl>
-
-        {/* Provenance row — concrete sources + freshness + methodology link.
-            Bankers buy on provenance, not on testimonials. */}
-        <div className="mt-6 pt-6 border-t border-warm-300 flex flex-col lg:flex-row lg:items-baseline gap-3 lg:gap-6 text-[12px] text-warm-600">
-          <span className="font-bold uppercase tracking-[0.12em] text-[11px] text-warm-600 shrink-0">
-            Sources
-          </span>
-          <span className="leading-relaxed">
-            FDIC Call Reports · NCUA 5300 · Federal Reserve FRED · Beige Book ·
-            Published deposit account agreements
-          </span>
-          <span className="lg:ml-auto shrink-0 text-warm-700 inline-flex items-center gap-1.5">
-            {/* Pulse dot acknowledges live data without shouting. The pulse
-                ring is decorative; the inner dot conveys state. Hidden under
+        {/* Provenance: sources as tags, freshness with a live dot, one methodology link. */}
+        <div className="mt-6 flex flex-col gap-3 border-t border-warm-300 pt-5 text-[12px] text-warm-600 sm:flex-row sm:items-center sm:justify-between">
+          <ul className="flex flex-wrap gap-1.5" aria-label="Data sources">
+            {SOURCES.map((source) => (
+              <li
+                key={source}
+                className="rounded-full border border-warm-300 bg-white/60 px-2.5 py-0.5 text-[11px] text-warm-700"
+              >
+                {source}
+              </li>
+            ))}
+          </ul>
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-warm-700">
+            {/* Pulse dot acknowledges live data without shouting; hidden under
                 prefers-reduced-motion via the live-pulse utility. */}
-            <span
-              aria-hidden="true"
-              className="relative inline-flex h-1.5 w-1.5 shrink-0"
-            >
+            <span aria-hidden="true" className="relative inline-flex h-1.5 w-1.5 shrink-0">
               <span className="absolute inset-0 rounded-full bg-terra/40 live-pulse" />
               <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-terra" />
             </span>
-            <span className="text-warm-900 font-medium">{summary.freshnessLabel}</span>
+            <span className="font-medium text-warm-900">{summary.freshnessLabel}</span>
             {" · "}
-            <Link
-              href="/methodology"
-              className="text-terra-dark hover:underline underline-offset-2"
-            >
+            <Link href="/methodology" className="text-terra-dark underline-offset-2 hover:underline">
               Methodology
             </Link>
           </span>

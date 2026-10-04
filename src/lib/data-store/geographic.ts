@@ -206,6 +206,7 @@ export async function getCityFeeAverages(city: string, stateCode: string): Promi
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}
       AND ef.review_status = 'approved'
+      AND ef.source_document_id IS NOT NULL
       AND ef.amount IS NOT NULL
       AND ef.fee_category IS NOT NULL
   ` as CityInstitutionFeeRow[];

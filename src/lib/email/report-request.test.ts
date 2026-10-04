@@ -49,20 +49,30 @@ describe("sendReportRequestNotifications", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("reports a missing From address as not_configured", async () => {
+  it("sends from the default address when no From variable is set", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     vi.stubEnv("REPORT_REQUEST_EMAIL_FROM", "");
     vi.stubEnv("WORKSPACE_INVITE_EMAIL_FROM", "");
     vi.stubEnv("TRANSACTIONAL_EMAIL_FROM", "");
     vi.stubEnv("EMAIL_FROM", "");
-    vi.stubGlobal("fetch", vi.fn());
+    const fetchMock = vi.fn().mockResolvedValue(okResponse("em_1"));
+    vi.stubGlobal("fetch", fetchMock);
 
     const result = await sendReportRequestNotifications(REQUEST);
 
-    expect(result.notification).toEqual({
-      status: "not_configured",
-      reason: expect.stringContaining("REPORT_REQUEST_EMAIL_FROM"),
-    });
+    expect(result.notification.status).toBe("sent");
+    expect(sentBodies(fetchMock).every((body) => body.from === "Fee Insight <hello@bankfeeindex.com>")).toBe(true);
+  });
+
+  it("repairs a From address typed without angle brackets", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("REPORT_REQUEST_EMAIL_FROM", "Fee Insight hello@bankfeeindex.com");
+    const fetchMock = vi.fn().mockResolvedValue(okResponse("em_1"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications(REQUEST);
+
+    expect(sentBodies(fetchMock)[0].from).toBe("Fee Insight <hello@bankfeeindex.com>");
   });
 
   it("sends the internal notification and the requester auto-reply", async () => {

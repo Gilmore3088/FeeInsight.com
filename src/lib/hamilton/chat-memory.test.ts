@@ -58,6 +58,7 @@ describe("Hamilton chat memory", () => {
 
     await appendMessage(
       "e7f37394-d8dd-49ef-a842-e453c89415b5",
+      7,
       "user",
       "Show institution 2945",
       12,
@@ -72,6 +73,7 @@ describe("Hamilton chat memory", () => {
       "Show institution 2945",
       12,
       "e7f37394-d8dd-49ef-a842-e453c89415b5",
+      7,
     ]);
     expect(mocks.state.sqlCalls[1].text).toContain("UPDATE hamilton_conversations");
   });
@@ -82,6 +84,7 @@ describe("Hamilton chat memory", () => {
     await expect(
       appendMessage(
         "e7f37394-d8dd-49ef-a842-e453c89415b5",
+        7,
         "assistant",
         "No conversation",
       ),

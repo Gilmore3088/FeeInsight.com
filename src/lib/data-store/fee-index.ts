@@ -1,6 +1,10 @@
 import { sql } from "./connection";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
-import { computeStats } from "./fees";
+import {
+  MIN_INSTITUTIONS_FOR_MEDIAN,
+  STATS_ROW_FILTER,
+  summarizeFeesBy,
+} from "./fee-stats";
 
 /** The canonical fee catalog — only these categories appear in indexes and reports */
 const CANONICAL_CATEGORIES = Object.values(FEE_FAMILIES).flat();
@@ -22,6 +26,10 @@ export interface IndexEntry {
   last_updated: string | null;
 }
 
+/**
+ * Every published row is approved (the catalog view has no other status), so
+ * `approvedOnly` changes nothing; statistics follow the contract in fee-stats.ts.
+ */
 export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[]> {
   const statusFilter = approvedOnly
     ? "ef.review_status = 'approved'"
@@ -32,7 +40,9 @@ export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[
             ef.review_status, ef.created_at, ct.charter_type
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
-     WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}]) AND ${statusFilter}`
+     WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}])
+       AND ${statusFilter}
+       AND ${STATS_ROW_FILTER}`
   ) as {
     fee_category: string;
     amount: number | null;
@@ -54,7 +64,7 @@ export async function getPeerIndex(
   },
   approvedOnly = true
 ): Promise<IndexEntry[]> {
-  const conditions = ["ef.fee_category IS NOT NULL"];
+  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
@@ -133,6 +143,7 @@ export async function getDistrictMedianByCategory(
   const conditions = [
     "ef.fee_category = $1",
     "ef.review_status = 'approved'",
+    STATS_ROW_FILTER,
     "ct.fed_district IS NOT NULL",
   ];
   const params: (string | number)[] = [category];
@@ -164,58 +175,37 @@ export async function getDistrictMedianByCategory(
     institution_id: number;
   }[];
 
-  const grouped = new Map<
-    number,
-    { amounts: number[]; institutions: Set<number> }
-  >();
-
-  for (const row of rows) {
-    if (!grouped.has(row.fed_district)) {
-      grouped.set(row.fed_district, { amounts: [], institutions: new Set() });
-    }
-    const entry = grouped.get(row.fed_district)!;
-    entry.institutions.add(row.institution_id);
-    if (row.amount !== null && row.amount > 0) {
-      entry.amounts.push(row.amount);
-    }
-  }
-
-  const results: { district: number; median_amount: number | null; institution_count: number }[] = [];
-  for (const [district, data] of grouped.entries()) {
-    const stats = computeStats(data.amounts);
-    results.push({
-      district,
-      median_amount: stats.median,
-      institution_count: data.institutions.size,
-    });
-  }
-
-  results.sort((a, b) => a.district - b.district);
-  return results;
+  return [...summarizeFeesBy(rows, (row) => String(Number(row.fed_district))).entries()]
+    .map(([district, stats]) => ({
+      district: Number(district),
+      median_amount: stats.median_amount,
+      institution_count: stats.institution_count,
+    }))
+    .sort((a, b) => a.district - b.district);
 }
 
 export async function getDistrictFeeMedians(
   district: number
 ): Promise<{ fee_category: string; median_amount: number; institution_count: number }[]> {
   const rows = await sql`
-    SELECT ef.fee_category,
-           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) AS median_amount,
-           COUNT(DISTINCT ef.institution_id) AS institution_count
+    SELECT ef.fee_category, ef.amount, ef.institution_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${district}
       AND ef.review_status = 'approved'
+      AND ef.source_document_id IS NOT NULL
+      AND ef.fee_category IS NOT NULL
       AND ef.amount IS NOT NULL
-      AND ef.amount > 0
-    GROUP BY ef.fee_category
-    HAVING COUNT(DISTINCT ef.institution_id) >= 3
-    ORDER BY COUNT(DISTINCT ef.institution_id) DESC
-  `;
-  return rows.map(r => ({
-    fee_category: r.fee_category as string,
-    median_amount: Number(r.median_amount),
-    institution_count: Number(r.institution_count),
-  }));
+  ` as { fee_category: string; amount: number | null; institution_id: number }[];
+
+  return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]
+    .filter(([, stats]) => stats.median_amount !== null && stats.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN)
+    .map(([fee_category, stats]) => ({
+      fee_category,
+      median_amount: stats.median_amount as number,
+      institution_count: stats.institution_count,
+    }))
+    .sort((a, b) => b.institution_count - a.institution_count);
 }
 
 function buildIndexEntries(
@@ -228,79 +218,33 @@ function buildIndexEntries(
     charter_type: string;
   }[]
 ): IndexEntry[] {
-  const grouped = new Map<
-    string,
-    {
-      amounts: number[];
-      banks: Set<number>;
-      cus: Set<number>;
-      approved: number;
-      total: number;
-      latest: string;
-    }
-  >();
-
+  const latestByCategory = new Map<string, string>();
   for (const row of rows) {
-    if (!grouped.has(row.fee_category)) {
-      grouped.set(row.fee_category, {
-        amounts: [],
-        banks: new Set(),
-        cus: new Set(),
-        approved: 0,
-        total: 0,
-        latest: "",
-      });
-    }
-    const entry = grouped.get(row.fee_category)!;
-    entry.total++;
-    const amt = row.amount !== null ? Number(row.amount) : null;
-    if (amt !== null && amt > 0) {
-      entry.amounts.push(amt);
-    }
-    const targetId = Number(row.institution_id);
-    if (row.charter_type === "bank") {
-      entry.banks.add(targetId);
-    } else {
-      entry.cus.add(targetId);
-    }
-    if (row.review_status === "approved") {
-      entry.approved++;
-    }
     const createdAt = (row.created_at as unknown) instanceof Date
       ? (row.created_at as unknown as Date).toISOString()
       : String(row.created_at ?? "");
-    if (createdAt > entry.latest) {
-      entry.latest = createdAt;
+    if (createdAt > (latestByCategory.get(row.fee_category) ?? "")) {
+      latestByCategory.set(row.fee_category, createdAt);
     }
   }
 
   const results: IndexEntry[] = [];
-  for (const [category, data] of grouped.entries()) {
-    const stats = computeStats(data.amounts);
-    const institutionCount = new Set([...data.banks, ...data.cus]).size;
-
-    let maturity_tier: IndexEntry["maturity_tier"] = "insufficient";
-    if (data.approved >= 10) {
-      maturity_tier = "strong";
-    } else if (data.total >= 10) {
-      maturity_tier = "provisional";
-    }
-
+  for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
     results.push({
       fee_category: category,
       fee_family: getFeeFamily(category),
-      median_amount: stats.median,
-      p25_amount: stats.p25,
-      p75_amount: stats.p75,
-      min_amount: stats.min,
-      max_amount: stats.max,
-      institution_count: institutionCount,
-      observation_count: data.total,
-      approved_count: data.approved,
-      bank_count: data.banks.size,
-      cu_count: data.cus.size,
-      maturity_tier,
-      last_updated: data.latest || null,
+      median_amount: stats.median_amount,
+      p25_amount: stats.p25_amount,
+      p75_amount: stats.p75_amount,
+      min_amount: stats.min_amount,
+      max_amount: stats.max_amount,
+      institution_count: stats.institution_count,
+      observation_count: stats.observation_count,
+      approved_count: stats.observation_count,
+      bank_count: stats.bank_count,
+      cu_count: stats.cu_count,
+      maturity_tier: stats.maturity_tier,
+      last_updated: latestByCategory.get(category) || null,
     });
   }
 

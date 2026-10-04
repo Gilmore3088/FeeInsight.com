@@ -53,6 +53,8 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<voi
       const email = session.customer_email || session.customer_details?.email || session.metadata?.email;
       const userId = Number(session.metadata?.user_id);
       if (!customerId) return;
+      // Pro is a subscription; a completed one-time payment must never grant it.
+      if (session.mode !== "subscription") return;
 
       // Prefer the user id checkout was started for; fall back to the email for sessions
       // created before user ids were attached.

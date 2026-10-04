@@ -51,6 +51,7 @@ function user(overrides: Record<string, unknown> = {}) {
 
 describe("createCheckoutSession", () => {
   beforeEach(() => {
+    process.env.STRIPE_PRO_PRICE_ID = "price_pro";
     mocks.getCurrentUserMock.mockReset();
     mocks.stripeCheckoutCreateMock.mockReset();
     mocks.headersMock.mockReset();
@@ -107,6 +108,16 @@ describe("createCheckoutSession", () => {
         }),
       }),
     );
+  });
+
+  it("rejects prices that are not a configured Pro price, and one-time payments", async () => {
+    const { createCheckoutSession } = await import("./stripe-actions");
+
+    await expect(createCheckoutSession("price_cheap_one_time")).rejects.toThrow("Unknown price");
+    await expect(createCheckoutSession("price_pro", "payment")).rejects.toThrow(
+      "Pro is sold as a subscription",
+    );
+    expect(mocks.stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 
   it("requires an authenticated user before creating checkout", async () => {

@@ -1,52 +1,70 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your overdraft fee ($35) is $5 above the $30 peer median, the highest of the 16 peers that publish it.",
   "findings": [
     {
-      "stat": "$50 vs $1",
-      "stat_label": "non-network ATM fee vs peer median",
-      "headline": "Your published ATM fee is 50x the peer median.",
-      "body": "Your published non-network ATM fee of $50.00 is a flagged extreme outlier — the 100th percentile of 7 peers, against a $1.00 median and a $2.13 cohort 75th percentile. A gap this large usually means one of two things: a disclosure error on the published schedule, or a price no customer should ever be asked to pay. Either way it is the first thing anyone comparing your schedule will see, and it warrants immediate verification and correction or repricing."
+      "stat": "$35 vs $30",
+      "stat_label": "overdraft fee, yours vs peer median",
+      "headline": "Your overdraft fee is above the market range.",
+      "body": "At $35, it is $5 above the $30 peer median and the highest of the 16 peers that publish it (middle half of the market: $28–$34.25). Overdraft pricing is the first line examiners, consumer advocates and comparison sites read."
     },
     {
-      "stat": "$35 vs $15",
-      "stat_label": "your NSF fee vs peer median",
-      "headline": "Your NSF fee is the highest in a 34-bank cohort.",
-      "body": "At $35.00, your returned-item fee is a flagged extreme outlier — 2.3x the $15 median of 34 peers, at the 100th percentile, tied with the cohort maximum. A quarter of your peers now charge $6.25 or less as the industry retires NSF fees under regulatory scrutiny. Your $35 overdraft fee sits at the 100th percentile of its cohort as well ($30 median), completing a penalty stack priced at the very top of the market."
+      "stat": "2 lines",
+      "stat_label": "priced below the market range",
+      "headline": "Several lines are priced below the market.",
+      "body": "Your stop-payment fee ($25 vs a $30 median) and outgoing international wire fee ($25 vs a $50 median) each sit below the peer 25th percentile. These are customer-favorable positions that peers' published schedules can verify."
     },
     {
-      "stat": "$5 vs $12",
-      "stat_label": "monthly maintenance vs peer median",
-      "headline": "Your relationship fees are below market — and invisible.",
-      "body": "Monthly maintenance ($5 vs a $12 median, 27th percentile), card replacement ($5 vs $10), stop payments ($25 vs $30), and international wires ($25 vs a $40 median, 22nd percentile) all run below the cohort. The everyday cost of banking with you is genuinely low; the penalty cost is the highest in the market. Today the outliers define the schedule and the friendly lines earn no credit."
+      "stat": "4 of 7",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 7 fee lines where we found both your published amount and at least eight comparable peers, four sit between the peer 25th and 75th percentiles, one above and two below."
     }
   ],
-  "exec_narrative": "Net position: Redwood Capital Bank runs a barbell fee schedule. Everyday relationship fees — monthly maintenance, card replacement, stop payments, international wires — price in the bottom third of the cohort. Penalty and exception fees price at the absolute top: NSF and overdraft both at the 100th percentile, paper statements at the 100th percentile, and a published $50 non-network ATM fee that is 50x the peer median and demands verification before anything else. The exposure is concentrated in three or four lines; the fix is surgical, and the below-market side of the schedule is a marketing story waiting to be told once the outliers are resolved.",
+  "exec_narrative": "Redwood Capital Bank is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in California have published data, so local competitors may price differently. Of 7 rankable lines, four sit inside the middle half of the market, one above it (overdraft fee), and two below it (stop-payment fee and outgoing international wire fee). We would suggest one step: review the overdraft fee, which sits above the market range; the peer median of $30 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Non-network ATM — $50.00 as published",
-      "stat": "Peer median $1.00 · P75 $2.13 · 100th percentile · n=7 · flagged: extreme outlier (>2x median)",
-      "body": "At 50x the peer median, this line is in a category of its own. First step: verify the published schedule — if this is a disclosure or data-entry artifact, correcting it is free and removes your most conspicuous outlier overnight. If the price is real, it is unpayable-by-design and functions as a customer-hostile signal on a schedule that is otherwise friendly on everyday fees."
-    },
-    {
-      "kind": "risk",
-      "title": "NSF / returned item — $35.00",
-      "stat": "Peer median $15.00 · P25 $6.25 · 100th percentile · n=34 · flagged: extreme outlier (>2x median)",
-      "body": "The peer distribution tells the story: a quarter of comparable banks now charge $6.25 or less and the median has fallen to $15 as institutions retire NSF fees ahead of regulatory and reputational pressure. Charging the cohort maximum on the industry's most scrutinized fee is a decision that deserves a documented rationale — or a cut."
-    },
-    {
-      "kind": "risk",
-      "title": "Overdraft and paper statements — top of the cohort",
-      "stat": "Overdraft $35.00 vs $30.00 median (P100, n=12) · Paper statement $5.00 vs $3.58 median (P100, n=14)",
-      "body": "Both fees sit at the 100th percentile of their cohorts. The overdraft gap is $5 — modest in dollars but maximal in position, and paired with the top-of-market NSF fee it reads as a pattern. Paper statements hit less-digital customers every month. Neither gap generates much revenue relative to the visibility it buys."
+      "title": "Overdraft fee — $35",
+      "stat": "Peer median $30 · middle half $28–$34.25 · range $18–$35 · 100th percentile · n=16",
+      "body": "Published as “Overdraft Fee - Item Paid.” At $35 it is $5 above the $30 peer median. Overdraft pricing is the first line examiners, consumer advocates and comparison sites read. A penalty fee offers little service to differentiate on, so the peer median of $30 is the natural reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Everyday fees — bottom third of the market, unmarketed",
-      "stat": "Monthly maintenance $5 vs $12 median (P27) · Intl wire $25 vs $40 median (P22) · Card replacement $5 vs $10 median (P31) · Stop payment $25 vs $30 median (P27)",
-      "body": "Four categories priced meaningfully below peers. For a community bank, 'lower everyday fees than most banks in your market' is a claim competitors' own published schedules substantiate — but it is only credible once the penalty-fee outliers stop contradicting it. Fix the top of the barbell, then advertise the bottom."
+      "title": "Stop-payment fee — $25",
+      "stat": "Peer median $30 · middle half $29.75–$31.25 · 17th percentile · n=12",
+      "body": "Published as “Stop Payment.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $30 is the reference point."
+    },
+    {
+      "kind": "opportunity",
+      "title": "Outgoing international wire fee — $25",
+      "stat": "Peer median $50 · middle half $47.50–$61.25 · 0th percentile · n=8",
+      "body": "Published as “International Wire Transfer.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $50 is the reference point."
+    },
+    {
+      "kind": "opportunity",
+      "title": "Lines with too few peers to rank",
+      "stat": "Card replacement fee $5 (n=6, median $10)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: large banks have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where the NSF median ($15) sits at less than half your posted fee and a quarter of peers charge $6.25 or less. Second, deposit competition has turned fee schedules into marketing documents: published fees are public, scraped, and compared, which converts every outlier line into a small reputational bet — and in your case, one published line is an outlier by a factor of fifty.</p><p>Mid-sized community banks occupy the exposed middle: large enough to be pulled into fee comparisons, without the brand gravity that lets bigger institutions charge premiums quietly. In that position, the highest-leverage moves are surgical, and yours are unusually clear — verify and fix the $50 ATM line, bring the penalty stack down from the cohort maximum, and then put the below-market everyday fees to work as the marketing story they already are.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Redwood Capital Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "deposited_item_return"
+  ],
+  "summary": {
+    "ranked": 7,
+    "above": [
+      "overdraft"
+    ],
+    "below": [
+      "stop_payment",
+      "wire_intl_outgoing"
+    ],
+    "gaps": [],
+    "thin": 1
+  }
 }

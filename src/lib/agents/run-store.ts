@@ -7,6 +7,7 @@ import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
   runPublicDiscoveryAudit,
@@ -262,6 +263,18 @@ async function executeAgenticStep(
   const stateCode = normalizeStateCode(
     stringRunParam(params, ["state_code", "stateCode", "state"]),
   ) ?? undefined;
+
+  // Regulator-data steps (registry-*) share one dispatcher in magellan/registry.
+  if (isRegistryStepKey(step.stepKey)) {
+    return runRegistryStep({
+      stepKey: step.stepKey,
+      runId: run.id,
+      partitionKey: stringRunParam(params, ["partition_key"]),
+      dryRun: run.runKind === "dry_run",
+      db: tx,
+    });
+  }
+
   switch (step.stepKey) {
     case "enhance": {
       const memory = await syncStateLaneProfiles(tx, stateCode);
@@ -333,6 +346,8 @@ async function executeAgenticStep(
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
           unchanged_documents: fetched.unchanged,
+          stored_documents: fetched.storedDocuments,
+          vault: fetched.vault,
           failed_fetches: fetched.failed,
           skipped_fetches: fetched.skipped,
           fetched_bytes: fetched.bytes,
@@ -374,6 +389,10 @@ async function executeAgenticStep(
           failed_reads: read.failed,
           skipped_reads: read.skipped,
           skipped_known_failures: read.skippedKnownFailures,
+          wrong_documents: read.wrongDocuments + read.triagedWrongDocuments,
+          sent_back_to_magellan: read.sentBackToMagellan,
+          read_from_vault: read.readFromVault,
+          triaged_texts: read.triagedTexts,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
@@ -1390,7 +1409,8 @@ export async function executeAgentRun(
         step.stepKey === "fetch" ||
         step.stepKey === "read" ||
         step.stepKey === "public-discovery" ||
-        step.stepKey === "public-audit"
+        step.stepKey === "public-audit" ||
+        isRegistryStepKey(step.stepKey)
           ? await executeAgenticStep(sql, run, step)
           : await withTransaction((tx) => executeAgenticStep(tx, run, step));
       lastResult = await finishAgenticStep(runId, step, outcome);

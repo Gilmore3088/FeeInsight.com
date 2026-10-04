@@ -1,52 +1,56 @@
 {
+  "generated_by": "narrate.mjs",
   "contact_email": "hello@bankfeeindex.com",
   "total_institutions": "1,183",
+  "quote": "Your outgoing domestic wire fee ($30) is $10 above the $20 peer median, the 90th percentile of 20 peers.",
   "findings": [
     {
       "stat": "$30 vs $20",
-      "stat_label": "outgoing wire vs peer median",
-      "headline": "Outgoing wires are priced near the top of your cohort.",
-      "body": "At $30.00, your outgoing domestic wire fee runs 50% above the $20 median of 43 comparable credit unions — the 91st percentile. Deposited-item returns follow the same pattern: $30.00 against a $20 median (80th percentile among 25 peers). Two exception fees, each $10 over median, together define your schedule's most exposed edge."
+      "stat_label": "outgoing domestic wire fee, yours vs peer median",
+      "headline": "Your outgoing domestic wire fee is above the market range.",
+      "body": "At $30, it is $10 above the $20 peer median and the 90th percentile of 20 peers (middle half of the market: $15–$25). Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions."
     },
     {
-      "stat": "$30 vs $25",
-      "stat_label": "NSF fee vs peer median",
-      "headline": "Your NSF fee sits above a falling market.",
-      "body": "Your $30 NSF fee lands at the 83rd percentile of 66 comparable credit unions, against a $25 median. A quarter of those peers now charge $20 or less, and the low end of the cohort has reached zero as institutions retire returned-item fees under sustained scrutiny. The market under this fee is moving down, not up."
+      "stat": "3 of 4",
+      "stat_label": "comparable lines inside the market range",
+      "headline": "Most of your schedule is priced with the market.",
+      "body": "Of the 4 fee lines where we found both your published amount and at least eight comparable peers, three sit between the peer 25th and 75th percentiles, one above."
     },
     {
-      "stat": "$10 vs $25",
-      "stat_label": "card replacement vs peer median",
-      "headline": "You are below market on member service fees — quietly.",
-      "body": "Card replacement ($10.00 vs a $25.00 median, 38th percentile across 94 peers) and paper statements ($1.00 vs $2.75, 25th percentile) are priced well under most comparable credit unions. That is a genuine member-friendly position, but today it earns you nothing, because no one has been told."
+      "stat": "47th",
+      "stat_label": "percentile, fee income relative to assets",
+      "headline": "Fee income is in line with peers.",
+      "body": "Service-charge income was 34.2 basis points of assets in your latest full-year filing, against a 37.2 bps median for 3,325 same-size credit unions."
     }
   ],
-  "exec_narrative": "Net position: Lockport Schools & Community Federal Credit Union runs a split schedule. Exception and penalty fees — outgoing wires, deposited-item returns, NSF — cluster in the top quartile of the cohort, while everyday service fees like card replacement and paper statements sit meaningfully below market. Three categories (non-network ATM, monthly maintenance, overdraft) do not appear in the published schedule at all, which limits comparability for members and analysts alike. The exposure is asymmetrical: the high exception fees draw attention while the below-market service fees earn no credit. The three findings above are the agenda for a one-hour pricing conversation.",
+  "exec_narrative": "Lockport Schools & Community Federal Credit Union is compared with 32 credit unions of similar size in New York that publish fee schedules in the Bank Fee Index. Of 4 rankable lines, three sit inside the middle half of the market, one above it (outgoing domestic wire fee). We would suggest one step: review the outgoing domestic wire fee, which sits above the market range; the peer median of $20 is the reference point.",
   "callouts": [
     {
       "kind": "risk",
-      "title": "Outgoing domestic wire — $30.00",
-      "stat": "Peer median $20.00 · P75 $25.00 · 91st percentile · n=43",
-      "body": "A $30 outgoing wire fee sits above the 75th percentile of your cohort, and wires are used disproportionately by your most engaged members — home closings, tuition payments, family transfers. At $10 over median the revenue is modest but the position is conspicuous. This line deserves a deliberate decision: hold with a rationale, or move toward the $20 center of the market."
-    },
-    {
-      "kind": "risk",
-      "title": "Deposited item return — $30.00",
-      "stat": "Peer median $20.00 · P75 $30.00 · 80th percentile · n=25",
-      "body": "This fee charges a member because someone else's check failed — a charge members consistently experience as unfair, since the failure is not theirs. At $30 you sit at the top edge of the cohort, $10 over the median. Fees that punish members for third-party behavior are exactly the category regulators and comparison sites highlight first."
-    },
-    {
-      "kind": "risk",
-      "title": "NSF / returned item — $30.00",
-      "stat": "Peer median $25.00 · P25 $20.00 · 83rd percentile · n=66",
-      "body": "The industry-wide retreat from NSF fees has reached small credit unions: your cohort's median is $25 and falling, with the low end already at zero. A $30 NSF fee is not yet an outlier, but it is on the wrong side of the trend line. Whether the answer is a cut, a cap, or a documented rationale, this fee should be a decision rather than a default."
+      "title": "Outgoing domestic wire fee — $30",
+      "stat": "Peer median $20 · middle half $15–$25 · range $15–$40 · 90th percentile · n=20",
+      "body": "Published as “Outgoing Wire Transfer.” At $30 it is $10 above the $20 peer median. Wire fees fall mostly on business and higher-balance customers, the relationships most likely to compare institutions. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $20 is the reference point."
     },
     {
       "kind": "opportunity",
-      "title": "Service fees — below market, unmarketed",
-      "stat": "Card replacement $10.00 vs $25.00 median (P38) · Paper statement $1.00 vs $2.75 median (P25)",
-      "body": "Two everyday member fees run well under your cohort. If deliberate, they belong in your member communications — 'lower service fees than most comparable credit unions' is a claim your peers' own published schedules substantiate. If not deliberate, they represent margin available without touching a single headline fee. Either way, the current state — below market and invisible — is the one position that earns nothing."
+      "title": "Lines with too few peers to rank",
+      "stat": "Overdraft-protection transfer fee $5 (n=7, median $10) · Incoming wire fee $10 (n=5, median $5)",
+      "body": "Fewer than eight comparable peers publish these lines, so we show them without a percentile or a flag. Treat any comparison as directional."
     }
   ],
-  "context_narrative": "<p>Two currents define the fee landscape your schedule competes in. First, the retreat from NSF: the largest institutions have largely eliminated returned-item fees, and the pressure has migrated down-market — visible in your own cohort, where a quarter of comparable credit unions now charge $20 or less and the low end has reached zero. Second, published fee schedules have become public documents in a real sense: scraped, compared, and surfaced in searches, which converts every outlier line into a small reputational bet. Regulatory attention to so-called junk fees has only sharpened the comparison.</p><p>Small community credit unions compete on something the money-center institutions cannot buy: relationship and trust. That makes fee-schedule coherence unusually valuable at your scale — members forgive a fee they understand and resent one that feels arbitrary. The highest-leverage moves here are surgical: bring the two or three top-of-cohort exception fees toward the middle, publish the categories currently missing from your schedule, and actively tell the below-market service-fee story you already own.</p>"
+  "context_narrative": "<p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Lockport Schools & Community Federal Credit Union with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p>",
+  "unclassified": [
+    "atm_non_network",
+    "deposited_item_return",
+    "overdraft"
+  ],
+  "summary": {
+    "ranked": 4,
+    "above": [
+      "wire_domestic_outgoing"
+    ],
+    "below": [],
+    "gaps": [],
+    "thin": 2
+  }
 }

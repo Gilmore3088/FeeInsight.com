@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { InfoTip } from "@/components/public/info-tip";
 import { formatCompactDollars } from "@/lib/format";
 import { COMPETITIVE_FEE_POSITION_REPORT } from "./profile-copy";
 
@@ -22,8 +23,8 @@ export function Metric({
         : "text-[#1A1815]";
 
   return (
-    <div className={`min-w-0 px-4 py-3 ${framed ? "border border-[#E0D7C9] bg-[#FDFBF8]" : ""}`}>
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">{label}</p>
+    <div className={`min-w-0 px-3 py-3 sm:px-4 ${framed ? "border border-[#E0D7C9] bg-[#FDFBF8]" : ""}`}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6B6255] sm:text-[11px] sm:tracking-[0.12em]">{label}</p>
       <p className={`mt-1 break-words text-lg font-semibold tabular-nums ${valueClass}`}>
         {value}
       </p>
@@ -35,7 +36,6 @@ export interface InstitutionMetricRowProps {
   verifiedCount: number;
   underReviewCount: number;
   assetsDollars: number | null;
-  financialsAsOf: string | null;
 }
 
 /** Counts and context for the profile, below the fee schedule and the alert control. */
@@ -43,11 +43,10 @@ export function InstitutionMetricRow({
   verifiedCount,
   underReviewCount,
   assetsDollars,
-  financialsAsOf,
 }: InstitutionMetricRowProps) {
   return (
     <section aria-label="Profile facts" className="overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="grid grid-cols-2 divide-y divide-[#E0D7C9] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+      <div className="grid grid-cols-3 divide-x divide-[#E0D7C9]">
         <Metric label="Verified fees" value={verifiedCount.toLocaleString("en-US")} tone="verified" />
         <Metric
           label="Under review"
@@ -55,7 +54,6 @@ export function InstitutionMetricRow({
           tone={underReviewCount > 0 ? "review" : undefined}
         />
         <Metric label="Assets" value={assetsDollars ? formatCompactDollars(assetsDollars) : "N/A"} />
-        <Metric label="Financials as of" value={financialsAsOf ?? "N/A"} />
       </div>
     </section>
   );
@@ -74,12 +72,14 @@ export function InstitutionOfferBand({
     <section className="border border-[#E0D7C9] bg-white px-4 py-4 sm:px-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-[#1A1815]">
-            Work at {institutionName}? Get your {COMPETITIVE_FEE_POSITION_REPORT.name} — {COMPETITIVE_FEE_POSITION_REPORT.price}, delivered in {COMPETITIVE_FEE_POSITION_REPORT.turnaround}.
-          </p>
-          <p className="mt-1 text-sm text-[#5A5347]">
-            Every fee on this page benchmarked against a verified peer set, in a board-ready document.
-          </p>
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1A1815]">
+            <p>Work at {institutionName}? See every fee vs. your peers.</p>
+            <InfoTip label="About the report">
+              The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
+              verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}, delivered in{" "}
+              {COMPETITIVE_FEE_POSITION_REPORT.turnaround}.
+            </InfoTip>
+          </div>
         </div>
         <div className="flex shrink-0 flex-col items-start gap-2 sm:flex-row sm:items-center">
           <Link

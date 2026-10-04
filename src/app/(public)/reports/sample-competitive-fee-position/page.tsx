@@ -19,11 +19,11 @@ const SAMPLE_PATH = "/reports/sample-competitive-fee-position";
 const SAMPLE_PDF_PATH = "/reports/sample-competitive-fee-position.pdf";
 const REQUEST_HREF = "/for-institutions#report";
 const REPORT_TITLE = "Sample Competitive Fee Position Report";
-const REPORT_DESCRIPTION = `An anonymized ${REPORT_OFFER.name} for a ~$400M community bank: its fees against a verified peer set, the outliers that matter, the revenue lens, and eight named peers. ${REPORT_OFFER_LINE}.`;
+const REPORT_DESCRIPTION = `An anonymized ${REPORT_OFFER.name} for a ~$400M community bank: its fees against a verified peer set, the lines outside the market range, the revenue lens, and eight named peers. ${REPORT_OFFER_LINE}.`;
 
 export const metadata: Metadata = {
   title: REPORT_TITLE,
-  description: `See what the free ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the outliers that matter, the revenue lens, and a named peer comparison. Delivered in 48 hours.`,
+  description: `See what the free ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the lines outside the market range, the revenue lens, and a named peer comparison. Delivered in 48 hours.`,
   alternates: { canonical: SAMPLE_PATH },
   robots: { index: true, follow: true },
   openGraph: {

@@ -8,7 +8,7 @@ import { sql } from "@/lib/data-store/connection";
 import type { MagellanStatus } from "./types";
 
 export async function fetchMagellanStatus(): Promise<MagellanStatus> {
-  await requireAuth("view");
+  await requireAuth("operate");
   const backend = getExecutionBackendStatus();
   const [row] = await sql`
     SELECT

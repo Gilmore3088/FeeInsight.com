@@ -1,6 +1,8 @@
-import { Building2, ExternalLink, FileText, Landmark, MapPin } from "lucide-react";
+import { Building2, CalendarCheck, ExternalLink, FileText, Landmark, MapPin, type LucideIcon } from "lucide-react";
+import { InfoTip } from "@/components/public/info-tip";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { getPublicStatusLabel } from "./enum-labels";
+import { STATUS_COPY } from "./profile-copy";
 
 const STATUS_TONE: Record<FeePublicationStatus, string> = {
   verified: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -26,7 +28,17 @@ export interface ProfileHeaderProps {
   districtName: string | null;
   websiteUrl: string | null;
   feeScheduleUrl: string | null;
-  freshnessLine: string | null;
+  collectedOn: string | null;
+  financialsAsOf: string | null;
+}
+
+function FactTag({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E0D7C9] bg-white px-2.5 py-1 text-xs text-[#5A5347]">
+      <Icon className="h-3.5 w-3.5 text-[#8A8072]" aria-hidden="true" />
+      {children}
+    </span>
+  );
 }
 
 const LINK_CLASS =
@@ -41,7 +53,8 @@ export function ProfileHeader({
   districtName,
   websiteUrl,
   feeScheduleUrl,
-  freshnessLine,
+  collectedOn,
+  financialsAsOf,
 }: ProfileHeaderProps) {
   return (
     <header className="fi-reveal mb-5">
@@ -49,6 +62,7 @@ export function ProfileHeader({
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusBadge status={status} />
+            <InfoTip label="What this status means">{STATUS_COPY[status]}</InfoTip>
             {segmentLabel && (
               <span className="rounded-md border border-[#E0D7C9] bg-white px-2 py-1 text-[11px] font-medium text-[#6B6255]">
                 {segmentLabel}
@@ -61,27 +75,14 @@ export function ProfileHeader({
           >
             {name}
           </h1>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#6B6255]">
-            {locationLabel && (
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-4 w-4" />
-                {locationLabel}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1.5">
-              <Building2 className="h-4 w-4" />
-              {charterLabel}
-            </span>
-            {districtName && (
-              <span className="inline-flex items-center gap-1.5">
-                <Landmark className="h-4 w-4" />
-                {districtName} district
-              </span>
-            )}
+          {/* Every key fact as a small tag: no separate facts box, no sentences. */}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {locationLabel && <FactTag icon={MapPin}>{locationLabel}</FactTag>}
+            <FactTag icon={Building2}>{charterLabel}</FactTag>
+            {districtName && <FactTag icon={Landmark}>{districtName} Fed district</FactTag>}
+            {collectedOn && <FactTag icon={CalendarCheck}>Fees collected {collectedOn}</FactTag>}
+            {financialsAsOf && <FactTag icon={CalendarCheck}>Financials {financialsAsOf}</FactTag>}
           </div>
-          {freshnessLine && (
-            <p className="mt-2 text-sm text-[#6B6255]">{freshnessLine}</p>
-          )}
         </div>
 
         {(websiteUrl || feeScheduleUrl) && (
