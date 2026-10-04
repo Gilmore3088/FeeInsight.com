@@ -19,6 +19,8 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_LINKS_TO_SCORE = 120;
 const MAX_CANDIDATE_FETCHES = 3;
+/** Misses recorded before homepage links were tried ahead of guessed paths. */
+export const HOMEPAGE_LINKS_FIRST_SINCE = "2026-10-05T00:00:00Z";
 
 const FEE_CONTENT_KEYWORDS = [
   "monthly maintenance fee",
@@ -262,6 +264,10 @@ function scoreCandidate(url: string, label: string, source: LinkCandidate["sourc
   };
 }
 
+function sourceRank(candidate: LinkCandidate): number {
+  return candidate.source === "homepage_link" ? 0 : 1;
+}
+
 function extractLinkCandidates(html: string, baseUrl: URL): LinkCandidate[] {
   const candidates = new Map<string, LinkCandidate>();
   const linkRegex = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -278,12 +284,16 @@ function extractLinkCandidates(html: string, baseUrl: URL): LinkCandidate[] {
     const url = new URL(path, baseUrl.origin).toString();
     const scored = scoreCandidate(url, path, "common_path");
     const current = candidates.get(url);
-    if (!current || scored.score > current.score) candidates.set(url, scored);
+    if (!current) candidates.set(url, scored);
+    // A guessed path that is also linked from the homepage stays a homepage link.
+    else if (scored.score > current.score) candidates.set(url, { ...current, score: scored.score });
   }
 
+  // A link the bank actually published beats a guessed path: guesses start with a
+  // higher base score, so without this the top fetches were all guesses that 404.
   return [...candidates.values()]
     .filter((candidate) => candidate.score >= MAGELLAN_DISCOVERY_MIN_CONFIDENCE)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => sourceRank(a) - sourceRank(b) || b.score - a.score)
     .slice(0, MAX_CANDIDATE_FETCHES);
 }
 
@@ -558,7 +568,16 @@ async function selectCandidates(
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
-       AND COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
+       AND (
+         COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
+         -- Marked dead only because guessed paths 404'd before homepage links ranked
+         -- first; each gets one search with the fixed ranking.
+         OR (
+           inst.rescue_status = 'dead'
+           AND inst.failure_reason_note LIKE 'Candidate HTTP 4%'
+           AND inst.failure_reason_updated_at < ${HOMEPAGE_LINKS_FIRST_SINCE}::timestamptz
+         )
+       )
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'

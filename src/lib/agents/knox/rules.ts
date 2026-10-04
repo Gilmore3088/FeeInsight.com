@@ -167,7 +167,9 @@ function candidateSegments(text: string): string[] {
 }
 
 export function classifyFeeText(value: string): string | null {
-  const match = FEE_PATTERNS.find((entry) => entry.pattern.test(value));
+  // PDFs usually render the apostrophe in "Cashier's check" as a curly quote.
+  const text = value.replace(/[\u2018\u2019\u02bc`]/g, "'");
+  const match = FEE_PATTERNS.find((entry) => entry.pattern.test(text));
   if (!match) return null;
   return CANONICAL_KEY_MAP[match.key] ?? null;
 }
