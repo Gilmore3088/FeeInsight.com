@@ -5,6 +5,8 @@ import { sql } from "@/lib/data-store/connection";
 import { canAccessPremium } from "@/lib/access";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getSpotlightCategories, getDisplayName } from "@/lib/fee-taxonomy";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { shouldResumeAfterCheckout } from "./resume";
 import {
   acceptPendingWorkspaceInvitationsForUser,
   getPendingWorkspaceInvitationsForEmail,
@@ -19,24 +21,19 @@ export const metadata: Metadata = {
   title: "Welcome",
 };
 
+/** True national medians for the spotlight fees (this step was labelled "median" but averaged). */
 async function getSpotlightMedians(): Promise<{ category: string; displayName: string; median: number }[]> {
-  const spotlight = getSpotlightCategories();
+  const spotlight = new Set(getSpotlightCategories());
   try {
-    const rows = await sql`
-      SELECT fee_category, ROUND(AVG(amount)::numeric, 2) as median
-      FROM published_fee_catalog
-      WHERE fee_category IN ${sql(spotlight)}
-        AND review_status = 'approved'
-        AND amount > 0
-      GROUP BY fee_category
-      ORDER BY median DESC
-    ` as { fee_category: string; median: number }[];
-
-    return rows.map((r) => ({
-      category: r.fee_category,
-      displayName: getDisplayName(r.fee_category),
-      median: Number(r.median),
-    }));
+    const summaries = await getCachedFeeCategorySummaries();
+    return summaries
+      .filter((s) => spotlight.has(s.fee_category) && s.median_amount !== null && s.median_amount > 0)
+      .map((s) => ({
+        category: s.fee_category,
+        displayName: getDisplayName(s.fee_category),
+        median: Number(s.median_amount),
+      }))
+      .sort((a, b) => b.median - a.median);
   } catch {
     return [];
   }
@@ -72,13 +69,6 @@ async function activateIfPaid(
   }
 
   return false;
-}
-
-function shouldResumeAfterCheckout(destination: string | null): destination is string {
-  return !!destination && (
-    destination.startsWith("/pro") ||
-    destination.startsWith("/workspace-invite")
-  );
 }
 
 export default async function WelcomePage({
@@ -120,7 +110,7 @@ export default async function WelcomePage({
       <header className="border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 flex items-center h-14">
           <div className="flex items-center gap-2 text-[#1A1815]">
-            <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
               <rect x="4" y="13" width="4" height="8" rx="1" />
               <rect x="10" y="8" width="4" height="13" rx="1" />
               <rect x="16" y="3" width="4" height="18" rx="1" />
@@ -132,7 +122,7 @@ export default async function WelcomePage({
         </div>
       </header>
 
-      <div className="px-4 py-10">
+      <main id="main-content" className="px-4 py-10">
         <WelcomeSteps
           userName={user.display_name}
           user={user}
@@ -143,7 +133,7 @@ export default async function WelcomePage({
           pendingWorkspaceInvitations={pendingWorkspaceInvitations}
           workspaceMemberships={workspaceMemberships}
         />
-      </div>
+      </main>
     </div>
   );
 }

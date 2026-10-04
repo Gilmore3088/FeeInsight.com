@@ -1,8 +1,11 @@
 "use client";
 
 import { register } from "./actions";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { resetSessionChrome } from "@/components/use-session-chrome";
+import type { RegisterVariant } from "./register-destination";
 
 const INSTITUTION_TYPES = [
   { value: "", label: "Select..." },
@@ -41,9 +44,17 @@ const US_STATES = [
   "VT","VA","WA","WV","WI","WY",
 ];
 
-export function RegisterForm({ redirectTo = "/account" }: { redirectTo?: string }) {
+export function RegisterForm({
+  redirectTo = "/account",
+  variant = "professional",
+}: {
+  redirectTo?: string;
+  variant?: RegisterVariant;
+}) {
   const router = useRouter();
+  const isConsumer = variant === "consumer";
   const [error, setError] = useState<string | null>(null);
+  const [loginHref, setLoginHref] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [showBankFields, setShowBankFields] = useState(false);
 
@@ -54,15 +65,20 @@ export function RegisterForm({ redirectTo = "/account" }: { redirectTo?: string 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setLoginHref(null);
     setPending(true);
 
     const formData = new FormData(e.currentTarget);
     const result = await register(formData, redirectTo);
 
     if (result.success && result.redirect) {
+      // The nav caches the signed-out session; drop it so the new account shows at once.
+      resetSessionChrome();
       router.push(result.redirect);
+      router.refresh();
     } else {
       setError(result.error || "Registration failed");
+      setLoginHref(result.loginHref ?? null);
       setPending(false);
     }
   }
@@ -76,16 +92,26 @@ export function RegisterForm({ redirectTo = "/account" }: { redirectTo?: string 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
           {error}
+          {loginHref && (
+            <>
+              {" "}
+              <Link href={loginHref} className="font-medium underline">
+                Sign in instead
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+
+      {!isConsumer && (
+        <div>
+          <label htmlFor="name" className={labelClass}>Full name</label>
+          <input id="name" name="name" type="text" required autoComplete="name" className={inputClass} />
         </div>
       )}
 
       <div>
-        <label htmlFor="name" className={labelClass}>Full name</label>
-        <input id="name" name="name" type="text" required autoComplete="name" className={inputClass} />
-      </div>
-
-      <div>
-        <label htmlFor="email" className={labelClass}>Work email</label>
+        <label htmlFor="email" className={labelClass}>{isConsumer ? "Email" : "Work email"}</label>
         <input id="email" name="email" type="email" required autoComplete="email" className={inputClass} />
       </div>
 
@@ -95,7 +121,8 @@ export function RegisterForm({ redirectTo = "/account" }: { redirectTo?: string 
         <p className="mt-1 text-xs text-[#6B6255]">Minimum 8 characters</p>
       </div>
 
-      {/* Professional context */}
+      {/* Professional context: only asked of people signing up for professional work. */}
+      {!isConsumer && (
       <div className="border-t border-[#E8DFD1] pt-4 mt-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255] mb-3">
           About your organization
@@ -149,13 +176,14 @@ export function RegisterForm({ redirectTo = "/account" }: { redirectTo?: string 
           )}
         </div>
       </div>
+      )}
 
       <button
         type="submit"
         disabled={pending}
         className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {pending ? "Creating account..." : "Create account"}
+        {pending ? "Creating account..." : isConsumer ? "Create free account" : "Create account"}
       </button>
     </form>
   );

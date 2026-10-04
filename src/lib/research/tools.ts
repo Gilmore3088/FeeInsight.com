@@ -26,13 +26,13 @@ import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 
 export const searchFees = tool({
   description:
-    "Returns national statistics (median, P25, P75, min, max, institution count) for each of 49 fee categories. Optionally returns detailed breakdown for a single category by charter type, asset tier, Fed district, and state. When: fee benchmark questions, 'what is the national average overdraft fee?', category deep-dives. Combine with: searchIndex for filtered peer comparison, queryNationalData(complaints) when the category is overdraft/NSF (regulatory context adds value).",
+    "Returns national statistics (median, P25, P75, min, max, institution count) for each fee category in the catalog. Optionally returns detailed breakdown for a single category by charter type, asset tier, Fed district, and state. When: fee benchmark questions, 'what is the national average overdraft fee?', category deep-dives. Combine with: searchIndex for filtered peer comparison, queryNationalData(complaints) when the category is overdraft/NSF (regulatory context adds value).",
   inputSchema: z.object({
     category: z
       .string()
       .optional()
       .describe(
-        "Fee category slug (e.g., overdraft, nsf, monthly_maintenance). Omit for all 49 categories."
+        "Fee category slug (e.g., overdraft, nsf, monthly_maintenance). Omit for every category in the catalog."
       ),
   }),
   execute: async ({ category }) => {

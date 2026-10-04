@@ -17,7 +17,9 @@ export type AnalyticsEvent =
   | "checkout_start"
   | "book_walkthrough"
   | "contact_sales"
-  | "notify_verified_request";
+  | "fee_alert_save"
+  | "fee_alert_signup"
+  | "fee_alert_remove";
 
 export type AnalyticsProps = Record<string, string | number | boolean>;
 

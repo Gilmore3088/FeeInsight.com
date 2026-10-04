@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProLock } from "@/components/public/pro-lock";
 
 const CARD_LINK =
   "group flex flex-col rounded-xl border border-[#E8DFD1]/80 px-5 py-4 transition-all hover:border-[#C44B2E]/20 hover:bg-[#FAF7F2] hover:shadow-md hover:shadow-[#C44B2E]/5";
@@ -28,6 +29,7 @@ export function OriginalResearchSection() {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -38,7 +40,8 @@ export function OriginalResearchSection() {
             <div>
               <span className="text-sm font-semibold text-[#1A1815] group-hover:text-[#A93D25] transition-colors">
                 Fee-to-Revenue Analysis
-              </span>
+              </span>{" "}
+              <ProLock className="ml-1 align-middle" />
               <span className="mt-1 block text-[13px] leading-relaxed text-[#6B6255]">
                 How published fee schedules correlate with service charge
                 income reported in FDIC call reports.
@@ -61,6 +64,7 @@ export function OriginalResearchSection() {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -71,7 +75,8 @@ export function OriginalResearchSection() {
             <div>
               <span className="text-sm font-semibold text-[#1A1815] group-hover:text-[#A93D25] transition-colors">
                 Market Concentration & Fees
-              </span>
+              </span>{" "}
+              <ProLock className="ml-1 align-middle" />
               <span className="mt-1 block text-[13px] leading-relaxed text-[#6B6255]">
                 HHI analysis of deposit market competition across U.S. metro
                 areas using FDIC Summary of Deposits data.
@@ -94,6 +99,7 @@ export function OriginalResearchSection() {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"

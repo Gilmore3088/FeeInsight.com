@@ -134,7 +134,7 @@ export function NewsFeed({
           disabled={refreshing}
           className="flex items-center gap-1.5 rounded-lg border border-warm-200 bg-white/70 px-3 py-1.5 text-[11px] font-medium text-warm-600 hover:text-warm-900 hover:bg-warm-100 transition-colors disabled:opacity-50"
         >
-          <svg
+          <svg aria-hidden="true"
             className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
             fill="none"
             viewBox="0 0 24 24"
@@ -203,7 +203,7 @@ export function NewsFeed({
                   </div>
 
                   {/* External link icon */}
-                  <svg
+                  <svg aria-hidden="true"
                     className="mt-1 h-3.5 w-3.5 shrink-0 text-warm-300 group-hover:text-terra transition-colors"
                     fill="none"
                     viewBox="0 0 24 24"

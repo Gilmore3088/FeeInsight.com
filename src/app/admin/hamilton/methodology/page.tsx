@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
 
 export const metadata = {
   title: "Methodology",
@@ -7,7 +8,7 @@ export const metadata = {
 
 const COVERAGE_STATS = {
   institutions: "1,100+",
-  categories: 49,
+  categories: TAXONOMY_COUNT,
   families: 9,
   coverageLeader: "Wyoming (91%)",
   confidenceThreshold: "0.85",
@@ -62,7 +63,7 @@ export default async function MethodologyPage() {
       <div className="admin-card p-6 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
 
         {/* Table of Contents */}
-        <nav className="mb-8">
+        <nav aria-label="On this page" className="mb-8">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Contents</p>
           <ol className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
             {[
@@ -207,7 +208,7 @@ export default async function MethodologyPage() {
           </table>
         </div>
         <p className="mb-3">
-          The spotlight and core tiers (15 categories collectively) represent the fees most
+          The spotlight and core tiers together represent the fees most
           universally charged and most frequently compared by consumers and analysts. These are
           shown by default in the index. The extended and comprehensive tiers are available for
           deeper analysis.
@@ -320,7 +321,7 @@ export default async function MethodologyPage() {
             ["Published vs. actual fees", "This index tracks published fee schedules, not fees actually charged. Many institutions waive fees for qualifying customers, offer relationship pricing, or apply undocumented discretionary exceptions. Published fees represent the ceiling, not the average realized charge."],
             ["Collection failures", "A subset of institutions publish fee schedules in formats that resist automated extraction: scanned PDFs, image-based documents, or fee information embedded in account agreement PDFs without structured layout. These institutions are tracked but may have zero or incomplete observations."],
             ["Fee schedule obfuscation", "Some institutions do not publish fee schedules accessible to automated collection. This is more common among large national banks, which may direct customers to branch or call-center disclosures. The index may systematically underrepresent fees at the largest institutions."],
-            ["Categorization ambiguity", "Not all fees map cleanly to the 49-category taxonomy. Fees with conditional pricing (e.g., \"$12 if balance below $500\") are captured at the stated amount but may not reflect the fee applicable to all customers."],
+            ["Categorization ambiguity", "Not all fees map cleanly to the fee taxonomy. Fees with conditional pricing (e.g., \"$12 if balance below $500\") are captured at the stated amount but may not reflect the fee applicable to all customers."],
           ].map(([title, content]) => (
             <li key={title} className="flex gap-2">
               <span className="mt-0.5 text-gray-300 dark:text-gray-600 select-none">—</span>

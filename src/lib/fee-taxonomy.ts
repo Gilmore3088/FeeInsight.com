@@ -183,7 +183,7 @@ export const DISPLAY_NAMES: Record<string, string> = {
 
 /**
  * Canonical key map: stable aggregation keys mirroring Python CANONICAL_KEY_MAP.
- * For the 49 base categories, canonical_fee_key === fee_category (identity mapping).
+ * For the base categories, canonical_fee_key === fee_category (identity mapping).
  * Synonym clusters map long-tail slugs to a single canonical key.
  *
  * IMPORTANT: Keep this map in sync with the public fee category definitions.

@@ -1,22 +1,16 @@
-import { getDataFreshness } from "@/lib/data-store";
+import { getPublicStatsSummary } from "@/lib/public-stats";
 
+/**
+ * "Data refreshed … · N verified fees". Uses the same de-duplicated count as every other
+ * public stat, so a page never shows two different totals for the same thing.
+ */
 export async function DataFreshness() {
-  const freshness = await getDataFreshness();
-
-  const lastUpdated = freshness.last_crawl_at ?? freshness.last_fee_extracted_at;
-
-  if (!lastUpdated) return null;
-
-  const dateStr = new Date(lastUpdated).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const summary = await getPublicStatsSummary();
+  if (!summary.refreshedOn) return null;
 
   return (
     <p className="text-[11px] text-[#6B6255]">
-      Data as of {dateStr} &middot;{" "}
-      {freshness.total_observations.toLocaleString()} observations
+      Data refreshed {summary.refreshedOn} &middot; {summary.observationsLabel} verified fees nationally
     </p>
   );
 }

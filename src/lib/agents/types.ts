@@ -108,4 +108,4 @@ export const MAX_STEP_ATTEMPTS = 3;
  * Steps that report on the pipeline rather than change data. They still run while
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
  */
-export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = ["daily-brief"];
+export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = ["daily-brief", "fee-alert-dispatch"];

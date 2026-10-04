@@ -16,15 +16,19 @@ import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { FeeAlertControl } from "./fee-alert-control";
 import { InfoTip } from "@/components/public/info-tip";
-import { LeadCapture } from "@/components/public/lead-capture";
 import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
+import { FeeFocusScroll } from "./fee-focus-scroll";
 import { FeeScheduleTable, type FeeBenchmarks } from "./fee-schedule-table";
+import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { FinancialContext } from "./financial-context";
 import { buildFinancialSeries, toPeerMedianPoints } from "./financial-history";
 import { FinancialProfileSection } from "./financial-profile-section";
@@ -48,7 +52,11 @@ import { ThinProfilePanel } from "./thin-profile-panel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  /** `fee`: the category a consumer guide sent the reader to compare; highlights that row. */
+  searchParams?: Promise<{ fee?: string }>;
 }
+
+const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 
 const FINANCIAL_HISTORY_QUARTERS = 4;
 /** Up to three call-report sources can carry the same quarter; fetch enough rows to dedupe. */
@@ -90,10 +98,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function InstitutionProfilePage({ params }: PageProps) {
+export default async function InstitutionProfilePage({ params, searchParams }: PageProps) {
   const { id } = await params;
   const instId = parseInt(id, 10);
   if (Number.isNaN(instId)) notFound();
+  const requestedFee = (await searchParams)?.fee ?? "";
+  const focusFeeCategory = TAXONOMY.has(requestedFee) ? requestedFee : null;
 
   const inst = await getPublicInstitutionForPage(instId);
   if (!inst) notFound();
@@ -115,6 +125,14 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
     getCurrentUser().catch(() => null),
   ]);
 
+  const alertSubscription = user
+    ? await getAlertSubscriptionForInstitution(user.id, instId).catch(fallbackTo("alert subscription", null))
+    : null;
+  const alertCategoryLabels = Object.fromEntries(
+    [focusFeeCategory, ...(alertSubscription?.fee_categories ?? [])]
+      .filter((category): category is string => Boolean(category))
+      .map((category) => [category, getDisplayName(category).replace(/\s*\([^)]*\)/g, "")]),
+  );
   // Financial history is Pro-only; free users never receive it in the RSC payload.
   const isPro = canAccessPremium(user);
   const [financialHistory, peerMedians, footprint, complaints, holdingCompany] = isPro
@@ -147,6 +165,13 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
   const nationalIndex =
     verifiedFees.length > 0 ? await getNationalIndexCached().catch(fallbackTo("national index", [])) : [];
   const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
+  // Medians for the per-row comparison: the same verified-only index the rating uses, and
+  // only where enough institutions publish the fee for a median to mean something.
+  const nationalMedians = new Map<string, number | null>(
+    nationalIndex
+      .filter((entry) => entry.maturity_tier !== "insufficient")
+      .map((entry) => [entry.fee_category, entry.median_amount]),
+  );
   const feeBenchmarks: FeeBenchmarks = {};
   for (const entry of nationalIndex) {
     if (entry.maturity_tier === "insufficient") continue;
@@ -213,7 +238,7 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
         ]}
       />
 
-      <main className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
+      <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
           <ProfileHeader
             name={inst.institution_name}
@@ -228,12 +253,6 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             financialsAsOf={financialsAsOf}
           />
 
-          <InstitutionMetricRow
-            verifiedCount={verifiedCount}
-            underReviewCount={underReviewCount}
-            assetsDollars={assetsDollars}
-          />
-
           <StatusNotice
             status={status}
             needsSource={needsSource}
@@ -243,17 +262,7 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0 space-y-6">
-              {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
-                  commissioned report carries the benchmark against a true peer set. */}
-              {showNarrative && rating && interpretation && (
-                <FeeProfileSummary
-                  rating={rating}
-                  interpretation={interpretation}
-                  overdraftAmount={headline.overdraft}
-                  factsOnly
-                />
-              )}
-
+              {/* The answer first: what this institution charges. */}
               <section className="border border-[#E0D7C9] bg-white">
                 <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
                   <div className="flex items-center gap-1.5">
@@ -265,7 +274,16 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
                 </div>
 
                 {displayFees.length > 0 ? (
-                  <FeeScheduleTable fees={displayFees} disclosureUrl={inst.fee_schedule_url} benchmarks={feeBenchmarks} />
+                  <>
+                    {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
+                    <FeeScheduleTable
+                      fees={displayFees}
+                      disclosureUrl={inst.fee_schedule_url}
+                      focusCategory={focusFeeCategory}
+                      medians={nationalMedians}
+                      benchmarks={feeBenchmarks}
+                    />
+                  </>
                 ) : (
                   <div className="px-4 py-8 sm:px-5">
                     <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
@@ -284,26 +302,39 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
                 )}
               </section>
 
-              {/* Fees first: the alert signup sits after the schedule people came to see. */}
-              <LeadCapture
-                placement="institution_alerts"
+              <FeeAlertControl
                 institutionId={instId}
                 institutionName={inst.institution_name}
-                stateCode={inst.state_code}
-                eyebrow="Fee change alerts"
-                headline={`Get alerted when ${inst.institution_name} changes fees`}
-                body="One email when a verified change to this published fee schedule lands in the index. No newsletter unless you ask for it."
-                buttonLabel="Alert me"
-                secondaryLink={{
-                  href: links.reportOfferHref,
-                  label: "Benchmark it against peers — free",
+                focusCategory={focusFeeCategory}
+                categoryLabels={alertCategoryLabels}
+                mode={thinProfile ? "verify" : "alerts"}
+                initial={{
+                  signedIn: Boolean(user),
+                  saved: alertSubscription !== null,
+                  feeCategories: alertSubscription?.fee_categories ?? null,
                 }}
+                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Benchmark it against peers, free" }}
+              />
+
+              {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
+                  commissioned report carries the benchmark against a true peer set. */}
+              {showNarrative && rating && interpretation && (
+                <FeeProfileSummary
+                  rating={rating}
+                  interpretation={interpretation}
+                  overdraftAmount={headline.overdraft}
+                  factsOnly
+                />
+              )}
+
+              <InstitutionMetricRow
+                verifiedCount={verifiedCount}
+                underReviewCount={underReviewCount}
+                assetsDollars={assetsDollars}
               />
 
               {thinProfile ? (
                 <ThinProfilePanel
-                  institutionId={instId}
-                  institutionName={inst.institution_name}
                   status={status}
                   verifiedCount={verifiedFees.length}
                   correctSourceHref={links.correctSourceHref}
@@ -343,7 +374,7 @@ export default async function InstitutionProfilePage({ params }: PageProps) {
             />
           </div>
         </div>
-      </main>
+      </div>
 
       <InstitutionJsonLd
         institutionId={instId}
