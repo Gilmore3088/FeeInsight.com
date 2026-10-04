@@ -6,18 +6,65 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
+import { inSavepoint } from "@/lib/agents/savepoint";
+
+import {
+  amountEnvelopeFor,
+  isExplicitZeroFee,
+  withinAmountEnvelope,
+  ZERO_FEE_RAW_FLAG,
+  ZERO_FEE_VERIFIED_FLAG,
+} from "./envelopes";
 
 type SqlTag = typeof sql;
 
 /** The verifier recorded in the attempt log; bump the version when the rules change. */
-export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 1 } as const;
+export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 2 } as const;
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
 
 const VALID_CANONICAL_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 
-interface RawFeeRow {
+/**
+ * Why Darwin did not verify a row. Every skipped row carries exactly one code, in the
+ * attempt log and in the review signal's reason counts.
+ */
+export type DarwinReasonCode =
+  | "missing_canonical"
+  | "missing_name"
+  | "missing_lineage"
+  | "invalid_amount"
+  | "outside_envelope"
+  | "duplicate_in_batch"
+  | "duplicate_verified";
+
+/**
+ * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
+ * be right but a person should look first (an amount outside its category's range).
+ * `duplicate`: the same fee was already verified. All three are terminal for this rule
+ * version, so a skipped row never comes back to starve the batch.
+ */
+export type DarwinDecision = "verified" | "rejected" | "needs_review" | "duplicate";
+
+export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
+  missing_canonical: "Missing or invalid canonical hint",
+  missing_name: "Missing fee name",
+  missing_lineage: "Missing source lineage",
+  invalid_amount: "Missing or invalid amount",
+  outside_envelope: "Amount outside the category's plausible range",
+  duplicate_in_batch: "Same fee already verified in this batch",
+  duplicate_verified: "Duplicate verified row",
+};
+
+function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
+  if (code == null) return "verified";
+  if (code === "outside_envelope") return "needs_review";
+  if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
+  return "rejected";
+}
+
+export interface RawFeeRow {
   fee_raw_id: number | string;
   institution_id: number | string;
   source_url: string | null;
@@ -38,6 +85,8 @@ export interface DarwinVerificationResult {
   amount: number | null;
   canonicalFeeKey: string | null;
   status: "verified" | "skipped";
+  decision: DarwinDecision;
+  reasonCode: DarwinReasonCode | null;
   reason: string | null;
   feeVerifiedId: number | null;
 }
@@ -61,6 +110,10 @@ export interface RunDarwinVerifyResult {
   dryRun: boolean;
   learning: boolean;
   outcomes: Partial<Record<AttemptOutcome, number>>;
+  /** Skipped rows by reason code. */
+  reasonCounts: Partial<Record<DarwinReasonCode, number>>;
+  /** Verified rows that are explicit $0 (free) fees. */
+  zeroFeesVerified: number;
   results: DarwinVerificationResult[];
 }
 
@@ -119,13 +172,29 @@ function normalizedAmount(value: number | string | null): number | null {
   return Math.round(parsed * 100) / 100;
 }
 
-function verificationSkipReason(row: RawFeeRow, canonicalFeeKey: string | null): string | null {
-  if (!canonicalFeeKey) return "Missing or invalid canonical hint";
-  if (!row.fee_name?.trim()) return "Missing fee name";
+/** The first rule a row fails, or null when it can be verified. Exported for tests. */
+export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string | null): DarwinReasonCode | null {
+  if (!canonicalFeeKey) return "missing_canonical";
+  if (!row.fee_name?.trim()) return "missing_name";
+  if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
   const amount = normalizedAmount(row.amount);
-  if (amount == null || amount <= 0) return "Missing or invalid amount";
-  if (amount > 2_500) return "Amount outside deterministic verification range";
+  if (amount == null || amount < 0) return "invalid_amount";
+  if (amount === 0) {
+    return isExplicitZeroFee(amount, parseFlags(row.outlier_flags), ZERO_FEE_RAW_FLAG) ? null : "invalid_amount";
+  }
+  if (!withinAmountEnvelope(canonicalFeeKey, amount)) return "outside_envelope";
   return null;
+}
+
+/** Same institution, category, amount, frequency and source: the same fee line. */
+function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
+  return [
+    Number(row.institution_id),
+    canonicalFeeKey,
+    normalizedAmount(row.amount),
+    (row.frequency ?? "").trim().toLowerCase(),
+    (row.source_url ?? row.document_r2_key ?? "").trim(),
+  ].join("|");
 }
 
 async function selectRawFees(
@@ -201,6 +270,7 @@ async function insertVerifiedFee(
   const amount = normalizedAmount(options.row.amount);
   const eventId = stableUuid(`darwin:${options.runId}:${feeRawId}:${options.canonicalFeeKey}`);
   const flags = ["agentic_darwin_verified"];
+  if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -262,7 +332,8 @@ async function recordVerificationSignals(
     institutionName: string;
     feeRawIds: number[];
     canonicalFeeKeys: string[];
-    reasons: Map<string, number>;
+    reasons: Map<DarwinReasonCode, number>;
+    envelopes: Record<string, { min: number; max: number }>;
   }>();
 
   results.forEach((result) => {
@@ -273,12 +344,16 @@ async function recordVerificationSignals(
         institutionName: row ? institutionLabel(row) : `Institution ${institutionId}`,
         feeRawIds: [],
         canonicalFeeKeys: [],
-        reasons: new Map<string, number>(),
+        reasons: new Map<DarwinReasonCode, number>(),
+        envelopes: {},
       };
       group.feeRawIds.push(result.feeRawId);
       if (result.canonicalFeeKey) group.canonicalFeeKeys.push(result.canonicalFeeKey);
-      const reason = result.reason ?? "Skipped during deterministic verification";
-      group.reasons.set(reason, (group.reasons.get(reason) ?? 0) + 1);
+      const code = result.reasonCode ?? "invalid_amount";
+      group.reasons.set(code, (group.reasons.get(code) ?? 0) + 1);
+      if (code === "outside_envelope" && result.canonicalFeeKey) {
+        group.envelopes[result.canonicalFeeKey] = amountEnvelopeFor(result.canonicalFeeKey);
+      }
       reviewGrouped.set(institutionId, group);
       return;
     }
@@ -298,7 +373,7 @@ async function recordVerificationSignals(
 
   for (const [institutionId, group] of grouped) {
     const count = group.feeVerifiedIds.length;
-    await recordHamiltonMonitorSignal(
+    await inSavepoint(db, (scope) => recordHamiltonMonitorSignal(
       {
         institutionId,
         signalType: "darwin_verification_completed",
@@ -318,15 +393,15 @@ async function recordVerificationSignals(
           provider_call_queued: false,
         },
       },
-      db,
-    ).catch((error) => {
+      scope,
+    )).catch((error) => {
       console.error("recordDarwinVerificationSignal failed:", error);
     });
   }
 
   for (const [institutionId, group] of reviewGrouped) {
     const count = group.feeRawIds.length;
-    await recordHamiltonMonitorSignal(
+    await inSavepoint(db, (scope) => recordHamiltonMonitorSignal(
       {
         institutionId,
         signalType: "darwin_verification_needs_review",
@@ -342,19 +417,24 @@ async function recordVerificationSignals(
           raw_fee_ids: group.feeRawIds,
           canonical_fee_keys: Array.from(new Set(group.canonicalFeeKeys)),
           reason_counts: Object.fromEntries(group.reasons),
+          reason_text: Object.fromEntries(
+            Array.from(group.reasons.keys()).map((code) => [code, DARWIN_REASON_TEXT[code]]),
+          ),
+          ...(Object.keys(group.envelopes).length > 0 ? { amount_envelopes: group.envelopes } : {}),
           skipped_fee_count: count,
           provider_call_queued: false,
         },
       },
-      db,
-    ).catch((error) => {
+      scope,
+    )).catch((error) => {
       console.error("recordDarwinVerificationReviewSignal failed:", error);
     });
   }
 }
 
-function rejectionOutcome(reason: string): AttemptOutcome {
-  return reason === "Duplicate verified row" ? "unchanged" : "rejected";
+function attemptOutcome(result: DarwinVerificationResult): AttemptOutcome {
+  if (result.decision === "verified") return "ok";
+  return result.decision === "duplicate" ? "unchanged" : "rejected";
 }
 
 export async function runDarwinVerify(
@@ -368,33 +448,45 @@ export async function runDarwinVerify(
   const rowByRawFeeId = new Map(rows.map((row) => [Number(row.fee_raw_id), row]));
   const results: DarwinVerificationResult[] = [];
 
+  const verifiedInBatch = new Set<string>();
+
   for (const row of rows) {
     const canonicalFeeKey = canonicalHintFrom(row);
-    const skipReason = verificationSkipReason(row, canonicalFeeKey);
+    let reasonCode = verificationReasonCode(row, canonicalFeeKey);
+    if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
+      reasonCode = "duplicate_in_batch";
+    }
+    const base = {
+      feeRawId: Number(row.fee_raw_id),
+      institutionId: Number(row.institution_id),
+      feeName: row.fee_name,
+      amount: normalizedAmount(row.amount),
+      canonicalFeeKey,
+    };
     let result: DarwinVerificationResult;
-    if (skipReason || !canonicalFeeKey) {
+    if (reasonCode || !canonicalFeeKey) {
+      const code = reasonCode ?? "missing_canonical";
       result = {
-        feeRawId: Number(row.fee_raw_id),
-        institutionId: Number(row.institution_id),
-        feeName: row.fee_name,
-        amount: normalizedAmount(row.amount),
-        canonicalFeeKey,
+        ...base,
         status: "skipped",
-        reason: skipReason ?? "Not verified",
+        decision: decisionFor(code),
+        reasonCode: code,
+        reason: DARWIN_REASON_TEXT[code],
         feeVerifiedId: null,
       };
     } else {
       const feeVerifiedId = dryRun
         ? null
         : await insertVerifiedFee(db, { runId: options.runId, row, canonicalFeeKey });
+      const verified = Boolean(feeVerifiedId) || dryRun;
+      const code: DarwinReasonCode | null = verified ? null : "duplicate_verified";
+      if (verified) verifiedInBatch.add(batchKey(row, canonicalFeeKey));
       result = {
-        feeRawId: Number(row.fee_raw_id),
-        institutionId: Number(row.institution_id),
-        feeName: row.fee_name,
-        amount: normalizedAmount(row.amount),
-        canonicalFeeKey,
-        status: feeVerifiedId || dryRun ? "verified" : "skipped",
-        reason: feeVerifiedId || dryRun ? null : "Duplicate verified row",
+        ...base,
+        status: verified ? "verified" : "skipped",
+        decision: decisionFor(code),
+        reasonCode: code,
+        reason: code ? DARWIN_REASON_TEXT[code] : null,
         feeVerifiedId,
       };
     }
@@ -407,7 +499,7 @@ export async function runDarwinVerify(
         strategy: DARWIN_VERIFY_STRATEGY.strategy,
         version: DARWIN_VERIFY_STRATEGY.version,
         fingerprint: rawFeeFingerprint(result.feeRawId),
-        outcome: result.status === "verified" ? "ok" : rejectionOutcome(result.reason ?? ""),
+        outcome: attemptOutcome(result),
         yieldCount: result.status === "verified" ? 1 : 0,
         costMicrousd: 0,
         runId: options.runId,
@@ -416,6 +508,9 @@ export async function runDarwinVerify(
           fee_raw_id: result.feeRawId,
           fee_verified_id: result.feeVerifiedId,
           canonical_fee_key: result.canonicalFeeKey,
+          amount: result.amount,
+          decision: result.decision,
+          reason_code: result.reasonCode,
           reason: result.reason,
         },
       });
@@ -426,6 +521,11 @@ export async function runDarwinVerify(
     await recordVerificationSignals(db, options.runId, results, rowByRawFeeId);
   }
 
+  const reasonCounts: Partial<Record<DarwinReasonCode, number>> = {};
+  for (const result of results) {
+    if (result.reasonCode) reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] ?? 0) + 1;
+  }
+
   return {
     selectedRawFees: rows.length,
     processedRawFees: results.length,
@@ -434,9 +534,9 @@ export async function runDarwinVerify(
     limit,
     dryRun,
     learning,
-    outcomes: learning
-      ? countOutcomes(results.map((result) => (result.status === "verified" ? "ok" : rejectionOutcome(result.reason ?? ""))))
-      : {},
+    outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
+    reasonCounts,
+    zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     results,
   };
 }

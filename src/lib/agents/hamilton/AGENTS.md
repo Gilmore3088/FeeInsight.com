@@ -19,6 +19,31 @@ Hamilton owns publication and analysis surfaces.
 - Emit publication, refresh, and fee-movement Monitor signals with canonical institution IDs.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
+## Publishing (publish.rules version 2)
+
+- `hamilton/publish.ts` publishes only Darwin-verified rows (`agentic_darwin_verified`)
+  with no blocking flag, a valid canonical key, a fee name, source lineage, Darwin's
+  verification event id, confidence at or above the threshold (0.8 by default), and an
+  amount inside the category range in `darwin/envelopes.ts`. $0 is published only when
+  Darwin flagged the row `zero_fee`.
+- `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
+  that actually ran.
+- One live price per fee: when the same institution, canonical key, variant and
+  frequency is published at a new amount, the prior live row is closed
+  (`rolled_back_at`, `rolled_back_by_batch_id`, `rolled_back_reason = 'superseded by
+  #<id>'`) and the change is written to `fee_change_records` (`increase`/`decrease`).
+  Closed rows stay in `published_fee_records` as history; `published_fee_catalog` shows
+  only live rows. An identical amount is skipped.
+- Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
+  and guide flags each have their own, so an optional write that fails never aborts the
+  run transaction.
+- Every decision is written to `pipeline_attempts` (stage `publish`, fingerprint
+  `verified:<fee_verified_id>`); a decided row is never selected again.
+- Dry runs read the prior live row and report the same skips, movements and supersedes
+  as a real run, without writing.
+- Not yet built: closing a row when a fee line disappears from a newer copy of its
+  document.
+
 ## Boundaries
 
 - Public Hamilton must be consumer-safe and cannot expose admin-only operational details.

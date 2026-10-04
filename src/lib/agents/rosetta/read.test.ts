@@ -1,7 +1,8 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { runRosettaRead } from "./read";
+import { runKnoxExtract } from "../knox/extract";
+import { REREAD_MAX_KNOX_FEES, runRosettaRead } from "./read";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -335,12 +336,12 @@ describe("Rosetta agentic read", () => {
       expect(result.results[0]).toMatchObject({
         status: "completed",
         documentType: "pdf",
-        strategy: "read.pdf_text",
+        strategy: "read.pdf_layout",
         format: "pdf_text",
         attemptOutcome: "ok",
       });
       expect(result).toMatchObject({ learning: true, outcomes: { ok: 1 } });
-      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining([42, 501, "read", "read.pdf_text", "source-hash", "ok", 301, 9]));
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining([42, 501, "read", "read.pdf_layout", "source-hash", "ok", 301, 9]));
       const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
       expect(sqlText).toContain("UPDATE institution_source_profiles");
       expect(JSON.stringify(db.mock.calls)).toContain('"pdf_text"');
@@ -379,7 +380,7 @@ describe("Rosetta agentic read", () => {
         {
           ...htmlCandidate,
           do_not_retry: [
-            { stage: "read", strategy: "read.html_text", version: 1, fingerprint: "source-hash", outcome: "js_required", at: "2026-09-01T00:00:00Z" },
+            { stage: "read", strategy: "read.html_dom", version: 2, fingerprint: "source-hash", outcome: "js_required", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);
@@ -391,6 +392,76 @@ describe("Rosetta agentic read", () => {
       const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
       expect(sqlText).not.toContain("INSERT INTO agent_source_texts");
       expect(attemptValues(db)).toHaveLength(0);
+    });
+
+    it("reads a fee table so Knox can pair each fee with its amount", async () => {
+      const db = learningDb([htmlCandidate]);
+      const body = `
+        <h1>Schedule of Fees</h1>
+        <table>
+          <tr><th>Service</th><th>Fee</th></tr>
+          <tr><td>Overdraft fee</td><td>$35.00 per item</td></tr>
+          <tr><td>Stop payment</td><td>$30.00</td></tr>
+          <tr><td>Outgoing domestic wire</td><td>$25.00</td></tr>
+        </table>`;
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
+
+      const result = await runRosettaRead({ runId: 306, db: asReadDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ status: "completed", strategy: "read.html_dom", tableRows: 4 });
+      expect(result.tableRows).toBe(4);
+      const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"));
+      const normalizedText = insert?.slice(1).find((value) => typeof value === "string" && value.includes("Overdraft")) as string;
+      expect(normalizedText).toContain("Overdraft fee | $35.00 per item");
+
+      // The same text handed to Knox now yields fees; tag stripping split every row in two.
+      const knoxDb = vi.fn(() => Promise.resolve([{ fee_raw_id: 1 }])) as DbMock;
+      knoxDb.unsafe = vi.fn((query: string) =>
+        Promise.resolve(
+          query.includes("FROM agent_source_texts")
+            ? [{ document_text_id: 801, source_document_id: 501, institution_id: 42, source_url: null, text_hash: "t", normalized_text: normalizedText }]
+            : [],
+        ),
+      );
+      const knox = await runKnoxExtract({
+        runId: 307,
+        dryRun: true,
+        db: knoxDb as unknown as NonNullable<Parameters<typeof runKnoxExtract>[0]["db"]>,
+      });
+      expect(knox.results[0].candidates.map((candidate) => [candidate.feeName, candidate.amount])).toEqual([
+        ["Overdraft fee", 35],
+        ["Stop payment", 30],
+        ["Outgoing domestic wire", 25],
+      ]);
+    });
+
+    it("re-reads older texts Knox found few or no fees in, newest documents first", async () => {
+      const db = learningDb([]);
+
+      await runRosettaRead({ runId: 308, db: asReadDb(db), fetchImpl: vi.fn() });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("AS is_reread");
+      expect(query).toContain("FROM pipeline_attempts current_read");
+      expect(query).toContain("current_read.strategy_version >= $");
+      expect(query).toContain("current_read.outcome = ANY(");
+      expect(query).toContain("fr.source_document_id = adt.source_document_id");
+      expect(query).toContain("ORDER BY is_reread ASC");
+      expect(query).toMatch(/SELECT COUNT\(\*\) FROM raw_fee_observations fr[\s\S]*\) < \$\d+/);
+      expect(params).toContain(2);
+      expect(params).toContain(REREAD_MAX_KNOX_FEES);
+    });
+
+    it("keeps the earlier text when a re-read fails", async () => {
+      const db = learningDb([{ ...htmlCandidate, is_reread: true }]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("gone", "text/html", 503));
+
+      const result = await runRosettaRead({ runId: 309, db: asReadDb(db), fetchImpl });
+
+      expect(result).toMatchObject({ failed: 1, reread: 1 });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).not.toContain("INSERT INTO agent_source_texts");
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "http_5xx"]));
     });
 
     it("records Word documents as unsupported instead of reading them as text", async () => {

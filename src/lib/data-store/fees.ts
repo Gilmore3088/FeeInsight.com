@@ -374,8 +374,8 @@ export async function getPriceMovementSummary(days: number = 90): Promise<PriceM
   try {
     return await sql.unsafe(
       `SELECT fee_category,
-              SUM(CASE WHEN change_type = 'increased' THEN 1 ELSE 0 END) as increased,
-              SUM(CASE WHEN change_type = 'decreased' THEN 1 ELSE 0 END) as decreased,
+              SUM(CASE WHEN change_type IN ('increase', 'increased') THEN 1 ELSE 0 END) as increased,
+              SUM(CASE WHEN change_type IN ('decrease', 'decreased') THEN 1 ELSE 0 END) as decreased,
               SUM(CASE WHEN change_type = 'removed' THEN 1 ELSE 0 END) as removed,
               COUNT(*) as total_changes
        FROM fee_change_records
