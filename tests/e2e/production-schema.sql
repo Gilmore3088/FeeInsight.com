@@ -2870,3 +2870,6 @@ CREATE TABLE IF NOT EXISTS public.institution_additional_sources (
 );
 CREATE INDEX IF NOT EXISTS institution_additional_sources_status_idx
   ON public.institution_additional_sources (status, found_at);
+-- 20270106020000_rosetta_table_rows.sql
+ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS table_rows jsonb;
+ALTER TABLE public.agent_source_texts ADD COLUMN IF NOT EXISTS reader text;

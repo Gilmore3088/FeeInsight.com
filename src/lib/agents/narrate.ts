@@ -85,7 +85,10 @@ export function narrateStepFinished(
           : `Had no new documents to read ${scope}.${formatsNote}`;
       }
       return `Read ${count(n(detail, "text_artifacts"), "document")} ${scope}${joinParts([
+        n(detail, "ocr_read") > 0 && `${n(detail, "ocr_read")} scans read with free OCR`,
+        n(detail, "js_fallback_read") > 0 && `${n(detail, "js_fallback_read")} JavaScript pages read from their data or PDF version`,
         n(detail, "needs_ocr") > 0 && `${n(detail, "needs_ocr")} are scans that need OCR`,
+        n(detail, "handed_to_magellan") > 0 && `${n(detail, "handed_to_magellan")} JavaScript-only pages handed to Magellan`,
         n(detail, "failed_reads") > 0 && `${n(detail, "failed_reads")} failed`,
         n(detail, "empty_documents") > 0 && `${n(detail, "empty_documents")} were empty`,
         n(detail, "skipped_known_failures") > 0 && `${n(detail, "skipped_known_failures")} skipped (failed before, unchanged since)`,
