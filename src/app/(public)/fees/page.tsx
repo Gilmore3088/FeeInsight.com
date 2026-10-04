@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getFeeCategorySummaries } from "@/lib/data-store";
 import { getDisplayName, getFeeFamily, FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
@@ -11,6 +10,7 @@ import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 
 // No live number in the title: counts come from getPublicStatsSummary() in the body.
 export const metadata: Metadata = {
@@ -36,7 +36,7 @@ export default async function FeeCatalogPage() {
   const showAll = canAccessAllCategories(user);
   const spotlightCats = new Set(getSpotlightCategories());
 
-  const allSummaries = await getFeeCategorySummaries();
+  const allSummaries = await getCachedFeeCategorySummaries();
   const summaries = showAll
     ? allSummaries
     : allSummaries.filter((s) => spotlightCats.has(s.fee_category));

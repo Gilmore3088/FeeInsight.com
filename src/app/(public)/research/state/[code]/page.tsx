@@ -4,8 +4,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getNationalIndexCached,
-  getPeerIndex,
-  getStateStats,
 } from "@/lib/data-store";
 import {
   getDisplayName,
@@ -21,6 +19,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
 import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { getPeerIndexCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -77,9 +76,11 @@ export default async function StateReportPage({ params }: PageProps) {
   const user = await getCurrentUser();
   const showAllCategories = canAccessAllCategories(user);
 
-  const stats = await getStateStats(stateCode);
-  const stateIndex = await getPeerIndex({ state_code: stateCode });
-  const nationalIndex = await getNationalIndexCached();
+  const [stats, stateIndex, nationalIndex] = await Promise.all([
+    getStateStatsCached(stateCode),
+    getPeerIndexCached({ state_code: stateCode }),
+    getNationalIndexCached(),
+  ]);
   const district = STATE_TO_DISTRICT[stateCode];
 
   // Build national lookup
