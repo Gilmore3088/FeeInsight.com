@@ -22,6 +22,13 @@ function where(stateCode: string | null | undefined): string {
   return stateCode ? `in ${stateCode}` : "across all states";
 }
 
+/** A 0..1 rate as "93.5%", or "n/a" when there is nothing to divide. */
+function percentOf(value: unknown): string {
+  if (value == null || value === "") return "n/a";
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? `${(parsed * 100).toFixed(1)}%` : "n/a";
+}
+
 function joinParts(parts: Array<string | null | false>): string {
   const kept = parts.filter((part): part is string => Boolean(part));
   return kept.length > 0 ? `: ${kept.join(", ")}` : "";
@@ -151,6 +158,17 @@ export function narrateStepFinished(
     case "registry-fred":
     case "registry-state-regulators":
       return narrateRegistryStep(stepKey, detail);
+    case "score-answer-key": {
+      if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
+      const banks = n(detail, "banks_scored");
+      if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
+      return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
+    }
+    case "scoreboard-snapshot": {
+      const coverage = (detail.coverage ?? {}) as Detail;
+      const accuracy = (detail.accuracy ?? {}) as Detail;
+      return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+    }
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
@@ -244,6 +262,8 @@ function shorten(message: string, max = 140): string {
 export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "daily-brief": "atlas",
+  "score-answer-key": "atlas",
+  "scoreboard-snapshot": "atlas",
   discover: "magellan",
   "discover-paid": "magellan",
   rescue: "magellan",

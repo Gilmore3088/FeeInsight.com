@@ -198,4 +198,74 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       account_research: 25,
     });
   }, 120_000);
+
+  it("scores the lane run against a confirmed answer key and records the scoreboard", async () => {
+    const { startAgentRun, executeAgentRun, getAgentRunSteps } = await import("@/lib/agents/run-store");
+    const [bank] = await sql`SELECT id FROM institution_sources WHERE cert_number = 'E2E-1'`;
+    const institutionId = Number(bank.id);
+    await sql`DELETE FROM answer_key_institutions WHERE institution_id = ${institutionId}`;
+    const [entry] = await sql`
+      INSERT INTO answer_key_institutions (institution_id, document_url, document_type, status, confirmed_by, confirmed_at)
+      VALUES (${institutionId}, 'https://greenmountain-test-bank.com/disclosures/fee-schedule/', 'html', 'confirmed', 'e2e', NOW())
+      RETURNING id
+    `;
+    const fees: Array<[string, number]> = [
+      ["overdraft", 32], ["nsf", 30], ["monthly_maintenance", 12], ["stop_payment", 35],
+      ["wire_domestic_outgoing", 25], ["wire_domestic_incoming", 15], ["atm_non_network", 3],
+      ["cashiers_check", 10], ["paper_statement", 3],
+    ];
+    for (const [key, amount] of fees) {
+      await sql`
+        INSERT INTO answer_key_fees (answer_key_institution_id, canonical_key, amount, amount_kind, status, confirmed_by, confirmed_at)
+        VALUES (${entry.id}, ${key}, ${amount}, 'fixed', 'confirmed', 'e2e', NOW())
+      `;
+    }
+
+    const started = await startAgentRun({
+      agent: "atlas",
+      kind: "workflow",
+      title: "E2E scoreboard",
+      triggeredBy: "e2e",
+      triggerSource: "admin",
+      idempotencyKey: `e2e:scoreboard:${Date.now()}`,
+      steps: [
+        { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
+        { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
+      ],
+    });
+    await executeAgentRun(started.run.id, { maxSteps: 2, allowProviderSteps: false });
+    const steps = await getAgentRunSteps(started.run.id);
+    expect(steps.map((step) => [step.stepKey, step.status])).toEqual([
+      ["score-answer-key", "completed"],
+      ["scoreboard-snapshot", "completed"],
+    ]);
+
+    const [scoreRun] = await sql`
+      SELECT precision, recall, by_stage, by_bank FROM answer_key_score_runs
+       WHERE agent_run_id = ${started.run.id}
+    `;
+    expect(Number(scoreRun.precision)).toBe(1);
+    expect(Number(scoreRun.recall)).toBe(1);
+    const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);
+    expect(bankScore).toMatchObject({ precision: 1, recall: 1, missing: [], extra: [] });
+    for (const stage of ["magellan", "rosetta", "knox", "darwin", "hamilton"]) {
+      expect((scoreRun.by_stage as Record<string, Record<string, unknown>>)[stage], stage).toMatchObject({ precision: 1, recall: 1 });
+    }
+
+    const [event] = await sql`
+      SELECT e.detail FROM agent_run_events e
+        JOIN agent_run_steps s ON s.id = e.step_id
+       WHERE e.agent_run_id = ${started.run.id} AND s.step_key = 'score-answer-key' AND e.event_type = 'step.finished'
+    `;
+    expect(event.detail).toMatchObject({ banks_scored: 1, precision: 1, recall: 1 });
+
+    const [snapshot] = await sql`
+      SELECT accuracy_precision, accuracy_recall, depth_median_categories, coverage_denominator, knox_yield_sample_size
+        FROM pipeline_scoreboard_snapshots WHERE agent_run_id = ${started.run.id}
+    `;
+    expect(Number(snapshot.accuracy_precision)).toBe(1);
+    expect(Number(snapshot.accuracy_recall)).toBe(1);
+    expect(Number(snapshot.depth_median_categories)).toBeGreaterThan(0);
+    expect(Number(snapshot.knox_yield_sample_size)).toBe(1);
+  }, 60_000);
 });
