@@ -43,8 +43,8 @@ describe("SimulateWorkspace", () => {
 
     expect(html).toContain("Verified-only benchmark");
     expect(html).toContain("Provisional rows excluded from scoring");
-    expect(html).toContain("Manual Scenario Mode");
-    expect(html).toContain("No provider automation queued");
+    expect(html).toContain("Your what-if");
+    expect(html).not.toContain("No provider automation queued");
     expect(html).toContain("Evidence posture:");
     expect(html).not.toContain("Last Live Sync");
     expect(html).not.toContain("Live Simulation Mode");

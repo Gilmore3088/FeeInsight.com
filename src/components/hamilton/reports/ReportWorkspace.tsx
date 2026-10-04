@@ -344,7 +344,7 @@ export function ReportWorkspace({
       {/* Page header */}
       <header className="mb-12">
         <h1 className="font-headline text-6xl italic tracking-tighter text-on-surface mb-2">
-          Report Builder
+          Report
         </h1>
         <p
           className="font-body max-w-xl"

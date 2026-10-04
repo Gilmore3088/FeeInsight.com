@@ -20,7 +20,7 @@ import {
 } from "@/lib/hamilton/artifact-context";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 
-export const metadata: Metadata = { title: "Report Builder" };
+export const metadata: Metadata = { title: "Report" };
 
 function buildLegacyPeerFilterLabel(params: {
   legacyPeerFilters?: string;

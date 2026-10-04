@@ -44,7 +44,7 @@ async function loadHomeBriefing(): Promise<{ data: HomeBriefingData; unavailable
   }
 }
 
-export const metadata: Metadata = { title: "Executive Briefing" };
+export const metadata: Metadata = { title: "Benchmark" };
 
 interface HamiltonHomePageProps {
   searchParams: Promise<{
@@ -60,9 +60,7 @@ interface HamiltonHomePageProps {
 function SignalsSkeleton() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div
-        style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "2rem" }}
-      >
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
         <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
         <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
       </div>
@@ -102,13 +100,7 @@ async function BriefingSignals({
   return (
     <>
       {/* Second Row: WhatChanged (8 col) + PriorityAlerts (4 col) */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr",
-          gap: "2rem",
-        }}
-      >
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
         <WhatChangedCard
           signals={signals.whatChanged}
           selectedInstitutionId={selectedInstitutionId}
@@ -160,7 +152,7 @@ export default async function HamiltonHomePage({
 
   return (
     <div>
-      {/* Page header — "Executive Briefing" + subtitle pills */}
+      {/* Page header — "Benchmark" (the nav label) + subtitle pills */}
       <header
         style={{
           display: "flex",
@@ -184,7 +176,7 @@ export default async function HamiltonHomePage({
               marginBottom: "0.5rem",
             }}
           >
-            Executive Briefing
+            Benchmark
           </h1>
           <span
             className="font-label"

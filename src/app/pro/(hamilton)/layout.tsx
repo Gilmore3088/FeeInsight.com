@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
 import { HamiltonPageSkeleton } from "@/components/hamilton/layout/HamiltonPageSkeleton";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
@@ -6,7 +7,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
 import { HamiltonShell } from "@/components/hamilton/layout/HamiltonShell";
-import { HamiltonUpgradeGate } from "@/components/hamilton/layout/HamiltonUpgradeGate";
 import { sql } from "@/lib/data-store/connection";
 import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
@@ -52,7 +52,8 @@ async function HamiltonLayoutInner({
   }
 
   if (!user || !canAccessPremium(user)) {
-    return <HamiltonUpgradeGate />;
+    // The /pro layout normally handles this first; never render a dead-end gate here.
+    redirect("/subscribe?from=%2Fpro%2Fhamilton");
   }
 
   const isAdmin = user.role === "admin" || user.role === "analyst";
@@ -172,7 +173,7 @@ async function HamiltonLayoutInner({
   }
 
   // Fetch pinned institutions (watchlist) for left rail (D-10)
-  let pinnedInstitutions: string[] = [];
+  let pinnedInstitutions: Array<{ id: string; name: string }> = [];
   try {
     const rows = await sql`
       SELECT institution_ids
@@ -181,9 +182,19 @@ async function HamiltonLayoutInner({
       ORDER BY updated_at DESC
       LIMIT 1
     `;
-    pinnedInstitutions = Array.isArray(rows[0]?.institution_ids)
-      ? (rows[0].institution_ids as unknown[]).map((id) => String(id))
+    const ids = Array.isArray(rows[0]?.institution_ids)
+      ? (rows[0].institution_ids as unknown[]).map((id) => String(id)).filter((id) => /^[1-9]\d*$/.test(id)).slice(0, 12)
       : [];
+    if (ids.length > 0) {
+      // One query for every name, in watchlist order.
+      const nameRows = await sql`
+        SELECT id::text AS id, institution_name
+          FROM institution_sources
+         WHERE id = ANY(${ids.map(Number)}::int[])
+      `;
+      const names = new Map(nameRows.map((row) => [String(row.id), String(row.institution_name)]));
+      pinnedInstitutions = ids.map((id) => ({ id, name: names.get(id) ?? `Institution ${id}` }));
+    }
   } catch {
     // Table may not have data yet — empty array is fine
   }

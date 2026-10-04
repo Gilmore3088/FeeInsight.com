@@ -434,7 +434,7 @@ export function SimulateWorkspace({
   }, [initialScenarioId, handleScenarioSelect]);
 
   // ─── Derived display values ────────────────────────────────────────────────
-  const categoryLabel = selectedCategory ? formatCategory(selectedCategory) : "Fee Simulation";
+  const categoryLabel = selectedCategory ? formatCategory(selectedCategory) : "Scenario";
   const hasDistribution = distribution && confidenceTier && !loadingCategory;
   const hasSimulation = hasDistribution && !simulationBlocked && currentPosition && proposedPosition;
   const activePeerLabel = distribution?.peer_label ?? "Peer baseline";
@@ -458,7 +458,7 @@ export function SimulateWorkspace({
             className="font-headline text-4xl leading-tight tracking-tight mb-1"
             style={{ color: "var(--hamilton-on-surface)" }}
           >
-            {selectedCategory ? `Fee Simulation: ${categoryLabel}` : "Fee Simulation"}
+            {selectedCategory ? `Scenario: ${categoryLabel}` : "Scenario"}
           </h1>
           <p className="font-label text-[10px] uppercase tracking-widest" style={{ color: "var(--hamilton-on-surface-variant)" }}>
             Verified-only benchmark &bull; Provisional rows excluded from scoring
@@ -473,10 +473,10 @@ export function SimulateWorkspace({
           }}
         >
           <span className="font-label text-[9px] font-bold uppercase tracking-widest">
-            Manual Scenario Mode
+            Your what-if
           </span>
           <span className="text-[11px]" style={{ color: "var(--hamilton-on-surface-variant)" }}>
-            No provider automation queued
+            Nothing changes until you decide to act
           </span>
         </div>
       </div>
@@ -525,9 +525,9 @@ export function SimulateWorkspace({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 items-center">
           {/* Category */}
           <div className="flex flex-col border-r pr-8" style={{ borderColor: "rgb(245 245 244)" }}>
-            <label className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+            <span className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
               Category
-            </label>
+            </span>
             {loadingCategories || loadingCategory ? (
               <div className="skeleton h-6 w-32 rounded" />
             ) : (
@@ -542,9 +542,9 @@ export function SimulateWorkspace({
 
           {/* Current Point */}
           <div className="flex flex-col border-r pr-8" style={{ borderColor: "rgb(245 245 244)" }}>
-            <label className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+            <span className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
               {usingInstitutionFee ? "Your Current Fee" : `${activePeerLabel} Median`}
-            </label>
+            </span>
             <div
               className="font-headline text-2xl"
               style={{ color: "rgb(120 113 108)" }}
@@ -579,9 +579,9 @@ export function SimulateWorkspace({
               />
             ) : (
               <div>
-                <label className="font-label text-[10px] uppercase tracking-widest mb-3 block" style={{ color: "var(--hamilton-primary)" }}>
+                <span className="font-label text-[10px] uppercase tracking-widest mb-3 block" style={{ color: "var(--hamilton-primary)" }}>
                   Active Simulation Target
-                </label>
+                </span>
                 <p className="text-sm italic" style={{ color: "var(--hamilton-on-surface-variant)" }}>
                   Select a fee category to begin simulation.
                 </p>
@@ -678,7 +678,7 @@ export function SimulateWorkspace({
 
       {/* Fixed Action Bar ──────────────────────────────────────────────────── */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-white border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-40 px-4 py-3 sm:px-12 sm:py-4"
+        className="fixed bottom-0 left-0 lg:left-72 right-0 bg-white border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-40 px-4 py-3 sm:px-12 sm:py-4"
         style={{ borderColor: "rgb(231 229 228)" }}
       >
         <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:gap-4">

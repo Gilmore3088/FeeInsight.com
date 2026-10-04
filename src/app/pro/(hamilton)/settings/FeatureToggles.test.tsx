@@ -7,11 +7,13 @@ describe("FeatureToggles", () => {
     const html = renderToStaticMarkup(<FeatureToggles selectedInstitutionId="2945" />);
 
     expect(html).toContain('href="/pro/analyze?instId=2945"');
-    expect(html).toContain('href="/pro/analyze?intent=benchmark&amp;instId=2945"');
+    expect(html).toContain('href="/pro/hamilton?instId=2945"');
     expect(html).toContain('href="/pro/reports?instId=2945"');
     expect(html).toContain('href="/pro/simulate?instId=2945"');
     expect(html).toContain('href="/pro/monitor?instId=2945"');
-    expect(html).toContain("Evidence gated");
+    // Plain-English labels, not internal policy jargon.
+    expect(html).not.toContain("Evidence gated");
+    expect(html).not.toContain("Context scoped");
     expect(html).not.toContain('role="switch"');
     expect(html).not.toContain("visual only");
   });
