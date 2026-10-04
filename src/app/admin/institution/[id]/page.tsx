@@ -12,7 +12,9 @@ import {
   getInstitutionFeeScheduleEvidence,
   getInstitutionCrawlHistory,
   getInstitutionAgentResults,
+  getInstitutionLearnedNotes,
   type Institution,
+  type InstitutionLearnedNotes,
   type InstitutionFeeScheduleEvidence,
 } from "@/lib/data-store/institution";
 import { InstitutionActions } from "./institution-actions";
@@ -44,6 +46,7 @@ export default async function InstitutionDetailPage({
     agentResults,
     peerRanking,
     financials,
+    learnedNotes,
   ] =
     await Promise.all([
       getInstitution(institutionId),
@@ -53,6 +56,7 @@ export default async function InstitutionDetailPage({
       getInstitutionAgentResults(institutionId),
       getInstitutionPeerRanking(institutionId),
       getFinancialsByInstitution(institutionId),
+      getInstitutionLearnedNotes(institutionId),
     ]);
 
   if (!institution) notFound();
@@ -216,6 +220,8 @@ export default async function InstitutionDetailPage({
         institution={institution}
         evidence={feeScheduleEvidence}
       />
+
+      {learnedNotes && <LearnedNotesPanel notes={learnedNotes} />}
 
       {/* Published Fees */}
       <div className="admin-card overflow-hidden mb-8">
@@ -881,6 +887,32 @@ function VerifiedFeePreviewTable({
         </div>
       )}
     </section>
+  );
+}
+
+function LearnedNotesPanel({ notes }: { notes: InstitutionLearnedNotes }) {
+  return (
+    <div className="admin-card overflow-hidden mb-8">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
+        <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.08em]">
+          What the pipeline has learned
+        </h2>
+        <span className="text-[11px] text-gray-400 tabular-nums">
+          {notes.formatLabel ?? "Document type unknown"}
+          {notes.lastLearnedAt ? ` · updated ${notes.lastLearnedAt}` : ""}
+        </span>
+      </div>
+      <div className="p-4 text-xs text-gray-700 dark:text-gray-300 space-y-1.5">
+        {notes.nextStep && (
+          <p className="font-medium text-amber-700 dark:text-amber-400">{notes.nextStep}</p>
+        )}
+        <ul className="list-disc pl-4 space-y-1">
+          {notes.lines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 

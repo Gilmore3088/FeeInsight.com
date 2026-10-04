@@ -1,11 +1,7 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  getInstitutionStateDirectorySummaries,
-  searchInstitutions,
-  type InstitutionSearchResult,
-} from "@/lib/data-store/search";
+import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -27,6 +23,7 @@ import {
   paginate,
   sortVerifiedFirst,
 } from "./directory-sort";
+import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
 
 export const metadata: Metadata = {
   title: `Find Your Bank — Search the ${PRODUCT_NAME}`,
@@ -68,7 +65,7 @@ async function loadResults(params: {
   fee_category?: string;
   page: number;
 }): Promise<DirectoryResults> {
-  const firstPass = await searchInstitutions({
+  const firstPass = await searchInstitutionsCached({
     ...params,
     page: 1,
     pageSize: DIRECTORY_SORT_WINDOW,
@@ -79,7 +76,7 @@ async function loadResults(params: {
       total: firstPass.total,
     };
   }
-  const paged = await searchInstitutions({ ...params, pageSize: DIRECTORY_PAGE_SIZE });
+  const paged = await searchInstitutionsCached({ ...params, pageSize: DIRECTORY_PAGE_SIZE });
   return { rows: sortVerifiedFirst(paged.rows), total: paged.total };
 }
 
@@ -97,7 +94,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   const shouldShowResults = hasQuery || hasState;
   const [stats, stateSummaries, results, summaries] = await Promise.all([
     getPublicStatsSummary(),
-    getInstitutionStateDirectorySummaries({ charter_type: charterType || undefined }),
+    getInstitutionStateDirectorySummariesCached({ charter_type: charterType || undefined }),
     shouldShowResults
       ? loadResults({
           query: hasQuery ? query : undefined,

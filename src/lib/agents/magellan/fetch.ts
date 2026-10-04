@@ -72,6 +72,8 @@ interface FetchResult {
   durationMs: number;
   /** The existing document this fetch matched, when unchanged. */
   previousDocumentId: number | null;
+  /** True when new-looking content matched an older stored document of this institution. */
+  reusedDocument?: boolean;
   /** Downloaded bytes, kept only long enough to store them in the vault. */
   body: Uint8Array | null;
   vaultStatus: VaultStoreStatus | null;
@@ -96,6 +98,8 @@ export interface RunMagellanFetchResult {
   succeeded: number;
   /** Fetched fine, but the content matched the stored copy: no new document. */
   unchanged: number;
+  /** Of those, content that matched an older stored copy rather than the latest one. */
+  reusedDocuments: number;
   failed: number;
   skipped: number;
   bytes: number;
@@ -477,11 +481,53 @@ async function insertSourceDocument(db: SqlTag, result: FetchResult, learning: b
   return sourceDocument?.id == null ? null : Number(sourceDocument.id);
 }
 
+/**
+ * The document that already holds these bytes for this institution, if any: the copy
+ * Rosetta read first, else the oldest. Content that changes and later changes back
+ * (A, B, A) reuses the first A instead of storing it again; the unique index on
+ * (institution_id, content_hash) relies on this.
+ */
+async function findDocumentWithContent(db: SqlTag, institutionId: number, contentHash: string): Promise<number | null> {
+  const [existing] = await db`
+    SELECT doc.id
+      FROM source_documents doc
+     WHERE doc.institution_id = ${institutionId}
+       AND doc.content_hash = ${contentHash}
+       AND doc.status = 'success'
+     ORDER BY EXISTS (
+                SELECT 1 FROM agent_source_texts adt
+                 WHERE adt.source_document_id = doc.id AND adt.status = 'completed'
+              ) DESC,
+              doc.id ASC
+     LIMIT 1
+  `;
+  return existing?.id == null ? null : Number(existing.id);
+}
+
 /** Writes the fetch result; returns the source document it created or matched. */
 async function recordFetchResult(db: SqlTag, result: FetchResult, learning: boolean): Promise<number | null> {
   if (result.outcome === "unchanged") {
     await recordUnchanged(db, result, learning);
     return result.previousDocumentId;
+  }
+  if (result.outcome === "success" && result.contentHash) {
+    const existingId = await findDocumentWithContent(db, result.institutionId, result.contentHash);
+    if (existingId != null) {
+      await recordUnchanged(db, { ...result, previousDocumentId: existingId }, learning);
+      await db`
+        UPDATE institution_sources
+           SET last_content_hash = ${result.contentHash},
+               document_type = ${result.documentType},
+               document_type_detected = ${result.documentType}
+         WHERE id = ${result.institutionId}
+      `;
+      // No new document: report it as unchanged content, which it is for this bank.
+      result.outcome = "unchanged";
+      result.attemptOutcome = "unchanged";
+      result.previousDocumentId = existingId;
+      result.reusedDocument = true;
+      return existingId;
+    }
   }
   const sourceDocumentId = await insertSourceDocument(db, result, learning);
 
@@ -700,6 +746,7 @@ export async function runMagellanFetch(
     processed: results.length,
     succeeded: results.filter((result) => result.outcome === "success").length,
     unchanged: results.filter((result) => result.outcome === "unchanged").length,
+    reusedDocuments: results.filter((result) => result.reusedDocument).length,
     failed: results.filter((result) => result.outcome === "failed").length,
     skipped: results.filter((result) => result.outcome === "skipped").length,
     bytes: results.reduce((total, result) => total + result.bytes, 0),

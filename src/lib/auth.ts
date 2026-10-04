@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sql, withTransaction } from "@/lib/data-store/connection";
@@ -52,6 +53,8 @@ export interface User {
   email: string | null;
   stripe_customer_id: string | null;
   subscription_status: "none" | "active" | "past_due" | "canceled";
+  /** When the subscription first went past_due (ISO string); null otherwise. */
+  past_due_since?: string | null;
   institution_name: string | null;
   institution_type: string | null;
   asset_tier: string | null;
@@ -197,6 +200,7 @@ export async function login(
     SELECT id, username, display_name, role, password_hash, email,
            stripe_customer_id,
            COALESCE(subscription_status, 'none') as subscription_status,
+           to_jsonb(users.*) ->> 'past_due_since' as past_due_since,
            institution_name, institution_type, asset_tier, state_code,
            fed_district, job_role, interests
     FROM users WHERE (username = ${username} OR email = ${username}) AND is_active = true
@@ -228,7 +232,8 @@ export async function logout(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE);
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+/** The signed-in user. Memoized per request: layouts, pages and actions share one lookup. */
+export const getCurrentUser = cache(async (): Promise<User | null> => {
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
@@ -240,6 +245,7 @@ export async function getCurrentUser(): Promise<User | null> {
     SELECT u.id, u.username, u.display_name, u.role,
            u.email, u.stripe_customer_id,
            COALESCE(u.subscription_status, 'none') as subscription_status,
+           to_jsonb(u.*) ->> 'past_due_since' as past_due_since,
            u.institution_name, u.institution_type, u.asset_tier,
            u.state_code, u.fed_district, u.job_role, u.interests,
            s.expires_at AS session_expires_at
@@ -260,7 +266,7 @@ export async function getCurrentUser(): Promise<User | null> {
     `.catch(() => {});
   }
   return user as User;
-}
+});
 
 /** True when a session has less than 15 days left and should be extended to 30. */
 export function shouldRenewSession(expiresAt: string | Date | null | undefined, now = Date.now()): boolean {

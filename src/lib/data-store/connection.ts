@@ -6,7 +6,7 @@ const DATABASE_POOL_MAX = Number.isInteger(configuredPoolMax) && configuredPoolM
   ? configuredPoolMax
   : 5;
 
-let _sql: ReturnType<typeof postgres> | null = null;
+let _sql: AppSql | null = null;
 
 /**
  * NUMERIC (oid 1700) arrives from postgres.js as a string by default. Fee amounts
@@ -73,21 +73,31 @@ export const JSON_TEXT_PASSTHROUGH = {
   parse: (value: string) => JSON.parse(value) as unknown,
 };
 
-export function getSql() {
+function connect(databaseUrl: string) {
+  return postgres(databaseUrl, {
+    ssl: "require",
+    // Keep serverless instances below the shared Supabase/Supavisor ceiling.
+    // Higher fan-out queues locally instead of hanging on connection startup.
+    max: DATABASE_POOL_MAX,
+    idle_timeout: 20,
+    connect_timeout: 15,
+    prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
+    types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
+  });
+}
+
+/**
+ * Declared explicitly (the generic client type every caller already uses) so getSql()
+ * never depends on inference through an import cycle.
+ */
+type AppSql = ReturnType<typeof postgres>;
+
+export function getSql(): AppSql {
   if (!_sql) {
     if (!DATABASE_URL) {
       throw new Error("DATABASE_URL environment variable is required");
     }
-    _sql = postgres(DATABASE_URL, {
-      ssl: "require",
-      // Keep serverless instances below the shared Supabase/Supavisor ceiling.
-      // Higher fan-out queues locally instead of hanging on connection startup.
-      max: DATABASE_POOL_MAX,
-      idle_timeout: 20,
-      connect_timeout: 15,
-      prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
-      types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
-    });
+    _sql = connect(DATABASE_URL);
   }
   return _sql;
 }
@@ -104,11 +114,25 @@ export function withTransaction<T>(callback: (tx: typeof sql) => Promise<T>): Pr
   return sql.begin((tx) => callback(tx as unknown as typeof sql)) as Promise<T>;
 }
 
+/**
+ * How long hasData() waits before treating the database as unavailable. It gates
+ * generateStaticParams at build time, and a saturated pool used to leave it hanging
+ * until the deploy timed out; giving up just skips prerendering, and the pages
+ * render on first request instead.
+ */
+const HAS_DATA_TIMEOUT_MS = 5_000;
+
 export async function hasData(): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const [row] = await getSql()`SELECT COUNT(*) as cnt FROM institution_sources`;
-    return Number(row.cnt) > 0;
+    const timedOut = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), HAS_DATA_TIMEOUT_MS);
+    });
+    const counted = getSql()`SELECT 1 FROM institution_sources LIMIT 1`.then((rows) => rows.length > 0, () => false);
+    return await Promise.race([counted, timedOut]);
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }

@@ -1,11 +1,6 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  getFeeRevenueData,
-  getTierFeeRevenueSummary,
-  getCharterFeeRevenueSummary,
-} from "@/lib/data-store";
 import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatAmount, formatAssets } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -14,6 +9,7 @@ import { SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
+import { getFeeRevenueDataCached, getTierFeeRevenueSummaryCached, getCharterFeeRevenueSummaryCached } from "@/lib/data-store/public-cached-reads";
 
 export const metadata: Metadata = {
   title: "Fee-to-Revenue Analysis - How Bank Fees Drive Income",
@@ -37,9 +33,11 @@ export default async function FeeRevenueAnalysisPage() {
       </div>
     );
   }
-  const correlations = await getFeeRevenueData();
-  const tierSummary = await getTierFeeRevenueSummary();
-  const charterSummary = await getCharterFeeRevenueSummary();
+  const [correlations, tierSummary, charterSummary] = await Promise.all([
+    getFeeRevenueDataCached(),
+    getTierFeeRevenueSummaryCached(),
+    getCharterFeeRevenueSummaryCached(),
+  ]);
 
   const totalInstitutions = correlations.length;
   const avgFee = totalInstitutions > 0

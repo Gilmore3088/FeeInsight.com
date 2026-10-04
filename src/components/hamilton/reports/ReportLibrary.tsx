@@ -17,6 +17,7 @@ interface ReportLibraryProps {
     report: ReportSummaryResponse,
     reportType: string,
     artifactMetadata: ReportArtifactMetadata | null,
+    reportId: string,
   ) => void;
 }
 
@@ -76,18 +77,16 @@ export function ReportLibrary({
   onViewReport,
 }: ReportLibraryProps) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   async function handleDownloadPdf(report: ReportLibraryItem) {
     setDownloadingId(report.id);
+    setDownloadError(null);
     try {
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          report: report.report_json,
-          reportType: report.report_type,
-          artifactMetadata: report.artifact_metadata ?? null,
-        }),
+        body: JSON.stringify({ type: "report", reportId: report.id }),
       });
       if (!res.ok) throw new Error("PDF generation failed");
       const blob = await res.blob();
@@ -101,7 +100,7 @@ export function ReportLibrary({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // Non-blocking — user can retry
+      setDownloadError(`The PDF for "${report.title}" couldn't be created. Please try again.`);
     } finally {
       setDownloadingId(null);
     }
@@ -155,6 +154,12 @@ export function ReportLibrary({
           {reports.length} {reports.length === 1 ? "report" : "reports"}
         </span>
       </div>
+
+      {downloadError && (
+        <p role="alert" className="mb-4 text-sm" style={{ color: "#b91c1c" }}>
+          {downloadError}
+        </p>
+      )}
 
       {/* Report card grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -258,6 +263,7 @@ export function ReportLibrary({
                       report.report_json,
                       report.report_type,
                       report.artifact_metadata ?? null,
+                      report.id,
                     )
                   }
                   className="text-primary text-xs uppercase tracking-widest font-bold hover:opacity-70 transition-opacity"

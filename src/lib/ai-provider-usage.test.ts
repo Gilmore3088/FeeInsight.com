@@ -78,6 +78,15 @@ describe("AI provider usage", () => {
     })).toBe(4_500);
   });
 
+  it("prices current models at their own list rates, not the family's oldest", () => {
+    // Opus 5.5: $4 / $20 per million tokens.
+    expect(estimateAnthropicCostMicrousd("claude-opus-5-5", { inputTokens: 1_000_000, outputTokens: 100_000 })).toBe(6_000_000);
+    // Sonnet 5.5: $2 / $10.
+    expect(estimateAnthropicCostMicrousd("claude-sonnet-5-5", { inputTokens: 1_000, outputTokens: 1_000 })).toBe(12_000);
+    // Older Opus falls back to the family rate.
+    expect(estimateAnthropicCostMicrousd("claude-3-opus-20240229", { inputTokens: 1_000, outputTokens: 0 })).toBe(15_000);
+  });
+
   it("records tokens after a successful provider request", async () => {
     const response = {
       content: [],

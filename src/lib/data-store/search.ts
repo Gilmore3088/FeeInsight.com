@@ -73,14 +73,28 @@ interface InstitutionSearchRow {
   latest_source_collected_at: string | Date | null;
 }
 
-const SEARCH_QUALITY_CTE = `
-  WITH catalog_counts AS (
+/**
+ * Per-institution fee counts and latest source status, computed only for the
+ * institutions in `scopeSql` (a SELECT returning one `id` column).
+ *
+ * Without the scope every caller aggregated the entire catalog, verified and raw
+ * tiers and source documents, even an autocomplete that shows eight rows. Under
+ * traffic those 30s+ scans held every pooled connection and stalled the public
+ * site, so each caller now scopes to the rows it will actually return.
+ */
+function searchQualityCte(scopeSql: string): string {
+  return `
+  WITH scope AS (
+    ${scopeSql}
+  ),
+  catalog_counts AS (
     SELECT
       institution_id,
       COUNT(*) FILTER (WHERE review_status = 'approved')::int AS published_fee_count,
       COUNT(*) FILTER (WHERE review_status <> 'approved' AND review_status <> 'rejected')::int AS catalog_provisional_fee_count,
       COUNT(*) FILTER (WHERE review_status <> 'rejected')::int AS visible_fee_count
     FROM published_fee_catalog
+    WHERE institution_id IN (SELECT id FROM scope)
     GROUP BY institution_id
   ),
   verified_unpublished_counts AS (
@@ -89,6 +103,7 @@ const SEARCH_QUALITY_CTE = `
       COUNT(*)::int AS verified_unpublished_fee_count
     FROM verified_fee_observations fv
     WHERE fv.review_status <> 'rejected'
+      AND fv.institution_id IN (SELECT id FROM scope)
       AND NOT EXISTS (
         SELECT 1
         FROM published_fee_catalog pfc
@@ -102,7 +117,8 @@ const SEARCH_QUALITY_CTE = `
       fr.institution_id,
       COUNT(*)::int AS raw_unverified_fee_count
     FROM raw_fee_observations fr
-    WHERE NOT EXISTS (
+    WHERE fr.institution_id IN (SELECT id FROM scope)
+      AND NOT EXISTS (
       SELECT 1
       FROM verified_fee_observations fv
       WHERE fv.fee_raw_id = fr.fee_raw_id
@@ -118,9 +134,11 @@ const SEARCH_QUALITY_CTE = `
       error_message AS latest_source_error,
       crawled_at AS latest_source_collected_at
     FROM source_documents
+    WHERE institution_id IN (SELECT id FROM scope)
     ORDER BY institution_id, crawled_at DESC NULLS LAST, id DESC
   )
 `;
+}
 
 function dateString(value: string | Date | null): string | null {
   if (!value) return null;
@@ -259,7 +277,7 @@ export async function searchInstitutions(params: {
   const offsetParam = paramIdx;
 
   const rows = await sql.unsafe<InstitutionSearchRow[]>(
-    `${SEARCH_QUALITY_CTE}
+    `${searchQualityCte(`SELECT ct.id FROM institution_sources ct ${where}`)}
      SELECT ct.id, ct.institution_name, ct.city, ct.state_code,
             ct.charter_type, ct.asset_size_tier, ct.asset_size,
             ct.source, ct.cert_number, ct.website_url, ct.fee_schedule_url,
@@ -310,7 +328,7 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
   const term = query.trim();
   const pattern = `%${term}%`;
   const rows = await sql.unsafe<InstitutionSearchRow[]>(
-    `${SEARCH_QUALITY_CTE}
+    `${searchQualityCte("SELECT ct.id FROM institution_sources ct WHERE ct.institution_name ILIKE $1")}
     SELECT ct.id, ct.institution_name, ct.city, ct.state_code,
            ct.charter_type, ct.asset_size_tier, ct.asset_size,
            ct.source, ct.cert_number, ct.website_url, ct.fee_schedule_url,
@@ -377,7 +395,7 @@ export async function getInstitutionStateDirectorySummaries(params: {
     verified_fee_count: number | string;
     provisional_fee_count: number | string;
   }[]>(
-    `${SEARCH_QUALITY_CTE}
+    `${searchQualityCte(`SELECT ct.id FROM institution_sources ct ${where}`)}
      SELECT
        per_institution.state_code,
        COUNT(*)::int AS institution_count,

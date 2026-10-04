@@ -37,13 +37,14 @@ describe("Hamilton category guard repair", () => {
 
     expect(result).toMatchObject({
       scannedFees: 4,
-      failingFees: 3,
+      failingFees: 2,
       rolledBackFees: 0,
       rejectedVerifiedFees: 0,
       dryRun: true,
-      byCode: { name_contradicts: 1, amount_out_of_range: 1, name_unsupported: 1 },
+      byCode: { name_contradicts: 1, name_unsupported: 1 },
     });
-    expect(result.failures.map((failure) => failure.feePublishedId)).toEqual([2, 3, 4]);
+    // Row 3 names its category; its implausible amount is the outlier rollback's job.
+    expect(result.failures.map((failure) => failure.feePublishedId)).toEqual([2, 4]);
     const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(statements).not.toContain("UPDATE");
     expect(statements).not.toContain("INSERT");
@@ -54,7 +55,7 @@ describe("Hamilton category guard repair", () => {
 
     const result = await runHamiltonCategoryGuard({ runId: 10, db: db as unknown as GuardDb });
 
-    expect(result).toMatchObject({ failingFees: 3, rolledBackFees: 3, rejectedVerifiedFees: 3 });
+    expect(result).toMatchObject({ failingFees: 2, rolledBackFees: 2, rejectedVerifiedFees: 2 });
     const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(statements).toContain("SET rolled_back_at = NOW()");
     expect(statements).toContain("review_status = 'rejected'");
@@ -67,6 +68,6 @@ describe("Hamilton category guard repair", () => {
 
     const result = await runHamiltonCategoryGuard({ runId: 11, limit: 1, db: db as unknown as GuardDb });
 
-    expect(result).toMatchObject({ failingFees: 3, rolledBackFees: 1 });
+    expect(result).toMatchObject({ failingFees: 2, rolledBackFees: 1 });
   });
 });

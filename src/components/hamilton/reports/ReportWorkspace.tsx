@@ -80,7 +80,7 @@ interface ReportWorkspaceProps {
   savedReports: HamiltonReportLibraryItem[];
   initialReport?: Pick<
     HamiltonReportLibraryItem,
-    "report_type" | "report_json" | "artifact_metadata"
+    "id" | "report_type" | "report_json" | "artifact_metadata"
   > | null;
   initialScenarioId: string | null;
   selectedInstitution?: HamiltonSelectedInstitutionContext | null;
@@ -133,6 +133,7 @@ export function ReportWorkspace({
   const [narrativeTone, setNarrativeTone] = useState<NarrativeTone>("consulting");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [generatedReport, setGeneratedReport] =
     useState<ReportSummaryResponse | null>(initialReport?.report_json ?? null);
   const [generatedReportType, setGeneratedReportType] = useState<string>(
@@ -140,6 +141,7 @@ export function ReportWorkspace({
   );
   const [generatedReportMetadata, setGeneratedReportMetadata] =
     useState<ReportArtifactMetadata | null>(initialReport?.artifact_metadata ?? null);
+  const [generatedReportId, setGeneratedReportId] = useState<string | null>(initialReport?.id ?? null);
   const [error, setError] = useState<string | null>(null);
   const [peerSetId, setPeerSetId] = useState<string | null>(initialPeerSetId ?? null);
   const [peerCoveragePreview, setPeerCoveragePreview] =
@@ -219,6 +221,7 @@ export function ReportWorkspace({
   function handlePeerSetChange(nextPeerSetId: string | null) {
     setPeerSetId(nextPeerSetId);
     setGeneratedReport(null);
+    setGeneratedReportId(null);
     setGeneratedReportType("");
     setGeneratedReportMetadata(null);
     setError(null);
@@ -232,8 +235,10 @@ export function ReportWorkspace({
     report: ReportSummaryResponse,
     reportType: string,
     artifactMetadata: ReportArtifactMetadata | null,
+    reportId: string,
   ) {
     setGeneratedReport(report);
+    setGeneratedReportId(reportId);
     setGeneratedReportType(reportType);
     setGeneratedReportMetadata(artifactMetadata);
     setError(null);
@@ -252,6 +257,7 @@ export function ReportWorkspace({
     setIsGenerating(true);
     setError(null);
     setGeneratedReport(null);
+    setGeneratedReportId(null);
     setGeneratedReportMetadata(null);
 
     const today = new Date().toISOString().split("T")[0];
@@ -259,7 +265,9 @@ export function ReportWorkspace({
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
     const dateFrom = threeMonthsAgo.toISOString().split("T")[0];
 
-    const result = await generateReport({
+    let result: Awaited<ReturnType<typeof generateReport>>;
+    try {
+      result = await generateReport({
       templateType: selectedTemplate,
       dateFrom,
       dateTo: today,
@@ -272,12 +280,17 @@ export function ReportWorkspace({
       evidencePolicy: "provisional-first",
       selectedSource,
       selectedSourceLabel,
+      narrativeTone,
     });
-
-    setIsGenerating(false);
+    } catch {
+      result = { success: false, error: "Hamilton couldn't reach the server. Check your connection and try again." };
+    } finally {
+      setIsGenerating(false);
+    }
 
     if (result.success) {
       setGeneratedReport(result.report);
+      setGeneratedReportId(result.reportId);
       setGeneratedReportType(selectedTemplate);
       setGeneratedReportMetadata(result.artifactMetadata);
     } else {
@@ -286,17 +299,14 @@ export function ReportWorkspace({
   }
 
   async function handleExportPdf() {
-    if (!generatedReport) return;
+    if (!generatedReport || !generatedReportId) return;
     setIsPdfExporting(true);
+    setPdfError(null);
     try {
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          report: generatedReport,
-          reportType: generatedReportType,
-          artifactMetadata: generatedReportMetadata,
-        }),
+        body: JSON.stringify({ type: "report", reportId: generatedReportId }),
       });
       if (!res.ok) throw new Error("PDF generation failed");
       const blob = await res.blob();
@@ -310,7 +320,7 @@ export function ReportWorkspace({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // Non-blocking
+      setPdfError("The PDF couldn't be created. Please try again.");
     } finally {
       setIsPdfExporting(false);
     }
@@ -334,14 +344,14 @@ export function ReportWorkspace({
       {/* Page header */}
       <header className="mb-12">
         <h1 className="font-headline text-6xl italic tracking-tighter text-on-surface mb-2">
-          Report Builder
+          Report
         </h1>
         <p
           className="font-body max-w-xl"
           style={{ color: "var(--hamilton-secondary)" }}
         >
-          Synthesize market intelligence into board-ready narratives. Select a
-          framework or create a custom inquiry from the institutional data lake.
+          Turn verified fee data into board-ready narratives. Choose a report type,
+          set the audience, and Hamilton writes it from your peer evidence.
         </p>
         {selectedInstitution && (
           <div
@@ -376,8 +386,9 @@ export function ReportWorkspace({
       </header>
 
       {/* Error banner */}
-      {error && (
+      {(error || pdfError) && (
         <div
+          role="alert"
           className="mb-8 p-4 text-sm border"
           style={{
             borderColor: "#dc2626",
@@ -385,7 +396,7 @@ export function ReportWorkspace({
             backgroundColor: "rgba(220,38,38,0.05)",
           }}
         >
-          {error}
+          {error ?? pdfError}
         </div>
       )}
 

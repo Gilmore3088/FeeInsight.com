@@ -413,3 +413,40 @@ describe("Hamilton Settings workspace access actions", () => {
     });
   });
 });
+
+describe("settings server actions surface", () => {
+  it("does not expose getSavedPeerSets(userId) as a callable server action", async () => {
+    const actions = await import("./actions");
+    expect("getSavedPeerSets" in actions).toBe(false);
+  });
+});
+
+describe("Pro-only settings actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const lapsed = { id: 9, role: "viewer", subscription_status: "canceled" };
+
+  it("refuse users without an active subscription", async () => {
+    mocks.getCurrentUserMock.mockResolvedValue(lapsed);
+    const actions = await import("./actions");
+    const form = new FormData();
+    form.set("name", "Peers");
+    expect(await actions.createPeerSet(form)).toMatchObject({ success: false, error: expect.stringContaining("subscription") });
+    expect(await actions.removePeerSet(1)).toMatchObject({ success: false });
+    const institutionForm = new FormData();
+    institutionForm.set("institution_id", "2945");
+    expect(await actions.updateWorkspaceInstitution({ success: false } as never, institutionForm)).toMatchObject({ success: false });
+  });
+
+  it("caps saved peer sets at ten", async () => {
+    mocks.getCurrentUserMock.mockResolvedValue({ id: 7, role: "premium", subscription_status: "active" });
+    const savedPeers = await import("@/lib/data-store/saved-peers");
+    vi.mocked(savedPeers.getSavedPeerSets).mockResolvedValueOnce(Array.from({ length: 10 }, (_, id) => ({ id })) as never);
+    const actions = await import("./actions");
+    const form = new FormData();
+    form.set("name", "Eleventh");
+    expect(await actions.createPeerSet(form)).toMatchObject({ success: false, error: expect.stringContaining("up to 10") });
+  });
+});

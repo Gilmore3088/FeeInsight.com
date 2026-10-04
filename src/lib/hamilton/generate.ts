@@ -6,6 +6,7 @@
 import {
   extractAnthropicText,
   getAnthropicMessagesClient,
+  getHamiltonModel,
 } from "@/lib/ai-provider";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
@@ -14,10 +15,13 @@ import {
   type CitationGateOptions,
   type CitationGateResult,
 } from "./citation-gate";
+import { checkNarrativeFigures } from "./figure-check";
 import type { SectionInput, SectionOutput, ThesisInput, ThesisOutput } from "./types";
 
-const MODEL = "claude-sonnet-4-20250514";
-const MAX_TOKENS = 1500;
+const MODEL = getHamiltonModel();
+// Opus 5.5 always thinks before answering and thinking counts toward max_tokens, so
+// the cap leaves room for it; the voice prompt keeps the narrative itself short.
+const MAX_TOKENS = 8000;
 const REQUEST_TIMEOUT_MS = 60_000;
 const THESIS_TIMEOUT_MS = 90_000;
 
@@ -280,4 +284,39 @@ export async function generateGatedSection(
   }
 
   return { status: "ok", section, gate };
+}
+
+// ─── Figure-Verified Section Generation ───────────────────────────────────────
+
+export type VerifiedSectionOutput =
+  | { status: "ok"; section: SectionOutput; figuresChecked: number; citation: CitationGateResult }
+  | { status: "needs_review"; section: SectionOutput; unmatched: string[]; citation: CitationGateResult };
+
+/**
+ * Generate a section whose every `$` and `%` figure traces to its DATA payload.
+ *
+ * An unmatched figure triggers one regeneration that names the offending figures;
+ * if the retry still states a figure the data does not support, the section comes
+ * back as `needs_review` and must not be published as final. The lexical citation
+ * gate is recorded alongside for diagnostics.
+ */
+export async function generateVerifiedSection(input: SectionInput): Promise<VerifiedSectionOutput> {
+  let section = await generateSection(input);
+  let check = checkNarrativeFigures(section.narrative, input.data);
+  if (check.unmatched.length > 0) {
+    section = await generateSection({
+      ...input,
+      context: [
+        input.context ?? "",
+        `FIGURE CHECK FAILED on your previous draft: ${check.unmatched.join(", ")} do not appear in DATA. ` +
+          "Use only figures present in DATA (or simple differences between them); describe anything else qualitatively.",
+      ].filter(Boolean).join("\n\n"),
+    });
+    check = checkNarrativeFigures(section.narrative, input.data);
+  }
+  const citation = evaluateCitationDensity(section.narrative);
+  if (check.unmatched.length > 0) {
+    return { status: "needs_review", section, unmatched: check.unmatched, citation };
+  }
+  return { status: "ok", section, figuresChecked: check.checked, citation };
 }

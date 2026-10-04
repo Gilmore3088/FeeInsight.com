@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
+import { HAMILTON_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 
 interface HamiltonTopNavProps {
@@ -111,6 +111,39 @@ export function HamiltonTopNav({ isAdmin, activeHref, selectedInstitutionId, use
             </Link>
           );
         })}
+        <details className="group relative shrink-0">
+          <summary
+            className="cursor-pointer list-none rounded px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wide sm:px-3 sm:text-xs"
+            style={{
+              fontFamily: "var(--hamilton-font-sans)",
+              color: HAMILTON_REFERENCE_NAV.some((item) => isActive(item.href))
+                ? "var(--hamilton-text-primary)"
+                : "var(--hamilton-text-secondary)",
+            }}
+          >
+            Reference <span aria-hidden="true">▾</span>
+          </summary>
+          <div
+            className="absolute left-0 z-50 mt-1 w-64 rounded-lg py-1 shadow-lg"
+            style={{ backgroundColor: "var(--hamilton-surface)", border: "1px solid var(--hamilton-border)" }}
+          >
+            {HAMILTON_REFERENCE_NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={hrefWithInstitutionContext(item.href, activeInstitutionId)}
+                className="block px-4 py-2 no-underline hover:opacity-80"
+                aria-current={isActive(item.href) ? "page" : undefined}
+              >
+                <span className="block text-sm font-medium" style={{ color: "var(--hamilton-text-primary)" }}>
+                  {item.label}
+                </span>
+                <span className="block text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
+                  {item.description}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </details>
       </nav>
 
       {/* Avatar dropdown */}

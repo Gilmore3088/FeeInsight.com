@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, runKnoxExtract } from "./extract";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -85,6 +85,45 @@ describe("Knox agentic extraction", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("knox_extraction_completed");
     expect(JSON.stringify(db.mock.calls)).toContain("raw_observations_pending_verification");
     expect(JSON.stringify(db.mock.calls)).not.toContain("No fee for e-statements");
+  });
+
+  it("sends free fees to Darwin and holds ranges for review", async () => {
+    const db = createDbMock([
+      { ...textArtifact, normalized_text: ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n") },
+    ]);
+
+    const result = await runKnoxExtract({ runId: 110, db: asExtractDb(db) });
+
+    expect(result).toMatchObject({ extractedFees: 1, insertedFees: 1, heldForReview: 2 });
+    expect(result.results[0].heldInserted).toBe(2);
+    const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
+    const flags = inserts.map((call) => call.slice(1).find((value) => typeof value === "string" && value.startsWith("[")) as string);
+    expect(flags).toEqual([
+      JSON.stringify(["needs_darwin_verification", "canonical_hint:overdraft"]),
+      JSON.stringify(["knox_review:zero", "needs_darwin_verification", "canonical_hint:paper_statement"]),
+      JSON.stringify(["knox_review:range", "canonical_hint:check_printing", "amount_max:40"]),
+    ]);
+  });
+
+  it("re-extracts a document whose text changed and retires rows from the older text", async () => {
+    const db = createDbMock([textArtifact]);
+    db.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 11 }, { fee_raw_id: 12 }]);
+      if (text.includes("INSERT INTO raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 950 }]);
+      return Promise.resolve([]);
+    });
+
+    const result = await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
+
+    const selectSql = String(db.unsafe.mock.calls[0][0]);
+    expect(selectSql).toContain("position(('text_hash=' || adt.text_hash || ';')");
+    expect(result.retiredOlderRows).toBe(2);
+    const retire = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE raw_fee_observations"));
+    expect(templateText(retire?.[0])).toContain("- 'needs_darwin_verification'");
+    expect(templateText(retire?.[0])).toContain("superseded_by_reread");
+    expect(templateText(retire?.[0])).toContain("FROM verified_fee_observations fv");
+    expect(retire?.slice(1)).toEqual(expect.arrayContaining([501, "text_hash=text-hash;"]));
   });
 
   it("keeps dry runs read-only while still reporting candidates", async () => {
@@ -186,6 +225,9 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("pa.input_fingerprint = adt.text_hash");
       expect(params).toEqual(expect.arrayContaining([KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version]));
+      // A text with few fees goes back to Knox when the rules version moves.
+      expect(query).toContain("FROM raw_fee_observations thin");
+      expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
     });
 
     it("flags a yield far below the institution's usual fee count as low_yield", async () => {
@@ -214,7 +256,7 @@ describe("Knox agentic extraction", () => {
         {
           ...textArtifact,
           do_not_retry: [
-            { stage: "extract", strategy: "extract.rules", version: 1, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
+            { stage: "extract", strategy: "extract.rules", version: 2, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);

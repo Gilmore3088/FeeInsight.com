@@ -7,9 +7,14 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonInstitutionContext, parseInstitutionId } from "@/lib/hamilton/institution-context";
-import { createWatchlistEntryFromInstitution, type WatchlistEntry } from "@/lib/hamilton/monitor-data";
+import {
+  createWatchlistEntryFromInstitution,
+  MAX_WATCHLIST_INSTITUTIONS,
+  type WatchlistEntry,
+} from "@/lib/hamilton/monitor-data";
 import { setHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 
 export type WatchlistActionResult =
@@ -26,6 +31,7 @@ export async function addToWatchlist(
 ): Promise<WatchlistActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Sign in before changing your watchlist." };
+  if (!canAccessPremium(user)) return { ok: false, error: "An active Hamilton subscription is required." };
 
   const parsedId = parseInstitutionId(institutionId);
   if (!parsedId) {
@@ -86,6 +92,13 @@ export async function addToWatchlist(
       return { ok: true, entry, message: "Already tracking this institution." };
     }
 
+    if (currentIds.length >= MAX_WATCHLIST_INSTITUTIONS) {
+      return {
+        ok: false,
+        error: `Your watchlist is full (${MAX_WATCHLIST_INSTITUTIONS} institutions). Remove one to add another.`,
+      };
+    }
+
     const updatedIds = [...currentIds, normalizedId];
     await sql`
       UPDATE hamilton_watchlists
@@ -116,6 +129,7 @@ export async function removeFromWatchlist(
 ): Promise<WatchlistActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Sign in before changing your watchlist." };
+  if (!canAccessPremium(user)) return { ok: false, error: "An active Hamilton subscription is required." };
 
   const parsedId = parseInstitutionId(institutionId);
   if (!parsedId) {

@@ -30,7 +30,7 @@ export function AnalyzeCTABar({
 }: AnalyzeCTABarProps) {
   if (!isVisible) return null;
 
-  const { primary, secondary } = CTA_HIERARCHY["Benchmark"];
+  const { primary, secondary } = CTA_HIERARCHY["Analyze"];
   const simulateHref = hrefWithInstitutionContext("/pro/simulate", institutionId);
   const secondaryActions = secondary.map((label) => {
     if (label === "Show Peer Distribution") {

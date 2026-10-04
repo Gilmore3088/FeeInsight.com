@@ -40,7 +40,7 @@ interface HamiltonShellProps {
   activeHref: string;
   savedAnalyses?: SavedAnalysis[];
   recentScenarios?: RecentScenario[];
-  pinnedInstitutions?: string[];
+  pinnedInstitutions?: Array<{ id: string; name: string }>;
   peerSets?: Array<{ id: number; name: string }>;
   children: React.ReactNode;
 }

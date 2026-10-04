@@ -56,7 +56,7 @@ export function CategoryGuardRepairControl({ disabled }: { disabled: boolean }) 
           </h2>
         </div>
         <p className="admin-meta">
-          Hamilton rolls back live fees whose name or amount contradicts their category.
+          Hamilton rolls back live fees whose name contradicts their category. Implausible amounts are rolled back automatically by the publish step.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">

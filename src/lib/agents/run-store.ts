@@ -3,6 +3,8 @@ import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
+import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -348,6 +350,7 @@ async function executeAgenticStep(
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
           unchanged_documents: fetched.unchanged,
+          reused_documents: fetched.reusedDocuments,
           stored_documents: fetched.storedDocuments,
           vault: fetched.vault,
           failed_fetches: fetched.failed,
@@ -394,7 +397,10 @@ async function executeAgenticStep(
           wrong_documents: read.wrongDocuments + read.triagedWrongDocuments,
           sent_back_to_magellan: read.sentBackToMagellan,
           read_from_vault: read.readFromVault,
+          reread_documents: read.reread,
+          table_rows: read.tableRows,
           triaged_texts: read.triagedTexts,
+          formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
@@ -435,6 +441,8 @@ async function executeAgenticStep(
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
           skipped_fee_candidates: extraction.skippedFees,
+          held_for_review: extraction.heldForReview,
+          replaced_older_rows: extraction.retiredOlderRows,
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
@@ -478,6 +486,8 @@ async function executeAgenticStep(
           processed_raw_fees: verification.processedRawFees,
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
+          verified_free_fees: verification.zeroFeesVerified,
+          reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
           learning_log: verification.learning,
           verify_limit: verification.limit,
@@ -489,6 +499,8 @@ async function executeAgenticStep(
             amount: result.amount,
             canonical_fee_key: result.canonicalFeeKey,
             status: result.status,
+            decision: result.decision,
+            reason_code: result.reasonCode,
             reason: result.reason,
             fee_verified_id: result.feeVerifiedId,
           })),
@@ -558,32 +570,92 @@ async function executeAgenticStep(
     case "publish":
     case "publish-index":
     case "publish-context": {
+      // Lanes run side by side, and the outlier and duplicate sweeps below touch every
+      // state's live rows. One publish step at a time keeps two sweeps from locking the
+      // same rows in opposite orders; the lock ends with this step's transaction.
+      await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
+      const institutionId = numericRunParam(params, ["institution_id"]);
+      const outlierRollbacks = await rollBackPublishedOutliers(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      const duplicateCollapses = await collapsePublishedDuplicates(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const published = await runHamiltonPublish({
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["publish_limit", "limit", "size"]),
-        institutionId: numericRunParam(params, ["institution_id"]),
+        institutionId,
         stateCode,
         minConfidence: numericRunParam(params, [
           "publish_min_confidence",
           "min_confidence",
           "confidence_threshold",
         ]),
+        minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
       const indexRefresh = published.dryRun
         ? null
-        : await refreshFeeIndexCache(tx, { runId: run.id, force: published.publishedFees > 0 });
+        : await refreshFeeIndexCache(tx, {
+            runId: run.id,
+            force: published.publishedFees > 0 || outlierRollbacks.length > 0 || duplicateCollapses.length > 0,
+          });
+      const outlierNote =
+        outlierRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
+          : "";
+      const duplicateNote =
+        duplicateCollapses.length > 0
+          ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
+          : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
           published_fees: published.publishedFees,
           skipped_verified_fees: published.skippedFees,
+          superseded_fees: published.supersededFees,
+          outlier_rollbacks: outlierRollbacks.length,
+          outlier_rollback_samples: outlierRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            reason: rollback.reason,
+          })),
+          duplicate_collapses: duplicateCollapses.length,
+          duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            kept_fee_published_id: row.keptFeePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            fee_name: row.feeName,
+            amount: row.amount,
+          })),
+          published_free_fees: published.zeroFeesPublished,
+          outcomes: published.outcomes,
+          learning_log: published.learning,
           publish_limit: published.limit,
           publish_min_confidence: published.minConfidence,
+          publish_min_institution_fees: published.minInstitutionFees,
+          held_thin_fees: published.heldFees,
+          held_thin_institutions: published.heldInstitutions.slice(0, 25).map((entry) => ({
+            institution_id: entry.institutionId,
+            institution_name: entry.institutionName,
+            fee_count: entry.feeCount,
+            held_rows: entry.heldRows,
+          })),
           publish_batch_id: published.batchId,
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,
@@ -597,6 +669,7 @@ async function executeAgenticStep(
             status: result.status,
             reason: result.reason,
             fee_published_id: result.feePublishedId,
+            superseded_fee_published_id: result.supersededFeePublishedId,
           })),
         },
       };
@@ -1356,7 +1429,7 @@ async function providerStepGate(
 
 export async function executeAgentRun(
   runId: number,
-  options: { maxSteps?: number; allowProviderSteps?: boolean } = {},
+  options: { maxSteps?: number; allowProviderSteps?: boolean; deadlineAt?: number } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
     return {
@@ -1411,6 +1484,9 @@ export async function executeAgentRun(
   let lastResult: AgentRunExecutionResult | null = null;
 
   for (let index = 0; index < maxSteps; index += 1) {
+    // Past the caller's deadline no further step starts; the run stays queued for the
+    // next tick. The first step always runs so a late tick still makes progress.
+    if (index > 0 && options.deadlineAt != null && Date.now() >= options.deadlineAt) break;
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
     const nextStepKey = await peekNextQueuedStepKey(runId);
@@ -1484,6 +1560,7 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId = null,
   maxProviderCallsPerRun = null,
   maxEstimatedCostMicrousd = null,
+  deadlineAt,
 }: {
   runLimit?: number;
   maxStepsPerRun?: number;
@@ -1491,6 +1568,8 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
+  /** Epoch ms after which no new step starts (each run still gets its first step). */
+  deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
   // When provider steps cannot run this tick, skip runs whose next queued step is a
@@ -1519,8 +1598,9 @@ export async function executeQueuedAgentRuns({
      ORDER BY r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
-  const results: AgentRunExecutionResult[] = [];
-  for (const row of rows) {
+  // Runs advance side by side (different states in parallel). Each step claims its run
+  // under a row lock, so two runs never share a step.
+  const results = await Promise.all(rows.map(async (row): Promise<AgentRunExecutionResult> => {
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -1532,8 +1612,8 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps }));
-  }
+    return executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt });
+  }));
   return { selected: rows.length, results };
 }
 
@@ -1802,3 +1882,65 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
 
   return created;
 }
+
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation";
+
+export interface RecordProRequestInput {
+  operation: ProRequestOperation;
+  title: string;
+  status: "completed" | "failed";
+  summary: string;
+  userId: number | null;
+  institutionId?: number | string | null;
+  detail?: Record<string, unknown>;
+}
+
+/**
+ * Records a finished Pro AI request in the run ledger (run_kind 'pro_request'): one
+ * run, one step and one event, written in one transaction after the work is done, so
+ * no run is ever left "running". Never throws: the ledger must not fail a paid request
+ * that already succeeded. Returns the run id, or null when it could not be written
+ * (for example before the pro_request migration is applied).
+ */
+export async function recordProRequest(input: RecordProRequestInput): Promise<number | null> {
+  const detail = {
+    operation: input.operation,
+    user_id: input.userId,
+    institution_id: input.institutionId ?? null,
+    ...(input.detail ?? {}),
+  };
+  try {
+    return await withTransaction(async (tx) => {
+      const [run] = await tx`
+        INSERT INTO agent_runs
+          (agent_name, run_kind, title, summary, status, params_json, trigger_source,
+           triggered_by, backend, progress_current, progress_total, current_stage,
+           error_summary, started_at, completed_at, updated_at)
+        VALUES
+          ('hamilton', 'pro_request', ${input.title}, ${input.summary}, ${input.status},
+           ${JSON.stringify(detail)}::jsonb, 'api', ${input.userId ? `user:${input.userId}` : "system"},
+           'agentic_v1', 1, 1, ${`pro.${input.operation}`},
+           ${input.status === "failed" ? input.summary : null}, NOW(), NOW(), NOW())
+        RETURNING id
+      `;
+      const runId = Number(run.id);
+      await tx`
+        INSERT INTO agent_run_steps
+          (agent_run_id, step_key, agent_name, title, status, sequence, input_payload,
+           summary, error_summary, started_at, completed_at, updated_at)
+        VALUES
+          (${runId}, ${`pro.${input.operation}`}, 'hamilton', ${input.title}, ${input.status}, 1,
+           ${JSON.stringify(detail)}::jsonb, ${input.summary},
+           ${input.status === "failed" ? input.summary : null}, NOW(), NOW(), NOW())
+      `;
+      await tx`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (${runId}, ${`run.${input.status}`}, ${input.status}, ${input.summary}, ${JSON.stringify(detail)}::jsonb)
+      `;
+      return runId;
+    });
+  } catch {
+    return null;
+  }
+}
+

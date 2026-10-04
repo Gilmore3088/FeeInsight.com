@@ -1,4 +1,6 @@
 import type { IndexEntry } from "@/lib/data-store/fee-index";
+import { computePercentile } from "@/lib/data-store/fees";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 
 export interface SelectedInstitutionFeeDelta {
   fee_name: string;
@@ -93,9 +95,11 @@ export function buildSelectedInstitutionFeeDeltas(params: {
   );
   const verifiedOnly = params.evidencePolicy === "verified-only";
 
-  return params.selectedFees
-    .filter((fee) => fee.review_status !== "rejected")
-    .filter((fee) => !verifiedOnly || fee.review_status === "approved")
+  return collapseToCategoryValues(
+    params.selectedFees
+      .filter((fee) => fee.review_status !== "rejected")
+      .filter((fee) => !verifiedOnly || fee.review_status === "approved"),
+  )
     .map((fee) => {
       const category = fee.fee_category;
       const institutionAmount = toNumber(fee.amount);
@@ -130,6 +134,41 @@ export function buildSelectedInstitutionFeeDeltas(params: {
     .filter((delta): delta is SelectedInstitutionFeeDelta => delta !== null)
     .sort((a, b) => Math.abs(b.delta_amount) - Math.abs(a.delta_amount))
     .slice(0, params.limit ?? 12);
+}
+
+/**
+ * One value per category for the selected institution, as the statistics contract
+ * counts it: the median of its amounts. Verified (approved) rows win over provisional
+ * ones; variants are folded into the first fee name.
+ */
+function collapseToCategoryValues<T extends SelectedInstitutionFeeInput>(fees: T[]): T[] {
+  const byCategory = new Map<string, T[]>();
+  const uncategorized: T[] = [];
+  for (const fee of fees) {
+    if (!fee.fee_category || toNumber(fee.amount) === null) {
+      uncategorized.push(fee);
+      continue;
+    }
+    const group = byCategory.get(fee.fee_category);
+    if (group) group.push(fee);
+    else byCategory.set(fee.fee_category, [fee]);
+  }
+  const collapsed: T[] = [];
+  for (const group of byCategory.values()) {
+    const approved = group.filter((fee) => fee.review_status === "approved");
+    const used = approved.length > 0 ? approved : group;
+    const amounts = used.map((fee) => toNumber(fee.amount) as number).sort((a, b) => a - b);
+    const first = used[0];
+    const confidences = used.map((fee) => toNumber(fee.extraction_confidence)).filter((c): c is number => c !== null);
+    collapsed.push({
+      ...first,
+      fee_name: used.length > 1 ? `${first.fee_name} (${used.length} variants)` : first.fee_name,
+      amount: Math.round(computePercentile(amounts, 50) * 100) / 100,
+      extraction_confidence: confidences.length > 0 ? Math.max(...confidences) : first.extraction_confidence ?? null,
+      source_url: used.find((fee) => fee.source_url)?.source_url ?? null,
+    });
+  }
+  return [...collapsed, ...uncategorized];
 }
 
 export function buildReportPeerCoveragePreview(params: {
@@ -175,13 +214,13 @@ export function buildReportPeerCoveragePreview(params: {
   ).length;
   const selectedProvisionalFeeDeltaCount = selectedFeeDeltas.length - selectedVerifiedFeeDeltaCount;
   const usablePeerCategoryCount = params.indexEntries.filter(
-    (entry) => entry.median_amount !== null && entry.institution_count >= 5,
+    (entry) => entry.median_amount !== null && entry.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN,
   ).length;
   const focusEntry = params.focusCategory
     ? params.indexEntries.find((entry) => entry.fee_category === params.focusCategory)
     : null;
   const focusCategoryCovered = focusEntry
-    ? focusEntry.median_amount !== null && focusEntry.institution_count >= 5
+    ? focusEntry.median_amount !== null && focusEntry.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN
     : params.focusCategory
       ? false
       : null;

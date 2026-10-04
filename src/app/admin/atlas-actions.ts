@@ -489,7 +489,7 @@ export async function resumeAtlasCycle(runId: number): Promise<{
 
 /**
  * Hamilton category-guard repair (issue #51): roll back live catalog rows whose own
- * name or amount contradicts the category they were filed under. Run the dry run first;
+ * name contradicts the category they were filed under. Run the dry run first;
  * its step detail lists counts by category and sample rows.
  */
 export async function runCategoryGuardRepair(dryRun: boolean): Promise<{

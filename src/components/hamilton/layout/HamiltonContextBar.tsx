@@ -58,12 +58,12 @@ export function HamiltonContextBar({
     >
       {/* Institution selector */}
       <div className="flex min-w-0 flex-[1_1_260px] flex-col">
-        <label
+        <span
           className="text-[9px] uppercase tracking-[0.1em] font-bold mb-0.5"
           style={{ color: "var(--hamilton-text-tertiary)" }}
         >
           Institution
-        </label>
+        </span>
         {hasInstitution ? (
           <span
             className="min-w-0 text-xs font-bold"
@@ -105,12 +105,12 @@ export function HamiltonContextBar({
       {feePublicationLabel && (
         <>
           <div className="flex min-w-0 flex-[1_1_220px] flex-col">
-            <label
+            <span
               className="text-[9px] uppercase tracking-[0.1em] font-bold mb-0.5"
               style={{ color: "var(--hamilton-text-tertiary)" }}
             >
               Evidence
-            </label>
+            </span>
             <span className="min-w-0 text-xs font-bold" style={{ color: "var(--hamilton-text-primary)" }}>
               <span className="inline-block max-w-full truncate align-bottom">{feePublicationLabel}</span>
               <span className="font-normal ml-1.5" style={{ color: "var(--hamilton-text-secondary)" }}>
@@ -123,16 +123,16 @@ export function HamiltonContextBar({
         </>
       )}
 
-      {/* Horizon selector */}
-      <div className="flex flex-col">
-        <label
+      {/* Data horizon (fixed; not a selector) */}
+      <div className="flex flex-col" title="Benchmarks use the latest published fee schedules">
+        <span
           className="text-[9px] uppercase tracking-[0.1em] font-bold mb-0.5"
           style={{ color: "var(--hamilton-text-tertiary)" }}
         >
-          Horizon
-        </label>
-        <span className="text-xs font-bold" style={{ color: "var(--hamilton-text-primary)" }}>
-          LTM
+          Data
+        </span>
+        <span className="text-xs" style={{ color: "var(--hamilton-text-primary)" }}>
+          Latest published
         </span>
       </div>
 

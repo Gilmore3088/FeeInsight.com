@@ -2,10 +2,11 @@
  * Hamilton Navigation — Single source of truth.
  * Top nav labels, left rail structure, CTA hierarchy, and label constants.
  *
- * Label set: Analyze | Benchmark | Scenario | Report | Monitor | Admin (the five Fee Insight Pro workspace modes).
- * URLs are unchanged from the prior label set (Home/Analyze/Simulate/Reports/Monitor)
- * to preserve bookmarks, internal links, and SEO. URL canonicalization is a
- * separate follow-up.
+ * Label set: Analyze | Benchmark | Scenario | Report | Monitor | Admin (the five Fee Insight Pro workspace modes,
+ * HAMILTON_MODES in constants.ts). Each label opens the screen of the same name, and that
+ * screen's <h1> and metadata title use the same word (2026-10-04 Pro audit: "Analyze"
+ * used to open the briefing and "Benchmark" the Analyze screen).
+ * URLs are unchanged to preserve bookmarks.
  *
  * Per D-17: Left rail + CTA hierarchy defined here, not in components.
  *
@@ -19,8 +20,8 @@
 export const HAMILTON_BASE = "/pro" as const;
 
 export const HAMILTON_NAV = [
-  { label: "Analyze",          href: `${HAMILTON_BASE}/hamilton`  },
-  { label: "Benchmark",     href: `${HAMILTON_BASE}/analyze`   },
+  { label: "Analyze",          href: `${HAMILTON_BASE}/analyze`   },
+  { label: "Benchmark",        href: `${HAMILTON_BASE}/hamilton`  },
   { label: "Scenario",        href: `${HAMILTON_BASE}/simulate`  },
   { label: "Report", href: `${HAMILTON_BASE}/reports`   },
   { label: "Monitor",        href: `${HAMILTON_BASE}/monitor`   },
@@ -29,13 +30,22 @@ export const HAMILTON_NAV = [
 
 export type HamiltonScreen = (typeof HAMILTON_NAV)[number]["label"];
 
+/** Reference pages: Pro data you look things up in, under one "Reference" menu. */
+export const HAMILTON_REFERENCE_NAV = [
+  { label: "Market",       href: `${HAMILTON_BASE}/market`,     description: "Beige Book themes and market reading" },
+  { label: "Institutions", href: `${HAMILTON_BASE}/data`,       description: "Find any bank or credit union" },
+  { label: "Fee categories", href: `${HAMILTON_BASE}/categories`, description: "Every fee type and its national median" },
+  { label: "Fed districts", href: `${HAMILTON_BASE}/districts`, description: "Fees and coverage by Federal Reserve district" },
+  { label: "Regulatory news", href: `${HAMILTON_BASE}/news`,    description: "CFPB, OCC and Fed updates" },
+] as const;
+
 /** Left rail workspace memory config per screen (per D-17, 02-navigation doc) */
 export const LEFT_RAIL_CONFIG: Record<HamiltonScreen, {
   primaryAction: string;
   sections: string[];
 }> = {
-  "Analyze":   { primaryAction: "Simulate Change",          sections: ["Saved Analyses", "Recent Work"] },
-  "Benchmark": { primaryAction: "Simulate a Change",        sections: ["Saved Analyses", "Recent Work", "Pinned Institutions"] },
+  "Analyze":   { primaryAction: "Simulate a Change",        sections: ["Saved Analyses", "Recent Work", "Pinned Institutions"] },
+  "Benchmark": { primaryAction: "Simulate Change",          sections: ["Saved Analyses", "Recent Work"] },
   "Scenario":  { primaryAction: "Generate Board Summary",   sections: ["Scenarios", "Saved Analyses"] },
   "Report":    { primaryAction: "Generate Brief",           sections: ["Your Reports", "Templates"] },
   "Monitor":   { primaryAction: "Review Pricing",           sections: ["Watchlist", "Signal Feed"] },
@@ -60,8 +70,8 @@ export const CTA_HIERARCHY: Record<Exclude<HamiltonScreen, "Admin">, {
   primary: string;
   secondary: string[];
 }> = {
-  "Analyze":   { primary: "Simulate Change",                 secondary: [] },
-  "Benchmark": { primary: "Simulate a Change",               secondary: ["Show Peer Distribution", "View Risk Drivers"] },
+  "Analyze":   { primary: "Simulate a Change",               secondary: ["Show Peer Distribution", "View Risk Drivers"] },
+  "Benchmark": { primary: "Simulate Change",                 secondary: [] },
   "Scenario":  { primary: "Generate Board Scenario Summary", secondary: [] },
   "Report":    { primary: "Generate Brief",                  secondary: [] },
   "Monitor":   { primary: "Review Pricing",                  secondary: ["Run Scenario"] },

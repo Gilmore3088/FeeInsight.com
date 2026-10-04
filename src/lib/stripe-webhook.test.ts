@@ -38,7 +38,7 @@ describe("applyStripeEvent", () => {
   it("returns a cancelled subscriber to a free viewer", async () => {
     await applyStripeEvent(tx as never, event("customer.subscription.deleted", { customer: "cus_1" }));
     const [sql] = issued();
-    expect(sql).toContain("subscription_status = 'canceled', role = 'viewer'");
+    expect(sql).toContain("subscription_status = 'canceled', past_due_since = NULL, role = 'viewer'");
     expect(sql).toContain("role IN ('viewer', 'premium')");
   });
 
@@ -81,5 +81,33 @@ describe("applyStripeEvent", () => {
       event("checkout.session.completed", { mode: "payment", customer: "cus_9", metadata: { user_id: "7" } }),
     );
     expect(tx).not.toHaveBeenCalled();
+  });
+
+  describe("payment grace window (past_due_since)", () => {
+    it("starts the window on the first failed payment and never resets it", async () => {
+      await applyStripeEvent(tx as never, event("invoice.payment_failed", { customer: "cus_1" }));
+      expect(issued()[0]).toContain("subscription_status = 'past_due', past_due_since = COALESCE(past_due_since, NOW())");
+    });
+
+    it("starts it when a subscription update reports past due, and clears it otherwise", async () => {
+      await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "past_due" }));
+      expect(issued()[0]).toContain("WHEN ? = 'past_due' THEN COALESCE(past_due_since, NOW()) ELSE NULL");
+    });
+
+    it("clears it when Pro becomes active, by checkout or by update", async () => {
+      await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "active" }));
+      await applyStripeEvent(
+        tx as never,
+        event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }),
+      );
+      for (const sql of issued().filter((text) => text.includes("UPDATE users"))) {
+        expect(sql).toContain("past_due_since = NULL");
+      }
+    });
+
+    it("clears it when the subscription ends", async () => {
+      await applyStripeEvent(tx as never, event("customer.subscription.deleted", { customer: "cus_1" }));
+      expect(issued()[0]).toContain("past_due_since = NULL");
+    });
   });
 });

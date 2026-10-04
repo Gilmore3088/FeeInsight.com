@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { getDataFreshness, getPublicStats } from "@/lib/data-store/core";
 import { sql } from "@/lib/data-store/connection";
+import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { US_STATES_ONLY } from "@/lib/us-states";
 
@@ -82,7 +83,7 @@ async function countMonitoredInstitutions(): Promise<number> {
   }
 }
 
-export const getPublicStatsSummary = cache(async (): Promise<PublicStatsSummary> => {
+async function computePublicStatsSummary(): Promise<PublicStatsSummary> {
   const [stats, freshness, monitored, categories, states] = await Promise.all([
     getPublicStats(),
     getDataFreshness().catch(() => null),
@@ -105,4 +106,16 @@ export const getPublicStatsSummary = cache(async (): Promise<PublicStatsSummary>
     refreshedOn,
     freshnessLabel: refreshedOn ? `Data refreshed ${refreshedOn}` : "Data refresh pending",
   };
-});
+}
+
+/**
+ * Cached between Hamilton publishes: this runs five catalog-wide aggregates and is read
+ * by most public pages. A zero-institution result (a failed read) is never cached.
+ */
+const cachedPublicStatsSummary = cachedPublicRead(
+  "public-stats-summary",
+  computePublicStatsSummary,
+  (summary) => summary.institutions === 0,
+);
+
+export const getPublicStatsSummary = cache(cachedPublicStatsSummary);

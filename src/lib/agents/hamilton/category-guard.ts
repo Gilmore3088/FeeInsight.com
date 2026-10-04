@@ -127,7 +127,7 @@ async function rejectVerifiedChunk(db: SqlTag, failures: CategoryGuardFailure[])
 }
 
 /**
- * Hamilton repair: roll back live published fee records whose own name or amount
+ * Hamilton repair: roll back live published fee records whose own name
  * contradicts the category they were filed under (src/lib/fee-category-guard.ts).
  *
  * Rows are soft-deleted (rolled_back_at), never edited or deleted, and their verified
@@ -148,7 +148,7 @@ export async function runHamiltonCategoryGuard(
   const byCode: RunHamiltonCategoryGuardResult["byCode"] = {};
   const byCategory: RunHamiltonCategoryGuardResult["byCategory"] = {};
   for (const row of rows) {
-    const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name, row.amount);
+    const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name);
     if (verdict.ok) continue;
     byCode[verdict.code] = (byCode[verdict.code] ?? 0) + 1;
     const category = (byCategory[row.canonical_fee_key] ??= {});
