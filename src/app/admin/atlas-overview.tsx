@@ -47,6 +47,12 @@ function ago(minutes: number | null): string {
   return `${Math.floor(hours / 24)} days ago`;
 }
 
+/** Prefer exact minutes; fall back to whole hours only for payloads that lack them. */
+export function publishMinutes(health: PipelineHealth): number | null {
+  if (health.minutes_since_last_publish !== undefined) return health.minutes_since_last_publish;
+  return health.hours_since_last_publish === null ? null : health.hours_since_last_publish * 60;
+}
+
 interface FunnelStep {
   label: string;
   value: number;
@@ -56,16 +62,16 @@ interface FunnelStep {
 export function funnelSteps(funnel: PipelineFunnel): FunnelStep[] {
   const universe = funnel.institutions;
   return [
-    { label: "Institutions", value: funnel.institutions, note: "universe" },
-    { label: "Fee URL found", value: funnel.withFeeUrl, note: `${share(funnel.withFeeUrl, universe)} of universe` },
-    { label: "Documents fetched", value: funnel.documentsFetched, note: "successful fetches" },
-    { label: "Documents read", value: funnel.textsRead, note: "normalized text" },
-    { label: "Fees extracted", value: funnel.rawExtracted, note: "raw rows (Knox)" },
-    { label: "Fees verified", value: funnel.verified, note: "verified rows" },
+    { label: "Institutions", value: funnel.institutions, note: "institutions · universe" },
+    { label: "Fee URL found", value: funnel.withFeeUrl, note: `institutions · ${share(funnel.withFeeUrl, universe)} of universe` },
+    { label: "Documents fetched", value: funnel.documentsFetched, note: "documents · successful fetches" },
+    { label: "Documents read", value: funnel.textsRead, note: "documents · normalized text" },
+    { label: "Fees extracted", value: funnel.rawExtracted, note: "fee rows · raw (Knox)" },
+    { label: "Fees verified", value: funnel.verified, note: "fee rows · verified" },
     {
       label: "Institutions published",
       value: funnel.sourcedInstitutions,
-      note: `${share(funnel.sourcedInstitutions, universe)} sourced · ${count(funnel.publishedInstitutions)} any`,
+      note: `institutions · ${share(funnel.sourcedInstitutions, universe)} sourced · ${count(funnel.publishedInstitutions)} any`,
     },
   ];
 }
@@ -84,7 +90,7 @@ export function AtlasOverview({
   const status = pipelineStatus(health, problems);
   const copy = STATUS_COPY[status];
   const topAttention = attention.slice(0, 3);
-  const minutesSincePublish = health.hours_since_last_publish === null ? null : health.hours_since_last_publish * 60;
+  const minutesSincePublish = publishMinutes(health);
 
   return (
     <section aria-label="Pipeline overview" className="space-y-5">

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { AtlasOverview, funnelSteps, pipelineStatus } from "./atlas-overview";
+import { AtlasOverview, funnelSteps, pipelineStatus, publishMinutes } from "./atlas-overview";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 
@@ -50,8 +50,8 @@ describe("funnelSteps", () => {
   it("expresses URL and sourced coverage as a share of the universe", () => {
     const steps = funnelSteps(funnel);
     expect(steps).toHaveLength(7);
-    expect(steps[1]).toMatchObject({ label: "Fee URL found", value: 4600, note: "53% of universe" });
-    expect(steps[6]).toMatchObject({ value: 239, note: "2.7% sourced · 1,183 any" });
+    expect(steps[1]).toMatchObject({ label: "Fee URL found", value: 4600, note: "institutions · 53% of universe" });
+    expect(steps[6]).toMatchObject({ value: 239, note: "institutions · 2.7% sourced · 1,183 any" });
   });
 });
 
@@ -79,6 +79,24 @@ describe("AtlasOverview", () => {
     expect(screen.queryByText("Fourth")).toBeNull();
     expect(screen.getByText("All 4 items")).toBeTruthy();
     expect(screen.getByText("3 min ago")).toBeTruthy();
+  });
+
+  it("shows a publish from minutes ago as minutes, not 0 min", () => {
+    render(
+      <AtlasOverview
+        health={{ ...health, hours_since_last_publish: 0, minutes_since_last_publish: 42 }}
+        problems={[]}
+        funnel={funnel}
+        attention={[]}
+      />,
+    );
+    expect(screen.getByText("42 min ago")).toBeTruthy();
+  });
+
+  it("falls back to whole hours for payloads without exact minutes", () => {
+    expect(publishMinutes(health)).toBe(360);
+    expect(publishMinutes({ ...health, hours_since_last_publish: null })).toBeNull();
+    expect(publishMinutes({ ...health, minutes_since_last_publish: 7 })).toBe(7);
   });
 
   it("reassures when running with nothing to do", () => {
