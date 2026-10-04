@@ -8,6 +8,21 @@ Hamilton owns publication and analysis surfaces.
 - Hamilton reads selected institution context, evidence policy, peer baseline metadata, financial context, Monitor signals, and refresh jobs.
 - Hamilton may generate public-safe, Pro-grade, or internal/admin analysis depending on audience and access control.
 
+## Category guard (issue #51)
+
+- The guard checks fee names only: for the 13 report categories a name must name its
+  category and not describe a different fee. Amounts are the envelopes' job
+  (`darwin/envelopes.ts`, applied by Darwin and by the outlier rollback below).
+- `hamilton/publish.ts` runs the category guard (`src/lib/fee-category-guard.ts`) before
+  publishing; a verified row that fails it is skipped and marked `review_status =
+  'rejected'` with a `category_guard:<code>` flag so it is never re-selected.
+- The `category-guard` step (`hamilton/category-guard.ts`) rolls back live
+  `published_fee_records` that fail the guard: soft delete only (`rolled_back_at`,
+  `rolled_back_by_batch_id = category-guard-run-<id>`, `rolled_back_reason =
+  category_guard:<code>: ...`), rejects their verified rows, and refreshes the fee index. Start it from
+  Atlas details -> Catalog repair; a `dry_run` run reports counts and samples and writes
+  nothing.
+
 ## Required Behavior
 
 - Use the shared Hamilton request contract: `institutionId`, `intent`, `evidencePolicy`, `audience`, and optional workspace context.

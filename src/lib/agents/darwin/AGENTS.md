@@ -17,6 +17,7 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
+| `category_mismatch` | for the 13 report categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range (`envelopes.ts`) | needs_review |

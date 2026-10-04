@@ -486,3 +486,49 @@ export async function resumeAtlasCycle(runId: number): Promise<{
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
+
+/**
+ * Hamilton category-guard repair (issue #51): roll back live catalog rows whose own
+ * name contradicts the category they were filed under. Run the dry run first;
+ * its step detail lists counts by category and sample rows.
+ */
+export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
+  success: boolean;
+  runId?: number;
+  title?: string;
+  reused?: boolean;
+  error?: string;
+}> {
+  const user = await requireAuth("trigger_jobs");
+  const title = dryRun
+    ? "Category guard dry run: find misfiled catalog fees"
+    : "Category guard repair: roll back misfiled catalog fees";
+
+  try {
+    await assertAtlasDispatchReady();
+    const result = await startAgentRun({
+      agent: "hamilton",
+      kind: dryRun ? "dry_run" : "manual_repair",
+      title,
+      params: { source: "admin.category_guard_repair" },
+      triggeredBy: user.username,
+      triggerSource: "admin",
+      idempotencyKey: dryRun ? "hamilton:category-guard-dry-run" : "hamilton:category-guard-repair",
+      steps: [
+        {
+          key: "category-guard",
+          agent: "hamilton",
+          title: dryRun
+            ? "Find live fees filed under the wrong category"
+            : "Roll back live fees filed under the wrong category",
+        },
+      ],
+      summary: "Agentic run accepted. Watch Atlas live status for step events.",
+    });
+    refreshAtlasDashboard();
+    return { success: true, runId: result.run.id, title, reused: result.reused };
+  } catch (error) {
+    refreshAtlasDashboard();
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}

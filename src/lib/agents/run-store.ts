@@ -2,6 +2,7 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
+import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
@@ -669,6 +670,45 @@ async function executeAgenticStep(
             reason: result.reason,
             fee_published_id: result.feePublishedId,
             superseded_fee_published_id: result.supersededFeePublishedId,
+          })),
+        },
+      };
+    }
+    case "category-guard": {
+      const guard = await runHamiltonCategoryGuard({
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        limit: numericRunParam(params, ["category_guard_limit", "limit"]),
+        institutionId: numericRunParam(params, ["institution_id"]),
+        db: tx,
+      });
+      const indexRefresh = guard.rolledBackFees > 0
+        ? await refreshFeeIndexCache(tx, { runId: run.id, force: true })
+        : null;
+      return {
+        status: "completed",
+        summary: guard.dryRun
+          ? `Hamilton category guard (dry run): ${guard.failingFees.toLocaleString()} of ${guard.scannedFees.toLocaleString()} live guarded fees would be rolled back.`
+          : `Hamilton category guard rolled back ${guard.rolledBackFees.toLocaleString()} of ${guard.failingFees.toLocaleString()} failing live fees (${guard.scannedFees.toLocaleString()} scanned).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        detail: {
+          scanned_fees: guard.scannedFees,
+          failing_fees: guard.failingFees,
+          rolled_back_fees: guard.rolledBackFees,
+          rejected_verified_fees: guard.rejectedVerifiedFees,
+          category_guard_limit: guard.limit,
+          rollback_batch_id: guard.rollbackBatchId,
+          guard_version: guard.guardVersion,
+          by_code: guard.byCode,
+          by_category: guard.byCategory,
+          dry_run: guard.dryRun,
+          index_refreshed: indexRefresh?.refreshed ?? false,
+          sample_failures: guard.failures.slice(0, 50).map((failure) => ({
+            fee_published_id: failure.feePublishedId,
+            institution_id: failure.institutionId,
+            canonical_fee_key: failure.canonicalFeeKey,
+            fee_name: failure.feeName,
+            amount: failure.amount,
+            code: failure.code,
           })),
         },
       };

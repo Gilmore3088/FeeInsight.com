@@ -35,6 +35,7 @@ import { AtlasRunControl } from "../../atlas-run-control";
 import { AtlasStateLaneDispatchPanel } from "../../atlas-state-lane-dispatch";
 import { AtlasTickControl } from "../../atlas-tick-control";
 import { AtlasWorkflowLauncher } from "../../atlas-workflow-launcher";
+import { CategoryGuardRepairControl } from "../../category-guard-repair-control";
 
 function number(value: number): string {
   return value.toLocaleString("en-US");
@@ -450,6 +451,9 @@ export default async function AtlasCommandPage() {
           activeJobCount={center.activeJobs.length}
           executionEnabled={execution.enabled}
           executionBlockedReason={execution.detail}
+        />
+        <CategoryGuardRepairControl
+          disabled={!center.automation.enabled || !execution.enabled}
         />
         </div>
       </details>

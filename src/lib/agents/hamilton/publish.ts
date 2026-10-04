@@ -10,6 +10,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
+import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
@@ -204,6 +205,33 @@ function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string |
 /** The attempt-log fingerprint for one verified row. */
 export function verifiedFeeFingerprint(feeVerifiedId: number | string): string {
   return `verified:${feeVerifiedId}`;
+}
+
+/** The verified-row flag a category-guard rejection leaves behind. */
+export function categoryGuardFlag(code: CategoryGuardCode): string {
+  return `category_guard:${code}`;
+}
+
+/**
+ * Retire a verified row the category guard rejects, so Hamilton's publish selection
+ * (verified/approved rows without a live published row) never picks it up again.
+ */
+export async function rejectVerifiedFeeForCategory(
+  db: SqlTag,
+  feeVerifiedId: number,
+  code: CategoryGuardCode,
+): Promise<void> {
+  const flag = categoryGuardFlag(code);
+  await db`
+    UPDATE verified_fee_observations
+       SET review_status = 'rejected',
+           outlier_flags = CASE
+             WHEN outlier_flags @> ${JSON.stringify([flag])}::jsonb THEN outlier_flags
+             ELSE outlier_flags || ${JSON.stringify([flag])}::jsonb
+           END
+     WHERE fee_verified_id = ${feeVerifiedId}
+       AND review_status IN ('verified', 'approved')
+  `;
 }
 
 async function selectVerifiedFees(
@@ -813,7 +841,15 @@ export async function runHamiltonPublish(
       changeRecorded: false,
     };
     let result: HamiltonPublishResult;
-    const skipReason = publishSkipReason(row, minConfidence);
+    // A row whose name contradicts its category (verified before Darwin had the guard)
+    // is retired instead of published.
+    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+    if (!category.ok && !dryRun) {
+      await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
+    }
+    const skipReason = category.ok
+      ? publishSkipReason(row, minConfidence)
+      : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
     const priorPublishedFee = skipReason ? null : await selectPriorPublishedFee(db, row);
