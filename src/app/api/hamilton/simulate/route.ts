@@ -36,7 +36,7 @@ import { canSimulate } from "@/lib/hamilton/confidence";
 import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 const HAMILTON_MODEL = getHamiltonModel();
 

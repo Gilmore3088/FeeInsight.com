@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sql } from "@/lib/data-store/connection";
@@ -148,7 +149,8 @@ export async function logout(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE);
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+/** The signed-in user. Memoized per request: layouts, pages and actions share one lookup. */
+export const getCurrentUser = cache(async (): Promise<User | null> => {
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
@@ -169,7 +171,7 @@ export async function getCurrentUser(): Promise<User | null> {
   `;
 
   return (rows[0] as User) ?? null;
-}
+});
 
 export function hasPermission(user: User, permission: Permission): boolean {
   return ROLE_PERMISSIONS[user.role]?.includes(permission) ?? false;

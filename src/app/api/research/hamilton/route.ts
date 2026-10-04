@@ -35,7 +35,7 @@ import {
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 
-export const maxDuration = 30;
+export const maxDuration = 300;
 
 // Cost per 1M tokens (in cents) for estimation
 /** Cents for the research_usage log, from the shared price map. */
