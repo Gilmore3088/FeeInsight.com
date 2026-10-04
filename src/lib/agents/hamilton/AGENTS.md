@@ -53,6 +53,14 @@ batch id, and a `hamilton.outliers_rolled_back` run event. Explicit $0 fees are 
 Clearing `rolled_back_at` restores a row a human confirms is real; widen its range in the
 same change so the next run does not roll it back again.
 
+## Duplicate Collapse
+
+Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
+live row exactly (same institution, canonical key, variant, frequency, amount and fee
+name). The newest copy stays live; the others get `rolled_back_reason = 'duplicate of
+#<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
+that differ in name or amount are separate fee lines and are left alone.
+
 ## Boundaries
 
 - Public Hamilton must be consumer-safe and cannot expose admin-only operational details.

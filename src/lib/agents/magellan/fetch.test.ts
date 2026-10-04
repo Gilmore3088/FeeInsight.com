@@ -186,11 +186,12 @@ describe("Magellan agentic fetch", () => {
       profile_last_document_id: 900,
     };
 
-    function learningDb(previous: Record<string, unknown> | null): DbMock {
+    function learningDb(previous: Record<string, unknown> | null, sameContent: Record<string, unknown> | null = null): DbMock {
       return vi.fn((strings: TemplateStringsArray) => {
         const text = templateText(strings);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
         if (text.includes("FROM institution_sources")) return Promise.resolve([candidate]);
+        if (text.includes("doc.content_hash =")) return Promise.resolve(sameContent ? [sameContent] : []);
         if (text.includes("FROM source_documents")) return Promise.resolve(previous ? [previous] : []);
         if (text.includes("INSERT INTO source_documents")) return Promise.resolve([{ id: 1001 }]);
         return Promise.resolve([]);
@@ -251,6 +252,20 @@ describe("Magellan agentic fetch", () => {
       expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["fetch", "ok", 1001]));
     });
 
+    it("reuses an older document with the same content instead of storing it again", async () => {
+      const db = learningDb({ id: 900, content_hash: "old-hash", etag: null, last_modified: null }, { id: 700 });
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
+
+      const result = await runMagellanFetch({ runId: 205, db: asFetchDb(db), fetchImpl });
+
+      expect(result).toMatchObject({ succeeded: 0, unchanged: 1, reusedDocuments: 1, outcomes: { unchanged: 1 } });
+      expect(result.results[0]).toMatchObject({ previousDocumentId: 700, reusedDocument: true });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).not.toContain("INSERT INTO source_documents");
+      expect(sqlText).toContain("last_content_hash =");
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["fetch", "unchanged", 700]));
+    });
+
     it("records a typed outcome for a network timeout", async () => {
       const db = learningDb(null);
       const abort = Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
@@ -276,6 +291,7 @@ describe("Magellan agentic fetch", () => {
         if (text.includes("FROM institution_sources")) {
           return Promise.resolve([{ id: 46, institution_name: "Vault Bank", fee_schedule_url: "https://vault.example/fees.pdf", consecutive_failures: 0 }]);
         }
+        if (text.includes("doc.content_hash =")) return Promise.resolve([]);
         if (text.includes("FROM source_documents")) return Promise.resolve(previous ? [previous] : []);
         if (text.includes("INSERT INTO source_documents")) return Promise.resolve([{ id: 2001 }]);
         return Promise.resolve([]);
