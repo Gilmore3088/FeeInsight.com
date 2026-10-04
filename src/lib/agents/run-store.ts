@@ -399,6 +399,7 @@ async function executeAgenticStep(
           reread_documents: read.reread,
           table_rows: read.tableRows,
           triaged_texts: read.triagedTexts,
+          formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,

@@ -9,6 +9,8 @@ about an institution are never spent learning it again.
 | `attempts.ts` | `recordAttempt` (L1): appends a `pipeline_attempts` row and folds it into the playbook. `learningSchemaReady` checks that the migration is applied. |
 | `playbook.ts` | The per-institution playbook (L2) on `institution_source_profiles`: learned `format`, `best_strategy`, `strategy_stats`, `do_not_retry`, `expected_fee_count`, `cost_to_date_microusd`. `applyAttempt` is pure. |
 | `router.ts` | `chooseStrategy` (L3), which is pure. It never repeats a known failure, prefers a strategy that has worked here, then format priors, then the cheapest strategy. |
+| `notes.ts` | `describePlaybook`, which is pure. It writes the playbook as plain-English notes (document type, the reader that works, what is not retried, the next step such as "Needs OCR") for the "What the pipeline has learned" panel on `/admin/institution/[id]`. |
+| `format-backfill.ts` | `backfillPlaybookFormats`, run in every Rosetta read step. It fills an empty `format` from the institution's newest fee-schedule text (`completed`, `needs_ocr` or `empty`; never `wrong_document`), for institutions read before the learning core existed. It never overwrites a learned format. Step detail: `formats_backfilled`. |
 | `format.ts` | `detectFormat` reads bytes, not URLs. `isLikelyScannedPdf` applies a threshold of under 200 non-whitespace characters per page. |
 
 ## Contract for every stage
