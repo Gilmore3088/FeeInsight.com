@@ -9,7 +9,6 @@ const hasQueuedProviderStepsMock = vi.fn();
 const reapStaleAgentStepsMock = vi.fn();
 const getExecutionBackendStatusMock = vi.fn();
 const scheduleDueStateLaneRunsMock = vi.fn();
-const scheduleDueRegistryRunsMock = vi.fn();
 const executeQueuedAgentRunsMock = vi.fn();
 const assertCronTickBudgetAllowedMock = vi.fn();
 
@@ -32,10 +31,6 @@ vi.mock("@/lib/execution-backend", () => ({
 
 vi.mock("@/lib/agents/state-lane-scheduler", () => ({
   scheduleDueStateLaneRuns: scheduleDueStateLaneRunsMock,
-}));
-
-vi.mock("@/lib/agents/registry-scheduler", () => ({
-  scheduleDueRegistryRuns: scheduleDueRegistryRunsMock,
 }));
 
 vi.mock("@/lib/agents/run-store", () => ({
@@ -78,7 +73,6 @@ describe("/api/admin/agents/tick", () => {
       failed: [],
       results: [{ stateCode: "CA", runId: 123, status: "queued", reused: false }],
     });
-    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: false, reason: "nothing_due" });
     executeQueuedAgentRunsMock.mockResolvedValue({
       selected: 1,
       results: [{ runId: 123, status: "queued", terminal: false, executedSteps: 1 }],
@@ -204,7 +198,6 @@ describe("/api/admin/agents/tick", () => {
     expect(body.pauseReason).toBe("Operator pause for maintenance");
     expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
-    expect(scheduleDueRegistryRunsMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });
 
@@ -225,35 +218,5 @@ describe("/api/admin/agents/tick", () => {
     expect(body.pauseReason).toBe("Agent execution is blocked.");
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
-  });
-
-  it("schedules one regulator-registry partition each tick", async () => {
-    scheduleDueRegistryRunsMock.mockResolvedValue({
-      scheduled: true,
-      reason: "scheduled",
-      source: "fdic-financials",
-      partitionKey: "2026Q2",
-      runId: 900,
-      reused: false,
-    });
-    const { GET } = await import("./route");
-
-    const body = await (await GET(request())).json();
-
-    expect(scheduleDueRegistryRunsMock).toHaveBeenCalledWith({ triggeredBy: "api.admin.agents.tick" });
-    expect(body.scheduledRegistry).toMatchObject({ scheduled: true, partitionKey: "2026Q2", runId: 900 });
-    expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
-  });
-
-  it("keeps draining the fee pipeline when registry scheduling throws", async () => {
-    scheduleDueRegistryRunsMock.mockRejectedValue(new Error("registry table locked"));
-    const { GET } = await import("./route");
-
-    const response = await GET(request());
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body.scheduledRegistry).toMatchObject({ scheduled: false, reason: "error", error: "registry table locked" });
-    expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
   });
 });
