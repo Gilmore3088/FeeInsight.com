@@ -9,6 +9,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { institutionTier } from "@/lib/agents/state-expert/memory";
 
 import {
   amountEnvelopeFor,
@@ -17,6 +18,18 @@ import {
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
 } from "./envelopes";
+import {
+  DARWIN_PEER_STRATEGY,
+  DARWIN_SECOND_SOURCE_STRATEGY,
+  loadSourceCopies,
+  PeerLevelCache,
+  peerCheck,
+  peerOutlierReason,
+  SECOND_SOURCE_FLAG,
+  secondSourceCheck,
+  type PeerCheckResult,
+  type SecondSourceResult,
+} from "./peer-checks";
 
 type SqlTag = typeof sql;
 
@@ -43,6 +56,7 @@ export type DarwinReasonCode =
   | "missing_lineage"
   | "invalid_amount"
   | "outside_envelope"
+  | "peer_outlier"
   | "duplicate_in_batch"
   | "duplicate_verified";
 
@@ -61,13 +75,14 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   missing_lineage: "Missing source lineage",
   invalid_amount: "Missing or invalid amount",
   outside_envelope: "Amount outside the category's plausible range",
+  peer_outlier: "Amount far outside the state's peer range for this fee and asset size",
   duplicate_in_batch: "Same fee already verified in this batch",
   duplicate_verified: "Duplicate verified row",
 };
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -84,6 +99,10 @@ export interface RawFeeRow {
   outlier_flags: unknown;
   conditions: string | null;
   institution_name?: string | null;
+  source_document_id?: number | string | null;
+  state_code?: string | null;
+  asset_size_tier?: string | null;
+  asset_size?: number | string | null;
 }
 
 export interface DarwinVerificationResult {
@@ -97,6 +116,10 @@ export interface DarwinVerificationResult {
   reasonCode: DarwinReasonCode | null;
   reason: string | null;
   feeVerifiedId: number | null;
+  /** Pass 2 peer check; null when the state has too few peers for this fee. */
+  peerCheck?: PeerCheckResult | null;
+  /** Pass 2 second-source check; null when no other stored document has this fee. */
+  secondSource?: SecondSourceResult | null;
 }
 
 export interface RunDarwinVerifyOptions {
@@ -122,6 +145,12 @@ export interface RunDarwinVerifyResult {
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
   /** Verified rows that are explicit $0 (free) fees. */
   zeroFeesVerified: number;
+  /** Pass 2: rows held for review as far outside their state peers. */
+  peerOutliers: number;
+  /** Pass 2: rows whose amount another stored document of the same bank confirms. */
+  secondSourceAgreements: number;
+  /** Pass 2: rows another stored document of the same bank shows at a different amount. */
+  secondSourceDisagreements: number;
   results: DarwinVerificationResult[];
 }
 
@@ -149,7 +178,7 @@ function parseFlags(value: unknown): string[] {
   return [];
 }
 
-function canonicalHintFrom(row: RawFeeRow): string | null {
+function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "conditions">): string | null {
   const fromFlag = parseFlags(row.outlier_flags)
     .find((flag) => flag.startsWith("canonical_hint:"))
     ?.slice("canonical_hint:".length)
@@ -251,6 +280,10 @@ async function selectRawFees(
              fr.outlier_flags,
              fr.conditions,
              inst.institution_name,
+             fr.source_document_id,
+             upper(btrim(inst.state_code)) AS state_code,
+             inst.asset_size_tier,
+             inst.asset_size,
              COALESCE(fr.source_document_id::text, 'row:' || fr.fee_raw_id::text) AS batch_document_key,
              fr.created_at AS batch_created_at
         FROM raw_fee_observations fr
@@ -277,6 +310,7 @@ async function insertVerifiedFee(
     runId: number;
     row: RawFeeRow;
     canonicalFeeKey: string;
+    secondSourceAgrees?: boolean;
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
@@ -285,6 +319,7 @@ async function insertVerifiedFee(
   const eventId = stableUuid(`darwin:${options.runId}:${feeRawId}:${options.canonicalFeeKey}`);
   const flags = ["agentic_darwin_verified"];
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
+  if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -348,6 +383,7 @@ async function recordVerificationSignals(
     canonicalFeeKeys: string[];
     reasons: Map<DarwinReasonCode, number>;
     envelopes: Record<string, { min: number; max: number }>;
+    peerOutliers: Array<Record<string, string | number | boolean | null>>;
   }>();
 
   results.forEach((result) => {
@@ -360,6 +396,7 @@ async function recordVerificationSignals(
         canonicalFeeKeys: [],
         reasons: new Map<DarwinReasonCode, number>(),
         envelopes: {},
+        peerOutliers: [],
       };
       group.feeRawIds.push(result.feeRawId);
       if (result.canonicalFeeKey) group.canonicalFeeKeys.push(result.canonicalFeeKey);
@@ -367,6 +404,20 @@ async function recordVerificationSignals(
       group.reasons.set(code, (group.reasons.get(code) ?? 0) + 1);
       if (code === "outside_envelope" && result.canonicalFeeKey) {
         group.envelopes[result.canonicalFeeKey] = amountEnvelopeFor(result.canonicalFeeKey);
+      }
+      if (code === "peer_outlier" && result.peerCheck) {
+        group.peerOutliers.push({
+          fee_raw_id: result.feeRawId,
+          canonical_fee_key: result.canonicalFeeKey,
+          amount: result.amount,
+          peer_low: result.peerCheck.low,
+          peer_high: result.peerCheck.high,
+          peer_median: result.peerCheck.median,
+          peer_count: result.peerCheck.peerCount,
+          peer_tier: result.peerCheck.levelTier,
+          reason: result.reason,
+          second_source: result.secondSource?.verdict ?? null,
+        });
       }
       reviewGrouped.set(institutionId, group);
       return;
@@ -435,6 +486,7 @@ async function recordVerificationSignals(
             Array.from(group.reasons.keys()).map((code) => [code, DARWIN_REASON_TEXT[code]]),
           ),
           ...(Object.keys(group.envelopes).length > 0 ? { amount_envelopes: group.envelopes } : {}),
+          ...(group.peerOutliers.length > 0 ? { peer_outliers: group.peerOutliers } : {}),
           skipped_fee_count: count,
           provider_call_queued: false,
         },
@@ -451,6 +503,66 @@ function attemptOutcome(result: DarwinVerificationResult): AttemptOutcome {
   return result.decision === "duplicate" ? "unchanged" : "rejected";
 }
 
+/** One attempt per pass 2 check that had evidence to work with, each its own strategy. */
+async function recordPassTwoAttempts(
+  db: SqlTag,
+  options: RunDarwinVerifyOptions,
+  result: DarwinVerificationResult,
+): Promise<void> {
+  const common = {
+    institutionId: result.institutionId,
+    stage: "verify" as const,
+    fingerprint: rawFeeFingerprint(result.feeRawId),
+    costMicrousd: 0,
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+  };
+  if (result.peerCheck) {
+    await recordAttempt(db, {
+      ...common,
+      strategy: DARWIN_PEER_STRATEGY.strategy,
+      version: DARWIN_PEER_STRATEGY.version,
+      // A peer outlier is a flag for review, not a rejection.
+      outcome: result.peerCheck.outlier ? "evidence_mismatch" : "ok",
+      yieldCount: result.peerCheck.outlier ? 0 : 1,
+      detail: {
+        fee_raw_id: result.feeRawId,
+        canonical_fee_key: result.canonicalFeeKey,
+        amount: result.amount,
+        peer_outlier: result.peerCheck.outlier,
+        peer_low: result.peerCheck.low,
+        peer_high: result.peerCheck.high,
+        peer_p25: result.peerCheck.p25,
+        peer_median: result.peerCheck.median,
+        peer_p75: result.peerCheck.p75,
+        peer_count: result.peerCheck.peerCount,
+        institution_tier: result.peerCheck.tier,
+        peer_tier: result.peerCheck.levelTier,
+        decision: result.decision,
+        reason: result.peerCheck.outlier ? result.reason : null,
+      },
+    });
+  }
+  if (result.secondSource) {
+    await recordAttempt(db, {
+      ...common,
+      strategy: DARWIN_SECOND_SOURCE_STRATEGY.strategy,
+      version: DARWIN_SECOND_SOURCE_STRATEGY.version,
+      outcome: result.secondSource.verdict === "agrees" ? "ok" : "evidence_mismatch",
+      yieldCount: result.secondSource.agreeingDocumentIds.length,
+      detail: {
+        fee_raw_id: result.feeRawId,
+        fee_verified_id: result.feeVerifiedId,
+        canonical_fee_key: result.canonicalFeeKey,
+        amount: result.amount,
+        verdict: result.secondSource.verdict,
+        agreeing_source_document_ids: result.secondSource.agreeingDocumentIds,
+        disagreeing: result.secondSource.disagreeing,
+      },
+    });
+  }
+}
+
 export async function runDarwinVerify(
   options: RunDarwinVerifyOptions,
 ): Promise<RunDarwinVerifyResult> {
@@ -463,6 +575,17 @@ export async function runDarwinVerify(
   const results: DarwinVerificationResult[] = [];
 
   const verifiedInBatch = new Set<string>();
+
+  // Pass 2 evidence, loaded once per batch: state peer levels and the banks' other
+  // stored documents for the same fees.
+  const peers = new PeerLevelCache(db);
+  const hintedRows = rows.filter((row) => canonicalHintFrom(row) != null);
+  const sourceCopies = await loadSourceCopies(
+    db,
+    Array.from(new Set(hintedRows.map((row) => Number(row.institution_id)))),
+    Array.from(new Set(hintedRows.map((row) => canonicalHintFrom(row) as string))),
+    canonicalHintFrom,
+  );
 
   for (const row of rows) {
     const canonicalFeeKey = canonicalHintFrom(row);
@@ -477,6 +600,26 @@ export async function runDarwinVerify(
       amount: normalizedAmount(row.amount),
       canonicalFeeKey,
     };
+
+    // Pass 2 runs only on rows the rules accept.
+    let peer: PeerCheckResult | null = null;
+    let secondSource: SecondSourceResult | null = null;
+    if (!reasonCode && canonicalFeeKey && base.amount != null) {
+      const levels = await peers.forState(row.state_code ?? options.stateCode);
+      peer = peerCheck(levels, canonicalFeeKey, institutionTier(row.asset_size_tier, row.asset_size), base.amount);
+      secondSource = secondSourceCheck(
+        {
+          feeRawId: base.feeRawId,
+          institutionId: base.institutionId,
+          sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+          canonicalFeeKey,
+          amount: base.amount,
+        },
+        sourceCopies,
+      );
+      if (peer?.outlier) reasonCode = "peer_outlier";
+    }
+
     let result: DarwinVerificationResult;
     if (reasonCode || !canonicalFeeKey) {
       const code = reasonCode ?? "missing_canonical";
@@ -485,13 +628,22 @@ export async function runDarwinVerify(
         status: "skipped",
         decision: decisionFor(code),
         reasonCode: code,
-        reason: DARWIN_REASON_TEXT[code],
+        reason: code === "peer_outlier" && peer && base.amount != null
+          ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
+          : DARWIN_REASON_TEXT[code],
         feeVerifiedId: null,
+        peerCheck: peer,
+        secondSource,
       };
     } else {
       const feeVerifiedId = dryRun
         ? null
-        : await insertVerifiedFee(db, { runId: options.runId, row, canonicalFeeKey });
+        : await insertVerifiedFee(db, {
+          runId: options.runId,
+          row,
+          canonicalFeeKey,
+          secondSourceAgrees: secondSource?.verdict === "agrees",
+        });
       const verified = Boolean(feeVerifiedId) || dryRun;
       const code: DarwinReasonCode | null = verified ? null : "duplicate_verified";
       if (verified) verifiedInBatch.add(batchKey(row, canonicalFeeKey));
@@ -502,6 +654,8 @@ export async function runDarwinVerify(
         reasonCode: code,
         reason: code ? DARWIN_REASON_TEXT[code] : null,
         feeVerifiedId,
+        peerCheck: peer,
+        secondSource,
       };
     }
     results.push(result);
@@ -528,6 +682,7 @@ export async function runDarwinVerify(
           reason: result.reason,
         },
       });
+      await recordPassTwoAttempts(db, options, result);
     }
   }
 
@@ -551,6 +706,9 @@ export async function runDarwinVerify(
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
+    peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
+    secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
+    secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
     results,
   };
 }

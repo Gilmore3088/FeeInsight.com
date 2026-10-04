@@ -93,6 +93,11 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
       "Member FDIC. Equal Housing Lender.",
     ]),
   },
+  // Overdraft far below its Vermont peers: Darwin's peer check must hold it for review.
+  "https://www.ottercreek-test-bank.com/fees": {
+    type: "text/html",
+    body: page("Fee Schedule | Otter Creek Test Bank", FEE_TABLE.replace("$32.00", "$5.00")),
+  },
   "https://www.champlain-test-cu.org/fees": {
     type: "text/html",
     body: page("Fee Schedule | Champlain Test Credit Union", FEE_TABLE.replace("$32.00", "$29.00")),
@@ -125,7 +130,35 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       VALUES
         ('Green Mountain Test Bank', 'https://www.greenmountain-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Burlington', 900000, 'E2E-1', 'e2e', 'active'),
         ('Lakeside Test Bank', 'https://www.lakeside-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Rutland', 700000, 'E2E-3', 'e2e', 'active'),
-        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active')
+        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active'),
+        ('Otter Creek Test Bank', 'https://www.ottercreek-test-bank.com/', 'https://www.ottercreek-test-bank.com/fees', 'bank', 'Vermont', ${STATE}, 'Middlebury', 600000, 'E2E-4', 'e2e', 'active')
+    `;
+    // Nine Vermont peers (community_mid) with overdraft already published at $28-$34,
+    // so the state expert has a peer level for Darwin's peer check. No website: the
+    // lane never tries to crawl them.
+    await sql`
+      WITH peers AS (
+        INSERT INTO institution_sources
+          (institution_name, charter_type, state, state_code, asset_size, source, status, rescue_status)
+        SELECT 'Peer Test Bank ' || g, 'bank', 'Vermont', ${STATE}, 500000, 'e2e', 'active', 'dead'
+          FROM generate_series(1, 9) g
+        RETURNING id
+      ), raw AS (
+        INSERT INTO raw_fee_observations (institution_id, agent_event_id, fee_name, amount, source, source_url)
+        SELECT id, gen_random_uuid(), 'Overdraft fee', 28 + (id % 7), 'manual_import', 'https://peer.example/fees'
+          FROM peers
+        RETURNING fee_raw_id, institution_id, amount
+      ), verified AS (
+        INSERT INTO verified_fee_observations
+          (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, source_url)
+        SELECT fee_raw_id, institution_id, 'overdraft', gen_random_uuid(), 'Overdraft fee', amount, 'https://peer.example/fees'
+          FROM raw
+        RETURNING fee_verified_id, institution_id, amount
+      )
+      INSERT INTO published_fee_records
+        (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, source_url)
+      SELECT fee_verified_id, institution_id, 'overdraft', gen_random_uuid(), 'Overdraft fee', amount, 'https://peer.example/fees'
+        FROM verified
     `;
   });
 
@@ -134,11 +167,14 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     await sql?.end({ timeout: 1 });
   });
 
+  let laneRunId = 0;
+
   it("takes a homepage to published fees through every lane step", async () => {
     const { startStateLaneRun } = await import("@/lib/agents/state-lane-scheduler");
     const { executeAgentRun, getAgentRunSteps } = await import("@/lib/agents/run-store");
 
     const started = await startStateLaneRun({ stateCode: STATE, triggeredBy: "e2e", triggerSource: "admin" });
+    laneRunId = started.run.id;
     for (let tick = 0; tick < 20; tick += 1) {
       const result = await executeAgentRun(started.run.id, { maxSteps: 10, allowProviderSteps: false });
       if (result.terminal || result.executedSteps === 0) break;
@@ -155,7 +191,7 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
        ORDER BY c.institution_id, c.fee_category
     `;
 
-    for (const step of summary.filter((s) => ["discover", "fetch", "read", "extract", "classify", "publish"].includes(s.key))) {
+    for (const step of summary.filter((s) => ["state-expert", "discover", "fetch", "read", "extract", "classify", "publish"].includes(s.key))) {
       expect(step, step.key).toMatchObject({ status: "completed" });
     }
     // With no paid budget configured, each paid last pass is skipped and the free steps
@@ -198,4 +234,63 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       account_research: 25,
     });
   }, 120_000);
+
+  it("refreshes the Vermont expert's memory and holds a peer outlier for review", async () => {
+    expect(laneRunId).toBeGreaterThan(0);
+    const { getAgentRunSteps } = await import("@/lib/agents/run-store");
+    const steps = await getAgentRunSteps(laneRunId);
+    expect(steps.slice(0, 2).map((step) => step.stepKey)).toEqual(["enhance", "state-expert"]);
+    const expertStep = steps.find((step) => step.stepKey === "state-expert");
+    expect(expertStep?.status).toBe("completed");
+
+    const [memory] = await sql`SELECT * FROM state_memory WHERE state_code = ${STATE}`;
+    expect(memory).toMatchObject({ expert_name: "Justin S. Morrill" });
+    expect(Number(memory.last_agent_run_id)).toBe(laneRunId);
+    expect(memory.regulator).toMatchObject({ agency: "Vermont Department of Financial Regulation" });
+    expect(memory.peer_levels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ canonicalFeeKey: "overdraft", tier: "all", count: 9 }),
+      expect.objectContaining({ canonicalFeeKey: "overdraft", tier: "community_mid", count: 9 }),
+    ]));
+
+    // Darwin flagged Otter Creek's $5 overdraft (peer range p25/3 .. p75*3) into review.
+    const flags = await sql`
+      SELECT pa.outcome, pa.detail
+        FROM pipeline_attempts pa
+        JOIN institution_sources inst ON inst.id = pa.institution_id
+       WHERE pa.agent_run_id = ${laneRunId}
+         AND pa.strategy = 'verify.peer_range'
+         AND inst.institution_name = 'Otter Creek Test Bank'
+         AND pa.detail->>'canonical_fee_key' = 'overdraft'
+    `;
+    expect(flags).toHaveLength(1);
+    expect(flags[0].outcome).toBe("evidence_mismatch");
+    expect(flags[0].detail).toMatchObject({ peer_outlier: true, decision: "needs_review", amount: 5 });
+    expect(String(flags[0].detail.reason)).toContain("outside the community mid state peer range");
+
+    // The good banks' overdrafts passed the same check.
+    const passed = await sql`
+      SELECT COUNT(*)::int AS n FROM pipeline_attempts
+       WHERE agent_run_id = ${laneRunId} AND strategy = 'verify.peer_range' AND outcome = 'ok'
+    `;
+    expect(passed[0].n).toBeGreaterThanOrEqual(3);
+
+    // The outlier is held back; the bank's other fees publish.
+    const otter = await sql`
+      SELECT c.fee_category FROM published_fee_catalog c
+        JOIN institution_sources inst ON inst.id = c.institution_id
+       WHERE inst.institution_name = 'Otter Creek Test Bank'
+    `;
+    const categories = otter.map((row) => String(row.fee_category));
+    expect(categories).not.toContain("overdraft");
+    expect(categories).toEqual(expect.arrayContaining(["nsf", "monthly_maintenance", "stop_payment"]));
+
+    // Hamilton's report hook sees the expert, the peer level and the outlier.
+    const { stateExpertSummary } = await import("@/lib/agents/hamilton/state-expert-summary");
+    const report = await stateExpertSummary(STATE);
+    expect(report).toMatchObject({ expertName: "Justin S. Morrill", source: "memory" });
+    expect(report?.peerLevels.map((level) => level.canonicalFeeKey)).toContain("overdraft");
+    expect(report?.notableOutliers).toEqual([
+      expect.objectContaining({ institutionName: "Otter Creek Test Bank", canonicalFeeKey: "overdraft", amount: 5 }),
+    ]);
+  }, 60_000);
 });

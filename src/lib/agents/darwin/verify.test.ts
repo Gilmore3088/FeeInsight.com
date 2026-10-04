@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, verificationReasonCode, type RawFeeRow } from "./verify";
+import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, SECOND_SOURCE_FLAG } from "./peer-checks";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -96,7 +97,9 @@ describe("Darwin agentic verification", () => {
       feeVerifiedId: null,
     });
     expect(db.unsafe).toHaveBeenCalledTimes(1);
-    expect(db).not.toHaveBeenCalled();
+    // Pass 2 may read evidence; a dry run never writes.
+    const statements = db.mock.calls.map((call) => templateText(call[0]));
+    expect(statements.every((text) => !/\b(INSERT|UPDATE|DELETE)\b/.test(text))).toBe(true);
   });
 
   it("rejects rows whose name contradicts the hinted category", async () => {
@@ -289,6 +292,97 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("COALESCE(fr.source_document_id::text, 'row:' || fr.fee_raw_id::text) AS batch_document_key");
       expect(query).toContain("WHERE rows_before < $1");
       expect(query).not.toMatch(/LIMIT \$1/);
+    });
+
+    describe("pass 2", () => {
+      const vtFee = { ...rawFee, state_code: "VT", asset_size_tier: null, asset_size: 600000, source_document_id: 55 };
+      const overdraftPeers = [
+        { canonical_fee_key: "overdraft", tier: "community_mid", p25: "30", median: "32", p75: "34", institutions: 9 },
+        { canonical_fee_key: "overdraft", tier: "all", p25: "30", median: "32", p75: "34", institutions: 9 },
+      ];
+
+      function passTwoDb(rows: Array<Record<string, unknown>>, copies: Array<Record<string, unknown>> = []): DbMock {
+        const db = learningDb(rows);
+        const template = db.getMockImplementation() as (...args: unknown[]) => unknown;
+        db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (templateText(strings).includes("FROM raw_fee_observations fr")) return Promise.resolve(copies);
+          return template(strings, ...values);
+        }) as never);
+        db.unsafe.mockImplementation((query: string) => {
+          if (query.includes("published_fee_catalog")) return Promise.resolve(overdraftPeers);
+          if (query.includes("FROM raw_fee_observations")) return Promise.resolve(rows);
+          return Promise.resolve([]);
+        });
+        return db;
+      }
+
+      function strategyAttempts(db: DbMock, strategy: string): unknown[][] {
+        return attemptValues(db).filter((values) => values.includes(strategy));
+      }
+
+      it("flags a fee far outside its state peers for review, with the range as the reason", async () => {
+        const db = passTwoDb([{ ...vtFee, amount: "5.00" }]);
+
+        const result = await runDarwinVerify({ runId: 501, stepId: 7, stateCode: "VT", db: asVerifyDb(db) });
+
+        expect(result).toMatchObject({ verifiedFees: 0, peerOutliers: 1, reasonCounts: { peer_outlier: 1 } });
+        expect(result.results[0]).toMatchObject({ decision: "needs_review", reasonCode: "peer_outlier" });
+        expect(result.results[0].reason).toContain("$5.00 is outside the community mid state peer range $10.00-$102.00");
+        const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+        expect(statements).not.toContain("INSERT INTO verified_fee_observations");
+        expect(JSON.stringify(db.mock.calls)).toContain("peer_outliers");
+        const peer = strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy);
+        expect(peer).toHaveLength(1);
+        expect(peer[0]).toEqual(expect.arrayContaining(["verify", "raw:801", "evidence_mismatch"]));
+      });
+
+      it("verifies a fee inside its peer range and logs the peer check as passed", async () => {
+        const db = passTwoDb([vtFee]);
+
+        const result = await runDarwinVerify({ runId: 502, stateCode: "VT", db: asVerifyDb(db) });
+
+        expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0 });
+        expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)[0]).toEqual(expect.arrayContaining(["ok"]));
+      });
+
+      it("skips the peer check when the state has fewer than eight peers", async () => {
+        const db = passTwoDb([{ ...vtFee, amount: "5.00" }]);
+        overdraftPeers.forEach((level) => (level.institutions = 7));
+        try {
+          const result = await runDarwinVerify({ runId: 503, stateCode: "VT", db: asVerifyDb(db) });
+          expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0 });
+          expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)).toHaveLength(0);
+        } finally {
+          overdraftPeers.forEach((level) => (level.institutions = 9));
+        }
+      });
+
+      it("records a sister document with the same amount as second-source evidence", async () => {
+        const db = passTwoDb([vtFee], [
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+        ]);
+
+        const result = await runDarwinVerify({ runId: 504, stateCode: "VT", db: asVerifyDb(db) });
+
+        expect(result).toMatchObject({ verifiedFees: 1, secondSourceAgreements: 1 });
+        const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
+        expect(JSON.stringify(insert)).toContain(SECOND_SOURCE_FLAG);
+        const second = strategyAttempts(db, DARWIN_SECOND_SOURCE_STRATEGY.strategy);
+        expect(second).toHaveLength(1);
+        expect(second[0]).toEqual(expect.arrayContaining(["ok"]));
+      });
+
+      it("notes a disagreeing older copy without blocking the row", async () => {
+        const db = passTwoDb([vtFee], [
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "30.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+          { fee_raw_id: 801, institution_id: 42, source_document_id: 55, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+        ]);
+
+        const result = await runDarwinVerify({ runId: 505, stateCode: "VT", db: asVerifyDb(db) });
+
+        expect(result).toMatchObject({ verifiedFees: 1, secondSourceAgreements: 0, secondSourceDisagreements: 1 });
+        expect(strategyAttempts(db, DARWIN_SECOND_SOURCE_STRATEGY.strategy)[0]).toEqual(expect.arrayContaining(["evidence_mismatch"]));
+      });
     });
   });
 });
