@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
 import { loadAnalysisRecord } from "./actions";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
@@ -28,6 +29,7 @@ export default async function AnalyzePage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
+  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/analyze");
 
   const params = await searchParams;
   const analysisId = params.analysis;

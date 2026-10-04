@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { summarizeFeesBy, type StatsInputRow } from "./fee-stats";
+import { summarizeFees, summarizeFeesBy, valuePerInstitution, type FeeStatistics, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
 
 export interface FeeCategorySummary {
@@ -127,6 +127,10 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   by_fed_district: DimensionBreakdown[];
   by_state: DimensionBreakdown[];
   change_events: FeeChangeEvent[];
+  /** Headline statistics under the shared contract (sourced rows, one value per institution). */
+  summary: FeeStatistics;
+  /** One amount per institution (sourced rows), for distribution charts. */
+  institution_values: number[];
 }> {
   const rawFees = await sql`
     SELECT ef.id, ct.institution_name, ef.institution_id,
@@ -213,6 +217,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     by_fed_district: by_fed_district_real,
     by_state: by_state.slice(0, 15),
     change_events,
+    summary: summarizeFees(sourcedFees),
+    institution_values: [...valuePerInstitution(sourcedFees).values()],
   };
 }
 

@@ -6,7 +6,6 @@ import {
   getFeeCategoryDetail,
   getDataFreshness,
 } from "@/lib/data-store";
-import { computeStats } from "@/lib/data-store";
 import {
   getDisplayName,
   getFeeFamily,
@@ -113,13 +112,19 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const detail = await getFeeCategoryDetail(category);
   const freshness = await getDataFreshness();
 
-  // N and M share one basis: verified fees with a stated amount, and the
-  // distinct institutions those fees came from.
-  const pricedFees = detail.fees.filter((f) => f.amount !== null && f.amount > 0);
-  const amounts = pricedFees.map((f) => f.amount!);
-  const verifiedFeeCount = amounts.length;
-  const institutionCount = new Set(pricedFees.map((f) => f.institution_id)).size;
-  const stats = computeStats(amounts);
+  // Same statistics contract as /fees and the national index: sourced rows,
+  // one value per institution, $0 counts, minimum sample before a median.
+  const summary = detail.summary;
+  const amounts = detail.institution_values;
+  const verifiedFeeCount = summary.observation_count;
+  const institutionCount = summary.institution_count;
+  const stats = {
+    median: summary.median_amount,
+    p25: summary.p25_amount,
+    p75: summary.p75_amount,
+    min: summary.min_amount,
+    max: summary.max_amount,
+  };
 
   const familyMembers = family
     ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category)

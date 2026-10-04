@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import {
   getHamiltonReportById,
   getHamiltonScenarioById,
@@ -81,6 +82,7 @@ export default async function ReportsPage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
+  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/reports");
 
   const params = await searchParams;
   const initialReportId = params.report_id ?? params.report ?? null;

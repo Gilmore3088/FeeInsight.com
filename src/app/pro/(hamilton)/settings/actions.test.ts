@@ -121,11 +121,10 @@ describe("Hamilton Settings workspace access actions", () => {
       institution: { id: 2945, name: "Hamilton Bank" },
       error: null,
     });
-    mocks.getActiveInstitutionMembershipMock.mockResolvedValue({
-      role: "owner",
-      institutionId: 2945,
-      userId: 7,
-    });
+    // The signed-in user (7) owns the workspace; other users have no membership.
+    mocks.getActiveInstitutionMembershipMock.mockImplementation(async ({ userId }: { userId: number }) =>
+      userId === 7 ? { role: "owner", institutionId: 2945, userId: 7 } : null,
+    );
     mocks.sendWorkspaceInviteEmailMock.mockResolvedValue({
       status: "not_configured",
       reason: "RESEND_API_KEY is not configured.",
@@ -193,6 +192,29 @@ describe("Hamilton Settings workspace access actions", () => {
     expect(result).toMatchObject({
       success: false,
       error: "Only institution owners or admins can manage workspace access.",
+    });
+    expect(mocks.grantInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to re-grant (and so demote) an existing workspace owner", async () => {
+    const { grantWorkspaceAccess } = await import("./actions");
+    mocks.getActiveInstitutionMembershipMock.mockImplementation(async ({ userId }: { userId: number }) =>
+      userId === 7
+        ? { role: "admin", institutionId: 2945, userId: 7 }
+        : { role: "owner", institutionId: 2945, userId },
+    );
+    mocks.state.queuedRows.push([
+      { id: 9, display_name: "Owner User", email: "owner@example.com", role: "premium", subscription_status: "active" },
+    ]);
+
+    const result = await grantWorkspaceAccess(
+      { success: false },
+      form({ institution_id: "2945", email: "owner@example.com", role: "viewer" }),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: "Only a platform admin can change an owner's workspace authority.",
     });
     expect(mocks.grantInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
   });

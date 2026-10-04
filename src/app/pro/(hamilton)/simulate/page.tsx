@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { SimulateWorkspace } from "@/components/hamilton/simulate";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { getHamiltonContextSourceLabel } from "@/lib/hamilton/context-source";
@@ -29,6 +30,7 @@ export default async function SimulatePage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
+  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/simulate");
 
   const params = await searchParams;
   const initialCategory = params.category || undefined;

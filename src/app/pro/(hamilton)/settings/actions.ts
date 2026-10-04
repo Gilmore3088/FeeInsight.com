@@ -447,6 +447,17 @@ export async function grantWorkspaceAccess(
   if (grantee.id === user.id) {
     return { success: false, error: "Your own workspace role is managed through institution claim authority." };
   }
+  // Granting upserts the role, so re-granting an owner would demote them (and
+  // then make them revocable). Owner authority changes only through a platform admin.
+  if (user.role !== "admin") {
+    const granteeMembership = await getActiveInstitutionMembership({
+      userId: grantee.id,
+      institutionId: institution.id,
+    }).catch(() => null);
+    if (granteeMembership?.role === "owner") {
+      return { success: false, error: "Only a platform admin can change an owner's workspace authority." };
+    }
+  }
   const granteeCanUseHamilton =
     grantee.role === "admin" ||
     grantee.role === "analyst" ||

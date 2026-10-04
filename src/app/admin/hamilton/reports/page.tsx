@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/data-store/connection";
 import type { ReportJob } from "@/lib/report-engine/types";
+import { getReportTitle } from "./report-title";
 import { ReportControls } from "../report-controls";
 import { publishReport, retryReport, cancelReport, cancelAllPending } from "../actions";
 import { ReportsTable } from "./reports-table";
@@ -50,6 +51,12 @@ export default async function HamiltonReportsPage({
 
   const publishedJobIds = publishedRows.map((r) => r.job_id);
   const publishedSet = new Set(publishedJobIds);
+  const actionsById: Record<string, React.ReactNode> = Object.fromEntries(
+    jobs.map((job) => [
+      job.id,
+      <ReportActions key={job.id} job={job} title={getReportTitle(job)} isPublished={publishedSet.has(job.id)} />,
+    ]),
+  );
 
   return (
     <div className="space-y-6">
@@ -121,8 +128,15 @@ export default async function HamiltonReportsPage({
 
         <ReportsTable
           jobs={jobs}
-          publishedSet={publishedSet}
-          renderActions={(job, title, isPublished) => (
+          actionsById={actionsById}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ReportActions({ job, title, isPublished }: { job: ReportJob; title: string; isPublished: boolean }) {
+  return (
             <div className="flex items-center gap-2 flex-wrap">
               {job.status === "complete" && (
                 <a
@@ -189,9 +203,5 @@ export default async function HamiltonReportsPage({
                 </form>
               )}
             </div>
-          )}
-        />
-      </div>
-    </div>
   );
 }

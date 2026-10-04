@@ -32,15 +32,18 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       NULL as median_overdraft
     FROM institution_sources ct
     JOIN published_fee_catalog ef ON ct.id = ef.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
+    JOIN (
+      -- One call-report row per institution: the latest quarter with service-charge
+      -- income, preferring fdic over ncua. ffiec rows use other units (see
+      -- institution/[id]/financial-units.ts) and would duplicate the institution.
+      SELECT DISTINCT ON (institution_id) institution_id, total_assets, service_charge_income
+        FROM institution_financial_records
+       WHERE source IN ('fdic', 'ncua') AND service_charge_income IS NOT NULL
+       ORDER BY institution_id, report_date DESC, CASE source WHEN 'fdic' THEN 0 ELSE 1 END
+    ) ifin ON ct.id = ifin.institution_id
     WHERE ef.review_status = 'approved'
       AND ef.amount IS NOT NULL
       AND ef.amount > 0
-      AND ifin.report_date = (
-        SELECT MAX(report_date)
-        FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id
-      )
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.id, ct.institution_name, ct.charter_type, ct.state_code,
              ct.asset_size_tier, ifin.total_assets, ifin.service_charge_income
@@ -84,14 +87,17 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
+    JOIN (
+      -- One call-report row per institution: the latest quarter with service-charge
+      -- income, preferring fdic over ncua. ffiec rows use other units (see
+      -- institution/[id]/financial-units.ts) and would duplicate the institution.
+      SELECT DISTINCT ON (institution_id) institution_id, total_assets, service_charge_income
+        FROM institution_financial_records
+       WHERE source IN ('fdic', 'ncua') AND service_charge_income IS NOT NULL
+       ORDER BY institution_id, report_date DESC, CASE source WHEN 'fdic' THEN 0 ELSE 1 END
+    ) ifin ON ct.id = ifin.institution_id
     WHERE ct.asset_size_tier IS NOT NULL
       AND ifin.service_charge_income IS NOT NULL
-      AND ifin.report_date = (
-        SELECT MAX(report_date)
-        FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id
-      )
     GROUP BY ct.asset_size_tier
     ORDER BY AVG(ifin.total_assets) ASC
   ` as TierFeeRevenueSummary[];
@@ -133,13 +139,15 @@ export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSu
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
-    WHERE ifin.service_charge_income IS NOT NULL
-      AND ifin.report_date = (
-        SELECT MAX(report_date)
-        FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id
-      )
+    JOIN (
+      -- One call-report row per institution: the latest quarter with service-charge
+      -- income, preferring fdic over ncua. ffiec rows use other units (see
+      -- institution/[id]/financial-units.ts) and would duplicate the institution.
+      SELECT DISTINCT ON (institution_id) institution_id, total_assets, service_charge_income
+        FROM institution_financial_records
+       WHERE source IN ('fdic', 'ncua') AND service_charge_income IS NOT NULL
+       ORDER BY institution_id, report_date DESC, CASE source WHEN 'fdic' THEN 0 ELSE 1 END
+    ) ifin ON ct.id = ifin.institution_id
     GROUP BY ct.charter_type
   ` as CharterFeeRevenueSummary[];
 

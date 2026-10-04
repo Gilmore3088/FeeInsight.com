@@ -186,8 +186,12 @@ export async function searchInstitutions(params: {
 
   if (params.query && params.query.trim().length >= 2) {
     paramIdx++;
-    conditions.push(`ct.institution_name ILIKE $${paramIdx}`);
-    queryParams.push(`%${params.query.trim()}%`);
+    // The search box promises name, city, or state.
+    conditions.push(
+      `(ct.institution_name ILIKE $${paramIdx} OR ct.city ILIKE $${paramIdx} OR ct.state_code ILIKE $${paramIdx + 1})`,
+    );
+    queryParams.push(`%${params.query.trim()}%`, params.query.trim());
+    paramIdx++;
   }
   if (params.state_code) {
     paramIdx++;

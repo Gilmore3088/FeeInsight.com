@@ -11,6 +11,8 @@ import {
   getSpotlightCategories,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
+
+const FEE_FAMILY_COUNT = Object.keys(FEE_FAMILIES).length;
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
@@ -22,7 +24,7 @@ import { UpgradeGate } from "@/components/upgrade-gate";
 export const metadata: Metadata = {
   title: "National Fee Index - US Bank & Credit Union Fee Benchmarks",
   description:
-    "The definitive national benchmark of bank and credit union fees across 49 categories. Median fees, percentiles, and institution counts from thousands of published fee schedules.",
+    `The definitive national benchmark of bank and credit union fees across ${TAXONOMY_COUNT} categories. Median fees, percentiles, and institution counts from thousands of published fee schedules.`,
   keywords: [
     "national fee index",
     "bank fee benchmarks",
@@ -38,7 +40,7 @@ export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
   const allIndex = await getNationalIndexCached();
-  const cpi = await getCpiContext();
+  const cpi = await getCpiContext().catch(() => ({ bankFees: null, allItems: null }));
 
   // Pro: full index. Free: spotlight preview only (6 categories)
   const spotlightCats = new Set(getSpotlightCategories());
@@ -390,7 +392,7 @@ export default async function NationalFeeIndexPage() {
         <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
           The National Fee Index is computed from published fee schedules of
           FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
-          into {TAXONOMY_COUNT} standard categories across 9 families. All
+          into {TAXONOMY_COUNT} standard categories across {FEE_FAMILY_COUNT} families. All
           statistics are based on verified, published fee schedules. National
           medians are computed across all reporting institutions for each fee
           category.

@@ -8,7 +8,7 @@ import {
   getStats,
   getDataFreshness,
 } from "@/lib/data-store";
-import { getDisplayName, FAMILY_COLORS as TAXONOMY_FAMILY_COLORS } from "@/lib/fee-taxonomy";
+import { getDisplayName, FAMILY_COLORS as TAXONOMY_FAMILY_COLORS, TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
@@ -296,7 +296,7 @@ export default async function GuidesIndexPage() {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {[
-            { label: "Fee Index", href: "/fees", desc: "All 49 categories" },
+            { label: "Fee Index", href: "/fees", desc: `All ${TAXONOMY_COUNT} categories` },
             { label: "National Benchmarks", href: "/research/national-fee-index", desc: "Medians & percentiles" },
             { label: "State Reports", href: "/research", desc: "Geographic analysis" },
             { label: "Fed Districts", href: "/research#districts", desc: "12 district reports" },

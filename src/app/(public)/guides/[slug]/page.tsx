@@ -8,9 +8,9 @@ import {
   getFeeCategorySummaries,
   getFeeCategoryDetail,
   getDataFreshness,
-  getStats,
+  getPublicStats,
 } from "@/lib/data-store";
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { getDisplayName, TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
@@ -47,22 +47,26 @@ export default async function GuidePage({ params }: PageProps) {
   );
 
   const freshness = await getDataFreshness();
-  const stats = await getStats();
+  const stats = await getPublicStats();
 
   const primaryCategory = guide.feeCategories[0];
   const primaryDetail = await getFeeCategoryDetail(primaryCategory);
-  const primaryAmounts = primaryDetail.fees
-    .map((f) => f.amount)
-    .filter((a): a is number => a !== null && a > 0);
+  const primaryAmounts = primaryDetail.institution_values;
   const primarySummary = relevantFees.find(
     (f) => f.fee_category === primaryCategory
   );
 
-  const sortedFees = primaryDetail.fees
-    .filter((f) => f.amount !== null && f.amount >= 0)
-    .sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0));
+  // One row per institution (its lowest listed amount), so a bank with several
+  // rows can't fill a list, and the two lists never overlap.
+  const lowestByInstitution = new Map<number, (typeof primaryDetail.fees)[number]>();
+  for (const f of primaryDetail.fees) {
+    if (f.amount === null || f.amount < 0) continue;
+    const current = lowestByInstitution.get(f.institution_id);
+    if (!current || f.amount < (current.amount ?? Infinity)) lowestByInstitution.set(f.institution_id, f);
+  }
+  const sortedFees = [...lowestByInstitution.values()].sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0));
   const cheapest = sortedFees.slice(0, 5);
-  const mostExpensive = sortedFees.slice(-5).reverse();
+  const mostExpensive = sortedFees.slice(Math.max(cheapest.length, sortedFees.length - 5)).reverse();
   const zeroFeeCount = sortedFees.filter((f) => f.amount === 0).length;
 
   return (
@@ -294,7 +298,7 @@ export default async function GuidePage({ params }: PageProps) {
                     National Fee Index
                   </span>
                   <span className="block text-[11px] text-[#6B6255]">
-                    All 49 fee categories benchmarked
+                    All {TAXONOMY_COUNT} fee categories benchmarked
                   </span>
                 </div>
               </Link>

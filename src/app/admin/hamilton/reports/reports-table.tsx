@@ -3,14 +3,8 @@
 import { Suspense } from "react";
 import { SortableTable, type Column } from "@/components/sortable-table";
 import { timeAgo } from "@/lib/format";
-import type { ReportJob, ReportType } from "@/lib/report-engine/types";
-
-const REPORT_TYPE_LABELS: Record<ReportType, string> = {
-  national_index: "National Index",
-  state_index: "State Index",
-  peer_brief: "Peer Brief",
-  monthly_pulse: "Monthly Pulse",
-};
+import type { ReportJob } from "@/lib/report-engine/types";
+import { getReportTitle } from "./report-title";
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   pending: "bg-amber-50 text-amber-600",
@@ -20,26 +14,15 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   failed: "bg-red-50 text-red-600",
 };
 
-function getReportTitle(job: ReportJob): string {
-  const typeLabel = REPORT_TYPE_LABELS[job.report_type] ?? job.report_type;
-  if (job.report_type === "state_index" && job.params?.state_code) {
-    return `${typeLabel} — ${job.params.state_code}`;
-  }
-  const year = new Date(job.created_at).getFullYear();
-  const quarter = Math.ceil((new Date(job.created_at).getMonth() + 1) / 3);
-  return `${typeLabel} Q${quarter} ${year}`;
-}
-
 type ReportRow = ReportJob & Record<string, unknown>;
 
 export function ReportsTable({
   jobs,
-  publishedSet,
-  renderActions,
+  actionsById,
 }: {
   jobs: ReportJob[];
-  publishedSet: Set<string>;
-  renderActions: (job: ReportJob, title: string, isPublished: boolean) => React.ReactNode;
+  /** Server-rendered action cells keyed by job id (functions cannot cross the client boundary). */
+  actionsById: Record<string, React.ReactNode>;
 }) {
   if (jobs.length === 0) {
     return (
@@ -107,12 +90,7 @@ export function ReportsTable({
       key: "id",
       label: "Actions",
       sortable: false,
-      format: (_, row) => {
-        const job = row as unknown as ReportJob;
-        const title = getReportTitle(job);
-        const isPublished = publishedSet.has(job.id);
-        return renderActions(job, title, isPublished);
-      },
+      format: (_, row) => actionsById[(row as unknown as ReportJob).id] ?? null,
     },
   ];
 

@@ -22,10 +22,11 @@ type ArticleRow = Article & Record<string, unknown>;
 
 export function ArticlesTable({
   articles,
-  renderActions,
+  actionsById,
 }: {
   articles: Article[];
-  renderActions: (article: Article) => React.ReactNode;
+  /** Server-rendered action cells keyed by article id (functions cannot cross the client boundary). */
+  actionsById: Record<string, React.ReactNode>;
 }) {
   const columns: Column<ArticleRow>[] = [
     {
@@ -86,7 +87,7 @@ export function ArticlesTable({
       label: "Actions",
       align: "right",
       sortable: false,
-      format: (_, row) => renderActions(row as unknown as Article),
+      format: (_, row) => actionsById[String((row as unknown as Article).id)] ?? null,
     },
   ];
 

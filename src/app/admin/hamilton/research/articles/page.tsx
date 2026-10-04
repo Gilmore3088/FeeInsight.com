@@ -76,7 +76,9 @@ export default async function ArticlesPage({
 
       <ArticlesTable
         articles={articles}
-        renderActions={(article) => <ArticleActions article={article} />}
+        actionsById={Object.fromEntries(
+          articles.map((article) => [String(article.id), <ArticleActions key={article.id} article={article} />]),
+        )}
       />
     </div>
   );

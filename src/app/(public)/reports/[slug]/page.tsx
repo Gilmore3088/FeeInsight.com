@@ -1,6 +1,6 @@
 /**
  * /reports/[slug] — ISR-cached report landing page.
- * Executive summary + 2 chart placeholders publicly visible.
+ * Title and publication details are public; the summary and charts live in the PDF.
  * Full PDF download behind email gate (no login required).
  *
  * OG metadata per D-06/D-07: og:type=article, article:published_time, article:author.
@@ -177,51 +177,6 @@ export default async function ReportPage({
             {RESEARCH_IMPRINT} &middot; Published {formatDate(report.published_at)}
           </p>
         </div>
-
-        {/* Executive Summary (publicly visible) */}
-        <section style={{ marginBottom: "48px" }}>
-          <h2 style={{
-            fontSize: "22px",
-            fontWeight: 600,
-            color: "#1A1815",
-            marginBottom: "16px",
-            fontFamily: "var(--font-newsreader), Georgia, serif",
-            letterSpacing: "-0.01em",
-            lineHeight: 1.3,
-          }}>
-            Executive Summary
-          </h2>
-          <p style={{ fontSize: "15px", color: "#5A5347", lineHeight: 1.75, fontStyle: "italic" }}>
-            {"Hamilton's executive summary for this report will appear here."}
-          </p>
-        </section>
-
-        {/* Chart placeholders (publicly visible, per D-03: 2 key charts) */}
-        <section style={{ marginBottom: "56px" }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "16px",
-          }}>
-            {[1, 2].map((n) => (
-              <div
-                key={n}
-                style={{
-                  background: "#F5F0E8",
-                  borderRadius: "8px",
-                  height: "192px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <span style={{ fontSize: "12px", color: "#A09788", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  Chart {n} — available in full report
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
 
         {/* Email gate — full PDF download */}
         <section style={{

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 function requestHeadersWithPath(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
+  // Internal routing hint: only the proxy may set it. A client-sent copy would
+  // let any /admin page skip the admin layout's auth check.
+  requestHeaders.delete("x-bfi-admin-login-route");
   const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`;
   requestHeaders.set("x-invoke-path", pathWithSearch);
   requestHeaders.set("x-next-url", pathWithSearch);

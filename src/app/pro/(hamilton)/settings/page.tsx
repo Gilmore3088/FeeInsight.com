@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { redirect } from "next/navigation";
 import { SettingsForm } from "./SettingsForm";
 import { PeerSetManager } from "./PeerSetManager";
@@ -55,6 +56,8 @@ export default async function SettingsPage({
     redirect(`/login?from=${encodeURIComponent(returnPath)}`);
   }
 
+  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/settings");
+
   const { institution: selectedInstitution, source: selectedSource } = await resolveHamiltonInstitutionContext({
     userId: user.id,
     instId: params.instId,
@@ -69,21 +72,30 @@ export default async function SettingsPage({
     getSavedPeerSets(String(user.id)).catch(() => []),
     getIntelligenceSnapshot(),
   ]);
-  const [selectedClaim, selectedMembership, workspaceMembers, workspaceInvitations] = selectedInstitution
+  const [selectedClaim, selectedMembership] = selectedInstitution
     ? await Promise.all([
         getWorkspaceInstitutionClaimState(selectedInstitution.id),
         getActiveInstitutionMembership({
           userId: user.id,
           institutionId: selectedInstitution.id,
         }).catch(() => null),
-        getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
-        getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
       ])
-    : [null, null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const;
+    : [null, null] as const;
   const canManageWorkspaceAccess =
     isAdmin ||
     selectedMembership?.role === "owner" ||
     selectedMembership?.role === "admin";
+  // Any institution can be selected via ?instId=, so the member roster and
+  // pending invites (names, emails) load only for people inside that workspace.
+  const canViewWorkspaceRoster = canManageWorkspaceAccess || Boolean(selectedMembership);
+  const [workspaceMembers, workspaceInvitations] = selectedInstitution && canViewWorkspaceRoster
+    ? await Promise.all([
+        getInstitutionWorkspaceMembers(selectedInstitution.id).catch((): InstitutionWorkspaceMembership[] => []),
+        canManageWorkspaceAccess
+          ? getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch((): InstitutionWorkspaceInvitation[] => [])
+          : Promise.resolve([] as InstitutionWorkspaceInvitation[]),
+      ])
+    : [[] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const;
 
   const cardStyle = {
     backgroundColor: "var(--hamilton-surface-elevated)",

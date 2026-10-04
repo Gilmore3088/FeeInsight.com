@@ -37,6 +37,27 @@ describe("proxy", () => {
     expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/pro/research");
   });
 
+  it("strips a client-sent admin login-route header so admin auth cannot be skipped", () => {
+    const response = proxy(
+      request("https://feeinsight.com/admin/quality", undefined, {
+        cookie: "fsh_session=forged",
+        "x-bfi-admin-login-route": "1",
+      }),
+    );
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("x-middleware-request-x-bfi-admin-login-route")).toBeNull();
+    expect(response.headers.get("x-middleware-override-headers") ?? "").not.toContain(
+      "x-bfi-admin-login-route",
+    );
+  });
+
+  it("marks only the admin login page as the login route", () => {
+    const response = proxy(request("https://feeinsight.com/admin/login"));
+
+    expect(response.headers.get("x-middleware-request-x-bfi-admin-login-route")).toBe("1");
+  });
+
   it("redirects retired public domains to feeinsight.com", () => {
     const response = proxy(request("https://bankfeeindex.com/fees?category=wire"));
 

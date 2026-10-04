@@ -25,10 +25,11 @@ const MIN_INDEXABLE_INSTITUTIONS = 3;
 const loadCityInstitutions = cache(getCityInstitutions);
 
 function titleCase(s: string): string {
+  // Keep the separators: the city is matched against the stored name, so
+  // "winston-salem" must stay "Winston-Salem", not become "Winston Salem".
   return decodeURIComponent(s)
-    .split(/[-\s]+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
+    .toLowerCase()
+    .replace(/(^|[-\s])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

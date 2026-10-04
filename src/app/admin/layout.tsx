@@ -28,7 +28,11 @@ async function AdminLayoutInner({
   children: React.ReactNode;
 }) {
   const requestHeaders = await headers();
-  if (requestHeaders.get("x-bfi-admin-login-route") === "1") {
+  // Both headers are set by the proxy, which overwrites any client-sent copy.
+  if (
+    requestHeaders.get("x-bfi-admin-login-route") === "1" &&
+    requestHeaders.get("x-pathname") === "/admin/login"
+  ) {
     return <>{children}</>;
   }
 

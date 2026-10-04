@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { fetchMonitorPageData } from "@/lib/hamilton/monitor-data";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { StatusStrip } from "@/components/hamilton/monitor/StatusStrip";
@@ -26,6 +27,8 @@ export default async function MonitorPage({
       : "/pro/monitor";
     redirect(`/login?from=${encodeURIComponent(returnPath)}`);
   }
+
+  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/monitor");
 
   const { institution: selectedInstitution } = await resolveHamiltonInstitutionContext({
     userId: user.id,
