@@ -19,10 +19,12 @@ vi.mock("./state-lane-memory", () => ({
 
 import {
   STATE_LANE_BACKLOG_RETRY_MINUTES,
+  STATE_LANE_BACKLOG_STEPS,
   STATE_LANE_DOCUMENT_BATCH,
   STATE_LANE_STEPS,
   scheduleDueStateLaneRuns,
   startStateLaneRun,
+  stateCrawledWithinFreshness,
   stateHasDocumentBacklog,
 } from "./state-lane-scheduler";
 
@@ -92,5 +94,55 @@ describe("state lane scheduler", () => {
     const dueQuery = templateText(txMock.mock.calls[0][0]);
     expect(dueQuery).toContain("FROM public.agent_runs active");
     expect(dueQuery).toContain("active.status IN ('queued', 'running', 'cancel_requested')");
+  });
+
+  it("runs only the stored-document steps while the state was crawled within its freshness target", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("AS recent")) return Promise.resolve([{ recent: true }]);
+      if (text.includes("AS backlog")) return Promise.resolve([{ backlog: true }]);
+      return Promise.resolve([]);
+    });
+
+    const result = await startStateLaneRun({ stateCode: "PA", triggeredBy: "test" });
+
+    expect(result.mode).toBe("backlog");
+    expect(result.idempotencyKey).toMatch(/^atlas:state-lane-backlog:PA:/);
+    const args = startAgentRunMock.mock.calls[0][0];
+    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["read", "extract", "classify", "publish"]);
+    expect(args.params).toMatchObject({ lane_mode: "backlog" });
+    expect(STATE_LANE_BACKLOG_STEPS.every((step) => step.agent !== "magellan")).toBe(true);
+  });
+
+  it("runs the full lane, discovery and fetch included, once the last crawl is older than the freshness target", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      if (templateText(strings).includes("AS recent")) return Promise.resolve([{ recent: false }]);
+      return Promise.resolve([]);
+    });
+
+    const result = await startStateLaneRun({ stateCode: "PA", triggeredBy: "test" });
+
+    expect(result.mode).toBe("full");
+    expect(startAgentRunMock.mock.calls[0][0].steps).toBe(STATE_LANE_STEPS);
+  });
+
+  it("always runs the full lane when an admin starts it", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      if (templateText(strings).includes("AS recent")) return Promise.resolve([{ recent: true }]);
+      return Promise.resolve([]);
+    });
+
+    const result = await startStateLaneRun({ stateCode: "PA", triggeredBy: "owner", source: "admin.state_lane" });
+
+    expect(result.mode).toBe("full");
+    expect(startAgentRunMock.mock.calls[0][0].steps).toBe(STATE_LANE_STEPS);
+  });
+
+  it("falls back to a full run when the crawl check fails", async () => {
+    sqlMock.mockRejectedValueOnce(new Error("boom"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(stateCrawledWithinFreshness("PA")).resolves.toBe(false);
+    error.mockRestore();
   });
 });
