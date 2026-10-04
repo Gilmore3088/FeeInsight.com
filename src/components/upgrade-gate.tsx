@@ -60,11 +60,18 @@ export async function UpgradeGate({
       <p className="text-sm text-[#6B6255] mb-4">
         {moreCount
           ? `${moreCount} more fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`
-          : `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`}
+          : summary.categories > 0
+            ? `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`
+            : "Unlock every fee category, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace."}
       </p>
-      <div className="text-[12px] text-[#6B6255] mt-2 mb-4">
-        Based on {summary.observationsLabel} verified fees from {summary.institutionsLabel} institutions
-      </div>
+      {/* Counts fall back to 0 when the stats query fails; never print "0 verified fees". */}
+      {summary.observations > 0 && summary.institutions > 0 ? (
+        <div className="text-[12px] text-[#6B6255] mt-2 mb-4">
+          Based on {summary.observationsLabel} verified fees from {summary.institutionsLabel} institutions
+        </div>
+      ) : (
+        <div className="mb-4" />
+      )}
       <Link
         href="/subscribe"
         className="inline-flex items-center gap-1.5 rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#C44B2E]/15 hover:bg-[#A93D25] hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all"

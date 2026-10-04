@@ -419,7 +419,7 @@ export default async function GuidePage({ params }: PageProps) {
               </p>
               {zeroFeeCount > 0 && (
                 <p className="mt-1.5 text-[12px] text-emerald-700">
-                  {zeroFeeCount} institution{zeroFeeCount !== 1 ? "s" : ""} charge{" "}
+                  {zeroFeeCount} institution{zeroFeeCount !== 1 ? "s" : ""} charge{zeroFeeCount === 1 ? "s" : ""}{" "}
                   <span className="font-bold">$0</span>
                 </p>
               )}
