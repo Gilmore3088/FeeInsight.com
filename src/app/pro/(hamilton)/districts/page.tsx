@@ -10,7 +10,6 @@ import {
   getPublicStats,
 } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
-import { ProReferenceWorkflowBanner } from "@/components/pro/reference-workflow-banner";
 
 export const metadata: Metadata = {
   title: "District Intelligence",
@@ -47,8 +46,6 @@ export default async function ProDistrictsPage() {
         {stats.total_institutions.toLocaleString()} institutions and{" "}
         {stats.total_observations.toLocaleString()} fee observations.
       </p>
-
-      <ProReferenceWorkflowBanner userId={user.id} surface="districts" />
 
       {/* District grid */}
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -110,8 +107,11 @@ export default async function ProDistrictsPage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                    Coverage
+                  <p
+                    className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500"
+                    title="Share of institutions in this district with a fee schedule on file"
+                  >
+                    Fee schedule on file
                   </p>
                   <p
                     className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"

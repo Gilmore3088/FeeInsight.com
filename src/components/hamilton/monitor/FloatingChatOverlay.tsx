@@ -6,20 +6,21 @@
  * Uses useChat + DefaultChatTransport from @ai-sdk/react v3 for streaming.
  */
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 
-export function FloatingChatOverlay() {
+export function FloatingChatOverlay({ institutionId = null }: { institutionId?: string | null } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/research/hamilton",
-      body: { mode: "monitor" },
+      // The institution in view, so answers are about what the user is looking at.
+      body: { mode: "monitor", institutionId },
     }),
   });
 
@@ -42,12 +43,13 @@ export function FloatingChatOverlay() {
     setIsOpen(false);
   }
 
-  const handleSend = useCallback(() => {
+  // The React Compiler memoizes this; a manual useCallback conflicted with it.
+  function handleSend() {
     const trimmed = inputValue.trim();
     if (!trimmed || isStreaming) return;
     sendMessage({ text: trimmed });
     setInputValue("");
-  }, [inputValue, isStreaming, sendMessage]);
+  }
 
   if (!isOpen) {
     return (
@@ -201,7 +203,12 @@ export function FloatingChatOverlay() {
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} />
+        {error && !isStreaming && (
+              <p role="alert" style={{ fontSize: "0.75rem", color: "#b91c1c", padding: "0.25rem 0" }}>
+                Hamilton couldn&apos;t answer that just now. Please try again.
+              </p>
+            )}
+            <div ref={messagesEndRef} />
       </div>
 
       {/* Input row */}
@@ -235,7 +242,7 @@ export function FloatingChatOverlay() {
             borderRadius: "0.375rem",
             backgroundColor: "var(--hamilton-surface-1)",
             color: "var(--hamilton-text-primary)",
-            outline: "none",
+            
             minWidth: 0,
           }}
         />

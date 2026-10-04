@@ -1045,6 +1045,9 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   --hamilton-surface-bright: #fbf9f4;
   --hamilton-surface-dim: #dbdad5;
   --hamilton-surface-container-lowest: #ffffff;
+  /* Aliases used by the Monitor chat overlay. */
+  --hamilton-surface-1: #ffffff;
+  --hamilton-surface-2: #f5f5f4;
   --hamilton-surface-container-low: #f5f3ee;
   --hamilton-surface-container: #f0eee9;
   --hamilton-surface-container-high: #eae8e3;

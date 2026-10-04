@@ -166,30 +166,6 @@ export function StatusStrip({ status }: StatusStripProps) {
           </>
         )}
 
-        {/* Live indicator */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span
-            style={{
-              width: "6px",
-              height: "6px",
-              borderRadius: "50%",
-              backgroundColor: "#16a34a",
-              animation: "pulse 2s ease-in-out infinite",
-            }}
-          />
-          <span
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.625rem",
-              fontWeight: 600,
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              color: "var(--hamilton-text-tertiary)",
-            }}
-          >
-            Live Updates
-          </span>
-        </div>
       </div>
     </div>
   );

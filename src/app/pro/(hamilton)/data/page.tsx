@@ -10,7 +10,6 @@ import { getStatesWithFeeData } from "@/lib/data-store";
 import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
-import { ProReferenceWorkflowBanner } from "@/components/pro/reference-workflow-banner";
 
 export const metadata: Metadata = {
   title: "Data Explorer",
@@ -98,8 +97,6 @@ export default async function ProDataPage({ searchParams }: PageProps) {
         with {stats.total_observations.toLocaleString()} fee observations across {TAXONOMY_COUNT} categories.
         <span className="ml-2 text-warm-500">Updated {lastUpdated}</span>
       </p>
-
-      <ProReferenceWorkflowBanner userId={user.id} surface="data" />
 
       {/* Stat cards */}
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -215,7 +212,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
                 <tr key={r.id} className="hover:bg-warm-100/60 transition-colors">
                   <td className="px-4 py-2.5">
                     <Link
-                      href={`/institution/${r.id}`}
+                      href={`/pro/analyze?instId=${r.id}&intent=institution`}
                       className="font-medium text-warm-900 hover:text-terra transition-colors"
                     >
                       {r.institution_name}

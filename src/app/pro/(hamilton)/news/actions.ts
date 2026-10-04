@@ -1,7 +1,6 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
 import { FEEDS, storeArticles } from "@/lib/data-store/news";
 
 interface FeedEntry {
@@ -93,7 +92,8 @@ export async function refreshFeeds(): Promise<{
   errors: string[];
 }> {
   const user = await getCurrentUser();
-  if (!user || !canAccessPremium(user)) {
+  // Feed ingestion writes shared data: operators only.
+  if (!user || (user.role !== "admin" && user.role !== "analyst")) {
     throw new Error("Unauthorized");
   }
 

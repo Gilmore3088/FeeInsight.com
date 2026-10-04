@@ -12,7 +12,6 @@ import {
   TAXONOMY_COUNT,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
-import { ProReferenceWorkflowBanner } from "@/components/pro/reference-workflow-banner";
 
 export const metadata: Metadata = {
   title: "Fee Categories",
@@ -78,8 +77,6 @@ export default async function ProCategoriesPage() {
         All {TAXONOMY_COUNT} fee categories across {familyNames.length} families,
         with statistical distributions and institutional coverage.
       </p>
-
-      <ProReferenceWorkflowBanner userId={user.id} surface="categories" />
 
       {/* Family grid — matches districts card layout */}
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -176,7 +173,7 @@ export default async function ProCategoriesPage() {
                   return (
                     <Link
                       key={cat}
-                      href={`/fees/${cat}`}
+                      href={`/pro/simulate?category=${cat}`}
                       className="flex items-center justify-between rounded-lg px-2.5 py-1.5 -mx-1 hover:bg-warm-100/80 transition-colors no-underline group"
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -193,8 +190,8 @@ export default async function ProCategoriesPage() {
                       </div>
                       <span className="shrink-0 ml-2 text-[11px] tabular-nums text-warm-500">
                         {s?.median_amount != null
-                          ? formatAmount(s.median_amount)
-                          : "--"}
+                          ? `${formatAmount(s.median_amount)} · n=${s.institution_count}`
+                          : <span title="Fewer than 5 institutions publish this fee">Too few</span>}
                       </span>
                     </Link>
                   );
