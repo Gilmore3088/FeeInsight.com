@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, runKnoxExtract } from "./extract";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -225,6 +225,9 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("pa.input_fingerprint = adt.text_hash");
       expect(params).toEqual(expect.arrayContaining([KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version]));
+      // A text with few fees goes back to Knox when the rules version moves.
+      expect(query).toContain("FROM raw_fee_observations thin");
+      expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
     });
 
     it("flags a yield far below the institution's usual fee count as low_yield", async () => {

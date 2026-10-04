@@ -15,6 +15,9 @@ Knox owns conservative raw fee extraction.
 - Preserve institution ID, source document ID, source URL/key, extraction confidence, canonical hints, amount/frequency/conditions, and outlier flags.
 - Emit aggregate Hamilton Monitor signals for inserted raw observations and no-candidate review states.
 - Keep rows provisional until Darwin verifies them.
+- Re-review thin documents: a text with fewer than 5 Knox fees (`KNOX_REEXTRACT_MAX_FEES`) is
+  extracted again each time `extract.rules` moves to a new version; the raw-row dedupe index
+  keeps fees found before from being inserted twice.
 - The rules live in `rules.ts` (`extract.rules`; bump `KNOX_EXTRACT_STRATEGY.version`
   when they change). Patterns are ordered most specific first; monthly maintenance and
   minimum balance come last. On a line, the first amount is the fee; a later amount is
