@@ -78,7 +78,8 @@ describe("Magellan agentic discovery", () => {
     ]);
     const feePage = "<h1>Fee Schedule</h1><table><tr><td>Overdraft fee</td><td>$32.00</td></tr>" +
       "<tr><td>Stop payment</td><td>$35.00</td></tr><tr><td>Monthly maintenance fee</td><td>$12.00</td></tr></table>";
-    const fetchImpl = vi.fn(async (url: string) => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
       if (url === "https://linkbank.example/") {
         return response('<a href="/about">About</a> <a href="/disclosures/fee-schedule">Fee Schedule</a>');
       }
