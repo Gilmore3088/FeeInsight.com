@@ -49,6 +49,8 @@ export interface User {
   email: string | null;
   stripe_customer_id: string | null;
   subscription_status: "none" | "active" | "past_due" | "canceled";
+  /** When the subscription first went past_due (ISO string); null otherwise. */
+  past_due_since?: string | null;
   institution_name: string | null;
   institution_type: string | null;
   asset_tier: string | null;
@@ -99,6 +101,7 @@ export async function login(
     SELECT id, username, display_name, role, password_hash, email,
            stripe_customer_id,
            COALESCE(subscription_status, 'none') as subscription_status,
+           to_jsonb(users.*) ->> 'past_due_since' as past_due_since,
            institution_name, institution_type, asset_tier, state_code,
            fed_district, job_role, interests
     FROM users WHERE (username = ${username} OR email = ${username}) AND is_active = true
@@ -157,6 +160,7 @@ export async function getCurrentUser(): Promise<User | null> {
     SELECT u.id, u.username, u.display_name, u.role,
            u.email, u.stripe_customer_id,
            COALESCE(u.subscription_status, 'none') as subscription_status,
+           to_jsonb(u.*) ->> 'past_due_since' as past_due_since,
            u.institution_name, u.institution_type, u.asset_tier,
            u.state_code, u.fed_district, u.job_role, u.interests
     FROM sessions s

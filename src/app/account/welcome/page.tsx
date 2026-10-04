@@ -58,7 +58,7 @@ async function activateIfPaid(
       });
       if (subs.data.length > 0) {
         await sql`
-          UPDATE users SET subscription_status = 'active', role = 'premium'
+          UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
           WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
         await acceptPendingWorkspaceInvitationsForUser({
           userId: user.id,

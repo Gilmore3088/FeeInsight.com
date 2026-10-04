@@ -1,10 +1,28 @@
 import type { User } from "@/lib/auth";
 
+/** Days a past_due subscriber keeps access while Stripe retries the card. */
+export const PAST_DUE_GRACE_DAYS = 7;
+
+/** True while a past_due subscriber is inside the grace window. */
+export function isInPaymentGrace(user: User | null, now: Date = new Date()): boolean {
+  if (!user || user.subscription_status !== "past_due") return false;
+  // Unknown start (column not yet migrated, or set before it existed): grant grace.
+  if (!user.past_due_since) return true;
+  const since = new Date(user.past_due_since).getTime();
+  if (!Number.isFinite(since)) return true;
+  return now.getTime() - since < PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+/** A past_due subscriber whose grace window has ended. */
+export function isPaymentLapsed(user: User | null, now: Date = new Date()): boolean {
+  return Boolean(user && user.subscription_status === "past_due" && !isInPaymentGrace(user, now));
+}
+
 /** Full premium access for app data, exports, and Hamilton workflows. */
 export function canAccessPremium(user: User | null): boolean {
   if (!user) return false;
   if (user.role === "admin" || user.role === "analyst") return true;
-  return user.subscription_status === "active";
+  return user.subscription_status === "active" || isInPaymentGrace(user);
 }
 
 /** Can see all 49 fee categories (free sees 6 spotlight only). */

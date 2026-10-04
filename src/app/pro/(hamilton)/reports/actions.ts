@@ -14,7 +14,8 @@ import {
   getInstitutionRevenueTrend,
 } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
-import { generateVerifiedSection } from "@/lib/hamilton/generate";
+import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
+import type { SectionInput } from "@/lib/hamilton/types";
 import {
   buildReportPeerCoveragePreview,
   buildSelectedInstitutionFeeDeltas,
@@ -66,6 +67,21 @@ export interface GenerateReportParams {
   evidencePolicy?: HamiltonEvidencePolicy;
   selectedSource?: HamiltonContextSource;
   selectedSourceLabel?: string | null;
+  /** The Audience picker: shapes the narrative's register, never its figures. */
+  narrativeTone?: ReportNarrativeTone;
+}
+
+export type ReportNarrativeTone = "consulting" | "academic" | "executive" | "technical";
+
+const TONE_GUIDANCE: Record<ReportNarrativeTone, string> = {
+  executive: "AUDIENCE: the board. Lead with the headline and the decision; keep it short; no methodology detail.",
+  consulting: "AUDIENCE: the internal pricing team. Action-oriented; name the next step for each finding.",
+  technical: "AUDIENCE: analysts. Data-first; state the sample size and maturity behind every benchmark.",
+  academic: "AUDIENCE: research readers. Fuller context; explain the method and its limits.",
+};
+
+function withTone(context: string, tone: ReportNarrativeTone | undefined): string {
+  return tone ? `${context}\n\n${TONE_GUIDANCE[tone] ?? ""}`.trim() : context;
 }
 
 export type GenerateReportResult =
@@ -475,74 +491,92 @@ export async function generateReport(
     // (no shared state, no ordering constraint). Was sequential and took
     // ~28s total; parallel cuts to ~10s (longest single call wins).
     const strategicSectionType = getStrategicSectionType(params.templateType);
-    const verifiedSections =
-      await Promise.all([
-        generateVerifiedSection({
-          type: "executive_summary",
-          title: "Executive Summary",
-          data: {
-            report_type: params.templateType,
-            period,
-            institution_name: institutionName,
-            selected_institution: selectedInstitutionData,
-            focus_category: params.focusCategory ?? null,
-            categories: topCategories.map((c) => ({
-              fee_category: c.fee_category,
-              median_amount: c.median_amount,
-              p25_amount: c.p25_amount,
-              p75_amount: c.p75_amount,
-              institution_count: c.institution_count,
-              maturity: c.maturity_tier,
-            })),
-          },
-          context: buildExecutiveSummaryContext(params, institutionName, period),
-        }),
-        generateVerifiedSection({
-          type: strategicSectionType,
-          title: "Strategic Analysis",
-          data: {
-            report_type: params.templateType,
-            period,
-            institution_name: institutionName,
-            selected_institution: selectedInstitutionData,
-            focus_category: params.focusCategory ?? null,
-            top_fees: topCategories.slice(0, 5).map((c) => ({
-              fee_category: c.fee_category,
-              median_amount: c.median_amount,
-              p25_amount: c.p25_amount,
-              p75_amount: c.p75_amount,
-              institution_count: c.institution_count,
-            })),
-          },
-          context: buildStrategicContext(params, institutionName),
-        }),
-        generateVerifiedSection({
-          type: "recommendation",
-          title: "Recommended Position",
-          // Pass actual peer-anchored fee data so the model can write
-          // specific recommendations instead of consultancy fluff. The
-          // RECOMMENDATION_RULES context block forbids inventing figures
-          // not present in this payload.
-          data: {
-            report_type: params.templateType,
-            institution_name: institutionName,
-            period,
-            selected_institution: selectedInstitutionData,
-            focus_category: params.focusCategory ?? null,
-            peer_anchored_fees: selectedInstitution
-              ? selectedFeeDeltas.slice(0, 5)
-              : topCategories.slice(0, 5).map((c) => ({
-                  fee_category: c.fee_category,
-                  peer_median: c.median_amount,
-                  peer_p25: c.p25_amount,
-                  peer_p75: c.p75_amount,
-                  institution_count: c.institution_count,
-                  maturity: c.maturity_tier,
-                })),
-          },
-          context: buildRecommendationContext(params, institutionName),
-        }),
-      ]);
+    const sectionInputs: SectionInput[] = [
+      {
+        type: "executive_summary",
+        title: "Executive Summary",
+        data: {
+          report_type: params.templateType,
+          period,
+          institution_name: institutionName,
+          selected_institution: selectedInstitutionData,
+          focus_category: params.focusCategory ?? null,
+          categories: topCategories.map((c) => ({
+            fee_category: c.fee_category,
+            median_amount: c.median_amount,
+            p25_amount: c.p25_amount,
+            p75_amount: c.p75_amount,
+            institution_count: c.institution_count,
+            maturity: c.maturity_tier,
+          })),
+        },
+        context: withTone(buildExecutiveSummaryContext(params, institutionName, period), params.narrativeTone),
+      },
+      {
+        type: strategicSectionType,
+        title: "Strategic Analysis",
+        data: {
+          report_type: params.templateType,
+          period,
+          institution_name: institutionName,
+          selected_institution: selectedInstitutionData,
+          focus_category: params.focusCategory ?? null,
+          top_fees: topCategories.slice(0, 5).map((c) => ({
+            fee_category: c.fee_category,
+            median_amount: c.median_amount,
+            p25_amount: c.p25_amount,
+            p75_amount: c.p75_amount,
+            institution_count: c.institution_count,
+          })),
+        },
+        context: withTone(buildStrategicContext(params, institutionName), params.narrativeTone),
+      },
+      {
+        type: "recommendation",
+        title: "Recommended Position",
+        // Pass actual peer-anchored fee data so the model can write
+        // specific recommendations instead of consultancy fluff. The
+        // RECOMMENDATION_RULES context block forbids inventing figures
+        // not present in this payload.
+        data: {
+          report_type: params.templateType,
+          institution_name: institutionName,
+          period,
+          selected_institution: selectedInstitutionData,
+          focus_category: params.focusCategory ?? null,
+          peer_anchored_fees: selectedInstitution
+            ? selectedFeeDeltas.slice(0, 5)
+            : topCategories.slice(0, 5).map((c) => ({
+                fee_category: c.fee_category,
+                peer_median: c.median_amount,
+                peer_p25: c.p25_amount,
+                peer_p75: c.p75_amount,
+                institution_count: c.institution_count,
+                maturity: c.maturity_tier,
+              })),
+        },
+        context: withTone(buildRecommendationContext(params, institutionName), params.narrativeTone),
+      },
+    ];
+
+    // Sections are independent: run them together, retry only a section that failed,
+    // so one provider hiccup never discards (and re-bills) the sections that worked.
+    const settled = await Promise.allSettled(sectionInputs.map((input) => generateVerifiedSection(input)));
+    const verifiedSections: VerifiedSectionOutput[] = [];
+    for (const [index, outcome] of settled.entries()) {
+      if (outcome.status === "fulfilled") {
+        verifiedSections.push(outcome.value);
+        continue;
+      }
+      try {
+        verifiedSections.push(await generateVerifiedSection(sectionInputs[index]));
+      } catch {
+        return {
+          success: false,
+          error: `Hamilton couldn't write the ${sectionInputs[index].title} section right now. Please try again in a minute.`,
+        };
+      }
+    }
 
     // Every $ and % in the narrative must trace to the data the model was given.
     const unverified = verifiedSections.flatMap((result) => (result.status === "needs_review" ? result.unmatched : []));
@@ -687,7 +721,7 @@ export async function loadActiveScenarios() {
  */
 export async function loadReport(reportId: string) {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
   return getHamiltonReportById(reportId, user.id);
 }
 

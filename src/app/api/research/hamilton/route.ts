@@ -85,7 +85,8 @@ async function handlePOST(request: Request) {
   if (user) {
     if (user.role === "admin" || user.role === "analyst") {
       role = "admin";
-    } else if (user.role === "premium") {
+    } else if (user.role === "premium" || canAccessPremium(user)) {
+      // Subscription state decides Pro access, not the role label.
       role = "pro";
     } else {
       role = "consumer";

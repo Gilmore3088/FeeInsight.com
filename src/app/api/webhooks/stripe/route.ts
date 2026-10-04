@@ -59,6 +59,7 @@ async function handlePOST(req: Request) {
             const activatedUsers = await tx<Array<{ id: number; email: string | null }>>`
               UPDATE users
               SET subscription_status = 'active',
+                  past_due_since = NULL,
                   role = 'premium',
                   stripe_customer_id = ${customerId}
               WHERE (email = ${email} OR username = ${email}) AND role NOT IN ('admin', 'analyst')
@@ -81,7 +82,12 @@ async function handlePOST(req: Request) {
             typeof sub.customer === "string" ? sub.customer : sub.customer.id;
           const status = mapStripeStatus(sub.status);
           const updatedUsers = await tx<Array<{ id: number; email: string | null }>>`
-            UPDATE users SET subscription_status = ${status}
+            UPDATE users
+               SET subscription_status = ${status},
+                   past_due_since = CASE
+                     WHEN ${status} = 'past_due' THEN COALESCE(past_due_since, NOW())
+                     ELSE NULL
+                   END
             WHERE stripe_customer_id = ${customerId}
             RETURNING id, email
           `;
@@ -101,7 +107,7 @@ async function handlePOST(req: Request) {
           const customerId =
             typeof sub.customer === "string" ? sub.customer : sub.customer.id;
           await tx`
-            UPDATE users SET subscription_status = 'canceled'
+            UPDATE users SET subscription_status = 'canceled', past_due_since = NULL
             WHERE stripe_customer_id = ${customerId} AND role IN ('viewer', 'premium')
           `;
           break;
@@ -115,7 +121,9 @@ async function handlePOST(req: Request) {
               : invoice.customer?.id;
           if (customerId) {
             await tx`
-              UPDATE users SET subscription_status = 'past_due'
+              UPDATE users
+                 SET subscription_status = 'past_due',
+                     past_due_since = COALESCE(past_due_since, NOW())
               WHERE stripe_customer_id = ${customerId}
             `;
           }

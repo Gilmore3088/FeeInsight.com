@@ -2,7 +2,12 @@ import { Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchHomeBriefingData, fetchHomeBriefingSignals } from "@/lib/hamilton/home-data";
+import {
+  fetchCacheableHomeBriefing,
+  fetchHomeBriefingData,
+  fetchHomeBriefingSignals,
+  type HomeBriefingData,
+} from "@/lib/hamilton/home-data";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
@@ -17,10 +22,27 @@ import type { HomeBriefingSignals } from "@/lib/hamilton/home-data";
 export const dynamic = "force-dynamic";
 
 const getCachedHomeBriefing = unstable_cache(
-  fetchHomeBriefingData,
+  fetchCacheableHomeBriefing,
   ["hamilton-home-briefing"],
   { revalidate: 86400 },
 );
+
+/** The cached briefing, or (when it can't be built) the data view without the AI thesis, uncached. */
+async function loadHomeBriefing(): Promise<{ data: HomeBriefingData; unavailable: boolean }> {
+  try {
+    return { data: await getCachedHomeBriefing(), unavailable: false };
+  } catch {
+    const data = await fetchHomeBriefingData({ includeThesis: false }).catch(() => ({
+      thesis: null,
+      confidence: "low" as const,
+      positioning: [],
+      spotlightCount: 0,
+      totalInstitutions: 0,
+      recommendedCategory: null,
+    }));
+    return { data, unavailable: true };
+  }
+}
 
 export const metadata: Metadata = { title: "Executive Briefing" };
 
@@ -128,7 +150,7 @@ export default async function HamiltonHomePage({
   searchParams,
 }: HamiltonHomePageProps) {
   const params = await searchParams;
-  const data = await getCachedHomeBriefing();
+  const { data, unavailable: briefingUnavailable } = await loadHomeBriefing();
   const selectedInstitutionId = await resolveSelectedInstitutionId(params);
   const reportsHref = hrefWithInstitutionContext(
     "/pro/reports?intent=executive-briefing",
@@ -176,6 +198,14 @@ export default async function HamiltonHomePage({
           >
             {data.thesis ? "Analysis current" : "Analysis unavailable"}
           </span>
+          {briefingUnavailable && (
+            <p role="status" style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)" }}>
+              Hamilton&apos;s written briefing is temporarily unavailable; the fee data below is current.{" "}
+              <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
+                Try again
+              </Link>
+            </p>
+          )}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", flexShrink: 1 }}>

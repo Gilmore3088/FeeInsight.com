@@ -133,6 +133,7 @@ export function ReportWorkspace({
   const [narrativeTone, setNarrativeTone] = useState<NarrativeTone>("consulting");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [generatedReport, setGeneratedReport] =
     useState<ReportSummaryResponse | null>(initialReport?.report_json ?? null);
   const [generatedReportType, setGeneratedReportType] = useState<string>(
@@ -264,7 +265,9 @@ export function ReportWorkspace({
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
     const dateFrom = threeMonthsAgo.toISOString().split("T")[0];
 
-    const result = await generateReport({
+    let result: Awaited<ReturnType<typeof generateReport>>;
+    try {
+      result = await generateReport({
       templateType: selectedTemplate,
       dateFrom,
       dateTo: today,
@@ -277,9 +280,13 @@ export function ReportWorkspace({
       evidencePolicy: "provisional-first",
       selectedSource,
       selectedSourceLabel,
+      narrativeTone,
     });
-
-    setIsGenerating(false);
+    } catch {
+      result = { success: false, error: "Hamilton couldn't reach the server. Check your connection and try again." };
+    } finally {
+      setIsGenerating(false);
+    }
 
     if (result.success) {
       setGeneratedReport(result.report);
@@ -294,6 +301,7 @@ export function ReportWorkspace({
   async function handleExportPdf() {
     if (!generatedReport || !generatedReportId) return;
     setIsPdfExporting(true);
+    setPdfError(null);
     try {
       const res = await fetch("/api/pro/report-pdf", {
         method: "POST",
@@ -312,7 +320,7 @@ export function ReportWorkspace({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // Non-blocking
+      setPdfError("The PDF couldn't be created. Please try again.");
     } finally {
       setIsPdfExporting(false);
     }
@@ -342,8 +350,8 @@ export function ReportWorkspace({
           className="font-body max-w-xl"
           style={{ color: "var(--hamilton-secondary)" }}
         >
-          Synthesize market intelligence into board-ready narratives. Select a
-          framework or create a custom inquiry from the institutional data lake.
+          Turn verified fee data into board-ready narratives. Choose a report type,
+          set the audience, and Hamilton writes it from your peer evidence.
         </p>
         {selectedInstitution && (
           <div
@@ -378,8 +386,9 @@ export function ReportWorkspace({
       </header>
 
       {/* Error banner */}
-      {error && (
+      {(error || pdfError) && (
         <div
+          role="alert"
           className="mb-8 p-4 text-sm border"
           style={{
             borderColor: "#dc2626",
@@ -387,7 +396,7 @@ export function ReportWorkspace({
             backgroundColor: "rgba(220,38,38,0.05)",
           }}
         >
-          {error}
+          {error ?? pdfError}
         </div>
       )}
 

@@ -110,7 +110,7 @@ export function SimulateWorkspace({
     : "Verified national index";
 
   // ─── Streaming Interpretation ────────────────────────────────────────────
-  const { complete, completion, isLoading: isStreaming } = useCompletion({
+  const { complete, completion, isLoading: isStreaming, error: interpretationError } = useCompletion({
     api: "/api/hamilton/simulate",
   });
 
@@ -132,7 +132,9 @@ export function SimulateWorkspace({
       ? (canSimulate(confidenceTier) as { allowed: false; reason: string }).reason
       : "";
 
-  const canGenerateSummary = !isStreaming && completion.length > 0 && !simulationBlocked;
+  // The board summary works from the computed positions; Hamilton's interpretation is
+  // a bonus, so a failed interpretation never blocks it.
+  const canGenerateSummary = !isStreaming && Boolean(distribution) && !simulationBlocked;
   const collaborateHref = hrefWithInstitutionContext(
     "/pro/settings#workspace-access",
     institutionId,
@@ -623,6 +625,14 @@ export function SimulateWorkspace({
                 interpretation={completion}
                 isStreaming={isStreaming}
               />
+              {interpretationError && !isStreaming && (
+                <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded px-3 py-2 text-sm" style={{ backgroundColor: "#fef2f2", color: "#7f1d1d" }}>
+                  <span>Hamilton&apos;s interpretation didn&apos;t load. The positions above are still accurate.</span>
+                  <button type="button" onClick={() => void handleInputCommit()} className="font-semibold underline">
+                    Retry
+                  </button>
+                </div>
+              )}
 
               {/* Finalize / Board Summary CTA */}
               <div className="space-y-2">

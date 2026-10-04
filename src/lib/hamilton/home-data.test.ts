@@ -118,3 +118,27 @@ describe("Hamilton home signal data", () => {
     expect(payload.data.total_institutions).toBe(335);
   });
 });
+
+describe("fetchCacheableHomeBriefing", () => {
+  it("throws instead of returning a briefing with no thesis, so the failure is never cached", async () => {
+    const feeIndex = await import("@/lib/data-store/fee-index");
+    const generate = await import("./generate");
+    vi.mocked(feeIndex.getNationalIndexCached).mockResolvedValue([
+      { fee_category: "overdraft", institution_count: 30, median_amount: 30, p25_amount: 25, p75_amount: 35, maturity_tier: "strong" },
+    ] as never);
+    vi.mocked(feeIndex.getSourcedInstitutionCount).mockResolvedValue(30);
+    vi.mocked(generate.generateGlobalThesis).mockRejectedValue(new Error("provider down"));
+
+    const { fetchCacheableHomeBriefing } = await import("./home-data");
+    await expect(fetchCacheableHomeBriefing()).rejects.toThrow("thesis generation failed");
+  });
+
+  it("does not call the provider when the thesis is not requested", async () => {
+    const generate = await import("./generate");
+    vi.mocked(generate.generateGlobalThesis).mockClear();
+    const { fetchHomeBriefingData } = await import("./home-data");
+    const data = await fetchHomeBriefingData({ includeThesis: false });
+    expect(data.thesis).toBeNull();
+    expect(generate.generateGlobalThesis).not.toHaveBeenCalled();
+  });
+});

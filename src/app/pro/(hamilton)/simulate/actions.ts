@@ -281,7 +281,7 @@ export async function listScenarios(limit = 20): Promise<
   }>
 > {
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
 
   try {
     const rows = await sql<
