@@ -17,6 +17,12 @@ import { WhatChangedCard } from "@/components/hamilton/home/WhatChangedCard";
 import { PriorityAlertsCard } from "@/components/hamilton/home/PriorityAlertsCard";
 import { MonitorFeedPreview } from "@/components/hamilton/home/MonitorFeedPreview";
 import { RecommendedActionCard } from "@/components/hamilton/home/RecommendedActionCard";
+import { InstitutionPositionCard } from "@/components/hamilton/home/InstitutionPositionCard";
+import {
+  fetchInstitutionPositioning,
+  type InstitutionPositioning,
+} from "@/lib/hamilton/institution-position";
+import { parseInstitutionId } from "@/lib/hamilton/institution-context";
 import type { HomeBriefingSignals } from "@/lib/hamilton/home-data";
 
 export const dynamic = "force-dynamic";
@@ -38,9 +44,27 @@ async function loadHomeBriefing(): Promise<{ data: HomeBriefingData; unavailable
       positioning: [],
       spotlightCount: 0,
       totalInstitutions: 0,
-      recommendedCategory: null,
     }));
     return { data, unavailable: true };
+  }
+}
+
+/** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
+const getCachedInstitutionPositioning = unstable_cache(
+  fetchInstitutionPositioning,
+  ["hamilton-home-briefing-institution"],
+  { revalidate: 3600 },
+);
+
+async function loadInstitutionPositioning(
+  selectedInstitutionId: string | null,
+): Promise<{ positioning: InstitutionPositioning | null; unavailable: boolean }> {
+  const institutionId = parseInstitutionId(selectedInstitutionId);
+  if (!institutionId) return { positioning: null, unavailable: false };
+  try {
+    return { positioning: await getCachedInstitutionPositioning(institutionId), unavailable: false };
+  } catch {
+    return { positioning: null, unavailable: true };
   }
 }
 
@@ -144,6 +168,8 @@ export default async function HamiltonHomePage({
   const params = await searchParams;
   const { data, unavailable: briefingUnavailable } = await loadHomeBriefing();
   const selectedInstitutionId = await resolveSelectedInstitutionId(params);
+  const { positioning, unavailable: positioningUnavailable } =
+    await loadInstitutionPositioning(selectedInstitutionId);
   const reportsHref = hrefWithInstitutionContext(
     "/pro/reports?intent=executive-briefing",
     selectedInstitutionId,
@@ -238,10 +264,22 @@ export default async function HamiltonHomePage({
         <HamiltonViewCard
           thesis={data.thesis}
           confidence={data.confidence}
+          priority={positioning?.priority ?? null}
           selectedInstitutionId={selectedInstitutionId}
         />
 
-        {/* Row 2: Positioning Evidence — full width */}
+        {/* Row 2: the selected institution against its benchmark */}
+        {positioning && <InstitutionPositionCard positioning={positioning} />}
+        {positioningUnavailable && (
+          <p role="status" style={{ fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)", margin: 0 }}>
+            Your institution&apos;s position is temporarily unavailable.{" "}
+            <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
+              Try again
+            </Link>
+          </p>
+        )}
+
+        {/* National benchmark for the lead spotlight category */}
         <PositioningEvidence
           entries={data.positioning}
           selectedInstitutionId={selectedInstitutionId}
@@ -249,8 +287,9 @@ export default async function HamiltonHomePage({
 
         {/* Row 3: Recommended Action — full width */}
         <RecommendedActionCard
-          recommendedCategory={data.recommendedCategory}
-          thesisExists={data.thesis !== null}
+          topGap={positioning?.topGap ?? null}
+          benchmarkLabel={positioning?.benchmarkLabel ?? null}
+          institutionName={positioning?.institutionName ?? null}
           selectedInstitutionId={selectedInstitutionId}
         />
 

@@ -66,7 +66,6 @@ export interface HomeBriefingData {
   positioning: PositioningEntry[];
   spotlightCount: number;
   totalInstitutions: number;
-  recommendedCategory: string | null;
 }
 
 function getCurrentQuarter(): string {
@@ -200,34 +199,12 @@ export async function fetchHomeBriefingData(
     thesis = null;
   }
 
-  // Derive recommendedCategory from thesis tensions (per D-07)
-  // Note: spotlightCategories is already declared at the top of this function.
-  let recommendedCategory: string | null = null;
-  if (thesis) {
-    const textToSearch = [
-      thesis.core_thesis,
-      ...(thesis.tensions ?? []).map((t) => `${t.implication ?? ""}`),
-    ]
-      .join(" ")
-      .toLowerCase();
-    for (const cat of spotlightCategories) {
-      if (textToSearch.includes(cat.replace(/_/g, " "))) {
-        recommendedCategory = cat;
-        break;
-      }
-    }
-  }
-  if (!recommendedCategory) {
-    recommendedCategory = "overdraft";
-  }
-
   return {
     thesis,
     confidence,
     positioning,
     spotlightCount: positioning.length,
     totalInstitutions,
-    recommendedCategory,
   };
 }
 

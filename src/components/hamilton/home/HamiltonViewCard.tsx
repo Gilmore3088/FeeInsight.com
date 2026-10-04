@@ -11,11 +11,13 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 interface HamiltonViewCardProps {
   thesis: ThesisOutput | null;
   confidence: "high" | "medium" | "low";
+  /** From the size of the selected institution's largest fee gap; null hides the badge. */
+  priority?: "high" | "medium" | "low" | null;
   selectedInstitutionId?: string | null;
 }
 
-function PriorityBadge({ confidence }: { confidence: "high" | "medium" | "low" }) {
-  if (confidence === "high") {
+function PriorityBadge({ priority }: { priority: "high" | "medium" | "low" }) {
+  if (priority === "high") {
     return (
       <span
         style={{
@@ -46,7 +48,7 @@ function PriorityBadge({ confidence }: { confidence: "high" | "medium" | "low" }
     );
   }
 
-  if (confidence === "medium") {
+  if (priority === "medium") {
     return (
       <span
         style={{
@@ -110,6 +112,7 @@ function PriorityBadge({ confidence }: { confidence: "high" | "medium" | "low" }
 export function HamiltonViewCard({
   thesis,
   confidence,
+  priority = null,
   selectedInstitutionId,
 }: HamiltonViewCardProps) {
   const thesisText = thesis?.core_thesis ?? null;
@@ -159,7 +162,7 @@ export function HamiltonViewCard({
         >
           Hamilton&apos;s View
         </h2>
-        <PriorityBadge confidence={confidence} />
+        {priority && <PriorityBadge priority={priority} />}
       </div>
 
       {/* Core thesis — large italic serif */}

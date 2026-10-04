@@ -5,6 +5,7 @@ import {
   STATS_METHOD_VERSION,
   STATS_ROW_FILTER,
   summarizeFeesBy,
+  valuePerInstitution,
 } from "./fee-stats";
 
 /** The canonical fee catalog — only these categories appear in indexes and reports */
@@ -90,6 +91,45 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
       WHERE ${conditions.join(" AND ")}`,
     params as never[],
   ) as ContractFeeRow[];
+}
+
+/**
+ * One institution's value per category under the statistics contract (the median of its
+ * approved, sourced amounts), so "your fee" is measured the same way as the benchmark.
+ */
+export async function getInstitutionFeeValues(
+  institutionId: number,
+  categories?: string[],
+): Promise<Map<string, number>> {
+  const params: (number | string[])[] = [institutionId];
+  let categoryFilter = "";
+  if (categories && categories.length > 0) {
+    params.push(categories);
+    categoryFilter = "AND ef.fee_category = ANY($2::text[])";
+  }
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = $1
+        AND ef.fee_category IS NOT NULL
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}
+        ${categoryFilter}`,
+    params as never[],
+  ) as { fee_category: string; amount: number | string | null }[];
+
+  const byCategory = new Map<string, { institution_id: number; amount: number | string | null }[]>();
+  for (const row of rows) {
+    const list = byCategory.get(row.fee_category) ?? [];
+    list.push({ institution_id: institutionId, amount: row.amount });
+    byCategory.set(row.fee_category, list);
+  }
+  const values = new Map<string, number>();
+  for (const [category, list] of byCategory) {
+    const value = valuePerInstitution(list).get(institutionId);
+    if (value !== undefined) values.set(category, value);
+  }
+  return values;
 }
 
 /** Distinct institutions with at least one fee that counts toward statistics. */

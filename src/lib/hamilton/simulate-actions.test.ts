@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   completeHamiltonRefreshJobsForInstitution: vi.fn(),
   resolveHamiltonPeerIndex: vi.fn(),
   getInstitutionById: vi.fn(),
+  getInstitutionFeeValues: vi.fn(),
+}));
+
+vi.mock("@/lib/data-store/fee-index", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/data-store/fee-index")>()),
+  getInstitutionFeeValues: mocks.getInstitutionFeeValues,
 }));
 
 vi.mock("@/lib/hamilton/peer-index", () => ({
@@ -73,17 +79,17 @@ describe("Simulate actions institution identity", () => {
     const result = await getInstitutionFee("first-national-bank", "wire_transfer");
 
     expect(result).toBeNull();
-    expect(mocks.sql).not.toHaveBeenCalled();
+    expect(mocks.getInstitutionFeeValues).not.toHaveBeenCalled();
   });
 
   it("looks up institution fees by canonical numeric ID only", async () => {
     const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
-    mocks.sql.mockResolvedValue([{ amount: "35.00" }]);
+    mocks.getInstitutionFeeValues.mockResolvedValue(new Map([["wire_transfer", 35]]));
 
     const result = await getInstitutionFee(" 2945 ", "wire_transfer");
 
     expect(result).toEqual({ amount: 35 });
-    expect(mocks.sql.mock.calls[0][1]).toBe(2945);
+    expect(mocks.getInstitutionFeeValues).toHaveBeenCalledWith(2945, ["wire_transfer"]);
   });
 
   it("persists canonical scenario institution IDs and completes matching refresh jobs", async () => {
@@ -135,10 +141,10 @@ describe("Simulate actions institution identity", () => {
     expect(mocks.sql).not.toHaveBeenCalled();
   });
 
-  it("uses the institution's median when it lists several amounts", async () => {
+  it("returns null when the institution has no published fee in the category", async () => {
     const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
-    mocks.sql.mockResolvedValue([{ amount: "30.00" }, { amount: "35.50" }, { amount: "40.00" }]);
+    mocks.getInstitutionFeeValues.mockResolvedValue(new Map());
 
-    expect(await getInstitutionFee("2945", "wire_transfer")).toEqual({ amount: 35.5 });
+    expect(await getInstitutionFee("2945", "wire_transfer")).toBeNull();
   });
 });
