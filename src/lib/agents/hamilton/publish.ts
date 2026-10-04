@@ -20,6 +20,14 @@ export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
 export const HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE = 0.8;
+/**
+ * An institution enters the catalog only once it has this many distinct fees (canonical
+ * fee keys) live or ready to publish. One overdraft fee is not a fee schedule, and
+ * counting it as a covered institution overstates coverage. Rows for thinner
+ * institutions stay verified and unpublished, and publish on a later run once Knox
+ * finds more of the schedule (Rosetta re-reads documents with few Knox fees).
+ */
+export const HAMILTON_PUBLISH_MIN_INSTITUTION_FEES = 3;
 
 const VALID_CANONICAL_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 const BLOCKING_FLAGS = new Set([
@@ -83,9 +91,19 @@ export interface RunHamiltonPublishOptions {
   institutionId?: number;
   stateCode?: string;
   minConfidence?: number;
+  /** Distinct fees an institution needs before any of its rows publish. */
+  minInstitutionFees?: number;
   stepId?: number;
   dryRun?: boolean;
   db?: SqlTag;
+}
+
+export interface HeldThinInstitution {
+  institutionId: number;
+  institutionName: string;
+  /** Distinct fees live or ready to publish for this institution. */
+  feeCount: number;
+  heldRows: number;
 }
 
 export interface RunHamiltonPublishResult {
@@ -101,6 +119,10 @@ export interface RunHamiltonPublishResult {
   outcomes: Partial<Record<AttemptOutcome, number>>;
   limit: number;
   minConfidence: number;
+  minInstitutionFees: number;
+  /** Rows not published because their institution is below the fee minimum. */
+  heldFees: number;
+  heldInstitutions: HeldThinInstitution[];
   dryRun: boolean;
   batchId: string;
   results: HamiltonPublishResult[];
@@ -116,6 +138,12 @@ function boundedConfidence(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE;
   return Math.min(Math.max(parsed, 0), 1);
+}
+
+function boundedMinInstitutionFees(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return HAMILTON_PUBLISH_MIN_INSTITUTION_FEES;
+  return Math.min(Math.max(Math.floor(parsed), 1), 50);
 }
 
 function parseFlags(value: unknown): string[] {
@@ -181,11 +209,34 @@ async function selectVerifiedFees(
   db: SqlTag,
   limit: number,
   learning: boolean,
+  minConfidence: number,
+  minInstitutionFees: number,
   institutionId?: number,
   stateCode?: string,
 ): Promise<VerifiedFeeRow[]> {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
+  if (minInstitutionFees > 1) {
+    // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
+    // the rest of the queue; the exact count (with every publish rule) runs after.
+    params.push(minConfidence, minInstitutionFees);
+    filters.push(`AND (
+           SELECT COUNT(DISTINCT depth.canonical_fee_key)
+             FROM (
+               SELECT fp.canonical_fee_key
+                 FROM published_fee_records fp
+                WHERE fp.institution_id = fv.institution_id
+                  AND fp.rolled_back_at IS NULL
+               UNION
+               SELECT pv.canonical_fee_key
+                 FROM verified_fee_observations pv
+                WHERE pv.institution_id = fv.institution_id
+                  AND pv.review_status IN ('verified', 'approved')
+                  AND pv.outlier_flags ? 'agentic_darwin_verified'
+                  AND COALESCE(pv.extraction_confidence, 0) >= $${params.length - 1}
+             ) depth
+         ) >= $${params.length}`);
+  }
   if (institutionId) {
     params.push(institutionId);
     filters.push(`AND fv.institution_id = $${params.length}`);
@@ -241,6 +292,66 @@ async function selectVerifiedFees(
     `,
     params,
   );
+}
+
+interface InstitutionDepthRow extends VerifiedFeeRow {
+  depth_source: "published" | "pending";
+}
+
+/**
+ * Distinct fees per institution that are live in the catalog or would publish now
+ * under every publish rule. Covers all of an institution's pending rows, not only
+ * this batch's, so a batch cut by the limit does not hold a deep institution.
+ */
+async function institutionFeeDepth(
+  db: SqlTag,
+  institutionIds: number[],
+  minConfidence: number,
+): Promise<Map<number, number>> {
+  const depth = new Map<number, Set<string>>();
+  if (institutionIds.length === 0) return new Map();
+  const rows = await db.unsafe<InstitutionDepthRow[]>(
+    `
+      -- institution_fee_depth
+      SELECT 'published' AS depth_source,
+             fp.institution_id,
+             fp.canonical_fee_key,
+             NULL::text AS fee_name,
+             NULL::text AS source_url,
+             NULL::text AS document_r2_key,
+             NULL::text AS verified_by_agent_event_id,
+             NULL::numeric AS amount,
+             NULL::numeric AS extraction_confidence,
+             '[]'::jsonb AS outlier_flags
+        FROM published_fee_records fp
+       WHERE fp.institution_id = ANY($1::bigint[])
+         AND fp.rolled_back_at IS NULL
+      UNION ALL
+      SELECT 'pending' AS depth_source,
+             fv.institution_id,
+             fv.canonical_fee_key,
+             fv.fee_name,
+             fv.source_url,
+             fv.document_r2_key,
+             fv.verified_by_agent_event_id::text,
+             fv.amount,
+             fv.extraction_confidence,
+             fv.outlier_flags
+        FROM verified_fee_observations fv
+       WHERE fv.institution_id = ANY($1::bigint[])
+         AND fv.review_status IN ('verified', 'approved')
+         AND fv.outlier_flags ? 'agentic_darwin_verified'
+    `,
+    [institutionIds],
+  );
+  for (const row of rows) {
+    if (row.depth_source === "pending" && publishSkipReason(row, minConfidence)) continue;
+    const id = Number(row.institution_id);
+    const keys = depth.get(id) ?? new Set<string>();
+    keys.add(row.canonical_fee_key);
+    depth.set(id, keys);
+  }
+  return new Map(Array.from(depth, ([id, keys]) => [id, keys.size]));
 }
 
 async function insertPublishedFee(
@@ -643,10 +754,44 @@ export async function runHamiltonPublish(
   const db = options.db ?? sql;
   const limit = boundedLimit(options.limit);
   const minConfidence = boundedConfidence(options.minConfidence);
+  const minInstitutionFees = boundedMinInstitutionFees(options.minInstitutionFees);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
-  const rows = await selectVerifiedFees(db, limit, learning, options.institutionId, options.stateCode);
+  const selected = await selectVerifiedFees(
+    db,
+    limit,
+    learning,
+    minConfidence,
+    minInstitutionFees,
+    options.institutionId,
+    options.stateCode,
+  );
+  const depthByInstitution = minInstitutionFees > 1
+    ? await institutionFeeDepth(
+        db,
+        Array.from(new Set(selected.map((row) => Number(row.institution_id)))),
+        minConfidence,
+      )
+    : new Map<number, number>();
+  // Held rows are left out of results and the attempt log, so they stay selectable
+  // and publish on the run where their institution reaches the minimum.
+  const held = new Map<number, HeldThinInstitution>();
+  const rows = selected.filter((row) => {
+    if (minInstitutionFees <= 1) return true;
+    const institutionId = Number(row.institution_id);
+    const feeCount = depthByInstitution.get(institutionId) ?? 0;
+    if (feeCount >= minInstitutionFees) return true;
+    const entry = held.get(institutionId) ?? {
+      institutionId,
+      institutionName: institutionLabel(row),
+      feeCount,
+      heldRows: 0,
+    };
+    entry.heldRows += 1;
+    held.set(institutionId, entry);
+    return false;
+  });
   const rowByVerifiedFeeId = new Map(rows.map((row) => [Number(row.fee_verified_id), row]));
   const results: HamiltonPublishResult[] = [];
 
@@ -760,8 +905,9 @@ export async function runHamiltonPublish(
   }
 
   const published = results.filter((result) => result.status === "published");
+  const heldInstitutions = Array.from(held.values());
   return {
-    selectedVerifiedFees: rows.length,
+    selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
     publishedFees: published.length,
     skippedFees: results.length - published.length,
@@ -771,6 +917,9 @@ export async function runHamiltonPublish(
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     limit,
     minConfidence,
+    minInstitutionFees,
+    heldFees: heldInstitutions.reduce((sum, entry) => sum + entry.heldRows, 0),
+    heldInstitutions,
     dryRun,
     batchId,
     results,

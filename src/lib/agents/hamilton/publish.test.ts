@@ -8,9 +8,22 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
+/** Three live catalog fees per institution, so the fee minimum passes by default. */
+function deepInstitutionRows(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const ids = Array.from(new Set(rows.map((row) => row.institution_id)));
+  return ids.flatMap((institution_id) =>
+    ["monthly_maintenance", "nsf", "wire_domestic_outgoing"].map((canonical_fee_key) => ({
+      depth_source: "published",
+      institution_id,
+      canonical_fee_key,
+    })),
+  );
+}
+
 function createDbMock(
   rows: Array<Record<string, unknown>>,
   priorPublishedRows: Array<Record<string, unknown>> = [],
+  depthRows: Array<Record<string, unknown>> = deepInstitutionRows(rows),
 ): DbMock {
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray) => {
@@ -27,6 +40,7 @@ function createDbMock(
     return Promise.resolve([]);
   }) as DbMock;
   db.unsafe = vi.fn((query: string) => {
+    if (query.includes("institution_fee_depth")) return Promise.resolve(depthRows);
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -177,7 +191,7 @@ describe("Hamilton agentic publish", () => {
 
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
-    expect(db.unsafe).toHaveBeenCalledTimes(1);
+    expect(db.unsafe).toHaveBeenCalledTimes(2);
     expect(writes(db)).toEqual([]);
   });
 
@@ -322,9 +336,64 @@ describe("Hamilton agentic publish", () => {
     expect(values.filter((value) => value === verifiedFee.verified_by_agent_event_id)).toHaveLength(2);
   });
 
+  describe("institution fee minimum", () => {
+    const pendingRow = (fee_verified_id: number, canonical_fee_key: string, extra: Record<string, unknown> = {}) => ({
+      ...verifiedFee,
+      fee_verified_id,
+      canonical_fee_key,
+      depth_source: "pending",
+      ...extra,
+    });
+
+    it("holds every row for an institution with fewer than three fees", async () => {
+      const db = createDbMock([verifiedFee], [], [pendingRow(801, "overdraft"), pendingRow(802, "nsf")]);
+
+      const result = await runHamiltonPublish({ runId: 601, db: asPublishDb(db) });
+
+      expect(result).toMatchObject({
+        selectedVerifiedFees: 1,
+        processedVerifiedFees: 0,
+        publishedFees: 0,
+        heldFees: 1,
+        minInstitutionFees: 3,
+        heldInstitutions: [{ institutionId: 42, feeCount: 2, heldRows: 1 }],
+      });
+      expect(writes(db)).toEqual([]);
+      const selectSql = String(db.unsafe.mock.calls[0][0]);
+      expect(selectSql).toContain("COUNT(DISTINCT depth.canonical_fee_key)");
+    });
+
+    it("counts pending rows outside the batch, but not ones a publish rule would skip", async () => {
+      const deep = [
+        { depth_source: "published", institution_id: 42, canonical_fee_key: "monthly_maintenance" },
+        pendingRow(801, "overdraft"),
+        pendingRow(802, "nsf"),
+      ];
+      const published = await runHamiltonPublish({ runId: 602, db: asPublishDb(createDbMock([verifiedFee], [], deep)) });
+      expect(published).toMatchObject({ publishedFees: 1, heldFees: 0 });
+
+      const shallow = [...deep.slice(1), pendingRow(803, "monthly_maintenance", { extraction_confidence: "0.4" })];
+      const held = await runHamiltonPublish({ runId: 603, db: asPublishDb(createDbMock([verifiedFee], [], shallow)) });
+      expect(held).toMatchObject({ publishedFees: 0, heldInstitutions: [{ feeCount: 2 }] });
+    });
+
+    it("publishes single fees when the minimum is set to one", async () => {
+      const db = createDbMock([verifiedFee], [], []);
+
+      const result = await runHamiltonPublish({ runId: 604, minInstitutionFees: 1, db: asPublishDb(db) });
+
+      expect(result).toMatchObject({ publishedFees: 1, heldFees: 0, minInstitutionFees: 1 });
+      expect(db.unsafe.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("institution_fee_depth");
+    });
+  });
+
   describe("with the learning core", () => {
-    function learningDb(rows: Array<Record<string, unknown>>, prior: Array<Record<string, unknown>> = []): DbMock {
-      const db = createDbMock(rows, prior);
+    function learningDb(
+      rows: Array<Record<string, unknown>>,
+      prior: Array<Record<string, unknown>> = [],
+      depthRows?: Array<Record<string, unknown>>,
+    ): DbMock {
+      const db = createDbMock(rows, prior, depthRows);
       const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
       db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
         if (templateText(strings).includes("learning_schema_ready")) {
@@ -358,6 +427,15 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'verified:' || fv.fee_verified_id::text");
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
+    });
+
+    it("does not log held rows, so they publish once the institution has enough fees", async () => {
+      const db = learningDb([verifiedFee], [], [{ ...verifiedFee, depth_source: "pending" }]);
+
+      const result = await runHamiltonPublish({ runId: 503, db: asPublishDb(db) });
+
+      expect(result).toMatchObject({ heldFees: 1, outcomes: {} });
+      expect(attemptValues(db)).toEqual([]);
     });
 
     it("logs an identical re-verified row as unchanged", async () => {

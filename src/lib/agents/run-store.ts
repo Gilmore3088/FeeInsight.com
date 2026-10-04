@@ -577,6 +577,7 @@ async function executeAgenticStep(
           "min_confidence",
           "confidence_threshold",
         ]),
+        minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
       const indexRefresh = published.dryRun
@@ -584,7 +585,7 @@ async function executeAgenticStep(
         : await refreshFeeIndexCache(tx, { runId: run.id, force: published.publishedFees > 0 });
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -596,6 +597,14 @@ async function executeAgenticStep(
           learning_log: published.learning,
           publish_limit: published.limit,
           publish_min_confidence: published.minConfidence,
+          publish_min_institution_fees: published.minInstitutionFees,
+          held_thin_fees: published.heldFees,
+          held_thin_institutions: published.heldInstitutions.slice(0, 25).map((entry) => ({
+            institution_id: entry.institutionId,
+            institution_name: entry.institutionName,
+            fee_count: entry.feeCount,
+            held_rows: entry.heldRows,
+          })),
           publish_batch_id: published.batchId,
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,

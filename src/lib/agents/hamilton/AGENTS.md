@@ -39,6 +39,13 @@ Hamilton owns publication and analysis surfaces.
   run transaction.
 - Every decision is written to `pipeline_attempts` (stage `publish`, fingerprint
   `verified:<fee_verified_id>`); a decided row is never selected again.
+- An institution publishes only once it has at least 3 distinct fees (canonical keys)
+  live or ready to publish (`HAMILTON_PUBLISH_MIN_INSTITUTION_FEES`; run param
+  `publish_min_institution_fees`, 1 turns it off). Thinner institutions' rows are held:
+  not published and not written to `pipeline_attempts`, so they publish on the run
+  where Knox's later finds bring the institution to the minimum. The step detail lists
+  them as `held_thin_institutions`. The gate applies to new publishes only; it does not
+  close rows already live.
 - Dry runs read the prior live row and report the same skips, movements and supersedes
   as a real run, without writing.
 - Not yet built: closing a row when a fee line disappears from a newer copy of its
