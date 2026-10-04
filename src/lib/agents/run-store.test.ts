@@ -66,6 +66,22 @@ vi.mock("@/lib/agents/daily-brief", () => ({
   }),
 }));
 
+vi.mock("@/lib/agents/fee-alerts", () => ({
+  runFeeAlertDispatch: vi.fn().mockResolvedValue({
+    dryRun: false,
+    readers: 2,
+    sent: 0,
+    failed: 0,
+    notConfigured: true,
+    reason: "TRANSACTIONAL_EMAIL_FROM is not configured.",
+    institutions: 2,
+    changes: 3,
+    newlyPublished: 0,
+    deferred: 0,
+  }),
+  summarizeFeeAlertDispatch: vi.fn(() => "Atlas found 2 reader(s) with fee changes but did not email them."),
+}));
+
 vi.mock("@/lib/agents/darwin/verify", () => ({
   runDarwinVerify: runDarwinVerifyMock,
 }));
@@ -901,6 +917,18 @@ describe("agentic run store", () => {
     const briefRun = { ...runRow, progress_total: 1 };
     installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
     installTxMocks(briefStep, briefRun);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+    expect(combinedTransactionSql()).toContain("step.finished");
+  });
+
+  it("runs the fee-alert dispatch as a visible step while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const alertStep = [{ ...queuedStepRows[0], step_key: "fee-alert-dispatch", agent_name: "atlas", title: "Fee alerts" }];
+    const alertRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: alertRun, finalSteps: alertStep });
+    installTxMocks(alertStep, alertRun);
 
     await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
     expect(combinedTransactionSql()).toContain("step.finished");

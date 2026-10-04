@@ -7,6 +7,10 @@ const redirectMock = vi.hoisted(() => vi.fn((url: string) => {
 }));
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 
+const auth = vi.hoisted(() => ({ getCurrentUser: vi.fn(), canAccessPremium: vi.fn() }));
+vi.mock("@/lib/auth", () => ({ getCurrentUser: auth.getCurrentUser }));
+vi.mock("@/lib/access", () => ({ canAccessPremium: auth.canAccessPremium }));
+
 import { HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 
 const proRoot = join(process.cwd(), "src/app/pro");
@@ -25,8 +29,12 @@ describe("Pro reference pages", () => {
     expect(() => LegacyPeersPage()).toThrow("NEXT_REDIRECT:/pro/settings#peer-sets");
   });
 
-  it("send /pro straight to the workspace", async () => {
+  it("send /pro to the workspace for subscribers and to pricing otherwise", async () => {
     const { default: ProIndexPage } = await import("../page");
-    expect(() => ProIndexPage()).toThrow("NEXT_REDIRECT:/pro/hamilton");
+    auth.getCurrentUser.mockResolvedValue({ id: 7 });
+    auth.canAccessPremium.mockReturnValue(true);
+    await expect(ProIndexPage()).rejects.toThrow("NEXT_REDIRECT:/pro/hamilton");
+    auth.canAccessPremium.mockReturnValue(false);
+    await expect(ProIndexPage()).rejects.toThrow("NEXT_REDIRECT:/subscribe?from=%2Fpro");
   });
 });

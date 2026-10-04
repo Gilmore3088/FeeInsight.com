@@ -53,7 +53,7 @@ export function proFeatureList(summary: PublicStatsSummary): string[] {
     "Continuous monitoring: know the day a competitor changes a fee",
     "What-if scenario modeling on your own schedule",
     "Board-ready reports, every figure cited to its source document",
-    "CSV and API exports",
+    "CSV exports (API access on request)",
     "Fed district economic context, Beige Book summaries, CFPB complaint data",
   ];
 }

@@ -1,4 +1,5 @@
 import type { User } from "@/lib/auth";
+import { TAXONOMY_COUNT, getSpotlightCategories } from "@/lib/fee-taxonomy";
 
 /** Days a past_due subscriber keeps access while Stripe retries the card. */
 export const PAST_DUE_GRACE_DAYS = 7;
@@ -25,7 +26,7 @@ export function canAccessPremium(user: User | null): boolean {
   return user.subscription_status === "active" || isInPaymentGrace(user);
 }
 
-/** Can see all 49 fee categories (free sees 6 spotlight only). */
+/** Can see the full fee catalog (free sees the spotlight categories only). */
 export function canAccessAllCategories(user: User | null): boolean {
   return canAccessPremium(user);
 }
@@ -51,9 +52,15 @@ export function canAccessFullDistrict(user: User | null): boolean {
   return canAccessPremium(user);
 }
 
-/** Number of fee categories visible. */
+/**
+ * Number of fee categories visible to this user.
+ *
+ * Both figures derive from the taxonomy. The catalog is a curated subset that changes
+ * as categories are added or retired, so no count is hardcoded here or advertised in
+ * copy — see `docs/plans/guides-remediation-plan-2026-08-15.md`, item E-5.
+ */
 export function getVisibleCategoryCount(user: User | null): number {
-  return canAccessPremium(user) ? 49 : 6;
+  return canAccessPremium(user) ? TAXONOMY_COUNT : getSpotlightCategories().length;
 }
 
 /** Daily Hamilton analysis query limit. */

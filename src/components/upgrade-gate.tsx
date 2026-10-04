@@ -11,6 +11,11 @@ interface UpgradeGateProps {
    * category count so it can never overstate the index.
    */
   count?: number;
+  /**
+   * "consumer": shown on free reader pages. Says what the professional tier is for and
+   * sells nothing a consumer would not use (no exports, no API).
+   */
+  audience?: "consumer" | "professional";
 }
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
@@ -23,6 +28,7 @@ export async function UpgradeGate({
   message,
   compact = false,
   count,
+  audience = "professional",
 }: UpgradeGateProps) {
   const summary = await getPublicStatsSummary();
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
@@ -46,7 +52,7 @@ export async function UpgradeGate({
   return (
     <div className="bg-[#FFFDF9] border border-[#E8DFD1] rounded-xl p-6 text-center">
       <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#FFF0ED] mb-3">
-        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           <path d="M7 11V7a5 5 0 0110 0v4" />
         </svg>
@@ -58,7 +64,9 @@ export async function UpgradeGate({
         {message || "Unlock full access"}
       </h3>
       <p className="text-sm text-[#6B6255] mb-4">
-        {moreCount
+        {audience === "consumer"
+          ? `These breakdowns are part of ${PRO_LABEL}, built for banks, credit unions and researchers who benchmark fee schedules. Everything above stays free.`
+          : moreCount
           ? `${moreCount} more fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`
           : `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`}
       </p>
@@ -70,7 +78,7 @@ export async function UpgradeGate({
         className="inline-flex items-center gap-1.5 rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#C44B2E]/15 hover:bg-[#A93D25] hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all"
       >
         See pricing
-        <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
           <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
         </svg>
       </Link>

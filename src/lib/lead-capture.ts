@@ -9,6 +9,8 @@
 import { VALID_US_CODES } from "@/lib/us-states";
 
 export const LEAD_CAPTURE_SOURCES = {
+  // No longer mounted: institution pages save to account-based alerts (FeeAlertControl).
+  // Kept so leads already captured from this placement still resolve and get their email.
   institution_alerts: "capture_institution",
   state_benchmark: "capture_state",
   national_index: "capture_national_index",

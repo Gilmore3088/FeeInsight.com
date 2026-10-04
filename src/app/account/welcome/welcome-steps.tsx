@@ -83,7 +83,9 @@ export function WelcomeSteps({
   pendingWorkspaceInvitations,
   workspaceMemberships,
 }: WelcomeStepsProps) {
-  const [step, setStep] = useState(1);
+  // Someone who already told us their organization skips that step, except Pro members:
+  // Hamilton needs a real institution picked from the list, not a typed name.
+  const [step, setStep] = useState(user.institution_name && !isPro ? 2 : 1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedInstitution, setSavedInstitution] = useState<string | null>(null);
@@ -258,7 +260,7 @@ export function WelcomeSteps({
           </h1>
           <p className="text-sm text-[#6B6255] mb-6">
             {savedInstitution ? `${savedInstitution} is saved as your institution. ` : ""}
-            Here are the national median fees across key categories (each institution counted once). With your account, you can drill into all 49 categories with peer filters.
+            Here are the national median fees across key categories (each institution counted once). With your account, you can drill into the full fee catalog with peer filters.
           </p>
 
           <div className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] overflow-hidden mb-6">
@@ -320,7 +322,7 @@ export function WelcomeSteps({
                   href={href}
                   className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-4 no-underline transition-colors hover:border-[#C44B2E]/30 hover:bg-white"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-[#C44B2E] mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-[#C44B2E] mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d={tool.icon} />
                   </svg>
                   <h3 className="text-sm font-medium text-[#1A1815] mb-1">
@@ -348,7 +350,7 @@ export function WelcomeSteps({
       {step === 4 && (
         <div className="text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 mb-4">
-            <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-emerald-600" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-emerald-600" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6L9 17l-5-5" />
             </svg>
           </div>

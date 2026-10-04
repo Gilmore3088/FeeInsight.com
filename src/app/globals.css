@@ -235,7 +235,10 @@
 }
 
 .fi-reveal {
-  animation: public-fade-up 360ms ease-out both;
+  /* "backwards", not "both": a fill-mode that persists keeps the element promoted
+     and traps any z-indexed child (the institution search dropdown) beneath later
+     siblings. The keyframes end at the natural state, so nothing visible changes. */
+  animation: public-fade-up 360ms ease-out backwards;
 }
 
 .fi-reveal-delay-1 {
@@ -1308,5 +1311,14 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   .hamilton-shell .hamilton-card,
   .hamilton-shell .burnished-cta {
     transition: none !important;
+  }
+}
+
+/* Backstop for utility animations (drawer slide-in, spinners) when the reader asks for
+   less motion; component-level motion-reduce variants cover the rest. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-spin {
+    animation: none !important;
   }
 }

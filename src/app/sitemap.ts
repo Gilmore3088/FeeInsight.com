@@ -6,7 +6,7 @@ import {
   getDataFreshness,
   getInstitutionIdsWithFeeDates,
 } from "@/lib/data-store";
-import { GUIDES } from "@/lib/guides";
+import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 
@@ -108,12 +108,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/terms", now, "yearly", 0.3),
   ];
 
+  // Individual report pages are noindex until they carry an on-page summary; the catalog
+  // and the sample stay listed.
   const reportPages: Entry[] = [
     entry("/reports", now, "weekly", reportsPriority),
     entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7),
-    ...publishedReports.map((r) =>
-      entry(`/reports/${r.slug}`, toDate(r.published_at, now), "monthly", 0.8),
-    ),
   ];
 
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)
@@ -130,12 +129,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const researchPages: Entry[] = [
     entry("/research/national-fee-index", dataUpdated, "weekly", 0.9),
-    entry("/research/fee-revenue-analysis", dataUpdated, "weekly", 0.8),
   ];
 
+  // Consumer guides live at /guides/[slug]; professional guides at /guides/pro/[slug],
+  // where the body is gated. Both are indexable — the professional pages show title,
+  // description and an upgrade prompt — but the free ones carry the higher priority.
+  const allGuides = await loadGuides();
   const guidePages: Entry[] = [
     entry("/guides", now, "monthly", 0.7),
-    ...GUIDES.map((g) => entry(`/guides/${g.slug}`, now, "monthly", 0.7)),
+    ...allGuides.map((g) =>
+      g.audience === "professional"
+        ? entry(`/guides/pro/${g.slug}`, toDate(g.reviewedAt, now), "monthly", 0.4)
+        : entry(`/guides/${g.slug}`, toDate(g.reviewedAt, now), "monthly", 0.7),
+    ),
   ];
 
   // Only institutions with at least one verified fee; lastmod is the latest observation.

@@ -8,27 +8,35 @@ interface DirectoryFiltersProps {
   query: string;
   stateCode: string;
   charterType: string;
+  /** Fee focus (`?fee=`) arriving from a consumer guide; changing a filter keeps it. */
+  feeCategory?: string;
 }
 
 const SELECT_CLASS =
   "min-h-10 rounded-md border border-[#D5CBBF] bg-[#FDFBF8] px-3 py-2 text-sm text-[#1A1815] outline-none focus:border-[#C44B2E] disabled:opacity-60";
 
-function buildHref(next: { query: string; stateCode: string; charterType: string }): string {
+function buildHref(next: {
+  query: string;
+  stateCode: string;
+  charterType: string;
+  feeCategory?: string;
+}): string {
   const params = new URLSearchParams();
   if (next.query) params.set("q", next.query);
   if (next.stateCode) params.set("state", next.stateCode);
   if (next.charterType) params.set("charter", next.charterType);
+  if (next.feeCategory) params.set("fee", next.feeCategory);
   const search = params.toString();
   return search ? `/institutions?${search}` : "/institutions";
 }
 
 /** State and institution-type filters that apply as soon as they change. */
-export function DirectoryFilters({ query, stateCode, charterType }: DirectoryFiltersProps) {
+export function DirectoryFilters({ query, stateCode, charterType, feeCategory = "" }: DirectoryFiltersProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   function apply(next: Partial<DirectoryFiltersProps>) {
-    const href = buildHref({ query, stateCode, charterType, ...next });
+    const href = buildHref({ query, stateCode, charterType, feeCategory, ...next });
     startTransition(() => router.push(href));
   }
 

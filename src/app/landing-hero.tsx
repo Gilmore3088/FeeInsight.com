@@ -5,6 +5,7 @@ import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
+import { AudiencePaths } from "@/components/public/audience-paths";
 
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
@@ -41,7 +42,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-[#5A5347] sm:text-base">
               Look up what {institutionsLabel} banks and credit unions charge — every fee sourced.
             </p>
-            <div className="mt-5 max-w-2xl sm:mt-6" aria-label="Search for a bank or credit union">
+            <div className="mt-5 max-w-2xl sm:mt-6" role="search" aria-label="Search for a bank or credit union">
               <InstitutionSearchBar />
             </div>
             <Link
@@ -59,6 +60,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
           </div>
           <ReportBanner />
         </div>
+        <AudiencePaths compact className="mt-10" />
       </div>
     </section>
   );

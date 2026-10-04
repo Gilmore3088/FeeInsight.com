@@ -490,7 +490,7 @@ export function soWhatBox(implication: string, label?: string): string {
 export interface InsightCardProps {
   number: string;       // e.g., "85%"
   insight: string;      // e.g., "of fees fall within tight ranges"
-  supporting: string;   // e.g., "Pricing is commoditized across 49 categories"
+  supporting: string;   // e.g., "Pricing is commoditized across the full fee catalog"
 }
 
 /**

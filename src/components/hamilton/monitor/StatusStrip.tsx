@@ -40,19 +40,18 @@ export function StatusStrip({ status }: StatusStripProps) {
 
   return (
     <div
-      className="@container"
+      className="@container px-4 py-3 @md:px-8"
       style={{
         width: "100%",
         backgroundColor: config.bg,
         borderBottom: `2px solid ${config.border}`,
-        padding: "0.75rem 2rem",
       }}
     >
       {/* Metrics grid: 2-col narrow, 3-col @xl, horizontal flex @2xl */}
-      <div className="grid grid-cols-2 gap-4 @xl:grid-cols-3 @2xl:flex @2xl:justify-between @2xl:items-center">
+      <div className="grid grid-cols-2 gap-4 @xl:grid-cols-3 @2xl:flex @2xl:flex-wrap @2xl:justify-between @2xl:items-center">
 
-        {/* System status — bold state indicator */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        {/* System status — bold state indicator; wraps under its label on narrow screens */}
+        <div className="min-w-0" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem 0.75rem" }}>
           <span
             style={{
               fontFamily: "var(--hamilton-font-sans)",

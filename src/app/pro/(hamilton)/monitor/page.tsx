@@ -43,7 +43,7 @@ export default async function MonitorPage({
       {/* Status strip — full width above content */}
       <StatusStrip status={data.status} />
 
-      {/* Page content */}
+      {/* Page content. HamiltonShell already provides the main landmark. */}
       <div
         className="@container"
         style={{
@@ -77,8 +77,8 @@ export default async function MonitorPage({
               lineHeight: 1.5,
             }}
           >
-            Continuous surveillance of high-priority counterparts and fee
-            structures to preserve long-term recurring value.
+            Fee changes at the institutions you watch: published fee movements,
+            newly verified schedules and competitor signals, as they reach the index.
           </p>
           <p
             style={{
