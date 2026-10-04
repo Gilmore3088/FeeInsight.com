@@ -114,11 +114,25 @@ export function withTransaction<T>(callback: (tx: typeof sql) => Promise<T>): Pr
   return sql.begin((tx) => callback(tx as unknown as typeof sql)) as Promise<T>;
 }
 
+/**
+ * How long hasData() waits before treating the database as unavailable. It gates
+ * generateStaticParams at build time, and a saturated pool used to leave it hanging
+ * until the deploy timed out; giving up just skips prerendering, and the pages
+ * render on first request instead.
+ */
+const HAS_DATA_TIMEOUT_MS = 5_000;
+
 export async function hasData(): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const [row] = await getSql()`SELECT COUNT(*) as cnt FROM institution_sources`;
-    return Number(row.cnt) > 0;
+    const timedOut = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), HAS_DATA_TIMEOUT_MS);
+    });
+    const counted = getSql()`SELECT 1 FROM institution_sources LIMIT 1`.then((rows) => rows.length > 0, () => false);
+    return await Promise.race([counted, timedOut]);
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
