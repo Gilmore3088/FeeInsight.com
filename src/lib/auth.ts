@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sql, withTransaction } from "@/lib/data-store/connection";
@@ -231,7 +232,8 @@ export async function logout(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE);
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+/** The signed-in user. Memoized per request: layouts, pages and actions share one lookup. */
+export const getCurrentUser = cache(async (): Promise<User | null> => {
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
@@ -264,7 +266,7 @@ export async function getCurrentUser(): Promise<User | null> {
     `.catch(() => {});
   }
   return user as User;
-}
+});
 
 /** True when a session has less than 15 days left and should be extended to 30. */
 export function shouldRenewSession(expiresAt: string | Date | null | undefined, now = Date.now()): boolean {

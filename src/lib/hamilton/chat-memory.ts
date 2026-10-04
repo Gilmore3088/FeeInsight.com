@@ -60,7 +60,7 @@ export async function appendMessage(
 }
 
 /**
- * Load the last `limit` messages for a conversation in chronological order.
+ * Load the most recent `limit` messages for a conversation, in chronological order.
  *
  * T-17-04: scoped to (conversation_id, user_id) to prevent cross-user access.
  * Returns plain objects — the API route converts to UIMessage shape.
@@ -78,12 +78,17 @@ export async function loadConversationHistory(
 
   if (!conv) return [];
 
+  // The most recent `limit` messages, returned oldest-first.
   const rows = await sql`
     SELECT role, content
-    FROM hamilton_messages
-    WHERE conversation_id = ${conversationId}
+    FROM (
+      SELECT role, content, created_at
+      FROM hamilton_messages
+      WHERE conversation_id = ${conversationId}
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+    ) recent
     ORDER BY created_at ASC
-    LIMIT ${limit}
   ` as Array<{ role: "user" | "assistant"; content: string }>;
 
   return rows;
@@ -116,11 +121,12 @@ export async function listConversations(
  */
 export async function updateConversationTitle(
   conversationId: string,
+  userId: number,
   title: string
 ): Promise<void> {
   await sql`
     UPDATE hamilton_conversations
     SET title = ${title}, updated_at = NOW()
-    WHERE id = ${conversationId}
+    WHERE id = ${conversationId} AND user_id = ${userId}
   `;
 }

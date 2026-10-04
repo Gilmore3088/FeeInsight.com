@@ -325,6 +325,9 @@ async function fetchStatusMetrics(
   }
 }
 
+/** Watchlist size limit: each entry is an institution lookup on every Monitor load. */
+export const MAX_WATCHLIST_INSTITUTIONS = 25;
+
 async function fetchWatchlist(userId: number): Promise<WatchlistEntry[]> {
   try {
     const rows = await sql`
@@ -336,7 +339,7 @@ async function fetchWatchlist(userId: number): Promise<WatchlistEntry[]> {
     if (rows.length === 0) return [];
 
     const ids: string[] = Array.isArray(rows[0]?.institution_ids)
-      ? (rows[0].institution_ids as string[])
+      ? (rows[0].institution_ids as string[]).slice(0, MAX_WATCHLIST_INSTITUTIONS)
       : [];
 
     return Promise.all(

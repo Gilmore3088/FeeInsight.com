@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { buildIndexEntries, getInstitutionFeeValues, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
+import { buildIndexEntries, getInstitutionFeeValues, getPeerIndexes, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 import { sql } from "./connection";
 
@@ -125,5 +125,46 @@ describe("getInstitutionFeeValues", () => {
     expect(query).toContain("source_document_id IS NOT NULL");
     expect(query).toContain("review_status = 'approved'");
     expect(params).toEqual([2945, ["wire_transfer", "overdraft", "nsf"]]);
+  });
+});
+
+describe("getPeerIndexes", () => {
+  beforeEach(() => {
+    db.unsafe.mockReset();
+  });
+
+  function peerRow(institution_id: number, amount: number, extra: Record<string, unknown>) {
+    return { ...row(institution_id, amount), asset_size_tier: "community", fed_district: 6, state_code: "GA", ...extra };
+  }
+
+  it("answers every filter set from one query, in order", async () => {
+    db.unsafe.mockResolvedValueOnce([
+      ...[1, 2, 3, 4, 5].map((id) => peerRow(id, 30, { charter_type: "bank", state_code: "GA" })),
+      ...[6, 7, 8, 9, 10].map((id) => peerRow(id, 20, { charter_type: "bank", state_code: "FL" })),
+      peerRow(11, 99, { charter_type: "credit_union", state_code: "GA" }),
+    ]);
+
+    const [gaBanks, banks, georgia] = await getPeerIndexes([
+      { charter_type: "bank", state_code: "GA" },
+      { charter_type: "bank" },
+      { state_code: "GA" },
+    ]);
+
+    expect(db.unsafe).toHaveBeenCalledTimes(1);
+    const [query, params] = db.unsafe.mock.calls[0];
+    expect(query).toContain("ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[])");
+    expect(params).toEqual([["bank"], ["GA"]]);
+    expect(gaBanks[0]).toMatchObject({ institution_count: 5, median_amount: 30 });
+    expect(banks[0]).toMatchObject({ institution_count: 10, median_amount: 25 });
+    expect(georgia[0]).toMatchObject({ institution_count: 6, median_amount: 30 });
+  });
+
+  it("loads all rows when a filter set has no charter or state anchor", async () => {
+    db.unsafe.mockResolvedValueOnce([]);
+
+    await getPeerIndexes([{ asset_tiers: ["community"] }]);
+
+    expect(db.unsafe.mock.calls[0][0]).not.toContain("ANY($1");
+    expect(db.unsafe.mock.calls[0][1]).toEqual([]);
   });
 });

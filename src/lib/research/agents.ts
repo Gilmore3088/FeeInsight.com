@@ -172,8 +172,25 @@ async function opsContext(): Promise<string> {
   }
 }
 
+const PROMPT_STATS_TTL_MS = 10 * 60 * 1000;
+let promptStats: { value: Promise<Awaited<ReturnType<typeof getPublicStats>>>; expiresAt: number } | null = null;
+
+/** The headline counts in the system prompt; they move slowly, so reuse them for 10 minutes. */
+function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
+  const now = Date.now();
+  if (!promptStats || promptStats.expiresAt <= now) {
+    const value = getPublicStats();
+    promptStats = { value, expiresAt: now + PROMPT_STATS_TTL_MS };
+    // A failed lookup is not reused.
+    value.catch(() => {
+      if (promptStats?.value === value) promptStats = null;
+    });
+  }
+  return promptStats.value;
+}
+
 export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
-  const s = await getPublicStats();
+  const s = await getPromptStats();
 
   const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), FRED economic indicators, Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
 

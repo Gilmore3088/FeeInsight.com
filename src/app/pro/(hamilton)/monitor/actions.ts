@@ -10,7 +10,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonInstitutionContext, parseInstitutionId } from "@/lib/hamilton/institution-context";
-import { createWatchlistEntryFromInstitution, type WatchlistEntry } from "@/lib/hamilton/monitor-data";
+import {
+  createWatchlistEntryFromInstitution,
+  MAX_WATCHLIST_INSTITUTIONS,
+  type WatchlistEntry,
+} from "@/lib/hamilton/monitor-data";
 import { setHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 
 export type WatchlistActionResult =
@@ -86,6 +90,13 @@ export async function addToWatchlist(
       }).catch(() => {});
       revalidatePath("/pro/monitor");
       return { ok: true, entry, message: "Already tracking this institution." };
+    }
+
+    if (currentIds.length >= MAX_WATCHLIST_INSTITUTIONS) {
+      return {
+        ok: false,
+        error: `Your watchlist is full (${MAX_WATCHLIST_INSTITUTIONS} institutions). Remove one to add another.`,
+      };
     }
 
     const updatedIds = [...currentIds, normalizedId];

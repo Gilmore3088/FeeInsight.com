@@ -1,5 +1,8 @@
 // Auth-gated, renders live DB-backed data at request time; not statically prerendered.
 export const dynamic = "force-dynamic";
+// Report generation is a server action on this page: several Opus sections plus a
+// figure-check retry can take minutes.
+export const maxDuration = 300;
 
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";

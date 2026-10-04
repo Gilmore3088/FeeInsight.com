@@ -210,6 +210,64 @@ export async function getPeerIndex(
   return buildIndexEntries(rows);
 }
 
+export interface PeerFilterSet {
+  charter_type?: string;
+  asset_tiers?: string[];
+  fed_districts?: number[];
+  state_code?: string;
+}
+
+interface PeerRow extends IndexRow {
+  asset_size_tier: string | null;
+  fed_district: number | null;
+  state_code: string | null;
+}
+
+export function matchesPeerFilters(
+  row: Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code">,
+  filters: PeerFilterSet,
+): boolean {
+  if (filters.charter_type && row.charter_type !== filters.charter_type) return false;
+  if (filters.state_code && row.state_code !== filters.state_code) return false;
+  if (filters.asset_tiers?.length && !filters.asset_tiers.includes(row.asset_size_tier ?? "")) return false;
+  if (filters.fed_districts?.length && !filters.fed_districts.includes(Number(row.fed_district))) return false;
+  return true;
+}
+
+/**
+ * The peer index for several filter sets from one query: rows are loaded once for the
+ * union of the sets' charters and states, then each set is filtered and summarized in
+ * memory. Results are in the same order as `filterSets`.
+ */
+export async function getPeerIndexes(
+  filterSets: PeerFilterSet[],
+  approvedOnly = true,
+): Promise<IndexEntry[][]> {
+  if (filterSets.length === 0) return [];
+  const conditions = [
+    "ef.fee_category IS NOT NULL",
+    STATS_ROW_FILTER,
+    approvedOnly ? "ef.review_status = 'approved'" : "ef.review_status != 'rejected'",
+  ];
+  const params: string[][] = [];
+  // Every set anchored on a charter or a state lets the query skip everything else.
+  if (filterSets.every((filters) => filters.charter_type || filters.state_code)) {
+    const charters = [...new Set(filterSets.map((f) => f.charter_type).filter((v): v is string => !!v))];
+    const states = [...new Set(filterSets.map((f) => f.state_code).filter((v): v is string => !!v))];
+    params.push(charters, states);
+    conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]))");
+  }
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.review_status, ef.created_at,
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ${conditions.join(" AND ")}`,
+    params as never[],
+  ) as PeerRow[];
+  return filterSets.map((filters) => buildIndexEntries(rows.filter((row) => matchesPeerFilters(row, filters))));
+}
+
 export async function getIndexSnapshot(
   filters?: {
     charter_type?: string;

@@ -33,7 +33,7 @@ import {
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const HAMILTON_MODEL = getHamiltonModel();
 
