@@ -15,6 +15,14 @@ Knox owns conservative raw fee extraction.
 - Preserve institution ID, source document ID, source URL/key, extraction confidence, canonical hints, amount/frequency/conditions, and outlier flags.
 - Emit aggregate Hamilton Monitor signals for inserted raw observations and no-candidate review states.
 - Keep rows provisional until Darwin verifies them.
+- The rules live in `rules.ts` (`extract.rules`; bump `KNOX_EXTRACT_STRATEGY.version`
+  when they change). Patterns are ordered most specific first; monthly maintenance and
+  minimum balance come last. On a line, the first amount is the fee; a later amount is
+  another fee only when words naming one sit just before it.
+- Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
+  and a `waivable` flag. $0/free, ranges, percentages and priced lines no rule recognizes
+  are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and without
+  `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
 ## Boundaries
 

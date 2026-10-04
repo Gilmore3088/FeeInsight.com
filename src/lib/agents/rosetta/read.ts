@@ -786,8 +786,10 @@ async function triageEarlierTexts(
              adt.text_hash,
              adt.normalized_text,
              EXISTS (
+               -- Rows Knox only held for review do not prove this is a fee page.
                SELECT 1 FROM raw_fee_observations fr
                 WHERE fr.source = 'knox' AND fr.source_document_id = adt.source_document_id
+                  AND fr.outlier_flags ? 'needs_darwin_verification'
              ) AS has_knox_fees
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id

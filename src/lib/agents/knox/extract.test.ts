@@ -87,6 +87,24 @@ describe("Knox agentic extraction", () => {
     expect(JSON.stringify(db.mock.calls)).not.toContain("No fee for e-statements");
   });
 
+  it("stores held rows for review without sending them to Darwin", async () => {
+    const db = createDbMock([
+      { ...textArtifact, normalized_text: ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n") },
+    ]);
+
+    const result = await runKnoxExtract({ runId: 110, db: asExtractDb(db) });
+
+    expect(result).toMatchObject({ extractedFees: 1, insertedFees: 1, heldForReview: 2 });
+    expect(result.results[0].heldInserted).toBe(2);
+    const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
+    const flags = inserts.map((call) => call.slice(1).find((value) => typeof value === "string" && value.startsWith("[")) as string);
+    expect(flags).toEqual([
+      JSON.stringify(["needs_darwin_verification", "canonical_hint:overdraft"]),
+      JSON.stringify(["knox_review:zero", "canonical_hint:paper_statement"]),
+      JSON.stringify(["knox_review:range", "canonical_hint:check_printing", "amount_max:40"]),
+    ]);
+  });
+
   it("keeps dry runs read-only while still reporting candidates", async () => {
     const db = createDbMock([textArtifact]);
 
@@ -214,7 +232,7 @@ describe("Knox agentic extraction", () => {
         {
           ...textArtifact,
           do_not_retry: [
-            { stage: "extract", strategy: "extract.rules", version: 1, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
+            { stage: "extract", strategy: "extract.rules", version: 2, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);

@@ -86,6 +86,7 @@ export function narrateStepFinished(
       if (processed === 0) return `Had no new documents to pull fees from ${scope}.`;
       return `Pulled ${count(n(detail, "inserted_raw_fee_observations"), "fee")} from ${count(processed, "document")} ${scope}${joinParts([
         n(detail, "skipped_fee_candidates") > 0 && `${n(detail, "skipped_fee_candidates")} lines set aside`,
+        n(detail, "held_for_review") > 0 && `${n(detail, "held_for_review")} free, range or percentage fees held for review`,
         n(detail, "skipped_known_inputs") > 0 && `${n(detail, "skipped_known_inputs")} documents already done`,
       ])}.`;
     }

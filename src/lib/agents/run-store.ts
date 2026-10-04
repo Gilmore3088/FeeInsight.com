@@ -436,6 +436,7 @@ async function executeAgenticStep(
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
           skipped_fee_candidates: extraction.skippedFees,
+          held_for_review: extraction.heldForReview,
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
