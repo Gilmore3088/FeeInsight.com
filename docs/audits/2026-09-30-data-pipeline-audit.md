@@ -23,6 +23,7 @@ Tracked in `docs/plans/pipeline-self-learning-plan-2026-10-02.md`.
 | R-H4 crawler User-Agent (`FeeInsightBot/1.0 (<Agent>; +https://feeinsight.com/contact)`) | Fixed in Phase 0; no separate `/bot` page, by owner decision |
 | Learning core L1–L3 (attempt log, playbook, router); content idempotency for fetch, read and extract (R-D4, part 1); byte-based format detection and the OCR flip-flop | Fixed in Phase 1a (`src/lib/agents/learning/`). Existing duplicates and the unique index come in a later dedupe workflow. |
 | R-D2 statistics contract (per-institution dedupe, $0 included, n≥5 for a median, ≥20 for "strong", sourced rows only per R-D5) | Fixed in Phase 1g in TypeScript (`src/lib/data-store/fee-stats.ts`). Materializing it into `fee_index_cache` after each publish is still open. |
+| Table rows split from their amounts (HTML tables, PDF columns) | Fixed in Phase 1D: `read.html_dom` and `read.pdf_layout` (Rosetta version 2), with a one-time re-read of older texts that yielded no Knox fees |
 | Everything else | Phases 1–3 |
 
 ---

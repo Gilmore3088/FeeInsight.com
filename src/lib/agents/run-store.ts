@@ -393,6 +393,8 @@ async function executeAgenticStep(
           wrong_documents: read.wrongDocuments + read.triagedWrongDocuments,
           sent_back_to_magellan: read.sentBackToMagellan,
           read_from_vault: read.readFromVault,
+          reread_documents: read.reread,
+          table_rows: read.tableRows,
           triaged_texts: read.triagedTexts,
           outcomes: read.outcomes,
           learning_log: read.learning,

@@ -78,6 +78,7 @@ export function narrateStepFinished(
         n(detail, "wrong_documents") > 0 && `${n(detail, "wrong_documents")} were not fee pages`,
         n(detail, "sent_back_to_magellan") > 0 && `${n(detail, "sent_back_to_magellan")} sent back to Magellan to find the real fee page`,
         n(detail, "read_from_vault") > 0 && `${n(detail, "read_from_vault")} read from our stored copy`,
+        n(detail, "reread_documents") > 0 && `${n(detail, "reread_documents")} re-read with the new table reader`,
       ])}.`;
     }
     case "extract": {
