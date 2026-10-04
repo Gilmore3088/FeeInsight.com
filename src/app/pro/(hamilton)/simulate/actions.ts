@@ -3,10 +3,9 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getNationalIndex } from "@/lib/data-store/fee-index";
+import { getInstitutionFeeValues, getNationalIndex } from "@/lib/data-store/fee-index";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
-import { valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -129,23 +128,11 @@ export async function getInstitutionFee(
   const numericInstitutionId = Number(canonicalInstitutionId);
 
   try {
-    const rows = await sql<{ amount: string }[]>`
-      SELECT ef.amount::text
-      FROM published_fee_catalog ef
-      WHERE ef.institution_id = ${numericInstitutionId}
-        AND ef.fee_category = ${feeCategory}
-        AND ef.review_status = 'approved'
-        AND ef.amount IS NOT NULL
-    `;
-
-    // The institution's value under the statistics contract: the median of its amounts.
-    const value = valuePerInstitution(
-      rows.map((row) => ({ institution_id: numericInstitutionId, amount: row.amount })),
-    ).get(numericInstitutionId);
-    if (value !== undefined) {
-      return { amount: value };
-    }
-    return null;
+    // The institution's value under the statistics contract (median of its approved,
+    // sourced amounts), measured the same way as the benchmark it is compared with.
+    const values = await getInstitutionFeeValues(numericInstitutionId, [feeCategory]);
+    const value = values.get(feeCategory);
+    return value === undefined ? null : { amount: value };
   } catch {
     return null;
   }
@@ -248,7 +235,7 @@ export async function saveScenario(params: {
     if (Number.isInteger(numericInstitutionId) && numericInstitutionId > 0) {
       await completeHamiltonRefreshJobsForInstitution({
         institutionId: numericInstitutionId,
-        jobTypes: ["scenario_refresh"],
+        jobTypes: ["scenario_refresh", "watchlist_review"],
         completedByUserId: user.id,
       }).catch(() => {});
     }
@@ -281,7 +268,7 @@ export async function listScenarios(limit = 20): Promise<
   }>
 > {
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
 
   try {
     const rows = await sql<

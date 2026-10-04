@@ -16,6 +16,8 @@ export interface HamiltonMonitorSignalInput {
   body: string;
   sourceJson?: postgres.JSONValue | null;
   priorityAlertUserId?: number | null;
+  /** Also raise a priority alert for every user watching this institution. */
+  alertWatchers?: boolean;
 }
 
 type SqlClient = typeof sql;
@@ -151,6 +153,20 @@ export async function recordHamiltonMonitorSignal(
       db,
     }).catch((error) => {
       console.error("enqueueHamiltonRefreshJobsForSignal failed:", error);
+    });
+  }
+
+  if (signalId && input.alertWatchers) {
+    // institution_ids is a jsonb array of id strings (or numbers); match either form.
+    await db`
+      INSERT INTO hamilton_priority_alerts (user_id, signal_id, status, created_at)
+      SELECT w.user_id, ${signalId}::uuid, 'active', NOW()
+        FROM hamilton_watchlists w
+       WHERE (w.institution_ids ? ${String(input.institutionId)}
+              OR w.institution_ids @> ${JSON.stringify([input.institutionId])}::jsonb)
+         AND w.user_id IS DISTINCT FROM ${input.priorityAlertUserId ?? null}
+    `.catch((error: unknown) => {
+      console.error("watcher priority alerts failed:", error);
     });
   }
 

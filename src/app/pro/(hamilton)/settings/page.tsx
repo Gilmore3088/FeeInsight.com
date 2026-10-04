@@ -1,11 +1,11 @@
 // Auth-gated, renders live DB-backed data at request time; not statically prerendered.
 export const dynamic = "force-dynamic";
 
+import { CONTACT_EMAIL } from "@/lib/constants";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { SettingsForm } from "./SettingsForm";
 import { PeerSetManager } from "./PeerSetManager";
 import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
 import {
@@ -130,8 +130,7 @@ export default async function SettingsPage({
           Strategy Settings
         </h1>
         <p className="text-sm max-w-xl" style={{ color: "var(--hamilton-text-secondary)" }}>
-          Refine your institutional parameters, monitor prediction thresholds, and tune the strategy
-          model your Hamilton experience is built on.
+          Choose your institution and peer sets, manage your watchlist and team, and handle billing.
         </p>
       </div>
 
@@ -166,7 +165,7 @@ export default async function SettingsPage({
                     color: "var(--hamilton-text-accent)",
                   }}
                 >
-                  {user.role}
+                  {user.role === "admin" ? "Admin" : user.role === "analyst" ? "Analyst" : "Subscriber"}
                 </span>
                 <span className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
                   {planLabel}
@@ -183,7 +182,7 @@ export default async function SettingsPage({
                 className="px-4 py-2 text-xs font-semibold rounded-md border transition-opacity hover:opacity-80"
               />
               <a
-                href="mailto:hello@bankfeeindex.com?subject=Fee%20Insight%20Hamilton%20support"
+                href={`mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Hamilton%20support`}
                 className="px-4 py-2 text-xs font-semibold rounded-md border transition-opacity hover:opacity-80"
                 style={{
                   borderColor: "var(--hamilton-border)",
@@ -246,32 +245,17 @@ export default async function SettingsPage({
 
       {/* Selected Hamilton Institution */}
       <div style={cardStyle} className="mb-6">
-        <p style={sectionLabelStyle} className="mb-1">Selected Hamilton Institution</p>
+        <p style={sectionLabelStyle} className="mb-1">Your Institution</p>
         <p className="text-xs mb-5" style={{ color: "var(--hamilton-text-tertiary)" }}>
-          This institution anchors Analyze, Reports, Scenarios, and Watchlist when no URL-specific institution is supplied.
+          {selectedInstitution
+            ? "Your Briefing, Analyze, Reports, Scenarios and Watchlist start from this institution."
+            : "Choose your institution so Hamilton can compare your fees with your peers."}
         </p>
         <WorkspaceInstitutionForm
           selectedInstitution={selectedInstitution}
           selectedSource={selectedSource === "artifact" ? "manual" : selectedSource}
           selectedClaim={selectedClaim}
           selectedMembership={selectedMembership}
-        />
-      </div>
-
-      {/* Institution Profile */}
-      <div style={cardStyle} className="mb-6">
-        <p style={sectionLabelStyle} className="mb-1">Institution Profile</p>
-        <p className="text-xs mb-5" style={{ color: "var(--hamilton-text-tertiary)" }}>
-          This profile powers all Hamilton screens. Configure it to unlock personalized benchmarks and analysis.
-        </p>
-        <SettingsForm
-          initialValues={{
-            institution_name: user.institution_name,
-            institution_type: user.institution_type,
-            asset_tier: user.asset_tier,
-            state_code: user.state_code,
-            fed_district: user.fed_district ?? null,
-          }}
         />
       </div>
 
@@ -346,7 +330,7 @@ export default async function SettingsPage({
                   className="text-base font-bold"
                   style={{ fontFamily: "var(--hamilton-font-serif)", color: "var(--hamilton-text-primary)" }}
                 >
-                  Professional
+                  Hamilton Pro
                 </p>
                 <span
                   className="px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wider"
@@ -361,7 +345,7 @@ export default async function SettingsPage({
                 </span>
               </div>
               <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Renews monthly
+                Plan, renewal date and invoices are in the billing portal.
               </p>
               <ManageBillingButton
                 hasStripeAccount={!!user.stripe_customer_id}

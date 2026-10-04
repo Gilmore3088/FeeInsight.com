@@ -452,21 +452,24 @@ describe("Rosetta agentic read", () => {
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });
 
-    it("binds every placeholder to a value of the type the query compares it with", async () => {
+    it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {
+      // A drifted `$${params.length - k}` once cast REREAD_MAX_KNOX_FEES to text[] and made
+      // every read fail with "operator does not exist: bigint < text[]".
       const db = learningDb([]);
 
-      await runRosettaRead({ runId: 310, db: asReadDb(db), fetchImpl: vi.fn(), stateCode: "WA" });
+      await runRosettaRead({ runId: 309, db: asReadDb(db), fetchImpl: vi.fn() });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      const param = (placeholder: string) => params[Number(placeholder.slice(1)) - 1];
-      const arrayPlaceholders = [...query.matchAll(/ANY\((\$\d+)::text\[\]\)/g)].map((match) => match[1]);
-      expect(arrayPlaceholders.length).toBeGreaterThan(0);
-      for (const placeholder of arrayPlaceholders) expect(Array.isArray(param(placeholder))).toBe(true);
-      const versionPlaceholders = [...query.matchAll(/strategy_version >?= (\$\d+)/g)].map((match) => match[1]);
-      expect(versionPlaceholders).toHaveLength(2);
-      for (const placeholder of versionPlaceholders) expect(typeof param(placeholder)).toBe("number");
-      const countPlaceholder = query.match(/\) < (\$\d+)/)?.[1];
-      expect(param(countPlaceholder ?? "")).toBe(REREAD_MAX_KNOX_FEES);
+      const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
+      for (const [, n] of query.matchAll(/\$(\d+)::text\[\]/g)) {
+        expect(Array.isArray(valueAt(n))).toBe(true);
+      }
+      for (const [, n] of query.matchAll(/strategy_version (?:=|>=) \$(\d+)/g)) {
+        expect(typeof valueAt(n)).toBe("number");
+      }
+      for (const [, n] of query.matchAll(/\) < \$(\d+)/g)) {
+        expect(valueAt(n)).toBe(REREAD_MAX_KNOX_FEES);
+      }
     });
 
     it("keeps the earlier text when a re-read fails", async () => {

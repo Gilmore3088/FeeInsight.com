@@ -176,6 +176,23 @@ describe("recordHamiltonMonitorSignal", () => {
     ]);
   });
 
+  it("fans a fee-movement signal out as priority alerts to every watcher", async () => {
+    mocks.state.queuedRows.push([{ id: "e7f37394-d8dd-49ef-a842-e453c89415b5" }], []);
+
+    await recordHamiltonMonitorSignal({
+      institutionId: 8109,
+      signalType: "hamilton_fee_movement_detected",
+      severity: "high",
+      title: "Fee movement",
+      body: "Overdraft rose.",
+      alertWatchers: true,
+    });
+
+    const fanOut = mocks.state.sqlCalls.find((call) => call.text.includes("FROM hamilton_watchlists"));
+    expect(fanOut?.text).toContain("INSERT INTO hamilton_priority_alerts");
+    expect(fanOut?.values).toEqual(["e7f37394-d8dd-49ef-a842-e453c89415b5", "8109", "[8109]", null]);
+  });
+
   it("skips invalid institution IDs", async () => {
     const signalId = await recordHamiltonMonitorSignal({
       institutionId: 0,

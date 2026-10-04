@@ -12,7 +12,6 @@ import {
   SOURCE_LABELS,
 } from "@/lib/data-store/news";
 import { NewsFeed } from "./news-feed";
-import { ProReferenceWorkflowBanner } from "@/components/pro/reference-workflow-banner";
 
 export const metadata: Metadata = {
   title: "Regulatory Wire",
@@ -62,7 +61,7 @@ export default async function NewsPage({
   const sourceCounts = await getSourceCounts(since);
 
   return (
-    <main id="main-content">
+    <div>
     <div className="mx-auto max-w-7xl px-6 py-10">
       {/* Header */}
       <div className="flex items-center gap-2 mb-1">
@@ -85,8 +84,6 @@ export default async function NewsPage({
         Real-time regulatory updates from the Federal Reserve, FDIC, OCC, and CFPB.
       </p>
 
-      <ProReferenceWorkflowBanner userId={user.id} surface="news" />
-
       <NewsFeed
         articles={articles}
         totalCount={totalCount}
@@ -97,8 +94,9 @@ export default async function NewsPage({
         activeSource={source}
         activeTopic={topic}
         activeRange={range}
+        canRefreshFeeds={user?.role === "admin" || user?.role === "analyst"}
       />
     </div>
-    </main>
+    </div>
   );
 }

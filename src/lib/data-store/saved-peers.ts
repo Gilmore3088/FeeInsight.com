@@ -10,22 +10,7 @@ export interface SavedPeerSet {
   created_at: string;
 }
 
-export async function ensureSavedPeerSetsTable(): Promise<void> {
-  await sql`
-    CREATE TABLE IF NOT EXISTS saved_peer_sets (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      tiers TEXT,
-      districts TEXT,
-      charter_type TEXT,
-      created_by TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `;
-}
-
 export async function getSavedPeerSets(userId: string): Promise<SavedPeerSet[]> {
-  await ensureSavedPeerSetsTable();
   return await sql`
     SELECT id, name, tiers, districts, charter_type, created_by, created_at
     FROM saved_peer_sets
@@ -38,7 +23,6 @@ export async function getSavedPeerSetById(
   id: number,
   userId: string,
 ): Promise<SavedPeerSet | null> {
-  await ensureSavedPeerSetsTable();
   const rows = await sql`
     SELECT id, name, tiers, districts, charter_type, created_by, created_at
     FROM saved_peer_sets
@@ -53,7 +37,6 @@ export async function savePeerSet(
   filters: { charter_type?: string; asset_tiers?: string[]; fed_districts?: number[] },
   userId: string
 ): Promise<number> {
-  await ensureSavedPeerSetsTable();
   const [row] = await sql`
     INSERT INTO saved_peer_sets (name, tiers, districts, charter_type, created_by)
     VALUES (
@@ -69,7 +52,6 @@ export async function savePeerSet(
 }
 
 export async function deletePeerSet(id: number, userId: string): Promise<boolean> {
-  await ensureSavedPeerSetsTable();
   const result = await sql`
     DELETE FROM saved_peer_sets WHERE id = ${id} AND created_by = ${userId}
   `;

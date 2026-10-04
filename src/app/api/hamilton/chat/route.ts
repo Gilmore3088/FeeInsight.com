@@ -13,14 +13,15 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  */
 
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
-import { guardProviderCall, recordProviderUsage } from "@/lib/ai-provider-usage";
+import { guardProviderCall, recordProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import {
   getAnthropicLanguageModel,
+  getHamiltonModel,
   hasAnthropicApiKey,
   MISSING_ANTHROPIC_API_KEY_MESSAGE,
 } from "@/lib/ai-provider";
 import { getCurrentUser } from "@/lib/auth";
-import { checkAdminRateLimit } from "@/lib/research/rate-limit";
+import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { logUsage } from "@/lib/research/history";
 import { buildHamiltonTools, buildHamiltonSystemPrompt } from "@/lib/hamilton/hamilton-agent";
 import { loadConversationHistory, appendMessage } from "@/lib/hamilton/chat-memory";
@@ -32,34 +33,17 @@ import {
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
-const HAMILTON_MODEL = "claude-sonnet-4-5-20250929";
+const HAMILTON_MODEL = getHamiltonModel();
 
-// Cost per 1M tokens (in cents)
-const COST_PER_M_INPUT: Record<string, number> = {
-  "claude-haiku-4-5-20251001": 80,
-  "claude-sonnet-4-5-20250929": 300,
-  "claude-opus-4-5-20250514": 1500,
-};
-const COST_PER_M_OUTPUT: Record<string, number> = {
-  "claude-haiku-4-5-20251001": 400,
-  "claude-sonnet-4-5-20250929": 1500,
-  "claude-opus-4-5-20250514": 7500,
-};
-
-function estimateCostCents(
-  model: string,
-  inputTokens: number,
-  outputTokens: number
-): number {
-  const inputRate = COST_PER_M_INPUT[model] ?? 300;
-  const outputRate = COST_PER_M_OUTPUT[model] ?? 1500;
-  return Math.round(
-    (inputTokens * inputRate + outputTokens * outputRate) / 1_000_000
-  );
+/** Cents for the research_usage log, from the shared price map. */
+function estimateCostCents(model: string, inputTokens: number, outputTokens: number): number {
+  return Math.round((estimateAnthropicCostMicrousd(model, { inputTokens, outputTokens }) ?? 0) / 10_000);
 }
 
+
+// Cost per 1M tokens (in cents)
 async function handlePOST(request: Request) {
   // Check API key
   if (!hasAnthropicApiKey()) {
@@ -81,14 +65,11 @@ async function handlePOST(request: Request) {
     );
   }
 
-  // Rate limiting
-  const rateResult = await checkAdminRateLimit(
-    user.id,
-    user.role as "analyst" | "admin"
-  );
-  if (!rateResult.allowed) {
+  // Per-user daily quota, counted in Postgres across instances
+  const quota = await checkProAiQuota(user);
+  if (!quota.allowed) {
     return Response.json(
-      { error: "Rate limit exceeded", resetAt: rateResult.resetAt },
+      { error: quotaExceededMessage(quota), resetAt: quota.resetsAt },
       { status: 429 }
     );
   }
@@ -175,7 +156,7 @@ async function handlePOST(request: Request) {
       tools: buildHamiltonTools(),
       maxOutputTokens: 3000,
       stopWhen: stepCountIs(10),
-      onFinish: async ({ usage, text }) => {
+      onFinish: async ({ totalUsage: usage, text }) => {
         try {
           const inputTokens = usage?.inputTokens ?? 0;
           const outputTokens = usage?.outputTokens ?? 0;

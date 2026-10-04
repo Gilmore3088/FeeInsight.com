@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import { getHamiltonModel } from "@/lib/ai-provider";
 import { publicTools } from "./tools";
 import { internalTools } from "./tools-internal";
 import { getPublicStats } from "../data-store";
@@ -171,8 +172,25 @@ async function opsContext(): Promise<string> {
   }
 }
 
+const PROMPT_STATS_TTL_MS = 10 * 60 * 1000;
+let promptStats: { value: Promise<Awaited<ReturnType<typeof getPublicStats>>>; expiresAt: number } | null = null;
+
+/** The headline counts in the system prompt; they move slowly, so reuse them for 10 minutes. */
+function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
+  const now = Date.now();
+  if (!promptStats || promptStats.expiresAt <= now) {
+    const value = getPublicStats();
+    promptStats = { value, expiresAt: now + PROMPT_STATS_TTL_MS };
+    // A failed lookup is not reused.
+    value.catch(() => {
+      if (promptStats?.value === value) promptStats = null;
+    });
+  }
+  return promptStats.value;
+}
+
 export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
-  const s = await getPublicStats();
+  const s = await getPromptStats();
 
   const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), FRED economic indicators, Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
 
@@ -209,8 +227,9 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
           "Deep analytical queries combining fee data, peer comparisons, financial metrics, and geographic analysis.",
         systemPrompt,
         tools: proTools,
-        model: process.env.BFI_MODEL_PRO || "claude-sonnet-4-6",
-        maxTokens: 4096,
+        model: process.env.BFI_MODEL_PRO || getHamiltonModel(),
+        // Opus 5.5 always thinks first; thinking counts toward this cap.
+        maxTokens: 16000,
         maxSteps: 4,
         requiresAuth: true,
         requiredRole: "premium",
@@ -233,8 +252,8 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
           "Full analytical access with operational context, data quality signals, and pipeline management.",
         systemPrompt,
         tools: adminTools,
-        model: process.env.BFI_MODEL_ADMIN || "claude-sonnet-4-6",
-        maxTokens: 12000,
+        model: process.env.BFI_MODEL_ADMIN || getHamiltonModel(),
+        maxTokens: 16000,
         maxSteps: 4,
         requiresAuth: true,
         requiredRole: "admin",

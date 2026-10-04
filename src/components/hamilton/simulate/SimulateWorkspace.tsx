@@ -110,7 +110,7 @@ export function SimulateWorkspace({
     : "Verified national index";
 
   // ─── Streaming Interpretation ────────────────────────────────────────────
-  const { complete, completion, isLoading: isStreaming } = useCompletion({
+  const { complete, completion, isLoading: isStreaming, error: interpretationError } = useCompletion({
     api: "/api/hamilton/simulate",
   });
 
@@ -132,7 +132,9 @@ export function SimulateWorkspace({
       ? (canSimulate(confidenceTier) as { allowed: false; reason: string }).reason
       : "";
 
-  const canGenerateSummary = !isStreaming && completion.length > 0 && !simulationBlocked;
+  // The board summary works from the computed positions; Hamilton's interpretation is
+  // a bonus, so a failed interpretation never blocks it.
+  const canGenerateSummary = !isStreaming && Boolean(distribution) && !simulationBlocked;
   const collaborateHref = hrefWithInstitutionContext(
     "/pro/settings#workspace-access",
     institutionId,
@@ -432,17 +434,20 @@ export function SimulateWorkspace({
   }, [initialScenarioId, handleScenarioSelect]);
 
   // ─── Derived display values ────────────────────────────────────────────────
-  const categoryLabel = selectedCategory ? formatCategory(selectedCategory) : "Fee Simulation";
+  const categoryLabel = selectedCategory ? formatCategory(selectedCategory) : "Scenario";
   const hasDistribution = distribution && confidenceTier && !loadingCategory;
   const hasSimulation = hasDistribution && !simulationBlocked && currentPosition && proposedPosition;
   const activePeerLabel = distribution?.peer_label ?? "Peer baseline";
   const benchmarkPosture = distribution
     ? `${distribution.approved_count} approved peer rows · ${peerSourceLabel(distribution.peer_source)}`
     : "Choose a category to load the approved-row peer baseline.";
+  const institutionHasNoFee = Boolean(distribution && institutionId && !usingInstitutionFee);
   const currentPointPosture = distribution
     ? usingInstitutionFee
-      ? "Current point uses the selected institution's approved fee row."
-      : "Current point starts from the peer median because no approved selected-institution fee row is available."
+      ? "Current point is your institution's verified fee (its median if it lists several)."
+      : institutionId
+        ? "Your institution has no published fee in this category, so the current point is the peer median, not your fee."
+        : "No institution selected, so the current point is the peer median."
     : "No selected category loaded.";
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -456,7 +461,7 @@ export function SimulateWorkspace({
             className="font-headline text-4xl leading-tight tracking-tight mb-1"
             style={{ color: "var(--hamilton-on-surface)" }}
           >
-            {selectedCategory ? `Fee Simulation: ${categoryLabel}` : "Fee Simulation"}
+            {selectedCategory ? `Scenario: ${categoryLabel}` : "Scenario"}
           </h1>
           <p className="font-label text-[10px] uppercase tracking-widest" style={{ color: "var(--hamilton-on-surface-variant)" }}>
             Verified-only benchmark &bull; Provisional rows excluded from scoring
@@ -471,10 +476,10 @@ export function SimulateWorkspace({
           }}
         >
           <span className="font-label text-[9px] font-bold uppercase tracking-widest">
-            Manual Scenario Mode
+            Your what-if
           </span>
           <span className="text-[11px]" style={{ color: "var(--hamilton-on-surface-variant)" }}>
-            No provider automation queued
+            Nothing changes until you decide to act
           </span>
         </div>
       </div>
@@ -523,9 +528,9 @@ export function SimulateWorkspace({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 items-center">
           {/* Category */}
           <div className="flex flex-col border-r pr-8" style={{ borderColor: "rgb(245 245 244)" }}>
-            <label className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+            <span className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
               Category
-            </label>
+            </span>
             {loadingCategories || loadingCategory ? (
               <div className="skeleton h-6 w-32 rounded" />
             ) : (
@@ -540,9 +545,9 @@ export function SimulateWorkspace({
 
           {/* Current Point */}
           <div className="flex flex-col border-r pr-8" style={{ borderColor: "rgb(245 245 244)" }}>
-            <label className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+            <span className="font-label text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--hamilton-on-surface-variant)" }}>
               {usingInstitutionFee ? "Your Current Fee" : `${activePeerLabel} Median`}
-            </label>
+            </span>
             <div
               className="font-headline text-2xl"
               style={{ color: "rgb(120 113 108)" }}
@@ -552,6 +557,11 @@ export function SimulateWorkspace({
             {!hasDistribution && (
               <span className="text-xs mt-1" style={{ color: "var(--hamilton-on-surface-variant)" }}>
                 Select a category
+              </span>
+            )}
+            {institutionHasNoFee && (
+              <span role="note" className="text-xs mt-1" style={{ color: "var(--hamilton-on-surface-variant)" }}>
+                Your institution has no published fee in this category.
               </span>
             )}
           </div>
@@ -577,9 +587,9 @@ export function SimulateWorkspace({
               />
             ) : (
               <div>
-                <label className="font-label text-[10px] uppercase tracking-widest mb-3 block" style={{ color: "var(--hamilton-primary)" }}>
+                <span className="font-label text-[10px] uppercase tracking-widest mb-3 block" style={{ color: "var(--hamilton-primary)" }}>
                   Active Simulation Target
-                </label>
+                </span>
                 <p className="text-sm italic" style={{ color: "var(--hamilton-on-surface-variant)" }}>
                   Select a fee category to begin simulation.
                 </p>
@@ -623,6 +633,14 @@ export function SimulateWorkspace({
                 interpretation={completion}
                 isStreaming={isStreaming}
               />
+              {interpretationError && !isStreaming && (
+                <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded px-3 py-2 text-sm" style={{ backgroundColor: "#fef2f2", color: "#7f1d1d" }}>
+                  <span>Hamilton&apos;s interpretation didn&apos;t load. The positions above are still accurate.</span>
+                  <button type="button" onClick={() => void handleInputCommit()} className="font-semibold underline">
+                    Retry
+                  </button>
+                </div>
+              )}
 
               {/* Finalize / Board Summary CTA */}
               <div className="space-y-2">
@@ -668,7 +686,7 @@ export function SimulateWorkspace({
 
       {/* Fixed Action Bar ──────────────────────────────────────────────────── */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-white border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-40 px-4 py-3 sm:px-12 sm:py-4"
+        className="fixed bottom-0 left-0 lg:left-72 right-0 bg-white border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-40 px-4 py-3 sm:px-12 sm:py-4"
         style={{ borderColor: "rgb(231 229 228)" }}
       >
         <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:gap-4">

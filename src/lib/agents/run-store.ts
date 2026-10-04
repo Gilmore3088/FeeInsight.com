@@ -1842,3 +1842,65 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
 
   return created;
 }
+
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation";
+
+export interface RecordProRequestInput {
+  operation: ProRequestOperation;
+  title: string;
+  status: "completed" | "failed";
+  summary: string;
+  userId: number | null;
+  institutionId?: number | string | null;
+  detail?: Record<string, unknown>;
+}
+
+/**
+ * Records a finished Pro AI request in the run ledger (run_kind 'pro_request'): one
+ * run, one step and one event, written in one transaction after the work is done, so
+ * no run is ever left "running". Never throws: the ledger must not fail a paid request
+ * that already succeeded. Returns the run id, or null when it could not be written
+ * (for example before the pro_request migration is applied).
+ */
+export async function recordProRequest(input: RecordProRequestInput): Promise<number | null> {
+  const detail = {
+    operation: input.operation,
+    user_id: input.userId,
+    institution_id: input.institutionId ?? null,
+    ...(input.detail ?? {}),
+  };
+  try {
+    return await withTransaction(async (tx) => {
+      const [run] = await tx`
+        INSERT INTO agent_runs
+          (agent_name, run_kind, title, summary, status, params_json, trigger_source,
+           triggered_by, backend, progress_current, progress_total, current_stage,
+           error_summary, started_at, completed_at, updated_at)
+        VALUES
+          ('hamilton', 'pro_request', ${input.title}, ${input.summary}, ${input.status},
+           ${JSON.stringify(detail)}::jsonb, 'api', ${input.userId ? `user:${input.userId}` : "system"},
+           'agentic_v1', 1, 1, ${`pro.${input.operation}`},
+           ${input.status === "failed" ? input.summary : null}, NOW(), NOW(), NOW())
+        RETURNING id
+      `;
+      const runId = Number(run.id);
+      await tx`
+        INSERT INTO agent_run_steps
+          (agent_run_id, step_key, agent_name, title, status, sequence, input_payload,
+           summary, error_summary, started_at, completed_at, updated_at)
+        VALUES
+          (${runId}, ${`pro.${input.operation}`}, 'hamilton', ${input.title}, ${input.status}, 1,
+           ${JSON.stringify(detail)}::jsonb, ${input.summary},
+           ${input.status === "failed" ? input.summary : null}, NOW(), NOW(), NOW())
+      `;
+      await tx`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (${runId}, ${`run.${input.status}`}, ${input.status}, ${input.summary}, ${JSON.stringify(detail)}::jsonb)
+      `;
+      return runId;
+    });
+  } catch {
+    return null;
+  }
+}
+

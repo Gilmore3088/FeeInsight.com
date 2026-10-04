@@ -14,7 +14,7 @@ import {
   shouldPersistUrlInstitutionSelection,
 } from "@/lib/hamilton/artifact-context";
 
-export const metadata: Metadata = { title: "Scenario Modeling" };
+export const metadata: Metadata = { title: "Scenario" };
 
 /**
  * SimulatePage — Server component that gates and hydrates the Simulate workspace.

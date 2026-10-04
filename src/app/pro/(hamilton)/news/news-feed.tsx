@@ -24,6 +24,8 @@ interface NewsFeedProps {
   activeSource?: string;
   activeTopic?: string;
   activeRange: string;
+  /** Feed ingestion is an operator task: only admins see the Refresh control. */
+  canRefreshFeeds?: boolean;
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -71,6 +73,7 @@ export function NewsFeed({
   activeSource,
   activeTopic,
   activeRange,
+  canRefreshFeeds = false,
 }: NewsFeedProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -124,7 +127,8 @@ export function NewsFeed({
           ))}
         </div>
 
-        {/* Refresh button */}
+        {/* Refresh button (operators only) */}
+        {canRefreshFeeds && (
         <button
           onClick={handleRefresh}
           disabled={refreshing}
@@ -141,6 +145,7 @@ export function NewsFeed({
           </svg>
           {refreshing ? "Fetching..." : "Refresh"}
         </button>
+        )}
 
         {refreshResult && (
           <span className="text-[11px] text-emerald-600 font-medium">{refreshResult}</span>
