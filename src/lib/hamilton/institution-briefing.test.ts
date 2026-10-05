@@ -44,7 +44,7 @@ describe("Hamilton institution briefing", () => {
       state_code: "FL",
       charter_type: "bank",
       asset_size_tier: "1b_10b",
-      asset_size: 2500000000,
+      asset_size: 2500000, // thousands of dollars
       fed_district: 6,
       fee_publication_status: "provisional",
       published_fee_count: 1,
@@ -105,7 +105,10 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain("SELECTED INSTITUTION CONTEXT");
     expect(prompt).toContain("Institution ID: 2945");
     expect(prompt).toContain("Example Bank");
-    expect(prompt).toContain("Public fee publication status: Provisional fees (provisional)");
+    expect(prompt).not.toContain("Public fee publication status");
+    expect(prompt).not.toContain("Quality signals");
+    expect(prompt).not.toContain('"confidence"');
+    expect(prompt).toContain("Total assets: $2.5B");
     expect(prompt).toContain("Verified fee count: 1");
     expect(prompt).toContain("Provisional fee count: 2");
     expect(prompt).toContain('"status":"verified"');
@@ -138,6 +141,16 @@ describe("Hamilton institution briefing", () => {
     expect(pro).toContain("Do not describe duplicates, stale sources");
     expect(pro).not.toContain("give concrete diligence steps");
     expect(admin).toContain("give concrete diligence steps");
+  });
+
+  it("gives operators the pipeline and quality fields", async () => {
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const prompt = await buildHamiltonInstitutionBriefing({ ...contract, audience: "admin" });
+
+    expect(prompt).toContain("Public fee publication status: Provisional fees (provisional)");
+    expect(prompt).toContain("Quality signals: extracted_not_published");
+    expect(prompt).toContain('"confidence":0.95');
   });
 
   it("returns null when the selected institution does not exist", async () => {
