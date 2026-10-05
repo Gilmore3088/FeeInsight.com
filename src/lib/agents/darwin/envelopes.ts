@@ -23,8 +23,10 @@ export interface AmountEnvelope {
 export const DEFAULT_AMOUNT_ENVELOPE: AmountEnvelope = { min: 0.01, max: 2_500 };
 
 export const CATEGORY_AMOUNT_ENVELOPES: Readonly<Record<string, AmountEnvelope>> = {
-  overdraft: { min: 1, max: 60 },
-  nsf: { min: 1, max: 60 },
+  // Live overdraft/NSF rows under $5 were transfer fees, per-day charges and
+  // thresholds ("no fee on items under $5"), not per-item prices; a real one goes to review.
+  overdraft: { min: 5, max: 60 },
+  nsf: { min: 5, max: 60 },
   continuous_od: { min: 1, max: 50 },
   od_protection_transfer: { min: 0.5, max: 40 },
   ach_return: { min: 1, max: 50 },
