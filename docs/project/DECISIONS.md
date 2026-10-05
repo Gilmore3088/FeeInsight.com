@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Hamilton is a paid consultant, not a chatbot that restates the site.** James, 22:57 UTC: "A
+consultant finds the actionable insights, the peer data, the qualitative and the quantitative, and
+packages it in an easy to understand and concise, valuable package." Hamilton's voice (v3.2.0),
+the Pro prompt and Analyze now forbid answering by repeating what the public pages show and ask
+for the "so what": peer gap, revenue at stake, trend or outlier, and the decision it raises.
+
 **Free reports are instant; the institution report is paid and never promises a turnaround.**
 James, 21:41-22:20 UTC. The request form becomes a picker: a National report (email only) and a
 Fed district report (email plus district) are free and open at once; a report on one institution
