@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   completeHamiltonRefreshJobsForInstitution: vi.fn(),
   checkProAiQuota: vi.fn(),
   recordProRequest: vi.fn(),
+  getLocalFeeMoves: vi.fn(),
   getLocalMarketCompetitors: vi.fn(),
   getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
@@ -40,6 +41,8 @@ vi.mock("@/lib/data-store/connection", () => ({
 
 vi.mock("@/lib/data-store/local-market", () => ({
   getLocalMarketCompetitors: mocks.getLocalMarketCompetitors,
+  getLocalFeeMoves: mocks.getLocalFeeMoves,
+  FEE_MOVES_TRACKED_SINCE: "2026-10-05T06:43:00Z",
 }));
 
 vi.mock("@/lib/data-store/complaints", () => ({
@@ -160,6 +163,7 @@ describe("Hamilton Reports generateReport", () => {
     mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
     mocks.recordProRequest.mockResolvedValue(1);
     mocks.getLocalMarketCompetitors.mockResolvedValue(null);
+    mocks.getLocalFeeMoves.mockResolvedValue([]);
     mocks.getInstitutionComplaintYears.mockResolvedValue([]);
 
     mocks.getCurrentUser.mockResolvedValue({
@@ -490,6 +494,9 @@ describe("Hamilton Reports generateReport", () => {
         { institution_id: 3, institution_name: "Prairie Trust", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 40 }, document_url: null, document_date: null },
       ],
     });
+    mocks.getLocalFeeMoves.mockResolvedValue([
+      { institution_id: 2, institution_name: "Clay County Bank", fee_category: "wire_transfer", previous_amount: 25, new_amount: 30, detected_at: "2026-10-05" },
+    ]);
     mocks.generateSection.mockImplementation(async (input: SectionInput) => ({
       narrative:
         input.type === "executive_summary"
@@ -523,7 +530,7 @@ describe("Hamilton Reports generateReport", () => {
         },
       ],
     });
-    expect(result.report.exhibits?.map((exhibit) => exhibit.id)).toEqual(["local_market", "peer_range", "dollar_impact", "regulatory"]);
+    expect(result.report.exhibits?.map((exhibit) => exhibit.id)).toEqual(["local_market", "peer_range", "dollar_impact", "competitor_moves", "regulatory"]);
     expect(result.report.exhibits?.[0].rows[0]).toEqual([
       "Wire Transfer",
       "$35.00",

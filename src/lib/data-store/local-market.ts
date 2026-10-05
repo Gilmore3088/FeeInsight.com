@@ -156,3 +156,57 @@ export async function getLocalMarketCompetitors(params: {
     competitors: [...byInstitution.values()],
   };
 }
+
+/**
+ * Hamilton publish has recorded a price change only for the same fee line at a new
+ * amount in a newer document since PR 78 (deployed 2026-10-05 06:43 UTC). Almost
+ * every change recorded before that was a false replacement, so earlier rows are
+ * never shown as competitor moves.
+ */
+export const FEE_MOVES_TRACKED_SINCE = "2026-10-05T06:43:00Z";
+
+export interface LocalFeeMove {
+  institution_id: number;
+  institution_name: string;
+  fee_category: string;
+  previous_amount: number;
+  new_amount: number;
+  /** When a newer published fee schedule showed the new amount (not the bank's own effective date). */
+  detected_at: string;
+}
+
+/** Price changes by the given competitors on the given fees, newest first. */
+export async function getLocalFeeMoves(params: {
+  institutionIds: number[];
+  categories: string[];
+  limit?: number;
+}): Promise<LocalFeeMove[]> {
+  if (params.institutionIds.length === 0 || params.categories.length === 0) return [];
+  const rows = await sql`
+    SELECT c.institution_id, s.institution_name, c.fee_category,
+           COALESCE(c.previous_amount, c.old_amount) AS previous_amount,
+           c.new_amount, c.detected_at
+      FROM fee_change_records c
+      JOIN institution_sources s ON s.id = c.institution_id
+     WHERE c.institution_id = ANY(${params.institutionIds}::int[])
+       AND c.fee_category = ANY(${params.categories}::text[])
+       AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
+       AND COALESCE(c.previous_amount, c.old_amount) IS NOT NULL
+       AND c.new_amount IS NOT NULL
+     ORDER BY c.detected_at DESC
+     LIMIT ${params.limit ?? 20}
+  `;
+  return rows.flatMap((row) => {
+    const previous = num(row.previous_amount);
+    const next = num(row.new_amount);
+    if (previous === null || next === null || Math.abs(previous - next) < 0.005) return [];
+    return [{
+      institution_id: Number(row.institution_id),
+      institution_name: String(row.institution_name),
+      fee_category: String(row.fee_category),
+      previous_amount: previous,
+      new_amount: next,
+      detected_at: new Date(row.detected_at as string | Date).toISOString().slice(0, 10),
+    }];
+  });
+}

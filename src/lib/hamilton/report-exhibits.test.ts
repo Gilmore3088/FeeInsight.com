@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, cheapestRank, peerBand } from "./report-exhibits";
+import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, buildReportExhibits, cheapestRank, peerBand } from "./report-exhibits";
 import { checkNarrativeFigures } from "./figure-check";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import type { LocalMarket } from "@/lib/data-store/local-market";
@@ -84,6 +84,29 @@ describe("price-move scenarios", () => {
     expect(peerBand(27, 25, 30, 35)).toBe("between the 25th percentile and the median");
     expect(peerBand(20, null, 30, null)).toBe("below the median");
     expect(cheapestRank(30, [30, 30, 25])).toBe(2);
+  });
+});
+
+describe("competitor moves", () => {
+  it("lists local price changes newest first and tells the model when tracking began", () => {
+    const result = buildReportExhibits({
+      institutionName: "Example Bank",
+      deltas: [delta("nsf", 30, 30)],
+      peerLabel: "state peers",
+      market: market([{ nsf: 30 }]),
+      serviceCharges: null,
+      moves: [{ institution_id: 1, institution_name: "Bank  1", fee_category: "nsf", previous_amount: 35, new_amount: 30, detected_at: "2026-10-06" }],
+    });
+    const exhibit = result.exhibits.find((e) => e.id === "competitor_moves");
+    expect(exhibit?.title).toBe("1 local price change on these fees since 2026-10-05: 0 up, 1 down");
+    expect(exhibit?.rows[0]).toEqual(["Bank 1", expect.any(String), "$35.00", "$30.00", "-$5.00", "2026-10-06"]);
+    expect(result.data.local_moves).toMatchObject({ tracked_since: "2026-10-05", moves: [{ change_amount: -5 }] });
+  });
+
+  it("shows no exhibit without moves, but still tells the model tracking began", () => {
+    const result = buildReportExhibits({ institutionName: "Example Bank", deltas: [delta("nsf", 30, 30)], peerLabel: "peers", market: market([{ nsf: 30 }]), serviceCharges: null });
+    expect(result.exhibits.some((e) => e.id === "competitor_moves")).toBe(false);
+    expect(result.data.local_moves).toEqual({ tracked_since: "2026-10-05", moves: [] });
   });
 });
 

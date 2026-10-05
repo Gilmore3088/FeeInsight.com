@@ -7,7 +7,7 @@
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { computePercentile } from "@/lib/data-store/fees";
 import { formatAmount, formatCompactDollars } from "@/lib/format";
-import type { LocalMarket } from "@/lib/data-store/local-market";
+import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import type { ReportExhibit, ReportSource } from "./types";
 
@@ -70,6 +70,11 @@ export interface ReportExhibitData {
   } | null;
   annual_service_charges: { year: number; income: number; display: string; source: string; label: string } | null;
   fee_impacts: FeeImpactEstimate[];
+  /** Price changes by local competitors on these fees; null when no local market was found. */
+  local_moves: {
+    tracked_since: string;
+    moves: Array<{ competitor: string; fee: string; previous_amount: number; new_amount: number; change_amount: number; detected: string }>;
+  } | null;
 }
 
 export interface ReportExhibitsResult {
@@ -193,8 +198,19 @@ export function buildReportExhibits(params: {
   market: LocalMarket | null;
   serviceCharges: AnnualServiceCharges | null;
   feeScheduleUrl?: string | null;
+  /** Recent price changes by the local competitors (see getLocalFeeMoves). */
+  moves?: LocalFeeMove[];
 }): ReportExhibitsResult {
   const { institutionName, deltas, peerLabel, market, serviceCharges } = params;
+  const moves = (params.moves ?? []).map((move) => ({
+    competitor: cleanName(move.institution_name),
+    fee: getDisplayName(move.fee_category),
+    previous_amount: move.previous_amount,
+    new_amount: move.new_amount,
+    change_amount: round2(move.new_amount - move.previous_amount),
+    detected: move.detected_at,
+  }));
+  const trackedSince = FEE_MOVES_TRACKED_SINCE.slice(0, 10);
   const local = buildLocalComparisons(deltas, market);
   const impacts = buildFeeImpacts(deltas, local, serviceCharges);
   const exhibits: ReportExhibit[] = [];
@@ -282,6 +298,18 @@ export function buildReportExhibits(params: {
     });
   }
 
+  if (moves.length > 0) {
+    const raised = moves.filter((m) => m.change_amount > 0).length;
+    exhibits.push({
+      id: "competitor_moves",
+      title: `${moves.length} local price ${moves.length === 1 ? "change" : "changes"} on these fees since ${trackedSince}: ${raised} up, ${moves.length - raised} down`,
+      subtitle: "Changes seen when a competitor's newer fee schedule showed a new amount for the same fee, newest first.",
+      columns: ["Competitor", "Fee", "Was", "Now", "Change", "Seen"],
+      rows: moves.map((m) => [m.competitor, m.fee, formatAmount(m.previous_amount), formatAmount(m.new_amount), signed(m.change_amount), m.detected]),
+      note: "The date is when a newer schedule was collected, not the competitor's own effective date.",
+    });
+  }
+
   const sources: ReportSource[] = [];
   if (params.feeScheduleUrl) {
     sources.push({ label: `${institutionName} fee schedule`, detail: "Published fee schedule used for every amount shown for your institution.", url: params.feeScheduleUrl });
@@ -329,6 +357,7 @@ export function buildReportExhibits(params: {
           }
         : null,
       fee_impacts: impacts,
+      local_moves: market ? { tracked_since: trackedSince, moves } : null,
     },
     exhibits,
     sources,

@@ -35,7 +35,7 @@ import {
   STATE_EXPERT_REPORT_RULES,
 } from "@/lib/hamilton/report-synthesis";
 import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
-import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { getLocalFeeMoves, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
 import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
@@ -241,6 +241,7 @@ HARD RULES — fail any, rewrite the section:
 8. Plain banker English. Short sentences. When you name a number, name what it is a number OF.
 9. Place the sharpest fact at the end of the sentence — the emphatic position. End on the figure from DATA rather than a comment about it ("which is notable").
 10. If a sentence could appear unchanged in any other bank's report, delete it.
+11. exhibits.local_moves lists price changes by named local competitors since tracked_since. When a decision touches a fee a competitor changed, name the competitor and its old and new amount. When moves is empty, say nothing about competitor changes, and never claim what happened before tracked_since.
 `.trim();
 
 function buildExecutiveSummaryContext(
@@ -304,9 +305,9 @@ const RECOMMENDATION_RULES = `
 ${NO_FLUFF_RULES}
 
 TRADE-OFF RULES:
-11. Cover the decisions on the answer page, in its order, and no others. At most 3.
-12. Each trade-off names the fee, the price it moves toward, and one concrete consequence: who notices, the attrition, complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
-13. If you can ground only 0 or 1 decisions, write only that many. Better short than generic.
+12. Cover the decisions on the answer page, in its order, and no others. At most 3.
+13. Each trade-off names the fee, the price it moves toward, and one concrete consequence: who notices, the attrition, complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+14. If you can ground only 0 or 1 decisions, write only that many. Better short than generic.
 `.trim();
 
 function buildRecommendationContext(
@@ -531,6 +532,12 @@ export async function generateReport(
           categories: selectedFeeDeltas.map((delta) => delta.fee_category),
         }).catch(() => null)
       : null;
+    const localMoves = localMarket
+      ? await getLocalFeeMoves({
+          institutionIds: localMarket.competitors.map((competitor) => competitor.institution_id),
+          categories: selectedFeeDeltas.map((delta) => delta.fee_category),
+        }).catch(() => [])
+      : [];
     const exhibitSet = buildReportExhibits({
       institutionName,
       deltas: selectedFeeDeltas,
@@ -538,6 +545,7 @@ export async function generateReport(
       market: localMarket,
       serviceCharges: annualServiceCharges(selectedFinancials),
       feeScheduleUrl: selectedInstitution?.fee_schedule_url ?? null,
+      moves: localMoves,
     });
     // Regulation: the federal rules that bear on these fees, the state chartering
     // agency, and the institution's CFPB complaint record.
