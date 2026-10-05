@@ -91,6 +91,18 @@ name). The newest copy stays live; the others get `rolled_back_reason = 'duplica
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
 
+## Rules Re-check
+
+In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
+free team (`runFreeSpecialists` plus Darwin's rule checks) on the text each live Knox
+fee came from, or the document's latest text when that one is gone. A live fee whose
+category and price the current rules no longer read is rolled back
+(`rolled_back_reason = 'rules_recheck_unreproduced'`, the run's batch id) and its
+verified row is rejected so the next publish does not bring it back. Up to 25 documents
+per step; each document is re-checked once per Knox version signature (attempt log,
+stage `publish`, strategy `hamilton.rules_recheck`). Knox's paid fees and fees from
+other sources are never touched; a document with no stored text keeps its fees.
+
 ## Boundaries
 
 - Public Hamilton must be consumer-safe and cannot expose admin-only operational details.
