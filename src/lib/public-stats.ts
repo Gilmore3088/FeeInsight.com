@@ -3,7 +3,9 @@ import { getDataFreshness, getPublicStats } from "@/lib/data-store/core";
 import { sql } from "@/lib/data-store/connection";
 import { getFeeCategorySummaries, type FeeCategorySummary } from "@/lib/data-store/fees";
 import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
-import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
+import type { IndexEntry } from "@/lib/data-store/fee-index";
+import { maturityTier } from "@/lib/data-store/maturity";
 import { US_STATES_ONLY } from "@/lib/us-states";
 
 /**
@@ -189,6 +191,34 @@ export const getPublicStatsSummary = cache(async (): Promise<PublicStatsSummary>
 export const getPublicCategorySummaries = cache(
   async (): Promise<FeeCategorySummary[]> => (await getPublicSnapshot()).categories,
 );
+
+/**
+ * The national index (canonical categories) in IndexEntry shape, built from the shared
+ * snapshot, for public pages that compare against national medians. Same figures as
+ * the fee index; admin and Pro keep reading fee_index_cache directly.
+ */
+export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> => {
+  const categories = await getPublicCategorySummaries();
+  return categories
+    .filter((c) => CANONICAL_CATEGORIES.has(c.fee_category))
+    .map((c) => ({
+      fee_category: c.fee_category,
+      fee_family: getFeeFamily(c.fee_category),
+      median_amount: c.median_amount,
+      p25_amount: c.p25_amount,
+      p75_amount: c.p75_amount,
+      min_amount: c.min_amount,
+      max_amount: c.max_amount,
+      institution_count: c.institution_count,
+      observation_count: c.total_observations,
+      approved_count: c.total_observations,
+      bank_count: c.bank_count,
+      cu_count: c.cu_count,
+      // A null median means the sample was below the minimum; mark it so callers skip it.
+      maturity_tier: c.median_amount === null ? "insufficient" : maturityTier(c.institution_count),
+      last_updated: null,
+    }));
+});
 
 /**
  * What a benchmark measures, for the line beside it:
