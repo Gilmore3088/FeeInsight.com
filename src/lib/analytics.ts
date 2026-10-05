@@ -23,6 +23,8 @@ export type AnalyticsEvent =
   | "upgrade_click"
   | "book_walkthrough"
   | "hosted_report_view"
+  /** A free national or district benchmark report was opened. */
+  | "benchmark_report_view"
   | "hosted_report_request"
   | "contact_sales"
   | "fee_alert_save"

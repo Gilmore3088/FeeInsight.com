@@ -7,7 +7,9 @@
  * 2. One value per institution: an institution with several rows for a category
  *    contributes the median of its own amounts once, so a bank with five copies of a
  *    fee no longer counts five times. The lowest amount was rejected: tiered or
- *    mislabeled sub-fees pull it down (overdraft read $20 instead of $28).
+ *    mislabeled sub-fees pull it down (overdraft read $20 instead of $28). Overdraft
+ *    counts the highest tier instead (James, 2026-10-05): a bank charging $5, $20 and
+ *    $35 by overdrawn amount is compared at its standard $35 fee.
  * 3. $0 counts: a free fee is a real price and pulls the median down.
  * 4. Minimum sample: no median or percentile below MIN_INSTITUTIONS_FOR_MEDIAN
  *    institutions; "strong" needs STRONG_INSTITUTION_COUNT.
@@ -19,7 +21,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 2;
+export const STATS_METHOD_VERSION = 3;
 
 /** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
 export const STATS_ROW_FILTER = "ef.source_document_id IS NOT NULL";
@@ -29,6 +31,17 @@ export interface StatsInputRow {
   institution_id: number | string;
   amount: number | string | null;
   charter_type?: string | null;
+  fee_category?: string | null;
+}
+
+/** Categories whose tiers are compared at the highest (standard) tier, not the median. */
+export const HIGHEST_TIER_CATEGORIES: ReadonlySet<string> = new Set(["overdraft"]);
+
+/** One institution's value for a category from its own amounts (sorted or not). */
+export function institutionValue(category: string | null | undefined, amounts: number[]): number {
+  const sorted = [...amounts].sort((a, b) => a - b);
+  if (category && HIGHEST_TIER_CATEGORIES.has(category)) return sorted[sorted.length - 1];
+  return computePercentile(sorted, 50);
 }
 
 export interface FeeStatistics {
@@ -52,20 +65,25 @@ function toAmount(value: number | string | null | undefined): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Each institution's value: the median of its non-negative amounts. Rows with no amount are skipped. */
+/**
+ * Each institution's value: the median of its non-negative amounts (the highest for
+ * HIGHEST_TIER_CATEGORIES, read from the rows' fee_category). Rows with no amount are skipped.
+ */
 export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> {
-  const amounts = new Map<number, number[]>();
+  const amounts = new Map<number, { category: string | null | undefined; list: number[] }>();
   for (const row of rows) {
     const amount = toAmount(row.amount);
     const id = Number(row.institution_id);
     if (amount === null || !Number.isFinite(id)) continue;
-    const list = amounts.get(id);
-    if (list) list.push(amount);
-    else amounts.set(id, [amount]);
+    const entry = amounts.get(id);
+    if (entry) {
+      entry.list.push(amount);
+      if (entry.category !== row.fee_category) entry.category = null;
+    } else amounts.set(id, { category: row.fee_category, list: [amount] });
   }
   const values = new Map<number, number>();
-  for (const [id, list] of amounts) {
-    values.set(id, computePercentile(list.sort((a, b) => a - b), 50));
+  for (const [id, { category, list }] of amounts) {
+    values.set(id, institutionValue(category, list));
   }
   return values;
 }

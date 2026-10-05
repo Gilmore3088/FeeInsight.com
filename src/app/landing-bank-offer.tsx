@@ -13,9 +13,9 @@ const WHAT_YOU_GET = [
 ];
 
 const NEXT_STEPS = [
-  "You send this form. We save your request right away.",
-  "We email you to confirm which competitors to compare you with.",
-  `Your PDF report arrives, ${REPORT_OFFER.turnaround}. No payment, no card. We only email you about your report.`,
+  "Pick a report. National and Fed district reports are free and open right away.",
+  "Want your own institution against named competitors? Pick the institution report.",
+  `${REPORT_OFFER.nextStep}. Nothing is charged until you agree.`,
 ];
 
 /**

@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Free reports are instant; the institution report is paid and never promises a turnaround.**
+James, 21:41-22:20 UTC. The request form becomes a picker: a National report (email only) and a
+Fed district report (email plus district) are free and open at once; a report on one institution
+against named competitors is the paid step, shown grayed out as the hook. Never promise "48 hours"
+for anything free, because that puts unpaid work on James. This replaces the earlier "the report
+is free" (J1) for the institution report. Built in PR 150.
+
 **Free discovery is never held to the monthly cadence.** James, 22:32 UTC ("if it doesn't
 require money, why are we limited in it?"). Every state's hourly backlog run now searches banks
 that are due a free search, and a discovery step takes up to 50 banks within its time budget.
@@ -27,6 +34,12 @@ for changed schedules.
 ask him to set up a Plausible goal. Its script, CSP host, env var and docs are removed and
 `plausible-kill` keeps them out. `trackEvent` stays as the one hook for a future provider; page
 views come from Vercel Analytics and report requests are leads in /admin/leads.
+
+**A bank's tiered overdraft counts at its highest (standard) tier.** James, 19:45 UTC, on a
+decision card. Each tier stays its own live fee with its band in the name, and a real $0 fee
+counts. Medians, percentiles, peer positions and reports use the bank's highest overdraft
+amount; other categories keep the median. Shipped in PR 132 (`institutionValue` in
+`src/lib/data-store/fee-stats.ts`).
 
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).

@@ -156,8 +156,8 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
           >
             <p className="text-pretty text-[16px] leading-relaxed text-[#1A1815]">
               See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
-              take to your pricing committee. Free for your institution,{" "}
-              {REPORT_OFFER.turnaround}.
+              take to your pricing committee. Start with a free national or Fed district report;
+              the report for your institution is priced on request.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <TrackLink
