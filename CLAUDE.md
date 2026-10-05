@@ -11,6 +11,13 @@ Headings never wrap a single word onto its own line. `src/app/globals.css` and
 `Reports/studio/template.html` balance h1-h4 (`text-wrap: balance`) and give body text
 `text-wrap: pretty`; don't override that per page. `scripts/ci-guards.sh heading-wrap-kill` enforces it.
 
+## Migrations
+`supabase/migrations/` must match prod's migration history (`supabase_migrations.schema_migrations`)
+file for file, so Supabase's GitHub deploy never re-runs applied SQL. Name a new file with a
+14-digit number one higher than the highest file already there (e.g. `20270109000000_name.sql`),
+never a lower or duplicate number. A file run by hand in the SQL editor also needs its history
+row recorded (a sql-to-run issue). `scripts/ci-guards.sh migration-version-kill` enforces the names.
+
 ## Money-Thesis
 A bank/CU marketing or product manager pays ~$300 for a competitive fee report for
 their market. Why us: live verified fee data (published_fee_catalog) + banking domain
