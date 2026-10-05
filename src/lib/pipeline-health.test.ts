@@ -42,6 +42,7 @@ describe("getPipelineHealth", () => {
       minutes_since_successful_tick: 10,
       blocked_ticks_1h: 12,
       hours_since_last_publish: 0,
+      minutes_since_last_publish: 10,
       provider_failure_count_24h: 2,
       runs_completed_24h: 5,
       runs_failed_24h: 1,
@@ -54,6 +55,7 @@ describe("getPipelineHealth", () => {
     const health = await getPipelineHealth();
     expect(health.minutes_since_successful_tick).toBeNull();
     expect(health.hours_since_last_publish).toBeNull();
+    expect(health.minutes_since_last_publish).toBeNull();
     expect(pipelineHealthProblems(health)).toHaveLength(2);
   });
 });

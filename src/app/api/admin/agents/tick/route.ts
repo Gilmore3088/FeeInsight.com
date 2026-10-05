@@ -21,14 +21,14 @@ export const maxDuration = 300;
  * steps inside the function's time limit.
  */
 const DEFAULT_MAX_STEPS_PER_RUN = 5;
+/** Runs advanced per tick, one after another (see executeQueuedAgentRuns). */
+const DEFAULT_RUN_LIMIT = 2;
 /**
- * Runs advanced side by side per tick, one per state lane. Each holds a connection for
- * its step's transaction, so this stays below the database pool size
- * (DATABASE_POOL_MAX, default 5) with room for queries made outside those transactions.
+ * No new step starts this long after the tick began. Ticks fire every 5 minutes and a
+ * killed tick leaves its query running on the database, so a tick must end well inside
+ * its interval; this leaves a slow last step about two minutes to finish.
  */
-const DEFAULT_RUN_LIMIT = 3;
-/** No new step starts this long after the tick began, leaving room for one more to finish. */
-const STEP_START_BUDGET_MS = 180_000;
+const STEP_START_BUDGET_MS = 150_000;
 
 async function isAuthorized(request: NextRequest): Promise<boolean> {
   if (matchesConfiguredCronSecret(request.headers.get("authorization"))) return true;

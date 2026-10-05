@@ -15,6 +15,8 @@ export interface PipelineHealth {
   overdue_state_lanes: number;
   last_published_at: string | null;
   hours_since_last_publish: number | null;
+  /** Exact minutes since the last publish; hours alone rounds recent publishes down to 0. */
+  minutes_since_last_publish?: number | null;
   provider_failure_count_24h: number;
   runs_completed_24h?: number;
   runs_failed_24h?: number;

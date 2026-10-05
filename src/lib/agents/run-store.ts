@@ -1721,9 +1721,12 @@ export async function executeQueuedAgentRuns({
      ORDER BY r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
-  // Runs advance side by side (different states in parallel). Each step claims its run
-  // under a row lock, so two runs never share a step.
-  const results = await Promise.all(rows.map(async (row): Promise<AgentRunExecutionResult> => {
+  // Runs advance one after another. Running state lanes side by side held several
+  // step transactions open at once (publish steps queue on one advisory lock while
+  // holding theirs), which starved the shared database and slowed the public site and
+  // admin to a crawl. The tick deadline still bounds how much work one tick does.
+  const results: AgentRunExecutionResult[] = [];
+  for (const row of rows) {
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -1735,8 +1738,8 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    return executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt });
-  }));
+    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt }));
+  }
   return { selected: rows.length, results };
 }
 
