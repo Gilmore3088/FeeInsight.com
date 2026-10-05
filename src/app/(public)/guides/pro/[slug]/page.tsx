@@ -16,7 +16,7 @@ import { notFound } from "next/navigation";
 import { guideCategories } from "@/lib/guides";
 import { loadGuide, loadRelatedGuides } from "@/lib/guides/source";
 import { getFeeCategoryDetail } from "@/lib/data-store";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { getPublicCategorySummaries } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -84,7 +84,7 @@ export default async function ProGuidePage({ params }: PageProps) {
 
   const categories = guideCategories(guide);
   const [allSummaries, related] = await Promise.all([
-    getCachedFeeCategorySummaries(),
+    getPublicCategorySummaries(),
     loadRelatedGuides(guide),
   ]);
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
