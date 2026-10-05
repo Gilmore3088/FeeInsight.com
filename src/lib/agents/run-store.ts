@@ -52,10 +52,23 @@ import {
 
 const ACTIVE_STATUSES = ["queued", "running", "cancel_requested"];
 const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "report", "manual_repair", "dry_run"] as const;
-const AGENTIC_SUMMARY =
-  "Agentic run advanced through the TypeScript run ledger with committed step events. Magellan can reduce missing fee URLs, fetch source documents, and inventory public discovery routes; Rosetta can normalize HTML/text/PDF source documents and route scanned PDFs to OCR; Knox can extract conservative raw fee observations and classify public page findings; Darwin can verify canonical-hinted raw rows and cluster public findings; Hamilton can publish eligible verified rows into the Tier-3 ledger and summarize public discovery diagnosis. Durable queues, scanned-PDF OCR, provider extraction, browser-render screenshots, and adversarial review depth remain gated until each agent module is implemented.";
+const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
 type SqlTag = typeof sql;
+
+/** A completed run's summary is what its steps actually reported, never stock text. */
+export async function completedRunSummary(db: SqlTag, runId: number, completed: number, total: number): Promise<string> {
+  const steps = await db<Array<{ summary: string | null }>>`
+    SELECT summary
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND summary IS NOT NULL
+     ORDER BY sequence, id
+  `;
+  const head = `Completed ${completed} of ${total} step${total === 1 ? "" : "s"}.`;
+  const text = [head, ...steps.map((step) => String(step.summary).trim()).filter(Boolean)].join(" ");
+  return text.length > RUN_SUMMARY_MAX_LENGTH ? `${text.slice(0, RUN_SUMMARY_MAX_LENGTH - 1)}…` : text;
+}
 
 interface AgenticStepExecution {
   status: Extract<AgentRunStepStatus, "completed" | "skipped">;
@@ -1158,13 +1171,15 @@ async function prepareNextAgenticStep(runId: number): Promise<
           message: failed.error ?? "Agent run has a failed step.",
         };
       }
+      const finishedSteps = steps.filter((candidate) => candidate.status === "completed" || candidate.status === "skipped").length;
+      const summary = await completedRunSummary(tx, runId, finishedSteps, steps.length);
       await tx`
         UPDATE agent_runs
            SET status = 'completed',
-               progress_current = ${steps.filter((candidate) => candidate.status === "completed" || candidate.status === "skipped").length},
+               progress_current = ${finishedSteps},
                progress_total = ${steps.length},
                current_stage = NULL,
-               summary = COALESCE(summary, ${AGENTIC_SUMMARY}),
+               summary = COALESCE(summary, ${summary}),
                completed_at = COALESCE(completed_at, NOW()),
                updated_at = NOW()
          WHERE id = ${runId}
@@ -1324,13 +1339,14 @@ async function finishAgenticStep(
       };
     }
 
+    const summary = await completedRunSummary(tx, runId, completed, total);
     await tx`
       UPDATE agent_runs
          SET status = 'completed',
              progress_current = ${completed},
              progress_total = ${total},
              current_stage = NULL,
-             summary = ${AGENTIC_SUMMARY},
+             summary = ${summary},
              error_summary = NULL,
              completed_at = NOW(),
              updated_at = NOW()
@@ -1341,7 +1357,7 @@ async function finishAgenticStep(
         (agent_run_id, event_type, status, message, detail)
       VALUES
         (${runId}, 'run.completed', 'completed',
-         ${AGENTIC_SUMMARY},
+         ${summary},
          ${JSON.stringify({ completed_steps: completed, total_steps: total })}::jsonb)
     `;
     await updateStateLaneTerminalStatus(tx, runId, "completed");
