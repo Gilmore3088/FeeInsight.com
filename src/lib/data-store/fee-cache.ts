@@ -27,20 +27,33 @@ export async function getCachedFeeCategorySummaries(): Promise<FeeCategorySummar
 }
 
 /**
- * Invalidate the cached summaries and the other public aggregate reads
- * (public-read-cache.ts). Called after a Hamilton publish writes new rows, so readers
- * see fresh benchmarks and counts without waiting out the ceiling.
+ * Invalidate the cached national summaries. Called after a Hamilton publish writes new
+ * rows, so readers see fresh benchmarks without waiting out the ceiling.
+ *
+ * The other public aggregate reads (public-read-cache.ts) are left to their hour-long
+ * ceiling: the pipeline publishes every few minutes, and expiring them on each publish
+ * re-ran a dozen catalog-wide aggregates (the state directory alone takes over a
+ * minute on a busy database) as soon as visitors arrived. Paths that remove published
+ * fees call invalidatePublicReadCache() as well.
  *
  * Safe to call outside a request scope — a publish may run from a job context where
  * `revalidateTag` is unavailable, and a failure to invalidate must never fail a publish.
  */
 export function invalidateFeeSummaryCache(): void {
+  revalidateQuietly(FEE_SUMMARY_CACHE_TAG);
+}
+
+/** Invalidate every public aggregate read. For paths that take published fees down. */
+export function invalidatePublicReadCache(): void {
+  revalidateQuietly(FEE_SUMMARY_CACHE_TAG);
+  revalidateQuietly(PUBLIC_READ_CACHE_TAG);
+}
+
+function revalidateQuietly(tag: string): void {
   try {
     // Next 16 requires a cache-life profile. "max" is the broadest bucket, so it
-    // certainly covers this entry's hour-long lifetime. Over-invalidating costs one
-    // recompute; under-invalidating would serve stale benchmarks, so err broad.
-    revalidateTag(FEE_SUMMARY_CACHE_TAG, "max");
-    revalidateTag(PUBLIC_READ_CACHE_TAG, "max");
+    // certainly covers these entries' hour-long lifetime.
+    revalidateTag(tag, "max");
   } catch {
     // Outside a Next request/render scope — a publish may run from a job context.
     // The time ceiling still bounds staleness, and a publish must never fail on this.
