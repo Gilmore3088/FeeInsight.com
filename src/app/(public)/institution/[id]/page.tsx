@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution, getNationalIndexCached } from "@/lib/data-store";
-import { getFinancialHistory, getPeerFinancialMedians } from "@/lib/data-store/financial";
+import { getFinancialHistory, getPeerFinancialMedians, getPeerPercentiles } from "@/lib/data-store/financial";
 import {
   getBranchFootprint,
   getComplaintTrend,
@@ -31,7 +31,13 @@ import { FeeFocusScroll } from "./fee-focus-scroll";
 import { FeeScheduleTable, type FeeBenchmarks } from "./fee-schedule-table";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { FinancialContext } from "./financial-context";
-import { buildFinancialSeries, toPeerMedianPoints } from "./financial-history";
+import {
+  buildFinancialSeries,
+  computeGrowth,
+  findOutliers,
+  toPeerMedianPoints,
+  toPeerRankRows,
+} from "./financial-history";
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
@@ -137,18 +143,27 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
   // Financial history is Pro-only; free users never receive it in the RSC payload.
   const isPro = canAccessPremium(user);
-  const [financialHistory, peerMedians, footprint, complaints, holdingCompany] = isPro
+  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany] = isPro
     ? await Promise.all([
         getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
         getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
+        getPeerPercentiles(instId).catch(fallbackTo("peer percentiles", null)),
         getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
         getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
         getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
       ])
-    : [[], null, null, null, null];
+    : [[], null, null, null, null, null];
   const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
+  const financialGrowth = computeGrowth(financialSeries);
+  const insights = {
+    growth: financialGrowth,
+    ranks: toPeerRankRows(peerPercentiles),
+    flags: findOutliers(financialSeries, financialGrowth, peerPercentiles),
+    peerCount: peerPercentiles?.peer_count ?? null,
+    peerQuarter: formatReportQuarter(peerPercentiles?.report_date),
+  };
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
   const catalogRows = toDisplayFees(visibleFees);
@@ -361,6 +376,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   isPro={isPro}
                   points={financialSeries}
                   peers={peerMedianPoints}
+                  insights={insights}
                   charterLabel={charterLabel}
                   footprint={footprint}
                   complaints={complaints}

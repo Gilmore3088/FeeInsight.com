@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Package all 16 years of call reports on institution pages, deeper for Pro.** James, 22:25 and
+22:38 UTC ("Go: phases 1 and 2"). Phase 1 shows the stored-but-hidden figures plus growth, peer
+rank and outliers. Phase 2 widens the FDIC and NCUA pulls (overdraft-related service charges and
+other deposit-fee lines) and re-pulls all 66 quarters as visible runs. Only figures the source
+reports: no overdraft/NSF split unless a filing reports one. Phases 3 (a Pro institution
+workspace) and 4 (free page tune-up) wait for his go-ahead.
+
 **No Plausible.** James, 20:51 UTC. He doesn't use it; dormant Plausible code led a session to
 ask him to set up a Plausible goal. Its script, CSP host, env var and docs are removed and
 `plausible-kill` keeps them out. `trackEvent` stays as the one hook for a future provider; page
