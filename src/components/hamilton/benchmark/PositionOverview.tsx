@@ -13,6 +13,7 @@ import {
   type InstitutionPositionEntry,
   type InstitutionPositioning,
 } from "@/lib/hamilton/institution-position";
+import type { ExpertStateContext } from "@/lib/hamilton/expert-context";
 import { RangeBar, RangeLegend, TONE_COLORS, type PositionTone } from "./RangeBar";
 
 export function positionTone(entry: Pick<InstitutionPositionEntry, "gapPct" | "gapAmount">): PositionTone {
@@ -61,7 +62,13 @@ function Tile({ label, value, color, note }: { label: string; value: number; col
   );
 }
 
-export function PositionOverview({ positioning }: { positioning: InstitutionPositioning }) {
+export function PositionOverview({
+  positioning,
+  state = null,
+}: {
+  positioning: InstitutionPositioning;
+  state?: ExpertStateContext | null;
+}) {
   const institutionId = String(positioning.institutionId);
   const entries = positioning.entries;
   const tones = entries.map(positionTone);
@@ -111,11 +118,12 @@ export function PositionOverview({ positioning }: { positioning: InstitutionPosi
           <h2 className="text-sm font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
             Where each fee sits, largest gap first
           </h2>
-          <RangeLegend />
+          <RangeLegend stateName={state && Object.keys(state.medians).length > 0 ? state.stateName : null} />
         </div>
         <ul className="divide-y" style={{ borderColor: "var(--hamilton-border)" }}>
           {entries.map((entry, i) => {
             const tone = tones[i];
+            const stateLevel = state?.medians[entry.feeCategory] ?? null;
             return (
               <li key={entry.feeCategory} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-5 py-3 md:grid-cols-[12rem_1fr_9.5rem]">
                 <div className="min-w-0">
@@ -132,6 +140,9 @@ export function PositionOverview({ positioning }: { positioning: InstitutionPosi
                   </Link>
                   <span className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
                     {entry.benchmarkCount} peers
+                    {stateLevel && state && (
+                      <span style={{ color: "#1d4ed8" }}> · {state.stateCode} median {formatAmount(stateLevel.median)}</span>
+                    )}
                   </span>
                 </div>
                 <div className="col-span-2 row-start-2 md:col-span-1 md:row-start-auto">
@@ -140,6 +151,7 @@ export function PositionOverview({ positioning }: { positioning: InstitutionPosi
                     p25={entry.benchmarkP25}
                     p75={entry.benchmarkP75}
                     yours={entry.yourAmount}
+                    stateMedian={stateLevel?.median ?? null}
                     tone={tone}
                     label={`${entry.displayName}: yours ${formatAmount(entry.yourAmount)}, peer median ${formatAmount(entry.benchmarkMedian)}`}
                   />

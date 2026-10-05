@@ -22,7 +22,12 @@ import { getHamiltonWritingStatus, type HamiltonWritingStatus } from "@/lib/hami
 import { PositionOverview } from "@/components/hamilton/benchmark/PositionOverview";
 import { NationalSnapshot } from "@/components/hamilton/benchmark/NationalSnapshot";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
-import { HamiltonCommentary } from "@/components/hamilton/benchmark/HamiltonCommentary";
+import { HamiltonBriefing } from "@/components/hamilton/benchmark/HamiltonBriefing";
+import {
+  fetchDistrictContext,
+  fetchRegulatoryContext,
+  fetchStateContext,
+} from "@/lib/hamilton/expert-context";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +92,11 @@ async function loadInstitutionPositioning(
     return { positioning: null, unavailable: true };
   }
 }
+
+/** State, district and regulatory context: slow-moving, so cached for hours (one cheap query each). */
+const getCachedStateContext = unstable_cache(fetchStateContext, ["hamilton-expert-state"], { revalidate: 21600 });
+const getCachedDistrictContext = unstable_cache(fetchDistrictContext, ["hamilton-expert-district"], { revalidate: 21600 });
+const getCachedRegulatoryContext = unstable_cache(fetchRegulatoryContext, ["hamilton-expert-regulation"], { revalidate: 3600 });
 
 export const metadata: Metadata = { title: "Benchmark" };
 
@@ -161,6 +171,12 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
   const { positioning, unavailable: positioningUnavailable } =
     await loadInstitutionPositioning(selectedInstitutionId);
 
+  const [state, district, regulation] = await Promise.all([
+    positioning?.stateCode ? getCachedStateContext(positioning.stateCode).catch(() => null) : null,
+    positioning?.fedDistrict ? getCachedDistrictContext(positioning.fedDistrict).catch(() => null) : null,
+    getCachedRegulatoryContext(3).catch(() => []),
+  ]);
+
   const topCategory = positioning?.topGap?.feeCategory ?? null;
   const simulateHref = hrefWithInstitutionContext(
     topCategory ? `/pro/simulate?category=${encodeURIComponent(topCategory)}` : "/pro/simulate",
@@ -206,7 +222,7 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
       </header>
 
       {positioning ? (
-        <PositionOverview positioning={positioning} />
+        <PositionOverview positioning={positioning} state={state} />
       ) : positioningUnavailable ? (
         <p role="status" className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
           Your institution&apos;s position couldn&apos;t load just now.{" "}
@@ -235,24 +251,27 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
         </section>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[3fr_2fr]">
-        <NationalSnapshot
-          entries={data.positioning}
-          totalInstitutions={data.totalInstitutions}
-          selectedInstitutionId={selectedInstitutionId}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[3fr_2fr]">
+        <HamiltonBriefing
+          thesis={data.thesis}
+          blockingPolicies={writing.blockingPolicies}
+          isAdmin={isAdmin}
+          analyzeHref={analyzeHref}
+          positioning={positioning}
+          state={state}
+          district={district}
+          regulation={regulation}
         />
-        <div className="flex min-w-0 flex-col gap-6">
-          <HamiltonCommentary
-            thesis={data.thesis}
-            blockingPolicies={writing.blockingPolicies}
-            isAdmin={isAdmin}
-            analyzeHref={analyzeHref}
-          />
-          <Suspense fallback={<ChangesSkeleton />}>
-            <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
-          </Suspense>
-        </div>
+        <Suspense fallback={<ChangesSkeleton />}>
+          <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
+        </Suspense>
       </div>
+
+      <NationalSnapshot
+        entries={data.positioning}
+        totalInstitutions={data.totalInstitutions}
+        selectedInstitutionId={selectedInstitutionId}
+      />
     </div>
   );
 }

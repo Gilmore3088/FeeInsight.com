@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { InstitutionPositioning } from "@/lib/hamilton/institution-position";
 import type { AlertEntry, PositioningEntry, SignalEntry } from "@/lib/hamilton/home-data";
-import { HamiltonCommentary } from "./HamiltonCommentary";
+import { HamiltonBriefing, stateComparison } from "./HamiltonBriefing";
+import type { ExpertStateContext } from "@/lib/hamilton/expert-context";
 import { NationalSnapshot } from "./NationalSnapshot";
 import { PositionOverview, headlineFor, positionTone } from "./PositionOverview";
 import { mergeChanges, RecentChanges } from "./RecentChanges";
@@ -13,6 +14,8 @@ const positioning: InstitutionPositioning = {
   institutionName: "First Bank",
   benchmarkLabel: "community banks",
   benchmarkSource: "selected-institution-default",
+  stateCode: "TX",
+  fedDistrict: 11,
   ownFeeCount: 12,
   priority: "high",
   topGap: null,
@@ -94,19 +97,56 @@ describe("RecentChanges", () => {
   });
 });
 
-describe("HamiltonCommentary", () => {
-  it("never invents text when the commentary is off, and tells admins why", () => {
-    const html = renderToStaticMarkup(
-      <HamiltonCommentary thesis={null} blockingPolicies={["agent:hamilton"]} isAdmin analyzeHref="/pro/analyze" />,
-    );
-    expect(html).toContain("commentary is paused");
-    expect(html).toContain("agent:hamilton");
+const texas: ExpertStateContext = {
+  stateCode: "TX",
+  stateName: "Texas",
+  expertName: "Example Banker",
+  expertBio: "Led an example bank.",
+  regulator: "Texas Department of Banking",
+  regulatorUrl: "https://www.dob.texas.gov",
+  creditUnionRegulator: null,
+  medians: {
+    overdraft: { median: 30, p25: 25, p75: 33, count: 40 },
+    stop_payment: { median: 30, p25: 25, p75: 32, count: 30 },
+  },
+};
+
+const briefingProps = {
+  thesis: null,
+  blockingPolicies: ["agent:hamilton"],
+  analyzeHref: "/pro/analyze",
+  positioning,
+  state: texas,
+  district: { district: 11, name: "Dallas", beigeBook: { text: "Economic activity grew slightly.", releaseDate: "October 2025" } },
+  regulation: [{ title: "Overdraft rule", link: "https://example.gov/rule", source: "CFPB", topic: "Overdraft & NSF", publishedAt: "2026-04-07T00:00:00.000Z" }],
+};
+
+describe("HamiltonBriefing", () => {
+  it("compares the institution with its state median", () => {
+    const result = stateComparison(positioning, texas);
+    expect(result?.line).toBe("1 of your 2 fees with a Texas median sits 10% or more above it.");
+    expect(result?.biggest).toEqual({ name: "Overdraft", yours: 35, median: 30 });
   });
 
-  it("hides policy names from customers", () => {
-    const html = renderToStaticMarkup(
-      <HamiltonCommentary thesis={null} blockingPolicies={["agent:hamilton"]} isAdmin={false} analyzeHref="/pro/analyze" />,
-    );
-    expect(html).not.toContain("agent:hamilton");
+  it("shows state, district and regulatory context with sources and dates", () => {
+    const html = renderToStaticMarkup(<HamiltonBriefing {...briefingProps} isAdmin={false} />);
+    expect(html).toContain("Texas Department of Banking");
+    expect(html).toContain("Dallas Fed district");
+    expect(html).toContain("Beige Book, October 2025");
+    expect(html).toContain("CFPB · Overdraft &amp; NSF · Apr 7, 2026");
+  });
+
+  it("never invents analysis when it is off, and tells only admins why", () => {
+    const admin = renderToStaticMarkup(<HamiltonBriefing {...briefingProps} isAdmin />);
+    expect(admin).toContain("analysis is paused");
+    expect(admin).toContain("agent:hamilton");
+    const customer = renderToStaticMarkup(<HamiltonBriefing {...briefingProps} isAdmin={false} />);
+    expect(customer).not.toContain("agent:hamilton");
+  });
+
+  it("draws the state median on the position chart", () => {
+    const html = renderToStaticMarkup(<PositionOverview positioning={positioning} state={texas} />);
+    expect(html).toContain("TX median $30.00");
+    expect(html).toContain("Texas median");
   });
 });

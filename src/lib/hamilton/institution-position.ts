@@ -37,6 +37,9 @@ export interface InstitutionPositioning {
   institutionName: string;
   benchmarkLabel: string;
   benchmarkSource: HamiltonPeerIndexSource;
+  /** Where the institution is, for the state and Fed district context around its fees. */
+  stateCode: string | null;
+  fedDistrict: number | null;
   /** Categories where the institution has a fee and the benchmark has a median, largest gap first. */
   entries: InstitutionPositionEntry[];
   /** Categories with a fee of the institution's own, benchmarked or not. */
@@ -66,6 +69,8 @@ export function buildInstitutionPositioning(params: {
   institutionName: string;
   benchmarkLabel: string;
   benchmarkSource: HamiltonPeerIndexSource;
+  stateCode?: string | null;
+  fedDistrict?: number | null;
   benchmark: (Pick<IndexEntry, "fee_category" | "median_amount" | "institution_count" | "maturity_tier">
     & Partial<Pick<IndexEntry, "p25_amount" | "p75_amount">>)[];
   ownValues: Map<string, number>;
@@ -97,6 +102,8 @@ export function buildInstitutionPositioning(params: {
     institutionName: params.institutionName,
     benchmarkLabel: params.benchmarkLabel,
     benchmarkSource: params.benchmarkSource,
+    stateCode: params.stateCode ?? null,
+    fedDistrict: params.fedDistrict ?? null,
     entries: entries.slice(0, MAX_POSITION_ROWS),
     ownFeeCount: params.ownValues.size,
     topGap,
@@ -117,6 +124,8 @@ export async function fetchInstitutionPositioning(institutionId: number): Promis
     institutionName: institution.institution_name,
     benchmarkLabel: peerIndex.label,
     benchmarkSource: peerIndex.source,
+    stateCode: institution.state_code ?? null,
+    fedDistrict: institution.fed_district ?? null,
     benchmark: peerIndex.entries,
     ownValues,
   });

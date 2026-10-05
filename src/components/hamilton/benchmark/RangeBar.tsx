@@ -21,6 +21,8 @@ interface RangeBarProps {
   p25: number | null;
   p75: number | null;
   yours?: number | null;
+  /** The state-wide median, drawn as a hollow diamond. */
+  stateMedian?: number | null;
   tone?: PositionTone;
   /** Read aloud in place of the drawing. */
   label: string;
@@ -40,8 +42,8 @@ function pct(value: number, [lo, hi]: [number, number]): number {
   return Math.min(100, Math.max(0, ((value - lo) / (hi - lo)) * 100));
 }
 
-export function RangeBar({ median, p25, p75, yours = null, tone = "none", label }: RangeBarProps) {
-  const domain = rangeDomain([median, p25, p75, yours]);
+export function RangeBar({ median, p25, p75, yours = null, stateMedian = null, tone = "none", label }: RangeBarProps) {
+  const domain = rangeDomain([median, p25, p75, yours, stateMedian]);
   const bandStart = p25 !== null ? pct(p25, domain) : null;
   const bandEnd = p75 !== null ? pct(p75, domain) : null;
   const medianAt = pct(median, domain);
@@ -72,6 +74,18 @@ export function RangeBar({ median, p25, p75, yours = null, tone = "none", label 
         title={`Peer median ${formatAmount(median)}`}
         style={{ left: `${medianAt}%`, backgroundColor: "var(--hamilton-on-surface)" }}
       />
+      {/* state median */}
+      {stateMedian !== null && (
+        <div
+          className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45"
+          title={`State median ${formatAmount(stateMedian)}`}
+          style={{
+            left: `${pct(stateMedian, domain)}%`,
+            border: "2px solid #1d4ed8",
+            backgroundColor: "#ffffff",
+          }}
+        />
+      )}
       {/* your fee */}
       {yoursAt !== null && (
         <div
@@ -88,7 +102,7 @@ export function RangeBar({ median, p25, p75, yours = null, tone = "none", label 
   );
 }
 
-export function RangeLegend({ showYours = true }: { showYours?: boolean }) {
+export function RangeLegend({ showYours = true, stateName = null }: { showYours?: boolean; stateName?: string | null }) {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
       {showYours && (
@@ -106,6 +120,12 @@ export function RangeLegend({ showYours = true }: { showYours?: boolean }) {
         <span className="inline-block h-2.5 w-6 rounded-full" style={{ backgroundColor: "rgba(138, 76, 39, 0.16)" }} />
         Middle half of peers
       </span>
+      {stateName && (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rotate-45" style={{ border: "2px solid #1d4ed8", backgroundColor: "#ffffff" }} />
+          {stateName} median
+        </span>
+      )}
     </div>
   );
 }
