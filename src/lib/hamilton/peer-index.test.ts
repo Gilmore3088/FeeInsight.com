@@ -52,7 +52,10 @@ describe("Hamilton peer index helpers", () => {
         asset_tiers: ["1b_10b"],
         fed_districts: [6],
       }),
-    ).toBe("FL · credit union · 1b_10b · Fed district 6 peers");
+    ).toBe("FL · credit union · 1b 10b · Fed district 6 peers");
+    expect(describePeerFilters({ state_code: "TX", charter_type: "bank", asset_tiers: ["community_mid"] })).toBe(
+      "TX · bank · $300M to $1B peers",
+    );
     expect(describePeerFilters(null)).toBe("Verified national index");
   });
 

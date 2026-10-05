@@ -17,6 +17,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
+import { HEADLINE_FEE_KEYS, getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
 import { InfoTip } from "@/components/public/info-tip";
@@ -114,7 +115,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, evidence, financials, user] = await Promise.all([
+  const [visibleFees, evidence, financials, user, headlineCoverage] = await Promise.all([
     catalogVisibleFeeCount > 0 ? getVisibleFeesForPage(instId) : Promise.resolve([]),
     shouldLoadPipelineEvidence
       ? getInstitutionFeeScheduleEvidence(instId).catch(fallbackTo("fee evidence", null))
@@ -123,6 +124,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       fallbackTo("financial context", []),
     ),
     getCurrentUser().catch(() => null),
+    getInstitutionHeadlineCoverage([instId]).catch(fallbackTo("headline coverage", null)),
   ]);
 
   const alertSubscription = user
@@ -328,6 +330,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               )}
 
               <InstitutionMetricRow
+                headlineCategories={headlineCoverage?.get(instId) ?? null}
+                headlineTotal={HEADLINE_FEE_KEYS.length}
                 verifiedCount={verifiedCount}
                 underReviewCount={underReviewCount}
                 assetsDollars={assetsDollars}

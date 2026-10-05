@@ -154,6 +154,17 @@ describe("Magellan agentic fetch", () => {
     expect(sqlText).toContain("COALESCE(inst.consecutive_failures, 0) ASC");
   });
 
+  it("fetches a link found since the last fetch first, and only those when asked", async () => {
+    const db = createDbMock([]);
+
+    await runMagellanFetch({ runId: 105, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
+
+    const sqlText = templateText(db.mock.calls[0][0]);
+    expect(sqlText).toContain("inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
+    expect(sqlText).toContain("CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END");
+    expect(db.mock.calls[0]).toContain(true);
+  });
+
   it("filters fetch candidates by state lane and profile memory", async () => {
     const db = createDbMock([]);
     const fetchImpl = vi.fn();
