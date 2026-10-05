@@ -79,3 +79,4 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );
+export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);

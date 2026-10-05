@@ -25,6 +25,10 @@
     "allow": [
       "Edit(src/lib/agents/**)",
       "Write(src/lib/agents/**)"
+    ],
+    "deny": [
+      "mcp__Firecrawl",
+      "mcp__Firecrawl__*"
     ]
   }
 }

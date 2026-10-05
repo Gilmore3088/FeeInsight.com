@@ -41,6 +41,11 @@ export interface MarketReadiness {
   ready: boolean;
 }
 
+/** An institution is rich when RICH_MIN_CATEGORIES+ of the headline categories are live. */
+export function isInstitutionRich(headlineCategories: number): boolean {
+  return headlineCategories >= RICH_MIN_CATEGORIES;
+}
+
 export function isMarketReady(rich: number): boolean {
   return rich >= MARKET_READY_MIN_RICH;
 }
@@ -68,12 +73,7 @@ export async function getMarketReadiness(): Promise<MarketReadiness[]> {
   const rows = await sql<
     { state_code: string; charter_type: string; institutions: string; rich: string }[]
   >`
-    WITH coverage AS (
-      SELECT institution_id, COUNT(DISTINCT canonical_fee_key) AS categories
-      FROM published_fee_catalog
-      WHERE canonical_fee_key = ANY(${keys})
-      GROUP BY institution_id
-    )
+    WITH coverage AS (${headlineCoverageSql(keys)})
     SELECT s.state_code, s.charter_type,
            COUNT(*) AS institutions,
            COUNT(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES}) AS rich
@@ -83,4 +83,29 @@ export async function getMarketReadiness(): Promise<MarketReadiness[]> {
     GROUP BY s.state_code, s.charter_type
     ORDER BY s.state_code, s.charter_type`;
   return rows.map(toMarketReadiness);
+}
+
+/**
+ * Distinct headline categories live per institution, the same count getMarketReadiness
+ * uses. Institutions with none are returned as 0, so every requested id has an entry.
+ */
+export async function getInstitutionHeadlineCoverage(ids: number[]): Promise<Map<number, number>> {
+  const wanted = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
+  const coverage = new Map<number, number>(wanted.map((id) => [id, 0]));
+  if (wanted.length === 0) return coverage;
+  const keys = [...HEADLINE_FEE_KEYS];
+  const rows = await sql<{ institution_id: number; categories: string }[]>`
+    WITH coverage AS (${headlineCoverageSql(keys, wanted)})
+    SELECT institution_id, categories FROM coverage`;
+  for (const row of rows) coverage.set(Number(row.institution_id), Number(row.categories));
+  return coverage;
+}
+
+function headlineCoverageSql(keys: string[], institutionIds?: number[]) {
+  return sql`
+    SELECT institution_id, COUNT(DISTINCT canonical_fee_key) AS categories
+    FROM published_fee_catalog
+    WHERE canonical_fee_key = ANY(${keys})
+      ${institutionIds ? sql`AND institution_id = ANY(${institutionIds})` : sql``}
+    GROUP BY institution_id`;
 }

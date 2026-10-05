@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   HEADLINE_FEE_KEYS,
   MARKET_READY_MIN_RICH,
+  RICH_MIN_CATEGORIES,
+  isInstitutionRich,
   isMarketReady,
   toMarketReadiness,
 } from "./market-readiness";
@@ -27,5 +29,10 @@ describe("market readiness", () => {
       ready: false,
     });
     expect(toMarketReadiness({ state_code: "CA", charter_type: "credit_union", institutions: 9, rich: 30 }).progress).toBe(1);
+  });
+
+  it("calls an institution rich at the headline threshold", () => {
+    expect(isInstitutionRich(RICH_MIN_CATEGORIES - 1)).toBe(false);
+    expect(isInstitutionRich(RICH_MIN_CATEGORIES)).toBe(true);
   });
 });
