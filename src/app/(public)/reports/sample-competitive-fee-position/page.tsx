@@ -8,7 +8,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
-import { LeadCapture } from "@/components/public/lead-capture";
 import { ReportExecutiveSummaryBlock } from "@/components/public/report-executive-summary";
 import { ReportFrame } from "@/components/public/report-frame";
 import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL, REPORT_OFFER, REPORT_OFFER_LINE } from "@/lib/constants";
@@ -104,14 +103,6 @@ export default function SampleReportPage() {
             </TrackLink>
           </div>
           <p className="mt-3 text-[13px] text-[#6B6255]">{REPORT_OFFER_LINE}.</p>
-          <LeadCapture
-            placement="sample_report"
-            className="mt-6"
-            eyebrow="Free sample, by email"
-            headline="Email me the sample"
-            body={`Get the sample PDF to share with your team, and a free ${REPORT_OFFER.name} for your own institution when you want one.`}
-            buttonLabel="Send it"
-          />
         </div>
 
         <aside className="rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-5">
