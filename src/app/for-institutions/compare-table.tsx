@@ -28,7 +28,7 @@ function buildRows(summary: Pick<PublicStatsSummary, "institutionsLabel" | "refr
       refresh: "Annual",
       sourceTraceable: "No",
       peerGroupControl: "No — fixed segments",
-      cost: "Typically $3–8k/yr",
+      cost: "Paid subscription",
     },
     {
       option: "Core/vendor peer report",
