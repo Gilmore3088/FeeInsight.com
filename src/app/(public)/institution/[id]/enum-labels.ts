@@ -6,10 +6,11 @@ import type { FeePublicationStatus } from "@/lib/institution-quality";
  * database vocabulary (community_small, per_occurrence, ...) never leaks.
  */
 
-export type PublicFeeStatusLabel = "Verified" | "Under review" | "No published schedule found";
+export type PublicFeeStatusLabel = "Fees published" | "Under review" | "No published schedule found";
 
 const PUBLIC_STATUS_LABELS: Record<FeePublicationStatus, PublicFeeStatusLabel> = {
-  verified: "Verified",
+  // Not "Verified": any published fee sets this status, which says nothing about completeness.
+  verified: "Fees published",
   provisional: "Under review",
   under_review: "Under review",
   unavailable: "No published schedule found",

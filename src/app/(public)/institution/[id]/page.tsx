@@ -88,7 +88,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Thin profiles (no verified fees yet) stay reachable but out of the index.
     robots: verifiedFees.length === 0 ? { index: false, follow: true } : undefined,
     title: buildProfileTitle(inst.institution_name, headline),
-    description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, verified against its own fee schedule, with peer benchmarks from ${SITE_NAME}.`,
+    description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, from its own fee schedule, with national benchmarks from ${SITE_NAME}.`,
     keywords: [
       inst.institution_name,
       `${inst.institution_name} fees`,
@@ -267,8 +267,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
                   <div className="flex items-center gap-1.5">
                     <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
-                    <InfoTip label="About verified fees">
-                      Verified fees power benchmarks; fees under review do not.
+                    <InfoTip label="About published fees">
+                      Published fees power benchmarks; fees under review do not.
                     </InfoTip>
                   </div>
                 </div>
@@ -294,7 +294,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                       </p>
                       <p className="mt-1 text-sm leading-relaxed text-[#6B6255]">
                         {underReviewCount > 0
-                          ? "Verified fees will appear here once review is complete."
+                          ? "Fees will appear here once review is complete."
                           : "Fee comparisons are withheld until a published fee schedule has been reviewed."}
                       </p>
                     </div>

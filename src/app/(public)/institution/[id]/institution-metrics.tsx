@@ -47,7 +47,7 @@ export function InstitutionMetricRow({
   return (
     <section aria-label="Profile facts" className="overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
       <div className="grid grid-cols-3 divide-x divide-[#E0D7C9]">
-        <Metric label="Verified fees" value={verifiedCount.toLocaleString("en-US")} tone="verified" />
+        <Metric label="Published fees" value={verifiedCount.toLocaleString("en-US")} />
         <Metric
           label="Under review"
           value={underReviewCount.toLocaleString("en-US")}

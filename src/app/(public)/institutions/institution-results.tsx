@@ -1,13 +1,14 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
 import { getCharterLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { hasVerifiedFees } from "./directory-sort";
 
 function statusChip(row: InstitutionSearchResult): { label: string; className: string } {
+  // "Fees published", never "verified": a published fee is not a checked, complete schedule.
   if (hasVerifiedFees(row)) {
-    return { label: "Verified fees", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+    return { label: "Fees published", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
   }
   if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") {
     return { label: "Under review", className: "border-amber-200 bg-amber-50 text-amber-900" };
@@ -59,14 +60,12 @@ function locationLabel(row: InstitutionSearchResult): string {
 
 function StatusChip({ row, small = false }: { row: InstitutionSearchResult; small?: boolean }) {
   const chip = statusChip(row);
-  const verified = hasVerifiedFees(row);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-md border font-medium ${chip.className} ${
         small ? "px-1.5 py-0.5 text-[11px]" : "px-2 py-1 text-[11px]"
       }`}
     >
-      {verified && <CheckCircle2 className="h-3 w-3" />}
       {chip.label}
     </span>
   );

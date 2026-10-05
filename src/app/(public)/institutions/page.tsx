@@ -55,7 +55,7 @@ interface DirectoryResults {
 }
 
 /**
- * Verified-first ordering across the whole result set when it fits in one
+ * Published-first ordering across the whole result set when it fits in one
  * window; otherwise the current page is sorted on its own.
  */
 async function loadResults(params: {
@@ -173,7 +173,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
                 they compare.
               </p>
               <p className="mt-1 text-sm text-[#6B6255]">
-                Verified fee schedules for {stats.institutionsLabel} institutions and growing.
+                Published fees for {stats.institutionsLabel} institutions and growing.
               </p>
               <div className="mt-5 max-w-2xl">
                 <InstitutionSearchBar
@@ -185,8 +185,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </div>
 
             <div className="grid grid-cols-3 divide-x divide-[#E0D7C9] border-y border-[#E0D7C9] bg-[#FDFBF8]">
-              <DirectoryStat label="Institutions with verified fees" value={stats.institutionsLabel} />
-              <DirectoryStat label="Verified fees" value={stats.observationsLabel} />
+              <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
+              <DirectoryStat label="Published fees" value={stats.observationsLabel} />
               <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
             </div>
           </div>
@@ -233,7 +233,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
                     {" "}for <strong className="text-[#1A1815]">{query}</strong>
                   </span>
                 )}
-                . Institutions with verified fees are listed first.
+                . Institutions with published fees are listed first.
               </p>
             </div>
 
