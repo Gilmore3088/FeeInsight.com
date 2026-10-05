@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 
 export const metadata: Metadata = {
   title: "About",
@@ -34,8 +35,8 @@ export default async function AboutPage() {
           Fee Insight is an independent banking fee intelligence company. Our
           flagship product, the Bank Fee Index, is a source-verified record of US
           bank and credit union fee data: we track, benchmark, and analyze fee schedules
-          from financial institutions across all 50 states and 12 Federal
-          Reserve districts.
+          from financial institutions in {summary.statesLabel} states and all 12
+          Federal Reserve districts.
         </p>
 
         <p>
@@ -122,10 +123,12 @@ export default async function AboutPage() {
 
         <p>
           Our national benchmarks include medians, percentile ranges (P25-P75),
-          and institutional coverage counts. Data maturity is classified as
-          &ldquo;strong&rdquo; (10+ approved observations), &ldquo;provisional&rdquo;
-          (10+ total observations), or &ldquo;insufficient&rdquo; to help users
-          assess statistical confidence.
+          and institutional coverage counts. Data maturity is classified by how many
+          institutions publish a verified fee in the category: &ldquo;strong&rdquo;
+          ({STRONG_INSTITUTION_COUNT}+ institutions), &ldquo;provisional&rdquo;
+          ({MIN_INSTITUTIONS_FOR_MEDIAN} to {STRONG_INSTITUTION_COUNT - 1}), or
+          &ldquo;insufficient&rdquo; (fewer than {MIN_INSTITUTIONS_FOR_MEDIAN}, no median
+          shown) to help users assess statistical confidence.
         </p>
 
         <h2

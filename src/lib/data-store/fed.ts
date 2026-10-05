@@ -15,7 +15,7 @@ export async function getLatestBeigeBook(district: number): Promise<BeigeBookSec
     const [latest] = await sql`
       SELECT release_code FROM fed_beige_book
       WHERE fed_district = ${district}
-      ORDER BY release_date DESC
+      ORDER BY release_code DESC
       LIMIT 1
     `;
 
@@ -49,7 +49,7 @@ export async function getBeigeBookEditions(
     return await sql`
       SELECT DISTINCT release_code, release_date
       FROM fed_beige_book
-      ORDER BY release_date DESC
+      ORDER BY release_code DESC
       LIMIT ${limit}
     ` as { release_code: string; release_date: string }[];
   } catch {
@@ -65,7 +65,7 @@ export async function getBeigeBookHeadline(
       SELECT content_text, release_date
       FROM fed_beige_book
       WHERE fed_district = ${district} AND section_name = 'Summary of Economic Activity'
-      ORDER BY release_date DESC
+      ORDER BY release_code DESC
       LIMIT 1
     `;
 
@@ -160,8 +160,8 @@ export async function getBeigeBookHeadlines(): Promise<Map<number, { text: strin
       FROM fed_beige_book bb1
       WHERE section_name = 'Summary of Economic Activity'
         AND fed_district IS NOT NULL
-        AND release_date = (
-          SELECT MAX(bb2.release_date)
+        AND release_code = (
+          SELECT MAX(bb2.release_code)
           FROM fed_beige_book bb2
           WHERE bb2.fed_district = bb1.fed_district
         )
@@ -342,7 +342,7 @@ export async function getDistrictBeigeBookSummaries(
       FROM fed_beige_book bb
       WHERE bb.section_name = 'Summary of Economic Activity'
         AND bb.fed_district IS NOT NULL
-      ORDER BY bb.fed_district, bb.release_date DESC
+      ORDER BY bb.fed_district, bb.release_code DESC
       LIMIT ${limit}
     ` as { fed_district: number; content_text: string; release_date: string | Date }[];
 

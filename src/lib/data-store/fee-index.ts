@@ -555,3 +555,51 @@ async function writeFeeIndexCache(db: typeof sql, entries: IndexEntry[], runId: 
     `;
   }
 }
+
+export interface StateFeeIndexes {
+  /** Every institution in the state. */
+  all: IndexEntry[];
+  bank: IndexEntry[];
+  credit_union: IndexEntry[];
+  /** Distinct institutions with at least one fee that counts toward statistics. */
+  verified_institutions: number;
+  verified_bank_institutions: number;
+  verified_cu_institutions: number;
+  /** Fee rows that count toward statistics. */
+  verified_fees: number;
+}
+
+/** Summarize already-loaded state rows into the all/bank/credit union indexes and counts. */
+export function buildStateFeeIndexes(rows: IndexRow[]): StateFeeIndexes {
+  const banks = rows.filter((row) => row.charter_type === "bank");
+  const cus = rows.filter((row) => row.charter_type === "credit_union");
+  const distinct = (list: IndexRow[]) => new Set(list.map((row) => Number(row.institution_id))).size;
+  return {
+    all: buildIndexEntries(rows),
+    bank: buildIndexEntries(banks),
+    credit_union: buildIndexEntries(cus),
+    verified_institutions: distinct(rows),
+    verified_bank_institutions: distinct(banks),
+    verified_cu_institutions: distinct(cus),
+    verified_fees: rows.length,
+  };
+}
+
+/**
+ * A state's index overall and by charter from one state-filtered query, so the state
+ * report's bank vs credit union exhibit costs no extra reads.
+ */
+export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeIndexes> {
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id,
+            ef.review_status, ef.created_at, ct.charter_type
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ct.state_code = $1
+        AND ef.fee_category IS NOT NULL
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [stateCode],
+  ) as IndexRow[];
+  return buildStateFeeIndexes(rows);
+}
