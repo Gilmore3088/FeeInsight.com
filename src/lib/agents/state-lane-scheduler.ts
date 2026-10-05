@@ -10,7 +10,7 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
-import { SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -328,13 +328,14 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
   return sql<{ state_code: string }[]>`
     WITH live AS (
       SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fr.source,
-             fr.source_document_id, fr.outlier_flags,
+             fr.source_document_id, fr.outlier_flags, fp.rolled_back_at,
              MAX(fp.fee_published_id) OVER (PARTITION BY fp.institution_id) AS max_fee_id
         FROM published_fee_records fp
         JOIN institution_sources inst ON inst.id = fp.institution_id
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-       WHERE fp.rolled_back_at IS NULL
+       -- Source-check takedowns count too: the source check re-checks and restores them.
+       WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`})
          AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
     )
     SELECT DISTINCT live.state_code
@@ -346,7 +347,8 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
                 AND pa.institution_id = live.institution_id
            )
         OR (
-          live.source = 'knox'
+          live.rolled_back_at IS NULL
+          AND live.source = 'knox'
           AND live.source_document_id IS NOT NULL
           AND NOT (COALESCE(live.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
           AND NOT EXISTS (
