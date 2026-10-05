@@ -48,7 +48,11 @@ Hamilton owns publication and analysis surfaces.
   (`rolled_back_at`, `rolled_back_by_batch_id`, `rolled_back_reason = 'superseded by
   #<id>'`) and the change is written to `fee_change_records` (`increase`/`decrease`).
   Closed rows stay in `published_fee_records` as history; `published_fee_catalog` shows
-  only live rows. An identical amount is skipped.
+  only live rows. An amount already live on any line for that fee is skipped.
+- One schedule can list several prices for one fee (a $28 and a $15 stop payment for
+  different channels). A row from the same source document as the live rows publishes as
+  its own line: nothing is closed and no change is recorded. Only a row from a different
+  document supersedes, replacing the live line with the same name, else the newest one.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.

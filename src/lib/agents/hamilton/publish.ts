@@ -58,6 +58,8 @@ interface VerifiedFeeRow {
   amount: number | string | null;
   frequency: string | null;
   raw_agent_event_id: string | null;
+  /** The source document Knox read this fee from; null for rows without one. */
+  source_document_id?: number | string | null;
   institution_name?: string | null;
 }
 
@@ -66,6 +68,7 @@ interface PriorPublishedFeeRow {
   amount: number | string | null;
   fee_name: string;
   published_at: string | Date;
+  source_document_id?: number | string | null;
 }
 
 export interface HamiltonPublishResult {
@@ -306,6 +309,7 @@ async function selectVerifiedFees(
              fv.amount,
              fv.frequency,
              fr.agent_event_id AS raw_agent_event_id,
+             fr.source_document_id,
              inst.institution_name,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
@@ -445,30 +449,65 @@ async function insertPublishedFee(
   return inserted[0]?.fee_published_id == null ? null : Number(inserted[0].fee_published_id);
 }
 
-async function selectPriorPublishedFee(
+/** Live rows for the same fee (institution, canonical key, variant, frequency), newest first. */
+async function selectLivePublishedFees(
   db: SqlTag,
   row: VerifiedFeeRow,
-): Promise<PriorPublishedFeeRow | null> {
+): Promise<PriorPublishedFeeRow[]> {
   try {
-    const rows = await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
-      SELECT fee_published_id,
-             amount,
-             fee_name,
-             published_at
-        FROM published_fee_records
-       WHERE institution_id = ${Number(row.institution_id)}
-         AND canonical_fee_key = ${row.canonical_fee_key}
-         AND COALESCE(variant_type, '') = COALESCE(${row.variant_type}, '')
-         AND COALESCE(frequency, '') = COALESCE(${row.frequency}, '')
-         AND rolled_back_at IS NULL
-       ORDER BY published_at DESC, fee_published_id DESC
-       LIMIT 1
+    return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
+      SELECT fp.fee_published_id,
+             fp.amount,
+             fp.fee_name,
+             fp.published_at,
+             fr.source_document_id
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.institution_id = ${Number(row.institution_id)}
+         AND fp.canonical_fee_key = ${row.canonical_fee_key}
+         AND COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, '')
+         AND COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, '')
+         AND fp.rolled_back_at IS NULL
+       ORDER BY fp.published_at DESC, fp.fee_published_id DESC
     `);
-    return rows[0] ?? null;
   } catch (error) {
-    console.error("selectPriorPublishedFee failed:", error);
-    return null;
+    console.error("selectLivePublishedFees failed:", error);
+    return [];
   }
+}
+
+function sameDocument(a: number | string | null | undefined, b: number | string | null | undefined): boolean {
+  return a != null && b != null && String(a) === String(b);
+}
+
+function normalizedFeeName(name: string | null | undefined): string {
+  return (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export type PriorFeeDecision =
+  | { kind: "new" }
+  | { kind: "identical"; prior: PriorPublishedFeeRow }
+  | { kind: "additional_line" }
+  | { kind: "supersede"; prior: PriorPublishedFeeRow };
+
+/**
+ * How a verified row relates to the fee's live rows. One schedule can list several
+ * prices for one fee key (a $28 and a $15 stop payment for different channels): those
+ * are separate fee lines, published side by side. Only a row from a different document
+ * replaces a live price, preferring the live line with the same name.
+ */
+export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
+  if (live.length === 0) return { kind: "new" };
+  const amount = normalizedAmount(row.amount);
+  const identical = live.find((prior) => normalizedAmount(prior.amount) === amount);
+  if (identical) return { kind: "identical", prior: identical };
+  const fromOtherDocuments = live.filter((prior) => !sameDocument(prior.source_document_id, row.source_document_id));
+  if (fromOtherDocuments.length === 0) return { kind: "additional_line" };
+  const name = normalizedFeeName(row.fee_name);
+  const prior = fromOtherDocuments.find((candidate) => normalizedFeeName(candidate.fee_name) === name)
+    ?? fromOtherDocuments[0];
+  return { kind: "supersede", prior };
 }
 
 /**
@@ -854,23 +893,21 @@ export async function runHamiltonPublish(
       : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
-    const priorPublishedFee = skipReason ? null : await selectPriorPublishedFee(db, row);
+    const decision = skipReason ? null : decidePriorFee(row, await selectLivePublishedFees(db, row));
+    const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
-    } else if (
+    } else if (decision?.kind === "identical") {
       // Content-level dedupe: re-verification mints a new fee_verified_id, so the
       // lineage guard alone lets identical fee lines pile up in the catalog.
-      priorPublishedFee &&
-      normalizedAmount(priorPublishedFee.amount) === normalizedAmount(row.amount)
-    ) {
       result = {
         ...base,
         status: "skipped",
         reason: "Identical fee already published",
         feePublishedId: null,
         ...NO_MOVEMENT,
-        previousFeePublishedId: Number(priorPublishedFee.fee_published_id),
-        previousAmount: normalizedAmount(priorPublishedFee.amount),
+        previousFeePublishedId: Number(decision.prior.fee_published_id),
+        previousAmount: normalizedAmount(decision.prior.amount),
       };
     } else if (dryRun) {
       result = {
