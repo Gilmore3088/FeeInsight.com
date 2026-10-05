@@ -7,7 +7,7 @@ import type {
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
-import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
+import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -82,6 +82,10 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     key: "classify",
     agent: "darwin",
     title: "Verify state raw fee observations",
+    // Darwin's per-step maximum. At the default 100 a lane cleared about 75 fees per pass
+    // while Knox re-extraction queued thousands an hour (2026-10-05: 16,471 waiting).
+    // A 500-row pass takes seconds and lanes still run one at a time.
+    input: { verify_limit: DARWIN_VERIFY_MAX_LIMIT },
   },
   {
     key: "publish",
