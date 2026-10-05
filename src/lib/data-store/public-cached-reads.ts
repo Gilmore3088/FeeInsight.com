@@ -19,6 +19,7 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
+import { getMarketReadiness } from "./market-readiness";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -72,3 +73,4 @@ export const getPublishedArticleSummariesCached = cachedPublicRead(
   // No articles is a real answer here, not a failed read (failures throw), so cache it.
   () => false,
 );
+export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
