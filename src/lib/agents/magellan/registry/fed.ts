@@ -140,7 +140,7 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
      ORDER BY series_id, observation_date DESC
   `;
   const known = new Set(tracked.map((row) => row.series_id));
-  const required = REQUIRED_FRED_SERIES.filter((meta) => !known.has(meta.series_id)).map((meta) => ({ ...meta, fed_district: null }));
+  const required = REQUIRED_FRED_SERIES.filter((meta) => !known.has(meta.series_id));
   const series = [...tracked, ...required].filter((row) => isFredNativeSeries(row.series_id) || isBlsSeries(row.series_id));
   const result: RegistryFredResult = {
     source: FRED_SOURCE,

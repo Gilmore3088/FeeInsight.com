@@ -1,3 +1,5 @@
+import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
+import { STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
 import { registryFetch, type RegistryFetchOptions } from "./http";
 
 /**
@@ -144,17 +146,42 @@ export function isFredNativeSeries(seriesId: string): boolean {
   return !/^(NYFED|OFR|BLS|CU)_/.test(seriesId) && !isBlsSeries(seriesId) && /^[A-Z0-9]+$/.test(seriesId);
 }
 
+export interface RequiredFredSeries {
+  series_id: string;
+  series_title: string;
+  units: string;
+  frequency: string;
+  fed_district: number | null;
+}
+
+/** Unemployment rate ({ST}UR) and nonfarm payroll jobs ({ST}NA) for the 50 states and DC. */
+function stateLaborSeries(): RequiredFredSeries[] {
+  return Object.entries(STATE_NAMES)
+    .filter(([code]) => US_STATES_ONLY.has(code) || code === "DC")
+    .flatMap(([code, name]) => {
+      const place = code === "DC" ? "the District of Columbia" : name;
+      const fed_district = STATE_TO_DISTRICT[code] ?? null;
+      return [
+        { series_id: `${code}UR`, series_title: `Unemployment Rate in ${place}`, units: "Percent", frequency: "Monthly", fed_district },
+        { series_id: `${code}NA`, series_title: `All Employees: Total Nonfarm in ${place}`, units: "Thousands of Persons", frequency: "Monthly", fed_district },
+      ];
+    });
+}
+
 /**
- * Series Hamilton's trend analysis needs even before anything else stores them.
- * GDPCTPI is BEA's chained GDP price index, used to turn nominal fee income into real dollars.
+ * Series reports need even before anything else stores them; registry-fred seeds and
+ * refreshes them. GDPCTPI is BEA's chained GDP price index, used to turn nominal fee
+ * income into real dollars; the state labor series feed the state report pages.
  */
-export const REQUIRED_FRED_SERIES: Array<{ series_id: string; series_title: string; units: string; frequency: string }> = [
+export const REQUIRED_FRED_SERIES: RequiredFredSeries[] = [
   {
     series_id: "GDPCTPI",
     series_title: "Gross Domestic Product: Chain-type Price Index",
     units: "Index 2017=100",
     frequency: "Quarterly",
+    fed_district: null,
   },
+  ...stateLaborSeries(),
 ];
 
 // ---------------------------------------------------------------------------

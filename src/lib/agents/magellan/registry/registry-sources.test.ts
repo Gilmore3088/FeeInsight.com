@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
 import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
 import { matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
@@ -232,9 +233,10 @@ describe("registry Federal Reserve workers", () => {
 
     const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
 
-    // UNRATE plus the required GDP price index; the NY Fed series belongs to another loader.
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(result).toMatchObject({ series: 2, refreshedSeries: 2, observations: 2 });
+    // UNRATE plus the required series; the NY Fed series belongs to another loader.
+    const expected = 1 + REQUIRED_FRED_SERIES.length;
+    expect(fetchImpl).toHaveBeenCalledTimes(expected);
+    expect(result).toMatchObject({ series: expected, refreshedSeries: expected, observations: expected });
     expect(statements.some((s) => s.text.includes("INSERT INTO fed_economic_indicators"))).toBe(true);
   });
 });
@@ -267,11 +269,22 @@ describe("registry FRED worker: BLS and required series", () => {
       "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SEMC01",
       expect.stringContaining("fredgraph.csv?id=GDPCTPI"),
     ]));
-    expect(result).toMatchObject({ series: 2, refreshedSeries: 2, observations: 2, missingSeries: [] });
+    expect(result).toMatchObject({ series: 1 + REQUIRED_FRED_SERIES.length, missingSeries: [] });
     const inserts = statements.filter((s) => s.text.includes("INSERT INTO fed_economic_indicators"));
     expect(inserts.map((s) => s.values[0])).toEqual(expect.arrayContaining(["CUUR0000SEMC01", "GDPCTPI"]));
     const blsRows = payloadOf(inserts.find((s) => s.values[0] === "CUUR0000SEMC01")!.values);
     expect(blsRows).toEqual([{ observation_date: "2026-08-01", value: 301.5 }]);
+  });
+});
+
+describe("required FRED series", () => {
+  it("covers unemployment and payroll jobs for the 50 states and DC, tagged with their Fed district", () => {
+    const ids = REQUIRED_FRED_SERIES.map((s) => s.series_id);
+    expect(ids).toContain("GDPCTPI");
+    expect(ids.filter((id) => /^[A-Z]{2}UR$/.test(id))).toHaveLength(51);
+    expect(ids.filter((id) => /^[A-Z]{2}NA$/.test(id))).toHaveLength(51);
+    expect(REQUIRED_FRED_SERIES.find((s) => s.series_id === "WYUR")).toMatchObject({ fed_district: 10, units: "Percent" });
+    expect(REQUIRED_FRED_SERIES.find((s) => s.series_id === "DCNA")?.series_title).toBe("All Employees: Total Nonfarm in the District of Columbia");
   });
 });
 
