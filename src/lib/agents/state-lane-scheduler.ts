@@ -139,15 +139,17 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 ];
 
 /**
- * Steps an hourly backlog run takes: fetch fee links found since their bank's last
- * fetch (one download each, so a link found mid-month is not left until next month),
- * then re-read, re-extract, verify and publish the documents the state already has.
- * Magellan's discover and public-discovery steps stay on the state's full crawl
- * cadence, so backlog runs never search or crawl bank websites. A re-read downloads a
+ * Steps an hourly backlog run takes: search banks that are due a free search and still
+ * have no fee link (James, 2026-10-05: free discovery is never held to the monthly
+ * cadence), fetch fee links found since their bank's last fetch, then re-read,
+ * re-extract, verify and publish the documents the state already has. Discovery's own
+ * backoff (12 hours after a miss that may clear, a month or a quarter after a dead end)
+ * keeps a bank from being searched more often than that. The paid find and
+ * public-discovery steps stay on the state's full-pass cadence. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["fetch", "read", "extract", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "classify", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch newly found fee links", input: { ...step.input, new_links_only: true } } : step));
@@ -298,6 +300,26 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                     AND pa.input_fingerprint = adt.source_hash
                     AND pa.strategy_version >= ${ROSETTA_READ_VERSION}
                )
+             )
+           )
+      ) OR EXISTS (
+        -- A bank with no fee link that is due a free search: never searched, or a miss
+        -- that may clear (pending, retry_after) last tried over 12 hours ago. Matches
+        -- the first two cases of Magellan's selectCandidates, so a lane never loops on it.
+        SELECT 1
+          FROM institution_sources inst
+          LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND COALESCE(inst.status, 'active') = 'active'
+           AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+           AND NULLIF(btrim(inst.website_url), '') IS NOT NULL
+           AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+           AND (
+             inst.last_rescue_attempt_at IS NULL
+             OR (
+               COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
+               AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'
              )
            )
       ) OR EXISTS (

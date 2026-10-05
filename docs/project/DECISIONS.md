@@ -5,6 +5,11 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Free discovery is never held to the monthly cadence.** James, 22:32 UTC ("if it doesn't
+require money, why are we limited in it?"). Every state's hourly backlog run now searches banks
+that are due a free search, and a discovery step takes up to 50 banks within its time budget.
+Shipped in PR 154.
+
 **Every state runs a daily full pass until its links are found.** James, 22:28 UTC. Daily passes
 used to be Texas and California only; now any state with more than 50 active institutions lacking
 a fee link runs daily, then drops back to monthly on its own. Shipped in PR 154.
