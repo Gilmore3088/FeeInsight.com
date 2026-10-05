@@ -130,6 +130,7 @@ const series = (id: string, latest: number, yearAgo: number, date = "2026-08-01"
 const economy: StateEconomicContext = {
   state_unemployment: series("TXUR", 4.1, 3.9),
   state_payrolls: series("TXNA", 14280, 14000),
+  national_unemployment: series("UNRATE", 4.3, 4.1),
   fed_funds: series("FEDFUNDS", 4.33, 5.33, "2026-09-01"),
   cpi_all_items: series("CUUR0000SA0", 103, 100, "2025-12-01"),
   cpi_bank_services: series("CUUR0000SEMC01", 104, 100, "2025-12-01"),
@@ -159,6 +160,11 @@ describe("EconomyTiles", () => {
     expect(tiles.map((t) => t.value)).toEqual(["4.1%", "+2.0%", "+4.0%", "4.33%"]);
     expect(tiles[2].change).toBe("vs +3.0% for all consumer prices");
     expect(tiles[0].change).toBe("+0.2 pts vs a year ago");
+  });
+
+  it("charts the state unemployment rate against the U.S. rate", () => {
+    const [ur] = buildEconomyTiles("Texas", economy);
+    expect(ur.lines.map((l) => l.label)).toEqual(["Texas", "United States"]);
   });
 
   it("labels old data as the latest published", () => {

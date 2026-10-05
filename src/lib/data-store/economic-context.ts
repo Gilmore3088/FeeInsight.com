@@ -17,7 +17,7 @@ export interface IndicatorSeries {
   latest: IndicatorPoint;
   /** The observation 12 months before the latest, when the series has one. */
   year_ago: IndicatorPoint | null;
-  /** Oldest first, for a sparkline. */
+  /** Oldest first: up to six years, enough for a five-year chart of 12-month changes. */
   history: IndicatorPoint[];
 }
 
@@ -41,6 +41,8 @@ export interface RegulatoryItem {
 export interface StateEconomicContext {
   state_unemployment: IndicatorSeries | null;
   state_payrolls: IndicatorSeries | null;
+  /** U.S. unemployment rate (UNRATE), the comparison line for the state rate. */
+  national_unemployment: IndicatorSeries | null;
   fed_funds: IndicatorSeries | null;
   cpi_all_items: IndicatorSeries | null;
   cpi_bank_services: IndicatorSeries | null;
@@ -48,7 +50,7 @@ export interface StateEconomicContext {
   regulatory: RegulatoryItem[];
 }
 
-const HISTORY_POINTS = 25;
+const HISTORY_POINTS = 72;
 const REGULATORY_TOPICS = ["overdraft", "fees_pricing", "rulemaking_compliance", "consumer_lending"];
 const REGULATORY_LIMIT = 5;
 const BANKING_SECTION = /bank|financ|credit|lending|loan/i;
@@ -138,13 +140,14 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
   const unemploymentId = `${stateCode}UR`;
   const payrollId = `${stateCode}NA`;
   const [series, beigeBook, regulatory] = await Promise.all([
-    loadSeries([unemploymentId, payrollId, "FEDFUNDS", "CPIAUCSL", "CUUR0000SEMC01", "CUUR0000SA0"]),
+    loadSeries([unemploymentId, payrollId, "UNRATE", "FEDFUNDS", "CPIAUCSL", "CUUR0000SEMC01", "CUUR0000SA0"]),
     district ? loadBeigeBook(district) : Promise.resolve(null),
     loadRegulatory(),
   ]);
   return {
     state_unemployment: series.get(unemploymentId) ?? null,
     state_payrolls: series.get(payrollId) ?? null,
+    national_unemployment: series.get("UNRATE") ?? null,
     fed_funds: series.get("FEDFUNDS") ?? null,
     cpi_all_items: series.get("CUUR0000SA0") ?? series.get("CPIAUCSL") ?? null,
     cpi_bank_services: series.get("CUUR0000SEMC01") ?? null,
@@ -155,7 +158,7 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
 
 export function isEmptyEconomicContext(ctx: StateEconomicContext): boolean {
   return (
-    !ctx.state_unemployment && !ctx.state_payrolls && !ctx.fed_funds && !ctx.cpi_all_items &&
+    !ctx.state_unemployment && !ctx.state_payrolls && !ctx.national_unemployment && !ctx.fed_funds && !ctx.cpi_all_items &&
     !ctx.cpi_bank_services && !ctx.beige_book && ctx.regulatory.length === 0
   );
 }
