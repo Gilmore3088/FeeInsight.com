@@ -104,7 +104,10 @@ export function LandingPriceStrip({
             <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
             Middle half of institutions
           </span>
-          <span>From the published schedules of {institutionsLabel} verified institutions</span>
+          <span>
+            From the published schedules of{" "}
+            {/\d/.test(institutionsLabel) ? `${institutionsLabel} ` : ""}verified institutions
+          </span>
           <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
             How we calculate this →
           </Link>

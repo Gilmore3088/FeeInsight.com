@@ -71,7 +71,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             Powered by <span className="text-[#5A5347]">{SITE_DOMAIN_DISPLAY}</span>
           </p>
           <p className="mt-5 text-[16px] leading-relaxed text-[#3D3830] sm:text-[18px]">
-            What {institutionsLabel} U.S. banks and credit unions charge, taken from their own
+            What {/\d/.test(institutionsLabel) ? `${institutionsLabel} ` : ""}U.S. banks and credit unions charge, taken from their own
             published fee schedules. Free to search for anyone checking their bank; benchmarks for
             the banks themselves.
           </p>
