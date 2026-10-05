@@ -27,7 +27,13 @@ Goal: let an outside publisher (betteranalyst.com) pull Bank Fee Index data.
 - Most-covered category (counter_check) spans 323 institutions; overdraft 232.
 - 0 API keys issued.
 
-## Open decisions (James)
-- Summaries only, or institution-level fees too?
-- Attribution and/or payment terms.
-- Freshness expectation (monthly matches the crawl cadence).
+## Decided (James, 2026-10-04)
+- betteranalyst.com may republish anything, including institution-level fees.
+- Terms: credit + link to feeinsight.com, no fee. Key on the enterprise (unlimited) tier.
+- Implication: institution feed with source_url + read date is the priority; responses should carry an attribution string.
+- Still open: freshness expectation (monthly matches the crawl cadence).
+
+## Likely blocker before issuing a key
+`src/lib/api-auth.ts` selects `tier` and `revoked_at` from `api_keys`, but the schema snapshot in
+project files (`e2e/01_tables.sql`) has neither column. A keyed request would likely 500. Not verified
+against the live DB.
