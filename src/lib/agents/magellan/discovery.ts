@@ -564,6 +564,9 @@ async function selectCandidates(
        )
      ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- A bank whose page was ruled out has a page whose links point the way: search it first.
+       CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
+             AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
        CASE WHEN inst.last_rescue_attempt_at IS NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.rescue_status = 'retry_after' THEN 1 ELSE 0 END,
        inst.last_rescue_attempt_at NULLS FIRST,

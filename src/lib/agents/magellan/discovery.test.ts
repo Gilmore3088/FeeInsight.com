@@ -325,7 +325,7 @@ describe("Magellan agentic discovery", () => {
     function vaultDb(rejected: string[]): DbMock {
       return createDbMock([footerBank], (text) => {
         if (text.includes("vault_schema_ready")) return [{ vault_schema_ready: true }];
-        if (text.includes("rejected_source_urls") && text.includes("jsonb_array_length")) {
+        if (text.includes("SELECT institution_id, rejected_source_urls")) {
           return [{ institution_id: 47, rejected_source_urls: rejected.map((url) => ({ url, reason: "not a fee page" })) }];
         }
         return undefined;
@@ -386,7 +386,7 @@ describe("Magellan agentic discovery", () => {
     function rejectedDb(entries: Array<{ url: string; at?: string }>): DbMock {
       return createDbMock([sofi], (text) => {
         if (text.includes("vault_schema_ready")) return [{ vault_schema_ready: true }];
-        if (text.includes("rejected_source_urls") && text.includes("jsonb_array_length")) {
+        if (text.includes("SELECT institution_id, rejected_source_urls")) {
           return [{ institution_id: 57, rejected_source_urls: entries.map((entry) => ({ ...entry, reason: "not a fee schedule" })) }];
         }
         return undefined;
