@@ -27,6 +27,8 @@
 #                 Fail if active app code uses crawler-era institution keys or physical data tables.
 #   sql-placeholder-kill
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
+#   heading-wrap-kill
+#                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
 #   brand-kill    Fail if src copy names the site as the product or references bankfeeindex.com (Fee Insight is the site; Bank Fee Index is the product).
 #   prompt-kill   Fail if active .claude prompts point agents at retired tooling.
 #   active-doc-kill
@@ -640,6 +642,21 @@ sql_placeholder_kill() {
   echo "sql-placeholder-kill: OK (no placeholders computed from params.length - N)"
 }
 
+heading_wrap_kill() {
+  # Headings must never wrap one word onto its own line (James, 5 Oct 2026). The rule lives
+  # once in the global stylesheet and once in the report template; per-page fixes drift.
+  local missing=""
+  for file in src/app/globals.css Reports/studio/template.html; do
+    tr '\n' ' ' < "$file" | grep -qE 'h1, h2, h3, h4 \{[[:space:]]*text-wrap: ?balance' || missing+="$file"$'\n'
+  done
+  if [[ -n "$missing" ]]; then
+    echo "heading-wrap-kill: keep 'h1, h2, h3, h4 { text-wrap: balance; }' (no one-word heading lines) in:" >&2
+    printf '%s' "$missing" >&2
+    exit 1
+  fi
+  echo "heading-wrap-kill: OK (headings balance their lines site-wide and in reports)"
+}
+
 case "$SUBCOMMAND" in
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
@@ -661,13 +678,14 @@ case "$SUBCOMMAND" in
   legacy-data-contract-kill) legacy_data_contract_kill ;;
   brand-kill) brand_kill ;;
   sql-placeholder-kill) sql_placeholder_kill ;;
+  heading-wrap-kill) heading_wrap_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill>" >&2
     exit 2
     ;;
 esac

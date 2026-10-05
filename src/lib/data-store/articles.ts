@@ -143,3 +143,23 @@ export async function incrementViewCount(slug: string): Promise<void> {
     UPDATE research_articles SET view_count = view_count + 1 WHERE slug = ${slug} AND status = 'published'
   `;
 }
+
+export interface ArticleSummary {
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  category: string;
+  /** ISO date string; text so it survives the JSON public cache. */
+  published_at: string | null;
+}
+
+/** Newest published articles, without bodies, for listing on public pages. */
+export async function getPublishedArticleSummaries(limit = 6): Promise<ArticleSummary[]> {
+  return await sql`
+    SELECT slug, title, subtitle, category, published_at::text AS published_at
+    FROM research_articles
+    WHERE status = 'published'
+    ORDER BY published_at DESC NULLS LAST
+    LIMIT ${limit}
+  ` as ArticleSummary[];
+}

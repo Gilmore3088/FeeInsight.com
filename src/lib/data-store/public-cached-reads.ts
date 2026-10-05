@@ -2,11 +2,12 @@ import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getFeeCategoryDetail } from "./fees";
-import { getPeerIndex } from "./fee-index";
+import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
   getDistrictStats,
+  getResearchCoverage,
   getStateStats,
   getStatesWithFeeData,
 } from "./geographic";
@@ -17,6 +18,7 @@ import {
   getTierFeeRevenueSummary,
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
+import { getPublishedArticleSummaries } from "./articles";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -58,4 +60,20 @@ export const searchInstitutionsCached = cachedPublicRead(
   "institution-search",
   searchInstitutions,
   (result) => result.rows.length === 0,
+);
+export const getResearchCoverageCached = cachedPublicRead(
+  "research-coverage",
+  getResearchCoverage,
+  (coverage) => coverage.states.length === 0,
+);
+export const getPublishedArticleSummariesCached = cachedPublicRead(
+  "published-article-summaries",
+  getPublishedArticleSummaries,
+  // No articles is a real answer here, not a failed read (failures throw), so cache it.
+  () => false,
+);
+export const getStateFeeIndexesCached = cachedPublicRead(
+  "state-fee-indexes",
+  getStateFeeIndexes,
+  (indexes) => indexes.all.length === 0,
 );
