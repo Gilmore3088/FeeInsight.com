@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**A bank's tiered overdraft counts at its highest (standard) tier.** James, 19:45 UTC, on a
+decision card. Each tier stays its own live fee with its band in the name, and a real $0 fee
+counts. Medians, percentiles, peer positions and reports use the bank's highest overdraft
+amount; other categories keep the median. Shipped in PR 132 (`institutionValue` in
+`src/lib/data-store/fee-stats.ts`).
+
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).
 Daily checkpoints, findings, decisions and a changelog now live in this folder.

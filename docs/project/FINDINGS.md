@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: The live source check took down correct fees
+**What happened:** between 18:46 and 20:15 UTC the Hamilton source check took down 1,956 live fees
+in states other than Texas and California, 903 of them as `amount_is_a_threshold` (read-only query
+on `published_fee_records.rolled_back_reason`). Spot checks found correct fees among them:
+"Title Draft $50.00 Incoming Wire Fee (domestic) $18.00" took down the $18 wire fee.
+**Cause:** the check compared every fee on a line to the line's first price. Many stored schedules
+put several fees on one line, or flatten the whole schedule into one paragraph. The hand-checked
+Texas sample it was tuned on had one fee per line, so the gap didn't show.
+**Fix:** PR 132 gives each fee the price after its own name and restores earlier takedowns that
+now trace, on the next hourly passes.
+**Lesson:** test a rule that changes live data on a sample from several states and layouts, and
+run it as a dry run (counts and samples) before it writes.
+
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since
 Aug 10. `report_jobs` holds 12 finished files (Apr 7 to Aug 10, from the old runtime) and
