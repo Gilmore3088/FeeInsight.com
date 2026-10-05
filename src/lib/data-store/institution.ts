@@ -816,9 +816,10 @@ export async function getInstitutionLearnedNotes(id: number): Promise<Institutio
     const [row] = await sql`
       SELECT format, best_strategy, strategy_stats, do_not_retry, expected_fee_count,
              cost_to_date_microusd, source_kind, read_strategy, locked_by_correction,
-             COALESCE(jsonb_array_length(
-               CASE WHEN jsonb_typeof(rejected_source_urls) = 'array' THEN rejected_source_urls ELSE '[]'::jsonb END
-             ), 0)::int AS rejected_url_count,
+             (SELECT COUNT(DISTINCT entry->>'url')
+                FROM jsonb_array_elements(
+                  CASE WHEN jsonb_typeof(rejected_source_urls) = 'array' THEN rejected_source_urls ELSE '[]'::jsonb END
+                ) entry)::int AS rejected_url_count,
              last_learned_at
         FROM institution_source_profiles
        WHERE institution_id = ${id}

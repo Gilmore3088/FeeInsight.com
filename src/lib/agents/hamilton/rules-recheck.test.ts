@@ -79,6 +79,20 @@ describe("Hamilton rules re-check", () => {
     expect(writes).toContain("hamilton.rules_recheck");
   });
 
+  it("keeps one live copy of a fee the document states once and asks Knox for the fees it misses", async () => {
+    const db = createDbMock(
+      [live(1, "stop_payment", "Stop Payment", "30.00"), live(5, "stop_payment", "Stop Payment Fee", "30.00")],
+      texts,
+    );
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 303, batchId: "b", dryRun: false });
+
+    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([1]);
+    // check_image $3 and safe_deposit_box $30 are read from the text but not live.
+    const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts"));
+    expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 1, missing_fees: 2 });
+  });
+
   it("checks against the document's latest text when the original text is gone", async () => {
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00", "gone")], texts);
 

@@ -220,7 +220,7 @@ export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth
 const CONDITION_BEFORE =
   /\b(below|above|over|under|less than|more than|greater than|at least|minimum(?: daily| average)?(?: balance| deposit)?(?: of)?|min\.?|maximum(?: fee)?(?: of)?|max\.?(?: fee)?|up to|exceeds?|exceeding|in excess of|negative|balances? of|deposits? of|totaling|first|cap of|limit of|between|per|and|or)\s*[-–(]?\s*$/i;
 /** Words just after an amount that make it a threshold: "$500 or more". */
-const CONDITION_AFTER = /^(?:\+|\s*(?:or more|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit))/i;
+const CONDITION_AFTER = /^(?:\+|\s*(?:or more|and more|or less|and less|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit))/i;
 
 export interface AmountMatch {
   value: number;
@@ -276,6 +276,9 @@ export function classifyPatternKey(value: string): string | null {
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
+  // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
+  // not an overdraft fee.
+  if (key === "overdraft" && /\bdeclin(?:e|ed|es)\b/i.test(text)) return null;
   // A PIN reissue is not a card replacement.
   if (key === "card_replacement" && /\bPIN\b/i.test(text)) return null;
   // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
@@ -438,13 +441,40 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // ("for balances below $2,500 ... $10") are conditions, never the fee.
   const waiver = segment.match(WAIVER_LANGUAGE);
   const waiverAt = waiver?.index ?? Number.POSITIVE_INFINITY;
-  const feeAmounts = amounts.filter((amount) => amount.start < waiverAt && !isConditionAmount(segment, amount));
+  // "Overdraft Items - Negative from $50.01 and more | $35": when a later cell holds a
+  // price, dollar figures in the first (label) cell are tiers or thresholds, never the fee.
+  // The next cell must be a price cell ("$35", "$200+ attorney fees"), not another fee.
+  const priceCell = cells?.[1] ?? "";
+  const labelEnd = cells && /^\$\s?\d/.test(priceCell) && nameFrom(priceCell).split(" ").filter(Boolean).length <= 3
+    ? segment.indexOf(CELL_SEPARATOR)
+    : -1;
+  const pricedLater = labelEnd >= 0 && amounts.some((amount) => amount.start > labelEnd && !isConditionAmount(segment, amount));
+  // A label figure followed by another fee's name ("Copy $2.00 Lien Release fee | $35")
+  // is the earlier fee's own price, from two rows run together.
+  const namesNextFee = (amount: AmountMatch) => {
+    const tail = nameFrom(segment.slice(amount.end, labelEnd));
+    return usableName(tail) && tail.split(" ").length >= 2 && /\b(fee|charge)s?\b/i.test(tail) && classifyFeeText(tail) != null;
+  };
+  // "ACH Origination ...... $15.00 | $700": the label's only figure, ending it (or followed
+  // only by how often it is charged), is the label's own price. "$25.01 to $50" is a tier.
+  const endsLabel = (amount: AmountMatch) =>
+    amounts.filter((other) => other.start < labelEnd).length === 1 &&
+    /^\s*(?:\/?\s*(?:mo|month|monthly|each|ea|item|year|yr|annually|per \w+))?\.?\s*$/i.test(segment.slice(amount.end, labelEnd));
+  const inLabel = (amount: AmountMatch) =>
+    pricedLater && amount.start < labelEnd && !namesNextFee(amount) && !endsLabel(amount);
+  const feeAmounts = amounts.filter((amount) => amount.start < waiverAt && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // A tiered label keeps its figures, so "$25 or less" and "$50.01 and more" stay apart,
+  // and the whole label names the fee when the words before its first figure do not.
+  if (cells && amounts.some(inLabel) && usableName(normalizeSegment(cells[0]))) {
+    feeName = normalizeSegment(cells[0]).slice(0, 120);
+    hint = classifyFeeText(feeName) ?? hint;
+  }
   // "Late Payment Up to $29 ... Rush Card Replacement $25": when a condition amount comes
   // before the price and the words after it name a fee of their own, the price is theirs.
-  const skipped = amounts.filter((amount) => amount.end <= feeAmounts[0].start).at(-1);
+  const skipped = amounts.filter((amount) => amount.end <= feeAmounts[0].start && !inLabel(amount)).at(-1);
   if (skipped) {
     const tail = nameFrom(segment.slice(skipped.end, feeAmounts[0].start));
     const tailHint = usableName(tail) && tail.split(" ").length >= 2 ? classifyFeeText(tail) : null;

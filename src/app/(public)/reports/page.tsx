@@ -13,7 +13,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
 import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
@@ -27,7 +27,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Fee Reports",
-  description: `See where your fees stand against the institutions you compete with. A free ${REPORT_OFFER.name} (${REPORT_OFFER.valueLabel}), live state fee reports, and published research from ${RESEARCH_IMPRINT}.`,
+  description: `See where your fees stand against the institutions you compete with. A free ${REPORT_OFFER.name}, live state fee reports, and published research from ${RESEARCH_IMPRINT}.`,
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
@@ -211,7 +211,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     loadStateCoverage(),
     loadMarketReadiness(),
   ]);
-  const positionMap = extractPositionMap(readSampleReportHtml());
+  // The sample is offline until it is re-rendered from source-checked data.
+  const positionMap = SAMPLE_REPORT_LIVE ? extractPositionMap(readSampleReportHtml()) : null;
   const hasReports = reports.length > 0;
   // Only show filter controls once there is a catalog to filter (or a filter is already applied).
   const showFilters = hasReports || filtersActive;
@@ -253,16 +254,17 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               >
                 {REPORT_OFFER.ctaLabel}
               </TrackLink>
-              <Link href={SAMPLE_REPORT_HREF} className={SECONDARY_BUTTON}>
-                Read the full sample
-              </Link>
+              {SAMPLE_REPORT_LIVE && (
+                <Link href={SAMPLE_REPORT_HREF} className={SECONDARY_BUTTON}>
+                  Read the full sample
+                </Link>
+              )}
             </div>
             <dl className="mt-8 grid max-w-[520px] grid-cols-3 gap-4 border-t border-[#E8DFD1] pt-5">
               <div>
                 <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Price</dt>
                 <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">
-                  {REPORT_OFFER.priceLabel}{" "}
-                  <span className="font-normal text-[#6B6255]">({REPORT_OFFER.valueLabel})</span>
+                  {REPORT_OFFER.priceLabel}
                 </dd>
               </div>
               <div>
@@ -276,7 +278,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             </dl>
           </div>
 
-          {positionMap.rows.length > 0 && (
+          {positionMap && positionMap.rows.length > 0 && (
             <div>
               <PositionPreview map={positionMap} />
               <p className="mt-3 text-[12px] leading-relaxed text-[#6B6255]">
@@ -338,7 +340,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             </h2>
             <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-[#5A5347]">
               Leave your institution and work email. We confirm your peer set within one business day,
-              then send the PDF. {REPORT_OFFER.priceLabel}, {REPORT_OFFER.valueLabel}.
+              then send the PDF. {REPORT_OFFER.priceLabel}.
             </p>
             <p className="mt-4 text-[13px] text-[#6B6255]">
               Prefer email?{" "}
@@ -446,12 +448,14 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             >
               {REPORT_OFFER.ctaLabel}
             </TrackLink>
-            <Link
-              href={SAMPLE_REPORT_HREF}
-              className="inline-flex items-center rounded-md border border-[#5A5347] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:border-white"
-            >
-              Read the sample
-            </Link>
+            {SAMPLE_REPORT_LIVE && (
+              <Link
+                href={SAMPLE_REPORT_HREF}
+                className="inline-flex items-center rounded-md border border-[#5A5347] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:border-white"
+              >
+                Read the sample
+              </Link>
+            )}
           </div>
         </div>
       </section>

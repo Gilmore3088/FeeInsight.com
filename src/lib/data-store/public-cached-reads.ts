@@ -2,7 +2,7 @@ import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getFeeCategoryDetail } from "./fees";
-import { getPeerIndex } from "./fee-index";
+import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
@@ -74,3 +74,8 @@ export const getPublishedArticleSummariesCached = cachedPublicRead(
   () => false,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
+export const getStateFeeIndexesCached = cachedPublicRead(
+  "state-fee-indexes",
+  getStateFeeIndexes,
+  (indexes) => indexes.all.length === 0,
+);

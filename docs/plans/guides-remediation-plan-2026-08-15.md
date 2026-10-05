@@ -661,7 +661,7 @@ an anonymous session cannot read a draft.
 
 **Depends on** B-8, C-1 (the shape must settle before it is persisted).
 
-**Resolution — 2026-08-15.** `supabase/migrations/20260815120000_consumer_guides.sql` plus `src/lib/data-store/guides.ts`. RLS on, privileges revoked from anon/authenticated. Two invariants are database constraints rather than conventions: a consumer guide must stay public, and a regulatory guide cannot publish unapproved.
+**Resolution — 2026-08-15.** `supabase/migrations/20261004002745_consumer_guides.sql` plus `src/lib/data-store/guides.ts`. RLS on, privileges revoked from anon/authenticated. Two invariants are database constraints rather than conventions: a consumer guide must stay public, and a regulatory guide cannot publish unapproved.
 
 ---
 
