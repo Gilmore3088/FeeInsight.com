@@ -17,6 +17,8 @@ export type AnalyticsEvent =
   | "checkout_start"
   | "upgrade_click"
   | "book_walkthrough"
+  | "hosted_report_view"
+  | "hosted_report_request"
   | "contact_sales"
   | "fee_alert_save"
   | "fee_alert_signup"
