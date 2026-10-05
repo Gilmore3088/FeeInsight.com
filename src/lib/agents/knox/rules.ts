@@ -276,6 +276,9 @@ export function classifyPatternKey(value: string): string | null {
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
+  // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
+  // not an overdraft fee.
+  if (key === "overdraft" && /\bdeclin(?:e|ed|es)\b/i.test(text)) return null;
   // A PIN reissue is not a card replacement.
   if (key === "card_replacement" && /\bPIN\b/i.test(text)) return null;
   // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
