@@ -1,6 +1,6 @@
 import { TrackLink } from "@/components/track-link";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
-import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
@@ -34,7 +34,7 @@ export function LandingBankOffer() {
             See where your fees sit against your competitors
           </h2>
           <p className="mt-3 max-w-xl text-pretty text-[15px] leading-relaxed text-[#5A5347]">
-            The {REPORT_OFFER.name} is free for your institution ({REPORT_OFFER.valueLabel}). We
+            The {REPORT_OFFER.name} is free for your institution. We
             read your fee schedule and your competitors&apos;, then show where you stand.
           </p>
 
@@ -47,17 +47,21 @@ export function LandingBankOffer() {
             ))}
           </ul>
 
-          <div className="mt-6">
-            <SamplePages />
-          </div>
-          <TrackLink
-            event="see_sample_report"
-            eventProps={{ placement: "home_bank_section" }}
-            href={SAMPLE_REPORT_HREF}
-            className="mt-3 inline-block text-sm font-semibold text-[#A93D25] hover:text-[#8E2A17]"
-          >
-            Read the full sample report →
-          </TrackLink>
+          {SAMPLE_REPORT_LIVE && (
+            <>
+              <div className="mt-6">
+                <SamplePages />
+              </div>
+              <TrackLink
+                event="see_sample_report"
+                eventProps={{ placement: "home_bank_section" }}
+                href={SAMPLE_REPORT_HREF}
+                className="mt-3 inline-block text-sm font-semibold text-[#A93D25] hover:text-[#8E2A17]"
+              >
+                Read the full sample report →
+              </TrackLink>
+            </>
+          )}
         </div>
 
         <div className="min-w-0 lg:sticky lg:top-20">

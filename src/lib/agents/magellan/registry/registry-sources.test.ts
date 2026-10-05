@@ -266,9 +266,18 @@ describe("registry FRED worker: BLS and required series", () => {
 
     const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
     expect(urls).toEqual(expect.arrayContaining([
-      "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SEMC01",
+      "https://api.bls.gov/publicAPI/v1/timeseries/data/",
       expect.stringContaining("fredgraph.csv?id=GDPCTPI"),
     ]));
+    // A plain GET returns about 3 years; the POST asks for 7 so 5-year charts are complete.
+    const blsCall = fetchImpl.mock.calls.find((call) => String(call[0]).includes("api.bls.gov"))!;
+    const year = new Date().getUTCFullYear();
+    expect(blsCall[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(blsCall[1].body))).toEqual({
+      seriesid: ["CUUR0000SEMC01"],
+      startyear: String(year - 6),
+      endyear: String(year),
+    });
     expect(result).toMatchObject({ series: 1 + REQUIRED_FRED_SERIES.length, missingSeries: [] });
     const inserts = statements.filter((s) => s.text.includes("INSERT INTO fed_economic_indicators"));
     expect(inserts.map((s) => s.values[0])).toEqual(expect.arrayContaining(["CUUR0000SEMC01", "GDPCTPI"]));

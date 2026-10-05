@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatCompactDollars } from "@/lib/format";
-import { getFrequencyLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
+import { getFrequencyLabel, getHeadlineCoverageLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { groupFeesByFamily, type DisplayFee } from "./fee-schedule-table";
 import {
   assetSizeToDollars,
@@ -133,6 +133,8 @@ describe("enum labels", () => {
   it("maps internal enums to public vocabulary", () => {
     expect(getPublicStatusLabel("provisional")).toBe("Under review");
     expect(getPublicStatusLabel("unavailable")).toBe("No published schedule found");
+    expect(getPublicStatusLabel("verified")).toBe("Fees published");
+    expect(getHeadlineCoverageLabel(6, 15)).toBe("6 of 15 headline fees published");
     expect(getSegmentLabel("community_small", "credit_union")).toBe("Community credit union, under $300M");
     expect(getSegmentLabel("super_regional", "bank")).toBe("National bank, over $250B");
     expect(getFrequencyLabel("per_occurrence")).toBe("per item");

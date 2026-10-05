@@ -101,7 +101,11 @@ category and price the current rules no longer read is rolled back
 verified row is rejected so the next publish does not bring it back. Up to 25 documents
 per step; each document is re-checked once per Knox version signature (attempt log,
 stage `publish`, strategy `hamilton.rules_recheck`). Knox's paid fees and fees from
-other sources are never touched; a document with no stored text keeps its fees.
+other sources are never touched; a document with no stored text keeps its fees. A
+document states each fee once: of live rows with the same category and price, the
+newest stays. The attempt's `missing_fees` counts fees today's rules read from the
+document's latest text that are not live; Knox extracts such a text again, so a rules
+fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only removes.
 
 ## Source Check
 
