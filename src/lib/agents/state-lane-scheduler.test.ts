@@ -120,6 +120,16 @@ describe("state lane scheduler", () => {
     expect(query).toContain("FROM verified_fee_observations fv");
   });
 
+  it("syncs every state's profiles only on the first tick of each hour", async () => {
+    withTransactionMock.mockImplementation((fn: (tx: unknown) => unknown) => fn(vi.fn().mockResolvedValue([])));
+
+    await scheduleDueStateLaneRuns({ limit: 2, now: new Date("2026-10-05T06:35:00Z") });
+    expect(syncStateLaneProfilesMock).not.toHaveBeenCalled();
+
+    await scheduleDueStateLaneRuns({ limit: 2, now: new Date("2026-10-05T07:02:00Z") });
+    expect(syncStateLaneProfilesMock).toHaveBeenCalledTimes(1);
+  });
+
   it("never schedules a second run for a state whose last run is still active", async () => {
     const txMock = vi.fn().mockResolvedValue([]);
     withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
