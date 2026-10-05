@@ -77,7 +77,6 @@ describe("Knox extract.rules", () => {
   it.each([
     ["Courtesy Pay*", "overdraft"],
     ["Overdraft Transfer From Savings", "od_protection_transfer"],
-    ["Return Payment Fee", "nsf"],
     ["Returned Checks Fee (Member Drawn)", "nsf"],
     ["Return Item Chrg (Return Item Charge)", "nsf"],
     ["Returned deposit", "deposited_item_return"],
@@ -86,7 +85,6 @@ describe("Knox extract.rules", () => {
     ["ATM/debit card replacement", "card_replacement"],
     ["Card Replacement", "card_replacement"],
     ["Fee for Lost Cards", "card_replacement"],
-    ["PIN Reissue", "card_replacement"],
     ["VISA Rush Overnight (Card Only)", "rush_card"],
     ["Wire Transfer Out", "wire_domestic_outgoing"],
     ["Wire Transfer International (Out)", "wire_intl_outgoing"],
@@ -109,13 +107,9 @@ describe("Knox extract.rules", () => {
     ["3” x 10” Box", "safe_deposit_box"],
     ["Size: 5 x 10 x 24", "safe_deposit_box"],
     ["Key Replacement", "safe_deposit_box"],
-    ["Fax Outgoing", "account_research"],
-    ["Returned Mail", "account_research"],
-    ["Bad Address", "account_research"],
     ["Abandoned Account Processing (Escheat)", "dormant_account"],
     ["Account Closure Fee within 90 days", "early_closure"],
     ["Christmas Club Early Withdrawal", "early_closure"],
-    ["Skip-A-Payment", "late_payment"],
     ["Zelle payment", "zelle_fee"],
     ["Overnight Delivery", "courier_delivery"],
     ["Statement Copy", "document_reproduction"],
@@ -149,5 +143,75 @@ describe("Knox extract.rules", () => {
       candidates: [],
       held: [],
     });
+  });
+
+  // v5: mistakes found by scoring 26 Texas fee schedules against a hand-built answer key.
+  it.each([
+    ["Photocopy of Paid Item (after 2 per month)", "check_image"],
+    ["Fax Copy of Paid Item", "check_image"],
+    ["Check/Draft Photocopy", "check_image"],
+    ["Copy of Draft (Check)", "check_image"],
+    ["Reproduction of TT&Ls or Cashier's checks", "document_reproduction"],
+    ["ATM/Debit Card Supporting Documents Photocopy", "document_reproduction"],
+    ["Official Check Fee- Money Order (per item)", "money_order"],
+    ["Outgoing Wire Transfer outside USA Consumer Customer", "wire_intl_outgoing"],
+    ["Return Item/Chargeback", "deposited_item_return"],
+    ["Debit card chargeback", "card_dispute"],
+    ["Third Party Return Items", "deposited_item_return"],
+    ["Debit Overdraft from Share", "od_protection_transfer"],
+    ["Overdraft Protection", "od_protection_transfer"],
+    ["Title Lien Release (2nd or more)", "vehicle_title"],
+    ["Skip-a-Pay (per loan)", "other_lending_fee"],
+    ["Loan Processing Fee", "other_lending_fee"],
+    ["Loan Extension Fee", "other_lending_fee"],
+    ['NSF Fee per Overdraft 3"X10"X 21"', "safe_deposit_box"],
+  ])("v5 classifies %s as %s", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    "Returned Mail Fee",
+    "Bad Address/Returned Statement",
+    "Fax Outgoing",
+    "Debit PIN Replacement",
+    "Visa Credit Card Replacement",
+    "Credit Card Return Payment",
+    "VISA Reloadable Debit Card",
+    "Re-open Account Closed Less Than Six (6) Months",
+    "Outgoing Wire Transfer within IBC (Book Transfer)",
+  ])("v5 files no category for %s", (name) => {
+    expect(classifyFeeText(name)).toBeNull();
+  });
+
+  it("v5 ignores services named in a waiver clause", () => {
+    expect(classifyFeeText("Monthly Fee for Account Requirements (waived if enrolled in Mobile Deposit)")).toBe("monthly_maintenance");
+  });
+
+  it("v5 gives a flattened table row's price to the cell nearest it", () => {
+    expect(extractFromSegment("STOP PAYMENT ORDER | NOTARY FEE | g$6.00").candidates).toMatchObject([
+      { canonicalHint: "notary_fee", amount: 6 },
+    ]);
+    expect(extractFromSegment("Wire Transfers | Outgoing Domestic | $25.00").candidates).toMatchObject([
+      { canonicalHint: "wire_domestic_outgoing", amount: 25 },
+    ]);
+    // A nearest cell that names its own fee owns the price, known or not.
+    expect(extractFromSegment("Account Research | Government Reclamations (Paper/ACH)........$50.00").candidates).toEqual([]);
+  });
+
+  it("v5 never lets words after a price classify it", () => {
+    expect(extractFromSegment("Copy of Draft (Check) $3.00 per Copy Bill Pay Service Fees").candidates).toMatchObject([
+      { canonicalHint: "check_image", amount: 3 },
+    ]);
+    expect(extractFromSegment("$5 gift cards or to donate to a charity").candidates).toEqual([]);
+  });
+
+  it("v5 reads no $0 price from a free in-network ATM or an allowance", () => {
+    expect(extractFromSegment("CUTX- OWNED OR NETWORK ATM TRANSACTION FEE | No Charge").held).toEqual([]);
+    expect(extractFromSegment("Stop Payments, two per year | Free").held).toEqual([]);
+    expect(extractFromSegment("Non-network ATM withdrawal | Free").held).toMatchObject([{ shape: "zero", canonicalHint: "atm_non_network" }]);
+  });
+
+  it("v5 reads a price written without a leading zero", () => {
+    expect(extractFromSegment("Photocopy – $.25 each").candidates).toMatchObject([{ canonicalHint: "document_reproduction", amount: 0.25 }]);
   });
 });

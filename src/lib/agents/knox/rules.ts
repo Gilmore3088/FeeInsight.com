@@ -1,4 +1,5 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
+import { composableTail } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 /**
@@ -73,25 +74,41 @@ interface FeePattern {
  * returned mail, abandoned accounts, account-closure windows, club withdrawals,
  * skip-a-pay, Zelle, courier delivery and statement copies. A minimum-balance hint now
  * needs a fee word, so "Minimum balance to earn interest $25" is not a fee.
+ *
+ * v5 fixed the category mistakes found by scoring 26 Texas fee schedules against a
+ * hand-built answer key: a copy of anything is a copy fee, money orders beat official
+ * checks, "outside USA" wires are international, returned mail, fax, PIN-only and credit
+ * card lines get no deposit-fee category, skip-a-pay and loan processing are lending
+ * fees, and a price is named by the words nearest before it (never by words after it).
  */
 export const FEE_PATTERNS: FeePattern[] = [
+  // A copy of something is a copy fee, whatever it copies ("Photocopy of paid item",
+  // "Reproduction of cashier's checks", "ATM card supporting documents photocopy").
+  {
+    key: "check_image",
+    pattern: /\b(?:photo|fax )?cop(?:y|ies)\b.{0,20}\b(?:paid |cancell?ed |cleared )?(?:checks?|drafts?|items?)\b|\b(?:check|draft)s?\b[\s/()a-z]{0,12}\b(?:photo)?cop(?:y|ies)\b/i,
+  },
+  { key: "document_reproduction", pattern: /\b(?:reproduction|supporting documents?)\b/i },
+  // A box size with three dimensions ("3"X10"X 21"") is a safe deposit box anywhere on the line.
+  { key: "safe_deposit_box", pattern: /\b\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\b/i },
+  { key: "card_dispute", pattern: /\b(?:card|transaction) disputes?\b|\b(?:debit|credit|card)\b.{0,15}\bchargebacks?\b/i },
   {
     key: "continuous_od",
     pattern: /\b(continuous|sustained|extended).{0,30}\boverdraft\b|\boverdraft\b.{0,20}\b(continuous|sustained|extended)\b/i,
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep)\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$/i,
   },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
     key: "deposited_item_return",
-    pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|chargeback)\b/i,
+    pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|chargebacks?)\b/i,
   },
   { key: "overdraft", pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b/i },
   {
     key: "nsf",
-    pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|payments?|ach|drafts?))\b/i,
+    pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|ach|drafts?))\b/i,
   },
   {
     key: "rush_card",
@@ -99,7 +116,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "card_replacement",
-    pattern: /\b(replacement|replace|reissue|re-issue|lost|stolen)\b.{0,30}\b(cards?|debit|PIN)\b|\b(cards?|PIN)\b.{0,20}\b(replacement|replace|reissue|re-issue)\b/i,
+    pattern: /\b(replacement|replace|reissue|re-issue|lost|stolen)\b.{0,30}\b(cards?|debit)\b|\bcards?\b.{0,20}\b(replacement|replace|reissue|re-issue)\b/i,
   },
   {
     key: "atm_international",
@@ -109,11 +126,11 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
-    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwire\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwire\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
   },
   {
     key: "wire_intl_incoming",
-    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwire\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwire\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
   },
   {
     key: "wire_domestic_outgoing",
@@ -124,11 +141,11 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(domestic)?\s*(incoming|receive|received).{0,40}\bwire\b|\bwires?\b.{0,30}\b(incoming|received)\b/i,
   },
   { key: "stop_payment", pattern: /\bstop payments?\b/i },
+  { key: "money_order", pattern: /\bmoney orders?\b/i },
   {
     key: "cashiers_check",
     pattern: /\b(cashier'?s?\s+checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
   },
-  { key: "money_order", pattern: /\bmoney orders?\b/i },
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks)\b/i },
   {
@@ -156,25 +173,25 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(safe deposit|lock box|lost key|key replacement|replacement key|drill\w*)\b|^\W*(?:size:?\s*|box\s+|rental for\s+)?\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\b/i,
   },
   { key: "garnishment_levy", pattern: /\b(garnish\w*|levy|levies|attachments?)\b/i },
+  { key: "vehicle_title", pattern: /\btitle\b.{0,20}\blien\b|\blien\b.{0,20}\btitle\b|\bvehicle title\b/i },
   { key: "legal_process", pattern: /\b(legal process|subpoena|court order|lien release)\b/i },
   { key: "subordination", pattern: /\bsubordination\b/i },
   { key: "other_lending_fee", pattern: /\bloan application\b/i },
   { key: "account_verification", pattern: /\b(account verification|verification of (deposit|account)s?)\b/i },
   { key: "balance_inquiry", pattern: /\bbalance inquiry\b/i },
-  { key: "late_payment", pattern: /\blate (payment|charge|fee)\b|\bskip[- ]a[- ]pay(ment)?\b/i },
-  { key: "loan_origination", pattern: /\bloan (origination|processing|extension|modification)\b/i },
+  { key: "other_lending_fee", pattern: /\bskip[- ]a[- ]pay(ment)?\b|\bloan (processing|extension|modification)\b/i },
+  { key: "late_payment", pattern: /\blate (payment|charge|fee)\b/i },
+  { key: "loan_origination", pattern: /\bloan origination\b/i },
   { key: "appraisal_fee", pattern: /\bappraisal\b/i },
   { key: "ira_administration", pattern: /\bIRA.{0,30}\b(administration|annual|maintenance)\b/i },
   { key: "ira_termination", pattern: /\bIRA.{0,30}\b(termination|closing|closure|transfer)\b/i },
   { key: "gift_card_purchase", pattern: /\bgift cards?\b/i },
-  { key: "prepaid_card_reload", pattern: /\b(prepaid|reload).{0,30}\bcard\b/i },
+  { key: "prepaid_card_reload", pattern: /\bprepaid\b.{0,30}\bcard\b|\bcard\b.{0,15}\breload(?:s|ing)?\b|\breload(?:s|ing)? (?:fee|a card)\b/i },
   {
     key: "early_closure",
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
   { key: "dormant_account", pattern: /\b(dormant|inactive|escheat\w*|abandoned)\b/i },
-  { key: "returned_mail", pattern: /\b(returned mail|return mail|bad address|incorrect address|undeliverable mail)\b/i },
-  { key: "fax_fee", pattern: /\bfax\b/i },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",
@@ -187,7 +204,7 @@ export const FEE_PATTERNS: FeePattern[] = [
  * A dollar amount. Thousands need a comma group (`$1,500.00`) or no separator at all
  * (`$1500`); the old pattern matched `$150` out of `$1500`.
  */
-export const AMOUNT_PATTERN = /\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?![\d.]*\d)/g;
+export const AMOUNT_PATTERN = /\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?|\.\d{2})(?![\d.]*\d)/g;
 const PERCENT_PATTERN = /(\d{1,2}(?:\.\d{1,3})?)\s*%/;
 export const RANGE_JOINER = /^\s*(?:-|–|—|to)\s*$/i;
 export const ZERO_CELL = /^(?:free|no charge|no fee|none|waived|n\/c|\$\s*0(?:\.00)?)$/i;
@@ -244,9 +261,40 @@ function candidateSegments(text: string): string[] {
 
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
 export function classifyPatternKey(value: string): string | null {
-  // PDFs usually render the apostrophe in "Cashier's check" as a curly quote.
-  const text = value.replace(/[‘’ʼ`]/g, "'");
-  return FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
+  // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
+  // clause names other services ("(waived if enrolled in Mobile Deposit)"), never the fee.
+  const text = value
+    .replace(/[‘’ʼ`]/g, "'")
+    .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
+    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international");
+  const key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
+  // Credit card fees are lending fees, not deposit-account card fees.
+  if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text)) return null;
+  // A book transfer inside the bank is not a wire.
+  if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
+  // Reopening a closed account is not an early-closure fee.
+  if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
+  return key;
+}
+
+/**
+ * The fee a price belongs to is named right before it. In a flattened table row
+ * ("STOP PAYMENT ORDER | NOTARY FEE | $6.00") the nearest cell names it, so cells are
+ * tried nearest first, widening only when the nearest ones name no fee on their own
+ * ("Wire Transfers | Outgoing Domestic | $25").
+ */
+export function nearestFeeText(prefix: string): string {
+  const cells = prefix.split(CELL_SEPARATOR).filter((cell) => /[a-z]{3,}/i.test(cell));
+  for (let start = cells.length - 1; start >= 0; start -= 1) {
+    const text = cells.slice(start).join(CELL_SEPARATOR);
+    // A cell that names a fee of its own owns the price, even when no rule knows it.
+    if (classifyFeeText(text) || !composableTail(normalizeSegment(cells[start]))) return text;
+  }
+  return cells.join(CELL_SEPARATOR);
+}
+
+export function classifyNearest(prefix: string): string | null {
+  return classifyFeeText(nearestFeeText(prefix));
 }
 
 export function classifyFeeText(value: string): string | null {
@@ -296,6 +344,28 @@ export function usableName(name: string): boolean {
   return name.length >= 3 && /[a-z]/i.test(name) && !/^\$/.test(name);
 }
 
+/** "$5.00 Monthly fee for paper statements": the words after an opening price name it only when they say it is a fee ("$5 gift cards" is a gift card worth $5). */
+function priceFirstHint(after: string): string | null {
+  return /\b(fee|charge|cost)s?\b/i.test(after) ? classifyFeeText(after) : null;
+}
+
+/**
+ * "CUTX-owned or network ATM: No charge": a free ATM in the bank's own network is not a
+ * $0 out-of-network ATM fee.
+ */
+export function ownNetworkAtm(hint: string, name: string): boolean {
+  return hint === "atm_non_network" && !/\b(non[-\s]?\w+|foreign|other|out[-\s]?of[-\s]?network|surcharge)\b/i.test(name);
+}
+
+/**
+ * A free row that is really an allowance ("Stop payments, two per year: Free") or a
+ * free in-network ATM is not a $0 price for the fee.
+ */
+export function notAZeroPrice(hint: string, name: string): boolean {
+  return ownNetworkAtm(hint, name) ||
+    /\b(?:one|two|three|four|five|six|first|\d+)\b(?: free)?\s*(?:per|a|each)\s+(?:year|month|statement|cycle)\b/i.test(name);
+}
+
 /** Rules for one line. Exported for tests. */
 export function extractFromSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
@@ -307,17 +377,22 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   const firstAmount = amounts[0];
   const prefix = firstAmount ? segment.slice(0, firstAmount.start) : segment;
   const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : nameFrom(segment);
-  let hint = classifyFeeText(prefix) ?? classifyFeeText(segment);
+  // Words after the price belong to the next fee, so they classify a line only when it
+  // opens with its price ("$5.00 Monthly fee for paper statements").
+  const priceFirst = firstAmount != null && !/[a-z]/i.test(prefix);
+  let hint = firstAmount
+    ? classifyNearest(prefix) ?? (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null)
+    : classifyFeeText(cells ? cells[0] : segment);
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
-  if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell))) {
+  if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
     const zeroName = nameFrom(cells[0]);
     if (usableName(zeroName)) {
       result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: hint, excerpt: segment });
     }
     return result;
   }
-  if (hint && firstAmount?.value === 0 && usableName(name)) {
+  if (hint && firstAmount?.value === 0 && usableName(name) && !notAZeroPrice(hint, name)) {
     result.held.push({ shape: "zero", feeName: name, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: hint, excerpt: segment });
     return result;
   }

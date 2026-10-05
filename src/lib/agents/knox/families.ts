@@ -1,3 +1,4 @@
+import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { CANONICAL_KEY_MAP, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   AMOUNT_PATTERN,
@@ -5,6 +6,8 @@ import {
   confidenceFor,
   detectFrequency,
   isConditionAmount,
+  nearestFeeText,
+  notAZeroPrice,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
   type ExtractionRulesResult,
@@ -56,19 +59,19 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 1,
+    version: 2,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
       { key: "overdraft", pattern: /\b(overdraft privilege|courtesy pay|paid items?|bounce)\b/i },
     ],
   },
-  { family: "wires", strategy: "extract.family.wires", version: 1, keys: familyKeys("Wire Transfers"), patterns: [] },
-  { family: "atm_card", strategy: "extract.family.atm_card", version: 1, keys: familyKeys("ATM & Card"), patterns: [] },
+  { family: "wires", strategy: "extract.family.wires", version: 2, keys: familyKeys("Wire Transfers"), patterns: [] },
+  { family: "atm_card", strategy: "extract.family.atm_card", version: 2, keys: familyKeys("ATM & Card"), patterns: [] },
   {
     family: "account",
     strategy: "extract.family.account",
-    version: 1,
+    version: 2,
     keys: familyKeys("Account Maintenance"),
     patterns: [
       {
@@ -77,11 +80,11 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
       },
     ],
   },
-  { family: "checks", strategy: "extract.family.checks", version: 1, keys: familyKeys("Check Services"), patterns: [] },
+  { family: "checks", strategy: "extract.family.checks", version: 2, keys: familyKeys("Check Services"), patterns: [] },
   {
     family: "services",
     strategy: "extract.family.services",
-    version: 1,
+    version: 2,
     keys: familyKeys(...Object.keys(FEE_FAMILIES).filter((family) => !EXPERT_FAMILIES.includes(family))),
     patterns: [],
   },
@@ -201,7 +204,7 @@ const TIER_LABEL = new RegExp(
 );
 const CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?)\b[^$]{0,30}$/i;
 const CAP_AFTER = /^\s*\)?\s*(?:per|a|each)\s+(?:business\s+)?day\b|^\s*\)?\s*daily\b/i;
-const NEGATIVE_NAME = /\b(no (?:[a-z]+ )?(?:fee|charge)s?|not charged|without charge)\b/i;
+const NEGATIVE_NAME = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i;
 
 /** "Overdraft fee 1st item" → "Overdraft fee": the fee a later tier row belongs to. */
 function tierBase(feeName: string): string {
@@ -219,7 +222,11 @@ interface FamilyMatch {
 
 function classifyFor(expert: FamilyExpert, name: string): string | null {
   const text = name.replace(/[‘’ʼ`]/g, "'");
-  const key = expert.patterns.find((entry) => entry.pattern.test(text))?.key ?? classifyPatternKey(text);
+  // A name the general rules file under another family is not this family's fee
+  // ("Photocopy of paid item" is a copy fee, not an overdraft).
+  const general = classifyPatternKey(text);
+  if (general && !expert.keys.has(CANONICAL_KEY_MAP[general] ?? "")) return null;
+  const key = expert.patterns.find((entry) => entry.pattern.test(text))?.key ?? general;
   const canonical = key ? CANONICAL_KEY_MAP[key] : null;
   return canonical && expert.keys.has(canonical) ? canonical : null;
 }
@@ -227,7 +234,8 @@ function classifyFor(expert: FamilyExpert, name: string): string | null {
 function matchFor(expert: FamilyExpert, name: string, heading: string | null): FamilyMatch | null {
   const hint = classifyFor(expert, name);
   if (hint) return { hint, feeName: name };
-  if (!heading || !composableTail(name)) return null;
+  // A name the rules already file elsewhere never borrows this family's heading.
+  if (!heading || !composableTail(name) || classifyPatternKey(name)) return null;
   const headed = classifyFor(expert, `${heading} ${name}`);
   return headed ? { hint: headed, feeName: `${heading}: ${name}` } : null;
 }
@@ -238,7 +246,9 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
   let last: (FamilyMatch & { lineIndex: number }) | null = null;
 
   windows.forEach((window, index) => {
-    const split = splitCapsHeading(window.rawName.replace(AMOUNT_PATTERN, " ").trim());
+    // In a flattened table row the cell nearest the price names it.
+    const ownText = window.rawName.includes(CELL_SEPARATOR) ? nearestFeeText(window.rawName) : window.rawName;
+    const split = splitCapsHeading(ownText.replace(AMOUNT_PATTERN, " ").trim());
     const heading = split.heading ?? window.heading;
     const cleaned = cleanFeeName(split.name);
     // The fee's own name ends right before its price; earlier lowercase terms belong
@@ -274,18 +284,19 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
       }
       return;
     }
-    if (!name || NEGATIVE_NAME.test(name)) return;
+    // A name that opens mid-sentence is prose from an agreement, not a fee row.
+    if (!name || NEGATIVE_NAME.test(name) || /^[a-z]/.test(name)) return;
 
     // A tier row under the fee above it: "1st item $25" after "Overdraft fee".
     let match = matchFor(expert, name, heading);
-    if (!match && recent && TIER_LABEL.test(name)) {
+    if (!match && recent && TIER_LABEL.test(name) && !classifyPatternKey(name)) {
       match = { hint: recent.hint, feeName: `${tierBase(recent.feeName)} (${name})` };
     }
     if (!match) return;
     last = { ...match, lineIndex: window.lineIndex };
 
     if (window.zero) {
-      if (passesDarwinChecks(match.hint, match.feeName, 0)) {
+      if (passesDarwinChecks(match.hint, match.feeName, 0) && !notAZeroPrice(match.hint, match.feeName)) {
         result.held.push({ shape: "zero", feeName: match.feeName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: match.hint, excerpt: window.excerpt });
       }
       return;
