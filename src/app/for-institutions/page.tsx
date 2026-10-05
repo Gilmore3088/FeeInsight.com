@@ -53,7 +53,7 @@ export default async function ForInstitutionsPage() {
               <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
-                it came from. Start with a free report or run the workspace yourself.
+                it came from. Start with a free national or Fed district report, or run the workspace yourself.
               </p>
 
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">

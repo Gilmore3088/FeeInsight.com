@@ -44,7 +44,7 @@ export async function sendReportRequestNotifications(
 ): Promise<LeadNotificationOutcome> {
   const roleSuffix = input.role ? `, ${input.role}` : "";
   const notificationLines = [
-    `${input.name} requested a free ${REPORT_OFFER.name} for ${input.institution}.`,
+    `${input.name} requested a ${REPORT_OFFER.name} for ${input.institution}. It is priced on request: reply with scope and price within one business day.`,
     "",
     ...[
       detailLine("Institution", input.institution),

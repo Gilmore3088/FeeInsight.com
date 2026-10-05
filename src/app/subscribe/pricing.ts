@@ -33,7 +33,7 @@ export function planPriceLine(plan: ProPlan): string {
 }
 /** "$5,000" */
 export const ANNUAL_PRICE_LABEL = WHOLE_DOLLARS.format(ANNUAL_PRICE_USD);
-/** "Free" — the report has no price. */
+/** "Priced on request" while the report has no list price. */
 export const REPORT_PRICE_LABEL = REPORT_PRICE_USD === 0 ? REPORT_OFFER.priceLabel : WHOLE_DOLLARS.format(REPORT_PRICE_USD);
 /** Computed from the two billed prices; e.g. "$1,000". */
 export const ANNUAL_SAVINGS_LABEL = WHOLE_DOLLARS.format(
@@ -62,5 +62,5 @@ export const REPORT_BULLETS = [
   "15 headline fees vs your true peer cohort",
   "Named competitors on the same lines",
   "Outlier flags and a source citation for every figure",
-  "PDF, delivered in 48 hours",
+  "A board-ready PDF for your pricing committee",
 ];

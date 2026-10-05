@@ -107,8 +107,8 @@ export default function TermsPage() {
               purchase at the price stated at the time of order.
             </li>
             <li>
-              We confirm the peer set with you before any work starts. The report is
-              delivered as a PDF within 48 hours after the peer set is confirmed.
+              We confirm the peer set, the price and the delivery date with you before any
+              work starts. The report is delivered as a PDF.
             </li>
             <li>
               If we cannot find at least 10 comparable institutions with verified fees for
