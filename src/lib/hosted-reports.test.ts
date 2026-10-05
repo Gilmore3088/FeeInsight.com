@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   extractExecutiveSummary,
+  extractPositionMap,
+  readSampleReportHtml,
   getHostedReport,
   isHostedReportExpired,
   prepareReportForEmbed,
@@ -111,5 +113,39 @@ describe("extractExecutiveSummary", () => {
 
   it("returns an empty summary for a document without an executive section", () => {
     expect(extractExecutiveSummary("<html><body>hi</body></html>")).toEqual({ findings: [], narrative: null });
+  });
+});
+
+describe("extractPositionMap", () => {
+  it("keeps only ranked lines and classifies each against the peer middle half", () => {
+    const html = `<p>Compared with 60 banks with $300M–$1B in assets</p>
+    <table class="position"><thead><tr><th>Fee</th></tr></thead><tbody>
+      <tr><td><span class="cat">Non-network ATM</span></td><td class="r"><b>—</b></td>
+      <td class="r">$1.25</td><td class="r">$2.13</td><td class="r">$4.31</td><td class="r muted">6</td>
+      <td><span class="small muted">listed under another label</span></td><td></td></tr>
+      <tr><td><span class="cat">Deposited item return</span><span class="feeline">Returned item</span></td>
+      <td class="r"><b>$18.00</b></td><td class="r">$5.00</td><td class="r">$5.00</td><td class="r">$10.00</td>
+      <td class="r muted">15</td><td><div class="bar-wrap"></div><span class="small muted"> P100</span></td><td></td></tr>
+      <tr><td><span class="cat">Outgoing intl. wire</span></td><td class="r"><b>$40.00</b></td>
+      <td class="r">$46.25</td><td class="r">$50.00</td><td class="r">$61.25</td><td class="r muted">8</td>
+      <td><span class="small muted"> P25</span></td><td></td></tr>
+    </tbody></table>`;
+    expect(extractPositionMap(html)).toEqual({
+      cohortSize: 60,
+      rows: [
+        { category: "Deposited item return", you: 18, p25: 5, median: 5, p75: 10, peers: 15, percentile: 100, status: "above" },
+        { category: "Outgoing intl. wire", you: 40, p25: 46.25, median: 50, p75: 61.25, peers: 8, percentile: 25, status: "below" },
+      ],
+    });
+  });
+
+  it("reads the committed sample report", () => {
+    const map = extractPositionMap(readSampleReportHtml());
+    expect(map.rows.length).toBeGreaterThan(3);
+    expect(map.cohortSize).toBeGreaterThan(0);
+  });
+
+  it("returns no rows when the report has no position map", () => {
+    expect(extractPositionMap("<html></html>")).toEqual({ rows: [], cohortSize: null });
   });
 });
