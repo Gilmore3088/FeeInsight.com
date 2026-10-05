@@ -19,7 +19,7 @@ Template:
 median is 1,054 to 1,254 in every year from 2010 to 2026 (read-only query, 22:40 UTC).
 **Cause:** the NCUA pull stores the 5300 net worth ratio (ACCT_998) as filed, in basis points,
 while FDIC ratios are percent. The medians match net worth / assets x 100 (10.5 to 12.5).
-**Fix:** the institution-data phase 1 PR converts it once in `src/lib/data-store/financial.ts`
+**Fix:** a fix PR converts it once in `src/lib/data-store/financial.ts`
 (`capitalRatioPct`), so every reader gets percent, and labels it "Net worth ratio" for credit unions.
 Stored rows are unchanged.
 **Lesson:** check each regulator field's unit against an independent figure before showing it;
