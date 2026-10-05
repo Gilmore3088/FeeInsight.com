@@ -13,6 +13,8 @@ type SqlTag = typeof sql;
 export const RULES_RECHECK_DOCUMENT_LIMIT = 25;
 export const RULES_RECHECK_REASON = "rules_recheck_unreproduced";
 export const RULES_RECHECK_STRATEGY = { strategy: "hamilton.rules_recheck", version: 1 } as const;
+/** Attempt detail key: fees today's rules read from the document that are not live. */
+export const MISSING_FEES_DETAIL = "missing_fees";
 
 /**
  * The free extractor team's versions. A document is re-checked once per signature, so
@@ -195,7 +197,7 @@ export async function rollBackUnreproducedFees(
   }
 
   const result: RulesRecheckResult = { documentsChecked: 0, documentsWithoutText: 0, liveFeesChecked: 0, rollbacks: [] };
-  const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number }> = [];
+  const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number; missing?: number }> = [];
   for (const [documentId, documentRows] of rowsByDocument) {
     const documentTexts = textsByDocument.get(documentId) ?? [];
     const institutionId = Number(documentRows[0].institution_id);
@@ -210,7 +212,12 @@ export async function rollBackUnreproducedFees(
     const latest = documentTexts[documentTexts.length - 1];
     const reproducedByHash = new Map<string, Set<string>>();
     let rolledBack = 0;
-    for (const row of documentRows) {
+    // One document states a fee once: when a re-extraction publishes the same category and
+    // price under a better name ("Negative $25 or less" for "Negative or less"), the newest
+    // row stays and older copies are rolled back.
+    const keptKeys = new Set<string>();
+    const newestFirst = [...documentRows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id));
+    for (const row of newestFirst) {
       const text = documentTexts.find((candidate) => candidate.text_hash === row.text_hash) ?? latest;
       const hash = text.text_hash ?? `document:${documentId}`;
       let reproduced = reproducedByHash.get(hash);
@@ -220,7 +227,11 @@ export async function rollBackUnreproducedFees(
       }
       result.liveFeesChecked += 1;
       const amount = row.amount == null ? null : Math.round(Number(row.amount) * 100) / 100;
-      if (amount != null && reproduced.has(feeKey(row.canonical_fee_key, amount))) continue;
+      const key = amount == null ? null : feeKey(row.canonical_fee_key, amount);
+      if (key != null && reproduced.has(key) && !keptKeys.has(key)) {
+        keptKeys.add(key);
+        continue;
+      }
       rolledBack += 1;
       result.rollbacks.push({
         feePublishedId: Number(row.fee_published_id),
@@ -232,9 +243,18 @@ export async function rollBackUnreproducedFees(
         amount,
       });
     }
-    checked.push({ institutionId, sourceDocumentId: documentId, checked: documentRows.length, rolledBack });
+    // Fees today's rules read from the latest text that are not live (Texar's $20 and $35
+    // tiers, missed by an older version): Knox extracts this text again (MISSING_FEES_DETAIL).
+    const live = new Set(
+      documentRows.filter((row) => row.amount != null).map((row) => feeKey(row.canonical_fee_key, Number(row.amount))),
+    );
+    const latestHash = latest.text_hash ?? `document:${documentId}`;
+    const latestReproduced = reproducedByHash.get(latestHash) ?? reproducibleFees(latest.normalized_text);
+    const missing = [...latestReproduced].filter((key) => !live.has(key)).length;
+    checked.push({ institutionId, sourceDocumentId: documentId, checked: documentRows.length, rolledBack, missing });
   }
 
+  result.rollbacks.sort((a, b) => a.feePublishedId - b.feePublishedId);
   if (options.dryRun) return result;
 
   try {
@@ -273,7 +293,7 @@ export async function rollBackUnreproducedFees(
           yieldCount: document.checked - document.rolledBack,
           costMicrousd: 0,
           runId: options.runId,
-          detail: { live_fees_checked: document.checked, rolled_back: document.rolledBack },
+          detail: { live_fees_checked: document.checked, rolled_back: document.rolledBack, [MISSING_FEES_DETAIL]: document.missing ?? 0 },
           foldIntoPlaybook: false,
         });
       }
