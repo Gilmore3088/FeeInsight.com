@@ -13,7 +13,8 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT } from "@/lib/constants";
+import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
 import { getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
 import { STATE_CODES } from "@/lib/us-states";
@@ -29,7 +30,7 @@ export const metadata: Metadata = {
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const REQUEST_HREF = "/for-institutions#report";
+const REQUEST_HREF = "#request";
 
 const PRIMARY_BUTTON =
   "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:bg-[#A93D25]";
@@ -306,15 +307,30 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             </li>
           ))}
         </ol>
-        <div className="mt-8">
-          <TrackLink
-            event="request_report"
-            eventProps={{ placement: "reports_hub_steps" }}
-            href={REQUEST_HREF}
-            className={PRIMARY_BUTTON}
-          >
-            {REPORT_OFFER.ctaLabel}
-          </TrackLink>
+      </section>
+
+      {/* Request form: the lead lands in the leads table (/admin/leads) */}
+      <section id="request" className="mx-auto max-w-6xl scroll-mt-20 px-6 pt-16">
+        <div className="grid gap-8 rounded-xl border border-[#E8DFD1] bg-[#FBF7F1] p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
+          <div>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+              Request your report
+            </p>
+            <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#1A1815]" style={SERIF}>
+              Tell us where to send it.
+            </h2>
+            <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-[#5A5347]">
+              Leave your institution and work email. We confirm your peer set within one business day,
+              then send the PDF. {REPORT_OFFER.priceLabel}, {REPORT_OFFER.valueLabel}.
+            </p>
+            <p className="mt-4 text-[13px] text-[#6B6255]">
+              Prefer email?{" "}
+              <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#A93D25] underline-offset-2 hover:underline">
+                {CONTACT_EMAIL}
+              </a>
+            </p>
+          </div>
+          <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" />
         </div>
       </section>
 
