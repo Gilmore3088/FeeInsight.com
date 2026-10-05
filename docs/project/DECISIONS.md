@@ -5,6 +5,10 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Every state runs a daily full pass until its links are found.** James, 22:28 UTC. Daily passes
+used to be Texas and California only; now any state with more than 50 active institutions lacking
+a fee link runs daily, then drops back to monthly on its own. Shipped in PR 154.
+
 **Spend to fill the fee database now, then refresh cheaply.** James, 22:19 UTC. He added $500
 of API credit and said yes to raising the in-app caps: fill the database, then drop to a monthly
 or quarterly refresh that costs little, paid for by Hamilton subscriptions. Caps go to $75/day and
@@ -29,7 +33,7 @@ document, measured on fresh random live samples. Offline holdout scores don't co
 shared check is `checkFeeAgainstSource` in `src/lib/custom-report/source-check.ts`.
 
 **Daily full passes in Texas and California.** James, 18:16 UTC. They run daily while more than
-50 active institutions there lack a fee link; other states stay monthly. Shipped in PR 117.
+50 active institutions there lack a fee link. Shipped in PR 117; widened to every state in PR 154.
 
 **No Firecrawl.** James, ~17:24 UTC. It bills an account he didn't set up for this project.
 Use plain fetches, Vercel previews, or a Remote Control session on his Mac.
