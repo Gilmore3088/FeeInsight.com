@@ -13,6 +13,15 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Shutdown months stored as 0 in economic series
+**What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
+(found by the Hamilton Pro page thread).
+**Cause:** BLS never published some October 2025 shutdown months, and those months are stored in
+`fed_economic_indicators` as 0 instead of being left out.
+**Fix:** the state report economy reader treats a stored 0 as a missing month for every series
+except the fed funds rate, which can really be near 0 (fix PR off main, merged once green).
+**Lesson:** a 0 from an outside feed can mean "no data"; check whether 0 is possible for that series.
+
 ## 2026-10-05: API credit ran out and stopped all paid work
 **What happened:** at 21:45 UTC Rosetta got "Your credit balance is too low" from the Anthropic
 API. The provider guard turned on the provider stop (`automation_control` key `global`), which

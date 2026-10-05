@@ -64,10 +64,18 @@ function toDateString(value: unknown): string {
 }
 
 /** Shape raw newest-first rows into a series; null when there are no usable values. */
+/**
+ * Series that can genuinely read 0 (the fed funds rate sat near zero in 2009-15 and 2020-22).
+ * Every other series here is a rate, a job count or a price index that is never 0, so a stored 0
+ * is a month with no data, such as the October 2025 shutdown months BLS never published.
+ */
+const ZERO_IS_REAL = new Set(["FEDFUNDS"]);
+
 export function buildIndicatorSeries(seriesId: string, rows: { observation_date: unknown; value: unknown }[]): IndicatorSeries | null {
+  const zeroIsMissing = !ZERO_IS_REAL.has(seriesId);
   const points = rows
     .map((r) => ({ date: toDateString(r.observation_date), value: Number(r.value) }))
-    .filter((p) => Number.isFinite(p.value) && isIsoDate(p.date));
+    .filter((p) => Number.isFinite(p.value) && isIsoDate(p.date) && !(zeroIsMissing && p.value === 0));
   if (points.length === 0) return null;
   const latest = points[0];
   const target = new Date(`${latest.date}T00:00:00Z`);
