@@ -98,6 +98,12 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(groundPaidRow({ canonical_key: "stop_payment", amount: 31 }, text)).toBe("missing_fields");
   });
 
+  it("never grounds a balance threshold as the fee (Texar $50.01)", () => {
+    const line = "Overdraft Protection Items - Negative from $50.01 and more | $35";
+    expect(groundPaidRow({ fee_name: "Overdraft Protection Items", canonical_key: "overdraft", amount: 50.01, source_line: line }, line)).toBe("not_in_text");
+    expect(groundPaidRow({ fee_name: "Overdraft Protection Items", canonical_key: "overdraft", amount: 35, source_line: line }, line)).toMatchObject({ amount: 35 });
+  });
+
   it("makes one budget-checked call per document and writes grounded rows like the rule path", async () => {
     const db = createDbMock([textRow]);
     const create = vi.fn(async () =>

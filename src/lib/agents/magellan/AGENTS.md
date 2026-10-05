@@ -31,6 +31,7 @@ and `detail.method_version`).
 
 | Pass | Strategy | What it tries |
 | --- | --- | --- |
+| 1 | `discover.rejected_page_links` | Fee links on pages Rosetta ruled out (newest two), boosted because the page is about fees. Runs before the homepage is read, so a bot-blocking homepage does not stop it; off-site PDFs (CDNs) count. |
 | 1 | `discover.known_link` | The bank's previous (unlocked) link. A locked correction is used as is, without a fetch. |
 | 1 | `discover.homepage_links` | Fee-like links on the homepage (homepage request logged here). |
 | 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`; an index opens its page/document children. |
@@ -46,8 +47,9 @@ and `detail.method_version`).
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
   and their first pages read, so a rate sheet or press release is rejected. A PDF with
   no readable text (a scan) is accepted only on a strong fee label.
-- URLs in `institution_source_profiles.rejected_source_urls` are never proposed again
-  for that bank and count against their path in per-platform learning.
+- URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
+  not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
+  their path in per-platform learning, and their links are searched first.
 - Platforms (Q2, Banno/Jack Henry, Fiserv, FIS, NCR, WordPress, Drupal, and others)
   are detected from homepage signals (`site-signals.ts`) and stored on
   `institution_source_profiles.platform` (and `institution_sources.cms_platform` when

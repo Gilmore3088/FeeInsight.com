@@ -55,7 +55,7 @@ describe("playbook notes", () => {
     ]);
     const searching = describePlaybook(input({}, { rejectedUrlCount: 2 }));
     expect(searching.nextStep).toBe("Still looking for the right fee schedule page.");
-    expect(searching.lines[0]).toBe("2 pages were ruled out as not the fee schedule and will not be proposed again.");
+    expect(searching.lines[0]).toBe("2 pages were ruled out as not the fee schedule; their links are followed to find the real one.");
   });
 
   it("flags text that was read but yielded no fees", () => {

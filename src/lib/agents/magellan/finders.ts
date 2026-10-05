@@ -47,6 +47,8 @@ const STRONG_LINK_PHRASES = [
   "business fees",
   "account fees",
   "rates and fees",
+  "fee sheet",
+  "schedule of charges",
 ];
 
 const MEDIUM_LINK_PHRASES = [
@@ -112,6 +114,7 @@ export const COMMON_PATHS = [
 
 /** Specialist names and versions. Bump a version when that specialist changes. */
 export const FINDERS = {
+  rejectedPageLinks: { strategy: "discover.rejected_page_links", version: 1, pass: 1 },
   knownLink: { strategy: "discover.known_link", version: 1, pass: 1 },
   homepageLinks: { strategy: "discover.homepage_links", version: 1, pass: 1 },
   sitemap: { strategy: "discover.sitemap", version: 1, pass: 1 },
@@ -126,6 +129,7 @@ export type FinderKey = keyof typeof FINDERS;
 
 /** The code a bank's search ends with when this specialist found the schedule. */
 export const FOUND_CODES = {
+  rejectedPageLinks: "found_from_rejected_page",
   knownLink: "found_known_link",
   homepageLinks: "found_homepage",
   sitemap: "found_sitemap",
@@ -137,6 +141,7 @@ export const FOUND_CODES = {
 } as const satisfies Record<FinderKey, string>;
 
 export type LinkSource =
+  | "rejected_page_link"
   | "known_link"
   | "homepage_link"
   | "sitemap"
@@ -156,7 +161,7 @@ export interface LinkCandidate extends FeeCandidate {
 
 export interface TrailEntry {
   url: string;
-  source: LinkSource | "homepage" | "robots" | "sitemap_file" | "hub_page" | "crawl_page";
+  source: LinkSource | "homepage" | "robots" | "sitemap_file" | "hub_page" | "crawl_page" | "rejected_page";
   foundOn: string | null;
   label: string;
   score: number;
@@ -207,6 +212,11 @@ export interface SearchContext {
   homepageLinks: PageLink[];
   platform: string | null;
   knownUrl: string | null;
+  /**
+   * Pages Rosetta read and ruled out, newest first. They are never proposed again, but
+   * they usually link to the real schedule ("See the Fee Sheet for details").
+   */
+  rejectedPages?: string[];
   deadline: number;
   politeDelayMs: number;
   knowledge: PlatformKnowledge;
@@ -448,6 +458,55 @@ function pathCandidates(ctx: SearchContext, paths: string[], source: LinkSource)
 }
 
 // --- Pass 1 ------------------------------------------------------------------------
+
+const MAX_REJECTED_PAGES = 2;
+const FEE_LINK_WORD = /\b(fees?|charges?|pricing)\b/;
+
+/**
+ * Fee links on a page the bank itself presents as being about fees: any link naming a
+ * fee is worth opening, so it gets a boost the homepage's links do not.
+ */
+export function rejectedPageCandidates(links: PageLink[], foundOn: string): LinkCandidate[] {
+  return links
+    .filter((link) => FEE_LINK_WORD.test(`${link.label} ${link.url}`.toLowerCase().replace(/[-_/.]+/g, " ")))
+    .map((link) => {
+      const scored = scoreLink(link.url, link.label, "rejected_page_link", foundOn);
+      return { ...scored, score: Math.min(0.98, scored.score + 0.3) };
+    })
+    .filter((candidate) => candidate.score >= MIN_LINK_SCORE)
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * The pages Rosetta ruled out (a marketing "no fees" page, an account overview) often
+ * link to the real fee schedule, sometimes a PDF on a CDN. Runs before the homepage is
+ * read, so a bank whose homepage blocks bots can still be found.
+ */
+export async function findFromRejectedPages(ctx: SearchContext): Promise<FinderResult> {
+  // A rejected PDF has no links to follow.
+  const pages = (ctx.rejectedPages ?? []).filter((url) => !looksLikePdfUrl(url)).slice(0, MAX_REJECTED_PAGES);
+  if (pages.length === 0) return emptyResult(false);
+  const result = emptyResult(true);
+  for (const pageUrl of pages) {
+    if (outOfTime(ctx)) {
+      result.outOfTime = true;
+      return result;
+    }
+    const entry: TrailEntry = { url: pageUrl, source: "rejected_page", foundOn: null, label: "", score: 0, verdict: "" };
+    result.trail.push(entry);
+    const html = await openPage(ctx, result, pageUrl, entry);
+    if (!html) continue;
+    let base: URL;
+    try {
+      base = new URL(pageUrl);
+    } catch {
+      continue;
+    }
+    if (await tryCandidates(ctx, result, rejectedPageCandidates(pageLinks(html, base), pageUrl), MAX_CANDIDATES_PER_FINDER)) return result;
+    await politePause(ctx);
+  }
+  return result;
+}
 
 /** The link this bank had before (not a person's locked correction): is it still there? */
 export async function findKnownLink(ctx: SearchContext): Promise<FinderResult> {

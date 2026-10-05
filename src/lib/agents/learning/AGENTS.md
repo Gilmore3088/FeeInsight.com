@@ -101,13 +101,13 @@ array.
 
 Before PR 1b it stored a JSON string, and every SQL JSON operator silently missed it.
 Darwin's `outlier_flags ? 'needs_darwin_verification'` is one example: it selected
-nothing. Migration `20270103000000_repair_double_encoded_jsonb.sql` unwrapped the
+nothing. Migration `20261003132125_repair_double_encoded_jsonb.sql` unwrapped the
 stored values.
 
 ## Deploy order
 
 The code checks `learningSchemaReady` before it uses the new table and columns. Until
-`supabase/migrations/20270102020000_learning_core.sql` is applied, the agents keep
+`supabase/migrations/20261002233217_learning_core.sql` is applied, the agents keep
 their previous behavior. Hash-based "unchanged" detection still works, because it
 uses the existing `last_source_hash`. Each step's `detail.learning_log` is `false`
 until then.

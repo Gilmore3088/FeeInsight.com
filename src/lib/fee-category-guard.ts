@@ -66,7 +66,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   stop_payment: {
     include: /stop/i,
-    exclude: /(release|cancel|revoc|line of credit|heloc|loan|cashier|official)/i,
+    // "Cancel stop payment" removes a stop; "ACH Stop Payment/Cancellation" places one.
+    exclude: /(release|cancel\w*\s+(of\s+)?(a\s+|the\s+)?stop|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
@@ -79,7 +80,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   paper_statement: {
     include: /statement/i,
-    exclude: /(cop(y|ies)|address|research|re-?print|duplicate|interim|special|photo|image|e-?statement)/i,
+    // An e-statement fee is excluded, but "Paper Statement (waived with e-Statements)" is not.
+    exclude: /(cop(y|ies)|address|research|re-?print|duplicate|interim|special|photo|image|^(?!.*paper).*e-?statement)/i,
   },
   card_replacement: {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
@@ -94,7 +96,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 3;
+export const CATEGORY_GUARD_VERSION = 4;
 
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
