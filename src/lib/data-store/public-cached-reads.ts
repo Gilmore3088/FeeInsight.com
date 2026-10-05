@@ -19,6 +19,7 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
+import { getMarketReadiness } from "./market-readiness";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -77,3 +78,4 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );
+export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
