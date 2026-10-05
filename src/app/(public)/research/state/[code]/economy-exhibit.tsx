@@ -34,6 +34,27 @@ export function yoyPct(series: IndicatorSeries | null): number | null {
   return ((series.latest.value - series.year_ago.value) / series.year_ago.value) * 100;
 }
 
+/** Percent change over the 12 months ending `date`, from a series' history; null without both points. */
+export function yoyAt(series: IndicatorSeries | null, date: string): number | null {
+  if (!series) return null;
+  const end = series.history.find((p) => p.date === date);
+  const start = new Date(`${date}T00:00:00Z`);
+  start.setUTCFullYear(start.getUTCFullYear() - 1);
+  const begin = series.history.find((p) => p.date === start.toISOString().slice(0, 10));
+  if (!end || !begin || begin.value === 0) return null;
+  return ((end.value - begin.value) / begin.value) * 100;
+}
+
+/** Monthly data more than this many months old is labeled as the latest published, not current. */
+const STALE_MONTHS = 4;
+
+export function isStale(date: string, now: Date = new Date()): boolean {
+  const d = new Date(`${date.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  const months = (now.getUTCFullYear() - d.getUTCFullYear()) * 12 + (now.getUTCMonth() - d.getUTCMonth());
+  return months > STALE_MONTHS;
+}
+
 function signed(value: number, digits = 1, suffix = "%"): string {
   const fixed = Math.abs(value).toFixed(digits);
   if (Number(fixed) === 0) return `0${suffix}`;
@@ -96,13 +117,16 @@ function buildTiles(stateName: string, ctx: StateEconomicContext): Tile[] {
   }
   const bank = ctx.cpi_bank_services;
   const bankYoy = yoyPct(bank);
-  const allYoy = yoyPct(ctx.cpi_all_items);
   if (bank && bankYoy != null) {
+    // Compare over the same 12 months, so a lagging series is never set against a newer one.
+    const allYoy = yoyAt(ctx.cpi_all_items, bank.latest.date);
     tiles.push({
       key: "bank-cpi",
       label: "Prices for bank services",
       value: signed(bankYoy),
-      change: allYoy != null ? `vs ${signed(allYoy)} for all consumer prices, over 12 months` : "over 12 months",
+      change: allYoy != null
+        ? `vs ${signed(allYoy)} for all consumer prices, 12 months to ${monthLabel(bank.latest.date)}`
+        : `12 months to ${monthLabel(bank.latest.date)}`,
       note: `${monthLabel(bank.latest.date)} · BLS consumer price index`,
       series: bank,
     });
@@ -129,14 +153,14 @@ function sentimentClass(sentiment: string): string {
 
 function Passage({ text, sentences }: { text: string; sentences: number }) {
   const { lead, rest } = leadSentences(text, sentences);
-  if (!rest) return <p className="mt-2 text-pretty text-[14px] leading-relaxed text-[#3D3830]">{lead}</p>;
+  if (!rest) return <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">{lead}</p>;
   return (
     <details className="group mt-2">
-      <summary className="cursor-pointer list-none text-pretty text-[14px] leading-relaxed text-[#3D3830] [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none text-[14px] leading-relaxed text-[#3D3830] [&::-webkit-details-marker]:hidden">
         {lead}{" "}
         <span className="whitespace-nowrap text-[12px] font-semibold text-[#A93D25] group-open:hidden print:hidden">Read more</span>
       </summary>
-      <p className="mt-2 text-pretty text-[14px] leading-relaxed text-[#3D3830]">{rest}</p>
+      <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">{rest}</p>
     </details>
   );
 }
@@ -162,9 +186,11 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
               <p className="mt-2 text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
                 {t.value}
               </p>
-              {t.change && <p className="mt-2 text-pretty text-[12px] text-[#5A5347]">{t.change}</p>}
+              {t.change && <p className="mt-2 text-[12px] text-[#5A5347]">{t.change}</p>}
               <Sparkline series={t.series} />
-              <p className="mt-auto pt-2 text-[10px] uppercase tracking-wider text-[#8A8072]">{t.note}</p>
+              <p className="mt-auto pt-2 text-[10px] uppercase tracking-wider text-[#8A8072]">
+                {isStale(t.series.latest.date) ? `Latest published ${t.note}` : t.note}
+              </p>
             </div>
           ))}
         </div>

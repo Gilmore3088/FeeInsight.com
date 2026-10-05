@@ -76,10 +76,10 @@ export function StateHero(props: StateHeroProps) {
           <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
           State fee report{district ? ` · ${DISTRICT_NAMES[district]} Fed` : ""}
         </p>
-        <h1 className="mt-3 max-w-3xl text-balance text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
           {stateName} bank &amp; credit union fees
         </h1>
-        <p className="mt-4 max-w-2xl text-pretty text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
           What {stateName} banks and credit unions charge for everyday services, measured against the national{" "}
           {PRODUCT_NAME}. Every number comes from verified, published fee schedules.
         </p>
