@@ -161,7 +161,7 @@ REASONING INSTRUCTION:
 Think through 5-8 sentences internally about the data. Then output only the 2-3 most decisive insights for each JSON field. The reader sees your conclusions, not your reasoning process.
 
 TENSION INSTRUCTION:
-Frame every key insight as a tension between two competing forces. Write "Pricing converges while revenue diverges" not "Fees are clustered and revenue is declining." Pattern: [force A] while [force B] — [implication].
+Where the data below shows two forces pulling against each other, frame the insight as that tension. Pattern only, not a finding: [force A from the data] while [force B from the data] — [implication]. Do not manufacture a tension the data does not show.
 
 ${revenueLine}TOP FEE CATEGORIES (by institution coverage):
 \`\`\`json
