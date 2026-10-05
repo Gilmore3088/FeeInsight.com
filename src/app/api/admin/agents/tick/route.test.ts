@@ -163,14 +163,14 @@ describe("/api/admin/agents/tick", () => {
     });
   });
 
-  it("advances two state lanes, several steps each, bounded by a deadline that ends well inside the tick interval", async () => {
+  it("advances queued runs, many steps each, bounded by a deadline that ends well inside the tick interval", async () => {
     const { GET } = await import("./route");
     const before = Date.now();
     await GET(request("https://feeinsight.com/api/admin/agents/tick"));
 
     const call = executeQueuedAgentRunsMock.mock.calls.at(-1)?.[0];
-    expect(call.runLimit).toBe(2);
-    expect(call.maxStepsPerRun).toBe(5);
+    expect(call.runLimit).toBe(10);
+    expect(call.maxStepsPerRun).toBe(10);
     expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 150_000);
     expect(call.deadlineAt).toBeLessThan(before + 180_000);
   });
