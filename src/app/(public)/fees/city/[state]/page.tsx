@@ -2,19 +2,13 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { STATE_NAMES, STATE_CODES } from "@/lib/us-states";
+import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { getCitiesInStateCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
   params: Promise<{ state: string }>;
-}
-
-export async function generateStaticParams() {
-  const { hasData } = await import("@/lib/data-store/connection");
-  if (!(await hasData())) return [];
-  return STATE_CODES.map((code) => ({ state: code.toLowerCase() }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
