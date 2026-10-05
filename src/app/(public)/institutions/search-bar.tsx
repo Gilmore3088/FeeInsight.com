@@ -159,7 +159,7 @@ function InstitutionSearchBarInner({
                 )}
                 {(r.published_fee_count ?? 0) > 0 && (
                   <span className="rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                    {r.published_fee_count} verified fees
+                    {r.published_fee_count} fees published
                   </span>
                 )}
                 {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) > 0 && (
