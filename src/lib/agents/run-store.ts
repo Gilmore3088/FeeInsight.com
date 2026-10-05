@@ -392,6 +392,7 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["fetch_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
+        newLinksOnly: params.new_links_only === true,
       });
       return {
         status: "completed",
