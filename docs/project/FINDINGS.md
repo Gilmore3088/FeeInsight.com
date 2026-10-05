@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Public pages showed different counts and medians on the same day
+**What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
+overdraft median while the fee index, directory and research hub said 2,144 and 60, research said
+$29, and the overdraft page said $30 from 798 institutions (the index listed 777).
+**Cause:** three caches with different lifetimes (hourly headline counts, per-publish category
+summaries, the fee_index_cache memo) each caught the catalog at a different moment while the sweep
+was publishing; the overdraft page also computed its own median over raw rows with $0 removed.
+**Fix:** PR 135: one public snapshot (`getPublicSnapshot` in `src/lib/public-stats.ts`) that every
+public page reads, plus one per-institution population for the chart.
+**Lesson:** a public figure has one reader. New public pages read the snapshot, never their own
+aggregate or cache, and say what the number measures and when it was taken.
+
 ## 2026-10-05: Shutdown months stored as 0 in economic series
 **What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
 (found by the Hamilton Pro page thread).
