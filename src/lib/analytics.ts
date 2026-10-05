@@ -18,6 +18,7 @@ export type AnalyticsEvent =
   | "lead_capture_success"
   | "lead_capture_error"
   | "checkout_start"
+  | "upgrade_click"
   | "book_walkthrough"
   | "contact_sales"
   | "fee_alert_save"

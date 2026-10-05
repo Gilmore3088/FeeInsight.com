@@ -36,7 +36,7 @@ describe("report offer", () => {
     expect(REPORT_OFFER.priceUsd).toBe(0);
     expect(REPORT_OFFER.priceLabel).toBe("Free");
     expect(REPORT_OFFER_LINE).toBe(
-      "Competitive Fee Position Report — free (a $300 value), delivered in 48 hours",
+      "Competitive Fee Position Report — free, delivered in 48 hours",
     );
   });
 });

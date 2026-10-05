@@ -70,11 +70,11 @@ function formatCount(value: number): string {
   return value.toLocaleString("en-US");
 }
 
-/** "12 verified · 740 monitored" */
+/** "12 with fees · 740 monitored" */
 function formatStateCounts(summary: InstitutionStateDirectorySummary | undefined): string {
   const verified = summary?.verified_institution_count ?? 0;
   const monitored = summary?.institution_count ?? 0;
-  return `${formatCount(verified)} verified · ${formatCount(monitored)} monitored`;
+  return `${formatCount(verified)} with fees · ${formatCount(monitored)} monitored`;
 }
 
 export function StateDirectoryMap({
@@ -172,11 +172,11 @@ export function StateDirectoryMap({
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#E0D7C9] pt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-[#6B6255]">
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 bg-[#F8DDD6]" />
-                Fewer verified
+                Fewer with fees
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 bg-[#C44B2E]" />
-                More verified
+                More with fees
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 bg-[#1A1815]" />
@@ -229,7 +229,7 @@ export function StateDirectoryMap({
 
         <aside className="hidden border-y border-[#E0D7C9] py-4 lg:block lg:border-l lg:border-y-0 lg:py-1 lg:pl-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
-            {focusSummary ? "Selected state" : "Most verified"}
+            {focusSummary ? "Selected state" : "Most with fees"}
           </p>
           {focusSummary ? (
             <>
@@ -240,7 +240,7 @@ export function StateDirectoryMap({
                 {formatStateCounts(focusSummary)}
               </p>
               <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <SnapshotMetric label="Verified" value={formatCount(focusSummary.verified_institution_count)} />
+                <SnapshotMetric label="With fees" value={formatCount(focusSummary.verified_institution_count)} />
                 <SnapshotMetric label="Under review" value={formatCount(focusSummary.provisional_institution_count + focusSummary.under_review_institution_count)} />
                 <SnapshotMetric label="No schedule found" value={formatCount(focusSummary.source_needed_institution_count)} />
                 <SnapshotMetric label="Monitored" value={formatCount(focusSummary.institution_count)} />

@@ -2169,6 +2169,8 @@ export interface LeadRow {
   source: string | null;
   status: string;
   created_at: string;
+  /** Full timestamp, for the lead's due time. */
+  created_at_iso: string;
 }
 
 export interface LeadsSummary {
@@ -2225,6 +2227,7 @@ export async function getLeads(limit = 200): Promise<LeadRow[]> {
       source: r.source ? String(r.source) : null,
       status: String(r.status || "new"),
       created_at: toDateStr(r.created_at as string | Date),
+      created_at_iso: new Date(r.created_at as string | Date).toISOString(),
     }));
   } catch (e) {
     console.error("getLeads failed:", e);
