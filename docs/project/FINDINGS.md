@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Rosetta kept re-downloading dead links, and the live board miscounted
+**What happened:** James's screen recording of /admin/live (22:36 UTC) showed banks failing in
+Rosetta with "page not found" that had no working document, the same bank more than once, and
+counts that disagreed between Knox, Darwin and Hamilton. Prod (read-only, 22:40 UTC): Rosetta
+logged 1,677 read 404s on 247 documents in 24 hours (LINKBANK's two old copies 9 and 10 times
+each). 480 of the 572 unread "success" documents had a newer download for the same bank.
+**Cause:** Rosetta picked any `source_documents` row with status `success`, including old
+February-April rows with no vault copy whose bank Magellan had since failed to download (404).
+It fetched the dead link, sent the bank back to Magellan, and picked the same row again next
+pass, because 404 is not a permanent outcome. On the board, Darwin's and Hamilton's per-bank
+counts came from the step's first ten fee rows (`sample_results`), not its real totals (one
+Darwin step checked 74 fees but the board saw 10), and a bank with several documents showed once
+per document.
+**Fix:** this PR. Rosetta reads only a bank's current document and skips a no-copy row whose
+link already returned 404/410; Rosetta's "banks in line" uses the same rule (1,408 to 640). Fee
+steps record `institution_results` with every bank's real totals; each board column shows a bank
+once; "On the site" shows the bank's live fee total.
+**Lesson:** a picker over a history table must say which row is current. Board numbers must come
+from totals, never from a sample written for debugging.
+
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since
 Aug 10. `report_jobs` holds 12 finished files (Apr 7 to Aug 10, from the old runtime) and
