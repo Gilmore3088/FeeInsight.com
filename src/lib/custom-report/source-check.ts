@@ -24,7 +24,7 @@ const LONG_LINE = 300;
 const PRICE_BELOW_LINES = 2;
 const PRICE_BELOW_MAX_LENGTH = 40;
 const CATEGORY_LOOKBACK_LINES = 3;
-const NAME_HEADING_LINES = 2;
+const NAME_HEADING_LINES = 4;
 const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
@@ -147,10 +147,18 @@ export function checkFeeAgainstSource(
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     // A name may be split under a heading ("Wire Transfer:" / "Incoming | FREE"): the
-    // line must carry one of its words and, with the lines above, name it. A line above
-    // that names the fee by itself is that fee's own row, not a heading.
-    const heading = lines.slice(Math.max(0, i - NAME_HEADING_LINES), i).join(" ");
-    const underHeading = namesFee(line, stems, 1) && !namesFee(heading, stems) && namesFee(`${heading} ${line}`, stems);
+    // line must carry one of its words and, with the headings above, carry all of them. A heading
+    // that names the fee by itself is that fee's own row.
+    // Headings carry no price, inline or printed under them ("Incoming Domestic" / "$14.00"
+    // is a fee's row, not a heading).
+    const headings: string[] = [];
+    for (let j = Math.max(0, i - NAME_HEADING_LINES); j < i; j += 1) {
+      if (feeRow(lines, j) === lines[j] && moneyTokens(lines[j]).length === 0 && !ZERO_WORDS.test(lines[j])) headings.push(lines[j]);
+    }
+    const underHeading =
+      namesFee(line, stems, 1) &&
+      !headings.some((above) => namesFee(above, stems)) &&
+      namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     const amountProblem = statesAmount(feeRow(lines, i), rounded);
     if (amountProblem) {
