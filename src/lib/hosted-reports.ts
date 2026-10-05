@@ -37,8 +37,15 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const STUDIO_DIR = path.join(process.cwd(), "Reports", "studio");
 const SAMPLE_FILE = path.join(STUDIO_DIR, "sample", "sample-competitive-fee-position.html");
 
+/** No one-word orphan lines; also covers reports rendered before the template had the rule. */
+const WRAP_STYLES = `
+<style data-fee-insight-wrap>
+  h1, h2, h3, h4 { text-wrap: balance; }
+  p, li, figcaption { text-wrap: pretty; }
+</style>`;
+
 /** Screen-only styles so the print-designed report reads as pages inside the site. */
-const SCREEN_STYLES = `
+const SCREEN_STYLES = `${WRAP_STYLES}
 <style data-fee-insight-embed>
   @media screen {
     body { background: #FDFBF8; }
@@ -113,10 +120,12 @@ export function prepareReportForPrint(html: string): string {
     "var go=function(){window.print();};" +
     "(document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(go,go);" +
     "});</script>";
+  const head = html.indexOf("</head>");
+  const styled = head === -1 ? `${WRAP_STYLES}${html}` : `${html.slice(0, head)}${WRAP_STYLES}\n${html.slice(head)}`;
   const marker = "</body>";
-  const at = html.lastIndexOf(marker);
-  if (at === -1) return `${html}${script}`;
-  return `${html.slice(0, at)}${script}\n${html.slice(at)}`;
+  const at = styled.lastIndexOf(marker);
+  if (at === -1) return `${styled}${script}`;
+  return `${styled.slice(0, at)}${script}\n${styled.slice(at)}`;
 }
 
 export interface ReportFinding {

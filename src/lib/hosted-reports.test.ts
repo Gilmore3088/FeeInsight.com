@@ -81,6 +81,13 @@ describe("report HTML preparation", () => {
     const out = prepareReportForPrint(doc);
     expect(out.indexOf("window.print()")).toBeLessThan(out.indexOf("</body>"));
   });
+
+  it("balances heading lines in both the embedded and printed report", () => {
+    for (const out of [prepareReportForEmbed(doc), prepareReportForPrint(doc)]) {
+      expect(out.indexOf("data-fee-insight-wrap")).toBeLessThan(out.indexOf("</head>"));
+      expect(out).toContain("text-wrap: balance");
+    }
+  });
 });
 
 describe("formatReportDate", () => {

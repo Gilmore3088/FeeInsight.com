@@ -270,3 +270,89 @@ export async function getStatesWithFeeData(): Promise<{ state_code: string; inst
     fee_count: Number(r.fee_count),
   }));
 }
+
+export interface CoverageArea {
+  /** Institutions the index monitors in the area. */
+  monitored: number;
+  /** Monitored institutions with at least one verified (approved) fee. */
+  verified_institutions: number;
+  /** Verified (approved) fee rows in the area. */
+  verified_fees: number;
+}
+
+export interface StateCoverage extends CoverageArea {
+  state_code: string;
+}
+
+export interface DistrictCoverage extends CoverageArea {
+  district: number;
+}
+
+export interface ResearchCoverage {
+  states: StateCoverage[];
+  districts: DistrictCoverage[];
+}
+
+export interface CoverageGroupRow {
+  state_code: string | null;
+  fed_district: number | string | null;
+  monitored: number | string;
+  verified_institutions: number | string;
+  verified_fees: number | string;
+}
+
+/**
+ * Roll (state, district) groups up to states and districts. Every institution sits in
+ * exactly one group, so summing the per-group distinct counts is exact.
+ */
+export function rollUpCoverage(rows: CoverageGroupRow[]): ResearchCoverage {
+  const states = new Map<string, StateCoverage>();
+  const districts = new Map<number, DistrictCoverage>();
+  for (const row of rows) {
+    const monitored = Number(row.monitored);
+    const verifiedInstitutions = Number(row.verified_institutions);
+    const verifiedFees = Number(row.verified_fees);
+    if (row.state_code && VALID_US_CODES.has(row.state_code)) {
+      const s = states.get(row.state_code) ?? {
+        state_code: row.state_code, monitored: 0, verified_institutions: 0, verified_fees: 0,
+      };
+      s.monitored += monitored;
+      s.verified_institutions += verifiedInstitutions;
+      s.verified_fees += verifiedFees;
+      states.set(row.state_code, s);
+    }
+    const district = Number(row.fed_district);
+    if (row.fed_district !== null && district >= 1 && district <= 12) {
+      const d = districts.get(district) ?? {
+        district, monitored: 0, verified_institutions: 0, verified_fees: 0,
+      };
+      d.monitored += monitored;
+      d.verified_institutions += verifiedInstitutions;
+      d.verified_fees += verifiedFees;
+      districts.set(district, d);
+    }
+  }
+  return {
+    states: [...states.values()].sort((a, b) => b.verified_institutions - a.verified_institutions),
+    districts: [...districts.values()].sort((a, b) => a.district - b.district),
+  };
+}
+
+/**
+ * Monitored vs verified coverage by state and Fed district, from one grouped scan.
+ * Only approved published fees count as verified, matching the public headline numbers.
+ */
+export async function getResearchCoverage(): Promise<ResearchCoverage> {
+  const rows = await sql`
+    SELECT ct.state_code,
+           ct.fed_district,
+           COUNT(DISTINCT ct.id) AS monitored,
+           COUNT(DISTINCT ef.institution_id) AS verified_institutions,
+           COUNT(ef.id) AS verified_fees
+    FROM institution_sources ct
+    LEFT JOIN published_fee_catalog ef
+      ON ef.institution_id = ct.id AND ef.review_status = 'approved'
+    GROUP BY ct.state_code, ct.fed_district
+  ` as CoverageGroupRow[];
+  return rollUpCoverage(rows);
+}

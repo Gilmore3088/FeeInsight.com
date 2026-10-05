@@ -17,7 +17,7 @@ const CACHE_CEILING_SECONDS = 3600;
 
 const cachedSummaries = unstable_cache(
   async () => getFeeCategorySummaries(),
-  ["fee-category-summaries", "v1"],
+  ["fee-category-summaries", "v2"],
   { tags: [FEE_SUMMARY_CACHE_TAG], revalidate: CACHE_CEILING_SECONDS },
 );
 

@@ -21,6 +21,8 @@ function summary(fee_category: string): FeeCategorySummary {
     bank_count: 60,
     cu_count: 40,
     zero_count: 7,
+    bank_median_amount: null,
+    cu_median_amount: null,
   };
 }
 
