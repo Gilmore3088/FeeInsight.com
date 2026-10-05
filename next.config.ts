@@ -18,7 +18,11 @@ const nextConfig: NextConfig = {
       "./node_modules/tesseract.js/src/**",
       "./node_modules/tesseract.js-core/package.json",
       "./node_modules/tesseract.js-core/index.js",
-      "./node_modules/tesseract.js-core/tesseract-core*lstm*",
+      // Every core build: tesseract.js 7 passes a boolean where getCore expects an OEM
+      // number, so it loads the non-LSTM build even for an LSTM worker. Shipping only the
+      // `*lstm*` files broke OCR in production (2026-10-05) while tests, which see the
+      // whole node_modules, passed. src/lib/agents/rosetta/ocr-bundle.test.ts guards this list.
+      "./node_modules/tesseract.js-core/tesseract-core*",
       "./node_modules/@tesseract.js-data/eng/package.json",
       "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/**",
       "./node_modules/{bmp-js,idb-keyval,is-url,regenerator-runtime,wasm-feature-detect,zlibjs}/**",
