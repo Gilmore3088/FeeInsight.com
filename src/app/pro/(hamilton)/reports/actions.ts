@@ -41,8 +41,7 @@ import { getLocalFeeMoves, getLocalMarketCompetitors } from "@/lib/data-store/lo
 import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
 import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
-import { getIndicatorTimeSeries, getServiceChargeHistory } from "@/lib/data-store/financial";
-import { buildFeeIncomeTrend } from "@/lib/hamilton/report-trend";
+import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import {
   ANSWER_SECTION_FORMAT,
   TRADEOFF_SECTION_FORMAT,
@@ -357,12 +356,6 @@ function getStrategicSectionType(
   }
 }
 
-/** FRED observations come back from Postgres as Date or text. */
-function toDatedValue(o: { observation_date: unknown; value: unknown }): { date: string; value: number } {
-  const date = o.observation_date instanceof Date ? o.observation_date.toISOString() : String(o.observation_date);
-  return { date: date.slice(0, 10), value: Number(o.value) };
-}
-
 /**
  * Generate a Hamilton report from a template and configuration.
  * Assembles fee data, calls generateSection() for key sections,
@@ -572,20 +565,7 @@ export async function generateReport(
     // Fee income over time: real (GDP price index), seasonally adjusted, tested for
     // trend, stationarity and structural breaks, against the industry. Computed, never modeled.
     const feeIncomeTrend = selectedInstitution
-      ? await Promise.all([
-          getServiceChargeHistory(selectedInstitution.id),
-          getIndicatorTimeSeries("GDPCTPI", { fromDate: "2009-01-01" }),
-          getIndicatorTimeSeries("QBPQYTNIYSRVDP", { fromDate: "2009-01-01" }),
-        ])
-          .then(([records, gdp, industry]) =>
-            buildFeeIncomeTrend({
-              institutionName,
-              records,
-              gdpPriceIndex: gdp.map(toDatedValue),
-              industryServiceCharges: industry.map(toDatedValue),
-            }),
-          )
-          .catch(() => null)
+      ? await getFeeIncomeTrend(selectedInstitution.id, institutionName).catch(() => null)
       : null;
     const exhibitData = { ...exhibitSet.data, regulatory: regulatory.data, fee_income_trend: feeIncomeTrend?.data ?? null };
     const withExpertRules = (context: string) => `${withStateRules(context)}\n\n${REGULATORY_REPORT_RULES}`;

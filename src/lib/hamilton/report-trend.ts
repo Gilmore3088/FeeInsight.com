@@ -3,6 +3,7 @@
  * Every number comes from the institution's call reports and federal series through
  * the deterministic methods in ./econometrics; the model only narrates them.
  */
+import { getIndicatorTimeSeries, getServiceChargeHistory } from "@/lib/data-store/financial";
 import { formatCompactDollars } from "@/lib/format";
 import {
   adfTest,
@@ -245,4 +246,29 @@ function appendixRows(data: FeeIncomeTrendData): string[][] {
     rows.push(["Seasonal factors", "Q1 to Q4", `${f.q1.toFixed(3)} / ${f.q2.toFixed(3)} / ${f.q3.toFixed(3)} / ${f.q4.toFixed(3)}`, "", "1.000 = an average quarter"]);
   }
   return rows;
+}
+
+/** FRED observations come back from Postgres as Date or text. */
+function toDatedValue(o: { observation_date: unknown; value: unknown }): DatedValue {
+  const date = o.observation_date instanceof Date ? o.observation_date.toISOString() : String(o.observation_date);
+  return { date: date.slice(0, 10), value: Number(o.value) };
+}
+
+/**
+ * Loads an institution's call-report history and the federal series, then builds the
+ * trend. Null when there are too few quarters. Shared by Hamilton reports and the
+ * per-bank peer brief so both cite the same numbers.
+ */
+export async function getFeeIncomeTrend(institutionId: number, institutionName: string): Promise<FeeIncomeTrendResult | null> {
+  const [records, gdp, industry] = await Promise.all([
+    getServiceChargeHistory(institutionId),
+    getIndicatorTimeSeries("GDPCTPI", { fromDate: "2009-01-01" }),
+    getIndicatorTimeSeries("QBPQYTNIYSRVDP", { fromDate: "2009-01-01" }),
+  ]);
+  return buildFeeIncomeTrend({
+    institutionName,
+    records,
+    gdpPriceIndex: gdp.map(toDatedValue),
+    industryServiceCharges: industry.map(toDatedValue),
+  });
 }
