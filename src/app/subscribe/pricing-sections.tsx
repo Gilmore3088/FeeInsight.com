@@ -13,8 +13,9 @@ const CHECK = "✓";
 
 const REPORT_ANCHOR_HREF = "/for-institutions#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const WALKTHROUGH_HREF = `mailto:${CONTACT_EMAIL}?subject=Walkthrough`;
-const ADVISORY_HREF = `mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Advisory`;
+// Contact form, not mailto, so every ask lands in /admin/leads with a due time.
+const WALKTHROUGH_HREF = "/contact?source=enterprise";
+const ADVISORY_HREF = "/contact?source=advisory";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
@@ -73,7 +74,7 @@ export function ReportCard() {
         </div>
         <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "pricing_report" }}
             href={REPORT_ANCHOR_HREF}
             className={PRIMARY_BUTTON_CLASS}

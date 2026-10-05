@@ -1,13 +1,16 @@
 /**
- * Thin, dependency-free event tracking. Sends to Plausible when its script is
- * loaded (NEXT_PUBLIC_PLAUSIBLE_DOMAIN set). Before the script arrives, the root
- * layout installs the standard queue shim (`window.plausible.q`), so early events
- * are buffered and flushed by the script instead of dropped. Without the domain
- * configured there is no shim and this is a no-op. Safe on the server.
+ * Thin event tracking. Every event goes to Vercel Analytics as a custom event (the
+ * <Analytics /> component in the root layout is always mounted), and also to Plausible
+ * when its script is configured (NEXT_PUBLIC_PLAUSIBLE_DOMAIN set; the root layout then
+ * installs the standard queue shim so early events are buffered, not dropped).
+ * Safe on the server, and never throws.
  */
+import { track } from "@vercel/analytics";
+
 export type AnalyticsEvent =
   | "create_account"
   | "request_report"
+  | "request_report_click"
   | "see_sample_report"
   | "newsletter_signup"
   | "lead_capture_view"
@@ -41,6 +44,11 @@ export const PLAUSIBLE_QUEUE_SHIM =
 
 export function trackEvent(event: AnalyticsEvent, props?: AnalyticsProps): void {
   if (typeof window === "undefined") return;
+  try {
+    track(event, props);
+  } catch {
+    // Analytics must never break the page.
+  }
   const plausible = window.plausible;
   if (typeof plausible !== "function") return;
   try {

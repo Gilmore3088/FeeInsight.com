@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { resetSessionChrome } from "@/components/use-session-chrome";
+import { trackEvent } from "@/lib/analytics";
 import type { RegisterVariant } from "./register-destination";
 
 const INSTITUTION_TYPES = [
@@ -72,6 +73,7 @@ export function RegisterForm({
     const result = await register(formData, redirectTo);
 
     if (result.success && result.redirect) {
+      trackEvent("create_account", { variant });
       // The nav caches the signed-out session; drop it so the new account shows at once.
       resetSessionChrome();
       router.push(result.redirect);
