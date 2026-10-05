@@ -13,7 +13,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT, SITE_NAME } from "@/lib/constants";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
 import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
@@ -402,7 +402,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* Published research */}
       <section className="mx-auto max-w-6xl px-6 pt-20" id="research">
-        <SectionHeading eyebrow="Published research" title={`Analysis from ${RESEARCH_IMPRINT}`} />
+        <SectionHeading eyebrow="Published research" title={`Research and analysis powered by ${SITE_NAME} and the ${PRODUCT_NAME}`} />
         {showFilters && (
           <ReportFilters typeFilter={typeFilter} rawRange={rawRange} filtersActive={filtersActive} />
         )}
