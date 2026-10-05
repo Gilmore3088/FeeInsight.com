@@ -141,6 +141,8 @@ export function narrateStepFinished(
         n(detail, "superseded_fees") > 0 && `${n(detail, "superseded_fees")} replaced an older price`,
         n(detail, "published_free_fees") > 0 && `${n(detail, "published_free_fees")} free ($0)`,
         n(detail, "duplicate_collapses") > 0 && `${n(detail, "duplicate_collapses")} duplicate copies closed`,
+        n(detail, "rules_recheck_rollbacks") > 0 &&
+          `${n(detail, "rules_recheck_rollbacks")} older fees today's rules no longer read rolled back`,
         n(detail, "skipped_verified_fees") > 0 && `${n(detail, "skipped_verified_fees")} already published or not eligible`,
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
@@ -167,6 +169,7 @@ export function narrateStepFinished(
     case "registry-sec-filings":
     case "registry-beige-book":
     case "registry-fred":
+    case "registry-reg-news":
     case "registry-state-regulators":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
@@ -225,6 +228,8 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       return detail.empty ? null : `Loaded the ${String(detail.release_date ?? partition)} Beige Book (${count(n(detail, "sections"), "section")}).`;
     case "registry-fred":
       return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
+    case "registry-reg-news":
+      return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
     default:
@@ -291,6 +296,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-sec-filings": "magellan",
   "registry-beige-book": "magellan",
   "registry-fred": "magellan",
+  "registry-reg-news": "magellan",
   "registry-state-regulators": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",

@@ -218,14 +218,14 @@ export async function previewReportPeerCoverage(
 const NO_FLUFF_RULES = `
 HARD RULES — fail any, rewrite the section:
 1. Cite a specific dollar value, percentile, or fee category from the DATA payload at least twice. If the data is thin, write a shorter section saying only what is known.
-2. NEVER cite a percentage, dollar amount, growth rate, or institution count absent from the DATA payload. Invented sources like "industry studies show", "research indicates", or phantom ranges like "12-18%" are forbidden.
+2. NEVER cite a percentage, dollar amount, growth rate, or institution count absent from the DATA payload. Invented sources like "industry studies show" or "research indicates", and any range or percentage not in DATA, are forbidden.
 3. Banned phrases (corporate-speak with no specific meaning): "strategic void", "must establish leadership", "deploying systematic intelligence", "data-sophisticated rivals", "revenue leakage", "willingness-to-pay", "dual strategy", "create sustainable competitive advantage", "market intelligence superiority", "precision pricing", "competitive positioning superiority". Banned even ironically.
-4. Write in the active voice. Say who does what. "Regions Bank raised overdraft to \$35" — not "overdraft was raised to \$35".
+4. Write in the active voice. Say who does what. Format only, with placeholders and not a fact: "[Competitor from DATA] charges \$[amount from DATA] for [fee]" — not "[fee] was raised".
 5. State claims in positive form. Prefer "X outpaces Y" over "X is not below Y". Prefer "declined" over "did not increase".
-6. Use definite, specific, concrete language. Say "\$35 overdraft fee at Regions Bank (Q4 2025)" — not "elevated fee structures at large regional banks recently".
+6. Use definite, specific, concrete language. Format only: "\$[amount] [fee] at [institution] ([period])", every value taken from DATA — not "elevated fee structures at large banks recently".
 7. Cut needless words. "In order to" → "to". "Due to the fact that" → "because". "At this point in time" → "now". "A large number of" → "many". If a word adds nothing, delete it.
 8. Plain banker English. Short sentences. When you name a number, name what it is a number OF.
-9. Place the sharpest fact at the end of the sentence — the emphatic position. Not "Regions Bank raised overdraft to \$35, which is notable" but "Regions Bank raised overdraft to \$35".
+9. Place the sharpest fact at the end of the sentence — the emphatic position. End on the figure from DATA rather than a comment about it ("which is notable").
 10. If a sentence could appear unchanged in any other bank's report, delete it.
 `.trim();
 
