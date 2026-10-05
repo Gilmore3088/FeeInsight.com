@@ -37,7 +37,7 @@ Confirm which one is canonical before fixing the password — you may need to re
    postgresql://postgres.rmhwbbjjctzfaqjyhomu:[PASSWORD]@aws-0-<region>.pooler.supabase.com:6543/postgres
    ```
    (Use the exact host Supabase shows — don't hand-build it.)
-3. **Update Vercel env vars** (Vercel → `feeschedule-hub` → Settings → Environment Variables)
+3. **Update Vercel env vars** (Vercel → the project serving `feeinsight.com` → Settings → Environment Variables)
    for **Production, Preview, and Development**:
    - `DATABASE_URL` → the transaction-pooler string above.
    - If present, `DATABASE_URL_SESSION` → the **Session pooler** string (port 5432); CLAUDE.md
