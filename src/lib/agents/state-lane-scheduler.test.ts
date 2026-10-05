@@ -71,6 +71,12 @@ describe("state lane scheduler", () => {
     expect(input("extract")).toEqual({ extract_limit: STATE_LANE_DOCUMENT_BATCH });
   });
 
+  it("verifies Darwin's maximum batch per pass, in full and backlog runs", () => {
+    for (const steps of [STATE_LANE_STEPS, STATE_LANE_BACKLOG_STEPS]) {
+      expect(steps.find((step) => step.key === "classify")?.input).toEqual({ verify_limit: 500 });
+    }
+  });
+
   it("starts every full pass with the state expert, right after enhance", () => {
     expect(STATE_LANE_STEPS.slice(0, 3).map((step) => step.key)).toEqual(["enhance", "state-expert", "discover"]);
     expect(STATE_LANE_STEPS.find((step) => step.key === "state-expert")?.agent).toBe("atlas");
