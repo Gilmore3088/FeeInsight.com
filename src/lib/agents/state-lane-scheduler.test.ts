@@ -200,6 +200,13 @@ describe("state lane scheduler", () => {
     expect(startAgentRunMock.mock.calls[1][0].params).toMatchObject({ recheck: "quarterly" });
   });
 
+  it("counts only full passes that ran the state expert toward this month", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true });
+    await stateLaneCadence("PA");
+    const query = templateText(sqlMock.mock.calls[0][0]);
+    expect(query).toContain("step.step_key = 'state-expert'");
+  });
+
   it("falls back to a full pass without a re-check when the cadence check fails", async () => {
     sqlMock.mockRejectedValueOnce(new Error("boom"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

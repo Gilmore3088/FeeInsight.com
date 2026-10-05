@@ -290,8 +290,8 @@ export interface StateLaneCadence {
 }
 
 /**
- * Which passes a state is due. A full pass that is queued, running or completed this
- * month counts; a failed or cancelled one does not, so the lane tries again. When the
+ * Which passes a state is due. A full pass (with the state-expert step) that is queued,
+ * running or completed this month counts; a failed or cancelled one does not, so the lane tries again. When the
  * check fails the lane takes a full pass (no re-check), the safe default.
  */
 export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
@@ -305,6 +305,12 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
              AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
              AND run.started_at >= date_trunc('month', NOW(), 'UTC')
+             -- Only a pass with the state-expert step counts: October 2026's passes ran
+             -- before it existed, so discovery and state memory would wait for November.
+             AND EXISTS (
+               SELECT 1 FROM public.agent_run_steps step
+                WHERE step.agent_run_id = run.id AND step.step_key = 'state-expert'
+             )
         ) AS full_this_month,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
