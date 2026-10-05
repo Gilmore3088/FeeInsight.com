@@ -29,6 +29,8 @@
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
 #   heading-wrap-kill
 #                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
+#   plausible-kill
+#                 Fail if Plausible analytics (script, CSP host, env var, window.plausible) comes back.
 #   brand-kill    Fail if src copy names the site as the product or references bankfeeindex.com (Fee Insight is the site; Bank Fee Index is the product).
 #   prompt-kill   Fail if active .claude prompts point agents at retired tooling.
 #   active-doc-kill
@@ -679,6 +681,21 @@ heading_wrap_kill() {
   echo "heading-wrap-kill: OK (headings balance their lines site-wide and in reports)"
 }
 
+plausible_kill() {
+  # Fee Insight does not use Plausible (James, 5 Oct 2026). Its script, CSP host, env var and
+  # window.plausible calls were removed; keep them out so no one is asked to set it up again.
+  # Matches only Plausible identifiers, not the English word "plausible" (fee ranges).
+  local hits
+  hits=$(grep -rnE 'plausible\.io|window\.plausible|PLAUSIBLE_|data-domain=' \
+    src next.config.ts .env.example AGENTS.md CLAUDE.md 2>/dev/null || true)
+  if [[ -n "$hits" ]]; then
+    echo "plausible-kill: Plausible is not used; remove these references:" >&2
+    echo "$hits" >&2
+    exit 1
+  fi
+  echo "plausible-kill: OK (no Plausible analytics references)"
+}
+
 case "$SUBCOMMAND" in
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
@@ -701,14 +718,15 @@ case "$SUBCOMMAND" in
   brand-kill) brand_kill ;;
   sql-placeholder-kill) sql_placeholder_kill ;;
   heading-wrap-kill) heading_wrap_kill ;;
+  plausible-kill) plausible_kill ;;
   migration-version-kill) migration_version_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill>" >&2
     exit 2
     ;;
 esac
