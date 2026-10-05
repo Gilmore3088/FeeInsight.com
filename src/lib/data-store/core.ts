@@ -153,6 +153,8 @@ export async function getInstitutionsByFilter(filters: {
   fed_districts?: number[];
   state_code?: string;
   gap?: boolean;
+  /** Only institutions with at least one published fee. */
+  has_fees?: boolean;
   page?: number;
   pageSize?: number;
 }): Promise<{ rows: InstitutionDetail[]; total: number }> {
@@ -180,7 +182,11 @@ export async function getInstitutionsByFilter(filters: {
   }
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
-  const having = filters.gap ? "HAVING COUNT(ef.id) = 0" : "";
+  const having = filters.gap
+    ? "HAVING COUNT(ef.id) = 0"
+    : filters.has_fees
+      ? "HAVING COUNT(ef.id) > 0"
+      : "";
 
   const page = filters.page ?? 1;
   const pageSize = filters.pageSize ?? 50;

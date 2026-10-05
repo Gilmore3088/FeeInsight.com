@@ -406,6 +406,12 @@ const spec = {
             description: "Filter by charter type",
           },
           {
+            name: "has_fees",
+            in: "query",
+            schema: { type: "string", enum: ["true"] },
+            description: "Only institutions with at least one published fee",
+          },
+          {
             name: "page",
             in: "query",
             schema: {

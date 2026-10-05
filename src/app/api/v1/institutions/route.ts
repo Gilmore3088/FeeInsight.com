@@ -17,6 +17,13 @@ function getAnonymousId(request: NextRequest): string {
   return createHash("sha256").update(ip).digest("hex").slice(0, 16);
 }
 
+// Postgres BIGINT/NUMERIC columns arrive as strings; partners need real numbers.
+function toNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function withRateLimitHeaders(
   response: NextResponse,
   rateLimit: { limit: number; remaining: number; reset: Date },
@@ -100,12 +107,12 @@ async function handleGET(request: NextRequest) {
     }).catch(() => {});
 
     const response = NextResponse.json({
-      id: inst.id,
+      id: Number(inst.id),
       name: inst.institution_name,
       state: inst.state_code,
       city: inst.city,
       charter_type: inst.charter_type,
-      asset_size: inst.asset_size,
+      asset_size: toNumberOrNull(inst.asset_size),
       asset_tier: inst.asset_size_tier,
       fed_district: inst.fed_district,
       fee_count: fees.length,
@@ -119,9 +126,14 @@ async function handleGET(request: NextRequest) {
   const filters: {
     charter_type?: string;
     state_code?: string;
+    has_fees?: boolean;
     page: number;
     pageSize: number;
   } = { page, pageSize };
+
+  if (searchParams.get("has_fees") === "true") {
+    filters.has_fees = true;
+  }
 
   if (charter === "bank" || charter === "credit_union") {
     filters.charter_type = charter;
@@ -135,6 +147,7 @@ async function handleGET(request: NextRequest) {
   logApiUsage(organizationId, anonymousId, "api.v1.institutions.list", {
     state: filters.state_code ?? null,
     charter_type: filters.charter_type ?? null,
+    has_fees: filters.has_fees ?? false,
     page,
     page_size: pageSize,
     status: 200,
@@ -146,15 +159,15 @@ async function handleGET(request: NextRequest) {
     page_size: pageSize,
     pages: Math.ceil(total / pageSize),
     data: rows.map((r) => ({
-      id: r.id,
+      id: Number(r.id),
       name: r.institution_name,
       state: r.state_code,
       city: r.city,
       charter_type: r.charter_type,
-      asset_size: r.asset_size,
+      asset_size: toNumberOrNull(r.asset_size),
       asset_tier: r.asset_size_tier,
       fed_district: r.fed_district,
-      fee_count: r.fee_count,
+      fee_count: Number(r.fee_count ?? 0),
     })),
     attribution: API_ATTRIBUTION,
   });
