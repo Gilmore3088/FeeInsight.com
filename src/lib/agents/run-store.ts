@@ -1414,6 +1414,37 @@ async function updateStateLaneTerminalStatus(
   }
 }
 
+/**
+ * A failed run never reaches its later steps. Close them as cancelled so they
+ * stop reading as queued work in the ledger and admin views.
+ */
+async function cancelStepsAfterRunFailure(
+  tx: SqlTag,
+  runId: number,
+  failedStepKey: string,
+): Promise<void> {
+  const cancelled = await tx`
+    UPDATE agent_run_steps
+       SET status = 'cancelled',
+           error_summary = COALESCE(error_summary, ${`Not run: step ${failedStepKey} failed earlier in this run.`}),
+           completed_at = COALESCE(completed_at, NOW()),
+           updated_at = NOW()
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     RETURNING id
+  `;
+  if (cancelled.length > 0) {
+    await tx`
+      INSERT INTO agent_run_events
+        (agent_run_id, event_type, status, message, detail)
+      VALUES
+        (${runId}, 'run.steps_cancelled', 'cancelled',
+         ${`Cancelled ${cancelled.length} queued steps after ${failedStepKey} failed.`},
+         ${JSON.stringify({ failed_step: failedStepKey, cancelled_steps: cancelled.length })}::jsonb)
+    `;
+  }
+}
+
 async function failAgenticStep(
   runId: number,
   step: AgentRunStepSnapshot,
@@ -1461,6 +1492,7 @@ async function failAgenticStep(
          ${message},
          ${JSON.stringify({ failed_step: step.stepKey, completed_steps: completed })}::jsonb)
     `;
+    await cancelStepsAfterRunFailure(tx, runId, step.stepKey);
     await updateStateLaneTerminalStatus(tx, runId, "failed");
   });
   return {
@@ -1533,6 +1565,7 @@ export async function reapStaleAgentSteps({
             (${runId}, ${stepId}, 'step.dead', 'failed', ${message},
              ${JSON.stringify({ step_key: stepKey, attempts: attempt, reaper: true })}::jsonb)
         `;
+        await cancelStepsAfterRunFailure(tx, runId, stepKey);
         await updateStateLaneTerminalStatus(tx, runId, "failed");
       });
       result.dead.push({ runId, stepId, stepKey, attempts: attempt });
