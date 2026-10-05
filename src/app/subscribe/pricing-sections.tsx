@@ -73,7 +73,7 @@ export function ReportCard() {
         </div>
         <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "pricing_report" }}
             href={REPORT_ANCHOR_HREF}
             className={PRIMARY_BUTTON_CLASS}

@@ -23,6 +23,11 @@ vi.mock("@/lib/email/lead-capture", () => ({
   sendLeadCaptureNotifications: vi.fn(),
 }));
 
+vi.mock("@/lib/email/resend", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/email/resend")>()),
+  sendResendEmail: vi.fn(() => Promise.resolve({ status: "sent", providerId: "alert_1" })),
+}));
+
 import { sql } from "@/lib/data-store/connection";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import {
@@ -330,6 +335,22 @@ describe("POST /api/leads", () => {
       expect(append.text).toContain("position(? in use_case) = 0");
       const attribution = "placement=state_benchmark; state=OH";
       expect(append.values).toEqual([attribution, "cmo@bank.com", attribution]);
+    });
+
+    it("appends a returning lead's new report request to use_case", async () => {
+      sqlMock.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await post({ name: "Pat", email: "cmo@bank.com", source: "report", company: "First Bank", use_case: "competitive-fee-position-report", institutionId: 4802 });
+      const append = issued(2);
+      expect(append.text).toContain("UPDATE leads SET use_case = use_case || '; ' || ?");
+      expect(append.values[0]).toBe("competitive-fee-position-report; institution_id=4802");
+    });
+
+    it("marks the lead email_failed when James's notification fails", async () => {
+      reportNotifyMock.mockResolvedValue({ notification: { status: "failed", error: "Resend 500" }, confirmation: SENT });
+      sqlMock.mockResolvedValue([]);
+      await post({ name: "Pat", email: "cmo@bank.com", source: "report", company: "First Bank" });
+      const updates = sqlMock.mock.calls.map((_, i) => issued(i).text).filter((text) => text.includes("status = 'email_failed'"));
+      expect(updates).toHaveLength(1);
     });
 
     it.each(["capture_report_sample", "capture_homepage"])("accepts a personal email for %s", async (source) => {

@@ -26,6 +26,7 @@ import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
@@ -392,6 +393,7 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["fetch_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
+        newLinksOnly: params.new_links_only === true,
       });
       return {
         status: "completed",
@@ -974,6 +976,21 @@ async function executeAgenticStep(
         detail: { ...result },
       };
     }
+    case "lead-watch": {
+      const result = await runLeadWatch({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeLeadWatch(result),
+        detail: {
+          overdue: result.overdue.length,
+          email_failed: result.emailFailed.length,
+          alert: result.alert,
+          alert_reason: result.alertReason,
+          dry_run: result.dryRun,
+          lead_ids: [...result.overdue, ...result.emailFailed].map((lead) => lead.id),
+        },
+      };
+    }
     case "score-answer-key": {
       const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
@@ -1414,6 +1431,37 @@ async function updateStateLaneTerminalStatus(
   }
 }
 
+/**
+ * A failed run never reaches its later steps. Close them as cancelled so they
+ * stop reading as queued work in the ledger and admin views.
+ */
+async function cancelStepsAfterRunFailure(
+  tx: SqlTag,
+  runId: number,
+  failedStepKey: string,
+): Promise<void> {
+  const cancelled = await tx`
+    UPDATE agent_run_steps
+       SET status = 'cancelled',
+           error_summary = COALESCE(error_summary, ${`Not run: step ${failedStepKey} failed earlier in this run.`}),
+           completed_at = COALESCE(completed_at, NOW()),
+           updated_at = NOW()
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     RETURNING id
+  `;
+  if (cancelled.length > 0) {
+    await tx`
+      INSERT INTO agent_run_events
+        (agent_run_id, event_type, status, message, detail)
+      VALUES
+        (${runId}, 'run.steps_cancelled', 'cancelled',
+         ${`Cancelled ${cancelled.length} queued steps after ${failedStepKey} failed.`},
+         ${JSON.stringify({ failed_step: failedStepKey, cancelled_steps: cancelled.length })}::jsonb)
+    `;
+  }
+}
+
 async function failAgenticStep(
   runId: number,
   step: AgentRunStepSnapshot,
@@ -1461,6 +1509,7 @@ async function failAgenticStep(
          ${message},
          ${JSON.stringify({ failed_step: step.stepKey, completed_steps: completed })}::jsonb)
     `;
+    await cancelStepsAfterRunFailure(tx, runId, step.stepKey);
     await updateStateLaneTerminalStatus(tx, runId, "failed");
   });
   return {
@@ -1533,6 +1582,7 @@ export async function reapStaleAgentSteps({
             (${runId}, ${stepId}, 'step.dead', 'failed', ${message},
              ${JSON.stringify({ step_key: stepKey, attempts: attempt, reaper: true })}::jsonb)
         `;
+        await cancelStepsAfterRunFailure(tx, runId, stepKey);
         await updateStateLaneTerminalStatus(tx, runId, "failed");
       });
       result.dead.push({ runId, stepId, stepKey, attempts: attempt });

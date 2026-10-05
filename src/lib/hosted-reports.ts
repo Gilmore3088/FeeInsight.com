@@ -79,12 +79,31 @@ export function isHostedReportExpired(entry: HostedReportEntry, now: Date = new 
 
 /** Resolve a token to its report record; null when unknown, malformed, or expired. */
 export function getHostedReport(token: string, options: LookupOptions = {}): HostedReport | null {
-  if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) return null;
+  const lookup = lookupHostedReport(token, options);
+  return lookup.state === "ok" ? lookup.report : null;
+}
+
+/** Like getHostedReport, but tells an expired link (offer a fresh report) from an unknown one. */
+export function lookupHostedReport(
+  token: string,
+  options: LookupOptions = {},
+): { state: "ok" | "expired"; report: HostedReport } | { state: "missing" } {
+  if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) return { state: "missing" };
   const map = options.map ?? (hostedReportMap as HostedReportMap);
   const entry = map[token];
-  if (!entry) return null;
-  if (isHostedReportExpired(entry, options.now)) return null;
-  return { token, ...entry };
+  if (!entry) return { state: "missing" };
+  const report = { token, ...entry };
+  return { state: isHostedReportExpired(entry, options.now) ? "expired" : "ok", report };
+}
+
+/** The free request form, prefilled for this institution; the request enters the lead loop. */
+export function hostedReportRequestHref(report: HostedReportEntry, src: "hosted_report" | "hosted_report_expired"): string {
+  const params = new URLSearchParams({
+    institution: String(report.institution_id),
+    name: report.institution_name,
+    src,
+  });
+  return `/for-institutions?${params.toString()}#report`;
 }
 
 /** Read the finished report HTML for an institution; null when no report exists. */
