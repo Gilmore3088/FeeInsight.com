@@ -34,7 +34,7 @@ export function LandingBankOffer() {
             See where your fees sit against your competitors
           </h2>
           <p className="mt-3 max-w-xl text-pretty text-[15px] leading-relaxed text-[#5A5347]">
-            The {REPORT_OFFER.name} is free for your institution ({REPORT_OFFER.valueLabel}). We
+            The {REPORT_OFFER.name} is free for your institution. We
             read your fee schedule and your competitors&apos;, then show where you stand.
           </p>
 

@@ -31,7 +31,7 @@ describe("lead capture emails", () => {
     );
     const text = content.lines.join("\n");
     expect(text).toContain("/reports/sample-competitive-fee-position.pdf");
-    expect(text).toContain("Competitive Fee Position Report — free (a $300 value)");
+    expect(text).toContain("Competitive Fee Position Report — free, delivered in 48 hours");
     expect(text).toContain("/for-institutions#report");
     expect(text).toContain("Unsubscribe: https://x/unsub");
     expect(content.cta).toEqual({ label: "Confirm my email", href: "https://x/confirm" });
