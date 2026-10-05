@@ -1,0 +1,15 @@
+name: fdic-field-probe
+on: pull_request
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find FDIC financial fields for deposit-account service charges
+        run: |
+          set -u
+          curl -sSfL "https://api.fdic.gov/banks/docs/risview_properties.yaml" -o ris.yaml || curl -sSfL "https://banks.data.fdic.gov/docs/risview_properties.yaml" -o ris.yaml
+          wc -l ris.yaml
+          grep -n -i -B2 -A6 "overdraft\|H032\|H033\|H034\|H035\|maintenance charge\|automated teller\|ISERCHG" ris.yaml | head -200
+      - name: Sample one large bank
+        run: |
+          curl -sS "https://api.fdic.gov/banks/financials?filters=CERT:628&sort_by=REPDTE&sort_order=DESC&limit=1&fields=CERT,REPDTE,ISERCHGQ" | head -c 2000
