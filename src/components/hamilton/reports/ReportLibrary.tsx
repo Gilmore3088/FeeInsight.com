@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import type { HamiltonReportLibraryItem } from "@/lib/hamilton/pro-tables";
+import { evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 type ReportLibraryItem = HamiltonReportLibraryItem;
 
@@ -21,16 +22,6 @@ interface ReportLibraryProps {
   ) => void;
 }
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
-  quarterly_strategy: "Quarterly Report",
-  monthly_pulse: "Monthly Pulse",
-  state_index: "Regional Analysis",
-  peer_brief: "Peer Brief",
-  peer_benchmarking: "Peer Benchmarking",
-  regional_landscape: "Regional Landscape",
-  category_deep_dive: "Category Deep Dive",
-  competitive_positioning: "Competitive Positioning",
-};
 
 function formatDate(isoString: string): string {
   const date = new Date(isoString);
@@ -62,11 +53,6 @@ function getCardSnippet(json: ReportSummaryResponse): string {
   return "";
 }
 
-function formatPolicy(policy: ReportArtifactMetadata["evidencePolicy"]): string {
-  if (policy === "verified-only") return "Verified only";
-  if (policy === "source-diligence") return "Source diligence";
-  return "Provisional first";
-}
 
 export function ReportLibrary({
   reports,
@@ -164,8 +150,7 @@ export function ReportLibrary({
       {/* Report card grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {reports.map((report) => {
-          const typeLabel =
-            REPORT_TYPE_LABELS[report.report_type] ?? report.report_type;
+          const typeLabel = reportTypeLabel(report.report_type);
           const isDownloading = downloadingId === report.id;
           const snippet = getCardSnippet(report.report_json);
           const snapshotCount = report.report_json.snapshot?.length ?? 0;
@@ -221,13 +206,7 @@ export function ReportLibrary({
                 {report.artifact_metadata && (
                   <>
                     <span aria-hidden="true">·</span>
-                    <span>{formatPolicy(report.artifact_metadata.evidencePolicy)}</span>
-                    {report.artifact_metadata.selectedSourceLabel && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span>{report.artifact_metadata.selectedSourceLabel}</span>
-                      </>
-                    )}
+                    <span>{evidencePolicyLabel(report.artifact_metadata.evidencePolicy)}</span>
                   </>
                 )}
               </div>

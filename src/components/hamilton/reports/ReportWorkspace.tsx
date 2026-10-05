@@ -218,6 +218,14 @@ export function ReportWorkspace({
     setSelectedTemplate((prev) => (prev === type ? null : type));
   }
 
+  function handleStartNewReport() {
+    setGeneratedReport(null);
+    setGeneratedReportId(null);
+    setGeneratedReportType("");
+    setGeneratedReportMetadata(null);
+    setError(null);
+  }
+
   function handlePeerSetChange(nextPeerSetId: string | null) {
     setPeerSetId(nextPeerSetId);
     setGeneratedReport(null);
@@ -405,7 +413,7 @@ export function ReportWorkspace({
           dominant action. Published library appears below as recent-history. */}
       <div className="grid min-w-0 gap-6 lg:grid-cols-12 lg:items-start lg:gap-12">
         {/* Left: Template Gallery + Preview */}
-        <section className="min-w-0 lg:col-span-8">
+        <section className={`min-w-0 ${reportGenerated ? "lg:col-span-12" : "lg:col-span-8"}`}>
           {/* Section label — "Generate New Report" per D-02 */}
           <div className="mb-6">
             <h2
@@ -539,7 +547,7 @@ export function ReportWorkspace({
 
             {/* Export PDF — shown after generation */}
             {reportGenerated && (
-              <div className="mt-6">
+              <div className="mt-6 flex flex-wrap items-center gap-4">
                 <button
                   type="button"
                   onClick={handleExportPdf}
@@ -549,12 +557,21 @@ export function ReportWorkspace({
                 >
                   {isPdfExporting ? "Preparing PDF..." : "Export PDF"}
                 </button>
+                <button
+                  type="button"
+                  onClick={handleStartNewReport}
+                  className="text-sm font-semibold underline-offset-4 hover:underline"
+                  style={{ color: "var(--hamilton-primary)" }}
+                >
+                  Start a new report
+                </button>
               </div>
             )}
           </div>
         </section>
 
-        {/* Configuration sidebar — right side for now, moves to left rail in v8.2 */}
+        {/* Configuration sidebar — only while setting up; a finished report reads full width */}
+        {!reportGenerated && (
         <ConfigSidebar
           selectedTemplate={selectedTemplate}
           selectedInstitutionId={selectedInstitution?.id?.toString() ?? null}
@@ -572,6 +589,7 @@ export function ReportWorkspace({
           isPeerCoverageLoading={isPeerCoverageLoading}
           peerCoverageError={peerCoverageError}
         />
+        )}
       </div>
 
       {/* Visual separator between generator and library */}
@@ -592,12 +610,14 @@ export function ReportWorkspace({
 
       {/* Published Reports library — recent-history reference, below the
           generator (audit H-1 reordering). */}
-      <ReportLibrary
-        reports={publishedReports}
-        title="Published Reports"
-        subtitle="Curated Hamilton intelligence publications"
-        onViewReport={handleViewPublishedReport}
-      />
+      {publishedReports.length > 0 && (
+        <ReportLibrary
+          reports={publishedReports}
+          title="Published Reports"
+          subtitle="Curated Hamilton intelligence publications"
+          onViewReport={handleViewPublishedReport}
+        />
+      )}
     </div>
   );
 }

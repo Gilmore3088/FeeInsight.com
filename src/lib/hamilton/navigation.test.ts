@@ -81,7 +81,7 @@ describe("LEFT_RAIL_CONFIG", () => {
     expect(getPrimaryActionHref("Analyze")).toBe("/pro/simulate");
     expect(getPrimaryActionHref("Benchmark")).toBe("/pro/simulate");
     expect(getPrimaryActionHref("Scenario")).toBe("/pro/reports");
-    expect(getPrimaryActionHref("Report")).toBe("/pro/reports");
+    expect(getPrimaryActionHref("Report")).toBe("/pro/reports?intent=executive-briefing");
     expect(getPrimaryActionHref("Monitor")).toBe("/pro/analyze");
     expect(getPrimaryActionHref("Admin")).toBe("/admin");
     expect(Object.keys(PRIMARY_ACTION_HREF).sort()).toEqual(

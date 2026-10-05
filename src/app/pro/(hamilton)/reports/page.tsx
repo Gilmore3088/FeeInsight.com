@@ -124,6 +124,7 @@ export default async function ReportsPage({
 
   return (
     <ReportWorkspace
+      key={`${params.intent ?? ""}:${initialReport?.id ?? ""}`}
       userId={user.id}
       institutionName={institutionName}
       publishedReports={publishedReports}

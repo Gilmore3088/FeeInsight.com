@@ -56,7 +56,9 @@ export const PRIMARY_ACTION_HREF: Record<HamiltonScreen, string> = {
   "Analyze":   "/pro/simulate",
   "Benchmark": "/pro/simulate",
   "Scenario":  "/pro/reports",
-  "Report":    "/pro/reports",
+  // Opens the builder with the executive brief template already chosen,
+  // not the page the user is already on.
+  "Report":    "/pro/reports?intent=executive-briefing",
   "Monitor":   "/pro/analyze",
   "Admin":     "/admin",
 } as const;

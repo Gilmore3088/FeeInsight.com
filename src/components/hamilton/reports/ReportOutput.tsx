@@ -1,6 +1,7 @@
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { ReportSection } from "./ReportSection";
 import { StatCalloutBox } from "./StatCalloutBox";
+import { evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 interface ReportOutputProps {
   report: ReportSummaryResponse;
@@ -8,21 +9,10 @@ interface ReportOutputProps {
   artifactMetadata?: ReportArtifactMetadata | null;
 }
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
-  quarterly_strategy: "Quarterly Strategy Report",
-  peer_brief: "Peer Brief",
-  monthly_pulse: "Monthly Pulse",
-  state_index: "State Index",
-};
 
-function formatPolicy(policy: ReportArtifactMetadata["evidencePolicy"]): string {
-  if (policy === "verified-only") return "Verified only";
-  if (policy === "source-diligence") return "Source diligence";
-  return "Provisional first";
-}
 
 export function ReportOutput({ report, reportType, artifactMetadata }: ReportOutputProps) {
-  const typeLabel = REPORT_TYPE_LABELS[reportType] ?? reportType;
+  const typeLabel = reportTypeLabel(reportType);
 
   return (
     <article className="max-w-3xl mx-auto px-4 pb-16">
@@ -71,14 +61,14 @@ export function ReportOutput({ report, reportType, artifactMetadata }: ReportOut
           >
             <span>
               <strong style={{ color: "var(--hamilton-text-primary)" }}>
-                {formatPolicy(artifactMetadata.evidencePolicy)}
+                {evidencePolicyLabel(artifactMetadata.evidencePolicy)}
               </strong>
             </span>
             <span>
-              Baseline: {artifactMetadata.peerBaselineLabel ?? "Not recorded"}
+              Peer group: {artifactMetadata.peerBaselineLabel ?? "Not recorded"}
             </span>
             <span>
-              {artifactMetadata.selectedSourceLabel ?? "Context source not recorded"} · {artifactMetadata.selectedFeeDeltaCount} deltas · {artifactMetadata.selectedVerifiedFeeCount} verified · {artifactMetadata.selectedProvisionalFeeCount} provisional
+              {artifactMetadata.selectedFeeDeltaCount} {artifactMetadata.selectedFeeDeltaCount === 1 ? "fee" : "fees"} compared with peers
             </span>
           </div>
         )}

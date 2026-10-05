@@ -12,13 +12,18 @@ interface AnalyzeCTABarProps {
   onExportPdf?: () => void;
   /** True while PDF is being generated */
   isExporting?: boolean;
+  /** Fee category the analysis is about, carried into Simulate when known */
+  feeCategory?: string | null;
+  /** Switches Analyze to the Risk lens with a risk question ready to send */
+  onViewRiskDrivers?: () => void;
 }
 
 /**
  * AnalyzeCTABar — CTA hierarchy for the Analyze screen.
  * Matches HTML prototype: burnished primary + outlined secondary buttons.
- * Primary: "Simulate a Change" → /pro/simulate (burnished green)
- * Secondary: "Show Peer Distribution" | "View Risk Drivers" (outlined, hover primary)
+ * Primary: "Simulate a Change" → /pro/simulate, carrying the fee category when known
+ * Secondary: "Show Peer Distribution" → Benchmark (where each fee sits among peers);
+ * "View Risk Drivers" → the Risk lens of this same screen.
  * Export PDF: outlined secondary button, triggers onExportPdf callback (ANL-05)
  * No "Recommended Position" — analyze only (ARCH-05).
  */
@@ -27,28 +32,28 @@ export function AnalyzeCTABar({
   institutionId = null,
   onExportPdf,
   isExporting,
+  feeCategory = null,
+  onViewRiskDrivers,
 }: AnalyzeCTABarProps) {
   if (!isVisible) return null;
 
   const { primary, secondary } = CTA_HIERARCHY["Analyze"];
-  const simulateHref = hrefWithInstitutionContext("/pro/simulate", institutionId);
+  const simulateHref = hrefWithInstitutionContext(
+    feeCategory ? `/pro/simulate?category=${encodeURIComponent(feeCategory)}` : "/pro/simulate",
+    institutionId,
+  );
   const secondaryActions = secondary.map((label) => {
     if (label === "Show Peer Distribution") {
-      return {
-        label,
-        href: hrefWithInstitutionContext("/pro/reports?intent=peer-brief", institutionId),
-      };
+      return { label, href: hrefWithInstitutionContext("/pro/hamilton", institutionId), onClick: undefined };
     }
     if (label === "View Risk Drivers") {
       return {
         label,
-        href: hrefWithInstitutionContext("/pro/monitor", institutionId),
+        href: hrefWithInstitutionContext("/pro/analyze?intent=risk", institutionId),
+        onClick: onViewRiskDrivers,
       };
     }
-    return {
-      label,
-      href: hrefWithInstitutionContext("/pro/analyze", institutionId),
-    };
+    return { label, href: hrefWithInstitutionContext("/pro/analyze", institutionId), onClick: undefined };
   });
 
   return (
@@ -65,6 +70,12 @@ export function AnalyzeCTABar({
         <Link
           key={action.label}
           href={action.href}
+          onClick={(e) => {
+            if (action.onClick) {
+              e.preventDefault();
+              action.onClick();
+            }
+          }}
           className="px-5 py-2.5 rounded text-[10px] uppercase tracking-widest font-bold border transition-all"
           style={{
             borderColor: "var(--hamilton-outline-variant, #d8c2b8)",

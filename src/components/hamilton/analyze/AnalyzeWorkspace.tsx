@@ -15,7 +15,8 @@ import { AnalyzeCTABar } from "./AnalyzeCTABar";
 import { AnalysisInputBar } from "./AnalysisInputBar";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
-import { parseAnalyzeResponse, type ParsedResponse } from "./parse-response";
+import { parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
+import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 
 function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: string }> }): string {
@@ -180,6 +181,12 @@ export function AnalyzeWorkspace({
     },
     [sendMessage, setMessages]
   );
+
+  const handleViewRiskDrivers = useCallback(() => {
+    setActiveTab("Risk");
+    setInput("What are the main risk drivers behind this position, and which one should we address first?");
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  }, []);
 
   const handleExportPdf = useCallback(async () => {
     if (!parsedResponse || isExporting) return;
@@ -389,6 +396,12 @@ export function AnalyzeWorkspace({
             institutionId={normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId)}
             onExportPdf={handleExportPdf}
             isExporting={isExporting}
+            feeCategory={
+              displayedResponse
+                ? inferFeeCategory(shapeHamiltonView(displayedResponse.hamiltonView).lead)
+                : null
+            }
+            onViewRiskDrivers={handleViewRiskDrivers}
           />
 
           {/* Why It Matters */}

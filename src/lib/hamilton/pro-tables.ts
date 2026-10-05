@@ -39,7 +39,9 @@ export interface HamiltonReportLibraryItem {
 /**
  * Get all published BFI-authored reports (visible to all authenticated pro users).
  * Published reports use sentinel user_id = 0 and status = 'published'.
- * Returns newest first, limited to 20.
+ * Returns newest first, limited to 20. Reports older than 90 days are left
+ * out: their figures predate the current fee data, and the April 2026 seed
+ * rows would otherwise sit at the top of the library as months-old news.
  */
 export async function getPublishedReports(): Promise<HamiltonReportLibraryItem[]> {
   // Filter rows whose title is empty/whitespace — these are seed fixtures
@@ -62,6 +64,7 @@ export async function getPublishedReports(): Promise<HamiltonReportLibraryItem[]
     FROM hamilton_reports
     WHERE status = 'published'
       AND coalesce(nullif(trim(report_json->>'title'), ''), '') != ''
+      AND created_at >= now() - interval '90 days'
     ORDER BY created_at DESC
     LIMIT 20
   `;
@@ -236,6 +239,7 @@ export async function getRecentHamiltonReports(
     WHERE user_id = ${userId}
       AND status = 'generated'
       AND coalesce(nullif(trim(report_json->>'title'), ''), '') != ''
+      AND created_at >= now() - interval '90 days'
     ORDER BY created_at DESC
     LIMIT ${Math.max(1, Math.min(50, Math.floor(limit)))}
   `;
@@ -263,7 +267,9 @@ export async function getRecentHamiltonReports(
 
 /**
  * Get active scenarios for a user (for scenario selector in ConfigSidebar).
- * Returns newest first, limited to 20.
+ * Returns newest first, limited to 20. Reports older than 90 days are left
+ * out: their figures predate the current fee data, and the April 2026 seed
+ * rows would otherwise sit at the top of the library as months-old news.
  */
 export async function getActiveScenarios(userId: number): Promise<Array<{
   id: string;

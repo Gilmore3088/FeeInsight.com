@@ -1,22 +1,18 @@
 import Link from "next/link";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
-
-// Older profiles and institution rows still carry the pre-2026 tier keys.
-const LEGACY_TIER_LABELS: Record<string, string> = {
-  community_small: "Small community",
-  community_mid: "Mid-size community",
-  community_large: "Large community",
-  large_regional: "Large regional",
-  super_regional: "Super regional",
-};
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { getSegmentLabel } from "@/app/(public)/institution/[id]/enum-labels";
 
 /** Plain-language asset tier for display; never shows a raw database key. */
-export function assetTierDisplayLabel(tier: string | null | undefined): string | null {
+export function assetTierDisplayLabel(
+  tier: string | null | undefined,
+  charterType: string | null | undefined = null,
+): string | null {
   if (!tier) return null;
-  const known = FDIC_TIER_LABELS[tier] ?? LEGACY_TIER_LABELS[tier];
-  if (known) return known;
+  const segment = getSegmentLabel(tier, charterType);
+  if (segment) return segment;
+  // Already a display label (the layout passes assetTierLabel when it has one).
   if (!/_/.test(tier) && tier !== tier.toLowerCase()) return tier;
   const words = tier.replace(/_/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -70,7 +66,7 @@ export function HamiltonContextBar({
   } = institutionContext;
   const hasInstitution = !!name;
   const institutionName = name ?? "Global Private Bank";
-  const tierLabel = assetTierDisplayLabel(assetTier);
+  const tierLabel = assetTierDisplayLabel(assetTier, type);
   const evidenceText = evidenceSummary(publishedFeeCount, provisionalFeeCount);
   const districtLabel = fedDistrict
     ? DISTRICT_NAMES[fedDistrict]

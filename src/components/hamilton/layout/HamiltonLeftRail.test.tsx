@@ -24,7 +24,7 @@ describe("HamiltonLeftRail primary actions", () => {
 
     expect(screen.getByRole("link", { name: /generate brief/i })).toHaveAttribute(
       "href",
-      "/pro/reports?instId=2945",
+      "/pro/reports?intent=executive-briefing&instId=2945",
     );
   });
 

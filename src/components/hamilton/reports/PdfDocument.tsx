@@ -15,6 +15,7 @@ import {
 } from "@react-pdf/renderer";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
+import { evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -191,12 +192,6 @@ const styles = StyleSheet.create({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
-  quarterly_strategy: "Quarterly Strategy Report",
-  peer_brief: "Peer Brief",
-  monthly_pulse: "Monthly Pulse",
-  state_index: "State Index",
-};
 
 // ─── PdfDocument Component ────────────────────────────────────────────────────
 
@@ -206,14 +201,9 @@ interface PdfDocumentProps {
   artifactMetadata?: ReportArtifactMetadata | null;
 }
 
-function formatPolicy(policy: ReportArtifactMetadata["evidencePolicy"]): string {
-  if (policy === "verified-only") return "Verified only";
-  if (policy === "source-diligence") return "Source diligence";
-  return "Provisional first";
-}
 
 export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumentProps) {
-  const typeLabel = REPORT_TYPE_LABELS[reportType] ?? reportType;
+  const typeLabel = reportTypeLabel(reportType);
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -231,10 +221,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           {artifactMetadata && (
             <View style={styles.metadataStrip}>
               <Text style={styles.metadataText}>
-                Evidence policy: {formatPolicy(artifactMetadata.evidencePolicy)} · Peer baseline: {artifactMetadata.peerBaselineLabel ?? "Not recorded"}
-              </Text>
-              <Text style={styles.metadataText}>
-                Selected institution: {artifactMetadata.selectedSourceLabel ?? "Context source not recorded"} · {artifactMetadata.selectedVerifiedFeeCount} verified, {artifactMetadata.selectedProvisionalFeeCount} provisional, {artifactMetadata.selectedFeeDeltaCount} deterministic deltas
+                {evidencePolicyLabel(artifactMetadata.evidencePolicy)} · Peer group: {artifactMetadata.peerBaselineLabel ?? "Not recorded"} · {artifactMetadata.selectedFeeDeltaCount} {artifactMetadata.selectedFeeDeltaCount === 1 ? "fee" : "fees"} compared with peers
               </Text>
               {artifactMetadata.peerFallbackReason && (
                 <Text style={styles.metadataText}>

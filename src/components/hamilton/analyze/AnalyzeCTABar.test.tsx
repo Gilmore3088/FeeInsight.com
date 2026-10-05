@@ -16,10 +16,18 @@ describe("AnalyzeCTABar", () => {
       <AnalyzeCTABar isVisible institutionId="2945" />,
     );
 
-    expect(html).toContain('href="/pro/reports?intent=peer-brief&amp;instId=2945"');
-    expect(html).toContain('href="/pro/monitor?instId=2945"');
+    expect(html).toContain('href="/pro/hamilton?instId=2945"');
+    expect(html).toContain('href="/pro/analyze?intent=risk&amp;instId=2945"');
     expect(html).toContain("Show Peer Distribution");
     expect(html).toContain("View Risk Drivers");
+  });
+
+  it("carries the analysed fee category into Simulate", () => {
+    const html = renderToStaticMarkup(
+      <AnalyzeCTABar isVisible institutionId="2945" feeCategory="nsf" />,
+    );
+
+    expect(html).toContain('href="/pro/simulate?category=nsf&amp;instId=2945"');
   });
 
   it("renders nothing before analysis completes", () => {
