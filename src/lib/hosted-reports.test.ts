@@ -4,7 +4,9 @@ import {
   extractPositionMap,
   readSampleReportHtml,
   getHostedReport,
+  hostedReportRequestHref,
   isHostedReportExpired,
+  lookupHostedReport,
   prepareReportForEmbed,
   prepareReportForPrint,
   type HostedReportMap,
@@ -154,5 +156,22 @@ describe("extractPositionMap", () => {
 
   it("returns no rows when the report has no position map", () => {
     expect(extractPositionMap("<html></html>")).toEqual({ rows: [], cohortSize: null });
+  });
+});
+
+describe("lookupHostedReport", () => {
+  it("tells an expired link from an unknown one", () => {
+    expect(lookupHostedReport("fedcba9876543210", { map: FIXTURE, now: NOW })).toMatchObject({
+      state: "expired",
+      report: { institution_id: 860, institution_name: "Bank of the Pacific" },
+    });
+    expect(lookupHostedReport("ffffffffffffffff", { map: FIXTURE, now: NOW })).toEqual({ state: "missing" });
+    expect(lookupHostedReport("0123456789abcdef", { map: FIXTURE, now: NOW }).state).toBe("ok");
+  });
+
+  it("links to the free request form prefilled for the institution", () => {
+    expect(hostedReportRequestHref(FIXTURE["fedcba9876543210"], "hosted_report_expired")).toBe(
+      "/for-institutions?institution=860&name=Bank+of+the+Pacific&src=hosted_report_expired#report",
+    );
   });
 });

@@ -130,6 +130,7 @@ export default async function WelcomePage({
           districtName={districtName}
           districtId={district}
           isPro={isPro}
+          activationPending={params.success === "true" && !isPro}
           pendingWorkspaceInvitations={pendingWorkspaceInvitations}
           workspaceMemberships={workspaceMemberships}
         />
