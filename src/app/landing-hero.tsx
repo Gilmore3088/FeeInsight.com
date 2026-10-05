@@ -79,7 +79,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
         <div
           role="tablist"
           aria-label="What brings you here?"
-          className="mt-7 inline-flex max-w-full gap-1 overflow-x-auto rounded-full border border-[#E0D7C9] bg-white/70 p-1"
+          className="mt-7 grid grid-cols-3 gap-1 rounded-2xl border border-[#E0D7C9] bg-white/70 p-1 sm:inline-flex sm:rounded-full"
         >
           {PATHS.map((path, index) => {
             const selected = active === path.key;
@@ -94,7 +94,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
                 tabIndex={selected ? 0 : -1}
                 onClick={() => setActive(path.key)}
                 onKeyDown={(event) => onTabKeyDown(event, index)}
-                className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C44B2E]/40 sm:px-4 ${
+                className={`rounded-xl px-2 py-2 text-[12px] font-semibold leading-tight sm:whitespace-nowrap sm:rounded-full sm:px-4 sm:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C44B2E]/40 ${
                   selected ? "bg-[#1A1815] text-white" : "text-[#5A5347] hover:text-[#1A1815]"
                 }`}
               >
