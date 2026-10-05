@@ -5,6 +5,11 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**No Plausible.** James, 20:51 UTC. He doesn't use it; dormant Plausible code led a session to
+ask him to set up a Plausible goal. Its script, CSP host, env var and docs are removed and
+`plausible-kill` keeps them out. `trackEvent` stays as the one hook for a future provider; page
+views come from Vercel Analytics and report requests are leads in /admin/leads.
+
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).
 Daily checkpoints, findings, decisions and a changelog now live in this folder.
