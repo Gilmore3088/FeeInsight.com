@@ -19,6 +19,7 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
+import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
 import { getMarketReadiness } from "./market-readiness";
 
 /**
@@ -77,5 +78,10 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   "state-fee-indexes",
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
+);
+export const getStateEconomicContextCached = cachedPublicRead(
+  "state-economic-context",
+  getStateEconomicContext,
+  isEmptyEconomicContext,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
