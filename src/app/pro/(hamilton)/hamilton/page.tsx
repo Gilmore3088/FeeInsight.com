@@ -6,26 +6,33 @@ import {
   fetchCacheableHomeBriefing,
   fetchHomeBriefingData,
   fetchHomeBriefingSignals,
+  HomeBriefingUnavailableError,
   type HomeBriefingData,
+  type HomeBriefingSignals,
 } from "@/lib/hamilton/home-data";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, type User } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { HamiltonViewCard } from "@/components/hamilton/home/HamiltonViewCard";
-import { PositioningEvidence } from "@/components/hamilton/home/PositioningEvidence";
-import { WhatChangedCard } from "@/components/hamilton/home/WhatChangedCard";
-import { PriorityAlertsCard } from "@/components/hamilton/home/PriorityAlertsCard";
-import { MonitorFeedPreview } from "@/components/hamilton/home/MonitorFeedPreview";
-import { RecommendedActionCard } from "@/components/hamilton/home/RecommendedActionCard";
-import { InstitutionPositionCard } from "@/components/hamilton/home/InstitutionPositionCard";
 import {
   fetchInstitutionPositioning,
   type InstitutionPositioning,
 } from "@/lib/hamilton/institution-position";
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
-import type { HomeBriefingSignals } from "@/lib/hamilton/home-data";
+import { getHamiltonWritingStatus, type HamiltonWritingStatus } from "@/lib/hamilton/writing-status";
+import { PositionOverview } from "@/components/hamilton/benchmark/PositionOverview";
+import { NationalSnapshot } from "@/components/hamilton/benchmark/NationalSnapshot";
+import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
+import { HamiltonCommentary } from "@/components/hamilton/benchmark/HamiltonCommentary";
 
 export const dynamic = "force-dynamic";
+
+const EMPTY_BRIEFING: HomeBriefingData = {
+  thesis: null,
+  confidence: "low",
+  positioning: [],
+  spotlightCount: 0,
+  totalInstitutions: 0,
+};
 
 const getCachedHomeBriefing = unstable_cache(
   fetchCacheableHomeBriefing,
@@ -33,20 +40,33 @@ const getCachedHomeBriefing = unstable_cache(
   { revalidate: 86400 },
 );
 
-/** The cached briefing, or (when it can't be built) the data view without the AI thesis, uncached. */
-async function loadHomeBriefing(): Promise<{ data: HomeBriefingData; unavailable: boolean }> {
-  try {
-    return { data: await getCachedHomeBriefing(), unavailable: false };
-  } catch {
-    const data = await fetchHomeBriefingData({ includeThesis: false }).catch(() => ({
-      thesis: null,
-      confidence: "low" as const,
-      positioning: [],
-      spotlightCount: 0,
-      totalInstitutions: 0,
-    }));
-    return { data, unavailable: true };
+/** The fee data without the AI thesis; throws on an empty index so an outage is never cached. */
+const getCachedNationalBriefing = unstable_cache(
+  async () => {
+    const data = await fetchHomeBriefingData({ includeThesis: false });
+    if (data.positioning.length === 0) throw new HomeBriefingUnavailableError("fee index unavailable");
+    return data;
+  },
+  ["hamilton-home-national"],
+  { revalidate: 3600 },
+);
+
+/** A cheap policy read, so a switched-off Hamilton isn't re-attempted (and logged) on every view. */
+const getCachedWritingStatus = unstable_cache(
+  getHamiltonWritingStatus,
+  ["hamilton-writing-status"],
+  { revalidate: 300 },
+);
+
+async function loadBriefing(writing: HamiltonWritingStatus): Promise<HomeBriefingData> {
+  if (writing.available) {
+    try {
+      return await getCachedHomeBriefing();
+    } catch {
+      // Thesis or index failed; fall through to the fee data alone.
+    }
   }
+  return getCachedNationalBriefing().catch(() => EMPTY_BRIEFING);
 }
 
 /** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
@@ -77,80 +97,45 @@ interface HamiltonHomePageProps {
   }>;
 }
 
-/**
- * Skeleton placeholder for fresh-data signal components while loading.
- * Uses .skeleton shimmer class from globals.css.
- */
-function SignalsSkeleton() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
-        <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
-        <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
-      </div>
-      <div className="hamilton-card skeleton" style={{ minHeight: "5rem" }} />
-    </div>
-  );
+function ChangesSkeleton() {
+  return <div className="skeleton rounded-xl" style={{ minHeight: "14rem" }} />;
 }
 
-/**
- * BriefingSignals — fetches time-sensitive signal/alert data fresh on every load.
- * Per D-11: unstable_noStore() opts this async component out of ISR caching.
- */
-async function BriefingSignals({
+/** Signals and alerts are fresh on every load (never cached). */
+async function ChangesForInstitution({
+  user,
   selectedInstitutionId,
 }: {
+  user: User | null;
   selectedInstitutionId: string | null;
 }) {
   unstable_noStore();
-
-  let signals: HomeBriefingSignals = {
-    whatChanged: [],
-    priorityAlerts: [],
-    monitorFeed: [],
-  };
-
-  try {
-    const user = await getCurrentUser();
-    if (user) {
+  let signals: HomeBriefingSignals = { whatChanged: [], priorityAlerts: [], monitorFeed: [] };
+  if (user) {
+    try {
       signals = await fetchHomeBriefingSignals(user.id, {
         institutionIds: selectedInstitutionId ? [selectedInstitutionId] : [],
       });
+    } catch {
+      // DB unavailable: the list shows its empty state.
     }
-  } catch {
-    // Auth or DB unavailable — render empty states
   }
-
   return (
-    <>
-      {/* Second Row: WhatChanged (8 col) + PriorityAlerts (4 col) */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
-        <WhatChangedCard
-          signals={signals.whatChanged}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-        <PriorityAlertsCard alerts={signals.priorityAlerts} />
-      </div>
-
-      {/* Monitor Feed — full-width timeline */}
-      <MonitorFeedPreview
-        signals={signals.monitorFeed}
-        selectedInstitutionId={selectedInstitutionId}
-      />
-    </>
+    <RecentChanges
+      alerts={signals.priorityAlerts}
+      signals={signals.whatChanged}
+      selectedInstitutionId={selectedInstitutionId}
+    />
   );
 }
 
-async function resolveSelectedInstitutionId(params: {
-  instId?: string;
-  intent?: string;
-}): Promise<string | null> {
+async function resolveSelectedInstitutionId(
+  user: User | null,
+  params: { instId?: string; intent?: string },
+): Promise<string | null> {
   if (params.instId) return params.instId;
-
+  if (!user) return null;
   try {
-    const user = await getCurrentUser();
-    if (!user) return null;
-
     const { institution } = await resolveHamiltonInstitutionContext({
       userId: user.id,
       instId: null,
@@ -162,141 +147,111 @@ async function resolveSelectedInstitutionId(params: {
   }
 }
 
-export default async function HamiltonHomePage({
-  searchParams,
-}: HamiltonHomePageProps) {
+export default async function HamiltonHomePage({ searchParams }: HamiltonHomePageProps) {
   const params = await searchParams;
-  const { data, unavailable: briefingUnavailable } = await loadHomeBriefing();
-  const selectedInstitutionId = await resolveSelectedInstitutionId(params);
+  const user = await getCurrentUser().catch(() => null);
+  const isAdmin = user?.role === "admin" || user?.role === "analyst";
+  const writing = await getCachedWritingStatus().catch(
+    (): HamiltonWritingStatus => ({ available: true, blockingPolicies: [] }),
+  );
+  const [data, selectedInstitutionId] = await Promise.all([
+    loadBriefing(writing),
+    resolveSelectedInstitutionId(user, params),
+  ]);
   const { positioning, unavailable: positioningUnavailable } =
     await loadInstitutionPositioning(selectedInstitutionId);
-  const reportsHref = hrefWithInstitutionContext(
-    "/pro/reports?intent=executive-briefing",
+
+  const topCategory = positioning?.topGap?.feeCategory ?? null;
+  const simulateHref = hrefWithInstitutionContext(
+    topCategory ? `/pro/simulate?category=${encodeURIComponent(topCategory)}` : "/pro/simulate",
     selectedInstitutionId,
   );
-  const monitorHref = hrefWithInstitutionContext("/pro/monitor", selectedInstitutionId);
+  const reportsHref = hrefWithInstitutionContext("/pro/reports?intent=executive-briefing", selectedInstitutionId);
+  const analyzeHref = hrefWithInstitutionContext("/pro/analyze", selectedInstitutionId);
+  const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
 
   return (
-    <div>
-      {/* Page header — "Benchmark" (the nav label) + subtitle pills */}
-      <header
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          gap: "1rem",
-          marginBottom: "3rem",
-        }}
-      >
-        <div>
-          <h1
-            className="font-headline"
-            style={{
-              fontSize: "3rem",
-              fontStyle: "italic",
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--hamilton-on-surface)",
-              lineHeight: 1.1,
-              marginBottom: "0.5rem",
-            }}
-          >
+    <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--hamilton-on-surface)" }}>
             Benchmark
           </h1>
-          <span
-            className="font-label"
-            style={{
-              fontSize: "0.625rem",
-              fontWeight: 600,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              color: "var(--hamilton-on-surface-variant)",
-            }}
-          >
-            {data.thesis ? "Analysis current" : "Analysis unavailable"}
-          </span>
-          {briefingUnavailable && (
-            <p role="status" style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)" }}>
-              Hamilton&apos;s written briefing is temporarily unavailable; the fee data below is current.{" "}
-              <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
-                Try again
-              </Link>
-            </p>
-          )}
+          <p className="mt-0.5 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+            {positioning
+              ? `${positioning.institutionName} compared with ${positioning.benchmarkLabel}`
+              : "How fees compare with peers and the nation"}
+          </p>
         </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", flexShrink: 1 }}>
+        <div className="flex flex-wrap gap-2">
           <Link
             href={reportsHref}
-            className="no-underline"
+            className="rounded-lg border px-3.5 py-2 text-sm font-medium no-underline"
             style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "var(--hamilton-surface-container-high)",
+              borderColor: "var(--hamilton-outline-variant)",
+              backgroundColor: "var(--hamilton-surface-container-lowest)",
               color: "var(--hamilton-on-surface)",
-              fontSize: "0.875rem",
-              fontWeight: 500,
-              borderRadius: "var(--hamilton-radius-lg)",
-              border: "1px solid var(--hamilton-border)",
             }}
           >
-            Generate Brief
+            Build a report
           </Link>
           <Link
-            href={monitorHref}
-            className="burnished-cta editorial-shadow no-underline"
-            style={{
-              padding: "0.5rem 1rem",
-              color: "var(--hamilton-on-primary)",
-              fontSize: "0.875rem",
-              fontWeight: 500,
-              borderRadius: "var(--hamilton-radius-lg)",
-            }}
+            href={simulateHref}
+            className="rounded-lg px-3.5 py-2 text-sm font-medium text-white no-underline"
+            style={{ background: "var(--hamilton-gradient-cta)" }}
           >
-            Open Watchlist
+            {positioning?.topGap ? `Simulate ${positioning.topGap.displayName}` : "Simulate a change"}
           </Link>
         </div>
       </header>
 
-      {/* Content grid */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-        {/* Row 1: Hamilton's View — full width */}
-        <HamiltonViewCard
-          thesis={data.thesis}
-          confidence={data.confidence}
-          priority={positioning?.priority ?? null}
-          selectedInstitutionId={selectedInstitutionId}
-        />
+      {positioning ? (
+        <PositionOverview positioning={positioning} />
+      ) : positioningUnavailable ? (
+        <p role="status" className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+          Your institution&apos;s position couldn&apos;t load just now.{" "}
+          <Link href="/pro/hamilton" className="underline">Try again</Link>
+        </p>
+      ) : (
+        <section
+          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border p-5"
+          style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
+        >
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: "var(--hamilton-on-surface)" }}>
+              See where your fees sit against your peers
+            </h2>
+            <p className="mt-0.5 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+              Choose your institution and every published fee is drawn against its peer group.
+            </p>
+          </div>
+          <Link
+            href={settingsHref}
+            className="rounded-lg px-3.5 py-2 text-sm font-medium text-white no-underline"
+            style={{ background: "var(--hamilton-gradient-cta)" }}
+          >
+            Choose institution
+          </Link>
+        </section>
+      )}
 
-        {/* Row 2: the selected institution against its benchmark */}
-        {positioning && <InstitutionPositionCard positioning={positioning} />}
-        {positioningUnavailable && (
-          <p role="status" style={{ fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)", margin: 0 }}>
-            Your institution&apos;s position is temporarily unavailable.{" "}
-            <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
-              Try again
-            </Link>
-          </p>
-        )}
-
-        {/* National benchmark for the lead spotlight category */}
-        <PositioningEvidence
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[3fr_2fr]">
+        <NationalSnapshot
           entries={data.positioning}
+          totalInstitutions={data.totalInstitutions}
           selectedInstitutionId={selectedInstitutionId}
         />
-
-        {/* Row 3: Recommended Action — full width */}
-        <RecommendedActionCard
-          topGap={positioning?.topGap ?? null}
-          benchmarkLabel={positioning?.benchmarkLabel ?? null}
-          institutionName={positioning?.institutionName ?? null}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-
-        {/* Fresh signal rows via Suspense (WhatChanged + PriorityAlerts + MonitorFeed) */}
-        <Suspense fallback={<SignalsSkeleton />}>
-          <BriefingSignals selectedInstitutionId={selectedInstitutionId} />
-        </Suspense>
+        <div className="flex min-w-0 flex-col gap-6">
+          <HamiltonCommentary
+            thesis={data.thesis}
+            blockingPolicies={writing.blockingPolicies}
+            isAdmin={isAdmin}
+            analyzeHref={analyzeHref}
+          />
+          <Suspense fallback={<ChangesSkeleton />}>
+            <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
+          </Suspense>
+        </div>
       </div>
     </div>
   );

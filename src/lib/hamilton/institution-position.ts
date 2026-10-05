@@ -22,6 +22,9 @@ export interface InstitutionPositionEntry {
   displayName: string;
   yourAmount: number;
   benchmarkMedian: number;
+  /** The benchmark's middle half (25th to 75th percentile); null when too few institutions. */
+  benchmarkP25: number | null;
+  benchmarkP75: number | null;
   benchmarkCount: number;
   maturityTier: IndexEntry["maturity_tier"];
   gapAmount: number;
@@ -63,7 +66,8 @@ export function buildInstitutionPositioning(params: {
   institutionName: string;
   benchmarkLabel: string;
   benchmarkSource: HamiltonPeerIndexSource;
-  benchmark: Pick<IndexEntry, "fee_category" | "median_amount" | "institution_count" | "maturity_tier">[];
+  benchmark: (Pick<IndexEntry, "fee_category" | "median_amount" | "institution_count" | "maturity_tier">
+    & Partial<Pick<IndexEntry, "p25_amount" | "p75_amount">>)[];
   ownValues: Map<string, number>;
 }): InstitutionPositioning {
   const benchmarkByCategory = new Map(params.benchmark.map((entry) => [entry.fee_category, entry]));
@@ -78,6 +82,8 @@ export function buildInstitutionPositioning(params: {
       displayName: displayNameFor(category),
       yourAmount,
       benchmarkMedian: median,
+      benchmarkP25: benchmark.p25_amount ?? null,
+      benchmarkP75: benchmark.p75_amount ?? null,
       benchmarkCount: benchmark.institution_count,
       maturityTier: benchmark.maturity_tier,
       gapAmount,
