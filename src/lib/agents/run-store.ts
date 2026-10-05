@@ -31,6 +31,7 @@ import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scorebo
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
+import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -1008,14 +1009,10 @@ async function executeAgenticStep(
         },
       };
     }
-    case "assemble":
-    case "render": {
-      return {
-        status: "completed",
-        summary: `${step.title} acknowledged for run #${run.id}; report rendering worker remains a dedicated follow-up.`,
-        detail: { report_worker_pending: true },
-      };
-    }
+    case "report-render":
+      return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
+    case "report-close":
+      return runReportCloseStep(tx, stringRunParam(params, ["report_job_id"]));
     default:
       return {
         status: "skipped",

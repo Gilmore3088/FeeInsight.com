@@ -19,6 +19,14 @@
     {
       "path": "/api/admin/crew/scoreboard",
       "schedule": "17 12 * * *"
+    },
+    {
+      "path": "/api/admin/reports/schedule?type=monthly_pulse",
+      "schedule": "30 14 3 * *"
+    },
+    {
+      "path": "/api/admin/reports/schedule?type=national_index",
+      "schedule": "30 14 5 1,4,7,10 *"
     }
   ]
 }
