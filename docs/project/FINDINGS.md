@@ -13,6 +13,14 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Economy charts dropped to zero for the 2025 shutdown month
+**What happened:** James's screenshot of /pro/hamilton showed Texas unemployment falling from about
+4% to 0% and back in late 2025.
+**Cause:** the October 2025 federal shutdown left BLS months missing, and they are stored as a value
+of 0 (also seen in CPIAUCSL at 2025-10-01). The shared reader `buildIndicatorSeries` plotted them.
+**Fix:** PR 89 drops stored zeros in `src/lib/data-store/economic-context.ts` (not merged yet).
+**Lesson:** a stored 0 in a rate or index series is a gap, not a reading; readers should filter it.
+
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since
 Aug 10. `report_jobs` holds 12 finished files (Apr 7 to Aug 10, from the old runtime) and

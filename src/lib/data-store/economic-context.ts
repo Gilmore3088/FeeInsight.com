@@ -67,7 +67,9 @@ function toDateString(value: unknown): string {
 export function buildIndicatorSeries(seriesId: string, rows: { observation_date: unknown; value: unknown }[]): IndicatorSeries | null {
   const points = rows
     .map((r) => ({ date: toDateString(r.observation_date), value: Number(r.value) }))
-    .filter((p) => Number.isFinite(p.value) && isIsoDate(p.date));
+    // A stored 0 is a missing month (the October 2025 shutdown left BLS gaps as 0), never a
+    // real reading for these series; keeping it draws a false crash to zero on the charts.
+    .filter((p) => Number.isFinite(p.value) && p.value !== 0 && isIsoDate(p.date));
   if (points.length === 0) return null;
   const latest = points[0];
   const target = new Date(`${latest.date}T00:00:00Z`);
