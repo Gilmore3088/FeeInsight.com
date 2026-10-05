@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import type { ReportTemplateType } from "@/app/pro/(hamilton)/reports/actions";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { REPORT_GOALS, type ReportClientGoal } from "@/lib/hamilton/report-goal";
 import {
   PeerBaselineSelector,
   type HamiltonPeerSetOption,
@@ -26,11 +27,62 @@ interface ConfigSidebarProps {
   peerCoverageError: string | null;
   onPeerSetChange: (peerSetId: string | null) => void;
   onNarrativeToneChange: (v: NarrativeTone) => void;
+  clientGoal: ReportClientGoal;
+  onClientGoalChange: (v: ReportClientGoal) => void;
   onGenerate: () => void;
 }
 
+function OptionList<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: ReadonlyArray<{ value: T; label: string; hint: string }>;
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="space-y-3" role="radiogroup" aria-label={label}>
+      {options.map((option) => {
+        const isActive = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
+            onClick={() => onChange(option.value)}
+            className="w-full text-left p-4 cursor-pointer transition-colors"
+            style={{
+              border: isActive ? "1px solid var(--hamilton-primary)" : "1px solid transparent",
+              backgroundColor: isActive
+                ? "var(--hamilton-surface-container-lowest)"
+                : "var(--hamilton-surface-container-high)",
+            }}
+          >
+            <span
+              className="text-[12px] uppercase tracking-widest block"
+              style={{
+                fontWeight: isActive ? 700 : 600,
+                color: isActive ? "var(--hamilton-on-surface)" : "var(--hamilton-secondary)",
+              }}
+            >
+              {option.label}
+            </span>
+            <span className="text-[11px] mt-0.5 block" style={{ color: "var(--hamilton-secondary)" }}>
+              {option.hint}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
- * The only configurable knob is AUDIENCE. Everything else (institution,
+ * Two knobs: the client's GOAL (how decisions are ranked) and the AUDIENCE. Everything else (institution,
  * peer set, focus area) inherits from the user's profile and the chosen
  * template. The audience values map 1:1 onto the existing NarrativeTone
  * enum so the API contract is unchanged — we just relabel the buttons.
@@ -90,6 +142,8 @@ export function ConfigSidebar({
   peerCoverageError,
   onPeerSetChange,
   onNarrativeToneChange,
+  clientGoal,
+  onClientGoalChange,
   onGenerate,
 }: ConfigSidebarProps) {
   const canGenerate = selectedTemplate !== null && !isGenerating;
@@ -99,66 +153,35 @@ export function ConfigSidebar({
   return (
     <aside className="min-w-0 lg:sticky lg:top-32 lg:col-span-4">
       <div className="bg-surface-container-low p-5 sm:p-8">
-        <div className="mb-8">
-          <h2 className="font-headline text-3xl italic mb-1">Audience</h2>
+        <div className="mb-6">
+          <h2 className="font-headline text-3xl italic mb-1">Goal</h2>
           <p
             className="text-xs tracking-wide leading-relaxed"
             style={{ color: "var(--hamilton-secondary)" }}
           >
-            Who is this report for? Hamilton tunes voice, depth, and structure
-            to match.
+            What should these decisions achieve? Hamilton ranks its
+            recommendations by this goal.
           </p>
         </div>
-
         <form
           onSubmit={(e) => {
             e.preventDefault();
             onGenerate();
           }}
         >
-          {/* Audience picker — the only knob. Vertical list so each option
-              has room for a one-line hint about what changes. */}
-          <div className="space-y-3" role="radiogroup" aria-label="Audience">
-            {AUDIENCES.map((aud) => {
-              const isActive = narrativeTone === aud.value;
-              return (
-                <button
-                  key={aud.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  onClick={() => onNarrativeToneChange(aud.value)}
-                  className="w-full text-left p-4 cursor-pointer transition-colors"
-                  style={{
-                    border: isActive
-                      ? "1px solid var(--hamilton-primary)"
-                      : "1px solid transparent",
-                    backgroundColor: isActive
-                      ? "var(--hamilton-surface-container-lowest)"
-                      : "var(--hamilton-surface-container-high)",
-                  }}
-                >
-                  <span
-                    className="text-[12px] uppercase tracking-widest block"
-                    style={{
-                      fontWeight: isActive ? 700 : 600,
-                      color: isActive
-                        ? "var(--hamilton-on-surface)"
-                        : "var(--hamilton-secondary)",
-                    }}
-                  >
-                    {aud.label}
-                  </span>
-                  <span
-                    className="text-[11px] mt-0.5 block"
-                    style={{ color: "var(--hamilton-secondary)" }}
-                  >
-                    {aud.hint}
-                  </span>
-                </button>
-              );
-            })}
+          <OptionList label="Goal" options={REPORT_GOALS} value={clientGoal} onChange={onClientGoalChange} />
+
+          <div className="mt-8 mb-4">
+            <h2 className="font-headline text-3xl italic mb-1">Audience</h2>
+            <p
+              className="text-xs tracking-wide leading-relaxed"
+              style={{ color: "var(--hamilton-secondary)" }}
+            >
+              Who is this report for? Hamilton tunes voice, depth, and structure
+              to match.
+            </p>
           </div>
+          <OptionList label="Audience" options={AUDIENCES} value={narrativeTone} onChange={onNarrativeToneChange} />
 
           {/* CTA */}
           <div className="pt-7">

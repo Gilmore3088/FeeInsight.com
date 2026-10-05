@@ -505,11 +505,14 @@ describe("Hamilton Reports generateReport", () => {
       usage: { inputTokens: 10, outputTokens: 8 },
     }));
 
-    const result = await generateReport(reportParams());
+    const result = await generateReport({ ...reportParams(), clientGoal: "lower_risk" });
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
+    const summaryInput = mocks.generateSection.mock.calls.find(([input]) => input.type === "executive_summary")?.[0] as SectionInput;
+    expect(summaryInput.context).toContain("CLIENT GOAL: lower regulatory and complaint risk");
     expect(result.report.answer).toEqual({
+      goal: "Lower regulatory risk",
       headline: "Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
       decisions: [
         {

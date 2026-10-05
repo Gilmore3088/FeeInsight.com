@@ -7,14 +7,14 @@ const CONFIDENCE_STYLE: Record<ReportConfidence, { background: string; color: st
 };
 
 /** The answer page: one headline and the numbered decisions, each with its confidence. */
-export function ReportAnswer({ headline, decisions }: { headline: string; decisions: ReportDecision[] }) {
+export function ReportAnswer({ headline, decisions, goal = null }: { headline: string; decisions: ReportDecision[]; goal?: string | null }) {
   return (
     <section aria-label="The answer" className="py-8 border-b" style={{ borderColor: "var(--hamilton-border)" }}>
       <div
         className="text-[11px] font-semibold uppercase tracking-wider mb-3"
         style={{ color: "var(--hamilton-text-accent)" }}
       >
-        The answer
+        The answer{goal ? ` · Goal: ${goal}` : ""}
       </div>
       <p
         className="text-2xl leading-snug mb-6"

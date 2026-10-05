@@ -1,5 +1,6 @@
 "use server";
 
+import { reportGoal, type ReportClientGoal } from "@/lib/hamilton/report-goal";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import {
@@ -87,6 +88,8 @@ export interface GenerateReportParams {
   selectedSourceLabel?: string | null;
   /** The Audience picker: shapes the narrative's register, never its figures. */
   narrativeTone?: ReportNarrativeTone;
+  /** The Goal picker: shapes how decisions are ranked and framed, never the figures. */
+  clientGoal?: ReportClientGoal;
 }
 
 export type ReportNarrativeTone = "consulting" | "academic" | "executive" | "technical";
@@ -98,8 +101,9 @@ const TONE_GUIDANCE: Record<ReportNarrativeTone, string> = {
   academic: "AUDIENCE: research readers. Fuller context; explain the method and its limits.",
 };
 
-function withTone(context: string, tone: ReportNarrativeTone | undefined): string {
-  return tone ? `${context}\n\n${TONE_GUIDANCE[tone] ?? ""}`.trim() : context;
+function withTone(context: string, tone: ReportNarrativeTone | undefined, goal?: ReportClientGoal): string {
+  const parts = [context, tone ? TONE_GUIDANCE[tone] ?? "" : "", reportGoal(goal).guidance];
+  return parts.filter(Boolean).join("\n\n").trim();
 }
 
 export type GenerateReportResult =
@@ -572,7 +576,7 @@ export async function generateReport(
             maturity: c.maturity_tier,
           })),
         },
-        context: withTone(withExpertRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone),
+        context: withTone(withExpertRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone, params.clientGoal),
       },
       {
         type: strategicSectionType,
@@ -593,7 +597,7 @@ export async function generateReport(
             institution_count: c.institution_count,
           })),
         },
-        context: withTone(withExpertRules(buildStrategicContext(params, institutionName)), params.narrativeTone),
+        context: withTone(withExpertRules(buildStrategicContext(params, institutionName)), params.narrativeTone, params.clientGoal),
       },
       {
         type: "recommendation",
@@ -621,7 +625,7 @@ export async function generateReport(
                 maturity: c.maturity_tier,
               })),
         },
-        context: withTone(withExpertRules(buildRecommendationContext(params, institutionName)), params.narrativeTone),
+        context: withTone(withExpertRules(buildRecommendationContext(params, institutionName)), params.narrativeTone, params.clientGoal),
       },
     ];
 
@@ -739,7 +743,7 @@ export async function generateReport(
     const tradeoffSection = parseTradeoffSection(recommendationSection.narrative);
     const report: ReportSummaryResponse = {
       title: reportTitle,
-      ...(answer ? { answer } : {}),
+      ...(answer ? { answer: { ...answer, goal: params.clientGoal && params.clientGoal !== "balanced" ? reportGoal(params.clientGoal).label : null } } : {}),
       exhibits: regulatory.exhibit ? [...exhibitSet.exhibits, regulatory.exhibit] : exhibitSet.exhibits,
       watchlist: tradeoffSection.watch,
       sources: [...exhibitSet.sources, ...regulatory.sources],

@@ -415,7 +415,7 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
     <>
       {answer && (
         <View style={styles.section}>
-          <Text style={styles.answerLabel}>The answer</Text>
+          <Text style={styles.answerLabel}>{answer.goal ? `The answer · Goal: ${answer.goal}` : "The answer"}</Text>
           <Text style={styles.headline}>{answer.headline}</Text>
           {answer.decisions.map((decision, i) => (
             <View key={i} style={styles.decision} wrap={false}>

@@ -115,7 +115,7 @@ function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
   const watchlist = report.watchlist ?? [];
   return (
     <>
-      {report.answer && <ReportAnswer headline={report.answer.headline} decisions={report.answer.decisions} />}
+      {report.answer && <ReportAnswer headline={report.answer.headline} decisions={report.answer.decisions} goal={report.answer.goal} />}
 
       {exhibits.length > 0 && (
         <ReportSection heading="The Evidence">

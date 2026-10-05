@@ -269,7 +269,7 @@ export interface ReportSource {
 export interface ReportSummaryResponse {
   title: string;
   /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
-  answer?: { headline: string; decisions: ReportDecision[] };
+  answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
   exhibits?: ReportExhibit[];
   /** "What to watch" lines from the trade-offs section. */
   watchlist?: string[];
