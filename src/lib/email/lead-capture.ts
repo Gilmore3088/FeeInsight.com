@@ -66,8 +66,8 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
       ];
     case "state_benchmark":
       return [
-        "We'll send the benchmark each time the state medians are refreshed.",
-        input.stateCode ? `Current benchmark: ${absolute(`/research/state/${input.stateCode}`)}` : "",
+        "Here is the benchmark: state medians against national, updated as new fee schedules are verified.",
+        input.stateCode ? `${absolute(`/research/state/${input.stateCode}`)}` : "",
       ];
     case "national_index":
       return [

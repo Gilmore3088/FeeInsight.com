@@ -38,7 +38,10 @@ export default async function MarketConcentrationPage() {
   if (!canAccessPremium(user)) {
     return (
       <div className="max-w-3xl mx-auto py-16 px-4">
-        <UpgradeGate message="Market Concentration Analysis" />
+        <UpgradeGate
+          message="Market concentration by metro"
+          locked="Deposit market concentration (HHI) for U.S. metro areas from FDIC Summary of Deposits data: the most and least concentrated markets and the largest markets by deposits."
+        />
       </div>
     );
   }
