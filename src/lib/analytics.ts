@@ -8,6 +8,8 @@
 export type AnalyticsEvent =
   | "create_account"
   | "request_report"
+  /** A click on a "request a report" button; "request_report" is the form submit. */
+  | "request_report_click"
   | "see_sample_report"
   | "newsletter_signup"
   | "lead_capture_view"

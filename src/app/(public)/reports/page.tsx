@@ -246,7 +246,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <TrackLink
-                event="request_report"
+                event="request_report_click"
                 eventProps={{ placement: "reports_hub_hero" }}
                 href={REQUEST_HREF}
                 className={PRIMARY_BUTTON}
@@ -439,7 +439,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           </div>
           <div className="flex flex-wrap gap-3">
             <TrackLink
-              event="request_report"
+              event="request_report_click"
               eventProps={{ placement: "reports_hub_footer" }}
               href={REQUEST_HREF}
               className={PRIMARY_BUTTON}
