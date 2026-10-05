@@ -5,6 +5,19 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Hamilton is a neutral research and modeling workspace, never a fee recommender.** James,
+23:27-23:39 UTC. Hamilton follows the same path every time: research, compare, model any price
+the bank wants to test, refine with the bank's own figures, plan the change, then build the
+report. It never tells a bank to raise or change a fee. It gives an opinion only when asked, and
+then names the objective it assumes. Dollar totals rest on the bank's own volume. Implementation
+is its own step: approvals, customer notice (30 days for an increase under Reg DD, none for a
+decrease), systems, the Reg E opt-in notice, the effective date and monitoring.
+
+The nav is Briefing, Research, Model, Reports, Watch and Data. Ask Hamilton is a docked bar on
+every screen; its work lands on the page, not in a chat log. Overdraft is the flagship example.
+The look follows James's "living memo" option, rendered in the Fee Insight brand.
+Mockup: https://claude.ai/artifact/Cjx5VmTFS2zhpi6bM7YQv1. Built in PR 89.
+
 **Free reports are instant; the institution report is paid and never promises a turnaround.**
 James, 21:41-22:20 UTC. The request form becomes a picker: a National report (email only) and a
 Fed district report (email plus district) are free and open at once; a report on one institution

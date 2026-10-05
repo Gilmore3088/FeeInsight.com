@@ -13,6 +13,15 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: A supply price was published as a Night Deposit fee
+**What happened:** Hamilton's briefing for Texas National Bank of Jacksonville led with "Night
+Deposit $3.00 against a $5.00 median". The $3.00 row in `published_fee_catalog` is "Zipper Bags",
+the price of deposit bags the bank sells, filed under `night_deposit`.
+**Cause:** not yet traced; most likely the category rule lets product and supply prices that sit
+near a fee name into that category.
+**Fix:** none yet; reported to Improving Hamilton for whoever owns Knox and Darwin.
+**Lesson:** a headline fee should be checked against its row's fee name before it leads a page.
+
 ## 2026-10-05: Shutdown months stored as 0 in economic series
 **What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
 (found by the Hamilton Pro page thread).
