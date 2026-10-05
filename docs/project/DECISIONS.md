@@ -35,6 +35,12 @@ ask him to set up a Plausible goal. Its script, CSP host, env var and docs are r
 `plausible-kill` keeps them out. `trackEvent` stays as the one hook for a future provider; page
 views come from Vercel Analytics and report requests are leads in /admin/leads.
 
+**A bank's tiered overdraft counts at its highest (standard) tier.** James, 19:45 UTC, on a
+decision card. Each tier stays its own live fee with its band in the name, and a real $0 fee
+counts. Medians, percentiles, peer positions and reports use the bank's highest overdraft
+amount; other categories keep the median. Shipped in PR 132 (`institutionValue` in
+`src/lib/data-store/fee-stats.ts`).
+
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).
 Daily checkpoints, findings, decisions and a changelog now live in this folder.

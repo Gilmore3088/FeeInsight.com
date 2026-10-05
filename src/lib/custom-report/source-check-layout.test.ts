@@ -26,4 +26,18 @@ describe("checkFeeAgainstSource layouts", () => {
     const overdraft = "$35 Overdraft Fee for each item we pay that overdraws your account more than $9.99";
     expect(checkFeeAgainstSource(overdraft, "Overdraft Fee for each item we pay", 35, ".").ok).toBe(true);
   });
+
+  it("reads each fee's own price when one line carries several fees", () => {
+    const line = "Title Draft $50.00 Incoming Wire Fee (domestic) $18.00";
+    expect(checkFeeAgainstSource(line, "Incoming Wire Fee (domestic)", 18, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(line, "Incoming Wire Fee (domestic)", 50, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(line, "Title Draft", 18, ".").ok).toBe(false);
+    const paragraph =
+      "Overdraft Transfer $3 per occurrence Stop Payment (Valid for six months) $32 per item or series " +
+      "Wire Transfers • Outgoing — domestic $33.00 • Incoming6 $15.00 Lost ATM/debit card replacement $5.00";
+    expect(checkFeeAgainstSource(paragraph, "Stop Payment (Valid for six months)", 32, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(paragraph, "Lost ATM/debit card replacement", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(paragraph, "Stop Payment (Valid for six months)", 3, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("$1.95 each thereafter) | $1.95 | NSF/Overdraft Fee | $32.00", "NSF/Overdraft Fee", 32, ".").ok).toBe(true);
+  });
 });

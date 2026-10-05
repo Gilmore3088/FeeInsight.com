@@ -67,7 +67,7 @@ describe("buildSelectedInstitutionFeeDeltas", () => {
     });
   });
 
-  it("collapses an institution's variants to one delta per category at its median, preferring verified rows", () => {
+  it("collapses an institution's variants to one delta per category, overdraft at its highest tier, preferring verified rows", () => {
     const deltas = buildSelectedInstitutionFeeDeltas({
       selectedFees: [
         { fee_name: "Overdraft", fee_category: "overdraft", amount: 30, review_status: "approved" },
@@ -83,7 +83,7 @@ describe("buildSelectedInstitutionFeeDeltas", () => {
     expect(deltas[0]).toMatchObject({
       fee_category: "overdraft",
       fee_name: "Overdraft (3 variants)",
-      institution_amount: 35,
+      institution_amount: 40,
       evidence_tier: "verified",
     });
   });
