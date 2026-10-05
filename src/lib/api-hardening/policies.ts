@@ -364,11 +364,12 @@ export const API_ROUTE_POLICIES = [
     surface: "public",
     allowedMethods: ["POST"],
     authRequirement: "public",
-    rateLimitBucket: "lead-write",
+    rateLimitBucket: "lead-subscription",
     costPolicy: "none",
     telemetryEvent: "api.leads.subscription",
     failBehavior: "fail_closed",
     auditPriority: "medium",
+    notes: "Confirm and one-click unsubscribe links; its own bucket so an unsubscribe is never rate limited.",
   },
   {
     routeId: "api.pro.report_pdf",

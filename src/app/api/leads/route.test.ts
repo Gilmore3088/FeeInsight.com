@@ -10,6 +10,10 @@ vi.mock("@/lib/api-hardening/audit", () => ({
   getRequestSubjectKey: vi.fn(() => "test"),
 }));
 
+vi.mock("@/lib/api-hardening/rate-limit", () => ({
+  isRateLimited: vi.fn(() => Promise.resolve(false)),
+}));
+
 vi.mock("@/lib/email/report-request", () => ({
   sendReportRequestNotifications: vi.fn(),
   sendContactRequestNotifications: vi.fn(),
