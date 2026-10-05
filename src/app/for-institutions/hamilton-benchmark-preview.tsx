@@ -1,4 +1,5 @@
 import { CheckCircle2 } from "lucide-react";
+import { SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 /**
  * Code-rendered example of Hamilton Benchmark mode, no image. Rows are real
@@ -18,6 +19,8 @@ const COLUMNS = ["NSF / returned item", "Monthly maintenance", "Domestic wire, o
 const CELL = "px-3 py-2 text-right tabular-nums";
 
 export function HamiltonBenchmarkPreview({ className = "" }: { className?: string }) {
+  // These rows come from the sample report, which is offline until it is re-rendered.
+  if (!SAMPLE_REPORT_LIVE) return null;
   return (
     <figure
       className={`overflow-hidden rounded-lg border border-warm-300 bg-white ${className}`}
