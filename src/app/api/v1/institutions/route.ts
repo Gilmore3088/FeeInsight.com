@@ -5,6 +5,8 @@ import {
   getInstitutionById,
   getFeesByInstitution,
   getInstitutionsByFilter,
+  getFinancialsByInstitution,
+  getComplaintsByInstitution,
 } from "@/lib/data-store";
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
@@ -101,6 +103,12 @@ async function handleGET(request: NextRequest) {
         published_at: f.created_at ?? null,
       }));
 
+    // Federal data: FDIC/NCUA call report quarters and CFPB complaint totals.
+    const [financials, complaints] = await Promise.all([
+      getFinancialsByInstitution(instId, 8),
+      getComplaintsByInstitution(instId),
+    ]);
+
     logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
       institution_id: instId,
       status: 200,
@@ -117,6 +125,15 @@ async function handleGET(request: NextRequest) {
       fed_district: inst.fed_district,
       fee_count: fees.length,
       fees,
+      call_reports: financials.map((quarter) => {
+        const { institution_id, ...fields } = quarter;
+        void institution_id;
+        return fields;
+      }),
+      complaints: complaints.map((c) => ({
+        product: c.product,
+        complaint_count: Number(c.complaint_count),
+      })),
       attribution: API_ATTRIBUTION,
     });
     return withRateLimitHeaders(response, rateLimit);

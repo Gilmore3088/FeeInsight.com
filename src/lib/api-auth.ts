@@ -74,3 +74,8 @@ export async function validateApiKey(
     tier: row.tier ?? "pro",
   };
 }
+
+/** Paid partner keys (pro, enterprise) may download CSV without a Pro login. */
+export function apiKeyCanExport(auth: ApiKeyValidation): boolean {
+  return auth.valid && (auth.tier === "pro" || auth.tier === "enterprise");
+}

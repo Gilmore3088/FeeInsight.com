@@ -5,7 +5,7 @@ import { getFeeCategorySummaries, getFeeCategoryDetail } from "@/lib/data-store"
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canExportData } from "@/lib/access";
-import { validateApiKey } from "@/lib/api-auth";
+import { apiKeyCanExport, validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
@@ -125,7 +125,7 @@ async function handleGET(request: NextRequest) {
 
   if (format === "csv") {
     const user = await getCurrentUser();
-    if (!canExportData(user)) {
+    if (!apiKeyCanExport(auth) && !canExportData(user)) {
       logApiUsage(organizationId, anonymousId, "api.fees.list", {
         format: "csv",
         status: 403,

@@ -2,7 +2,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
-import { validateApiKey } from "@/lib/api-auth";
+import { apiKeyCanExport, validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
 import { getCurrentUser } from "@/lib/auth";
@@ -40,7 +40,7 @@ async function handleGET(request: NextRequest) {
 
   if (format === "csv") {
     const user = await getCurrentUser();
-    if (!canExportData(user)) {
+    if (!apiKeyCanExport(authResult) && !canExportData(user)) {
       logApiUsage(authResult.organizationId, anonId, "api.v1.index.csv", {
         status: 403,
       }).catch(() => {});

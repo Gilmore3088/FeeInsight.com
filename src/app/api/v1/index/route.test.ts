@@ -9,6 +9,8 @@ import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({
   validateApiKey: vi.fn(),
+  apiKeyCanExport: (auth: { valid: boolean; tier: string }) =>
+    auth.valid && (auth.tier === "pro" || auth.tier === "enterprise"),
 }));
 
 vi.mock("@/lib/api-rate-limit", () => ({
@@ -80,5 +82,22 @@ describe("/api/v1/index", () => {
     });
     expect(response.status).toBe(403);
     expect(getNationalIndex).not.toHaveBeenCalled();
+  });
+
+  it("lets an enterprise API key download CSV without a login", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({
+      valid: true,
+      organizationId: 7,
+      tier: "enterprise",
+    });
+    vi.mocked(getCurrentUser).mockResolvedValue(null);
+    vi.mocked(canExportData).mockReturnValue(false);
+
+    const response = await GET(
+      new NextRequest("https://feeinsight.com/api/v1/index?format=csv"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/csv");
   });
 });
