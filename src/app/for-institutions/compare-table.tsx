@@ -52,7 +52,7 @@ function buildRows(summary: Pick<PublicStatsSummary, "institutionsLabel" | "refr
       refresh: `Rolling — every schedule rechecked at least quarterly${refreshed}`,
       sourceTraceable: "Every figure linked to its disclosure",
       peerGroupControl: "Yes — charter, asset tier, district",
-      cost: "Free report",
+      cost: "Free national and district reports",
       highlight: true,
     },
   ];

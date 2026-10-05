@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Free reports are instant; the institution report is paid and never promises a turnaround.**
+James, 21:41-22:20 UTC. The request form becomes a picker: a National report (email only) and a
+Fed district report (email plus district) are free and open at once; a report on one institution
+against named competitors is the paid step, shown grayed out as the hook. Never promise "48 hours"
+for anything free, because that puts unpaid work on James. This replaces the earlier "the report
+is free" (J1) for the institution report. Built in PR 150.
+
 **Free discovery is never held to the monthly cadence.** James, 22:32 UTC ("if it doesn't
 require money, why are we limited in it?"). Every state's hourly backlog run now searches banks
 that are due a free search, and a discovery step takes up to 50 banks within its time budget.

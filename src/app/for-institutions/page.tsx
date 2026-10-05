@@ -9,7 +9,7 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
-import { ReportOfferSection, REPORT_NAME } from "./report-offer";
+import { ReportOfferSection } from "./report-offer";
 import { ProToolsSection } from "./pro-tools";
 import { CompareTableSection } from "./compare-table";
 
@@ -19,7 +19,7 @@ const REPORT_ANCHOR = "#report";
 export const metadata: Metadata = {
   title: "For Financial Institutions",
   description:
-    `Competitive Fee Position Report (free, 48 hours), peer benchmarking, and the Hamilton ` +
+    `Free national and Fed district fee reports, institution reports, peer benchmarking, and the Hamilton ` +
     `workspace for banking teams — built on the ${PRODUCT_NAME}.`,
 };
 
@@ -53,7 +53,7 @@ export default async function ForInstitutionsPage() {
               <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
-                it came from. Start with a free report or run the workspace yourself.
+                it came from. Start with a free national or Fed district report, or run the workspace yourself.
               </p>
 
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">
@@ -77,7 +77,7 @@ export default async function ForInstitutionsPage() {
                 <a href={REPORT_ANCHOR} className="underline underline-offset-2 hover:text-warm-150">
                   Get your free report
                 </a>{" "}
-                · {REPORT_NAME}, delivered in 48 hours.
+                · National and Fed district reports, free and instant.
               </p>
             </div>
           </div>
