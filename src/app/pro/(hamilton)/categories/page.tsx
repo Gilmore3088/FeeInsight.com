@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getFeeCategorySummaries } from "@/lib/data-store";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import {
   getDisplayName,
   getFeeTier,
@@ -53,7 +53,7 @@ export default async function ProCategoriesPage() {
   if (!user) redirect("/login?from=/pro/categories");
   if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/categories");
 
-  const summaries = await getFeeCategorySummaries();
+  const summaries = await getCachedFeeCategorySummaries();
   const summaryMap = new Map(summaries.map((s) => [s.fee_category, s]));
   const familyNames = Object.keys(FEE_FAMILIES);
 

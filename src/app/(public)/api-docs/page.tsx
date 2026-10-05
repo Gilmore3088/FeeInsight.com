@@ -523,33 +523,34 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           params={[
             { name: "state", type: "string", description: "Two-letter state code" },
             { name: "charter", type: "string", description: '"bank" or "credit_union"' },
+            { name: "has_fees", type: "boolean", description: '"true" to return only institutions with published fees' },
             { name: "page", type: "integer", description: "Page number (default: 1)" },
             { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/institutions?state=NY&limit=10"`}
+  "${BASE}/institutions?state=MN&has_fees=true&limit=10"`}
           responseFields={[
             { name: "total", type: "integer", note: "Total matching institutions" },
             { name: "page", type: "integer", note: "Current page" },
             { name: "pages", type: "integer", note: "Total pages" },
-            { name: "data[].asset_tier", type: "string", note: "e.g., 1B-10B, 100M-1B" },
+            { name: "data[].asset_tier", type: "string", note: "e.g., community_mid" },
           ]}
           responseExample={`{
-  "total": 312,
+  "total": 44,
   "page": 1,
   "page_size": 10,
-  "pages": 32,
+  "pages": 5,
   "data": [
     {
-      "id": 4521,
-      "name": "First National Bank of New York",
-      "state": "NY",
-      "city": "New York",
+      "id": 2466,
+      "name": "Gateway Bank",
+      "state": "MN",
+      "city": "Mendota Heights",
       "charter_type": "bank",
-      "asset_size": 2400000000,
-      "asset_tier": "1B-10B",
-      "fed_district": 2,
-      "fee_count": 22
+      "asset_size": 319549,
+      "asset_tier": "community_mid",
+      "fed_district": 9,
+      "fee_count": 33
     },
     ...
   ]
@@ -566,7 +567,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "id", type: "integer", required: true, description: "Institution ID" },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/institutions?id=4521"`}
+  "${BASE}/institutions?id=2466"`}
           responseFields={[
             { name: "fees[]", type: "array", note: "All non-rejected fees for this institution" },
             { name: "fees[].amount", type: "number", note: "Fee amount in USD" },
@@ -574,28 +575,28 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "fees[].conditions", type: "string", note: "Waiver conditions, if any" },
           ]}
           responseExample={`{
-  "id": 4521,
-  "name": "First National Bank of New York",
-  "state": "NY",
-  "city": "New York",
+  "id": 2466,
+  "name": "Gateway Bank",
+  "state": "MN",
+  "city": "Mendota Heights",
   "charter_type": "bank",
-  "asset_size": 2400000000,
-  "asset_tier": "1B-10B",
-  "fed_district": 2,
-  "fee_count": 22,
+  "asset_size": 319549,
+  "asset_tier": "community_mid",
+  "fed_district": 9,
+  "fee_count": 33,
   "fees": [
     {
       "fee_name": "Overdraft Fee",
-      "amount": 35.00,
-      "frequency": "per item",
-      "conditions": "Max 4 per day. Waived for balances over $5,000.",
+      "amount": 30.00,
+      "frequency": "per_occurrence",
+      "conditions": "Per item; created by check, in-person withdrawal, or other electronic means",
       "review_status": "approved"
     },
     {
-      "fee_name": "Monthly Maintenance Fee",
-      "amount": 12.00,
+      "fee_name": "Account Maintenance",
+      "amount": 17.00,
       "frequency": "monthly",
-      "conditions": "Waived with $1,500 minimum balance.",
+      "conditions": null,
       "review_status": "approved"
     },
     ...
@@ -670,7 +671,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Status.</span>{" "}
-            Each category carries a status: Verified (10+ checked fees), Under review, or Too few to benchmark.
+            Each category carries a status: Strong (20+ institutions with verified fees), Provisional (5 to 19), or Too few to benchmark (under 5, no median shown).
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}
