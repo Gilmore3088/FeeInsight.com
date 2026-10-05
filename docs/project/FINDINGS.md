@@ -13,6 +13,16 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: API credit ran out and stopped all paid work
+**What happened:** at 21:45 UTC Rosetta got "Your credit balance is too low" from the Anthropic
+API. The provider guard turned on the provider stop (`automation_control` key `global`), which
+also blocked Hamilton (a customer report at 22:15 was refused). Spend that day was $14.92, under
+the app's own $20 cap, so the account balance, not the app cap, was the limit.
+**Cause:** the Anthropic account balance hit zero.
+**Fix:** James added $500 of credit (22:18). Adding credit does not clear the stop: an admin must
+click Mark billing resolved, then Resume automation, on /admin (issue 153, step 0).
+**Lesson:** after topping up credit, check the provider stop on /admin; it stays on by design.
+
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since
 Aug 10. `report_jobs` holds 12 finished files (Apr 7 to Aug 10, from the old runtime) and
