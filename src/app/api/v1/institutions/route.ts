@@ -9,6 +9,7 @@ import {
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
+import { API_ATTRIBUTION } from "@/lib/constants";
 
 function getAnonymousId(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -83,10 +84,14 @@ async function handleGET(request: NextRequest) {
       .filter((f) => f.review_status !== "rejected")
       .map((f) => ({
         fee_name: f.fee_name,
+        category: f.fee_category,
         amount: f.amount,
         frequency: f.frequency,
         conditions: f.conditions,
         review_status: f.review_status,
+        confidence: f.extraction_confidence,
+        source_url: f.source_url ?? null,
+        published_at: f.created_at ?? null,
       }));
 
     logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
@@ -105,6 +110,7 @@ async function handleGET(request: NextRequest) {
       fed_district: inst.fed_district,
       fee_count: fees.length,
       fees,
+      attribution: API_ATTRIBUTION,
     });
     return withRateLimitHeaders(response, rateLimit);
   }
@@ -150,6 +156,7 @@ async function handleGET(request: NextRequest) {
       fed_district: r.fed_district,
       fee_count: r.fee_count,
     })),
+    attribution: API_ATTRIBUTION,
   });
   return withRateLimitHeaders(response, rateLimit);
 }

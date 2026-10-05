@@ -1,15 +1,11 @@
 import { sql } from "@/lib/data-store/connection";
-import { createHash } from "crypto";
+import { hashApiKey } from "@/lib/api-keys";
 
 export interface ApiKeyValidation {
   valid: boolean;
   organizationId: number | null;
   tier: string;
   error?: string;
-}
-
-function hashApiKey(key: string): string {
-  return createHash("sha256").update(key).digest("hex");
 }
 
 function extractApiKey(request: Request): string | null {

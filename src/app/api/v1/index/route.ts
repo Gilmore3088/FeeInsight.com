@@ -8,6 +8,7 @@ import { logApiUsage } from "@/lib/api-usage";
 import { getCurrentUser } from "@/lib/auth";
 import { canExportData } from "@/lib/access";
 import crypto from "crypto";
+import { API_ATTRIBUTION } from "@/lib/constants";
 
 async function handleGET(request: NextRequest) {
   // API auth + rate limiting
@@ -135,6 +136,7 @@ async function handleGET(request: NextRequest) {
     },
     total: data.length,
     data,
+    attribution: API_ATTRIBUTION,
   }, {
     headers: {
       "X-RateLimit-Limit": String(rateResult.limit),

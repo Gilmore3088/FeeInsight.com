@@ -186,7 +186,23 @@ const spec = {
                   type: "string",
                   enum: ["pending", "staged", "approved"],
                 },
+                category: { type: "string", nullable: true, example: "overdraft" },
+                confidence: { type: "number", example: 0.97 },
+                source_url: {
+                  type: "string",
+                  nullable: true,
+                  description: "The institution's own fee schedule this fee was read from.",
+                },
+                published_at: { type: "string", format: "date-time", nullable: true },
               },
+            },
+          },
+          attribution: {
+            type: "object",
+            description: "Credit line to display with the data.",
+            properties: {
+              text: { type: "string", example: "Source: Bank Fee Index, feeinsight.com" },
+              url: { type: "string", example: "https://feeinsight.com" },
             },
           },
         },
