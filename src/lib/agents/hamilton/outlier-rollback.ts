@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
+import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -122,7 +122,7 @@ export async function rollBackPublishedOutliers(
 
   if (!options.dryRun && rollbacks.length > 0) {
     // Public benchmark reads are cached between publishes; drop rows that just left.
-    invalidateFeeSummaryCache();
+    invalidatePublicReadCache();
     const byCategory: Record<string, number> = {};
     for (const rollback of rollbacks) {
       byCategory[rollback.canonicalFeeKey] = (byCategory[rollback.canonicalFeeKey] ?? 0) + 1;

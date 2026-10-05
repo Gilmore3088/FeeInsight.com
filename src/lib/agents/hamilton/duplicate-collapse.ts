@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
+import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
@@ -108,7 +108,7 @@ export async function collapsePublishedDuplicates(
   }));
 
   if (!options.dryRun && collapsed.length > 0) {
-    invalidateFeeSummaryCache();
+    invalidatePublicReadCache();
     try {
       await inSavepoint(db, (scope) => scope`
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
