@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Spend to fill the fee database now, then refresh cheaply.** James, 22:19 UTC. He added $500
+of API credit and said yes to raising the in-app caps: fill the database, then drop to a monthly
+or quarterly refresh that costs little, paid for by Hamilton subscriptions. Caps go to $75/day and
+$500/month for the whole app, with Knox $200, Magellan $150 and Rosetta $150 a month; Hamilton
+stays at $5/day and $50/month. The SQL is issue 153. Sized from prod spend: paid steps cost
+$13.67 for 356 institutions on Oct 5 (about $0.04 each, about $80 a day at full speed). After
+the fill the caps come back down; paid steps skip text they already read, so a refresh only pays
+for changed schedules.
+
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).
 Daily checkpoints, findings, decisions and a changelog now live in this folder.
