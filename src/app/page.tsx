@@ -9,6 +9,8 @@ import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constant
 import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
+import { LandingBankOffer } from "./landing-bank-offer";
+import { extractExecutiveSummary, readSampleReportHtml, type ReportFinding } from "@/lib/hosted-reports";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -51,6 +53,15 @@ const WEBSITE_JSON_LD = {
   },
 };
 
+/** The public sample's executive-summary findings; a missing or changed file just hides them. */
+function sampleFindings(): ReportFinding[] {
+  try {
+    return extractExecutiveSummary(readSampleReportHtml()).findings;
+  } catch {
+    return [];
+  }
+}
+
 export default async function LandingPage() {
   const [summary, nationalIndex, stateCoverage] = await Promise.all([
     getPublicStatsSummary(),
@@ -73,6 +84,7 @@ export default async function LandingPage() {
       <main id="main-content">
         <LandingHero institutionsLabel={summary.institutionsLabel} />
         <LandingPriceStrip entries={nationalIndex} institutionsLabel={summary.institutionsLabel} />
+        <LandingBankOffer findings={sampleFindings()} />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />

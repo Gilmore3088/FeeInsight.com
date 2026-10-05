@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/r/**": ["./Reports/studio/out/*.html", "./Reports/studio/hosted-reports.json"],
     "/reports/sample-competitive-fee-position": ["./Reports/studio/sample/*.html"],
+    // The homepage shows the sample report's findings in its bank section.
+    "/": ["./Reports/studio/sample/*.html"],
     "/api/admin/**": [
       "./node_modules/tesseract.js/package.json",
       "./node_modules/tesseract.js/src/**",
