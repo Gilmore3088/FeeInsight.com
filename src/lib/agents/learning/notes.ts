@@ -119,7 +119,7 @@ export function describePlaybook(input: PlaybookNoteInput): PlaybookNotes {
   }
 
   if (input.rejectedUrlCount > 0) {
-    lines.push(`${plural(input.rejectedUrlCount, "page was", "pages were")} ruled out as not the fee schedule and will not be proposed again.`);
+    lines.push(`${plural(input.rejectedUrlCount, "page was", "pages were")} ruled out as not the fee schedule; their links are followed to find the real one.`);
   }
   if (input.lockedByCorrection) lines.push("A person corrected the source, so the pipeline will not change it.");
   if (playbook.costToDateMicrousd > 0) {

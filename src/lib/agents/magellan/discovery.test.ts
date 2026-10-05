@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DISCOVERY_METHOD_VERSION, runMagellanDiscovery } from "./discovery";
+import { DISCOVERY_METHOD_VERSION, rejectedSourcesFrom, runMagellanDiscovery } from "./discovery";
 
 type DbMock = ReturnType<typeof vi.fn>;
 type Handler = (text: string, values: unknown[]) => unknown[] | undefined;
@@ -375,6 +375,54 @@ describe("Magellan agentic discovery", () => {
 
       expect(fetched(fetchImpl)).not.toContain("https://footer.example/schedule-of-fees.pdf");
       expect(result.results[0].url).not.toBe("https://footer.example/schedule-of-fees.pdf");
+    });
+  });
+
+  describe("pages already ruled out", () => {
+    const sofi = bank(57, "https://www.sofi.com", { rescue_status: "pending" });
+    const marketingPage = "<h1>No account fees</h1><p>We do not charge maintenance fees.</p>" +
+      '<p>See the <a href="https://d32ijn7u0aqfv4.cloudfront.net/wp/wp-content/uploads/raw/SoFi-Bank-Fee-Sheet-May-18-2026.pdf">SoFi Bank Fee Sheet</a> for details.</p>';
+
+    function rejectedDb(entries: Array<{ url: string; at?: string }>): DbMock {
+      return createDbMock([sofi], (text) => {
+        if (text.includes("vault_schema_ready")) return [{ vault_schema_ready: true }];
+        if (text.includes("rejected_source_urls") && text.includes("jsonb_array_length")) {
+          return [{ institution_id: 57, rejected_source_urls: entries.map((entry) => ({ ...entry, reason: "not a fee schedule" })) }];
+        }
+        return undefined;
+      });
+    }
+
+    it("follows the ruled-out page's link to an off-site fee PDF, even when the homepage blocks bots", async () => {
+      const db = rejectedDb([{ url: "https://www.sofi.com/banking/fees/", at: new Date().toISOString() }]);
+      const fetchImpl = site({
+        "https://www.sofi.com/": () => response("denied", "text/html", 403),
+        "https://www.sofi.com/banking/fees/": () => response(marketingPage),
+        "https://d32ijn7u0aqfv4.cloudfront.net/wp/wp-content/uploads/raw/SoFi-Bank-Fee-Sheet-May-18-2026.pdf": () => response("%PDF-1.7", "application/pdf"),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 720, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({
+        outcome: "discovered",
+        code: "found_from_rejected_page",
+        documentType: "pdf",
+        url: "https://d32ijn7u0aqfv4.cloudfront.net/wp/wp-content/uploads/raw/SoFi-Bank-Fee-Sheet-May-18-2026.pdf",
+      });
+      expect(fetched(fetchImpl)).not.toContain("https://www.sofi.com/");
+    });
+
+    it("counts each ruled-out URL once and lets a ban expire after 90 days", () => {
+      const now = Date.parse("2026-10-05T00:00:00Z");
+      const sources = rejectedSourcesFrom([
+        { url: "https://bank.example/old", at: "2026-01-01T00:00:00Z" },
+        { url: "https://bank.example/fees/", at: "2026-10-01T00:00:00Z" },
+        { url: "https://bank.example/fees/", at: "2026-10-04T00:00:00Z" },
+        { url: "https://bank.example/legacy" },
+      ], now);
+
+      expect(sources.pages).toEqual(["https://bank.example/legacy", "https://bank.example/fees/", "https://bank.example/old"]);
+      expect([...sources.identities].sort()).toEqual(["bank.example/fees", "bank.example/legacy"]);
     });
   });
 

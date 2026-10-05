@@ -543,7 +543,7 @@ describe("Rosetta agentic read", () => {
 
       expect(result).toMatchObject({ completed: 0, wrongDocuments: 1, sentBackToMagellan: 1, outcomes: { wrong_document: 1 } });
       const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
-      expect(sqlText).toContain("rejected_source_urls = COALESCE(rejected_source_urls");
+      expect(sqlText).toContain("WHERE entry->>'url' IS DISTINCT FROM");
       expect(sqlText).toContain("SET fee_schedule_url = NULL");
       expect(sqlText).toContain("locked_by_correction IS TRUE");
       expect(JSON.stringify(db.mock.calls)).toContain('"wrong_document"');
