@@ -14,6 +14,7 @@ import { fetchWithTimeout } from "./find-validate";
 import {
   FINDER_ORDER,
   FINDERS,
+  findFromRejectedPages,
   finderOutcome,
   FOUND_CODES,
   MIN_LINK_SCORE,
@@ -44,8 +45,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * an older method is searched again at once, whatever its backoff.
  * 1: homepage links and guessed paths. 2: the find team (known link, homepage links,
  * site maps, hub pages, platform paths, guessed paths; peer hint and bounded crawl).
+ * 3: links on pages Rosetta ruled out are followed first (even when the homepage
+ * blocks bots), "fee sheet" is a strong link phrase, and rejections expire.
  */
-export const DISCOVERY_METHOD_VERSION = 2;
+export const DISCOVERY_METHOD_VERSION = 3;
 /** One bank never takes longer than this. */
 const INSTITUTION_BUDGET_MS = 45_000;
 // The tick starts no step after 180 s of its 300 s limit, so a step must end within ~110 s:
@@ -202,8 +205,41 @@ function profileDocumentType(row: DiscoveryCandidateRow): string | null {
     : null;
 }
 
-async function loadRejectedUrls(db: SqlTag, institutionIds: number[]): Promise<Map<number, Set<string>>> {
-  const byInstitution = new Map<number, Set<string>>();
+/**
+ * A ruled-out URL is skipped for this long, then may be proposed again: banks rewrite
+ * pages, and the fee-page check improves. The page's own links are followed at once.
+ */
+export const REJECTED_URL_TTL_DAYS = 90;
+
+export interface RejectedSources {
+  /** URL identities still inside their ban. */
+  identities: Set<string>;
+  /** Distinct ruled-out page URLs, newest first (bans expired or not). */
+  pages: string[];
+}
+
+/** Distinct rejected URLs, newest first, and the identities still banned. */
+export function rejectedSourcesFrom(entries: unknown, now = Date.now()): RejectedSources {
+  const list = Array.isArray(entries) ? (entries as Array<{ url?: unknown; at?: unknown }>) : [];
+  const identities = new Set<string>();
+  const pages: string[] = [];
+  const seen = new Set<string>();
+  const cutoff = now - REJECTED_URL_TTL_DAYS * 86_400_000;
+  for (const entry of [...list].reverse()) {
+    if (typeof entry?.url !== "string") continue;
+    const identity = urlIdentity(entry.url);
+    const at = typeof entry.at === "string" ? Date.parse(entry.at) : Number.NaN;
+    if (Number.isNaN(at) || at >= cutoff) identities.add(identity);
+    if (!seen.has(identity)) {
+      seen.add(identity);
+      pages.push(entry.url);
+    }
+  }
+  return { identities, pages };
+}
+
+async function loadRejectedUrls(db: SqlTag, institutionIds: number[]): Promise<Map<number, RejectedSources>> {
+  const byInstitution = new Map<number, RejectedSources>();
   if (institutionIds.length === 0) return byInstitution;
   const rows = await db`
     SELECT institution_id, rejected_source_urls
@@ -212,12 +248,7 @@ async function loadRejectedUrls(db: SqlTag, institutionIds: number[]): Promise<M
        AND jsonb_array_length(rejected_source_urls) > 0
   `;
   for (const row of rows) {
-    const entries = Array.isArray(row.rejected_source_urls) ? row.rejected_source_urls : [];
-    const urls = new Set<string>();
-    for (const entry of entries as Array<{ url?: unknown }>) {
-      if (typeof entry?.url === "string") urls.add(urlIdentity(entry.url));
-    }
-    byInstitution.set(Number(row.institution_id), urls);
+    byInstitution.set(Number(row.institution_id), rejectedSourcesFrom(row.rejected_source_urls));
   }
   return byInstitution;
 }
@@ -241,7 +272,7 @@ async function discoverForInstitution(
   row: DiscoveryCandidateRow,
   options: {
     fetchImpl: Fetcher;
-    rejectedUrls?: Set<string>;
+    rejectedUrls?: RejectedSources;
     knowledge: PlatformLearner;
     deadline: number;
     politeDelayMs: number;
@@ -294,6 +325,47 @@ async function discoverForInstitution(
     return finish({ outcome: "needs_human", code: "no_website", reason: "Invalid or missing website_url" });
   }
 
+  const ctx: SearchContext = {
+    institutionId,
+    stateCode,
+    site: baseUrl,
+    fetchImpl: options.fetchImpl,
+    rejected: options.rejectedUrls?.identities ?? new Set(),
+    tried: new Set([urlIdentity(baseUrl.toString())]),
+    homepageHtml: "",
+    homepageLinks: [],
+    platform: null,
+    knownUrl: normalizeHttpUrl(row.profile_canonical_source_url),
+    rejectedPages: options.rejectedUrls?.pages ?? [],
+    deadline: options.deadline,
+    politeDelayMs: options.politeDelayMs,
+    knowledge: options.knowledge,
+    pages: new Map(),
+  };
+
+  // Pages already ruled out often link to the real schedule: follow them first, before
+  // (and regardless of) the homepage, which may block bots.
+  if (ctx.rejectedPages && ctx.rejectedPages.length > 0) {
+    const finderStarted = Date.now();
+    const result = await findFromRejectedPages(ctx).catch((error): FinderResult => ({
+      found: null, trail: [], fetches: 0, ran: true, outOfTime: false,
+      note: `error: ${error instanceof Error ? error.message : String(error)}`,
+    }));
+    attemptedUrls += result.fetches;
+    if (result.ran) {
+      finders.push({
+        key: "rejectedPageLinks",
+        ...FINDERS.rejectedPageLinks,
+        outcome: finderOutcome(result),
+        fetches: result.fetches,
+        durationMs: Date.now() - finderStarted,
+        note: result.note,
+        trail: result.trail.slice(0, MAX_TRAIL),
+      });
+    }
+    if (result.found) return foundResult(finish, "rejectedPageLinks", result.found);
+  }
+
   // The homepage is read once and shared by every specialist; its request is logged on
   // the homepage-links attempt.
   const homepageTrail: TrailEntry = { url: baseUrl.toString(), source: "homepage", foundOn: null, label: "", score: 0, verdict: "" };
@@ -344,22 +416,12 @@ async function discoverForInstitution(
   const html = await homepage.text();
   homepageHash = sha256Text(html);
   platform = detectPlatform(html);
-  const ctx: SearchContext = {
-    institutionId,
-    stateCode,
-    site,
-    fetchImpl: options.fetchImpl,
-    rejected: options.rejectedUrls ?? new Set(),
-    tried: new Set([urlIdentity(site.toString())]),
-    homepageHtml: html,
-    homepageLinks: pageLinks(html, site),
-    platform,
-    knownUrl: normalizeHttpUrl(row.profile_canonical_source_url),
-    deadline: options.deadline,
-    politeDelayMs: options.politeDelayMs,
-    knowledge: options.knowledge,
-    pages: new Map([[urlIdentity(site.toString()), html]]),
-  };
+  ctx.site = site;
+  ctx.tried.add(urlIdentity(site.toString()));
+  ctx.homepageHtml = html;
+  ctx.homepageLinks = pageLinks(html, site);
+  ctx.platform = platform;
+  ctx.pages.set(urlIdentity(site.toString()), html);
 
   let lastReason = "No candidate validated";
   let ranOutOfTime = false;
@@ -408,7 +470,7 @@ async function discoverForInstitution(
     });
   }
   const sawCandidates = finders.some((finder) =>
-    finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page"].includes(entry.source)),
+    finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page", "rejected_page"].includes(entry.source)),
   );
   if (!sawCandidates && looksJavaScriptBuilt(html) && countAnchors(html) < 5) {
     return finish({ outcome: "dead", code: "js_homepage", reason: "Homepage is built by JavaScript; no links to follow without a browser" });
@@ -502,6 +564,9 @@ async function selectCandidates(
        )
      ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- A bank whose page was ruled out has a page whose links point the way: search it first.
+       CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
+             AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
        CASE WHEN inst.last_rescue_attempt_at IS NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.rescue_status = 'retry_after' THEN 1 ELSE 0 END,
        inst.last_rescue_attempt_at NULLS FIRST,
@@ -697,7 +762,7 @@ export async function runMagellanDiscovery(
   const rows = await selectCandidates(db, limit, options.stateCode, learning);
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
-    : new Map<number, Set<string>>();
+    : new Map<number, RejectedSources>();
   const knowledge = dryRun ? NO_KNOWLEDGE : createPlatformLearner(db);
 
   const startedAt = Date.now();
