@@ -4,6 +4,7 @@ import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financ
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARTITION, SEC_LINKS_SOURCE, runRegistrySecFilings, runRegistrySecLinks } from "./sec";
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
@@ -218,6 +219,20 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
         detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
+      };
+    },
+  },
+  {
+    source: REG_NEWS_SOURCE,
+    stepKey: "registry-reg-news",
+    title: "Pull regulator press releases",
+    fixedPartition: REG_NEWS_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryRegNews({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const failed = r.failedFeeds.length > 0 ? ` ${r.failedFeeds.length} feed(s) failed: ${r.failedFeeds.join("; ")}.` : "";
+      return {
+        summary: `Magellan read ${r.fetched} regulator press releases and stored ${r.inserted} new ones${dry(r.dryRun)}.${failed}`,
+        detail: { fetched: r.fetched, inserted: r.inserted, failed_feeds: r.failedFeeds },
       };
     },
   },

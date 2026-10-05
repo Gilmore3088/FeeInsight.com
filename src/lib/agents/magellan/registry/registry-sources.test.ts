@@ -9,6 +9,7 @@ import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
 import { cikBatch, runRegistrySecLinks } from "./sec";
+import { runRegistryRegNews } from "./reg-news";
 import { runRegistryStateRegulators } from "./state-regulators";
 
 function templateText(strings: unknown): string {
@@ -237,6 +238,35 @@ describe("registry Federal Reserve workers", () => {
   });
 });
 
+describe("registry regulator news worker", () => {
+  const rss = `<rss><channel>
+    <item><title>Agencies issue final rule on overdraft fee disclosures</title><link>https://example.gov/a</link><guid>a-1</guid><pubDate>Mon, 05 Oct 2026 14:00:00 GMT</pubDate></item>
+    <item><title><![CDATA[Board announces meeting]]></title><link>https://example.gov/b</link></item>
+  </channel></rss>`;
+
+  it("stores new press releases with a topic and records the partition", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_articles", () => [{ guid: "a-1" }]]]);
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(rss));
+
+    const result = await runRegistryRegNews({ db, feeds: { FED: "https://example.gov/feed" }, fetchOptions: { fetchImpl, backoffMs: 0 } });
+
+    expect(result).toMatchObject({ fetched: 2, inserted: 1, failedFeeds: [] });
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_articles"))!.values);
+    expect(rows[0]).toMatchObject({ guid: "a-1", source: "FED", topic: "overdraft", published_at: "2026-10-05T14:00:00.000Z" });
+    expect(rows[1]).toMatchObject({ guid: "https://example.gov/b", title: "Board announces meeting", published_at: null });
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partition?.values).toEqual(expect.arrayContaining(["reg-news", "current", "succeeded"]));
+  });
+
+  it("fails the step when every feed fails", async () => {
+    const { db } = createDb([]);
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("gone", { status: 404 }));
+    await expect(
+      runRegistryRegNews({ db, feeds: { OCC: "https://example.gov/occ" }, fetchOptions: { fetchImpl, backoffMs: 0 } }),
+    ).rejects.toThrow("Every regulator feed failed");
+  });
+});
+
 describe("registry state regulators worker", () => {
   it("upserts all 51 agencies and tags credit unions", async () => {
     const { db, statements } = createDb([["UPDATE institution_sources", () => [{ id: 1 }]]]);
@@ -261,6 +291,7 @@ describe("registry dispatch", () => {
       "sec-filings",
       "beige-book",
       "fred",
+      "reg-news",
       "state-regulators",
     ]);
   });
