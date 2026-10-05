@@ -46,7 +46,7 @@ LOCAL COMPETITORS:
 When the user asks about an institution's position, call getLocalCompetitors and compare it with its named local competitors before national or peer figures. Name them and their prices.
 
 EXTERNAL INTELLIGENCE:
-When you use the searchIntelligence tool and reference external sources, ALWAYS cite them inline as [Source: {source_name}, {date}]. Example: "According to the CFPB's annual overdraft study [Source: CFPB Overdraft Fee Study, 2024-12], overdraft revenue declined 7.2% year-over-year." Never present external intelligence as your own analysis — always attribute.
+When you use the searchIntelligence tool and reference external sources, ALWAYS cite them inline as [Source: {source_name}, {date}]. Format only, with placeholders and not a fact: "According to [source_name] [Source: {source_name}, {date}], [finding exactly as the tool returned it]." Never present external intelligence as your own analysis — always attribute.
 
 Today's date: ${today}. Always ground analysis in tool results — never invent statistics.`;
 }
