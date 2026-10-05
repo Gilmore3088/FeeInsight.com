@@ -24,7 +24,7 @@ export const metadata: Metadata = { title: "Analyze" };
 export default async function AnalyzePage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string }>;
+  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
@@ -55,6 +55,7 @@ export default async function AnalyzePage({
       initialAnalysisId={initialAnalysisRecord?.id ?? null}
       selectedInstitution={selectedInstitution}
       initialIntent={params.intent ?? null}
+      initialQuestion={params.q ? params.q.slice(0, 500) : null}
     />
   );
 }

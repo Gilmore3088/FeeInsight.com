@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { TemplateCard } from "./TemplateCard";
 import { ConfigSidebar } from "./ConfigSidebar";
 import { ReportOutput } from "./ReportOutput";
+import { ReportBasketPanel } from "./ReportBasketPanel";
+import { useReportBasket } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemsFor } from "@/lib/hamilton/report-basket";
 import { GeneratingState } from "./GeneratingState";
 import { ReportLibrary } from "./ReportLibrary";
 import {
@@ -126,6 +129,7 @@ export function ReportWorkspace({
   // is the first one (typically monthly_maintenance) so the focusArea is
   // always a real fee_category key, not a generic placeholder.
   const SPOTLIGHT = getSpotlightCategories();
+  const basketItems = basketItemsFor(useReportBasket(), selectedInstitution?.id?.toString() ?? null);
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplateType | null>(() =>
     getInitialTemplateFromIntent(initialIntent),
   );
@@ -260,8 +264,14 @@ export function ReportWorkspace({
     }, 100);
   }
 
-  async function handleGenerate() {
-    if (!selectedTemplate) return;
+  async function handleGenerate(override?: { template: ReportTemplateType; focus?: string | null }) {
+    const template = override?.template ?? selectedTemplate;
+    if (!template) return;
+    const focus = override?.focus ?? focusArea;
+    if (override) {
+      setSelectedTemplate(override.template);
+      if (override.focus) setFocusArea(override.focus);
+    }
     setIsGenerating(true);
     setError(null);
     setGeneratedReport(null);
@@ -276,11 +286,11 @@ export function ReportWorkspace({
     let result: Awaited<ReturnType<typeof generateReport>>;
     try {
       result = await generateReport({
-      templateType: selectedTemplate,
+      templateType: template,
       dateFrom,
       dateTo: today,
       // focusArea is already a real fee_category key — no transform needed
-      focusCategory: selectedTemplate === "category_deep_dive" ? focusArea : undefined,
+      focusCategory: template === "category_deep_dive" ? focus : undefined,
       scenarioId: initialScenarioId ?? undefined,
       institutionId: selectedInstitution?.id,
       selectedInstitutionName: selectedInstitution?.name,
@@ -289,6 +299,7 @@ export function ReportWorkspace({
       selectedSource,
       selectedSourceLabel,
       narrativeTone,
+      addedFindings: basketItems,
     });
     } catch {
       result = { success: false, error: "Hamilton couldn't reach the server. Check your connection and try again." };
@@ -299,7 +310,7 @@ export function ReportWorkspace({
     if (result.success) {
       setGeneratedReport(result.report);
       setGeneratedReportId(result.reportId);
-      setGeneratedReportType(selectedTemplate);
+      setGeneratedReportType(template);
       setGeneratedReportMetadata(result.artifactMetadata);
     } else {
       setError(result.error);
@@ -414,6 +425,20 @@ export function ReportWorkspace({
       <div className="grid min-w-0 gap-6 lg:grid-cols-12 lg:items-start lg:gap-12">
         {/* Left: Template Gallery + Preview */}
         <section className={`min-w-0 ${reportGenerated ? "lg:col-span-12" : "lg:col-span-8"}`}>
+          {!reportGenerated && !isGenerating && basketItems.length > 0 && (
+            <ReportBasketPanel
+              items={basketItems}
+              onBuild={() => {
+                const categories = [...new Set(basketItems.map((item) => item.feeCategory).filter(Boolean))];
+                void handleGenerate(
+                  categories.length === 1
+                    ? { template: "category_deep_dive", focus: categories[0] }
+                    : { template: "competitive_positioning" },
+                );
+              }}
+            />
+          )}
+
           {/* Section label — "Generate New Report" per D-02 */}
           <div className="mb-6">
             <h2
@@ -584,7 +609,7 @@ export function ReportWorkspace({
           isGenerating={isGenerating}
           onPeerSetChange={handlePeerSetChange}
           onNarrativeToneChange={setNarrativeTone}
-          onGenerate={handleGenerate}
+          onGenerate={() => handleGenerate()}
           peerCoveragePreview={peerCoveragePreview}
           isPeerCoverageLoading={isPeerCoverageLoading}
           peerCoverageError={peerCoverageError}

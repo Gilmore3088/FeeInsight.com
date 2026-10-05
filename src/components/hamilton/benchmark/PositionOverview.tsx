@@ -15,6 +15,8 @@ import {
 } from "@/lib/hamilton/institution-position";
 import type { ExpertStateContext } from "@/lib/hamilton/expert-context";
 import { RangeBar, RangeLegend, TONE_COLORS, type PositionTone } from "./RangeBar";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 
 export function positionTone(entry: Pick<InstitutionPositionEntry, "gapPct" | "gapAmount">): PositionTone {
   if (entry.gapPct === null) {
@@ -147,6 +149,31 @@ export function PositionOverview({
                       <span style={{ color: "#1d4ed8" }}> · {state.stateCode} median {formatAmount(stateLevel.median)}</span>
                     )}
                   </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <Link
+                      href={hrefWithInstitutionContext(
+                        `/pro/analyze?q=${encodeURIComponent(
+                          `Why is our ${entry.displayName} fee ${formatAmount(entry.yourAmount)} against a peer median of ${formatAmount(entry.benchmarkMedian)}, and what should we do about it?`,
+                        )}`,
+                        institutionId,
+                      )}
+                      className="font-semibold no-underline hover:underline"
+                      style={{ color: "var(--hamilton-primary)" }}
+                    >
+                      Ask about this
+                    </Link>
+                    <AddToReportButton
+                      variant="link"
+                      item={{
+                        id: basketItemId("Position", institutionId, entry.feeCategory),
+                        source: "Position",
+                        title: `${entry.displayName}: ${formatAmount(entry.yourAmount)} against a peer median of ${formatAmount(entry.benchmarkMedian)}`,
+                        detail: `${gapText(entry)}, compared with ${entry.benchmarkCount} peer institutions.`,
+                        feeCategory: entry.feeCategory,
+                        institutionId,
+                      }}
+                    />
+                  </span>
                 </div>
                 <div className="col-span-2 row-start-2 md:col-span-1 md:row-start-auto">
                   <RangeBar
@@ -173,7 +200,7 @@ export function PositionOverview({
           })}
         </ul>
         <p className="text-pretty border-t px-5 py-2.5 text-xs" style={{ borderColor: "var(--hamilton-border)", color: "var(--hamilton-text-tertiary)" }}>
-          Click a fee to simulate a change. {positioning.ownFeeCount} fees are published for this institution; the {entries.length} with a peer median and the largest gaps are shown.
+          Click a fee to test a change, ask Hamilton about it, or add it to your report. {positioning.ownFeeCount} fees are published for this institution; the {entries.length} with a peer median and the largest gaps are shown.
         </p>
       </div>
     </section>

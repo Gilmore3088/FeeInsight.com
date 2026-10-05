@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { CTA_HIERARCHY } from "@/lib/hamilton/navigation";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
 
 interface AnalyzeCTABarProps {
   /** Only show after analysis completes */
@@ -16,6 +18,8 @@ interface AnalyzeCTABarProps {
   feeCategory?: string | null;
   /** Switches Analyze to the Risk lens with a risk question ready to send */
   onViewRiskDrivers?: () => void;
+  /** This answer as a report-basket finding */
+  basketItem?: Omit<ReportBasketItem, "addedAt"> | null;
 }
 
 /**
@@ -34,6 +38,7 @@ export function AnalyzeCTABar({
   isExporting,
   feeCategory = null,
   onViewRiskDrivers,
+  basketItem = null,
 }: AnalyzeCTABarProps) {
   if (!isVisible) return null;
 
@@ -65,6 +70,8 @@ export function AnalyzeCTABar({
       >
         {primary}
       </Link>
+
+      {basketItem && <AddToReportButton item={basketItem} />}
 
       {secondaryActions.map((action) => (
         <Link

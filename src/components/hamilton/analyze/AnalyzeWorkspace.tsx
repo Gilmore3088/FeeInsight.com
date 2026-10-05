@@ -17,6 +17,7 @@ import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 
 function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: string }> }): string {
@@ -38,6 +39,8 @@ interface AnalyzeWorkspaceProps {
   /** Pre-populated analysis loaded from hamilton_saved_analyses via ?analysis= searchParam */
   initialAnalysis?: AnalyzeResponse | null;
   initialAnalysisId?: string | null;
+  /** A question handed over from another page ("Ask about this"); filled in, never auto-sent */
+  initialQuestion?: string | null;
 }
 
 /**
@@ -60,6 +63,7 @@ export function AnalyzeWorkspace({
   initialIntent,
   initialAnalysis,
   initialAnalysisId = null,
+  initialQuestion = null,
 }: AnalyzeWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<AnalysisFocus>(() => focusForIntent(initialIntent));
   const [parsedResponse, setParsedResponse] = useState<ParsedResponse | null>(() => {
@@ -75,6 +79,7 @@ export function AnalyzeWorkspace({
   // If restoring a saved analysis, mark it already saved to prevent duplicate auto-save
   const [isSaved, setIsSaved] = useState(!!initialAnalysis);
   const [input, setInput] = useState(() => {
+    if (initialQuestion && !initialAnalysis) return initialQuestion;
     if (!selectedInstitution || initialAnalysis) return "";
     if (selectedInstitution.insightReadiness === "source_needed") {
       return `Build a diligence path for ${selectedInstitution.name}. Explain what is known, what is missing, and what source evidence is needed before making fee claims.`;
@@ -237,6 +242,8 @@ export function AnalyzeWorkspace({
   const streamingContent = lastAssistantMessage ? extractTextFromMessage(lastAssistantMessage) : "";
   const liveParsed = isLoading && streamingContent ? parseAnalyzeResponse(streamingContent) : null;
   const displayedResponse = parsedResponse ?? liveParsed;
+  const answerLead = displayedResponse ? shapeHamiltonView(displayedResponse.hamiltonView).lead : "";
+  const answerCategory = answerLead ? inferFeeCategory(answerLead) : null;
 
   return (
     <div className="@container flex flex-col gap-6 pb-56">
@@ -396,12 +403,22 @@ export function AnalyzeWorkspace({
             institutionId={normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId)}
             onExportPdf={handleExportPdf}
             isExporting={isExporting}
-            feeCategory={
-              displayedResponse
-                ? inferFeeCategory(shapeHamiltonView(displayedResponse.hamiltonView).lead)
+            feeCategory={answerCategory}
+            onViewRiskDrivers={handleViewRiskDrivers}
+            basketItem={
+              displayedResponse && answerLead
+                ? {
+                    id: basketItemId("Ask", selectedInstitution?.id ?? institutionId, answerLead),
+                    source: "Ask",
+                    title: answerLead,
+                    detail: [shapeHamiltonView(displayedResponse.hamiltonView).paragraphs.join(" "), displayedResponse.whatThisMeans]
+                      .filter(Boolean)
+                      .join(" "),
+                    feeCategory: answerCategory,
+                    institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId),
+                  }
                 : null
             }
-            onViewRiskDrivers={handleViewRiskDrivers}
           />
 
           {/* Why It Matters */}

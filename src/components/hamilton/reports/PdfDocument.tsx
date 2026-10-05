@@ -242,6 +242,21 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           ))}
         </View>
 
+        {/* Findings the reader added from Position, Ask and Test */}
+        {report.addedFindings && report.addedFindings.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeading}>Findings You Added</Text>
+            {report.addedFindings.map((finding, i) => (
+              <View key={i} wrap={false}>
+                <Text style={styles.paragraph}>
+                  {finding.title}
+                  {finding.detail ? ` ${finding.detail}` : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Snapshot — only if scenario data present */}
         {report.snapshot.length > 0 && (
           <View style={styles.section}>

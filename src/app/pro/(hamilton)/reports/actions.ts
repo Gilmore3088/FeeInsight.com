@@ -35,6 +35,7 @@ import {
 } from "@/lib/hamilton/report-synthesis";
 import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
+import { basketItemsFor, sanitizeBasketItems } from "@/lib/hamilton/report-basket";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
 import {
@@ -77,6 +78,8 @@ export interface GenerateReportParams {
   selectedSourceLabel?: string | null;
   /** The Audience picker: shapes the narrative's register, never its figures. */
   narrativeTone?: ReportNarrativeTone;
+  /** Report basket: findings and tests the user added from Position, Ask and Test (re-validated here). */
+  addedFindings?: unknown;
 }
 
 export type ReportNarrativeTone = "consulting" | "academic" | "executive" | "technical";
@@ -397,6 +400,10 @@ export async function generateReport(
     const selectedVerifiedFees = selectedVisibleFees.filter((fee) => fee.review_status === "approved");
     const selectedProvisionalFees = selectedVisibleFees.filter((fee) => fee.review_status !== "approved");
     const evidencePolicy = params.evidencePolicy ?? "provisional-first";
+    const addedFindings = basketItemsFor(
+      sanitizeBasketItems(params.addedFindings),
+      selectedInstitution ? String(selectedInstitution.id) : null,
+    );
     const selectedSourceContext = resolveReportSelectedSource(params);
     const selectedFeeDeltas = buildSelectedInstitutionFeeDeltas({
       selectedFees: selectedVisibleFees,
@@ -520,6 +527,7 @@ export async function generateReport(
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
           focus_category: params.focusCategory ?? null,
+          findings_added_by_reader: addedFindings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail })),
           categories: topCategories.map((c) => ({
             fee_category: c.fee_category,
             median_amount: c.median_amount,
@@ -529,7 +537,15 @@ export async function generateReport(
             maturity: c.maturity_tier,
           })),
         },
-        context: withTone(withStateRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone),
+        context: withTone(
+          withStateRules(
+            buildExecutiveSummaryContext(params, institutionName, period) +
+              (addedFindings.length > 0
+                ? "\n\nThe reader added the findings in findings_added_by_reader from their own analysis. Address each one in the summary, using only figures present in DATA."
+                : ""),
+          ),
+          params.narrativeTone,
+        ),
       },
       {
         type: strategicSectionType,
@@ -702,6 +718,9 @@ export async function generateReport(
         shareEnabled: false,
       },
     };
+    if (addedFindings.length > 0) {
+      report.addedFindings = addedFindings.map((f) => ({ source: f.source, title: f.title, detail: f.detail }));
+    }
     const artifactQuality = validateHamiltonReportArtifact({
       report,
       selectedInstitutionId: selectedInstitution?.id ?? null,

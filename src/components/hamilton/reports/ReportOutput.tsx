@@ -87,10 +87,33 @@ export function ReportOutput({ report, reportType, artifactMetadata }: ReportOut
         ))}
       </ReportSection>
 
+      {/* Findings the reader carried in from Position, Ask and Test */}
+      {report.addedFindings && report.addedFindings.length > 0 && (
+        <ReportSection heading="Findings You Added">
+          <ul className="space-y-4">
+            {report.addedFindings.map((finding, i) => (
+              <li key={i} className="border-l-2 pl-4" style={{ borderColor: "var(--hamilton-primary)" }}>
+                <p className="text-[15px] font-semibold text-pretty" style={{ color: "var(--hamilton-text-primary)" }}>
+                  {finding.title}
+                </p>
+                {finding.detail && (
+                  <p className="mt-1 text-sm leading-relaxed text-pretty" style={{ color: "var(--hamilton-text-secondary)" }}>
+                    {finding.detail}
+                  </p>
+                )}
+                <p className="mt-1 text-[11px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                  From {finding.source}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </ReportSection>
+      )}
+
       {/* Current vs Proposed Snapshot — only if scenario data present */}
       {report.snapshot.length > 0 && (
         <ReportSection heading="Current vs Proposed Snapshot">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {report.snapshot.map((item, i) => (
               <StatCalloutBox
                 key={i}
