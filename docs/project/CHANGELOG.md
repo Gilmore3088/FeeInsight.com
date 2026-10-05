@@ -40,7 +40,16 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Regulator news and the latest Beige Book kept current; invented Hamilton prompt examples removed (#104).
 - A budget refusal is named as the reason a Hamilton thesis failed (#83).
 - Partner API: brainstorm notes, call report quarters, CFPB complaints, CSV for paid keys (#90).
+- API spec: `/fees?category` and `/institutions?id` are now query parameters on `/fees` and `/institutions`, so code generators and Postman import the spec cleanly.
 - The Live page became a visual flow board (#80).
+
+**Revenue and leads**
+- Free national and Fed district fee reports open instantly from an email; the institution report is the paid step, and no page or email promises "48 hours" (#150).
+- Clicks, checkout and sign-ups are sent to Vercel Analytics (#147); Plausible removed (#151).
+- Every report request gets its own lead row, so a repeat email (the First National Bank Alaska request) shows in /admin/leads (#148).
+- Lead loop with statuses, 24-hour due times and failed-email alerts (#136); spam guards on forms (#138).
+- Pro welcome email (#141); hosted report next steps (#142); For Institutions buttons and tracking (#144).
+- New /reports page (#85); the sample is offline and "$300 value" is gone (#123).
 
 ## 2026-10-04 (from 19:56 UTC)
 - Rosetta read fixed: every read had failed with "bigint < text[]" (#72).

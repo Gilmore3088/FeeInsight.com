@@ -9,7 +9,9 @@ type SqlTag = typeof sql;
 /** Institutions source-checked per publish step; later steps pick up the rest. */
 export const SOURCE_CHECK_INSTITUTION_LIMIT = 40;
 export const SOURCE_CHECK_REASON = "source_check_untraceable";
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 1 } as const;
+// Version 2: a line carrying several fees gives each fee its own price, and fees an
+// earlier version took down are re-checked and restored when they trace.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 2 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -29,6 +31,8 @@ export interface LiveFeeRow {
   canonical_fee_key: string;
   fee_name: string;
   amount: number | string | null;
+  /** Taken down by an earlier source check; restored if it now traces. */
+  taken_down?: boolean | null;
 }
 
 export interface InstitutionText {
@@ -82,9 +86,12 @@ export interface SourceCheckResult {
   traced: number;
   relinked: number;
   takedowns: SourceCheckTakedown[];
+  /** Fees an earlier source check took down that now trace, put back live. */
+  restored: number;
 }
 
-const EMPTY_RESULT: SourceCheckResult = { institutionsChecked: 0, liveFeesChecked: 0, traced: 0, relinked: 0, takedowns: [] };
+const EMPTY_RESULT: SourceCheckResult = { institutionsChecked: 0, liveFeesChecked: 0, traced: 0, relinked: 0, takedowns: [], restored: 0 };
+const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
 
 /**
  * Hamilton repair: every live fee must be stated in the bank's own stored schedule
@@ -93,8 +100,9 @@ const EMPTY_RESULT: SourceCheckResult = { institutionsChecked: 0, liveFeesChecke
  * own document's text, or relinked to another stored document of the institution that
  * states it. A fee that still can't be traced is taken down: kept, with
  * `rolled_back_at`, the batch id and the reason, and its verified row rejected so the
- * next publish does not bring it back. Clearing `rolled_back_at` restores it. A dry run
- * reports and writes nothing.
+ * next publish does not bring it back. Clearing `rolled_back_at` restores it. Fees an
+ * earlier version took down are re-checked with the institution and restored (with their
+ * verified row) when they now trace. A dry run reports and writes nothing.
  */
 export async function takeDownUntraceableFees(
   db: SqlTag,
@@ -118,7 +126,7 @@ export async function takeDownUntraceableFees(
           SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_fee_id
             FROM published_fee_records fp
             JOIN institution_sources inst ON inst.id = fp.institution_id
-           WHERE fp.rolled_back_at IS NULL
+           WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${TAKEN_DOWN})
              AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
              AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
            GROUP BY fp.institution_id
@@ -138,11 +146,11 @@ export async function takeDownUntraceableFees(
     const ids = [...fingerprints.keys()];
     fees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.rolled_back_at IS NOT NULL AS taken_down
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-       WHERE fp.rolled_back_at IS NULL
+       WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${TAKEN_DOWN})
          AND fp.institution_id = ANY(${ids}::bigint[])
     `);
     texts = await inSavepoint(db, (scope) => scope<Array<InstitutionText & { institution_id: number | string }>>`
@@ -168,13 +176,20 @@ export async function takeDownUntraceableFees(
   const relinks: Array<{ feeRawId: number; sourceDocumentId: number }> = [];
   const linkedKeys = new Set<string>();
   const verifiedIds: number[] = [];
-  const perInstitution = new Map<number, { checked: number; takenDown: number; relinked: number }>(
-    [...fingerprints.keys()].map((id) => [id, { checked: 0, takenDown: 0, relinked: 0 }]),
+  const restores: number[] = [];
+  const perInstitution = new Map<number, { checked: number; takenDown: number; relinked: number; restored: number }>(
+    [...fingerprints.keys()].map((id) => [id, { checked: 0, takenDown: 0, relinked: 0, restored: 0 }]),
   );
   for (const fee of fees) {
     const institutionId = Number(fee.institution_id);
     const counts = perInstitution.get(institutionId)!;
     const verdict = traceLiveFee(fee, textsByInstitution.get(institutionId) ?? []);
+    if (fee.taken_down) {
+      // Already down: restore it when it now traces, otherwise leave it down.
+      if (verdict.kind === "untraceable") continue;
+      restores.push(Number(fee.fee_published_id));
+      counts.restored += 1;
+    }
     result.liveFeesChecked += 1;
     counts.checked += 1;
     if (verdict.kind === "traced") {
@@ -201,6 +216,7 @@ export async function takeDownUntraceableFees(
     }
   }
   result.institutionsChecked = perInstitution.size;
+  result.restored = restores.length;
 
   if (options.dryRun) return result;
 
@@ -222,6 +238,37 @@ export async function takeDownUntraceableFees(
                   AND other.fee_name = fr.fee_name
              )
         `;
+      }
+      if (restores.length > 0) {
+        // A restore never makes an exact second copy of a fee that is live again.
+        const restored = await scope<{ lineage_ref: number | string }[]>`
+          UPDATE published_fee_records fp
+             SET rolled_back_at = NULL,
+                 rolled_back_by_batch_id = NULL,
+                 rolled_back_reason = NULL
+           WHERE fp.fee_published_id = ANY(${restores}::bigint[])
+             AND fp.rolled_back_reason LIKE ${TAKEN_DOWN}
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records live
+                WHERE live.rolled_back_at IS NULL
+                  AND live.institution_id = fp.institution_id
+                  AND live.canonical_fee_key = fp.canonical_fee_key
+                  AND live.amount IS NOT DISTINCT FROM fp.amount
+                  AND live.fee_name = fp.fee_name
+             )
+          RETURNING fp.lineage_ref
+        `;
+        result.restored = restored.length;
+        if (restored.length > 0) {
+          await scope`
+            UPDATE verified_fee_observations
+               SET review_status = 'verified',
+                   outlier_flags = outlier_flags - ${SOURCE_CHECK_REASON}
+             WHERE fee_verified_id = ANY(${restored.map((row) => Number(row.lineage_ref))}::bigint[])
+               AND review_status = 'rejected'
+               AND outlier_flags ? ${SOURCE_CHECK_REASON}
+          `;
+        }
       }
       if (result.takedowns.length > 0) {
         await scope`
@@ -257,7 +304,7 @@ export async function takeDownUntraceableFees(
           yieldCount: counts.checked - counts.takenDown,
           costMicrousd: 0,
           runId: options.runId,
-          detail: { live_fees_checked: counts.checked, relinked: counts.relinked, taken_down: counts.takenDown },
+          detail: { live_fees_checked: counts.checked, relinked: counts.relinked, taken_down: counts.takenDown, restored: counts.restored },
           foldIntoPlaybook: false,
         });
       }
@@ -265,7 +312,7 @@ export async function takeDownUntraceableFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.source_check', 'completed',
-          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down`},
+          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down, ${result.restored} restored`},
           ${JSON.stringify({
             batch_id: options.batchId,
             institutions_checked: result.institutionsChecked,
@@ -273,6 +320,7 @@ export async function takeDownUntraceableFees(
             traced: result.traced,
             relinked: result.relinked,
             taken_down: result.takedowns.length,
+            restored: result.restored,
             samples: result.takedowns.slice(0, 20).map((row) => ({
               fee_published_id: row.feePublishedId,
               institution_id: row.institutionId,
@@ -287,8 +335,8 @@ export async function takeDownUntraceableFees(
     });
   } catch (error) {
     console.error("takeDownUntraceableFees write failed:", error);
-    return { ...result, relinked: 0, takedowns: [] };
+    return { ...result, relinked: 0, takedowns: [], restored: 0 };
   }
-  if (result.takedowns.length > 0) invalidatePublicReadCache();
+  if (result.takedowns.length > 0 || result.restored > 0) invalidatePublicReadCache();
   return result;
 }

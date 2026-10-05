@@ -85,8 +85,8 @@ export function InstitutionOfferBand({
             <p>Work at {institutionName}? See every fee vs. your peers.</p>
             <InfoTip label="About the report">
               The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
-              verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}, delivered in{" "}
-              {COMPETITIVE_FEE_POSITION_REPORT.turnaround}.
+              verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}:{" "}
+              {COMPETITIVE_FEE_POSITION_REPORT.nextStep.toLowerCase()}.
             </InfoTip>
           </div>
         </div>
@@ -95,7 +95,7 @@ export function InstitutionOfferBand({
             href={reportOfferHref}
             className="inline-flex items-center gap-2 rounded-md bg-[#C44B2E] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
           >
-            Get your free report
+            Request the report
             <ArrowRight className="h-4 w-4" />
           </Link>
           <Link

@@ -91,7 +91,7 @@ Brand hierarchy is settled and out of scope: Fee Insight (company/site) → Bank
   `Reports/studio/out/` (token map file), with exec summary, PDF link, refresh price, "Book 15 minutes". (F3)
 - Leads API: newsletter branch inserts-or-tags and never overwrites non-null name/company/role;
   footer copy "Monthly fee index update: new benchmarks, notable fee changes, one chart." (F13)
-- Analytics: `track(event)` helper for Plausible; events on Create account / Request a Report /
+- Analytics: `trackEvent(event)` helper (no analytics provider connected); events on Create account / Request a Report /
   See a sample report / newsletter / checkout start. (F13)
 - SEO: sitemap adds /for-institutions, /subscribe, /contact, /api-docs, guides; /reports priority
   reduced until content; real lastmod where available; noindex city pages with <3 institutions and
@@ -111,7 +111,6 @@ back page, `fill.mjs` if it generates the back page)
 
 ## Explicitly not resolvable in code (handed back)
 - LinkedIn research for marketing/product leads at the 25 targets; sending the emails.
-- Vercel `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` + Plausible dashboard site rename.
 - Stripe payment-mode checkout for the $300 SKU: scoped as an inline request form now; checkout
   needs a Stripe price created in the dashboard (user action) before code can reference it.
 - Verification of the top-50 banks / 25 CUs by deposits (data pipeline work, not UI).

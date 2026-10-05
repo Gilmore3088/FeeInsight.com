@@ -34,7 +34,9 @@ import { countAnchors, detectPlatform, looksJavaScriptBuilt } from "./site-signa
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
-export const MAGELLAN_DISCOVERY_DEFAULT_LIMIT = 25;
+// A step stops starting banks at STEP_START_BUDGET_MS, so the limit is a ceiling, not the
+// pace: at 25 a step often finished early and left free search time unused.
+export const MAGELLAN_DISCOVERY_DEFAULT_LIMIT = 50;
 export const MAGELLAN_DISCOVERY_MAX_LIMIT = 50;
 export const MAGELLAN_DISCOVERY_MIN_CONFIDENCE = MIN_LINK_SCORE;
 
