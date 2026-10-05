@@ -16,6 +16,10 @@ export interface FeeCategorySummary {
   cu_count: number;
   /** Institutions publishing this fee at $0. Consumer guides cite it directly. */
   zero_count: number;
+  /** Median among banks only; null below the minimum sample. */
+  bank_median_amount: number | null;
+  /** Median among credit unions only; null below the minimum sample. */
+  cu_median_amount: number | null;
 }
 
 export interface FeeInstance {
@@ -111,6 +115,11 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     }
   }
 
+  // Same rows, split by charter: no extra query for the bank vs credit union medians.
+  const byCharter = summarizeFeesBy(rows, (row) =>
+    row.charter_type === "bank" || row.charter_type === "credit_union" ? `${row.fee_category}|${row.charter_type}` : null,
+  );
+
   const results: FeeCategorySummary[] = [];
   for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
     results.push({
@@ -126,6 +135,8 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
       p25_amount: stats.p25_amount,
       p75_amount: stats.p75_amount,
       zero_count: zeroInstitutions.get(category)?.size ?? 0,
+      bank_median_amount: byCharter.get(`${category}|bank`)?.median_amount ?? null,
+      cu_median_amount: byCharter.get(`${category}|credit_union`)?.median_amount ?? null,
     });
   }
 
