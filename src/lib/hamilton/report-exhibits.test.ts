@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons } from "./report-exhibits";
+import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, cheapestRank, peerBand } from "./report-exhibits";
 import { checkNarrativeFigures } from "./figure-check";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import type { LocalMarket } from "@/lib/data-store/local-market";
@@ -66,6 +66,24 @@ describe("buildFeeImpacts", () => {
     ]);
     // The figures Hamilton may quote trace back to the payload.
     expect(checkNarrativeFigures("Moving NSF to $30 is worth $5,000 per 1,000 charges, 0.5% of income.", { impacts }).unmatched).toEqual([]);
+  });
+});
+
+describe("price-move scenarios", () => {
+  it("ranks the fee among local competitors before and after moving to the reference price", () => {
+    const deltas = [delta("nsf", 36, 30)];
+    const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 35 }]));
+    const [impact] = buildFeeImpacts(deltas, local, null);
+    // Local median of 28, 30, 32, 35 is 31; today 36 is the most expensive of 5.
+    expect(impact).toMatchObject({ reference_amount: 31, local_rank_today: 5, local_rank_at_reference: 3, local_field_size: 5 });
+  });
+
+  it("places amounts in peer bands, falling back to above/below the median without quartiles", () => {
+    expect(peerBand(40, 25, 30, 35)).toBe("above the 75th percentile");
+    expect(peerBand(30, 25, 30, 35)).toBe("at the median");
+    expect(peerBand(27, 25, 30, 35)).toBe("between the 25th percentile and the median");
+    expect(peerBand(20, null, 30, null)).toBe("below the median");
+    expect(cheapestRank(30, [30, 30, 25])).toBe(2);
   });
 });
 

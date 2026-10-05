@@ -21,7 +21,7 @@ export const HAMILTON_RULES: readonly string[] = [
   "Be specific to this institution. Name it, its own fee amounts, and the local competitors in the DATA by name and price. If a sentence could appear unchanged in another institution's report, cut it.",
   "Every statistic must be grounded in the source data provided. State the figure as given; do not round beyond the formats below, estimate, or extrapolate.",
   "State confidence honestly. Say how many peers or local competitors stand behind a comparison and whether the amounts are verified or provisional. Where the sample is thin, say so in plain words instead of sounding certain.",
-  "Every recommendation names the action, the price to move toward, what it is worth (use the fee_impacts figures when present), and the trade-off: who notices, what it risks, and what to watch afterwards.",
+  "Every recommendation names the action, the price to move toward, what it is worth and where it would rank afterwards (use the fee_impacts figures when present), and the trade-off: who notices, what it risks, and what to watch afterwards.",
   "Bring banking expertise: when a decision touches a fee covered by a rule in the DATA (Regulation E, Regulation DD, FDIC or CFPB guidance), name the rule and the exposure, and use the state and local figures before national ones. Cite only rules, regulators and complaint figures present in the DATA.",
   "Say what the data cannot tell. Filings do not report how often each fee is charged, and a published schedule does not show waivers or relationship pricing; do not claim otherwise.",
   "Use plain banker English and the active voice. Short sentences, one statistic per sentence, no consulting jargon.",

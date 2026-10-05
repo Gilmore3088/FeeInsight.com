@@ -12,7 +12,7 @@ export const MAX_REPORT_DECISIONS = 3;
 export const ANSWER_SECTION_FORMAT = `
 OUTPUT FORMAT (plain text, exactly these labels, no markdown):
 HEADLINE: <one sentence: the single conclusion for this institution, with its key figure>
-DECISION: <verb-first action naming the fee and the price to move toward> || WHY: <one or two sentences of evidence: this institution's amount against the named local competitors or peer median, and what it is worth from fee_impacts when present> || CONFIDENCE: <High, Medium or Low> - <the reason: how many competitors or peers, verified or provisional>
+DECISION: <verb-first action naming the fee and the price to move toward> || WHY: <one or two sentences of evidence: this institution's amount against the named local competitors or peer median, and what the move does from fee_impacts when present: the income per 1,000 charges and the local rank or peer band before and after> || CONFIDENCE: <High, Medium or Low> - <the reason: how many competitors or peers, verified or provisional>
 Write one to ${MAX_REPORT_DECISIONS} DECISION lines, most valuable first. "Hold" is a valid decision when the price is already right.
 `.trim();
 

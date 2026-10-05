@@ -34,7 +34,11 @@ export interface LocalFeeComparison {
   local_competitor_count: number;
   position_vs_local: "above" | "below" | "at" | null;
   competitors: Array<{ name: string; amount: number }>;
+  /** Every local competitor's amount for this fee, lowest first (for ranks). */
+  local_amounts: number[];
 }
+
+export type PeerBand = "below the median" | "above the median" | "below the 25th percentile" | "between the 25th percentile and the median" | "at the median" | "between the median and the 75th percentile" | "above the 75th percentile";
 
 export interface FeeImpactEstimate {
   fee_category: string;
@@ -48,6 +52,12 @@ export interface FeeImpactEstimate {
   income_per_1000_amount: number;
   /** That change as a percent of last full year's deposit service-charge income. */
   share_of_service_charges_pct: number | null;
+  /** Price-move scenario: rank among local competitors plus this institution, 1 = cheapest. */
+  local_rank_today: number | null;
+  local_rank_at_reference: number | null;
+  local_field_size: number | null;
+  peer_band_today: PeerBand;
+  peer_band_at_reference: PeerBand;
 }
 
 export interface ReportExhibitData {
@@ -117,8 +127,29 @@ export function buildLocalComparisons(
       local_competitor_count: competitors.length,
       position_vs_local: position,
       competitors: competitors.slice(0, NAMED_COMPETITORS_PER_FEE),
+      local_amounts: amounts,
     }];
   });
+}
+
+/** Rank among the competitors plus this institution at `amount`, 1 = cheapest (ties share the better rank). */
+export function cheapestRank(amount: number, competitorAmounts: number[]): number {
+  return 1 + competitorAmounts.filter((other) => other < amount - 0.005).length;
+}
+
+export function peerBand(amount: number, p25: number | null, median: number, p75: number | null): PeerBand {
+  if (Math.abs(amount - median) < 0.005) return "at the median";
+  if (p25 === null || p75 === null) return amount < median ? "below the median" : "above the median";
+  if (amount < p25 - 0.005) return "below the 25th percentile";
+  if (amount < median) return "between the 25th percentile and the median";
+  if (amount <= p75 + 0.005) return "between the median and the 75th percentile";
+  return "above the 75th percentile";
+}
+
+function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
 }
 
 export function buildFeeImpacts(
@@ -133,6 +164,7 @@ export function buildFeeImpacts(
     const gap = round2(reference - delta.institution_amount);
     if (Math.abs(gap) < MIN_GAP_TO_SIZE) return [];
     const per1000 = Math.round(gap * 1000);
+    const localRow = localByCategory.get(delta.fee_category);
     return [{
       fee_category: delta.fee_category,
       fee: getDisplayName(delta.fee_category),
@@ -145,6 +177,11 @@ export function buildFeeImpacts(
         serviceCharges && serviceCharges.amount > 0
           ? Math.round((per1000 / serviceCharges.amount) * 1000) / 10
           : null,
+      local_rank_today: localRow ? cheapestRank(delta.institution_amount, localRow.local_amounts) : null,
+      local_rank_at_reference: localRow ? cheapestRank(reference, localRow.local_amounts) : null,
+      local_field_size: localRow ? localRow.local_amounts.length + 1 : null,
+      peer_band_today: peerBand(delta.institution_amount, delta.peer_p25, delta.peer_median, delta.peer_p75),
+      peer_band_at_reference: peerBand(reference, delta.peer_p25, delta.peer_median, delta.peer_p75),
     }];
   });
 }
@@ -222,17 +259,26 @@ export function buildReportExhibits(params: {
         ? `${institutionName} earned ${formatCompactDollars(serviceCharges.amount)} in ${incomeLabel} in ${serviceCharges.year}; ${largestText}`
         : `At today's prices, ${largestText}`,
       subtitle:
-        "Income change from moving each fee to the reference price, per 1,000 times it is charged a year. Filings do not report how often each fee is charged, so read across to your own volumes.",
-      columns: ["Fee", "Yours", "Reference", "Gap", "Per 1,000 charges", serviceCharges ? `Share of ${serviceCharges.year} ${incomeLabel}` : `Share of ${incomeLabel}`],
+        "What each price move does: where the fee would rank locally and against peers, and the income change per 1,000 times it is charged a year. Filings do not report how often each fee is charged, so read across to your own volumes.",
+      columns: [
+        "Fee",
+        "Move",
+        "Local rank, cheapest first",
+        `Against ${peerLabel}`,
+        "Per 1,000 charges",
+        serviceCharges ? `Share of ${serviceCharges.year} ${incomeLabel}` : `Share of ${incomeLabel}`,
+      ],
       rows: impacts.map((i) => [
         i.fee,
-        formatAmount(i.your_amount),
-        `${formatAmount(i.reference_amount)} ${i.reference}`,
-        signed(i.gap_amount),
+        `${formatAmount(i.your_amount)} to ${formatAmount(i.reference_amount)} (${i.reference})`,
+        i.local_rank_today !== null && i.local_rank_at_reference !== null && i.local_field_size !== null
+          ? `${ordinal(i.local_rank_today)} to ${ordinal(i.local_rank_at_reference)} of ${i.local_field_size}`
+          : "No local comparison",
+        i.peer_band_today === i.peer_band_at_reference ? `Stays ${i.peer_band_today}` : `From ${i.peer_band_today} to ${i.peer_band_at_reference}`,
         signed(i.income_per_1000_amount).replace(".00", ""),
         i.share_of_service_charges_pct !== null ? `${i.share_of_service_charges_pct.toFixed(1)}%` : "Not reported",
       ]),
-      note: "An estimate of price, not volume: it assumes the same number of charges at the new price.",
+      note: "An estimate of price, not volume: it assumes the same number of charges at the new price. Ranks count only competitors that publish the fee.",
     });
   }
 
