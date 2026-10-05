@@ -6,6 +6,11 @@ Fee Insight is the company and site (feeinsight.com). Bank Fee Index is its prod
 Brand strings live in `src/lib/constants.ts`; `scripts/ci-guards.sh brand-kill` enforces it.
 Contact stays hello@bankfeeindex.com until feeinsight.com mail exists.
 
+## Design
+Headings never wrap a single word onto its own line. `src/app/globals.css` and
+`Reports/studio/template.html` balance h1-h4 (`text-wrap: balance`) and give body text
+`text-wrap: pretty`; don't override that per page. `scripts/ci-guards.sh heading-wrap-kill` enforces it.
+
 ## Money-Thesis
 A bank/CU marketing or product manager pays ~$300 for a competitive fee report for
 their market. Why us: live verified fee data (published_fee_catalog) + banking domain
