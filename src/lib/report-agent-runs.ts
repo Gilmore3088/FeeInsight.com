@@ -36,28 +36,23 @@ export async function triggerReportJob(
     idempotencyKey: `report:${reportJobId}`,
     steps: [
       {
-        key: "assemble",
+        key: "report-render",
         agent: "hamilton",
-        title: "Assemble report data manifest",
+        title: "Write and render the report",
       },
       {
-        key: "render",
+        key: "report-close",
         agent: "hamilton",
-        title: "Render report artifact",
-      },
-      {
-        key: "publish-context",
-        agent: "hamilton",
-        title: "Attach report artifact and catalog metadata",
+        title: "Close the report job",
       },
     ],
-    summary: "Hamilton report run accepted. Render worker implementation is tracked in the agent run ledger.",
+    summary: "Hamilton report run accepted: render, store, then ready to publish from the reports page.",
   });
   await sql`
     UPDATE report_jobs
        SET agent_run_id = ${result.run.id},
            status = 'pending',
-           error = 'Report run accepted by the agentic ledger; Hamilton render worker implementation is pending.'
+           error = NULL
      WHERE id = ${reportJobId}
   `;
   return { success: true, agentRunId: result.run.id };

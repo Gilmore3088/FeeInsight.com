@@ -1,9 +1,7 @@
 /**
- * Thin event tracking. Every event goes to Vercel Analytics as a custom event (the
- * <Analytics /> component in the root layout is always mounted), and also to Plausible
- * when its script is configured (NEXT_PUBLIC_PLAUSIBLE_DOMAIN set; the root layout then
- * installs the standard queue shim so early events are buffered, not dropped).
- * Safe on the server, and never throws.
+ * Event tracking entry point for funnel events (button clicks, form submits). Each event
+ * goes to Vercel Analytics as a custom event (the <Analytics /> component in the root
+ * layout is always mounted). Safe on the server, and never throws.
  */
 import { track } from "@vercel/analytics";
 
@@ -33,32 +31,10 @@ export type AnalyticsEvent =
 
 export type AnalyticsProps = Record<string, string | number | boolean>;
 
-type PlausibleFn = ((event: string, options?: { props?: AnalyticsProps }) => void) & {
-  /** Pre-load queue populated by the inline shim; drained by the Plausible script. */
-  q?: IArguments[] | unknown[][];
-};
-
-declare global {
-  interface Window {
-    plausible?: PlausibleFn;
-  }
-}
-
-/** Inline shim rendered by the root layout when Plausible is configured. */
-export const PLAUSIBLE_QUEUE_SHIM =
-  "window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)}";
-
 export function trackEvent(event: AnalyticsEvent, props?: AnalyticsProps): void {
   if (typeof window === "undefined") return;
   try {
     track(event, props);
-  } catch {
-    // Analytics must never break the page.
-  }
-  const plausible = window.plausible;
-  if (typeof plausible !== "function") return;
-  try {
-    plausible(event, props ? { props } : undefined);
   } catch {
     // Analytics must never break the page.
   }

@@ -1,6 +1,7 @@
 "use server";
 
 import { createUserWithSession } from "@/lib/auth";
+import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
 
 export interface RegisterResult {
@@ -25,6 +26,10 @@ function optionalString(value: FormDataEntryValue | null): string | null {
  * user reaches checkout (see `ensureStripeCustomer`).
  */
 export async function register(formData: FormData, redirectTo?: string): Promise<RegisterResult> {
+  // Bots fill the hidden honeypot; no account is created for them.
+  if (optionalString(formData.get(LEAD_HONEYPOT_FIELD))) {
+    return { success: false, error: "Registration failed" };
+  }
   const email = formData.get("email");
   const password = formData.get("password");
   const name = optionalString(formData.get("name"));

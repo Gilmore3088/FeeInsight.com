@@ -317,6 +317,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   publish: "hamilton",
   "publish-index": "hamilton",
   "publish-context": "hamilton",
+  "report-render": "hamilton",
+  "report-close": "hamilton",
   "category-guard": "hamilton",
   "public-diagnose": "hamilton",
 };

@@ -32,6 +32,7 @@ import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scorebo
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
+import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -1025,14 +1026,10 @@ async function executeAgenticStep(
         },
       };
     }
-    case "assemble":
-    case "render": {
-      return {
-        status: "completed",
-        summary: `${step.title} acknowledged for run #${run.id}; report rendering worker remains a dedicated follow-up.`,
-        detail: { report_worker_pending: true },
-      };
-    }
+    case "report-render":
+      return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
+    case "report-close":
+      return runReportCloseStep(tx, stringRunParam(params, ["report_job_id"]));
     default:
       return {
         status: "skipped",
@@ -1841,7 +1838,7 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
-  /** Epoch ms after which no new step starts (each run still gets its first step). */
+  /** Epoch ms after which no new step or run starts (the first run still gets its first step). */
   deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
@@ -1877,6 +1874,9 @@ export async function executeQueuedAgentRuns({
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   for (const row of rows) {
+    // The first run always gets a step; later runs start only before the deadline, so
+    // a larger run limit fills the tick's time budget without running past it.
+    if (results.length > 0 && deadlineAt != null && Date.now() >= deadlineAt) break;
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`

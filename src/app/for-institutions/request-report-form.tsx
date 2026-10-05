@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { trackEvent } from "@/lib/analytics";
 import { REPORT_OFFER } from "@/lib/constants";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 
 const LEADS_ENDPOINT = "/api/leads";
 const REPORT_USE_CASE = "competitive-fee-position-report";
@@ -107,7 +108,7 @@ function RequestReportFormInner({
       source: REPORT_SOURCE,
       institutionId: lockedInstitutionId,
       src,
-      [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
+      [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
 
     try {
@@ -139,14 +140,7 @@ function RequestReportFormInner({
       className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 space-y-4"
       aria-label={`Request a ${REPORT_OFFER.name}`}
     >
-      {/* Honeypot: hidden from people and assistive tech; bots fill it and the server drops the request. */}
-      <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
-        <label>
-          Website
-          <input type="text" name={LEAD_HONEYPOT_FIELD} tabIndex={-1} autoComplete="off" defaultValue="" />
-        </label>
-      </div>
-
+      <HoneypotField />
       {status === "error" && errorMessage && (
         <div
           role="alert"
