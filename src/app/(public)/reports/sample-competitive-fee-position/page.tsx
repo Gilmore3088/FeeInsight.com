@@ -8,7 +8,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
-import { LeadCapture } from "@/components/public/lead-capture";
 import { ReportExecutiveSummaryBlock } from "@/components/public/report-executive-summary";
 import { ReportFrame } from "@/components/public/report-frame";
 import {
@@ -88,7 +87,7 @@ function SampleComingSoon() {
       </p>
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <TrackLink
-          event="request_report"
+          event="request_report_click"
           eventProps={{ placement: "sample_report_offline" }}
           href={REQUEST_HREF}
           className={PRIMARY_BUTTON}
@@ -156,7 +155,7 @@ export default function SampleReportPage() {
               Download the sample (PDF)
             </a>
             <TrackLink
-              event="request_report"
+              event="request_report_click"
               eventProps={{ placement: "sample_report_header" }}
               href={REQUEST_HREF}
               className={SECONDARY_BUTTON}
@@ -165,14 +164,6 @@ export default function SampleReportPage() {
             </TrackLink>
           </div>
           <p className="mt-3 text-[13px] text-[#6B6255]">{REPORT_OFFER_LINE}.</p>
-          <LeadCapture
-            placement="sample_report"
-            className="mt-6"
-            eyebrow="Free sample, by email"
-            headline="Email me the sample"
-            body={`Get the sample PDF to share with your team, and a free ${REPORT_OFFER.name} for your own institution when you want one.`}
-            buttonLabel="Send it"
-          />
         </div>
 
         <aside className="rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-5">
@@ -216,7 +207,7 @@ export default function SampleReportPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "sample_report_footer" }}
             href={REQUEST_HREF}
             className={PRIMARY_BUTTON}

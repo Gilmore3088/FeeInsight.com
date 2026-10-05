@@ -27,7 +27,7 @@ export function SubmitSuccessCard({
           </h2>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#5A5347]">
             {contactEmailProvided
-              ? "We'll email you when the profile is updated."
+              ? "Once reviewed, verified fees appear on the profile and in benchmarks. We'll use your email only if we have a question about the source."
               : "Once reviewed, verified fees appear on the profile and in benchmarks."}
           </p>
           {claimFlow && (

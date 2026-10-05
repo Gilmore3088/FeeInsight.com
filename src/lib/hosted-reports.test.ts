@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   extractExecutiveSummary,
+  extractPositionMap,
+  readSampleReportHtml,
   getHostedReport,
+  hostedReportRequestHref,
   isHostedReportExpired,
+  lookupHostedReport,
   prepareReportForEmbed,
   prepareReportForPrint,
   type HostedReportMap,
@@ -118,5 +122,56 @@ describe("extractExecutiveSummary", () => {
 
   it("returns an empty summary for a document without an executive section", () => {
     expect(extractExecutiveSummary("<html><body>hi</body></html>")).toEqual({ findings: [], narrative: null });
+  });
+});
+
+describe("extractPositionMap", () => {
+  it("keeps only ranked lines and classifies each against the peer middle half", () => {
+    const html = `<p>Compared with 60 banks with $300M–$1B in assets</p>
+    <table class="position"><thead><tr><th>Fee</th></tr></thead><tbody>
+      <tr><td><span class="cat">Non-network ATM</span></td><td class="r"><b>—</b></td>
+      <td class="r">$1.25</td><td class="r">$2.13</td><td class="r">$4.31</td><td class="r muted">6</td>
+      <td><span class="small muted">listed under another label</span></td><td></td></tr>
+      <tr><td><span class="cat">Deposited item return</span><span class="feeline">Returned item</span></td>
+      <td class="r"><b>$18.00</b></td><td class="r">$5.00</td><td class="r">$5.00</td><td class="r">$10.00</td>
+      <td class="r muted">15</td><td><div class="bar-wrap"></div><span class="small muted"> P100</span></td><td></td></tr>
+      <tr><td><span class="cat">Outgoing intl. wire</span></td><td class="r"><b>$40.00</b></td>
+      <td class="r">$46.25</td><td class="r">$50.00</td><td class="r">$61.25</td><td class="r muted">8</td>
+      <td><span class="small muted"> P25</span></td><td></td></tr>
+    </tbody></table>`;
+    expect(extractPositionMap(html)).toEqual({
+      cohortSize: 60,
+      rows: [
+        { category: "Deposited item return", you: 18, p25: 5, median: 5, p75: 10, peers: 15, percentile: 100, status: "above" },
+        { category: "Outgoing intl. wire", you: 40, p25: 46.25, median: 50, p75: 61.25, peers: 8, percentile: 25, status: "below" },
+      ],
+    });
+  });
+
+  it("reads the committed sample report", () => {
+    const map = extractPositionMap(readSampleReportHtml());
+    expect(map.rows.length).toBeGreaterThan(3);
+    expect(map.cohortSize).toBeGreaterThan(0);
+  });
+
+  it("returns no rows when the report has no position map", () => {
+    expect(extractPositionMap("<html></html>")).toEqual({ rows: [], cohortSize: null });
+  });
+});
+
+describe("lookupHostedReport", () => {
+  it("tells an expired link from an unknown one", () => {
+    expect(lookupHostedReport("fedcba9876543210", { map: FIXTURE, now: NOW })).toMatchObject({
+      state: "expired",
+      report: { institution_id: 860, institution_name: "Bank of the Pacific" },
+    });
+    expect(lookupHostedReport("ffffffffffffffff", { map: FIXTURE, now: NOW })).toEqual({ state: "missing" });
+    expect(lookupHostedReport("0123456789abcdef", { map: FIXTURE, now: NOW }).state).toBe("ok");
+  });
+
+  it("links to the free request form prefilled for the institution", () => {
+    expect(hostedReportRequestHref(FIXTURE["fedcba9876543210"], "hosted_report_expired")).toBe(
+      "/for-institutions?institution=860&name=Bank+of+the+Pacific&src=hosted_report_expired#report",
+    );
   });
 });

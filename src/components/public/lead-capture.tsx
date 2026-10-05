@@ -262,7 +262,11 @@ export function LeadCapture({
                 {secondaryLink && (
                   <>
                     {" "}
-                    <Link href={secondaryLink.href} className="text-[#A93D25] underline">
+                    <Link
+                      href={secondaryLink.href}
+                      className="text-[#A93D25] underline"
+                      onClick={() => trackEvent("see_sample_report", eventProps)}
+                    >
                       {secondaryLink.label}
                     </Link>
                   </>

@@ -377,6 +377,16 @@ describe("getRevenueByTier", () => {
     }
   });
 
+  it("buckets tiers in thousands and skips ffiec rows", async () => {
+    const unsafe = vi.fn().mockResolvedValue([]);
+    getMock().unsafe = unsafe;
+
+    await getRevenueByTier("2024-09-30");
+    const query: string = unsafe.mock.calls[0][0];
+    expect(query).toContain("inf.total_assets < 100000 ");
+    expect(query).toContain("inf.source IN ('fdic', 'ncua')");
+  });
+
   it("returns empty array when no data", async () => {
     getMock().mockResolvedValue([{}]);
 
@@ -406,6 +416,14 @@ describe("getInstitutionRevenueTrend", () => {
 
     const result = await getInstitutionRevenueTrend(999);
     expect(result).toEqual([]);
+  });
+
+  it("never mixes the ffiec duplicate into the quarterly series", async () => {
+    const unsafe = vi.fn().mockResolvedValue([]);
+    getMock().unsafe = unsafe;
+
+    await getInstitutionRevenueTrend(3827);
+    expect(unsafe.mock.calls[0][0]).toContain("inf.source IN ('fdic', 'ncua')");
   });
 
   it("returns quarterly SC income for a specific institution", async () => {
@@ -514,7 +532,7 @@ describe("getInstitutionPeerRanking", () => {
       .mockResolvedValueOnce([
         {
           institution_name: "Community Bank",
-          total_assets: "500000000", // $500M → community tier
+          total_assets: "500000", // $500M in thousands → community tier
           service_charge_income: "800000",
           fee_income_ratio: "14.5",
           report_date: "2024-09-30",
@@ -550,7 +568,7 @@ describe("getInstitutionPeerRanking", () => {
       .mockResolvedValueOnce([
         {
           institution_name: "Tiny Credit Union",
-          total_assets: "50000000", // $50M → micro
+          total_assets: "50000", // $50M in thousands → micro
           service_charge_income: "50000",
           fee_income_ratio: null,
           report_date: "2024-09-30",
@@ -566,10 +584,10 @@ describe("getInstitutionPeerRanking", () => {
 
     const result = await getInstitutionPeerRanking(7);
     expect(result!.tier).toBe("micro");
-    // Verify the second unsafe call uses tier bounds for micro (0 to 100_000_000)
+    // The micro bounds ($0 to $100M) are passed in thousands, the scale of the rows
     const statsCallParams: unknown[] = unsafe.mock.calls[1][1];
     expect(statsCallParams).toContain(0);
-    expect(statsCallParams).toContain(100_000_000);
+    expect(statsCallParams).toContain(100_000);
   });
 
   it("uses midsize tier for $2B institution", async () => {
@@ -577,7 +595,7 @@ describe("getInstitutionPeerRanking", () => {
       .mockResolvedValueOnce([
         {
           institution_name: "Mid Bank",
-          total_assets: "2000000000", // $2B → midsize
+          total_assets: "2000000", // $2B in thousands → midsize
           service_charge_income: "5000000",
           fee_income_ratio: "15.0",
           report_date: "2024-12-31",
@@ -600,7 +618,7 @@ describe("getInstitutionPeerRanking", () => {
       .mockResolvedValueOnce([
         {
           institution_name: "Bank A",
-          total_assets: "200000000",
+          total_assets: "200000",
           service_charge_income: "300000",
           fee_income_ratio: null,
           report_date: "2024-09-30",
@@ -622,7 +640,7 @@ describe("getInstitutionPeerRanking", () => {
   it("withholds peer medians when fewer than five peers report", async () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
-        { institution_name: "Bank A", total_assets: "200000000", service_charge_income: "300000", fee_income_ratio: "10", report_date: "2024-09-30" },
+        { institution_name: "Bank A", total_assets: "200000", service_charge_income: "300000", fee_income_ratio: "10", report_date: "2024-09-30" },
       ])
       .mockResolvedValueOnce([{ peer_count: "3", median_sc: "250000", median_fee_ratio: "9" }])
       .mockResolvedValueOnce([{ better_count: "1" }]);
@@ -632,6 +650,35 @@ describe("getInstitutionPeerRanking", () => {
     expect(result!.peer_count).toBe(3);
     expect(result!.peer_median_sc).toBeNull();
     expect(result!.peer_median_fee_ratio).toBeNull();
+  });
+
+  it("classifies a $86.9M bank (86,908 thousand) as micro, not by raw row value", async () => {
+    const unsafe = vi.fn()
+      .mockResolvedValueOnce([
+        { institution_name: "Small Bank", total_assets: "86908", service_charge_income: "80", fee_income_ratio: "0.068", report_date: "2026-06-30" },
+      ])
+      .mockResolvedValueOnce([{ peer_count: "600", median_sc: "40", median_fee_ratio: "0.04" }])
+      .mockResolvedValueOnce([{ better_count: "100" }]);
+    getMock().unsafe = unsafe;
+
+    const result = await getInstitutionPeerRanking(3827);
+    expect(result!.tier).toBe("micro");
+    expect(unsafe.mock.calls[1][1]).toEqual(["2026-06-30", 0, 100_000]);
+  });
+
+  it("reads only fdic and ncua rows, never the ffiec duplicates", async () => {
+    const unsafe = vi.fn()
+      .mockResolvedValueOnce([
+        { institution_name: "Bank A", total_assets: "200000", service_charge_income: "300", fee_income_ratio: "0.1", report_date: "2024-09-30" },
+      ])
+      .mockResolvedValueOnce([{ peer_count: "75", median_sc: "250", median_fee_ratio: "0.08" }])
+      .mockResolvedValueOnce([{ better_count: "5" }]);
+    getMock().unsafe = unsafe;
+
+    await getInstitutionPeerRanking(33);
+    for (const call of unsafe.mock.calls) {
+      expect(call[0]).toContain("inf.source IN ('fdic', 'ncua')");
+    }
   });
 });
 

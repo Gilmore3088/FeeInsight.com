@@ -22,6 +22,13 @@ describe("register", () => {
     mocks.getStripe.mockClear();
   });
 
+  it("creates no account when the hidden honeypot is filled", async () => {
+    const { register } = await import("./actions");
+    const result = await register(form({ email: "bot@example.com", password: "password1", website: "spam.example" }));
+    expect(result.success).toBe(false);
+    expect(mocks.createUserWithSession).not.toHaveBeenCalled();
+  });
+
   it("creates a consumer account from email and password alone, without Stripe", async () => {
     mocks.createUserWithSession.mockResolvedValue({ ok: true, userId: 12 });
     const { register } = await import("./actions");

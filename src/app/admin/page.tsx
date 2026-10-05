@@ -11,6 +11,7 @@ import {
 import { getAtlasCommandCenter } from "@/lib/admin-command-center";
 import { getCrewFeed, getCrewStatus } from "@/lib/agents/crew";
 import { getFailureAlerts } from "@/lib/agents/failure-alerts";
+import { getFeedFreshness } from "@/lib/data-store/feed-freshness";
 import { EMPTY_PIPELINE_FUNNEL, getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import { pipelineHealthProblems } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
@@ -19,6 +20,7 @@ import { AtlasEmergencyControl } from "./atlas-emergency-control";
 import { AtlasOverview } from "./atlas-overview";
 import { CrewCommandBar } from "./crew-command-bar";
 import { CrewLive } from "./crew-live";
+import { DataFeedsPanel } from "./data-feeds-panel";
 
 const getCachedAtlasCommandCenter = unstable_cache(
   getAtlasCommandCenter,
@@ -38,6 +40,12 @@ const getCachedPipelineFunnel = unstable_cache(
   },
 );
 
+// Feed and report dates move a few times a day; the call-report scan is the
+// slowest read on this page, so it refreshes every five minutes.
+const getCachedFeedFreshness = unstable_cache(getFeedFreshness, ["admin", "feed-freshness"], {
+  revalidate: 300,
+});
+
 function dateTime(value: string | null): string {
   return value ? formatAdminDateTime(value) : "—";
 }
@@ -49,7 +57,7 @@ function dateTime(value: string | null): string {
  */
 export default async function CrewPage() {
   await requireAuth("view");
-  const [center, health, funnel, crew, feed, failureAlerts] = await Promise.all([
+  const [center, health, funnel, crew, feed, failureAlerts, freshness] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {
       console.error("Crew pipeline health query failed", error);
@@ -68,6 +76,10 @@ export default async function CrewPage() {
       return [];
     }),
     getFailureAlerts(),
+    getCachedFeedFreshness().catch((error) => {
+      console.error("Crew feed freshness query failed", error);
+      return null;
+    }),
   ]);
   const problems = health
     ? pipelineHealthProblems(health)
@@ -116,6 +128,14 @@ export default async function CrewPage() {
       )}
 
       <CrewLive initialCrew={crew} initialFeed={feed} />
+
+      {freshness ? (
+        <DataFeedsPanel freshness={freshness} />
+      ) : (
+        <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200" role="status">
+          Data feed and report dates could not be read; check the database connection.
+        </p>
+      )}
 
       <AtlasEmergencyControl
         enabled={center.automation.enabled}

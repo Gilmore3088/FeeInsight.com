@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { readerFeeConditions } from "../fee-conditions";
 import { summarizeFeesBy } from "./fee-stats";
 import { VALID_US_CODES } from "../us-states";
 import {
@@ -101,6 +102,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
     institution_id: Number(r.institution_id),
     amount: r.amount !== null ? Number(r.amount) : null,
     extraction_confidence: Number(r.extraction_confidence),
+    conditions: readerFeeConditions(r.conditions),
   }));
 }
 

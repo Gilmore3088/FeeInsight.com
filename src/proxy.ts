@@ -17,7 +17,7 @@ function isRouteBranch(pathname: string, branch: string) {
 const LEGACY_PATH_REDIRECTS: Record<string, string> = {
   "/consumer": "/institutions",
   "/check": "/institutions",
-  "/districts": "/research",
+  "/districts": "/research#districts",
   "/waitlist": "/for-institutions#report",
 };
 
