@@ -38,8 +38,8 @@ export function KeyFindings({ findings, asOf }: { findings: Finding[]; asOf: str
                 <span className="block text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
                   {f.figure}
                 </span>
-                <span className="mt-2 block text-[15px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">{f.headline}</span>
-                <span className="mt-1 block text-[13px] leading-relaxed text-[#6B6255]">{f.detail}</span>
+                <span className="mt-2 block text-balance text-[15px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">{f.headline}</span>
+                <span className="mt-1 block text-pretty text-[13px] leading-relaxed text-[#6B6255]">{f.detail}</span>
               </span>
             </a>
           </li>
@@ -50,17 +50,33 @@ export function KeyFindings({ findings, asOf }: { findings: Finding[]; asOf: str
   );
 }
 
+type CharterRow = Pick<FeeCategorySummary, "fee_category" | "bank_median_amount" | "cu_median_amount">;
+
 /** Dumbbell chart: bank median vs credit union median for each everyday fee. */
-export function CharterExhibit({ benchmarks, asOf }: { benchmarks: FeeCategorySummary[]; asOf: string | null }) {
+export function CharterExhibit({
+  benchmarks,
+  asOf,
+  eyebrow = "Exhibit 2 · Banks vs credit unions",
+  place,
+}: {
+  benchmarks: CharterRow[];
+  asOf: string | null;
+  eyebrow?: string;
+  /** Where the medians are measured, e.g. a state name; omitted for national. */
+  place?: string;
+}) {
   const rows = benchmarks.filter((b) => b.bank_median_amount != null && b.cu_median_amount != null);
   if (rows.length === 0) return null;
   const cuCheaper = rows.filter((b) => b.cu_median_amount! < b.bank_median_amount!).length;
 
   return (
     <section id="charters" className="scroll-mt-28 print:break-inside-avoid">
-      <SectionHeading eyebrow="Exhibit 2 · Banks vs credit unions" title={`Credit unions are cheaper on ${cuCheaper} of ${rows.length} everyday fees`}>
-        Median price at banks and at credit unions for each fee. The gap between the dots is what switching charter
-        would typically save or cost.
+      <SectionHeading
+        eyebrow={eyebrow}
+        title={`${place ? `${place} credit` : "Credit"} unions are cheaper on ${cuCheaper} of ${rows.length} ${place ? "fees" : "everyday fees"}`}
+      >
+        Median price at banks and at credit unions for each fee{place ? ` in ${place}` : ""}. The gap between the dots is
+        what switching charter would typically save or cost.
       </SectionHeading>
 
       <div className="mt-7 rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-7">
