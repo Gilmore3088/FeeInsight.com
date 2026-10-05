@@ -20,6 +20,7 @@ import {
 import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
+import { getMarketReadiness } from "./market-readiness";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -83,3 +84,4 @@ export const getStateEconomicContextCached = cachedPublicRead(
   getStateEconomicContext,
   isEmptyEconomicContext,
 );
+export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);

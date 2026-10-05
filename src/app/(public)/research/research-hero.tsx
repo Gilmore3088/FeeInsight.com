@@ -52,10 +52,10 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
           <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
           Research
         </p>
-        <h1 className="mt-3 max-w-3xl text-balance text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
           What banks and credit unions actually charge
         </h1>
-        <p className="mt-4 max-w-2xl text-pretty text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
           National benchmarks, state and Federal Reserve district coverage, and original studies from the{" "}
           {PRODUCT_NAME}. Every number on this page comes from verified, published fee schedules.
         </p>
@@ -138,10 +138,10 @@ export function SectionHeading({
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="max-w-2xl">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{eyebrow}</p>
-        <h2 className="mt-1.5 text-balance text-[1.6rem] font-normal leading-tight tracking-[-0.01em] text-[#1A1815] sm:text-[2rem]" style={SERIF}>
+        <h2 className="mt-1.5 text-[1.6rem] font-normal leading-tight tracking-[-0.01em] text-[#1A1815] sm:text-[2rem]" style={SERIF}>
           {title}
         </h2>
-        {children && <p className="mt-2 text-pretty text-[14px] leading-relaxed text-[#6B6255]">{children}</p>}
+        {children && <p className="mt-2 text-[14px] leading-relaxed text-[#6B6255]">{children}</p>}
       </div>
       {action}
     </div>

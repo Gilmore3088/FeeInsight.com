@@ -125,7 +125,12 @@ describe("selected institution report synthesis", () => {
     });
 
     expect(reportData).not.toBeNull();
-    expect(reportData?.financials?.service_charge_income).toBe(1_500_000);
+    // Call Report rows are in thousands and ratios are fractions; the model gets dollars and percents.
+    expect(reportData?.financials).toMatchObject({
+      service_charge_income_dollars: 1_500_000_000,
+      fee_income_ratio_pct: 6,
+    });
+    expect(JSON.stringify(reportData)).not.toMatch(/pipeline|insight_readiness|latest_source_status|confidence"|peer_set_id/);
     expect(reportData?.fee_rows).toEqual([
       expect.objectContaining({
         fee_name: "Overdraft",
@@ -138,17 +143,9 @@ describe("selected institution report synthesis", () => {
         excluded_from_verified_benchmark: true,
       }),
     ]);
-    expect(reportData?.pipeline_fee_rows).toEqual([
-      expect.objectContaining({
-        fee_name: "Cashier check",
-        evidence_tier: "provisional",
-        pipeline_stage: "verified_unpublished",
-      }),
-      expect.objectContaining({
-        fee_name: "Raw source row",
-        evidence_tier: "provisional",
-        pipeline_stage: "raw_unverified",
-      }),
+    expect(reportData?.fees_under_review).toEqual([
+      expect.objectContaining({ fee_name: "Cashier check", evidence_tier: "provisional" }),
+      expect.objectContaining({ fee_name: "Raw source row", evidence_tier: "provisional" }),
     ]);
     expect(reportData?.fee_peer_deltas[0]).toMatchObject({
       evidence_tier: "provisional",
@@ -156,8 +153,7 @@ describe("selected institution report synthesis", () => {
     });
     expect(reportData?.can_generate_verified_benchmark_conclusions).toBe(false);
     expect(reportData?.revenue_trend).toHaveLength(8);
-    expect(reportData?.peer_set_id).toBe("peer-set-1");
-    expect(reportData?.evidence_policy).toBe("provisional-first");
+
   });
 
   it("allows verified benchmark conclusions only when a verified delta exists", () => {
@@ -188,8 +184,7 @@ describe("selected institution report synthesis", () => {
     });
 
     expect(reportData?.can_generate_verified_benchmark_conclusions).toBe(true);
-    expect(reportData?.peer_fallback_reason).toBe("Saved peer set was too sparse.");
-    expect(reportData?.evidence_policy).toBe("verified-only");
+    expect(reportData?.peer_group_note).toBe("Saved peer set was too sparse.");
   });
 });
 

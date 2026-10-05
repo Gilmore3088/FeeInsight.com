@@ -90,15 +90,19 @@ vi.mock("@/lib/research/skills", () => ({
   findOfferedSkill: () => null,
 }));
 
-vi.mock("@/lib/research/agents", () => ({
-  getHamilton: async () => ({
+const getHamiltonMock = vi.hoisted(() =>
+  vi.fn(async (_role: string) => ({
     name: "Hamilton",
     model: "claude-sonnet-4-5-20250929",
     systemPrompt: "You are Hamilton.",
     tools: {},
     maxTokens: 1500,
     maxSteps: 4,
-  }),
+  })),
+);
+
+vi.mock("@/lib/research/agents", () => ({
+  getHamilton: getHamiltonMock,
   buildAnalyzeModeSuffix: () => "",
   buildMonitorModeSuffix: () => "",
 }));
@@ -218,6 +222,24 @@ describe("POST /api/research/hamilton — citation gate", () => {
     expect(body.status).toBe("ok");
     expect(body.text).toContain("published fee records");
     expect(body.metrics.citations).toBeGreaterThanOrEqual(5);
+  });
+
+  it("should_answer_an_admin_on_the_analyze_screen_with_the_pro_prompt", async () => {
+    generateTextMock.mockResolvedValue({ text: "## Hamilton's View\nShort answer.", usage: { inputTokens: 10, outputTokens: 10 } });
+    getHamiltonMock.mockClear();
+
+    const { POST } = await import("./route");
+    await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "pricing" }] }],
+      mode: "analyze",
+      gate_citations: true,
+    }));
+    await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "pipeline status" }] }],
+      gate_citations: true,
+    }));
+
+    expect(getHamiltonMock.mock.calls.map((call) => call[0])).toEqual(["pro", "admin"]);
   });
 
   it("should_return_locked_when_gated_provider_circuit_is_open", async () => {

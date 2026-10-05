@@ -181,10 +181,13 @@ describe("state lane scheduler", () => {
     expect(result.recheck).toBeNull();
     expect(result.idempotencyKey).toMatch(/^atlas:state-lane-backlog:PA:\d{4}-\d{2}-\d{2}T\d{2}$/);
     const args = startAgentRunMock.mock.calls[0][0];
-    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["read", "extract", "classify", "publish"]);
+    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["fetch", "read", "extract", "classify", "publish"]);
     expect(args.params).toMatchObject({ lane_mode: "backlog" });
     expect(args.params.recheck).toBeUndefined();
-    expect(STATE_LANE_BACKLOG_STEPS.every((step) => step.agent !== "magellan")).toBe(true);
+    // Magellan only fetches links found since the last fetch; it never searches or crawls.
+    expect(STATE_LANE_BACKLOG_STEPS.filter((step) => step.agent === "magellan")).toEqual([
+      expect.objectContaining({ key: "fetch", input: expect.objectContaining({ new_links_only: true }) }),
+    ]);
   });
 
   it("runs the monthly full pass, discovery and fetch included, when none ran this month", async () => {

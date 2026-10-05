@@ -3,7 +3,7 @@ import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   BEIGE_BOOK_DISTRICTS,
   beigeBookPageUrl,
-  blsSeriesUrl,
+  blsSeriesRequest,
   fetchText,
   fredCsvUrl,
   isBlsSeries,
@@ -157,7 +157,10 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
   await mapWithConcurrency(series, FED_CONCURRENCY, async (meta) => {
     let observations: FredObservation[];
     if (isBlsSeries(meta.series_id)) {
-      observations = parseBlsSeries(await registryFetchJson<unknown>(blsSeriesUrl(meta.series_id, blsKey), options.fetchOptions));
+      const request = blsSeriesRequest(meta.series_id, blsKey);
+      observations = parseBlsSeries(
+        await registryFetchJson<unknown>(request.url, options.fetchOptions, { json: request.json }),
+      );
     } else {
       const csv = await fetchText(fredCsvUrl(meta.series_id), options.fetchOptions);
       observations = csv ? parseFredCsv(csv) : [];

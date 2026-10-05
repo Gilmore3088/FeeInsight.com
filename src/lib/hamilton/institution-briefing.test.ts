@@ -44,7 +44,7 @@ describe("Hamilton institution briefing", () => {
       state_code: "FL",
       charter_type: "bank",
       asset_size_tier: "1b_10b",
-      asset_size: 2500000000,
+      asset_size: 2500000, // thousands of dollars
       fed_district: 6,
       fee_publication_status: "provisional",
       published_fee_count: 1,
@@ -105,12 +105,52 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain("SELECTED INSTITUTION CONTEXT");
     expect(prompt).toContain("Institution ID: 2945");
     expect(prompt).toContain("Example Bank");
-    expect(prompt).toContain("Public fee publication status: Provisional fees (provisional)");
+    expect(prompt).not.toContain("Public fee publication status");
+    expect(prompt).not.toContain("Quality signals");
+    expect(prompt).not.toContain('"confidence"');
+    expect(prompt).toContain("Total assets: $2.5B");
     expect(prompt).toContain("Verified fee count: 1");
     expect(prompt).toContain("Provisional fee count: 2");
     expect(prompt).toContain('"status":"verified"');
     expect(prompt).toContain('"status":"provisional"');
     expect(prompt).toContain("Evidence policy: provisional-first");
+  });
+
+  it("uses the fdic record, not the ffiec duplicate, as the latest financial record", async () => {
+    mocks.getFinancialsByInstitution.mockResolvedValueOnce([
+      { report_date: "2026-06-30", source: "ffiec", total_assets: 84762000, service_charge_income: 0, fee_income_ratio: 0 },
+      { report_date: "2026-06-30", source: "fdic", total_assets: 84762, service_charge_income: 81, fee_income_ratio: 0.0706 },
+    ]);
+    mocks.getInstitutionPeerRanking.mockResolvedValueOnce({ tier: "micro", sc_income: 81, sc_rank: 10, peer_count: 600 });
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const prompt = await buildHamiltonInstitutionBriefing(contract);
+
+    expect(prompt).toContain('"service_charge_income":81');
+    expect(prompt).not.toContain("84762000");
+    expect(prompt).toContain("in thousands of dollars");
+    expect(prompt).toContain("Peer ranking tier: micro (assets under $100M)");
+  });
+
+  it("keeps data-quality narration out of Pro answers but not admin ones", async () => {
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const pro = await buildHamiltonInstitutionBriefing(contract);
+    const admin = await buildHamiltonInstitutionBriefing({ ...contract, audience: "admin" });
+
+    expect(pro).toContain("Do not describe duplicates, stale sources");
+    expect(pro).not.toContain("give concrete diligence steps");
+    expect(admin).toContain("give concrete diligence steps");
+  });
+
+  it("gives operators the pipeline and quality fields", async () => {
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const prompt = await buildHamiltonInstitutionBriefing({ ...contract, audience: "admin" });
+
+    expect(prompt).toContain("Public fee publication status: Provisional fees (provisional)");
+    expect(prompt).toContain("Quality signals: extracted_not_published");
+    expect(prompt).toContain('"confidence":0.95');
   });
 
   it("returns null when the selected institution does not exist", async () => {

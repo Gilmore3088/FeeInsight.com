@@ -8,7 +8,7 @@
  */
 
 import type { IndicatorSeries, StateEconomicContext } from "@/lib/data-store/economic-context";
-import { lastMonths, TrendChart, yoySeries, type TrendLine } from "./trend-chart";
+import { lastMonths, TrendChart, yoySeries, type TrendLine } from "@/app/(public)/research/state/[code]/trend-chart";
 
 /** Monthly data more than this many months old is labeled as the latest published. */
 const STALE_MONTHS = 4;

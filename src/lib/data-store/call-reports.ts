@@ -1,8 +1,15 @@
 import { getSql } from "./connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
+import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
 
-// Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
-// ingest scaling). No query-layer multiplication needed.
+/**
+ * fdic and ncua rows report dollars in thousands. ffiec rows duplicate the fdic
+ * quarters in other units (whole-dollar balances, service charges over-scaled
+ * further; see financial-units.ts), so mixing them into one series or one peer
+ * group produces fake drops and wrong ranks. Every query here reads the
+ * thousands-scale sources only.
+ */
+const SAME_SCALE_SOURCES = "inf.source IN ('fdic', 'ncua')";
 
 export interface RevenueSnapshot {
   quarter: string;
@@ -47,6 +54,7 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
      FROM institution_financial_records inf
      JOIN institution_sources ct ON ct.id = inf.institution_id
      WHERE inf.service_charge_income > 0
+       AND ${SAME_SCALE_SOURCES}
      GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
      ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
      LIMIT $1`,
@@ -121,6 +129,7 @@ export async function getTopRevenueInstitutions(
        JOIN institution_sources ct ON ct.id = inf.institution_id
        WHERE inf.report_date = $1
          AND inf.service_charge_income > 0
+         AND ${SAME_SCALE_SOURCES}
        ORDER BY inf.service_charge_income DESC
        LIMIT $2`,
       [latestDate, limit]
@@ -178,6 +187,7 @@ export async function getInstitutionRevenueTrend(
          FROM institution_financial_records inf
          WHERE inf.institution_id = $1
            AND inf.service_charge_income IS NOT NULL
+           AND ${SAME_SCALE_SOURCES}
        ) ranked
        WHERE quarter_rank = 1
        ORDER BY report_date DESC
@@ -232,6 +242,7 @@ export async function getInstitutionPeerRanking(
      WHERE inf.institution_id = $1
        AND inf.service_charge_income IS NOT NULL
        AND inf.total_assets IS NOT NULL
+       AND ${SAME_SCALE_SOURCES}
      ORDER BY inf.report_date DESC
      LIMIT 1`,
     [targetId]
@@ -250,21 +261,11 @@ export async function getInstitutionPeerRanking(
   const scIncome = Number(inst.service_charge_income);
   const feeRatio = inst.fee_income_ratio !== null ? Number(inst.fee_income_ratio) : null;
 
-  // Determine FDIC asset tier from total_assets
-  let tier: string;
-  let tierMin: number;
-  let tierMax: number;
-  if (totalAssets < 100_000_000) {
-    tier = "micro"; tierMin = 0; tierMax = 100_000_000;
-  } else if (totalAssets < 1_000_000_000) {
-    tier = "community"; tierMin = 100_000_000; tierMax = 1_000_000_000;
-  } else if (totalAssets < 10_000_000_000) {
-    tier = "midsize"; tierMin = 1_000_000_000; tierMax = 10_000_000_000;
-  } else if (totalAssets < 250_000_000_000) {
-    tier = "regional"; tierMin = 10_000_000_000; tierMax = 250_000_000_000;
-  } else {
-    tier = "mega"; tierMin = 250_000_000_000; tierMax = Number.MAX_SAFE_INTEGER;
-  }
+  // total_assets is in thousands for fdic/ncua rows; the tier breakpoints are in dollars.
+  const tier = getTierForAssets(totalAssets * 1_000);
+  const [tierMinDollars, tierMaxDollars] = FDIC_TIER_BREAKPOINTS[tier];
+  const tierMin = tierMinDollars / 1_000;
+  const tierMax = Number.isFinite(tierMaxDollars) ? tierMaxDollars / 1_000 : Number.MAX_SAFE_INTEGER;
 
   const statsRows = await sql.unsafe(
     `SELECT
@@ -274,7 +275,8 @@ export async function getInstitutionPeerRanking(
      FROM institution_financial_records inf
      WHERE inf.report_date = $1
        AND inf.total_assets >= $2 AND inf.total_assets < $3
-       AND inf.service_charge_income > 0`,
+       AND inf.service_charge_income > 0
+       AND ${SAME_SCALE_SOURCES}`,
     [inst.report_date, tierMin, tierMax]
   ) as { peer_count: string; median_sc: string; median_fee_ratio: string | null }[];
 
@@ -283,7 +285,8 @@ export async function getInstitutionPeerRanking(
      FROM institution_financial_records inf
      WHERE inf.report_date = $1
        AND inf.total_assets >= $2 AND inf.total_assets < $3
-       AND inf.service_charge_income > $4`,
+       AND inf.service_charge_income > $4
+       AND ${SAME_SCALE_SOURCES}`,
     [inst.report_date, tierMin, tierMax, scIncome]
   ) as { better_count: string }[];
 
@@ -345,6 +348,7 @@ export async function getDistrictFeeRevenue(
      WHERE inf.report_date = $1
        AND ct.fed_district = $2
        AND inf.service_charge_income > 0
+       AND ${SAME_SCALE_SOURCES}
      GROUP BY ct.fed_district`,
     [date, district]
   ) as {
@@ -392,10 +396,10 @@ export async function getRevenueByTier(
   const rows = await sql.unsafe(
     `SELECT
        CASE
-         WHEN inf.total_assets < 100000000             THEN 'micro'
-         WHEN inf.total_assets < 1000000000            THEN 'community'
-         WHEN inf.total_assets < 10000000000           THEN 'midsize'
-         WHEN inf.total_assets < 250000000000          THEN 'regional'
+         WHEN inf.total_assets < 100000                THEN 'micro'
+         WHEN inf.total_assets < 1000000               THEN 'community'
+         WHEN inf.total_assets < 10000000              THEN 'midsize'
+         WHEN inf.total_assets < 250000000             THEN 'regional'
          ELSE                                               'mega'
        END AS tier,
        COUNT(DISTINCT inf.institution_id)::int        AS institution_count,
@@ -405,6 +409,7 @@ export async function getRevenueByTier(
      WHERE inf.report_date = $1
        AND inf.service_charge_income > 0
        AND inf.total_assets > 0
+       AND ${SAME_SCALE_SOURCES}
      GROUP BY 1
      ORDER BY MIN(inf.total_assets)`,
     [date]

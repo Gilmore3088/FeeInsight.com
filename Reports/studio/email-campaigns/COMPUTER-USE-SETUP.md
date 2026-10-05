@@ -40,7 +40,7 @@ You're finishing the Fee Insight email setup in two web dashboards: MailerLite a
 7. **Report back** with a table: automation → email # → subject → sender name → content looks designed (yes/no) → test sent (yes/no). List anything that looked wrong.
 
 ## Part 2: Vercel (https://vercel.com)
-1. Open the project that serves **feeinsight.com** (the repo is feeschedule-hub). Go to Settings → Environment Variables.
+1. Open the project that serves **feeinsight.com** (GitHub repo Gilmore3088/feeinsight.com, Vercel team hello@bankfeeindex.com). Go to Settings → Environment Variables.
 2. Confirm `MAILERLITE_API_KEY` exists for **Production**. Don't open or copy its value.
 3. Add or update these for **Production and Preview**. If a variable already exists with a different value, tell me before you overwrite it.
 

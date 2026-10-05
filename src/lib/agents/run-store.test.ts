@@ -704,6 +704,29 @@ describe("agentic run store", () => {
     );
   });
 
+  it("cancels the run's queued later steps when a step fails", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    runRosettaReadMock.mockRejectedValue(new Error("invalid byte sequence"));
+    const readStepRows = [
+      { ...queuedStepRows[0], step_key: "read", agent_name: "rosetta", title: "Read source document text" },
+      { ...queuedStepRows[0], id: 2, sequence: 2, step_key: "extract", agent_name: "knox", title: "Extract fees" },
+    ];
+    const readRunRow = {
+      ...runRow,
+      agent_name: "rosetta",
+      run_kind: "manual_repair",
+      params_json: { institution_id: 42, read_limit: 4 },
+    };
+    installSqlMocks({ finalRun: readRunRow, finalSteps: readStepRows });
+    installTxMocks(readStepRows, readRunRow);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed", terminal: true });
+    const combinedSql = combinedTransactionSql();
+    expect(combinedSql).toContain("step.failed");
+    expect(combinedSql).toContain("SET status = 'cancelled'");
+    expect(combinedSql).toContain("AND status = 'queued'");
+  });
+
   it("runs Knox extraction through the agentic worker instead of measuring only", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const extractStepRows = [
@@ -911,6 +934,22 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
+  it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) return Promise.resolve([{ id: 101 }, { id: 102 }, { id: 103 }]);
+      if (text.includes("FROM agent_runs")) return Promise.resolve([runRow]);
+      if (text.includes("FROM agent_run_steps")) return Promise.resolve(queuedStepRows);
+      return Promise.resolve([]);
+    });
+    installTxMocks(queuedStepRows, runRow);
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() - 1 });
+
+    expect(result.selected).toBe(3);
+    expect(result.results.map((run) => run.runId)).toEqual([101]);
+  });
+
   it("still sends the Atlas daily brief while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
@@ -984,6 +1023,7 @@ describe("agentic run store", () => {
     const combinedSql = combinedTransactionSql();
     expect(combinedSql).toContain("step.dead");
     expect(combinedSql).toContain("SET status = 'failed'");
+    expect(combinedSql).toContain("SET status = 'cancelled'");
   });
 });
 

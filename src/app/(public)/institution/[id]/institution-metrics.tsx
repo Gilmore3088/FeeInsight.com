@@ -33,6 +33,9 @@ export function Metric({
 }
 
 export interface InstitutionMetricRowProps {
+  /** Headline categories published, out of headlineTotal; null when the count could not be read. */
+  headlineCategories: number | null;
+  headlineTotal: number;
   verifiedCount: number;
   underReviewCount: number;
   assetsDollars: number | null;
@@ -40,14 +43,20 @@ export interface InstitutionMetricRowProps {
 
 /** Counts and context for the profile, below the fee schedule and the alert control. */
 export function InstitutionMetricRow({
+  headlineCategories,
+  headlineTotal,
   verifiedCount,
   underReviewCount,
   assetsDollars,
 }: InstitutionMetricRowProps) {
   return (
     <section aria-label="Profile facts" className="overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="grid grid-cols-3 divide-x divide-[#E0D7C9]">
-        <Metric label="Verified fees" value={verifiedCount.toLocaleString("en-US")} tone="verified" />
+      <div className="grid grid-cols-2 gap-px bg-[#E0D7C9] *:bg-[#FDFBF8] sm:grid-cols-4">
+        <Metric
+          label="Headline fees published"
+          value={headlineCategories === null ? "N/A" : `${headlineCategories} of ${headlineTotal}`}
+        />
+        <Metric label="Published fees" value={verifiedCount.toLocaleString("en-US")} />
         <Metric
           label="Under review"
           value={underReviewCount.toLocaleString("en-US")}

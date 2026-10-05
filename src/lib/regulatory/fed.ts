@@ -188,11 +188,31 @@ export const REQUIRED_FRED_SERIES: RequiredFredSeries[] = [
 // BLS public data API (keyless v1; v2 with BLS_API_KEY raises the daily limit)
 // ---------------------------------------------------------------------------
 
-export function blsSeriesUrl(seriesId: string, apiKey?: string | null): string {
-  const id = encodeURIComponent(seriesId);
-  return apiKey
-    ? `https://api.bls.gov/publicAPI/v2/timeseries/data/${id}?registrationkey=${encodeURIComponent(apiKey)}`
-    : `https://api.bls.gov/publicAPI/v1/timeseries/data/${id}`;
+/** Calendar years requested from BLS, so a 5-year chart of 12-month changes is complete. */
+export const BLS_YEARS = 7;
+
+export interface BlsSeriesRequest {
+  url: string;
+  json: { seriesid: string[]; startyear: string; endyear: string; registrationkey?: string };
+}
+
+/**
+ * A plain GET returns only about 3 years, so the request is a POST with start and
+ * end years (both API versions allow up to 10 years per request).
+ */
+export function blsSeriesRequest(seriesId: string, apiKey?: string | null, now = new Date()): BlsSeriesRequest {
+  const endYear = now.getUTCFullYear();
+  return {
+    url: apiKey
+      ? "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+      : "https://api.bls.gov/publicAPI/v1/timeseries/data/",
+    json: {
+      seriesid: [seriesId],
+      startyear: String(endYear - BLS_YEARS + 1),
+      endyear: String(endYear),
+      ...(apiKey ? { registrationkey: apiKey } : {}),
+    },
+  };
 }
 
 interface BlsResponse {

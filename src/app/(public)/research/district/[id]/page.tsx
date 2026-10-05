@@ -195,7 +195,10 @@ export default async function DistrictReportPage({ params }: PageProps) {
       {/* Beige Book Context -- premium only */}
       {!showFullDistrict && beigeHeadline && (
         <div className="mt-8">
-          <UpgradeGate message={`Full ${districtName} district intelligence`} />
+          <UpgradeGate
+            message={`${districtName} Beige Book context`}
+            locked={`The summary of economic activity from the latest ${districtName} Fed Beige Book, shown next to this district's fee benchmarks.`}
+          />
         </div>
       )}
       {showFullDistrict && beigeHeadline && (
