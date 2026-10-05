@@ -429,15 +429,27 @@ export async function startStateLaneRun(
   return { ...result, stateCode, idempotencyKey, mode, recheck };
 }
 
+/**
+ * The nationwide profile and lane sync scans every institution, which takes close to a
+ * minute on the production database, so the 5-minute tick runs it only on the first
+ * tick of each hour. Each lane still syncs its own state when it is launched and in its
+ * enhance step.
+ */
+export function shouldRunNationwideLaneSync(now: Date = new Date()): boolean {
+  return now.getUTCMinutes() < 5;
+}
+
 export async function scheduleDueStateLaneRuns({
   limit = 2,
   triggeredBy = "atlas.scheduler",
+  now = new Date(),
 }: {
   limit?: number;
   triggeredBy?: string;
+  now?: Date;
 } = {}): Promise<DueStateLaneScheduleResult> {
   const safeLimit = boundedLaneLimit(limit);
-  await syncStateLaneProfiles(sql);
+  if (shouldRunNationwideLaneSync(now)) await syncStateLaneProfiles(sql);
 
   let dueRows: Array<{ state_code: string }>;
   try {

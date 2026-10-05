@@ -41,6 +41,13 @@ only on what the free team could not read.
 - Pass 1, free (`extract.rules`, `rules.ts`): line rules. A threshold, cap or rate base
   ("balances below $2,500", "up to $29", "maximum of $175") is never read as the fee. New
   patterns map only to existing canonical keys and each has a fixture in `rules.test.ts`.
+- Pass 1 reads a price's name from the words nearest before it: in a flattened table row
+  the nearest cell ("STOP PAYMENT ORDER | NOTARY FEE | $6.00" is a notary fee), widened
+  only across bare direction or unit cells. Words after a price never classify it unless
+  the line opens with the price and says it is a fee. A free in-network ATM or an
+  allowance ("two per year: Free") is not a $0 price. All three specialists follow the
+  same rules, and table and family rows whose name opens mid-sentence (agreement prose
+  in columns) are skipped.
 - Pass 2, free and heavier (`specialists.ts` runs the team and merges its finds):
   - `extract.table` (`table-rows.ts`): pairs table cells, a name line with the price on
     the next line, and dot-leader rows whose price slid onto the next line. A heading is
