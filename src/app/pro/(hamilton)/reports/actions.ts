@@ -1,6 +1,8 @@
 "use server";
 
 import { reportGoal, type ReportClientGoal } from "@/lib/hamilton/report-goal";
+import { partnerReviewContext, reviewAnswerPage } from "@/lib/hamilton/partner-review";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import {
@@ -646,12 +648,17 @@ export async function generateReport(
       institutionId: selectedInstitution?.id ?? null,
       title: `Hamilton report: ${reportTitle}`,
     };
+    // Partner review of the answer page (filled in once the answer is drafted).
+    const partnerReview = { problems: [] as string[], rewritten: false, remaining: 0 };
+    // Drafts the partner review replaced or rejected: billed, so counted in usage.
+    const billedDrafts: VerifiedSectionOutput[] = [];
     const recordReportOutcome = async (
       status: "completed" | "failed",
       summary: string,
       sections: VerifiedSectionOutput[],
       extra: Record<string, unknown> = {},
     ) => {
+      sections = [...sections, ...billedDrafts];
       const inputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.inputTokens ?? 0), 0);
       const outputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.outputTokens ?? 0), 0);
       const model = sections[0]?.section.model ?? getHamiltonModel();
@@ -669,6 +676,7 @@ export async function generateReport(
           output_tokens: outputTokens,
           estimated_cost_microusd: costMicrousd,
           sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
+          partner_review: partnerReview,
           ...extra,
         },
       });
@@ -696,8 +704,35 @@ export async function generateReport(
 
     // The answer page comes first; the other two sections explain and stress-test
     // its decisions, so they receive it as context and run together.
-    const answerResult = await generateWithRetry(sectionInputs[0]);
+    let answerResult = await generateWithRetry(sectionInputs[0]);
     if (!answerResult) return sectionFailed(sectionInputs[0]);
+    // Partner review: a draft that fails the checklist goes back once with the
+    // problems named; the rewrite is kept only if it fixes more than it breaks.
+    const reviewInput = {
+      institutionName,
+      feeNames: selectedFeeDeltas.map((delta) => getDisplayName(delta.fee_category)),
+      competitorNames: exhibitSet.data.local_market?.comparisons.flatMap((row) => row.competitors.map((c) => c.name)) ?? [],
+    };
+    const firstProblems = reviewAnswerPage({ ...reviewInput, narrative: answerResult.section.narrative });
+    partnerReview.problems = firstProblems;
+    partnerReview.remaining = firstProblems.length;
+    if (firstProblems.length > 0) {
+      const rewrite = await generateVerifiedSection({
+        ...sectionInputs[0],
+        context: `${sectionInputs[0].context ?? ""}\n\n${partnerReviewContext(firstProblems, answerResult.section.narrative)}`.trim(),
+      }).catch(() => null);
+      if (rewrite) {
+        const remaining = reviewAnswerPage({ ...reviewInput, narrative: rewrite.section.narrative });
+        if (remaining.length < firstProblems.length && rewrite.status !== "needs_review") {
+          billedDrafts.push(answerResult);
+          answerResult = rewrite;
+          partnerReview.rewritten = true;
+          partnerReview.remaining = remaining.length;
+        } else {
+          billedDrafts.push(rewrite);
+        }
+      }
+    }
     verifiedSections.push(answerResult);
     const answerContext = `ANSWER PAGE (already written; explain and stress-test these decisions, do not contradict or add to them):\n${answerResult.section.narrative}`;
     const followUps = await Promise.all(

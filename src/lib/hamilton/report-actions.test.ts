@@ -297,9 +297,16 @@ describe("Hamilton Reports generateReport", () => {
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
 
-    expect(mocks.generateSection).toHaveBeenCalledTimes(3);
+    // The default mock answer is unformatted prose, so the partner review sends it
+    // back once; the identical rewrite fixes nothing and the first draft is kept.
+    expect(mocks.generateSection).toHaveBeenCalledTimes(4);
     expect(mocks.recordProRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ operation: "report", status: "completed", userId: expect.any(Number) }),
+      expect.objectContaining({
+        operation: "report",
+        status: "completed",
+        userId: expect.any(Number),
+        detail: expect.objectContaining({ partner_review: expect.objectContaining({ rewritten: false, remaining: 1 }) }),
+      }),
     );
     const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
     for (const input of calls) {
@@ -502,7 +509,7 @@ describe("Hamilton Reports generateReport", () => {
         input.type === "executive_summary"
           ? [
               "HEADLINE: Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
-              "DECISION: Lower the domestic wire fee to $30 || WHY: Three local competitors charge a $30 median; the row is provisional. || CONFIDENCE: Medium - 3 local competitors, provisional row",
+              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 3 local competitors, provisional row",
             ].join("\n")
           : input.type === "recommendation"
             ? "Clay County Bank already charges $30, so business customers will notice. The row is provisional.\n\nWATCH: Prairie Trust's wire price"
@@ -524,7 +531,7 @@ describe("Hamilton Reports generateReport", () => {
       decisions: [
         {
           action: "Lower the domestic wire fee to $30",
-          why: "Three local competitors charge a $30 median; the row is provisional.",
+          why: "Clay County Bank charges $30, the local median; the row is provisional.",
           confidence: "Medium",
           confidenceReason: "3 local competitors, provisional row",
         },
