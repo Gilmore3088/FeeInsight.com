@@ -50,7 +50,7 @@ export function proFeatureList(summary: PublicStatsSummary): string[] {
     `Full dataset: ${summary.categoriesLabel} fee categories, ${summary.institutionsLabel} institutions with verified fees`,
     "Hamilton workspace: Analyze, Benchmark, Scenario, Report and Monitor modes",
     "Unlimited peer sets by charter type, asset tier and Fed district",
-    "Continuous monitoring: know the day a competitor changes a fee",
+    "Fee-change alerts: an email when a competitor you follow changes a published fee",
     "What-if scenario modeling on your own schedule",
     "Board-ready reports, every figure cited to its source document",
     "CSV exports (API access on request)",
