@@ -73,6 +73,8 @@ const verifiedFee = {
   amount: "35.00",
   frequency: "per_item",
   raw_agent_event_id: "00000000-0000-4000-8000-000000000701",
+  source_document_id: 77,
+  document_crawled_at: "2026-10-01T00:00:00.000Z",
 };
 
 const priorPublishedFee = {
@@ -80,6 +82,8 @@ const priorPublishedFee = {
   amount: "30.00",
   fee_name: "Overdraft fee",
   published_at: "2026-07-01T00:00:00.000Z",
+  source_document_id: 12,
+  document_crawled_at: "2026-07-01T00:00:00.000Z",
 };
 
 describe("Hamilton agentic publish", () => {
@@ -500,7 +504,7 @@ describe("Hamilton agentic publish", () => {
 });
 
 describe("decidePriorFee", () => {
-  const row = { ...verifiedFee, source_document_id: 77 };
+  const row = { ...verifiedFee };
   const live = (overrides: Record<string, unknown>) => ({ ...priorPublishedFee, ...overrides });
 
   it("treats a fee with no live row as new", () => {
@@ -508,7 +512,7 @@ describe("decidePriorFee", () => {
   });
 
   it("skips an amount already live on any line", () => {
-    const match = live({ fee_published_id: 602, amount: "35.00", source_document_id: 12 });
+    const match = live({ fee_published_id: 602, amount: "35.00" });
     expect(decidePriorFee(row, [live({ source_document_id: 77 }), match])).toEqual({ kind: "identical", prior: match });
   });
 
@@ -517,14 +521,23 @@ describe("decidePriorFee", () => {
   });
 
   it("replaces the same-named line from an older document", () => {
-    const other = live({ fee_published_id: 603, fee_name: "Overdraft - business", source_document_id: 12 });
-    const named = live({ fee_published_id: 604, fee_name: "Overdraft Fee", source_document_id: 12 });
+    const other = live({ fee_published_id: 603, fee_name: "Overdraft - business" });
+    const named = live({ fee_published_id: 604, fee_name: "Overdraft Fee ......" });
     expect(decidePriorFee(row, [other, named])).toEqual({ kind: "supersede", prior: named });
   });
 
-  it("replaces the newest older-document line when no name matches", () => {
-    const newest = live({ fee_published_id: 605, fee_name: "Paid item", source_document_id: 12 });
-    const older = live({ fee_published_id: 606, fee_name: "Returned item", source_document_id: 12 });
-    expect(decidePriorFee(row, [newest, older])).toEqual({ kind: "supersede", prior: newest });
+  it("adds a differently named line from a newer document instead of calling it a change", () => {
+    const other = live({ fee_published_id: 605, fee_name: "Returned item" });
+    expect(decidePriorFee(row, [other])).toEqual({ kind: "additional_line" });
+  });
+
+  it("never lets an older document replace a newer live price", () => {
+    const newer = live({ fee_published_id: 606, document_crawled_at: "2026-10-04T00:00:00.000Z" });
+    expect(decidePriorFee(row, [newer])).toEqual({ kind: "older_document", prior: newer });
+  });
+
+  it("does not record a change when either document's date is unknown", () => {
+    expect(decidePriorFee({ ...row, document_crawled_at: null }, [live({})])).toEqual({ kind: "additional_line" });
+    expect(decidePriorFee(row, [live({ document_crawled_at: null })])).toEqual({ kind: "additional_line" });
   });
 });

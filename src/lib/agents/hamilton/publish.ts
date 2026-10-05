@@ -60,6 +60,8 @@ interface VerifiedFeeRow {
   raw_agent_event_id: string | null;
   /** The source document Knox read this fee from; null for rows without one. */
   source_document_id?: number | string | null;
+  /** When that document was fetched; orders documents for the same fee. */
+  document_crawled_at?: string | Date | null;
   institution_name?: string | null;
 }
 
@@ -69,6 +71,7 @@ interface PriorPublishedFeeRow {
   fee_name: string;
   published_at: string | Date;
   source_document_id?: number | string | null;
+  document_crawled_at?: string | Date | null;
 }
 
 export interface HamiltonPublishResult {
@@ -310,11 +313,13 @@ async function selectVerifiedFees(
              fv.frequency,
              fr.agent_event_id AS raw_agent_event_id,
              fr.source_document_id,
+             sd.crawled_at AS document_crawled_at,
              inst.institution_name,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
         JOIN institution_sources inst ON inst.id = fv.institution_id
        WHERE fv.review_status IN ('verified', 'approved')
          AND fv.outlier_flags ? 'agentic_darwin_verified'
@@ -460,10 +465,12 @@ async function selectLivePublishedFees(
              fp.amount,
              fp.fee_name,
              fp.published_at,
-             fr.source_document_id
+             fr.source_document_id,
+             sd.crawled_at AS document_crawled_at
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fp.institution_id = ${Number(row.institution_id)}
          AND fp.canonical_fee_key = ${row.canonical_fee_key}
          AND COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, '')
@@ -485,29 +492,46 @@ function normalizedFeeName(name: string | null | undefined): string {
   return (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function documentTime(value: string | Date | null | undefined): number | null {
+  if (value == null) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
 export type PriorFeeDecision =
   | { kind: "new" }
   | { kind: "identical"; prior: PriorPublishedFeeRow }
+  | { kind: "older_document"; prior: PriorPublishedFeeRow }
   | { kind: "additional_line" }
   | { kind: "supersede"; prior: PriorPublishedFeeRow };
 
 /**
- * How a verified row relates to the fee's live rows. One schedule can list several
- * prices for one fee key (a $28 and a $15 stop payment for different channels): those
- * are separate fee lines, published side by side. Only a row from a different document
- * replaces a live price, preferring the live line with the same name.
+ * How a verified row relates to the fee's live rows. A price change is recorded only
+ * when it really happened: the same fee line (same name) at a new amount in a newer
+ * document. One schedule can list several prices for one fee key (a $28 and a $15 stop
+ * payment for different channels), and a bank can publish several schedules; those are
+ * separate lines, published side by side. A row from an older document than a live
+ * line is stale and never replaces it.
  */
 export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
   if (live.length === 0) return { kind: "new" };
   const amount = normalizedAmount(row.amount);
   const identical = live.find((prior) => normalizedAmount(prior.amount) === amount);
   if (identical) return { kind: "identical", prior: identical };
+  const rowTime = documentTime(row.document_crawled_at);
   const fromOtherDocuments = live.filter((prior) => !sameDocument(prior.source_document_id, row.source_document_id));
-  if (fromOtherDocuments.length === 0) return { kind: "additional_line" };
+  if (rowTime == null) return { kind: "additional_line" };
+  const newer = fromOtherDocuments.find((prior) => {
+    const priorTime = documentTime(prior.document_crawled_at);
+    return priorTime != null && priorTime > rowTime;
+  });
+  if (newer) return { kind: "older_document", prior: newer };
   const name = normalizedFeeName(row.fee_name);
-  const prior = fromOtherDocuments.find((candidate) => normalizedFeeName(candidate.fee_name) === name)
-    ?? fromOtherDocuments[0];
-  return { kind: "supersede", prior };
+  const prior = fromOtherDocuments.find((candidate) => {
+    const priorTime = documentTime(candidate.document_crawled_at);
+    return priorTime != null && priorTime < rowTime && normalizedFeeName(candidate.fee_name) === name;
+  });
+  return prior ? { kind: "supersede", prior } : { kind: "additional_line" };
 }
 
 /**
@@ -810,6 +834,8 @@ async function flagMovedGuidesStale(
   }
 }
 
+const OLDER_DOCUMENT_REASON = "Older document than the live price";
+
 const NO_MOVEMENT = {
   previousFeePublishedId: null,
   previousAmount: null,
@@ -819,7 +845,9 @@ const NO_MOVEMENT = {
 
 function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome {
   if (result.status === "published") return "ok";
-  return result.reason === "Identical fee already published" || result.reason === "Duplicate published row"
+  return result.reason === "Identical fee already published" ||
+    result.reason === "Duplicate published row" ||
+    result.reason === OLDER_DOCUMENT_REASON
     ? "unchanged"
     : "rejected";
 }
@@ -908,6 +936,14 @@ export async function runHamiltonPublish(
         ...NO_MOVEMENT,
         previousFeePublishedId: Number(decision.prior.fee_published_id),
         previousAmount: normalizedAmount(decision.prior.amount),
+      };
+    } else if (decision?.kind === "older_document") {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: OLDER_DOCUMENT_REASON,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
       };
     } else if (dryRun) {
       result = {
