@@ -117,7 +117,7 @@ export function HamiltonShell({
       />
 
       {/* Two-column layout: left rail + main content */}
-      <div className="flex" style={{ minHeight: "calc(100vh - 120px)" }}>
+      <div className="relative flex" style={{ minHeight: "calc(100vh - 120px)" }}>
         <HamiltonLeftRail
           savedAnalyses={savedAnalyses}
           recentScenarios={recentScenarios}
@@ -125,7 +125,7 @@ export function HamiltonShell({
           peerSets={peerSets}
           selectedInstitutionId={selectedInstitutionId}
         />
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 pb-6 pt-14 sm:px-6 lg:px-10 lg:py-8">{children}</main>
       </div>
     </div>
   );

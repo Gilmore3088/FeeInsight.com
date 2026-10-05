@@ -42,8 +42,28 @@ export function parseAnalyzeResponse(content: string): ParsedResponse {
     whatThisMeans: whatThisMeansRaw,
     whyItMatters: parseBullets(whyItMattersRaw),
     evidence: parseEvidenceMetrics(evidenceRaw),
-    exploreFurther: parseBullets(exploreFurtherRaw),
+    exploreFurther: parseFollowUps(exploreFurtherRaw),
   };
+}
+
+/**
+ * Follow-up questions from the Explore Further section. Only real questions
+ * survive: quotes, numbering and stray ** are stripped, and lines that are not
+ * questions ("Operational flags: …" notes) are dropped. At most four.
+ */
+export function parseFollowUps(text: string): string[] {
+  return text
+    .split("\n")
+    .map((l) =>
+      l
+        .replace(/^\s*(?:[-*\u2022]|\d+[.)])\s+/, "")
+        .replace(/\*\*/g, "")
+        .trim()
+        .replace(/^["\u201c\u2018']+|["\u201d\u2019']+$/g, "")
+        .trim(),
+    )
+    .filter((l) => /\w/.test(l) && l.endsWith("?") && !/^[^?]{0,40}:\s/.test(l))
+    .slice(0, 4);
 }
 
 

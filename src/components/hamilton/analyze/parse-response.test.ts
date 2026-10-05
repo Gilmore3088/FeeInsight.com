@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAnalyzeResponse, parseEvidenceMetrics, shapeHamiltonView, splitSentences } from "./parse-response";
+import { parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, shapeHamiltonView, splitSentences } from "./parse-response";
 
 describe("parseEvidenceMetrics", () => {
   it("keeps dates, ranges and hyphenated words inside the value", () => {
@@ -60,5 +60,24 @@ describe("shapeHamiltonView", () => {
     );
     expect(parsed.evidence).toEqual([{ label: "NSF", value: "$35" }]);
     expect(parsed.exploreFurther).toEqual(["Next question?"]);
+  });
+});
+
+describe("parseFollowUps", () => {
+  it("keeps real questions and drops ops notes, quotes and stray markdown", () => {
+    const prompts = parseFollowUps(
+      [
+        '- "Which District 11 banks have both NSF and maintenance fees?"',
+        "- “How does the overdraft fee compare with Texas credit unions?”",
+        '- "Operational flags:** 746 decisions are pending review and 17 runs are active."',
+        "- **Board question:** what would a $5 cut cost?",
+        "1. Which peers moved first?",
+      ].join("\n"),
+    );
+    expect(prompts).toEqual([
+      "Which District 11 banks have both NSF and maintenance fees?",
+      "How does the overdraft fee compare with Texas credit unions?",
+      "Which peers moved first?",
+    ]);
   });
 });

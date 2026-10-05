@@ -38,20 +38,17 @@ export function WhyItMattersPanel({ items, isStreaming }: WhyItMattersPanelProps
           <div className="skeleton h-4 rounded w-4/5" />
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul className="max-w-[68ch] space-y-2">
           {cleanItems.map((item, i) => (
             <li key={i} className="flex items-start gap-2.5">
               <span
-                className="mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                className="mt-2.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: "var(--hamilton-accent)" }}
                 aria-hidden="true"
               />
               <span
-                className="text-sm leading-relaxed"
-                style={{
-                  color: "var(--hamilton-text-primary)",
-                  fontFamily: "var(--hamilton-font-serif)",
-                }}
+                className="text-pretty text-base leading-relaxed"
+                style={{ color: "var(--hamilton-text-primary)" }}
               >
                 {renderInline(item)}
               </span>

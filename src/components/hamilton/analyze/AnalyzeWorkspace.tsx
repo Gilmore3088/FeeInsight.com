@@ -93,6 +93,8 @@ export function AnalyzeWorkspace({
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  // The question on screen: shown the moment it is sent, kept with its answer.
+  const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
 
   // Ref to always have latest activeTab inside async callbacks
   const activeTabRef = useRef<AnalysisFocus>(activeTab);
@@ -163,6 +165,7 @@ export function AnalyzeWorkspace({
     if (!prompt) return;
     clearError();
     setInput("");
+    setAskedQuestion(prompt);
     sendMessage({ text: prompt });
   }, [clearError, sendMessage]);
 
@@ -172,8 +175,10 @@ export function AnalyzeWorkspace({
     lastPromptRef.current = trimmed;
     setParsedResponse(null);
     setIsSaved(false);
+    setAskedQuestion(trimmed);
     sendMessage({ text: trimmed });
     setInput("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [input, isLoading, sendMessage]);
 
   const handleExploreFurther = useCallback(
@@ -181,8 +186,10 @@ export function AnalyzeWorkspace({
       lastPromptRef.current = prompt;
       setParsedResponse(null);
       setIsSaved(false);
+      setAskedQuestion(prompt);
       setMessages([]);
       sendMessage({ text: prompt });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [sendMessage, setMessages]
   );
@@ -237,9 +244,10 @@ export function AnalyzeWorkspace({
       parsedResponse.evidence.length > 0);
   const analysisComplete = !isLoading && hasAnalysisStructure;
 
-  // Live-parse streaming content for progressive rendering
-  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
-  const streamingContent = lastAssistantMessage ? extractTextFromMessage(lastAssistantMessage) : "";
+  // Live-parse streaming content for progressive rendering. Only the reply to
+  // the question just sent counts; an earlier answer must not stand in for it.
+  const lastMessage = messages[messages.length - 1];
+  const streamingContent = lastMessage?.role === "assistant" ? extractTextFromMessage(lastMessage) : "";
   const liveParsed = isLoading && streamingContent ? parseAnalyzeResponse(streamingContent) : null;
   const displayedResponse = parsedResponse ?? liveParsed;
   const answerLead = displayedResponse ? shapeHamiltonView(displayedResponse.hamiltonView).lead : "";
@@ -264,28 +272,55 @@ export function AnalyzeWorkspace({
           {exportError}
         </p>
       )}
-      {/* Analysis prompt title when active */}
-      {displayedResponse && (
-        <div className="flex items-center gap-4 mb-2">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            style={{ color: "var(--hamilton-primary)", opacity: 0.6 }} aria-hidden="true">
-            <path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <h1
-            className="text-3xl italic tracking-tight"
-            style={{
-              fontFamily: "var(--hamilton-font-serif)",
-              color: "var(--hamilton-text-primary)",
-            }}
+      {/* The question being answered: on screen from the moment it is sent */}
+      {(askedQuestion || displayedResponse) && (
+        <div className="max-w-5xl">
+          <p
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: "var(--hamilton-text-tertiary)" }}
           >
-            {activeTab} Assessment
-          </h1>
+            {askedQuestion ? `You asked · ${activeTab} lens` : `${activeTab} analysis`}
+          </p>
+          {askedQuestion && (
+            <h1
+              className="mt-1 text-balance text-lg font-medium leading-snug"
+              style={{ color: "var(--hamilton-text-primary)", fontFamily: "var(--hamilton-font-sans)" }}
+            >
+              {askedQuestion}
+            </h1>
+          )}
+        </div>
+      )}
+
+      {/* Thinking: shown until the first words of the answer arrive */}
+      {isLoading && !displayedResponse && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="max-w-5xl rounded-xl border p-6"
+          style={{
+            backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
+            borderColor: "rgba(216,194,184,0.3)",
+          }}
+        >
+          <p className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--hamilton-text-primary)" }}>
+            <span
+              className="inline-block h-2 w-2 animate-pulse rounded-full"
+              style={{ backgroundColor: "var(--hamilton-primary)" }}
+              aria-hidden="true"
+            />
+            Hamilton is reading the fee data, peers and local economy for this answer…
+          </p>
+          <div className="mt-4 space-y-2" aria-hidden="true">
+            <div className="skeleton h-4 w-full rounded" />
+            <div className="skeleton h-4 w-5/6 rounded" />
+            <div className="skeleton h-4 w-2/3 rounded" />
+          </div>
         </div>
       )}
 
       {/* Empty state */}
-      {!displayedResponse && !isLoading && messages.length === 0 && (
+      {!displayedResponse && !isLoading && !askedQuestion && messages.length === 0 && (
         <div className="py-8">
           {selectedInstitution ? (
             <div
@@ -515,9 +550,8 @@ function ContextStat({ label, value }: { label: string; value: string }) {
         {label}
       </p>
       <p
-        className="mt-1 truncate font-semibold"
+        className="mt-1 break-words font-semibold leading-snug"
         style={{ color: "var(--hamilton-text-primary)" }}
-        title={value}
       >
         {value}
       </p>

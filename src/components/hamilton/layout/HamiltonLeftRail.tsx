@@ -56,7 +56,8 @@ export function HamiltonLeftRail({
   selectedInstitutionId,
 }: HamiltonLeftRailProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  // Below lg the rail is a drawer opened from the "Workspace" button.
+  // Below lg the rail is a drawer opened from the "Workspace" button, which sits in
+  // its own reserved strip above the page (never over content) until the drawer opens.
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -92,7 +93,7 @@ export function HamiltonLeftRail({
       onClick={() => setMobileOpen((open) => !open)}
       aria-expanded={mobileOpen}
       aria-controls="hamilton-left-rail"
-      className="fixed left-3 top-16 z-50 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm lg:hidden"
+      className={`${mobileOpen ? "fixed top-16" : "absolute top-3"} left-4 z-50 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm sm:left-6 lg:hidden`}
       style={{ backgroundColor: "var(--hamilton-surface)", borderColor: "var(--hamilton-border)", color: "var(--hamilton-text-primary)" }}
     >
       {mobileOpen ? "Close" : "Workspace"}
