@@ -10,6 +10,7 @@ import {
 } from "@/lib/admin-dashboard-cache";
 import { getAtlasCommandCenter } from "@/lib/admin-command-center";
 import { getCrewFeed, getCrewStatus } from "@/lib/agents/crew";
+import { getFailureAlerts } from "@/lib/agents/failure-alerts";
 import { EMPTY_PIPELINE_FUNNEL, getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import { pipelineHealthProblems } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
@@ -48,7 +49,7 @@ function dateTime(value: string | null): string {
  */
 export default async function CrewPage() {
   await requireAuth("view");
-  const [center, health, funnel, crew, feed] = await Promise.all([
+  const [center, health, funnel, crew, feed, failureAlerts] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {
       console.error("Crew pipeline health query failed", error);
@@ -66,6 +67,7 @@ export default async function CrewPage() {
       console.error("Crew feed query failed", error);
       return [];
     }),
+    getFailureAlerts(),
   ]);
   const problems = health
     ? pipelineHealthProblems(health)
@@ -85,6 +87,23 @@ export default async function CrewPage() {
           All run controls and history
         </Link>
       </header>
+
+      {failureAlerts.length > 0 ? (
+        <section
+          className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
+          role="alert"
+          aria-label="Failing agent work"
+        >
+          <p className="font-semibold">Something in the pipeline is failing</p>
+          <ul className="mt-2 space-y-2">
+            {failureAlerts.map((alert) => (
+              <li key={alert.key}>
+                <span className="font-semibold">{alert.title}.</span> {alert.message}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <CrewCommandBar />
 
