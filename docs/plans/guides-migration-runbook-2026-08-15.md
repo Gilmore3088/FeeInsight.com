@@ -11,7 +11,7 @@ application code run against it. This is not a dry read of the SQL.
 
 | Check | Result |
 | --- | --- |
-| `20260815120000_consumer_guides.sql` applies cleanly | ✅ 3 tables, 11 indexes, 8 comments, no errors |
+| `20261004002745_consumer_guides.sql` applies cleanly | ✅ 3 tables, 11 indexes, 8 comments, no errors |
 | RLS enabled on all three tables | ✅ |
 | `anon` / `authenticated` / `PUBLIC` privileges | ✅ none — a draft is unreachable by an anonymous request |
 | Consumer guide cannot leave the public tier | ✅ rejected by `consumer_guides_consumer_is_public_check` |
@@ -47,7 +47,7 @@ supabase db push
 
 # Option B — psql directly
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f supabase/migrations/20260815120000_consumer_guides.sql
+  -f supabase/migrations/20261004002745_consumer_guides.sql
 ```
 
 `anon` and `authenticated` already exist on Supabase, so the `REVOKE` statements resolve

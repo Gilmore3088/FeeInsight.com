@@ -23,6 +23,7 @@ import {
   STATE_LANE_DOCUMENT_BATCH,
   STATE_LANE_STEPS,
   laneIdempotencyKey,
+  nextDayStart,
   nextMonthStart,
   quarterWindowKey,
   scheduleDueStateLaneRuns,
@@ -41,15 +42,28 @@ function laneUpdate(): { text: string; values: unknown[] } | undefined {
 }
 
 /** Answers the cadence query: was there a full pass this month / a re-check this quarter. */
-function mockCadence({ fullThisMonth, recheckThisQuarter, backlog = false }: {
+function mockCadence({
+  fullThisMonth,
+  recheckThisQuarter,
+  backlog = false,
+  fullToday = fullThisMonth,
+  missingLinks = 0,
+}: {
   fullThisMonth: boolean;
   recheckThisQuarter: boolean;
   backlog?: boolean;
+  fullToday?: boolean;
+  missingLinks?: number;
 }) {
   sqlMock.mockImplementation((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("AS full_this_month")) {
-      return Promise.resolve([{ full_this_month: fullThisMonth, recheck_this_quarter: recheckThisQuarter }]);
+      return Promise.resolve([{
+        full_this_month: fullThisMonth,
+        full_today: fullToday,
+        recheck_this_quarter: recheckThisQuarter,
+        missing_links: missingLinks,
+      }]);
     }
     if (text.includes("AS backlog")) return Promise.resolve([{ backlog }]);
     return Promise.resolve([]);
@@ -71,9 +85,10 @@ describe("state lane scheduler", () => {
     expect(input("extract")).toEqual({ extract_limit: STATE_LANE_DOCUMENT_BATCH });
   });
 
-  it("verifies Darwin's maximum batch per pass, in full and backlog runs", () => {
+  it("verifies and publishes the maximum batch per pass, in full and backlog runs", () => {
     for (const steps of [STATE_LANE_STEPS, STATE_LANE_BACKLOG_STEPS]) {
       expect(steps.find((step) => step.key === "classify")?.input).toEqual({ verify_limit: 500 });
+      expect(steps.find((step) => step.key === "publish")?.input).toEqual({ publish_limit: 500 });
     }
   });
 
@@ -199,12 +214,58 @@ describe("state lane scheduler", () => {
     expect(startAgentRunMock.mock.calls[1][0].params).toMatchObject({ recheck: "quarterly" });
   });
 
+  it("counts only full passes that ran the state expert toward this month", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true });
+    await stateLaneCadence("PA");
+    const query = templateText(sqlMock.mock.calls[0][0]);
+    expect(query).toContain("step.step_key = 'state-expert'");
+  });
+
   it("falls back to a full pass without a re-check when the cadence check fails", async () => {
     sqlMock.mockRejectedValueOnce(new Error("boom"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(stateLaneCadence("PA")).resolves.toEqual({ fullDue: true, recheckDue: false });
+    await expect(stateLaneCadence("PA")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: false });
     error.mockRestore();
+  });
+
+  it("runs a daily full pass in a focus state while it still misses many links", async () => {
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 354 });
+    await expect(stateLaneCadence("TX")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: true });
+
+    mockCadence({ fullThisMonth: true, fullToday: true, recheckThisQuarter: true, missingLinks: 354 });
+    await expect(stateLaneCadence("TX")).resolves.toMatchObject({ fullDue: false, daily: true });
+
+    // Few links left: back to the monthly cadence.
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 50 });
+    await expect(stateLaneCadence("CA")).resolves.toMatchObject({ fullDue: false, daily: false });
+
+    // Other states never go daily, however many links they miss.
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 900 });
+    await expect(stateLaneCadence("PA")).resolves.toMatchObject({ fullDue: false, daily: false });
+  });
+
+  it("gives focus-state full passes bigger discovery and fetch batches, and wakes them tomorrow", async () => {
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 354 });
+
+    await startStateLaneRun({ stateCode: "tx", triggeredBy: "test" });
+
+    expect(startAgentRunMock.mock.calls[0][0].params).toMatchObject({
+      lane_mode: "full",
+      discovery_limit: 50,
+      fetch_limit: 50,
+    });
+    expect(laneUpdate()?.values).toEqual(expect.arrayContaining([nextDayStart().toISOString(), "TX"]));
+  });
+
+  it("keeps other states' full passes at the default batches", async () => {
+    mockCadence({ fullThisMonth: false, recheckThisQuarter: true });
+
+    await startStateLaneRun({ stateCode: "pa", triggeredBy: "test" });
+
+    const params = startAgentRunMock.mock.calls[0][0].params;
+    expect(params).not.toHaveProperty("discovery_limit");
+    expect(params).not.toHaveProperty("fetch_limit");
   });
 
   it("puts a lane to sleep until next month when nothing is due and there is no backlog", async () => {

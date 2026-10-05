@@ -1046,8 +1046,8 @@ export async function recordReadResult(
 }
 
 /**
- * The page Rosetta read is not a fee schedule. Remember the URL so discovery never
- * proposes it again and, unless a person locked this source, send the institution
+ * The page Rosetta read is not a fee schedule. Remember the URL (once, with the latest
+ * date) so discovery does not propose it again for a while and follows its links, and, unless a person locked this source, send the institution
  * back to Magellan to find the real fee page. Only the institution's latest document
  * can trigger this, so an old version never undoes a newer, correct URL.
  */
@@ -1065,7 +1065,11 @@ export async function sendBackToMagellan(
   const rejected = JSON.stringify([{ url: input.url, reason: input.reason, at: new Date().toISOString() }]);
   await db`
     UPDATE institution_source_profiles
-       SET rejected_source_urls = COALESCE(rejected_source_urls, '[]'::jsonb) || ${rejected}::jsonb,
+       SET rejected_source_urls = (
+             SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+              WHERE entry->>'url' IS DISTINCT FROM ${input.url}
+           ) || ${rejected}::jsonb,
            canonical_source_url = CASE WHEN locked_by_correction THEN canonical_source_url ELSE NULL END,
            updated_at = NOW()
      WHERE institution_id = ${input.institutionId}

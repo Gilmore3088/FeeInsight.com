@@ -8,6 +8,9 @@ import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
+import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
+import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
+import { SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -27,6 +30,17 @@ export const STATE_LANE_DOCUMENT_BATCH = 50;
  * While a state still has a free-work backlog, its lane runs again this soon.
  */
 export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
+
+/**
+ * Focus report markets (James, 2026-10-05: Texas and California). Their full passes look
+ * for and fetch twice the default links (Magellan's maximum), and run daily instead of monthly while more than
+ * FOCUS_STATE_DAILY_MISSING_LINKS active institutions still have no fee schedule link.
+ */
+export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; fetch_limit: number }> = {
+  TX: { discovery_limit: 50, fetch_limit: 50 },
+  CA: { discovery_limit: 50, fetch_limit: 50 },
+};
+export const FOCUS_STATE_DAILY_MISSING_LINKS = 50;
 
 export type StateLaneRecheck = "quarterly";
 
@@ -91,6 +105,9 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     key: "publish",
     agent: "hamilton",
     title: "Publish verified state fee intelligence",
+    // Hamilton's per-step maximum, matching Darwin's: at 100 a pass published a third of
+    // what Darwin verified (PA 2026-10-05: 302 verified, 102 published).
+    input: { publish_limit: HAMILTON_PUBLISH_MAX_LIMIT },
   },
   {
     key: "public-discovery",
@@ -172,6 +189,11 @@ export function monthWindowKey(date = new Date()): string {
 /** Quarterly window (UTC) for the re-check pass, e.g. `2026-Q4`. */
 export function quarterWindowKey(date = new Date()): string {
   return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+}
+
+/** Start of the next UTC day: when a daily focus lane's next full pass is due. */
+export function nextDayStart(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
 }
 
 /** Start of the next UTC calendar month: when an idle lane's next full pass is due. */
@@ -271,10 +293,85 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            )
       ) AS backlog
     `;
-    return Boolean(row?.backlog);
+    return Boolean(row?.backlog) || (await stateHasUncheckedLiveFees(stateCode));
   } catch (error) {
     console.error("stateHasDocumentBacklog failed:", error);
     return false;
+  }
+}
+
+/**
+ * Live fees Hamilton has not checked yet: an institution not source-checked since its
+ * newest live fee, or a live Knox document not re-checked under today's rules. With a
+ * state code, true when that state has any; without one, the states that do.
+ */
+function uncheckedLiveFeeStates(stateCode: string | null) {
+  return sql<{ state_code: string }[]>`
+    WITH live AS (
+      SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fr.source,
+             fr.source_document_id, fr.outlier_flags,
+             MAX(fp.fee_published_id) OVER (PARTITION BY fp.institution_id) AS max_fee_id
+        FROM published_fee_records fp
+        JOIN institution_sources inst ON inst.id = fp.institution_id
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.rolled_back_at IS NULL
+         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+    )
+    SELECT DISTINCT live.state_code
+      FROM live
+     WHERE NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
+                AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                AND pa.institution_id = live.institution_id
+           )
+        OR (
+          live.source = 'knox'
+          AND live.source_document_id IS NOT NULL
+          AND NOT (COALESCE(live.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
+          AND NOT EXISTS (
+            SELECT 1 FROM pipeline_attempts pa
+             WHERE pa.input_fingerprint = ${knoxFreeSignature()}
+               AND pa.strategy = ${RULES_RECHECK_STRATEGY.strategy}
+               AND pa.strategy_version = ${RULES_RECHECK_STRATEGY.version}
+               AND pa.institution_id = live.institution_id
+               AND pa.source_document_id = live.source_document_id
+          )
+        )
+     ${stateCode ? sql`LIMIT 1` : sql``}
+  `;
+}
+
+export async function stateHasUncheckedLiveFees(stateCode: string): Promise<boolean> {
+  try {
+    return (await uncheckedLiveFeeStates(stateCode)).length > 0;
+  } catch (error) {
+    console.error("stateHasUncheckedLiveFees failed:", error);
+    return false;
+  }
+}
+
+/**
+ * A rules fix or a new source rule must reach every live fee within hours, not at each
+ * state's next monthly pass: wake sleeping lanes whose state has live fees Hamilton has
+ * not checked, so their hourly backlog passes run the checks in small batches.
+ */
+export async function wakeLanesWithUncheckedLiveFees(): Promise<number> {
+  try {
+    const states = (await uncheckedLiveFeeStates(null)).map((row) => String(row.state_code));
+    if (states.length === 0) return 0;
+    const woken = await sql`
+      UPDATE public.agent_state_lanes
+         SET next_run_after = NOW(),
+             updated_at = NOW()
+       WHERE state_code = ANY(${states}::text[])
+         AND next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+    `;
+    return woken.count;
+  } catch (error) {
+    console.error("wakeLanesWithUncheckedLiveFees failed:", error);
+    return 0;
   }
 }
 
@@ -283,16 +380,24 @@ export interface StateLaneCadence {
   fullDue: boolean;
   /** No quarterly re-check pass started (and not failed) this UTC calendar quarter. */
   recheckDue: boolean;
+  /** Focus state still missing many links: full passes are due daily, not monthly. */
+  daily: boolean;
 }
 
 /**
- * Which passes a state is due. A full pass that is queued, running or completed this
- * month counts; a failed or cancelled one does not, so the lane tries again. When the
+ * Which passes a state is due. A full pass (with the state-expert step) that is queued,
+ * running or completed this month counts; a failed or cancelled one does not, so the lane tries again. When the
  * check fails the lane takes a full pass (no re-check), the safe default.
  */
 export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
   try {
-    const [row] = await sql<{ full_this_month: boolean; recheck_this_quarter: boolean }[]>`
+    const focus = stateCode in FOCUS_STATE_LANE_PARAMS;
+    const [row] = await sql<{
+      full_this_month: boolean;
+      full_today: boolean;
+      recheck_this_quarter: boolean;
+      missing_links: number;
+    }[]>`
       SELECT
         EXISTS (
           SELECT 1 FROM public.agent_runs run
@@ -301,7 +406,27 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
              AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
              AND run.started_at >= date_trunc('month', NOW(), 'UTC')
+             -- Only a pass with the state-expert step counts: October 2026's passes ran
+             -- before it existed, so discovery and state memory would wait for November.
+             AND EXISTS (
+               SELECT 1 FROM public.agent_run_steps step
+                WHERE step.agent_run_id = run.id AND step.step_key = 'state-expert'
+             )
         ) AS full_this_month,
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('day', NOW(), 'UTC')
+        ) AS full_today,
+        CASE WHEN ${focus} THEN (
+          SELECT count(*)::int FROM public.institution_sources inst
+           WHERE upper(btrim(inst.state_code)) = ${stateCode}
+             AND COALESCE(inst.status, 'active') = 'active'
+             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+        ) ELSE 0 END AS missing_links,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
            WHERE run.run_kind = 'workflow_lane'
@@ -312,24 +437,35 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
         ) AS recheck_this_quarter
     `;
+    const daily = focus && Number(row?.missing_links ?? 0) > FOCUS_STATE_DAILY_MISSING_LINKS;
     return {
-      fullDue: !row?.full_this_month,
+      fullDue: daily ? !row?.full_today : !row?.full_this_month,
       recheckDue: !row?.recheck_this_quarter,
+      daily,
     };
   } catch (error) {
     console.error("stateLaneCadence failed:", error);
-    return { fullDue: true, recheckDue: false };
+    return { fullDue: true, recheckDue: false, daily: false };
   }
 }
 
-async function markLaneScheduled(stateCode: string, runId: number, backlog: boolean): Promise<void> {
+function nextFullPassAt(daily: boolean): string {
+  return (daily ? nextDayStart() : nextMonthStart()).toISOString();
+}
+
+async function markLaneScheduled(
+  stateCode: string,
+  runId: number,
+  backlog: boolean,
+  daily: boolean,
+): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
        SET last_agent_run_id = ${runId},
            last_run_at = NOW(),
            next_run_after = CASE
              WHEN ${backlog} THEN NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-             ELSE ${nextMonthStart().toISOString()}::timestamptz
+             ELSE ${nextFullPassAt(daily)}::timestamptz
            END,
            lease_token = NULL,
            lease_expires_at = NULL,
@@ -338,11 +474,11 @@ async function markLaneScheduled(stateCode: string, runId: number, backlog: bool
   `;
 }
 
-/** Nothing due and no backlog: the lane sleeps until next month's full pass. */
-async function markLaneIdle(stateCode: string): Promise<void> {
+/** Nothing due and no backlog: the lane sleeps until its next full pass (next month, or tomorrow for a daily focus state). */
+async function markLaneIdle(stateCode: string, daily: boolean): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
-       SET next_run_after = ${nextMonthStart().toISOString()}::timestamptz,
+       SET next_run_after = ${nextFullPassAt(daily)}::timestamptz,
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()
@@ -412,6 +548,7 @@ export async function startStateLaneRun(
       source,
       lane_mode: mode,
       ...(recheck ? { recheck } : {}),
+      ...(mode === "full" ? FOCUS_STATE_LANE_PARAMS[stateCode] ?? {} : {}),
     },
     triggeredBy: input.triggeredBy,
     triggerSource: input.triggerSource ?? "schedule",
@@ -424,7 +561,12 @@ export async function startStateLaneRun(
   if (result.run.status === "blocked") {
     await markLaneLaunchBlocked(stateCode, result.run.id);
   } else {
-    await markLaneScheduled(stateCode, result.run.id, await stateHasDocumentBacklog(stateCode));
+    await markLaneScheduled(
+      stateCode,
+      result.run.id,
+      await stateHasDocumentBacklog(stateCode),
+      cadence?.daily ?? false,
+    );
   }
   return { ...result, stateCode, idempotencyKey, mode, recheck };
 }
@@ -449,7 +591,10 @@ export async function scheduleDueStateLaneRuns({
   now?: Date;
 } = {}): Promise<DueStateLaneScheduleResult> {
   const safeLimit = boundedLaneLimit(limit);
-  if (shouldRunNationwideLaneSync(now)) await syncStateLaneProfiles(sql);
+  if (shouldRunNationwideLaneSync(now)) {
+    await syncStateLaneProfiles(sql);
+    await wakeLanesWithUncheckedLiveFees();
+  }
 
   let dueRows: Array<{ state_code: string }>;
   try {
@@ -505,7 +650,7 @@ export async function scheduleDueStateLaneRuns({
     try {
       const cadence = await stateLaneCadence(stateCode);
       if (!cadence.fullDue && !(await stateHasDocumentBacklog(stateCode))) {
-        await markLaneIdle(stateCode);
+        await markLaneIdle(stateCode, cadence.daily);
         output.idle += 1;
         continue;
       }

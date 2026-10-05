@@ -103,6 +103,22 @@ per step; each document is re-checked once per Knox version signature (attempt l
 stage `publish`, strategy `hamilton.rules_recheck`). Knox's paid fees and fees from
 other sources are never touched; a document with no stored text keeps its fees.
 
+## Source Check
+
+Every live fee must be stated in the bank's own stored schedule. After publishing, each
+state-lane (or single-institution) publish step runs `source-check.ts` on up to 40
+institutions not checked since their newest live fee. Each live fee, from any source,
+goes through `checkFeeAgainstSource` (`src/lib/custom-report/source-check.ts`, the same
+rule the report gate uses): one row of the document names the fee and states the
+amount as its price, not a limit. A Knox fee answers to its own document. An imported
+fee with no usable document is relinked to another stored document of the institution
+that states it. A fee that still can't be traced is taken down
+(`rolled_back_reason = 'source_check_untraceable:<reason>'`, the run's batch id; clear
+`rolled_back_at` to restore it) and its verified row is rejected. Each pass logs a
+`hamilton.source_check` event and one attempt per institution. The hourly scheduler
+tick wakes sleeping state lanes that still have unchecked live fees (source check or
+rules re-check), so a new rule reaches every state within hours.
+
 ## Boundaries
 
 - Public Hamilton must be consumer-safe and cannot expose admin-only operational details.

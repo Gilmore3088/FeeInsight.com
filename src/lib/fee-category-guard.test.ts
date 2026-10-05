@@ -32,6 +32,9 @@ describe("checkFeeCategory", () => {
     ["cashiers_check", "Teller's Check"],
     ["card_replacement", "ATM Debit Card (duplicate)"],
     ["stop_payment", "Stop Payment"],
+    ["stop_payment", "ACH Stop Payment/Cancelation Fee"],
+    ["paper_statement", "Paper Statement (Per Month, Waived w/ e-Statements)"],
+    ["paper_statement", "E-statements complimentary on all accounts. Paper statement fee is"],
   ])("accepts %s: %s", (key, name) => {
     expect(checkFeeCategory(key, name)).toEqual({ ok: true });
   });
@@ -57,6 +60,9 @@ describe("checkFeeCategory", () => {
     ["wire_domestic_outgoing", "Outgoing International Wire"],
     ["card_replacement", "Card Replacement (rush order)"],
     ["paper_statement", "Copy of Statement"],
+    ["paper_statement", "eStatement Fee"],
+    ["stop_payment", "Cancel stop payment"],
+    ["stop_payment", "Cancellation of a Stop Payment"],
     ["atm_non_network", "Foreign ATM Balance Inquiry"],
   ])("flags %s: %s as filed under the wrong category", (key, name) => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_contradicts" });
