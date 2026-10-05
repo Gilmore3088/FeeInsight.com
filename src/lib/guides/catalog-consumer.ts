@@ -807,7 +807,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Most US cards charge around 3% of the transaction. Across the institutions we track, the median foreign transaction charge is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing.",
+            text: "Across the institutions we track, the median foreign transaction charge is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing.",
           },
           {
             type: "paragraph",
