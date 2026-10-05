@@ -147,7 +147,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(cashier'?s?\s+checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
   },
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
-  { key: "check_printing", pattern: /\b(check printing|checks order|order checks)\b/i },
+  { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
     pattern: /\b(check image|check cop(y|ies)|cop(y|ies) of (a |paid |cancell?ed |cleared )?checks?|photocop(y|ies) of (a )?checks?|image of (a )?check)\b/i,
@@ -175,7 +175,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "garnishment_levy", pattern: /\b(garnish\w*|levy|levies|attachments?)\b/i },
   { key: "vehicle_title", pattern: /\btitle\b.{0,20}\blien\b|\blien\b.{0,20}\btitle\b|\bvehicle title\b/i },
   { key: "mortgage_lien_release", pattern: /\blien release|\brelease of (?:real estate |mortgage )?liens?\b/i },
-  { key: "legal_process", pattern: /\b(legal process|subpoena|court order)\b/i },
+  { key: "legal_process", pattern: /\b(legal process(?:ing)?|subpoena|court order)\b/i },
   { key: "subordination", pattern: /\bsubordination\b/i },
   { key: "other_lending_fee", pattern: /\bloan application\b/i },
   { key: "account_verification", pattern: /\b(account verification|verification of (deposit|account)s?)\b/i },
@@ -348,7 +348,20 @@ export function confidenceFor(segment: string): number {
 }
 
 export function nameFrom(value: string): string {
-  return normalizeSegment(value.replace(AMOUNT_PATTERN, " ")).slice(0, 120).trim();
+  return stripFootnoteMarks(normalizeSegment(value.replace(AMOUNT_PATTERN, " "))).slice(0, 120).trim();
+}
+
+/**
+ * Footnote numbers a PDF glues to a word ("Outgoing domestic wire transfer3",
+ * "Return Item fee2 (each)", "Overdraft Fee7,8") are not part of the fee's name. Only
+ * digits right after a word ending in two lowercase letters, or after a closing
+ * parenthesis, count, and only at the end of the name or before a parenthesis, so box
+ * sizes ("10x10"), acronyms ("W2") and counts ("after 12 months") stay.
+ */
+export function stripFootnoteMarks(name: string): string {
+  return name
+    .replace(/([A-Za-z][a-z]{2}|\))\d{1,2}(?:,\d{1,2})*(?=\s*\(|\s*$)/g, "$1")
+    .trim();
 }
 
 export function usableName(name: string): boolean {

@@ -13,6 +13,16 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Footnote numbers glued to live fee names
+**What happened:** SoFi's fee sheet published "Outgoing domestic wire transfer3" and "Return Item
+fee2". At 23:25 UTC, 155 live fees at 66 institutions had a footnote number glued to the name
+(read-only regex count on `published_fee_catalog`; box sizes like "10x10" are excluded).
+**Cause:** Knox's line rules (pass 1) kept a PDF's superscript footnote, which the text layer
+flattens into a digit. The table and family specialists (pass 2) already stripped it; pass 1 did not.
+**Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
+merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
+**Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+
 ## 2026-10-05: Shutdown months stored as 0 in economic series
 **What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
 (found by the Hamilton Pro page thread).
