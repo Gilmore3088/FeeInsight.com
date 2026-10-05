@@ -24,7 +24,7 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 10)).toEqual([
+    expect(candidates.slice(0, 11)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
@@ -34,10 +34,11 @@ describe("registry scheduler", () => {
       "sec-filings:batch-0",
       "beige-book:202610",
       "fred:current",
+      "reg-news:current",
       "state-regulators:current",
     ]);
     // Round two continues each source's history.
-    expect(candidates.slice(10, 15)).toEqual([
+    expect(candidates.slice(11, 16)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
       "fdic-sod:2025",
