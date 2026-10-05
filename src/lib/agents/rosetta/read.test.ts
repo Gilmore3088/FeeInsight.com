@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
-import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION, runRosettaRead } from "./read";
+import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_MAX_LIMIT, ROSETTA_READ_VERSION, runRosettaRead } from "./read";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -62,7 +62,7 @@ describe("Rosetta agentic read", () => {
       needsOcr: 0,
       failed: 0,
       skipped: 0,
-      limit: 50,
+      limit: ROSETTA_READ_MAX_LIMIT,
       dryRun: false,
     });
     expect(result.results[0]).toMatchObject({
@@ -500,9 +500,14 @@ describe("Rosetta agentic read", () => {
     const vaultKey = `ab/${"ab".repeat(32)}`;
     const feeText = ["Schedule of fees", "Overdraft fee $35.00", "NSF fee $35.00", "Stop payment fee $30.00"].join("\n");
 
-    function vaultDb(rows: Array<Record<string, unknown>>, triageRows: Array<Record<string, unknown>> = []): DbMock {
+    function vaultDb(
+      rows: Array<Record<string, unknown>>,
+      triageRows: Array<Record<string, unknown>> = [],
+      blockedBefore = false,
+    ): DbMock {
       const db = vi.fn((strings: TemplateStringsArray) => {
         const text = templateText(strings);
+        if (text.includes("AS blocked")) return Promise.resolve([{ blocked: blockedBefore }]);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
         if (text.includes("vault_schema_ready")) return Promise.resolve([{ vault_schema_ready: true }]);
         if (text.includes("INSERT INTO agent_source_texts")) return Promise.resolve([{ id: 801 }]);
@@ -547,6 +552,29 @@ describe("Rosetta agentic read", () => {
       expect(sqlText).toContain("SET fee_schedule_url = NULL");
       expect(sqlText).toContain("locked_by_correction IS TRUE");
       expect(JSON.stringify(db.mock.calls)).toContain('"wrong_document"');
+    });
+
+    it("sends a bank whose link is gone (HTTP 404) back to Magellan, only while that link is current", async () => {
+      const db = vaultDb([htmlCandidate]);
+      const fetchImpl = vi.fn().mockResolvedValue(response("Not found", "text/html", 404));
+
+      const result = await runRosettaRead({ runId: 604, db: asReadDb(db), fetchImpl, vault: fakeVault(new Uint8Array()) });
+
+      expect(result).toMatchObject({ failed: 1, sentBackToMagellan: 1, outcomes: { http_404: 1 } });
+      const clear = db.mock.calls.find((call) => templateText(call[0]).includes("SET fee_schedule_url = NULL"));
+      expect(clear).toEqual(expect.arrayContaining(["rosetta_dead_link", true, htmlCandidate.document_url]));
+    });
+
+    it("keeps a link that blocked us once, and sends it back when the block repeats", async () => {
+      const blocked = () => vi.fn().mockResolvedValue(response("Forbidden", "text/html", 403));
+
+      const first = vaultDb([htmlCandidate]);
+      const once = await runRosettaRead({ runId: 605, db: asReadDb(first), fetchImpl: blocked(), vault: fakeVault(new Uint8Array()) });
+      expect(once).toMatchObject({ failed: 1, sentBackToMagellan: 0 });
+
+      const repeat = vaultDb([htmlCandidate], [], true);
+      const twice = await runRosettaRead({ runId: 606, db: asReadDb(repeat), fetchImpl: blocked(), vault: fakeVault(new Uint8Array()) });
+      expect(twice).toMatchObject({ failed: 1, sentBackToMagellan: 1 });
     });
 
     it("re-checks earlier texts without downloading, sparing ones Knox found fees in", async () => {
