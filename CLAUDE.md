@@ -19,6 +19,15 @@ expertise. Kept fully separate from the CSI day job.
 - No Firecrawl. Use plain fetches.
 - Fix PRs may merge once CI is green. Redesigns and design work wait for James's review.
 
+## Project memory
+`docs/project/` is the project's durable memory; `docs/project/README.md` explains it.
+- Before starting work, read the latest file in `docs/project/checkpoints/`.
+- When you hit a structural or infrastructure problem, add it to `docs/project/FINDINGS.md`
+  in the same PR as the fix (or its own PR if there is no fix yet).
+- When James makes a decision that changes how work is done, add it to `docs/project/DECISIONS.md`.
+- A daily routine writes the checkpoint and `docs/project/CHANGELOG.md` from merged PRs.
+- This file holds rules that stay true. Status and next steps go in a checkpoint, never here.
+
 ## Design
 Headings never wrap a single word onto its own line. `src/app/globals.css` and
 `Reports/studio/template.html` balance h1-h4 (`text-wrap: balance`) and give body text
