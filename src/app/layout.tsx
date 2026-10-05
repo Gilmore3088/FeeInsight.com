@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Newsreader, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SITE_URL } from "@/lib/constants";
-import { PLAUSIBLE_QUEUE_SHIM } from "@/lib/analytics";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -22,8 +20,6 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains",
   display: "swap",
 });
-
-const PLAUSIBLE_DOMAIN = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -60,27 +56,11 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
           rel="stylesheet"
         />
-        {PLAUSIBLE_DOMAIN && (
-          // Standard Plausible queue shim: buffers trackEvent() calls fired before
-          // the deferred script loads; the script drains window.plausible.q.
-          <script
-            id="plausible-queue"
-            dangerouslySetInnerHTML={{ __html: PLAUSIBLE_QUEUE_SHIM }}
-          />
-        )}
       </head>
       <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         {children}
         {/* Vercel injects /_vercel/insights only on its own platform; elsewhere the script 404s. */}
         {process.env.VERCEL ? <Analytics /> : null}
-        {PLAUSIBLE_DOMAIN && (
-          <Script
-            defer
-            data-domain={PLAUSIBLE_DOMAIN}
-            src="https://plausible.io/js/script.js"
-            strategy="afterInteractive"
-          />
-        )}
       </body>
     </html>
   );
