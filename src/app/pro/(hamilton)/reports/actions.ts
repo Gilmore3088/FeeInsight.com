@@ -34,6 +34,14 @@ import {
   STATE_EXPERT_REPORT_RULES,
 } from "@/lib/hamilton/report-synthesis";
 import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
+import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
+import {
+  ANSWER_SECTION_FORMAT,
+  TRADEOFF_SECTION_FORMAT,
+  parseAnswerSection,
+  parseTradeoffSection,
+} from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -237,21 +245,21 @@ function buildExecutiveSummaryContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Compare ${institutionName}'s fees to peers using the categories in the DATA payload. Lead with the 1–2 categories where the gap is largest (above or below peer median). Cite dollar figures from the payload. Period: ${period}.`;
+        return `Write the answer page for ${institutionName}'s fee benchmark. Decide which fees to change, which to hold, and where it sits against its local competitors (exhibits.local_market) and peers. Period: ${period}.`;
       case "regional_landscape":
-        return `Describe the regional fee pattern visible in the DATA payload. Lead with the single most striking geographic difference (e.g. "FL CU NSF median is \$28; national CU median is \$26"). Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s regional market. Lead with how its prices compare with the named local competitors in exhibits.local_market, then the decisions that follow. Period: ${period}.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Summarize the ${cat} distribution at ${institutionName}'s peer set. Lead with the median, the P25–P75 spread, and the number of institutions observed. Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s ${cat} pricing: where it sits against local competitors and peers, and whether to raise, hold, lower or restructure it. Period: ${period}.`;
       }
       case "competitive_positioning":
-        return `Assess competitive position across the categories in the DATA payload. Lead with the 1–2 categories where ${institutionName} is most exposed (highest variance from peer median). Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s competitive position: the fees where it is most exposed against named local competitors and peers, and what to do about each. Period: ${period}.`;
     }
   })();
 
-  return `${head}\n\n${NO_FLUFF_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
+  return `${head}\n\n${ANSWER_SECTION_FORMAT}\n\n${NO_FLUFF_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
 }
 
 /**
@@ -264,17 +272,17 @@ function buildStrategicContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Explain WHY the peer gaps in the DATA payload exist for ${institutionName}. For each category in top_fees, cite the peer median + spread, then offer one observation about the gap (e.g. "P25 cluster at \$20 suggests overdraft-fee compression among CUs under \$5B"). Stop after 3 such observations.`;
+        return `Explain what is behind ${institutionName}'s position. In two or three short paragraphs, each opening with its takeaway, compare its amounts with the named local competitors in exhibits.local_market and with the peer median and spread, and say which gaps are deliberate-looking (a fee the market is moving away from) and which look like prices never revisited.`;
       case "regional_landscape":
-        return `Explain WHY the regional pattern in the DATA payload looks the way it does. Anchor each observation to a specific region or fee category from the payload. Stop after 3 observations.`;
+        return `Explain the local market behind ${institutionName}'s position in two or three short paragraphs, each opening with its takeaway. Name the competitors in exhibits.local_market that set the high and low prices, and compare the local pattern with the state and peer figures.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Explain WHY the ${cat} distribution looks the way it does for ${institutionName}'s peer set. Use the maturity field to flag where the sample is thin. Stop after 3 observations.`;
+        return `Explain what is behind ${institutionName}'s ${cat} position in two or three short paragraphs, each opening with its takeaway: the named local competitors, the peer spread, and where the sample is thin (use the maturity and count fields).`;
       }
       case "competitive_positioning":
-        return `Explain WHY ${institutionName} sits where it does on the categories in top_fees. For each, cite the peer P25/median/P75 and identify whether it has pricing power, parity, or vulnerability. Stop after 3 categories.`;
+        return `Explain what is behind ${institutionName}'s position in two or three short paragraphs, each opening with its takeaway. For its most exposed fees, name the local competitors priced above and below it and say whether it has pricing room, parity, or a vulnerability.`;
     }
   })();
 
@@ -289,10 +297,10 @@ function buildStrategicContext(
 const RECOMMENDATION_RULES = `
 ${NO_FLUFF_RULES}
 
-RECOMMENDATION-SPECIFIC RULES:
-6. Output AT MOST 3 recommendations. Generic advice about "establishing leadership" or "building frameworks" is forbidden.
-7. Each recommendation must include: (a) the fee category, (b) the peer median or P25/P75 anchor it should move toward, (c) one observable consequence (revenue direction, competitive percentile shift, or member-experience signal). If you cannot ground a recommendation in the DATA payload, omit it.
-8. If you can ground 0 or 1 recommendations, return only that many. Better empty than meaningless.
+TRADE-OFF RULES:
+11. Cover the decisions on the answer page, in its order, and no others. At most 3.
+12. Each trade-off names the fee, the price it moves toward, and one concrete consequence: who notices, the attrition, complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+13. If you can ground only 0 or 1 decisions, write only that many. Better short than generic.
 `.trim();
 
 function buildRecommendationContext(
@@ -302,21 +310,21 @@ function buildRecommendationContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Recommend up to 3 specific fee adjustments for ${institutionName}, each anchored to a peer-median or P75 figure from the DATA payload. Order by impact: largest variance from peer median first.`;
+        return `Write the trade-offs for ${institutionName}'s fee decisions: for each fee to change (largest value in exhibits.fee_impacts first), who notices, what it risks, and how to phase it.`;
       case "regional_landscape":
-        return `Recommend up to 3 regional moves for ${institutionName}, each tied to a specific market position visible in the DATA payload (e.g. "FL CU median is $X, ${institutionName} sits at $Y").`;
+        return `Write the trade-offs for ${institutionName}'s regional moves: for each, the named local competitors customers will compare it with, what it risks, and how to phase it.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Recommend up to 3 specific actions for ${institutionName} in the ${cat} category. Each must name the current peer P25/median/P75 anchor and the directional move (raise, hold, lower, restructure).`;
+        return `Write the trade-offs for ${institutionName}'s ${cat} decision (raise, hold, lower or restructure against the local and peer anchors): who notices, what it risks, and how to phase it.`;
       }
       case "competitive_positioning":
-        return `Recommend up to 3 specific repositioning moves for ${institutionName}, prioritizing the categories with the largest distance from peer median in the DATA payload.`;
+        return `Write the trade-offs for ${institutionName}'s repositioning moves, most exposed fees first: which local competitors customers will compare it with, what each move risks, and how to phase it.`;
     }
   })();
 
-  return `${head}\n\n${RECOMMENDATION_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
+  return `${head}\n\n${TRADEOFF_SECTION_FORMAT}\n\n${RECOMMENDATION_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
 }
 
 /**
@@ -362,7 +370,8 @@ export async function generateReport(
     ] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
-      params.institutionId ? getFinancialsByInstitution(params.institutionId).catch(() => []) : [],
+      // Two years of quarters across sources, enough for one complete calendar year.
+      params.institutionId ? getFinancialsByInstitution(params.institutionId, 24).catch(() => []) : [],
       params.institutionId ? getInstitutionRevenueTrend(params.institutionId).catch(() => []) : [],
       params.institutionId ? getInstitutionPeerRanking(params.institutionId).catch(() => null) : null,
       params.institutionId ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null) : null,
@@ -505,20 +514,39 @@ export async function generateReport(
     const withStateRules = (context: string) =>
       statePeers ? `${context}\n\n${STATE_EXPERT_REPORT_RULES}` : context;
 
-    // 2-4. Generate the three sections in parallel — they're independent
-    // (no shared state, no ordering constraint). Was sequential and took
-    // ~28s total; parallel cuts to ~10s (longest single call wins).
+    // Consultant exhibits, built from data only: named local competitors (FDIC branch
+    // deposits), the peer range, and dollar sensitivity from the institution's filings.
+    const localMarket = selectedInstitution
+      ? await getLocalMarketCompetitors({
+          institutionId: selectedInstitution.id,
+          certNumber: selectedInstitution.cert_number,
+          city: selectedInstitution.city,
+          stateCode: selectedInstitution.state_code,
+          categories: selectedFeeDeltas.map((delta) => delta.fee_category),
+        }).catch(() => null)
+      : null;
+    const exhibitSet = buildReportExhibits({
+      institutionName,
+      deltas: selectedFeeDeltas,
+      peerLabel: peerIndex.label,
+      market: localMarket,
+      serviceCharges: annualServiceCharges(selectedFinancials),
+      feeScheduleUrl: selectedInstitution?.fee_schedule_url ?? null,
+    });
+
+    // 2-4. The three sections: the answer page, what is behind it, and the trade-offs.
     const strategicSectionType = getStrategicSectionType(params.templateType);
     const sectionInputs: SectionInput[] = [
       {
         type: "executive_summary",
-        title: "Executive Summary",
+        title: "The Answer",
         data: {
           report_type: params.templateType,
           period,
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
+          exhibits: exhibitSet.data,
           focus_category: params.focusCategory ?? null,
           categories: topCategories.map((c) => ({
             fee_category: c.fee_category,
@@ -533,13 +561,14 @@ export async function generateReport(
       },
       {
         type: strategicSectionType,
-        title: "Strategic Analysis",
+        title: "What Is Behind It",
         data: {
           report_type: params.templateType,
           period,
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
+          exhibits: exhibitSet.data,
           focus_category: params.focusCategory ?? null,
           top_fees: topCategories.slice(0, 5).map((c) => ({
             fee_category: c.fee_category,
@@ -553,7 +582,7 @@ export async function generateReport(
       },
       {
         type: "recommendation",
-        title: "Recommended Position",
+        title: "Trade-offs and What to Watch",
         // Pass actual peer-anchored fee data so the model can write
         // specific recommendations instead of consultancy fluff. The
         // RECOMMENDATION_RULES context block forbids inventing figures
@@ -564,6 +593,7 @@ export async function generateReport(
           period,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
+          exhibits: exhibitSet.data,
           focus_category: params.focusCategory ?? null,
           peer_anchored_fees: selectedInstitution
             ? selectedFeeDeltas.slice(0, 5)
@@ -580,8 +610,6 @@ export async function generateReport(
       },
     ];
 
-    // Sections are independent: run them together, retry only a section that failed,
-    // so one provider hiccup never discards (and re-bills) the sections that worked.
     // Paid model calls from here on: enforce the daily quota, and record the outcome
     // (one usage row per report, one pro_request run in the ledger) however it ends.
     const quota = await checkProAiQuota(user);
@@ -619,22 +647,40 @@ export async function generateReport(
       });
     };
 
-    const settled = await Promise.allSettled(sectionInputs.map((input) => generateVerifiedSection(input)));
+    // One retry per section, so a provider hiccup never discards (and re-bills) the
+    // sections that worked.
     const verifiedSections: VerifiedSectionOutput[] = [];
-    for (const [index, outcome] of settled.entries()) {
-      if (outcome.status === "fulfilled") {
-        verifiedSections.push(outcome.value);
-        continue;
-      }
+    const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
       try {
-        verifiedSections.push(await generateVerifiedSection(sectionInputs[index]));
+        return await generateVerifiedSection(input);
       } catch {
-        await recordReportOutcome("failed", `Section "${sectionInputs[index].title}" failed after a retry.`, verifiedSections);
-        return {
-          success: false,
-          error: `Hamilton couldn't write the ${sectionInputs[index].title} section right now. Please try again in a minute.`,
-        };
+        try {
+          return await generateVerifiedSection(input);
+        } catch {
+          await recordReportOutcome("failed", `Section "${input.title}" failed after a retry.`, verifiedSections);
+          return null;
+        }
       }
+    };
+    const sectionFailed = (input: SectionInput): GenerateReportResult => ({
+      success: false,
+      error: `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
+    });
+
+    // The answer page comes first; the other two sections explain and stress-test
+    // its decisions, so they receive it as context and run together.
+    const answerResult = await generateWithRetry(sectionInputs[0]);
+    if (!answerResult) return sectionFailed(sectionInputs[0]);
+    verifiedSections.push(answerResult);
+    const answerContext = `ANSWER PAGE (already written; explain and stress-test these decisions, do not contradict or add to them):\n${answerResult.section.narrative}`;
+    const followUps = await Promise.all(
+      sectionInputs.slice(1).map((input) =>
+        generateWithRetry({ ...input, context: `${input.context ?? ""}\n\n${answerContext}`.trim() }),
+      ),
+    );
+    for (const [index, result] of followUps.entries()) {
+      if (!result) return sectionFailed(sectionInputs[index + 1]);
+      verifiedSections.push(result);
     }
 
     // Every $ and % in the narrative must trace to the data the model was given.
@@ -674,15 +720,21 @@ export async function generateReport(
           }));
 
     // 5. Assemble ReportSummaryResponse
+    const answer = parseAnswerSection(summarySection.narrative);
+    const tradeoffSection = parseTradeoffSection(recommendationSection.narrative);
     const report: ReportSummaryResponse = {
       title: reportTitle,
-      executiveSummary: summarySection.narrative
-        .split("\n\n")
-        .filter((p) => p.trim().length > 0),
+      ...(answer ? { answer } : {}),
+      exhibits: exhibitSet.exhibits,
+      watchlist: tradeoffSection.watch,
+      sources: exhibitSet.sources,
+      executiveSummary: answer
+        ? [answer.headline, ...answer.decisions.map((decision) => `${decision.action.replace(/\.$/, "")}. ${decision.why}`.trim())]
+        : summarySection.narrative.split("\n\n").filter((p) => p.trim().length > 0),
       snapshot: snapshotRows,
       strategicRationale: strategicSection.narrative,
       tradeoffs: tradeoffRows,
-      recommendation: recommendationSection.narrative,
+      recommendation: tradeoffSection.body || recommendationSection.narrative,
       implementationNotes: [
         `Report generated ${new Date().toLocaleDateString()}`,
         `Analysis period: ${period}`,
