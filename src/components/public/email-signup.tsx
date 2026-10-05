@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { trackEvent } from "@/lib/analytics";
+import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { HoneypotField, honeypotValue } from "./honeypot-field";
 
 const NEWSLETTER_SOURCE = "newsletter";
 const NEWSLETTER_LEAD_NAME = "Newsletter signup";
@@ -14,6 +16,7 @@ export function EmailSignup() {
     e.preventDefault();
     if (!email.trim()) return;
 
+    const honeypot = honeypotValue(e.currentTarget as HTMLFormElement);
     setStatus("loading");
     try {
       const resp = await fetch("/api/leads", {
@@ -23,6 +26,7 @@ export function EmailSignup() {
           name: NEWSLETTER_LEAD_NAME,
           email: email.trim(),
           source: NEWSLETTER_SOURCE,
+          [LEAD_HONEYPOT_FIELD]: honeypot,
         }),
       });
       if (resp.ok) {
@@ -46,7 +50,8 @@ export function EmailSignup() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="relative flex flex-col gap-2">
+      <HoneypotField />
       <label htmlFor="footer-newsletter-email" className="text-[12px] font-semibold text-[#5A5347]">
         Monthly fee index update
       </label>

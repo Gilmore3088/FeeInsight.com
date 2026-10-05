@@ -70,6 +70,20 @@ describe("applyStripeEvent", () => {
     expect(tx.mock.calls[0]).toContain(7);
   });
 
+  it("asks for one welcome email per newly activated subscriber", async () => {
+    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
+    const effects = await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
+  });
+
+  it("sends no welcome for renewals or a checkout that activated nobody", async () => {
+    expect((await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "active" }))).welcome).toEqual([]);
+    expect((await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }))).welcome).toEqual([]);
+  });
+
   it("falls back to the email for older sessions", async () => {
     await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_9", customer_email: "a@b.com" }));
     expect(issued()[0]).toContain("WHERE (email = ? OR username = ?)");

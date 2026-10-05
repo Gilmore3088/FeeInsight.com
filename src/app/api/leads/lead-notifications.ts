@@ -5,6 +5,7 @@ import {
 } from "@/lib/email/report-request";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import type { EmailDeliveryStatus } from "@/lib/email/resend";
+import { handleLeadDeliveryOutcome } from "@/lib/leads/lead-alerts";
 import { NEWSLETTER_SOURCE, placementForSource, type LeadCapturePlacement } from "@/lib/lead-capture";
 
 export const REPORT_SOURCE = "report";
@@ -15,6 +16,8 @@ const MAX_INSTITUTION_ID = 2_147_483_647;
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 export interface StoredLead {
+  /** The row this submission created; null when it filled gaps on an existing lead. */
+  leadId?: number | null;
   name: string;
   email: string;
   company: string | null;
@@ -89,13 +92,21 @@ function deliveryReason(result: LeadNotificationOutcome["notification"]) {
 
 /**
  * The lead is stored either way; an email that did not go out is logged with its reason
- * (e.g. "RESEND_API_KEY is not configured.") so it is visible in the deployment logs.
+ * (e.g. "RESEND_API_KEY is not configured.") and handed to the lead loop, which alerts
+ * James or marks the lead email_failed so the hourly lead watch alerts on it.
  */
-function logUndelivered(source: string, outcome: LeadNotificationOutcome) {
+async function handleUndelivered(lead: StoredLead, outcome: LeadNotificationOutcome) {
   const notification = deliveryReason(outcome.notification);
   const confirmation = deliveryReason(outcome.confirmation);
-  if (notification || confirmation) {
-    console.warn("[api/leads] lead email not delivered", { source, notification, confirmation });
+  if (!notification && !confirmation) return;
+  console.warn("[api/leads] lead email not delivered", { source: lead.source, notification, confirmation });
+  try {
+    await handleLeadDeliveryOutcome({ ...lead, id: lead.leadId ?? null }, outcome);
+  } catch (error) {
+    console.error("[api/leads] failed-email alert failed", {
+      source: lead.source,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -119,7 +130,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionName: lead.institutionName ?? null,
         stateCode: lead.stateCode ?? null,
       });
-      logUndelivered(lead.source, outcome);
+      await handleUndelivered(lead, outcome);
       return toStatus(outcome);
     }
     if (lead.source === REPORT_SOURCE) {
@@ -131,7 +142,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionId: lead.institutionId,
         src: lead.src,
       });
-      logUndelivered(lead.source, outcome);
+      await handleUndelivered(lead, outcome);
       return toStatus(outcome);
     }
     const outcome = await sendContactRequestNotifications({
@@ -143,13 +154,13 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
       inquiryType:
         lead.source === ENTERPRISE_SOURCE ? ENTERPRISE_SOURCE : contactInquiryType(lead.source),
     });
-    logUndelivered(lead.source, outcome);
+    await handleUndelivered(lead, outcome);
     return toStatus(outcome);
   } catch (error) {
-    console.error("[api/leads] notification failed", {
-      source: lead.source,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[api/leads] notification failed", { source: lead.source, error: message });
+    const failed = { status: "failed", error: message } as const;
+    await handleUndelivered(lead, { notification: failed, confirmation: failed });
     return { notification: "failed", confirmation: "failed" };
   }
 }

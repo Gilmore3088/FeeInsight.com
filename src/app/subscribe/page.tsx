@@ -94,12 +94,6 @@ export default async function SubscribePage({
       <main id="main-content">
 
       <div className="mx-auto max-w-5xl px-6 py-14">
-        {params.success && (
-          <div className="mb-6 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm text-emerald-700">
-            Subscription activated. You now have full access.
-          </div>
-        )}
-
         {inviteMode && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>

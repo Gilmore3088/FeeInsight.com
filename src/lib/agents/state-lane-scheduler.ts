@@ -135,16 +135,18 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 ];
 
 /**
- * Steps an hourly backlog run takes: re-read, re-extract, verify and publish the
- * documents the state already has. Magellan's discover, fetch and public-discovery
- * steps stay on the state's full crawl cadence, so backlog runs never search or
- * crawl bank websites. A re-read downloads a document that is not in the vault once
- * per reader version; Knox, Darwin and Hamilton work from stored rows only.
+ * Steps an hourly backlog run takes: fetch fee links found since their bank's last
+ * fetch (one download each, so a link found mid-month is not left until next month),
+ * then re-read, re-extract, verify and publish the documents the state already has.
+ * Magellan's discover and public-discovery steps stay on the state's full crawl
+ * cadence, so backlog runs never search or crawl bank websites. A re-read downloads a
+ * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
+ * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["read", "extract", "classify", "publish"] as const;
-export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS.filter((step) =>
-  (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key),
-);
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["fetch", "read", "extract", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
+  .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
+  .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch newly found fee links", input: { ...step.input, new_links_only: true } } : step));
 
 export type StateLaneMode = "full" | "backlog";
 
@@ -294,6 +296,15 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                )
              )
            )
+      ) OR EXISTS (
+        -- A fee link found after the bank's last fetch.
+        SELECT 1
+          FROM institution_sources inst
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND COALESCE(inst.status, 'active') = 'active'
+           AND inst.rescue_status = 'rescued'
+           AND inst.fee_schedule_url IS NOT NULL
+           AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
       ) OR EXISTS (
         -- Raw rows Darwin has not decided under the current rules (the rows its
         -- verify step selects), so a large extraction drains hourly, not next month.

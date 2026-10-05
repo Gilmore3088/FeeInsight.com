@@ -16,6 +16,7 @@ import {
   parseInstitutionId,
   parseSrc,
 } from "./lead-notifications";
+import { isRequestLead } from "@/lib/leads/lead-status";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_SOURCE = "website";
@@ -72,9 +73,14 @@ async function handlePOST(request: NextRequest) {
       );
     }
 
+    // A request (report, contact, enterprise) is work owed, so each one gets its own row
+    // with its own created_at and status, even from an email we already know. Folding it
+    // into an older row hid it: the row kept its old date and company, so it never
+    // showed up as a new request in /admin/leads.
     const [existing] = await sql`SELECT id FROM leads WHERE lower(email) = lower(${email})`;
+    let leadId: number | null = null;
 
-    if (existing) {
+    if (existing && !isRequestLead(source)) {
       // Fill gaps only: never overwrite a qualified lead's name/company/role/use_case,
       // and never let the newsletter placeholder replace a real name. Sources accumulate
       // as a comma-separated list (exact-member match, so "report" is not hidden by
@@ -98,8 +104,8 @@ async function handlePOST(request: NextRequest) {
           status = COALESCE(status, ${NEW_LEAD_STATUS})
         WHERE lower(email) = lower(${email})`;
       if (placement && useCase) {
-        // Capture attribution accumulates too: a returning lead signing up from a new
-        // placement keeps its earlier use_case and gains this placement's context.
+        // Attribution accumulates too: a returning lead signing up from a new placement
+        // keeps its earlier use_case and gains this one.
         await sql`
           UPDATE leads SET use_case = use_case || '; ' || ${useCase}
           WHERE lower(email) = lower(${email})
@@ -107,13 +113,16 @@ async function handlePOST(request: NextRequest) {
             AND position(${useCase} in use_case) = 0`;
       }
     } else {
-      await sql`
+      const [inserted] = await sql`
         INSERT INTO leads (name, email, company, role, use_case, source)
-        VALUES (${name}, ${email}, ${company}, ${role}, ${useCase}, ${source})`;
+        VALUES (${name}, ${email}, ${company}, ${role}, ${useCase}, ${source})
+        RETURNING id`;
+      leadId = typeof inserted?.id === "number" ? inserted.id : null;
     }
 
     // Storage is done; email is best-effort and its status rides along for the client.
     const notifications = await notifyForLead({
+      leadId,
       name,
       email,
       company,

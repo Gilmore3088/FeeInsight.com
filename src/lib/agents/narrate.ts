@@ -183,6 +183,13 @@ export function narrateStepFinished(
       const accuracy = (detail.accuracy ?? {}) as Detail;
       return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
     }
+    case "lead-watch": {
+      const owed = n(detail, "overdue") + n(detail, "email_failed");
+      if (owed === 0) return "Checked the leads; none is waiting on a reply.";
+      return detail.alert === "sent"
+        ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
+        : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
+    }
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
@@ -279,6 +286,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "state-expert": "atlas",
   "daily-brief": "atlas",
+  "lead-watch": "atlas",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
   discover: "magellan",
@@ -309,6 +317,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   publish: "hamilton",
   "publish-index": "hamilton",
   "publish-context": "hamilton",
+  "report-render": "hamilton",
+  "report-close": "hamilton",
   "category-guard": "hamilton",
   "public-diagnose": "hamilton",
 };

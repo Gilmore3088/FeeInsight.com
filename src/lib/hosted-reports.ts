@@ -79,12 +79,31 @@ export function isHostedReportExpired(entry: HostedReportEntry, now: Date = new 
 
 /** Resolve a token to its report record; null when unknown, malformed, or expired. */
 export function getHostedReport(token: string, options: LookupOptions = {}): HostedReport | null {
-  if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) return null;
+  const lookup = lookupHostedReport(token, options);
+  return lookup.state === "ok" ? lookup.report : null;
+}
+
+/** Like getHostedReport, but tells an expired link (offer a fresh report) from an unknown one. */
+export function lookupHostedReport(
+  token: string,
+  options: LookupOptions = {},
+): { state: "ok" | "expired"; report: HostedReport } | { state: "missing" } {
+  if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) return { state: "missing" };
   const map = options.map ?? (hostedReportMap as HostedReportMap);
   const entry = map[token];
-  if (!entry) return null;
-  if (isHostedReportExpired(entry, options.now)) return null;
-  return { token, ...entry };
+  if (!entry) return { state: "missing" };
+  const report = { token, ...entry };
+  return { state: isHostedReportExpired(entry, options.now) ? "expired" : "ok", report };
+}
+
+/** The free request form, prefilled for this institution; the request enters the lead loop. */
+export function hostedReportRequestHref(report: HostedReportEntry, src: "hosted_report" | "hosted_report_expired"): string {
+  const params = new URLSearchParams({
+    institution: String(report.institution_id),
+    name: report.institution_name,
+    src,
+  });
+  return `/for-institutions?${params.toString()}#report`;
 }
 
 /** Read the finished report HTML for an institution; null when no report exists. */
@@ -174,4 +193,77 @@ export function extractExecutiveSummary(html: string): ReportExecutiveSummary {
   const narrativeMatch = NARRATIVE_PATTERN.exec(html);
   const narrative = narrativeMatch ? decodeText(narrativeMatch[1]) : null;
   return { findings, narrative: narrative || null };
+}
+
+export type PositionStatus = "above" | "inside" | "below";
+
+export interface ReportPositionRow {
+  category: string;
+  you: number;
+  p25: number;
+  median: number;
+  p75: number;
+  peers: number;
+  percentile: number;
+  status: PositionStatus;
+}
+
+export interface ReportPositionMap {
+  rows: ReportPositionRow[];
+  /** Number of institutions in the peer cohort, when the report states it. */
+  cohortSize: number | null;
+}
+
+const POSITION_TABLE_PATTERN = /<table class="position"[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/;
+const POSITION_ROW_PATTERN = /<tr>([\s\S]*?)<\/tr>/g;
+const POSITION_CELL_PATTERN = /<td[^>]*>([\s\S]*?)<\/td>/g;
+const CATEGORY_PATTERN = /<span class="cat">([\s\S]*?)<\/span>/;
+const PERCENTILE_PATTERN = /\bP(\d{1,3})\b/;
+const COHORT_PATTERN = /Compared with (\d+) (?:banks|credit unions|institutions)/;
+
+function parseMoney(text: string): number | null {
+  const match = /\$([\d,]+(?:\.\d+)?)/.exec(text);
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Pull the ranked lines of the position map (§ 02) out of a finished report: the
+ * institution's published amount against the peer quartiles. Lines the report could
+ * not rank (too few peers, fee not in the published schedule) are left out, exactly
+ * as the report leaves them unranked.
+ */
+export function extractPositionMap(html: string): ReportPositionMap {
+  const cohortMatch = COHORT_PATTERN.exec(html);
+  const cohortSize = cohortMatch ? Number(cohortMatch[1]) : null;
+  const table = POSITION_TABLE_PATTERN.exec(html);
+  if (!table) return { rows: [], cohortSize };
+
+  const rows: ReportPositionRow[] = [];
+  for (const rowMatch of table[1].matchAll(POSITION_ROW_PATTERN)) {
+    const cells = [...rowMatch[1].matchAll(POSITION_CELL_PATTERN)].map((m) => m[1]);
+    if (cells.length < 7) continue;
+    const categoryMatch = CATEGORY_PATTERN.exec(cells[0]);
+    const percentileMatch = PERCENTILE_PATTERN.exec(decodeText(cells[6]));
+    const you = parseMoney(cells[1]);
+    const p25 = parseMoney(cells[2]);
+    const median = parseMoney(cells[3]);
+    const p75 = parseMoney(cells[4]);
+    const peers = Number(decodeText(cells[5]));
+    if (!categoryMatch || !percentileMatch || you === null || p25 === null || median === null || p75 === null) {
+      continue;
+    }
+    rows.push({
+      category: decodeText(categoryMatch[1]),
+      you,
+      p25,
+      median,
+      p75,
+      peers: Number.isFinite(peers) ? peers : 0,
+      percentile: Number(percentileMatch[1]),
+      status: you > p75 ? "above" : you < p25 ? "below" : "inside",
+    });
+  }
+  return { rows, cohortSize };
 }

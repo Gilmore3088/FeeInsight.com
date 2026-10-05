@@ -44,12 +44,23 @@ async function endSubscription(tx: Tx, customerId: string): Promise<void> {
   `;
 }
 
+/** What the caller does after the transaction commits: a welcome email per new Pro. */
+export interface StripeEventEffects {
+  welcome: Array<{ email: string; name: string | null }>;
+}
+
 /**
  * Applies one verified, not-yet-seen Stripe event inside the caller's transaction.
  * `past_due_since` starts the 7-day payment grace window on the first failure (never
  * reset by later failures) and clears whenever the subscription is active or ends.
  */
-export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<void> {
+export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<StripeEventEffects> {
+  const effects: StripeEventEffects = { welcome: [] };
+  await applyEvent(tx, event, effects);
+  return effects;
+}
+
+async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffects): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -63,22 +74,24 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<voi
       // Prefer the user id checkout was started for; fall back to the email for sessions
       // created before user ids were attached.
       const activated = Number.isInteger(userId) && userId > 0
-        ? await tx<Array<{ id: number; email: string | null }>>`
+        ? await tx<Array<{ id: number; email: string | null; display_name: string | null }>>`
             UPDATE users
             SET subscription_status = 'active', past_due_since = NULL, role = 'premium', stripe_customer_id = ${customerId}
             WHERE id = ${userId} AND role NOT IN ('admin', 'analyst')
-            RETURNING id, email
+            RETURNING id, email, display_name
           `
         : email
-          ? await tx<Array<{ id: number; email: string | null }>>`
+          ? await tx<Array<{ id: number; email: string | null; display_name: string | null }>>`
               UPDATE users
               SET subscription_status = 'active', past_due_since = NULL, role = 'premium', stripe_customer_id = ${customerId}
               WHERE (email = ${email} OR username = ${email}) AND role NOT IN ('admin', 'analyst')
-              RETURNING id, email
+              RETURNING id, email, display_name
             `
           : [];
       for (const user of activated) {
         await acceptPendingWorkspaceInvitationsForUser({ userId: user.id, email: user.email ?? email ?? "" }, tx);
+        const to = user.email ?? email;
+        if (to) effects.welcome.push({ email: to, name: user.display_name ?? null });
       }
       return;
     }
