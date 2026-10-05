@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   checkProAiQuota: vi.fn(),
   recordProRequest: vi.fn(),
   getLocalMarketCompetitors: vi.fn(),
+  getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
 }));
 
@@ -39,6 +40,10 @@ vi.mock("@/lib/data-store/connection", () => ({
 
 vi.mock("@/lib/data-store/local-market", () => ({
   getLocalMarketCompetitors: mocks.getLocalMarketCompetitors,
+}));
+
+vi.mock("@/lib/data-store/complaints", () => ({
+  getInstitutionComplaintYears: mocks.getInstitutionComplaintYears,
 }));
 
 vi.mock("@/lib/data-store/call-reports", () => ({
@@ -155,6 +160,7 @@ describe("Hamilton Reports generateReport", () => {
     mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
     mocks.recordProRequest.mockResolvedValue(1);
     mocks.getLocalMarketCompetitors.mockResolvedValue(null);
+    mocks.getInstitutionComplaintYears.mockResolvedValue([]);
 
     mocks.getCurrentUser.mockResolvedValue({
       id: 7,
@@ -514,7 +520,7 @@ describe("Hamilton Reports generateReport", () => {
         },
       ],
     });
-    expect(result.report.exhibits?.map((exhibit) => exhibit.id)).toEqual(["local_market", "peer_range", "dollar_impact"]);
+    expect(result.report.exhibits?.map((exhibit) => exhibit.id)).toEqual(["local_market", "peer_range", "dollar_impact", "regulatory"]);
     expect(result.report.exhibits?.[0].rows[0]).toEqual([
       "Wire Transfer",
       "$35.00",
@@ -529,6 +535,7 @@ describe("Hamilton Reports generateReport", () => {
     const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
     expect(calls[0].type).toBe("executive_summary");
     for (const input of calls.slice(1)) expect(input.context).toContain("ANSWER PAGE");
+    for (const input of calls) expect(input.context).toContain("REGULATORY RULES");
     expect(calls[0].data.exhibits).toMatchObject({
       local_market: { comparisons: [expect.objectContaining({ local_median: 30, position_vs_local: "above" })] },
       fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],

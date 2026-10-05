@@ -252,7 +252,7 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact";
+  id: "local_market" | "peer_range" | "dollar_impact" | "regulatory";
   title: string;
   subtitle: string;
   columns: string[];

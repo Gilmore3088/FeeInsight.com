@@ -36,6 +36,8 @@ import {
 import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
+import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
+import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
 import {
   ANSWER_SECTION_FORMAT,
   TRADEOFF_SECTION_FORMAT,
@@ -533,6 +535,19 @@ export async function generateReport(
       serviceCharges: annualServiceCharges(selectedFinancials),
       feeScheduleUrl: selectedInstitution?.fee_schedule_url ?? null,
     });
+    // Regulation: the federal rules that bear on these fees, the state chartering
+    // agency, and the institution's CFPB complaint record.
+    const regulatory = buildRegulatoryContext({
+      institutionName,
+      stateCode: selectedInstitution?.state_code,
+      charterType: selectedInstitution?.charter_type,
+      fees: selectedFeeDeltas,
+      complaintYears: selectedInstitution
+        ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])
+        : [],
+    });
+    const exhibitData = { ...exhibitSet.data, regulatory: regulatory.data };
+    const withExpertRules = (context: string) => `${withStateRules(context)}\n\n${REGULATORY_REPORT_RULES}`;
 
     // 2-4. The three sections: the answer page, what is behind it, and the trade-offs.
     const strategicSectionType = getStrategicSectionType(params.templateType);
@@ -546,7 +561,7 @@ export async function generateReport(
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
-          exhibits: exhibitSet.data,
+          exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
           categories: topCategories.map((c) => ({
             fee_category: c.fee_category,
@@ -557,7 +572,7 @@ export async function generateReport(
             maturity: c.maturity_tier,
           })),
         },
-        context: withTone(withStateRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone),
+        context: withTone(withExpertRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone),
       },
       {
         type: strategicSectionType,
@@ -568,7 +583,7 @@ export async function generateReport(
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
-          exhibits: exhibitSet.data,
+          exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
           top_fees: topCategories.slice(0, 5).map((c) => ({
             fee_category: c.fee_category,
@@ -578,7 +593,7 @@ export async function generateReport(
             institution_count: c.institution_count,
           })),
         },
-        context: withTone(withStateRules(buildStrategicContext(params, institutionName)), params.narrativeTone),
+        context: withTone(withExpertRules(buildStrategicContext(params, institutionName)), params.narrativeTone),
       },
       {
         type: "recommendation",
@@ -593,7 +608,7 @@ export async function generateReport(
           period,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
-          exhibits: exhibitSet.data,
+          exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
           peer_anchored_fees: selectedInstitution
             ? selectedFeeDeltas.slice(0, 5)
@@ -606,7 +621,7 @@ export async function generateReport(
                 maturity: c.maturity_tier,
               })),
         },
-        context: withTone(withStateRules(buildRecommendationContext(params, institutionName)), params.narrativeTone),
+        context: withTone(withExpertRules(buildRecommendationContext(params, institutionName)), params.narrativeTone),
       },
     ];
 
@@ -725,9 +740,9 @@ export async function generateReport(
     const report: ReportSummaryResponse = {
       title: reportTitle,
       ...(answer ? { answer } : {}),
-      exhibits: exhibitSet.exhibits,
+      exhibits: regulatory.exhibit ? [...exhibitSet.exhibits, regulatory.exhibit] : exhibitSet.exhibits,
       watchlist: tradeoffSection.watch,
-      sources: exhibitSet.sources,
+      sources: [...exhibitSet.sources, ...regulatory.sources],
       executiveSummary: answer
         ? [answer.headline, ...answer.decisions.map((decision) => `${decision.action.replace(/\.$/, "")}. ${decision.why}`.trim())]
         : summarySection.narrative.split("\n\n").filter((p) => p.trim().length > 0),
