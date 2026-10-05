@@ -40,6 +40,7 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Regulator news and the latest Beige Book kept current; invented Hamilton prompt examples removed (#104).
 - A budget refusal is named as the reason a Hamilton thesis failed (#83).
 - Partner API: brainstorm notes, call report quarters, CFPB complaints, CSV for paid keys (#90).
+- API spec: `/fees?category` and `/institutions?id` are now query parameters on `/fees` and `/institutions`, so code generators and Postman import the spec cleanly.
 - The Live page became a visual flow board (#80).
 
 ## 2026-10-04 (from 19:56 UTC)
