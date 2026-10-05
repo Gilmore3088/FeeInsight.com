@@ -66,7 +66,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
           >
             The {PRODUCT_NAME}
           </h1>
-          <p className="mt-2.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#8A8072]">
+          <p className="mt-2.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B6255]">
             <span aria-hidden="true" className="h-px w-5 bg-[#C44B2E]/60" />
             Powered by <span className="text-[#5A5347]">{SITE_DOMAIN_DISPLAY}</span>
           </p>

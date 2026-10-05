@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { getDataFreshness, getPublicStats } from "@/lib/data-store/core";
 import { sql } from "@/lib/data-store/connection";
+import { getFeeCategorySummaries, type FeeCategorySummary } from "@/lib/data-store/fees";
 import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { US_STATES_ONLY } from "@/lib/us-states";
@@ -32,6 +33,17 @@ export interface PublicStatsSummary {
   /** False when any count failed to read; its label then shows UNAVAILABLE_LABEL, never "0". */
   complete: boolean;
 }
+
+/**
+ * One name per coverage count, used everywhere a count appears, so "institutions"
+ * never means two different things on two pages.
+ */
+export const COVERAGE_LABELS = {
+  monitored: "Institutions monitored",
+  institutions: "Institutions with published fees",
+  observations: "Published fee entries",
+  categories: "Fee categories with published fees",
+} as const;
 
 /** Shown in place of a count whose read failed, so a failed read never renders as a real 0. */
 export const UNAVAILABLE_LABEL = "—";
@@ -129,14 +141,74 @@ async function computePublicStatsSummary(): Promise<PublicStatsSummary> {
 }
 
 /**
- * Cached between Hamilton publishes: this runs five catalog-wide aggregates and is read
- * by most public pages. A summary with any failed count is never cached, so one failed
- * read cannot pin a blank number on the homepage for the whole cache ceiling.
+ * Everything the public site states as a national figure, computed together.
+ *
+ * The headline counts and the per-category benchmarks used to sit in separate cache
+ * entries with different lifetimes (hourly counts, per-publish summaries, the
+ * fee_index_cache memo), so the homepage, fee index and research hub could each show
+ * a different moment of a catalog that changes every few minutes. One entry means
+ * every public page reads the same moment, and `refreshedOn` dates it.
  */
-const cachedPublicStatsSummary = cachedPublicRead(
-  "public-stats-summary",
-  computePublicStatsSummary,
-  (summary) => !summary.complete,
+export interface PublicSnapshot {
+  summary: PublicStatsSummary;
+  /** National benchmark per category, under the statistics contract (fee-stats.ts). */
+  categories: FeeCategorySummary[];
+}
+
+async function readCategorySummaries(): Promise<FeeCategorySummary[]> {
+  try {
+    return await getFeeCategorySummaries();
+  } catch (error) {
+    console.error("[public-stats] category summaries read failed; benchmarks hidden", error);
+    return [];
+  }
+}
+
+async function computePublicSnapshot(): Promise<PublicSnapshot> {
+  const [summary, categories] = await Promise.all([computePublicStatsSummary(), readCategorySummaries()]);
+  return { summary, categories };
+}
+
+/**
+ * Cached between Hamilton publishes on the hourly public ceiling (takedowns invalidate
+ * it early). A snapshot with any failed read is never cached, so one failed read cannot
+ * pin a blank number on the homepage for the whole ceiling.
+ */
+const cachedPublicSnapshot = cachedPublicRead(
+  "public-snapshot",
+  computePublicSnapshot,
+  (snapshot) => !snapshot.summary.complete || snapshot.categories.length === 0,
 );
 
-export const getPublicStatsSummary = cache(cachedPublicStatsSummary);
+export const getPublicSnapshot = cache(cachedPublicSnapshot);
+
+/** Headline counts from the shared snapshot. */
+export const getPublicStatsSummary = cache(async (): Promise<PublicStatsSummary> => (await getPublicSnapshot()).summary);
+
+/** National category benchmarks from the shared snapshot: the same moment as the counts. */
+export const getPublicCategorySummaries = cache(
+  async (): Promise<FeeCategorySummary[]> => (await getPublicSnapshot()).categories,
+);
+
+/**
+ * What a benchmark measures, for the line beside it:
+ * "Median $30 · 798 institutions · 945 published fee entries · updated Oct 5, 2026".
+ */
+export function benchmarkBasis(
+  category: Pick<FeeCategorySummary, "median_amount" | "institution_count" | "total_observations">,
+  refreshedOn: string | null,
+): string {
+  const parts: string[] = [];
+  if (category.median_amount !== null) parts.push(`Median ${formatMoney(category.median_amount)}`);
+  parts.push(`${formatCount(category.institution_count)} ${category.institution_count === 1 ? "institution" : "institutions"}`);
+  parts.push(
+    `${formatCount(category.total_observations)} published fee ${category.total_observations === 1 ? "entry" : "entries"}`,
+  );
+  if (refreshedOn) parts.push(`updated ${refreshedOn}`);
+  return parts.join(" · ");
+}
+
+function formatMoney(value: number): string {
+  const n = Math.round(value * 100) / 100;
+  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+}
