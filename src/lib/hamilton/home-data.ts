@@ -178,8 +178,11 @@ export async function fetchHomeBriefingData(
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    let errorType: "missing_key" | "rate_limit" | "api_error" = "api_error";
-    if (errorMessage.includes("API key") || errorMessage.includes("ANTHROPIC_API_KEY")) {
+    let errorType: "budget_blocked" | "missing_key" | "rate_limit" | "api_error" = "api_error";
+    if (errorMessage.includes("Provider budget") || errorMessage.includes("budget policy")) {
+      // A budget policy refused the call before it reached the provider: not an API error.
+      errorType = "budget_blocked";
+    } else if (errorMessage.includes("API key") || errorMessage.includes("ANTHROPIC_API_KEY")) {
       errorType = "missing_key";
     } else if (errorMessage.includes("rate_limit") || errorMessage.includes("429")) {
       errorType = "rate_limit";
@@ -190,6 +193,7 @@ export async function fetchHomeBriefingData(
       status: "failed",
       summary: `Thesis generation failed (${errorType}).`,
       userId: null,
+      detail: { error_type: errorType, error: errorMessage.slice(0, 500) },
     });
     console.warn("[Hamilton] Thesis generation failed", {
       timestamp: new Date().toISOString(),

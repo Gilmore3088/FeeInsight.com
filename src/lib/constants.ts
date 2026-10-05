@@ -8,6 +8,11 @@ export const SITE_DOMAIN = "feeinsight.com";
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
+/** Credit line returned with every public API response, for partners to display with the data. */
+export const API_ATTRIBUTION = {
+  text: `Source: ${PRODUCT_NAME}, ${SITE_DOMAIN}`,
+  url: `https://${SITE_DOMAIN}`,
+} as const;
 export const SITE_TITLE_TEMPLATE = `%s | ${SITE_NAME}`;
 
 /** Full document title for pages that must set one outside the root title template. */
