@@ -36,6 +36,8 @@ interface LeadsResponse {
 
 interface RequestReportFormProps {
   contactEmail: string;
+  /** Lead `src` when the URL carries none, so each page's requests are attributable. */
+  defaultSrc?: string;
 }
 
 interface Prefill {
@@ -44,13 +46,13 @@ interface Prefill {
   src: string;
 }
 
-function readPrefill(params: URLSearchParams): Prefill {
+function readPrefill(params: URLSearchParams, defaultSrc: string): Prefill {
   const idRaw = Number(params.get("institution"));
   const srcRaw = (params.get("src") ?? "").trim();
   return {
     institutionId: Number.isInteger(idRaw) && idRaw > 0 ? idRaw : null,
     institutionName: (params.get("name") ?? "").trim(),
-    src: SRC_PATTERN.test(srcRaw) ? srcRaw : DEFAULT_SRC,
+    src: SRC_PATTERN.test(srcRaw) ? srcRaw : defaultSrc,
   };
 }
 
@@ -71,11 +73,12 @@ export function RequestReportForm(props: RequestReportFormProps) {
 
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
-  return <RequestReportFormInner {...props} prefill={readPrefill(params)} />;
+  return <RequestReportFormInner {...props} prefill={readPrefill(params, props.defaultSrc ?? DEFAULT_SRC)} />;
 }
 
 function RequestReportFormInner({
   contactEmail,
+  defaultSrc = DEFAULT_SRC,
   prefill,
 }: RequestReportFormProps & { prefill: Prefill | null }) {
   const [status, setStatus] = useState<Status>("idle");
@@ -85,7 +88,7 @@ function RequestReportFormInner({
     Boolean(prefill?.institutionName),
   );
 
-  const src = prefill?.src ?? DEFAULT_SRC;
+  const src = prefill?.src ?? defaultSrc;
   const lockedInstitutionId = institutionLocked ? prefill?.institutionId ?? null : null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

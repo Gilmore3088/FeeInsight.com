@@ -9,7 +9,8 @@ import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
 
-const REPORT_REQUEST_HREF = "/for-institutions#report";
+// The request form sits in the bank section further down this page.
+const REPORT_REQUEST_HREF = "#for-banks";
 
 interface LandingHeroProps {
   institutionsLabel: string;
@@ -167,12 +168,12 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
               >
                 {REPORT_OFFER.ctaLabel}
               </TrackLink>
-              <a
-                href="#for-banks"
+              <Link
+                href="/reports/sample-competitive-fee-position"
                 className="text-sm font-semibold text-[#1A1815] underline-offset-4 hover:text-[#A93D25] hover:underline"
               >
-                What&apos;s in the report ↓
-              </a>
+                Read the full sample
+              </Link>
             </div>
           </div>
         </div>

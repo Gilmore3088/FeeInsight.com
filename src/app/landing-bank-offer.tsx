@@ -1,8 +1,8 @@
 import { TrackLink } from "@/components/track-link";
-import { REPORT_OFFER } from "@/lib/constants";
+import { RequestReportForm } from "@/app/for-institutions/request-report-form";
+import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
 import type { ReportFinding } from "@/lib/hosted-reports";
 
-const REPORT_REQUEST_HREF = "/for-institutions#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
@@ -14,19 +14,19 @@ const WHAT_YOU_GET = [
 ];
 
 const NEXT_STEPS = [
-  "Tell us your institution and your email.",
-  "We confirm your peer set with you by email.",
-  `Your PDF arrives, ${REPORT_OFFER.turnaround}. No payment, no card.`,
+  "You send this form. We save your request right away.",
+  "We email you to confirm which competitors to compare you with.",
+  `Your PDF report arrives, ${REPORT_OFFER.turnaround}. No payment, no card. We only email you about your report.`,
 ];
 
 /**
  * The bank and credit union path: what the report is, real findings from the public
- * sample, and one button. No email form here; the request form lives on /for-institutions.
+ * sample, and the same request form as /for-institutions, so the lead is captured right here.
  */
 export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
   return (
     <section id="for-banks" className="scroll-mt-16 border-b border-[#E0D7C9] bg-white">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
             For banks and credit unions
@@ -48,28 +48,26 @@ export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
             ))}
           </ul>
 
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <TrackLink
-              event="request_report"
-              eventProps={{ placement: "home_bank_section" }}
-              href={REPORT_REQUEST_HREF}
-              className="inline-flex items-center rounded-md bg-[#C44B2E] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
-            >
-              {REPORT_OFFER.ctaLabel}
-            </TrackLink>
-            <TrackLink
-              event="see_sample_report"
-              eventProps={{ placement: "home_bank_section" }}
-              href={SAMPLE_REPORT_HREF}
-              className="inline-flex items-center rounded-md border border-[#D5CBBF] px-5 py-3 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
-            >
-              Read the full sample
-            </TrackLink>
-          </div>
+          {findings.length > 0 && (
+            <div className="mt-6">
+              <SampleFindings findings={findings.slice(0, 3)} />
+            </div>
+          )}
+          <TrackLink
+            event="see_sample_report"
+            eventProps={{ placement: "home_bank_section" }}
+            href={SAMPLE_REPORT_HREF}
+            className="mt-3 inline-block text-sm font-semibold text-[#A93D25] hover:text-[#8E2A17]"
+          >
+            Read the full sample report →
+          </TrackLink>
+        </div>
 
-          <div className="mt-7 border-t border-[#EDE6DA] pt-5">
+        <div className="min-w-0 lg:sticky lg:top-20">
+          <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="homepage" />
+          <div className="mt-5 rounded-lg bg-[#FAF7F2] px-4 py-3.5">
             <p className="text-[12px] font-semibold text-[#1A1815]">What happens next</p>
-            <ol className="mt-2 grid gap-2 sm:grid-cols-3">
+            <ol className="mt-2 space-y-2">
               {NEXT_STEPS.map((step, index) => (
                 <li key={step} className="flex gap-2 text-[12px] leading-snug text-[#5A5347]">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F4EEE5] text-[11px] font-semibold tabular-nums text-[#A93D25]">
@@ -81,8 +79,6 @@ export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
             </ol>
           </div>
         </div>
-
-        {findings.length > 0 && <SampleFindings findings={findings.slice(0, 3)} />}
       </div>
     </section>
   );
