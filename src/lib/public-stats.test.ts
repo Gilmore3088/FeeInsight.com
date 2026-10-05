@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { formatAbsoluteDate, formatCount, formatFreshness } from "./public-stats";
+import {
+  UNAVAILABLE_LABEL,
+  formatAbsoluteDate,
+  formatCount,
+  formatCountOrUnavailable,
+  formatFreshness,
+} from "./public-stats";
 
 describe("public stats formatting", () => {
   it("formats counts with thousands separators", () => {
     expect(formatCount(1183)).toBe("1,183");
     expect(formatCount(0)).toBe("0");
+  });
+
+  it("shows a failed count as unavailable, never as 0", () => {
+    expect(formatCountOrUnavailable(null)).toBe(UNAVAILABLE_LABEL);
+    expect(formatCountOrUnavailable(null)).not.toBe("0");
+    expect(formatCountOrUnavailable(58)).toBe("58");
   });
 
   it("formats absolute dates and tolerates bad input", () => {
