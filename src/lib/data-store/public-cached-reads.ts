@@ -73,7 +73,6 @@ export const getPublishedArticleSummariesCached = cachedPublicRead(
   // No articles is a real answer here, not a failed read (failures throw), so cache it.
   () => false,
 );
-export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getStateFeeIndexesCached = cachedPublicRead(
   "state-fee-indexes",
   getStateFeeIndexes,
