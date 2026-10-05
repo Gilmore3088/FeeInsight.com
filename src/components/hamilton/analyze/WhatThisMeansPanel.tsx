@@ -30,11 +30,11 @@ export function WhatThisMeansPanel({ content, isStreaming }: WhatThisMeansPanelP
           <div className="skeleton h-5 rounded w-5/6" />
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="max-w-[68ch] space-y-4">
           {content.split("\n").map((p) => p.trim()).filter((p) => /\w/.test(p)).map((para, i) => (
             <p
               key={i}
-              className="text-lg leading-relaxed font-light"
+              className="text-[17px] leading-relaxed text-pretty"
               style={{ color: "var(--hamilton-text-secondary)" }}
             >
               {renderInline(para)}

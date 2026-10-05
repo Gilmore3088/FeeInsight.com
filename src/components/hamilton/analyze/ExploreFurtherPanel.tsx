@@ -14,9 +14,8 @@ interface ExploreFurtherPanelProps {
 }
 
 /**
- * ExploreFurtherPanel — Centered "EXPLORE FURTHER" divider + prompt pills.
- * Matches HTML prototype: horizontal rule dividers flanking italic label,
- * pill-shaped prompt buttons with outlined style + hover primary border/color.
+ * ExploreFurtherPanel — Hamilton's suggested follow-up questions, rendered in
+ * the page flow under the evidence as a short list of full-width buttons.
  * Falls back to DEFAULT_PROMPTS when Hamilton hasn't returned suggestions yet.
  */
 export function ExploreFurtherPanel({
@@ -29,48 +28,38 @@ export function ExploreFurtherPanel({
   const displayPrompts = prompts.length > 0 ? prompts : DEFAULT_PROMPTS;
 
   return (
-    <div className="flex flex-col items-center gap-6">
-      {/* Divider with label */}
-      <div className="flex items-center gap-3" style={{ color: "var(--hamilton-text-tertiary)" }}>
-        <span className="h-px w-12 block" style={{ backgroundColor: "var(--hamilton-outline-variant, #d8c2b8)" }} />
-        <span
-          className="text-[10px] uppercase tracking-[0.2em] font-bold italic"
-          style={{ color: "var(--hamilton-text-tertiary)" }}
-        >
-          Explore further
-        </span>
-        <span className="h-px w-12 block" style={{ backgroundColor: "var(--hamilton-outline-variant, #d8c2b8)" }} />
-      </div>
-
-      {/* Prompt pills */}
-      <div className="flex flex-wrap justify-center gap-3">
+    <section className="hamilton-card p-5" aria-label="Explore further">
+      <h3
+        className="text-xs font-semibold uppercase tracking-wider mb-3"
+        style={{ color: "var(--hamilton-text-secondary)" }}
+      >
+        Ask Hamilton next
+      </h3>
+      <ul className="flex flex-col gap-2">
         {displayPrompts.map((prompt, i) => (
-          <button
-            key={i}
-            onClick={() => onPromptSelect(prompt)}
-            className="px-5 py-3 rounded-xl text-[11px] font-semibold border transition-all"
-            style={{
-              backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-              borderColor: "rgba(216,194,184,0.5)",
-              color: "var(--hamilton-text-secondary)",
-              cursor: "pointer",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-            }}
-            onMouseEnter={(e) => {
-              const el = e.currentTarget as HTMLButtonElement;
-              el.style.borderColor = "var(--hamilton-primary)";
-              el.style.color = "var(--hamilton-primary)";
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget as HTMLButtonElement;
-              el.style.borderColor = "rgba(216,194,184,0.5)";
-              el.style.color = "var(--hamilton-text-secondary)";
-            }}
-          >
-            &ldquo;{prompt}&rdquo;
-          </button>
+          <li key={i}>
+            <button
+              type="button"
+              onClick={() => onPromptSelect(prompt)}
+              className="group flex w-full items-start justify-between gap-4 rounded-lg border px-4 py-3 text-left text-sm leading-snug transition-colors hover:border-[color:var(--hamilton-primary)] focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{
+                backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
+                borderColor: "rgba(216,194,184,0.5)",
+                color: "var(--hamilton-text-primary)",
+              }}
+            >
+              <span className="text-pretty">{prompt}</span>
+              <span
+                aria-hidden="true"
+                className="shrink-0 transition-transform group-hover:translate-x-0.5"
+                style={{ color: "var(--hamilton-primary)" }}
+              >
+                &rarr;
+              </span>
+            </button>
+          </li>
         ))}
-      </div>
-    </div>
+      </ul>
+    </section>
   );
 }

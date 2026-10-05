@@ -15,79 +15,8 @@ import { AnalyzeCTABar } from "./AnalyzeCTABar";
 import { AnalysisInputBar } from "./AnalysisInputBar";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { parseAnalyzeResponse, type ParsedResponse } from "./parse-response";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
-
-// ─── Section Parsing ─────────────────────────────────────────────────────────
-
-interface ParsedResponse {
-  hamiltonView: string;
-  whatThisMeans: string;
-  whyItMatters: string[];
-  evidence: Array<{ label: string; value: string; note?: string }>;
-  exploreFurther: string[];
-}
-
-/**
- * Parse Hamilton's structured analyze response into typed sections.
- * Expects ## headings: Hamilton's View, What This Means, Why It Matters, Evidence, Explore Further.
- * Falls back to raw content in hamiltonView if sections are not found.
- */
-function parseAnalyzeResponse(content: string): ParsedResponse {
-  const sections = content.split(/^##\s+/m);
-
-  function getSection(name: string): string {
-    const match = sections.find((s) => s.toLowerCase().startsWith(name.toLowerCase()));
-    if (!match) return "";
-    return match.replace(/^[^\n]+\n/, "").trim();
-  }
-
-  function parseBullets(text: string): string[] {
-    return text
-      .split("\n")
-      .map((l) => l.replace(/^[-*\s]+/, "").trim())
-      .filter((l) => /\w/.test(l));
-  }
-
-  function parseEvidenceMetrics(
-    text: string
-  ): Array<{ label: string; value: string; note?: string }> {
-    const metrics: Array<{ label: string; value: string; note?: string }> = [];
-    for (const line of text.split("\n").filter((l) => l.trim())) {
-      const bold = line.match(/^[-*]\s*\*\*(.+?)\*\*:\s*(.+?)(?:\s*[—–-]\s*(.+))?$/);
-      if (bold) {
-        metrics.push({ label: bold[1].trim(), value: bold[2].trim(), note: bold[3]?.trim() });
-        continue;
-      }
-      const plain = line.match(/^[-*]?\s*(.+?):\s*(.+?)(?:\s*[—–]\s*(.+))?$/);
-      if (plain) {
-        metrics.push({
-          label: plain[1].replace(/^[-*]\s*/, "").trim(),
-          value: plain[2].trim(),
-          note: plain[3]?.trim(),
-        });
-      }
-    }
-    return metrics;
-  }
-
-  const hamiltonViewRaw = getSection("hamilton");
-  const whatThisMeansRaw = getSection("what this means");
-  const whyItMattersRaw = getSection("why it matters");
-  const evidenceRaw = getSection("evidence");
-  const exploreFurtherRaw = getSection("explore further");
-
-  if (!hamiltonViewRaw && !whatThisMeansRaw && !whyItMattersRaw) {
-    return { hamiltonView: content.trim(), whatThisMeans: "", whyItMatters: [], evidence: [], exploreFurther: [] };
-  }
-
-  return {
-    hamiltonView: hamiltonViewRaw,
-    whatThisMeans: whatThisMeansRaw,
-    whyItMatters: parseBullets(whyItMattersRaw),
-    evidence: parseEvidenceMetrics(evidenceRaw),
-    exploreFurther: parseBullets(exploreFurtherRaw),
-  };
-}
 
 function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: string }> }): string {
   return (
@@ -472,6 +401,13 @@ export function AnalyzeWorkspace({
             <EvidencePanel metrics={displayedResponse.evidence} isStreaming={isLoading} />
           )}
 
+          {/* Follow-up questions sit in the page flow so they never cover the answer */}
+          <ExploreFurtherPanel
+            prompts={parsedResponse?.exploreFurther ?? []}
+            onPromptSelect={handleExploreFurther}
+            isVisible={analysisComplete}
+          />
+
           {/* Save confirmation */}
           {isSaved && (
             <p className="text-xs text-center" style={{ color: "var(--hamilton-text-secondary)" }}>
@@ -481,7 +417,7 @@ export function AnalyzeWorkspace({
         </div>
       )}
 
-      {/* Explore Further + floating input — always at bottom */}
+      {/* Focus tabs + floating input — always at bottom */}
       <div
         className="@container fixed bottom-0 left-0 lg:left-72 right-0 z-20 px-4 @lg:px-8 @xl:px-12 py-10"
         style={{
@@ -489,12 +425,6 @@ export function AnalyzeWorkspace({
         }}
       >
         <div className="max-w-4xl mx-auto flex flex-col gap-6">
-          <ExploreFurtherPanel
-            prompts={parsedResponse?.exploreFurther ?? []}
-            onPromptSelect={handleExploreFurther}
-            isVisible={analysisComplete}
-          />
-
           <div role="tablist" aria-label="Analysis focus" className="flex flex-wrap gap-2">
             {ANALYSIS_FOCUS_TABS.map((tab) => (
               <button

@@ -1,6 +1,7 @@
 "use client";
 
 import { renderInline } from "./markdown";
+import { shapeHamiltonView } from "./parse-response";
 
 interface HamiltonViewPanelProps {
   content: string;
@@ -11,12 +12,14 @@ interface HamiltonViewPanelProps {
 /**
  * HamiltonViewPanel — Hamilton's core analytical finding (inner content only).
  * The card wrapper with left accent border lives in AnalyzeWorkspace.
- * Matches HTML prototype: HAMILTON'S VIEW label, green confidence dot, large serif thesis.
+ * The first sentence is the lead, set in serif; the rest reads as short body
+ * paragraphs so a long answer never becomes one wall of display type.
  * Skeleton shimmer while streaming and content is empty.
  */
 export function HamiltonViewPanel({ content, confidence, isStreaming }: HamiltonViewPanelProps) {
   const showSkeleton = isStreaming && !content;
   const confidenceLevel = confidence?.level?.toLowerCase();
+  const { lead, paragraphs } = shapeHamiltonView(content);
 
   return (
     <div className="space-y-6">
@@ -62,23 +65,35 @@ export function HamiltonViewPanel({ content, confidence, isStreaming }: Hamilton
         )}
       </div>
 
-      {/* Thesis — large serif */}
+      {/* Lead sentence in serif, then readable body paragraphs */}
       {showSkeleton ? (
         <div className="space-y-3">
-          <div className="skeleton h-8 rounded w-full" />
-          <div className="skeleton h-8 rounded w-5/6" />
-          <div className="skeleton h-8 rounded w-4/6" />
+          <div className="skeleton h-7 rounded w-full" />
+          <div className="skeleton h-7 rounded w-4/6" />
+          <div className="skeleton h-4 rounded w-full mt-5" />
+          <div className="skeleton h-4 rounded w-5/6" />
         </div>
       ) : (
-        <h2
-          className="text-3xl leading-[1.15]"
-          style={{
-            fontFamily: "var(--hamilton-font-serif)",
-            color: "var(--hamilton-text-primary)",
-          }}
-        >
-          {renderInline(content)}
-        </h2>
+        <div className="max-w-[68ch] space-y-4">
+          <h2
+            className="text-2xl leading-snug text-balance md:text-[1.75rem]"
+            style={{
+              fontFamily: "var(--hamilton-font-serif)",
+              color: "var(--hamilton-text-primary)",
+            }}
+          >
+            {renderInline(lead)}
+          </h2>
+          {paragraphs.map((para, i) => (
+            <p
+              key={i}
+              className="text-[17px] leading-relaxed text-pretty [font-variant-numeric:tabular-nums]"
+              style={{ color: "var(--hamilton-text-primary)" }}
+            >
+              {renderInline(para)}
+            </p>
+          ))}
+        </div>
       )}
     </div>
   );

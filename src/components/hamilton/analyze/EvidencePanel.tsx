@@ -1,5 +1,7 @@
 "use client";
 
+import { renderInline } from "./markdown";
+
 interface EvidenceMetric {
   label: string;
   value: string;
@@ -14,8 +16,9 @@ interface EvidencePanelProps {
 /**
  * EvidencePanel — Shows supporting data metrics for the analysis.
  * Renders the "Evidence" section from the analyze response.
- * Two-column layout: label | value, with optional sub-note below the value.
- * Values use tabular-nums for alignment.
+ * Two columns on wide screens (label | value), stacked on phones. Every value
+ * renders in one font with inline markdown; a row with no value is a group
+ * heading. Notes from older saved analyses run on after the value.
  * Skeleton shimmer while streaming and metrics are empty.
  */
 export function EvidencePanel({ metrics, isStreaming }: EvidencePanelProps) {
@@ -40,43 +43,44 @@ export function EvidencePanel({ metrics, isStreaming }: EvidencePanelProps) {
           ))}
         </div>
       ) : metrics.length === 0 ? null : (
-        <table className="w-full text-sm">
-          <tbody>
-            {metrics.map((m, i) => (
-              <tr
+        <dl className="divide-y" style={{ borderColor: "var(--hamilton-border)" }}>
+          {metrics.map((m, i) => {
+            const label = m.label.replace(/^\*+|\*+$/g, "").trim();
+            const value = m.value.replace(/^\*\*\s*|\s*\*\*$/g, "").trim();
+            if (!value && !m.note) {
+              return (
+                <dt
+                  key={i}
+                  className="pt-5 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: "var(--hamilton-text-tertiary)", borderColor: "var(--hamilton-border)" }}
+                >
+                  {label}
+                </dt>
+              );
+            }
+            return (
+              <div
                 key={i}
-                className="border-b last:border-b-0"
+                className="grid grid-cols-1 gap-1 py-3 sm:grid-cols-[minmax(0,13rem)_1fr] sm:gap-6"
                 style={{ borderColor: "var(--hamilton-border)" }}
               >
-                <td
-                  className="py-2 pr-4 align-top text-sm"
-                  style={{ color: "var(--hamilton-text-secondary)", width: "50%" }}
+                <dt
+                  className="text-sm font-medium text-pretty"
+                  style={{ color: "var(--hamilton-text-secondary)" }}
                 >
-                  {m.label}
-                </td>
-                <td className="py-2 align-top">
-                  <span
-                    className="font-medium tabular-nums"
-                    style={{
-                      color: "var(--hamilton-text-primary)",
-                      fontFamily: "var(--hamilton-font-mono, monospace)",
-                    }}
-                  >
-                    {m.value}
-                  </span>
-                  {m.note && (
-                    <div
-                      className="text-xs mt-0.5"
-                      style={{ color: "var(--hamilton-text-secondary)" }}
-                    >
-                      {m.note}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  {label}
+                </dt>
+                <dd
+                  className="text-sm leading-relaxed text-pretty [font-variant-numeric:tabular-nums]"
+                  style={{ color: "var(--hamilton-text-primary)" }}
+                >
+                  {renderInline(value)}
+                  {m.note && <> {renderInline(m.note)}</>}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
       )}
     </div>
   );

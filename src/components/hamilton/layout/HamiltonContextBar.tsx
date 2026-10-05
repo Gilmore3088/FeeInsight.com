@@ -1,9 +1,37 @@
 import Link from "next/link";
-import {
-  getHamiltonContextSourceLabel,
-  type HamiltonContextSource,
-} from "@/lib/hamilton/context-source";
+import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
+
+// Older profiles and institution rows still carry the pre-2026 tier keys.
+const LEGACY_TIER_LABELS: Record<string, string> = {
+  community_small: "Small community",
+  community_mid: "Mid-size community",
+  community_large: "Large community",
+  large_regional: "Large regional",
+  super_regional: "Super regional",
+};
+
+/** Plain-language asset tier for display; never shows a raw database key. */
+export function assetTierDisplayLabel(tier: string | null | undefined): string | null {
+  if (!tier) return null;
+  const known = FDIC_TIER_LABELS[tier] ?? LEGACY_TIER_LABELS[tier];
+  if (known) return known;
+  if (!/_/.test(tier) && tier !== tier.toLowerCase()) return tier;
+  const words = tier.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** "23 verified fees, 23 provisional" — counts in words, without the status label repeated. */
+export function evidenceSummary(published: number | null | undefined, provisional: number | null | undefined): string | null {
+  const verified = published ?? 0;
+  const pending = provisional ?? 0;
+  if (verified === 0 && pending === 0) return null;
+  const parts: string[] = [];
+  if (verified > 0) parts.push(`${verified.toLocaleString()} verified ${verified === 1 ? "fee" : "fees"}`);
+  if (pending > 0) parts.push(`${pending.toLocaleString()} provisional`);
+  return parts.join(", ");
+}
 
 interface InstitutionContext {
   name: string | null;
@@ -39,12 +67,16 @@ export function HamiltonContextBar({
     feePublicationLabel,
     publishedFeeCount,
     provisionalFeeCount,
-    selectedSource,
-    selectedFromUrl,
   } = institutionContext;
   const hasInstitution = !!name;
   const institutionName = name ?? "Global Private Bank";
-  const sourceLabel = getHamiltonContextSourceLabel(selectedSource, selectedFromUrl);
+  const tierLabel = assetTierDisplayLabel(assetTier);
+  const evidenceText = evidenceSummary(publishedFeeCount, provisionalFeeCount);
+  const districtLabel = fedDistrict
+    ? DISTRICT_NAMES[fedDistrict]
+      ? `${DISTRICT_NAMES[fedDistrict]} Fed district`
+      : `Fed district ${fedDistrict}`
+    : null;
   const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
 
   return (
@@ -72,18 +104,7 @@ export function HamiltonContextBar({
             <span className="inline-block max-w-full truncate align-bottom">{institutionName}</span>
             {type && (
               <span className="font-normal ml-1.5" style={{ color: "var(--hamilton-text-secondary)" }}>
-                - {type}
-              </span>
-            )}
-            {sourceLabel && (
-              <span
-                className="ml-2 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em]"
-                style={{
-                  backgroundColor: "var(--hamilton-accent-subtle)",
-                  color: "var(--hamilton-text-accent)",
-                }}
-              >
-                {sourceLabel}
+                · {type === "credit_union" ? "Credit union" : type === "bank" ? "Bank" : type.replace(/_/g, " ")}
               </span>
             )}
           </span>
@@ -111,11 +132,12 @@ export function HamiltonContextBar({
             >
               Evidence
             </span>
-            <span className="min-w-0 text-xs font-bold" style={{ color: "var(--hamilton-text-primary)" }}>
-              <span className="inline-block max-w-full truncate align-bottom">{feePublicationLabel}</span>
-              <span className="font-normal ml-1.5" style={{ color: "var(--hamilton-text-secondary)" }}>
-                {publishedFeeCount ?? 0} verified / {provisionalFeeCount ?? 0} provisional
-              </span>
+            <span
+              className="min-w-0 truncate text-xs font-semibold"
+              style={{ color: "var(--hamilton-text-primary)" }}
+              title={feePublicationLabel}
+            >
+              {evidenceText ?? feePublicationLabel}
             </span>
           </div>
 
@@ -137,28 +159,28 @@ export function HamiltonContextBar({
       </div>
 
       {/* Asset tier / district chips */}
-      {(assetTier || fedDistrict) && (
+      {(tierLabel || districtLabel) && (
         <div className="flex min-w-0 flex-wrap items-center gap-2 lg:ml-auto">
-          {assetTier && (
+          {tierLabel && (
             <span
-              className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded"
+              className="px-2 py-0.5 text-[11px] font-medium rounded"
               style={{
                 backgroundColor: "var(--hamilton-accent-subtle)",
                 color: "var(--hamilton-text-accent)",
               }}
             >
-              {assetTier}
+              {tierLabel}
             </span>
           )}
-          {fedDistrict && (
+          {districtLabel && (
             <span
-              className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded"
+              className="px-2 py-0.5 text-[11px] font-medium rounded"
               style={{
                 backgroundColor: "var(--hamilton-accent-subtle)",
                 color: "var(--hamilton-text-accent)",
               }}
             >
-              District {fedDistrict}
+              {districtLabel}
             </span>
           )}
         </div>
