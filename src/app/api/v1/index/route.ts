@@ -12,6 +12,7 @@ import {
   API_V1_RATE_LIMIT_ROUTE,
   ApiParamError,
   apiError,
+  apiKeyRequiredError,
   apiOptions,
   charterParam,
   districtParam,
@@ -31,6 +32,10 @@ async function handleGET(request: NextRequest) {
   if (auth.error) {
     return apiError(401, "invalid_api_key", auth.error);
   }
+  // The API is for partners we have issued a key to; the site's own signed-in
+  // download buttons still work without one.
+  const user = auth.valid ? null : await getCurrentUser();
+  if (!auth.valid && !user) return apiKeyRequiredError();
   const anonId = auth.organizationId ? null : getAnonymousId(request);
   const tier = auth.valid ? auth.tier : "free";
   const rateLimit = await checkRateLimitWithTier(
@@ -59,7 +64,6 @@ async function handleGET(request: NextRequest) {
   }
 
   const paidKey = isPaidApiKey(auth);
-  const user = paidKey ? null : await getCurrentUser();
 
   if (format === "csv" && !paidKey && !canExportData(user)) {
     logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { status: 403 }).catch(() => {});

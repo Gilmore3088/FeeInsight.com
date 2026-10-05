@@ -23,7 +23,7 @@ vi.mock("@/lib/data-store", () => ({
 describe("/api/v1/institutions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(validateApiKey).mockResolvedValue({ valid: false, organizationId: null, tier: "free" });
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 3, tier: "free" });
     vi.mocked(checkRateLimitWithTier).mockResolvedValue({
       allowed: true,
       remaining: 99,
@@ -32,6 +32,16 @@ describe("/api/v1/institutions", () => {
     });
     vi.mocked(getCurrentUser).mockResolvedValue(null);
     vi.mocked(canAccessPremium).mockReturnValue(false);
+  });
+
+  it("turns away callers with no key", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: false, organizationId: null, tier: "free" });
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?state=TX"));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ code: "api_key_required" });
+    expect(getInstitutionsByFilter).not.toHaveBeenCalled();
   });
 
   it("keeps institution detail behind a paid key, as documented", async () => {

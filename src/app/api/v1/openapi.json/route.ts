@@ -8,7 +8,7 @@ const spec = {
     title: "Bank Fee Index API",
     version: "1.1.0",
     description:
-      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Unauthenticated JSON reads are supported with free-tier rate limits; API keys are manually issued and are not self-serve from Account yet.",
+      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
       name: SITE_NAME,
       email: "hello@bankfeeindex.com",
@@ -22,7 +22,7 @@ const spec = {
       description: "Production",
     },
   ],
-  security: [{}, { BearerAuth: [] }, { ApiKeyQuery: [] }],
+  security: [{ BearerAuth: [] }, { ApiKeyQuery: [] }],
   components: {
     securitySchemes: {
       BearerAuth: {
@@ -48,6 +48,7 @@ const spec = {
           code: {
             type: "string",
             enum: [
+              "api_key_required",
               "invalid_api_key",
               "invalid_parameter",
               "not_found",
@@ -269,7 +270,7 @@ const spec = {
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       Unauthorized: {
-        description: "The API key is unknown or revoked (code invalid_api_key)",
+        description: "No API key was sent (code api_key_required), or it is unknown or revoked (code invalid_api_key)",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       PlanRequired: {
@@ -300,7 +301,7 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free tier is limited to 6 spotlight categories. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
+          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free-tier keys are limited to 6 spotlight categories. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
         tags: ["Fees"],
         parameters: [
           {
@@ -567,7 +568,7 @@ const spec = {
   ],
   "x-rateLimit": {
     description:
-      "One monthly allowance per API key (or per anonymous caller) shared across all endpoints. Free: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted.",
+      "One monthly allowance per API key, shared across all endpoints. Free keys: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted.",
     headers: {
       "X-RateLimit-Limit": "Maximum requests allowed in the current window",
       "X-RateLimit-Remaining": "Requests remaining in the current window",

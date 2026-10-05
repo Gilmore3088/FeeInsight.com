@@ -50,15 +50,12 @@ function indexEntry(category: string) {
 }
 
 const enterpriseKey = { valid: true, organizationId: 7, tier: "enterprise" };
+const freeKey = { valid: true, organizationId: 3, tier: "free" };
 
 describe("/api/v1/index", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(validateApiKey).mockResolvedValue({
-      valid: false,
-      organizationId: null,
-      tier: "free",
-    });
+    vi.mocked(validateApiKey).mockResolvedValue(freeKey);
     vi.mocked(checkRateLimitWithTier).mockResolvedValue({
       allowed: true,
       remaining: 99,
@@ -87,6 +84,27 @@ describe("/api/v1/index", () => {
     await expect(response.json()).resolves.toEqual({ error: "Invalid API key", code: "invalid_api_key" });
     expect(response.status).toBe(401);
     expect(checkRateLimitWithTier).not.toHaveBeenCalled();
+  });
+
+  it("turns away callers with no key and no signed-in session", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: false, organizationId: null, tier: "free" });
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ code: "api_key_required" });
+    expect(checkRateLimitWithTier).not.toHaveBeenCalled();
+    expect(getNationalIndex).not.toHaveBeenCalled();
+  });
+
+  it("still serves the site's own signed-in download buttons without a key", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: false, organizationId: null, tier: "free" });
+    vi.mocked(getCurrentUser).mockResolvedValue({ id: 1 } as never);
+    vi.mocked(canExportData).mockReturnValue(true);
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index?format=csv"));
+
+    expect(response.status).toBe(200);
   });
 
   it("requires a paid key or Seat License for CSV export", async () => {
@@ -123,7 +141,7 @@ describe("/api/v1/index", () => {
     expect(getNationalIndex).not.toHaveBeenCalled();
   });
 
-  it("gives the free tier the spotlight categories only", async () => {
+  it("gives a free-tier key the spotlight categories only", async () => {
     const [spotlight] = getSpotlightCategories();
     vi.mocked(getNationalIndex).mockResolvedValue([
       indexEntry(spotlight),

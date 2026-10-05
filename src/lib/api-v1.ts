@@ -13,6 +13,7 @@ import type { RateLimitResult } from "@/lib/api-rate-limit";
 export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
 
 export type ApiErrorCode =
+  | "api_key_required"
   | "invalid_api_key"
   | "invalid_parameter"
   | "not_found"
@@ -67,6 +68,12 @@ export function apiError(
     { status, headers: options.headers },
   );
   return withApiHeaders(response, options.rateLimit);
+}
+
+export function apiKeyRequiredError(): NextResponse {
+  return apiError(401, "api_key_required", "An API key is required. Ask hello@bankfeeindex.com for access.", {
+    headers: { "WWW-Authenticate": "Bearer" },
+  });
 }
 
 /** The response for a failed or exhausted rate-limit reservation. */

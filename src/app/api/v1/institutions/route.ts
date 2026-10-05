@@ -17,6 +17,7 @@ import {
   API_V1_RATE_LIMIT_ROUTE,
   ApiParamError,
   apiError,
+  apiKeyRequiredError,
   apiOptions,
   charterParam,
   getAnonymousId,
@@ -40,6 +41,10 @@ async function handleGET(request: NextRequest) {
   if (auth.error) {
     return apiError(401, "invalid_api_key", auth.error);
   }
+  // The API is for partners we have issued a key to; the site's own signed-in
+  // download buttons still work without one.
+  const user = auth.valid ? null : await getCurrentUser();
+  if (!auth.valid && !user) return apiKeyRequiredError();
 
   const organizationId = auth.organizationId;
   const anonymousId = organizationId ? null : getAnonymousId(request);
@@ -81,7 +86,7 @@ async function handleGET(request: NextRequest) {
 
   // Single institution detail (Pro and Enterprise only)
   if (id !== null) {
-    const paid = isPaidApiKey(auth) || canAccessPremium(await getCurrentUser());
+    const paid = isPaidApiKey(auth) || canAccessPremium(user);
     if (!paid) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
         institution_id: id,
