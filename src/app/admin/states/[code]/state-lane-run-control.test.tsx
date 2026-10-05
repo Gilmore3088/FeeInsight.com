@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StateLaneRunActionState } from "./actions";
-import { StateLaneRunControl } from "./state-lane-run-control";
+import { SLOW_SCHEDULING_MS, StateLaneRunControl, type ActiveStateLaneRun } from "./state-lane-run-control";
 
 const mocks = vi.hoisted(() => ({
   useActionState: vi.fn(),
@@ -32,9 +32,14 @@ vi.mock("./actions", () => ({
   runStateLaneFormAction: vi.fn(),
 }));
 
-function renderControl(state: StateLaneRunActionState | null, pending = false, blockedReason: string | null = null) {
+function renderControl(
+  state: StateLaneRunActionState | null,
+  pending = false,
+  blockedReason: string | null = null,
+  activeRun: ActiveStateLaneRun | null = null,
+) {
   mocks.useActionState.mockReturnValue([state, mocks.formAction, pending]);
-  return render(<StateLaneRunControl stateCode="OH" blockedReason={blockedReason} />);
+  return render(<StateLaneRunControl stateCode="OH" blockedReason={blockedReason} activeRun={activeRun} />);
 }
 
 beforeEach(() => {
@@ -44,6 +49,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("StateLaneRunControl", () => {
@@ -80,5 +86,25 @@ describe("StateLaneRunControl", () => {
     renderControl(null, true);
 
     expect(screen.getByRole("button", { name: "Scheduling Lane" })).toBeDisabled();
+  });
+
+  it("shows the active run's real status with a link instead of the button", () => {
+    renderControl(null, false, null, { id: 1034, status: "running", startedAt: "2026-10-05T17:31:49.000Z" });
+
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Run #1034 running since 5:31 PM UTC");
+    expect(screen.getByRole("link", { name: "Open run" })).toHaveAttribute("href", "/admin/states/OH/runs/1034");
+  });
+
+  it("explains a slow schedule instead of spinning silently", () => {
+    vi.useFakeTimers();
+    renderControl(null, true);
+    expect(screen.queryByText(/Still waiting for the server/)).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(SLOW_SCHEDULING_MS);
+    });
+
+    expect(screen.getByText(/Still waiting for the server/)).toBeInTheDocument();
   });
 });

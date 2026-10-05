@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   runStateLaneFormAction,
   type StateLaneRunActionState,
@@ -9,15 +9,61 @@ import {
 
 const INITIAL_STATE: StateLaneRunActionState | null = null;
 
+/** After this long, a pending click explains that the run may already exist. */
+export const SLOW_SCHEDULING_MS = 15_000;
+
+export type ActiveStateLaneRun = {
+  id: number;
+  status: string;
+  startedAt: string | null;
+};
+
+function startedLabel(startedAt: string | null): string {
+  if (!startedAt) return "";
+  const date = new Date(startedAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return ` since ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC`;
+}
+
 export function StateLaneRunControl({
   stateCode,
   blockedReason,
+  activeRun = null,
 }: {
   stateCode: string;
   blockedReason: string | null;
+  activeRun?: ActiveStateLaneRun | null;
 }) {
   const [state, formAction, isPending] = useActionState(runStateLaneFormAction, INITIAL_STATE);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!isPending) return;
+    const timer = setTimeout(() => setSlow(true), SLOW_SCHEDULING_MS);
+    return () => {
+      clearTimeout(timer);
+      setSlow(false);
+    };
+  }, [isPending]);
   const disabled = Boolean(blockedReason) || isPending;
+
+  if (activeRun && !isPending && !state) {
+    return (
+      <div className="grid justify-items-end gap-1.5">
+        <p role="status" className="rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-300">
+          Run #{activeRun.id} {activeRun.status}{startedLabel(activeRun.startedAt)}
+          <Link
+            href={`/admin/states/${stateCode}/runs/${activeRun.id}`}
+            className="ml-2 underline underline-offset-2"
+          >
+            Open run
+          </Link>
+        </p>
+        <p className="max-w-xs text-right text-[10px] font-medium text-gray-500 dark:text-gray-400">
+          Steps advance on each scheduler tick. Refresh to see the latest.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form action={formAction} className="grid justify-items-end gap-1.5">
@@ -30,6 +76,11 @@ export function StateLaneRunControl({
       >
         {isPending ? "Scheduling Lane" : blockedReason ? "State Lane Paused" : "Run State Lane"}
       </button>
+      {isPending && slow && (
+        <p role="status" className="max-w-xs text-right text-[10px] font-medium text-amber-700 dark:text-amber-300">
+          Still waiting for the server. The run may already exist; refresh this page to check.
+        </p>
+      )}
       {blockedReason && (
         <p className="max-w-xs text-right text-[10px] font-medium text-amber-700 dark:text-amber-300">
           {blockedReason}

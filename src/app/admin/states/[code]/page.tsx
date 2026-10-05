@@ -105,6 +105,7 @@ export default async function StateDetailPage({
     getAutomationControl(),
     Promise.resolve(getExecutionBackendStatus()),
   ]);
+  const activeLaneRun = agentRuns.find((run) => run.status === "queued" || run.status === "running");
   const stateLaneBlockedReason = !canRunStateLane
     ? "You need trigger_jobs permission to schedule Atlas lanes."
     : !automation.enabled
@@ -132,7 +133,11 @@ export default async function StateDetailPage({
             State coverage, source memory, and lane health
           </p>
         </div>
-        <StateLaneRunControl stateCode={stateCode} blockedReason={stateLaneBlockedReason} />
+        <StateLaneRunControl
+          stateCode={stateCode}
+          blockedReason={stateLaneBlockedReason}
+          activeRun={activeLaneRun ? { id: activeLaneRun.id, status: activeLaneRun.status, startedAt: activeLaneRun.started_at || null } : null}
+        />
       </div>
 
       {/* Summary Stats */}
