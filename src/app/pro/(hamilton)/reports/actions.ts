@@ -41,6 +41,8 @@ import { getLocalFeeMoves, getLocalMarketCompetitors } from "@/lib/data-store/lo
 import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
 import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getIndicatorTimeSeries, getServiceChargeHistory } from "@/lib/data-store/financial";
+import { buildFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import {
   ANSWER_SECTION_FORMAT,
   TRADEOFF_SECTION_FORMAT,
@@ -244,6 +246,7 @@ HARD RULES — fail any, rewrite the section:
 9. Place the sharpest fact at the end of the sentence — the emphatic position. End on the figure from DATA rather than a comment about it ("which is notable").
 10. If a sentence could appear unchanged in any other bank's report, delete it.
 11. exhibits.local_moves lists price changes by named local competitors since tracked_since. When a decision touches a fee a competitor changed, name the competitor and its old and new amount. When moves is empty, say nothing about competitor changes, and never claim what happened before tracked_since.
+12. exhibits.fee_income_trend, when present, is the institution's fee income after inflation (in dollars_of dollars), with tests already run. Use it to say whether pricing is fighting a declining or a growing income line. Quote real_cagr_pct against industry_real_cagr_pct, and a structural_break only when significant is true, naming its quarter. Never compute a growth rate or test result yourself; when it is null, say nothing about trend.
 `.trim();
 
 function buildExecutiveSummaryContext(
@@ -307,9 +310,9 @@ const RECOMMENDATION_RULES = `
 ${NO_FLUFF_RULES}
 
 TRADE-OFF RULES:
-12. Cover the decisions on the answer page, in its order, and no others. At most 3.
-13. Each trade-off names the fee, the price it moves toward, and one concrete consequence: who notices, the attrition, complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
-14. If you can ground only 0 or 1 decisions, write only that many. Better short than generic.
+13. Cover the decisions on the answer page, in its order, and no others. At most 3.
+14. Each trade-off names the fee, the price it moves toward, and one concrete consequence: who notices, the attrition, complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+15. If you can ground only 0 or 1 decisions, write only that many. Better short than generic.
 `.trim();
 
 function buildRecommendationContext(
@@ -352,6 +355,12 @@ function getStrategicSectionType(
     case "competitive_positioning":
       return "peer_competitive";
   }
+}
+
+/** FRED observations come back from Postgres as Date or text. */
+function toDatedValue(o: { observation_date: unknown; value: unknown }): { date: string; value: number } {
+  const date = o.observation_date instanceof Date ? o.observation_date.toISOString() : String(o.observation_date);
+  return { date: date.slice(0, 10), value: Number(o.value) };
 }
 
 /**
@@ -560,7 +569,25 @@ export async function generateReport(
         ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])
         : [],
     });
-    const exhibitData = { ...exhibitSet.data, regulatory: regulatory.data };
+    // Fee income over time: real (GDP price index), seasonally adjusted, tested for
+    // trend, stationarity and structural breaks, against the industry. Computed, never modeled.
+    const feeIncomeTrend = selectedInstitution
+      ? await Promise.all([
+          getServiceChargeHistory(selectedInstitution.id),
+          getIndicatorTimeSeries("GDPCTPI", { fromDate: "2009-01-01" }),
+          getIndicatorTimeSeries("QBPQYTNIYSRVDP", { fromDate: "2009-01-01" }),
+        ])
+          .then(([records, gdp, industry]) =>
+            buildFeeIncomeTrend({
+              institutionName,
+              records,
+              gdpPriceIndex: gdp.map(toDatedValue),
+              industryServiceCharges: industry.map(toDatedValue),
+            }),
+          )
+          .catch(() => null)
+      : null;
+    const exhibitData = { ...exhibitSet.data, regulatory: regulatory.data, fee_income_trend: feeIncomeTrend?.data ?? null };
     const withExpertRules = (context: string) => `${withStateRules(context)}\n\n${REGULATORY_REPORT_RULES}`;
 
     // 2-4. The three sections: the answer page, what is behind it, and the trade-offs.
@@ -787,9 +814,14 @@ export async function generateReport(
     const report: ReportSummaryResponse = {
       title: reportTitle,
       ...(answer ? { answer: { ...answer, goal: params.clientGoal && params.clientGoal !== "balanced" ? reportGoal(params.clientGoal).label : null } } : {}),
-      exhibits: regulatory.exhibit ? [...exhibitSet.exhibits, regulatory.exhibit] : exhibitSet.exhibits,
+      exhibits: [
+        ...exhibitSet.exhibits,
+        ...(feeIncomeTrend ? [feeIncomeTrend.exhibits[0]] : []),
+        ...(regulatory.exhibit ? [regulatory.exhibit] : []),
+        ...(feeIncomeTrend ? feeIncomeTrend.exhibits.slice(1) : []),
+      ],
       watchlist: tradeoffSection.watch,
-      sources: [...exhibitSet.sources, ...regulatory.sources],
+      sources: [...exhibitSet.sources, ...(feeIncomeTrend?.sources ?? []), ...regulatory.sources],
       executiveSummary: answer
         ? [answer.headline, ...answer.decisions.map((decision) => `${decision.action.replace(/\.$/, "")}. ${decision.why}`.trim())]
         : summarySection.narrative.split("\n\n").filter((p) => p.trim().length > 0),
