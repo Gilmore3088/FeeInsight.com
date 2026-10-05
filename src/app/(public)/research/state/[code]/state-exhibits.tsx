@@ -27,6 +27,7 @@ export const STATE_SECTIONS = [
   { id: "benchmarks", label: "Everyday fees" },
   { id: "position", label: "vs national" },
   { id: "charters", label: "Banks vs CUs" },
+  { id: "economy", label: "Economy & regulation" },
   { id: "coverage", label: "Coverage & cities" },
   { id: "table", label: "Full table" },
   { id: "methodology", label: "Methodology" },
@@ -306,7 +307,7 @@ export function CoverageExhibit(props: {
   return (
     <section id="coverage" className="scroll-mt-28 print:break-inside-avoid">
       <SectionHeading
-        eyebrow="Exhibit 4 · Coverage & local markets"
+        eyebrow="Exhibit 5 · Coverage & local markets"
         title="Who is in the data"
         action={
           <Link

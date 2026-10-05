@@ -14,13 +14,16 @@ import { LeadCapture } from "@/components/public/lead-capture";
 import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
 import {
   getCitiesInStateCached,
+  getStateEconomicContextCached,
   getStateFeeIndexesCached,
   getStateStatsCached,
 } from "@/lib/data-store/public-cached-reads";
+import type { StateEconomicContext } from "@/lib/data-store/economic-context";
 import type { CitySummary, StateFeeIndexes } from "@/lib/data-store";
 import { ResearchSectionNav } from "../../research-hero";
 import { BENCHMARK_KEYS } from "../../benchmark-board";
 import { CharterExhibit, KeyFindings } from "../../exhibits";
+import { EconomyExhibit } from "./economy-exhibit";
 import { buildCharterPairs, buildComparisons, computeStateFindings } from "./state-findings";
 import {
   CoverageExhibit,
@@ -66,6 +69,16 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+const EMPTY_ECONOMY: StateEconomicContext = {
+  state_unemployment: null,
+  state_payrolls: null,
+  fed_funds: null,
+  cpi_all_items: null,
+  cpi_bank_services: null,
+  beige_book: null,
+  regulatory: [],
+};
+
 async function loadCities(stateCode: string): Promise<CitySummary[]> {
   try {
     return (await getCitiesInStateCached(stateCode)).slice(0, CITY_LIMIT);
@@ -85,14 +98,16 @@ export default async function StateReportPage({ params }: PageProps) {
   const showAllCategories = canAccessAllCategories(user);
 
   // Every read is served from the public cache between publishes.
-  const [summary, stats, indexes, nationalIndex, cities] = await Promise.all([
+  const district = STATE_TO_DISTRICT[stateCode];
+  const [summary, stats, indexes, nationalIndex, cities, economy] = await Promise.all([
     getPublicStatsSummary(),
     getStateStatsCached(stateCode),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
     getNationalIndexCached(),
     loadCities(stateCode),
+    // Context only: a failed read hides the exhibit rather than failing the report.
+    getStateEconomicContextCached(stateCode, district ?? null).catch(() => EMPTY_ECONOMY),
   ]);
-  const district = STATE_TO_DISTRICT[stateCode];
   const districtStates = district
     ? Object.entries(STATE_TO_DISTRICT)
         .filter(([s, d]) => d === district && s !== stateCode && STATE_NAMES[s])
@@ -165,6 +180,8 @@ export default async function StateReportPage({ params }: PageProps) {
         <PositionExhibit rows={visible} stateName={stateName} asOf={asOf} />
 
         <CharterExhibit benchmarks={charterPairs} asOf={asOf} eyebrow="Exhibit 3 · Banks vs credit unions" place={stateName} />
+
+        <EconomyExhibit stateName={stateName} district={district} ctx={economy} />
 
         <CoverageExhibit
           stateCode={stateCode}
