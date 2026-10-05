@@ -26,6 +26,7 @@ import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
@@ -973,6 +974,21 @@ async function executeAgenticStep(
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
         detail: { ...result },
+      };
+    }
+    case "lead-watch": {
+      const result = await runLeadWatch({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeLeadWatch(result),
+        detail: {
+          overdue: result.overdue.length,
+          email_failed: result.emailFailed.length,
+          alert: result.alert,
+          alert_reason: result.alertReason,
+          dry_run: result.dryRun,
+          lead_ids: [...result.overdue, ...result.emailFailed].map((lead) => lead.id),
+        },
       };
     }
     case "score-answer-key": {
