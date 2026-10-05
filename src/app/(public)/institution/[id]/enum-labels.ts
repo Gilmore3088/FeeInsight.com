@@ -16,6 +16,14 @@ const PUBLIC_STATUS_LABELS: Record<FeePublicationStatus, PublicFeeStatusLabel> =
   unavailable: "No published schedule found",
 };
 
+/**
+ * Completeness, never "verified": how many of the headline fee categories an institution
+ * has published. The count is not source-checked, so the label says "published".
+ */
+export function getHeadlineCoverageLabel(categories: number, total: number): string {
+  return `${categories} of ${total} headline fees published`;
+}
+
 export function getPublicStatusLabel(status: FeePublicationStatus | null | undefined): PublicFeeStatusLabel {
   return PUBLIC_STATUS_LABELS[status ?? "unavailable"];
 }
