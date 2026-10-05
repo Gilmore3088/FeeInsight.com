@@ -1,7 +1,4 @@
-import {
-  getFeePublicationStatusLabel,
-  type FeePublicationStatus,
-} from "@/lib/institution-quality";
+import type { FeePublicationStatus } from "@/lib/institution-quality";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { SelectedInstitutionFeeDelta } from "@/lib/hamilton/report-evidence";
 
@@ -18,6 +15,8 @@ export interface ReportSynthesisInstitutionInput {
 
 export interface ReportSynthesisFinancialInput {
   report_date: string | null;
+  /** fdic/ncua rows are in thousands; ffiec rows use other scales and are not accepted here. */
+  source?: string | null;
   total_assets: number | null;
   total_deposits: number | null;
   service_charge_income: number | null;
@@ -68,17 +67,24 @@ export interface ReportSynthesisPeerContextInput {
   fallbackReason: string | null;
 }
 
+/** Call Report figures as a customer reads them: whole dollars and percents. */
+export interface CustomerFinancials {
+  report_date: string | null;
+  total_assets_dollars: number | null;
+  total_deposits_dollars: number | null;
+  service_charge_income_dollars: number | null;
+  total_revenue_dollars: number | null;
+  fee_income_ratio_pct: number | null;
+  roa_pct: number | null;
+}
+
 export interface SelectedInstitutionReportData {
   id: number;
   name: string;
-  status: string;
-  status_label: string;
-  insight_readiness: string;
   confidence_summary: string | null;
   verified_fee_count: number;
   provisional_fee_count: number;
-  latest_source_status: string | null;
-  financials: ReportSynthesisFinancialInput | null;
+  financials: CustomerFinancials | null;
   fee_rows: Array<{
     fee_name: string;
     fee_category: string | null;
@@ -86,30 +92,21 @@ export interface SelectedInstitutionReportData {
     frequency: string | null;
     evidence_tier: "verified" | "provisional";
     excluded_from_verified_benchmark: boolean;
-    confidence: number | null;
-    source_url: string | null;
   }>;
-  pipeline_fee_rows: Array<{
+  /** Fees read from the schedule but not yet confirmed; directional only. */
+  fees_under_review: Array<{
     fee_name: string;
     fee_category: string | null;
     amount: number | null;
     frequency: string | null;
     evidence_tier: "provisional";
-    pipeline_stage: "verified_unpublished" | "raw_unverified";
-    confidence: number | null;
-    source_url: string | null;
   }>;
-  fee_peer_deltas: SelectedInstitutionFeeDelta[];
+  fee_peer_deltas: Array<Omit<SelectedInstitutionFeeDelta, "confidence">>;
   benchmark_scope: string;
-  peer_index_source: string;
-  peer_filters: unknown;
-  peer_set_id: string | null;
-  peer_fallback_reason: string | null;
+  peer_group_note: string | null;
   can_generate_verified_benchmark_conclusions: boolean;
-  pipeline_counts: unknown | null;
-  revenue_trend: unknown[];
-  peer_ranking: unknown;
-  evidence_policy: HamiltonEvidencePolicy;
+  revenue_trend: Array<Record<string, unknown>>;
+  peer_ranking: Record<string, unknown> | null;
 }
 
 export function buildSelectedInstitutionReportRules(params: {
@@ -124,6 +121,7 @@ SELECTED-INSTITUTION RULES:
 2. If fee_peer_deltas is empty, do not write benchmark conclusions or pricing recommendations. Return a diligence/readiness explanation instead.
 3. Provisional rows are directional only. When evidence_tier is provisional or excluded_from_verified_benchmark is true, label the conclusion as provisional and do not treat it as a verified benchmark score.
 4. Do not convert national category medians into selected-institution recommendations unless selected_institution.fee_peer_deltas contains a matching selected institution row.
+5. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
 `.trim();
 }
 
@@ -141,7 +139,7 @@ export function buildSelectedInstitutionReportData(params: {
   const selectedInstitution = params.selectedInstitution;
   if (!selectedInstitution) return null;
 
-  const pipelineFeeRows = [
+  const feesUnderReview = [
     ...(params.selectedEvidence?.verified_fee_preview ?? [])
       .filter((fee) => fee.review_status !== "rejected")
       .map((fee) => ({
@@ -150,9 +148,6 @@ export function buildSelectedInstitutionReportData(params: {
         amount: fee.amount,
         frequency: fee.frequency ?? null,
         evidence_tier: "provisional" as const,
-        pipeline_stage: "verified_unpublished" as const,
-        confidence: fee.extraction_confidence ?? null,
-        source_url: fee.source_url ?? null,
       })),
     ...(params.selectedEvidence?.raw_fee_preview ?? []).map((fee) => ({
       fee_name: fee.fee_name,
@@ -160,25 +155,16 @@ export function buildSelectedInstitutionReportData(params: {
       amount: fee.amount,
       frequency: fee.frequency ?? null,
       evidence_tier: "provisional" as const,
-      pipeline_stage: "raw_unverified" as const,
-      confidence: fee.extraction_confidence ?? null,
-      source_url: fee.source_url ?? null,
     })),
   ].slice(0, 25);
 
   return {
     id: selectedInstitution.id,
     name: selectedInstitution.institution_name,
-    status: selectedInstitution.fee_publication_status ?? "unavailable",
-    status_label: getFeePublicationStatusLabel(
-      selectedInstitution.fee_publication_status ?? "unavailable",
-    ),
-    insight_readiness: selectedInstitution.insight_readiness ?? "source_needed",
     confidence_summary: selectedInstitution.confidence_summary ?? null,
     verified_fee_count: selectedInstitution.published_fee_count ?? 0,
     provisional_fee_count: selectedInstitution.provisional_fee_count ?? 0,
-    latest_source_status: selectedInstitution.latest_source_status ?? null,
-    financials: params.latestFinancial,
+    financials: customerFinancials(params.latestFinancial),
     fee_rows: params.selectedVisibleFees.slice(0, 25).map((fee) => ({
       fee_name: fee.fee_name,
       fee_category: fee.fee_category ?? null,
@@ -186,23 +172,90 @@ export function buildSelectedInstitutionReportData(params: {
       frequency: fee.frequency ?? null,
       evidence_tier: fee.review_status === "approved" ? "verified" : "provisional",
       excluded_from_verified_benchmark: fee.review_status !== "approved",
-      confidence: fee.extraction_confidence ?? null,
-      source_url: fee.source_url ?? null,
     })),
-    pipeline_fee_rows: pipelineFeeRows,
-    fee_peer_deltas: params.selectedFeeDeltas,
+    fees_under_review: feesUnderReview,
+    fee_peer_deltas: params.selectedFeeDeltas.map(withoutConfidence),
     benchmark_scope: params.peerIndex.label,
-    peer_index_source: params.peerIndex.source,
-    peer_filters: params.peerIndex.filters,
-    peer_set_id: params.peerIndex.peerSetId,
-    peer_fallback_reason: params.peerIndex.fallbackReason,
+    peer_group_note: params.peerIndex.fallbackReason,
     can_generate_verified_benchmark_conclusions: params.selectedFeeDeltas.some(
       (delta) => delta.evidence_tier === "verified",
     ),
-    pipeline_counts: params.selectedEvidence?.pipeline_counts ?? null,
-    revenue_trend: params.selectedRevenueTrend.slice(0, 8),
-    peer_ranking: params.selectedPeerRanking,
-    evidence_policy: params.evidencePolicy,
+    revenue_trend: params.selectedRevenueTrend.slice(0, 8).map(customerRevenueQuarter),
+    peer_ranking: customerPeerRanking(params.selectedPeerRanking),
+  };
+}
+
+function withoutConfidence(delta: SelectedInstitutionFeeDelta): Omit<SelectedInstitutionFeeDelta, "confidence"> {
+  const rest: Partial<SelectedInstitutionFeeDelta> = { ...delta };
+  delete rest.confidence;
+  return rest as Omit<SelectedInstitutionFeeDelta, "confidence">;
+}
+
+const THOUSANDS = 1_000;
+
+function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function thousandsToDollars(value: unknown): number | null {
+  const n = finiteNumber(value);
+  return n === null ? null : Math.round(n * THOUSANDS);
+}
+
+/** A fraction (0.0239) as a one-decimal percent (2.4). */
+function fractionToPct(value: unknown): number | null {
+  const n = finiteNumber(value);
+  return n === null ? null : Math.round(n * 1_000) / 10;
+}
+
+function customerFinancials(record: ReportSynthesisFinancialInput | null): CustomerFinancials | null {
+  if (!record) return null;
+  if (record.source && !["fdic", "ncua"].includes(record.source.toLowerCase())) return null;
+  const roa = finiteNumber(record.roa);
+  return {
+    report_date: record.report_date,
+    total_assets_dollars: thousandsToDollars(record.total_assets),
+    total_deposits_dollars: thousandsToDollars(record.total_deposits),
+    service_charge_income_dollars: thousandsToDollars(record.service_charge_income),
+    total_revenue_dollars: thousandsToDollars(record.total_revenue),
+    fee_income_ratio_pct: fractionToPct(record.fee_income_ratio),
+    // roa is already a percent in fdic rows; zero is an NCUA placeholder.
+    roa_pct: roa === null || roa === 0 ? null : Math.round(roa * 100) / 100,
+  };
+}
+
+function customerRevenueQuarter(row: unknown): Record<string, unknown> {
+  const quarter = (row ?? {}) as Record<string, unknown>;
+  return {
+    quarter: quarter.quarter ?? null,
+    service_charge_income_dollars: thousandsToDollars(quarter.service_charge_income),
+    fee_income_ratio_pct: fractionToPct(quarter.fee_income_ratio),
+    yoy_change_pct: finiteNumber(quarter.yoy_change_pct),
+  };
+}
+
+const PEER_TIER_LABELS: Record<string, string> = {
+  micro: "institutions under $100M in assets",
+  community: "institutions with $100M to $1B in assets",
+  midsize: "institutions with $1B to $10B in assets",
+  regional: "institutions with $10B to $250B in assets",
+  mega: "institutions over $250B in assets",
+};
+
+function customerPeerRanking(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  const ranking = value as Record<string, unknown>;
+  const tier = typeof ranking.tier === "string" ? ranking.tier : null;
+  return {
+    peer_group: tier ? PEER_TIER_LABELS[tier] ?? "institutions of similar size" : null,
+    service_charge_income_dollars: thousandsToDollars(ranking.sc_income),
+    rank: finiteNumber(ranking.sc_rank),
+    peer_count: finiteNumber(ranking.peer_count),
+    peer_median_service_charge_income_dollars: thousandsToDollars(ranking.peer_median_sc),
+    fee_income_ratio_pct: fractionToPct(ranking.fee_income_ratio),
+    peer_median_fee_income_ratio_pct: fractionToPct(ranking.peer_median_fee_ratio),
   };
 }
 

@@ -156,7 +156,7 @@ export default function SampleReportPage() {
               Download the sample (PDF)
             </a>
             <TrackLink
-              event="request_report"
+              event="request_report_click"
               eventProps={{ placement: "sample_report_header" }}
               href={REQUEST_HREF}
               className={SECONDARY_BUTTON}
@@ -216,7 +216,7 @@ export default function SampleReportPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "sample_report_footer" }}
             href={REQUEST_HREF}
             className={PRIMARY_BUTTON}

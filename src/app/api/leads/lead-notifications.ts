@@ -16,6 +16,8 @@ const MAX_INSTITUTION_ID = 2_147_483_647;
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 export interface StoredLead {
+  /** The row this submission created; null when it filled gaps on an existing lead. */
+  leadId?: number | null;
   name: string;
   email: string;
   company: string | null;
@@ -99,7 +101,7 @@ async function handleUndelivered(lead: StoredLead, outcome: LeadNotificationOutc
   if (!notification && !confirmation) return;
   console.warn("[api/leads] lead email not delivered", { source: lead.source, notification, confirmation });
   try {
-    await handleLeadDeliveryOutcome(lead, outcome);
+    await handleLeadDeliveryOutcome({ ...lead, id: lead.leadId ?? null }, outcome);
   } catch (error) {
     console.error("[api/leads] failed-email alert failed", {
       source: lead.source,

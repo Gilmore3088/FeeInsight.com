@@ -42,7 +42,7 @@ export async function sendLeadAlert(content: LeadEmailContent): Promise<EmailDel
  * alerts on it (and the admin row turns red) even if nothing could be emailed now.
  */
 export async function handleLeadDeliveryOutcome(
-  lead: { email: string; name: string; source: string },
+  lead: { id?: number | null; email: string; name: string; source: string },
   outcome: LeadNotificationOutcome,
 ): Promise<void> {
   const notificationFailure = failureReason(outcome.notification);
@@ -50,9 +50,7 @@ export async function handleLeadDeliveryOutcome(
   if (!notificationFailure && !confirmationFailure) return;
 
   if (notificationFailure) {
-    await sql`
-      UPDATE leads SET status = 'email_failed'
-      WHERE lower(email) = lower(${lead.email})`;
+    await setDeliveryStatus(lead, "email_failed");
     return;
   }
 
@@ -67,9 +65,16 @@ export async function handleLeadDeliveryOutcome(
     ],
     cta: { label: "Open leads", href: adminLeadsUrl() },
   });
-  await sql`
-    UPDATE leads SET status = ${alert.status === "sent" ? "needs_reply" : "email_failed"}
-    WHERE lower(email) = lower(${lead.email})`;
+  await setDeliveryStatus(lead, alert.status === "sent" ? "needs_reply" : "email_failed");
+}
+
+/** Marks the submission's own row when known, so an earlier answered request keeps its status. */
+async function setDeliveryStatus(lead: { id?: number | null; email: string }, status: string) {
+  if (lead.id != null) {
+    await sql`UPDATE leads SET status = ${status} WHERE id = ${lead.id}`;
+    return;
+  }
+  await sql`UPDATE leads SET status = ${status} WHERE lower(email) = lower(${lead.email})`;
 }
 
 export interface LeadWatchLead {
