@@ -7,7 +7,10 @@
  */
 export type AnalyticsEvent =
   | "create_account"
+  /** A submitted report request (fires only after the server accepts it). */
   | "request_report"
+  /** A click on a link that leads to the report request form. */
+  | "request_report_click"
   | "see_sample_report"
   | "newsletter_signup"
   | "lead_capture_view"
