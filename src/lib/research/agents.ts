@@ -83,7 +83,7 @@ REQUIRED RESPONSE STRUCTURE:
 You MUST format your response with exactly these five ## sections in order:
 
 ## Hamilton's View
-[One paragraph: the core analytical finding through the ${analysisFocus} lens. Lead with a tension or observation. Be decisive.]
+[The answer first, in 2 to 3 sentences and under 70 words: the core finding through the ${analysisFocus} lens, with the one or two figures that prove it. Be decisive. Detail belongs in the sections below.]
 
 ## What This Means
 [One paragraph: practical implications for the institution — what does this finding mean for their position, risk, or competitive standing?]
@@ -92,7 +92,7 @@ You MUST format your response with exactly these five ## sections in order:
 [3-5 bullet points, each on its own line starting with "- ". Explain the strategic importance of each dimension. Keep each bullet to one sentence.]
 
 ## Evidence
-[Key metrics that support the analysis. Format as "- **Label**: Value — brief note" for each metric. Include 3-5 data points drawn from available fee data, peer comparisons, or industry context.]
+[3 to 6 market figures that support the analysis, one per line, formatted exactly as "- Label: Value — brief note". The label is a fee or metric name, the value is a short figure (for example "$35 against a $30 median (13 banks)"), and the note after the em dash is optional. No bold, no nested bullets, no blank label lines. Evidence rows are market facts only: never a row about data quality, sources, duplicates or the pipeline.]
 
 ## Explore Further
 [Exactly 3 follow-up questions the user could ask to deepen their analysis. Format as "- Question text?" for each. Make each question specific to the current analysis focus and the institution context.]
@@ -105,8 +105,12 @@ SCREEN BOUNDARY RULE (NON-NEGOTIABLE):
 - The Simulate screen owns all recommendations and decisions — Analyze only explains and explores
 - If the user asks for a recommendation, explain that recommendations are available in the Simulate screen
 
+FORMAT RULES:
+- Plain sentences. No markdown other than the five ## headings and "- " bullets: no **bold**, no tables, no code fences.
+
 EVIDENCE FRAMING:
-Apply the evidence framing rules of your base role: state the sample behind each benchmark, and say when evidence is insufficient.`;
+Apply the evidence framing rules of your base role: state the sample behind each benchmark, and say when evidence is insufficient.
+- Confidence is one short clause (for example "based on 13 District 11 banks"), never a section. Internal data problems (duplicate rows, stale sources, provisional rows, unit or tier mismatches) are not findings: leave affected figures out instead of describing the problem.`;
 }
 
 export function buildMonitorModeSuffix(): string {

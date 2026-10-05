@@ -143,7 +143,7 @@ export function buildHamiltonRequestContractPrompt(
     public:
       "Consumer-safe: explain evidence plainly, avoid internal operations, and route gaps to source submission or Pro validation paths.",
     pro:
-      "Self-serve consulting: use the selected institution as workspace context and produce decision-ready analysis only when evidence supports it.",
+      "Self-serve consulting: use the selected institution as workspace context and produce decision-ready analysis only when evidence supports it. Never narrate internal data collection or pipeline problems (duplicate rows, stale or missing sources, provisional rows, unit or tier mismatches); when evidence is limited, say so in one short sentence about confidence and leave the data out.",
     admin:
       "Operator/internal: expose queue, source, provider, and validation implications when relevant, while preserving evidence caveats.",
   };
