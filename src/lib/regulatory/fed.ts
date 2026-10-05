@@ -134,7 +134,58 @@ export function parseFredCsv(csv: string): FredObservation[] {
   return out;
 }
 
+/** BLS CPI series ids (CUUR... not seasonally adjusted, CUSR... adjusted); FRED does not serve the detailed ones. */
+export function isBlsSeries(seriesId: string): boolean {
+  return /^CU[US]R[0-9A-Z]+$/.test(seriesId);
+}
+
 /** Series in fed_economic_indicators that come from FRED (other loaders prefix theirs). */
 export function isFredNativeSeries(seriesId: string): boolean {
-  return !/^(NYFED|OFR|BLS|CU)_/.test(seriesId) && /^[A-Z0-9]+$/.test(seriesId);
+  return !/^(NYFED|OFR|BLS|CU)_/.test(seriesId) && !isBlsSeries(seriesId) && /^[A-Z0-9]+$/.test(seriesId);
+}
+
+/**
+ * Series Hamilton's trend analysis needs even before anything else stores them.
+ * GDPCTPI is BEA's chained GDP price index, used to turn nominal fee income into real dollars.
+ */
+export const REQUIRED_FRED_SERIES: Array<{ series_id: string; series_title: string; units: string; frequency: string }> = [
+  {
+    series_id: "GDPCTPI",
+    series_title: "Gross Domestic Product: Chain-type Price Index",
+    units: "Index 2017=100",
+    frequency: "Quarterly",
+  },
+];
+
+// ---------------------------------------------------------------------------
+// BLS public data API (keyless v1; v2 with BLS_API_KEY raises the daily limit)
+// ---------------------------------------------------------------------------
+
+export function blsSeriesUrl(seriesId: string, apiKey?: string | null): string {
+  const id = encodeURIComponent(seriesId);
+  return apiKey
+    ? `https://api.bls.gov/publicAPI/v2/timeseries/data/${id}?registrationkey=${encodeURIComponent(apiKey)}`
+    : `https://api.bls.gov/publicAPI/v1/timeseries/data/${id}`;
+}
+
+interface BlsResponse {
+  status?: string;
+  message?: string[];
+  Results?: { series?: Array<{ seriesID?: string; data?: Array<{ year?: string; period?: string; value?: string }> }> };
+}
+
+/** Monthly observations (period M01-M12) from a BLS timeseries response; annual averages (M13) are skipped. */
+export function parseBlsSeries(body: unknown): FredObservation[] {
+  const response = body as BlsResponse;
+  if (response?.status !== "REQUEST_SUCCEEDED") return [];
+  const out: FredObservation[] = [];
+  for (const series of response.Results?.series ?? []) {
+    for (const point of series.data ?? []) {
+      const month = /^M(0[1-9]|1[0-2])$/.exec(point.period ?? "");
+      const value = Number(point.value);
+      if (!month || !/^\d{4}$/.test(point.year ?? "") || !Number.isFinite(value)) continue;
+      out.push({ observation_date: `${point.year}-${month[1]}-01`, value });
+    }
+  }
+  return out.sort((a, b) => a.observation_date.localeCompare(b.observation_date));
 }
