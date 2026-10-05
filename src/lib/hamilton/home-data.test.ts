@@ -21,6 +21,10 @@ vi.mock("./generate", () => ({
   generateGlobalThesis: vi.fn(),
 }));
 
+vi.mock("@/lib/agents/run-store", () => ({
+  recordProRequest: vi.fn().mockResolvedValue(null),
+}));
+
 describe("Hamilton home signal data", () => {
   beforeEach(() => {
     sqlCalls.length = 0;
@@ -140,5 +144,30 @@ describe("fetchCacheableHomeBriefing", () => {
     const data = await fetchHomeBriefingData({ includeThesis: false });
     expect(data.thesis).toBeNull();
     expect(generate.generateGlobalThesis).not.toHaveBeenCalled();
+  });
+
+  it("records a budget-policy refusal as budget_blocked with the real reason, not as an API error", async () => {
+    const feeIndex = await import("@/lib/data-store/fee-index");
+    const generate = await import("./generate");
+    const runStore = await import("@/lib/agents/run-store");
+    vi.mocked(runStore.recordProRequest).mockClear();
+    vi.mocked(feeIndex.getNationalIndexCached).mockResolvedValue([
+      { fee_category: "overdraft", institution_count: 30, median_amount: 30, p25_amount: 25, p75_amount: 35, maturity_tier: "strong" },
+    ] as never);
+    vi.mocked(feeIndex.getSourcedInstitutionCount).mockResolvedValue(30);
+    const reason =
+      "Provider budget policy route:api.reports.generate is disabled; configure explicit caps before provider calls can run.";
+    vi.mocked(generate.generateGlobalThesis).mockRejectedValue(
+      new Error(`Hamilton thesis generation failed [scope=monthly_pulse]: ${reason}`),
+    );
+
+    const { fetchHomeBriefingData } = await import("./home-data");
+    await fetchHomeBriefingData();
+
+    expect(runStore.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      summary: "Thesis generation failed (budget_blocked).",
+      detail: expect.objectContaining({ error_type: "budget_blocked", error: expect.stringContaining(reason) }),
+    }));
   });
 });
