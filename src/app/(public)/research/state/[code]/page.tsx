@@ -116,7 +116,11 @@ export default async function StateReportPage({ params }: PageProps) {
   const gate =
     !showAllCategories && extended.length > 0 ? (
       <div className="mt-4 print:hidden">
-        <UpgradeGate count={extended.length} message={`${extended.length} more fee categories for ${stateName}`} />
+        <UpgradeGate
+          count={extended.length}
+          message={`${extended.length} more ${stateName} fee categories in Pro`}
+          from={`/research/state/${stateCode}`}
+        />
       </div>
     ) : null;
 
@@ -153,7 +157,7 @@ export default async function StateReportPage({ params }: PageProps) {
           stateCode={stateCode}
           eyebrow="Free benchmark"
           headline={`Get the free ${stateName} fee benchmark`}
-          body={`${stateName} medians against national, sent each time the state index refreshes — plus a link to the sample ${REPORT_OFFER.name}.`}
+          body={`Leave your email and we'll send ${stateName} medians against national, plus a link to the sample ${REPORT_OFFER.name}.`}
           buttonLabel="Send it to me"
           secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
         />
