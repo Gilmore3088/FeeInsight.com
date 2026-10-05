@@ -16,6 +16,8 @@ interface UpgradeGateProps {
    * sells nothing a consumer would not use (no exports, no API).
    */
   audience?: "consumer" | "professional";
+  /** The page the reader is on, so pricing can send them back after they subscribe. */
+  from?: string;
 }
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
@@ -29,8 +31,10 @@ export async function UpgradeGate({
   compact = false,
   count,
   audience = "professional",
+  from,
 }: UpgradeGateProps) {
   const summary = await getPublicStatsSummary();
+  const pricingHref = from ? `/subscribe?from=${encodeURIComponent(from)}` : "/subscribe";
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
   if (compact) {
     return (
@@ -40,7 +44,7 @@ export async function UpgradeGate({
           {" "}with {PRO_LABEL}
         </div>
         <Link
-          href="/subscribe"
+          href={pricingHref}
           className="inline-block mt-2 text-sm font-bold text-[#A93D25] hover:underline"
         >
           See pricing &rarr;
@@ -74,7 +78,7 @@ export async function UpgradeGate({
         Based on {summary.observationsLabel} verified fees from {summary.institutionsLabel} institutions
       </div>
       <Link
-        href="/subscribe"
+        href={pricingHref}
         className="inline-flex items-center gap-1.5 rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#C44B2E]/15 hover:bg-[#A93D25] hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all"
       >
         See pricing

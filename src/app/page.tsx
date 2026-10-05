@@ -9,6 +9,7 @@ import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constant
 import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
+import { LandingBankOffer } from "./landing-bank-offer";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -73,6 +74,7 @@ export default async function LandingPage() {
       <main id="main-content">
         <LandingHero institutionsLabel={summary.institutionsLabel} />
         <LandingPriceStrip entries={nationalIndex} institutionsLabel={summary.institutionsLabel} />
+        <LandingBankOffer />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />

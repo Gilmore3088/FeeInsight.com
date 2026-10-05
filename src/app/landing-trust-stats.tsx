@@ -9,6 +9,8 @@ interface LandingTrustStatsProps {
   states: InstitutionStateDirectorySummary[];
 }
 
+const STATE_NAME = new Map(US_STATES.map((state) => [state.id, state.name]));
+
 const SOURCES = ["FDIC", "NCUA", "Federal Reserve", "Published fee schedules"];
 
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
@@ -31,15 +33,27 @@ function coverageFill(verified: number, max: number): string {
 export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
   const byState = new Map(states.map((s) => [s.state_code, s]));
   const maxVerified = Math.max(...states.map((s) => s.verified_institution_count), 1);
+  const topStates = [...states]
+    .filter((s) => s.verified_institution_count > 0)
+    .sort((a, b) => b.verified_institution_count - a.verified_institution_count)
+    .slice(0, 3);
 
   return (
     <section className="border-t border-warm-300 bg-warm-150/60">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center lg:gap-10">
           <div className="min-w-0">
-            <h2 className="text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
+            <h2 className="text-balance text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
               Where we track fees
             </h2>
+            {states.length > 0 && (
+              <p className="mt-1.5 text-[13px] text-warm-700">
+                Darker states have more institutions with verified fees.{" "}
+                <span className="font-semibold text-warm-900">
+                  Tap a state to see its banks and credit unions.
+                </span>
+              </p>
+            )}
             {states.length > 0 && (
               <>
                 <svg
@@ -100,6 +114,29 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
               </dd>
               <dt className="mt-1 text-[12px] text-warm-600">Fee types tracked</dt>
             </div>
+            {topStates.length > 0 && (
+              <div className="col-span-2 lg:col-span-1">
+                <dt className="text-[12px] text-warm-600">Most coverage</dt>
+                <dd className="mt-1.5">
+                  <ul className="space-y-1">
+                    {topStates.map((s) => (
+                      <li key={s.state_code}>
+                        <Link
+                          href={`/institutions?state=${s.state_code}`}
+                          prefetch={false}
+                          className="flex items-baseline justify-between gap-3 text-[13px] text-warm-900 hover:text-terra-dark"
+                        >
+                          <span>{STATE_NAME.get(s.state_code) ?? s.state_code}</span>
+                          <span className="tabular-nums text-warm-600">
+                            {s.verified_institution_count.toLocaleString("en-US")}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            )}
           </dl>
         </div>
 

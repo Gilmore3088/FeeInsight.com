@@ -3,12 +3,18 @@ import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   BEIGE_BOOK_DISTRICTS,
   beigeBookPageUrl,
+  blsSeriesUrl,
   fetchText,
   fredCsvUrl,
+  isBlsSeries,
   isFredNativeSeries,
+  parseBlsSeries,
   parseBeigeBookPage,
   parseFredCsv,
+  REQUIRED_FRED_SERIES,
+  type FredObservation,
 } from "@/lib/regulatory/fed";
+import { registryFetchJson } from "@/lib/regulatory/http";
 import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -17,7 +23,9 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  * registry-beige-book (partition = release code YYYYMM): the national summary
  * and 12 district reports, one row per section, into fed_beige_book.
  * registry-fred (partition "current"): refreshes every FRED-native series
- * already tracked in fed_economic_indicators from the keyless graph CSV.
+ * already tracked in fed_economic_indicators (plus REQUIRED_FRED_SERIES) from the
+ * keyless graph CSV, and the BLS CPI series (FRED lacks the detailed ones, such as
+ * "checking account and other bank services") from the BLS public API.
  */
 
 export const BEIGE_BOOK_SOURCE = "beige-book";
@@ -131,7 +139,9 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
       FROM fed_economic_indicators
      ORDER BY series_id, observation_date DESC
   `;
-  const series = tracked.filter((row) => isFredNativeSeries(row.series_id));
+  const known = new Set(tracked.map((row) => row.series_id));
+  const required = REQUIRED_FRED_SERIES.filter((meta) => !known.has(meta.series_id));
+  const series = [...tracked, ...required].filter((row) => isFredNativeSeries(row.series_id) || isBlsSeries(row.series_id));
   const result: RegistryFredResult = {
     source: FRED_SOURCE,
     partitionKey: FRED_PARTITION,
@@ -143,9 +153,15 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
   };
   if (options.dryRun) return result;
 
+  const blsKey = process.env.BLS_API_KEY || null;
   await mapWithConcurrency(series, FED_CONCURRENCY, async (meta) => {
-    const csv = await fetchText(fredCsvUrl(meta.series_id), options.fetchOptions);
-    const observations = csv ? parseFredCsv(csv) : [];
+    let observations: FredObservation[];
+    if (isBlsSeries(meta.series_id)) {
+      observations = parseBlsSeries(await registryFetchJson<unknown>(blsSeriesUrl(meta.series_id, blsKey), options.fetchOptions));
+    } else {
+      const csv = await fetchText(fredCsvUrl(meta.series_id), options.fetchOptions);
+      observations = csv ? parseFredCsv(csv) : [];
+    }
     if (observations.length === 0) {
       result.missingSeries.push(meta.series_id);
       return;
