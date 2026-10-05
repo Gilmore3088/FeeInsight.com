@@ -16,11 +16,12 @@ import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT } from "@/lib/constants";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
-import { getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
-import { STATE_CODES } from "@/lib/us-states";
+import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
+import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES, type MarketReadiness } from "@/lib/data-store/market-readiness";
+import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
 import { PositionPreview } from "./position-preview";
-import { StateReportGrid, type StateCoverage } from "./state-report-grid";
+import { bestMarket, StateReportGrid, type StateCoverage } from "./state-report-grid";
 
 export const revalidate = 3600;
 
@@ -143,6 +144,19 @@ async function loadStateCoverage(): Promise<StateCoverage[] | null> {
   }
 }
 
+async function loadMarketReadiness(): Promise<MarketReadiness[] | null> {
+  try {
+    const rows = await withDeadline<MarketReadiness[] | null>(getMarketReadinessCached(), null, QUERY_DEADLINE_MS);
+    if (!rows || rows.length === 0) return null;
+    const inScope = new Set(STATE_CODES);
+    return rows.filter((row) => inScope.has(row.state_code));
+  } catch {
+    return null;
+  }
+}
+
+const CHARTER_NOUN: Record<string, string> = { bank: "banks", credit_union: "credit unions" };
+
 function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
     <div className="mb-8 max-w-[640px]">
@@ -192,9 +206,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const fromIso = rawRange ? dateRangeToIso(rawRange) : null;
   const filtersActive = Boolean(typeFilter || rawRange);
 
-  const [{ reports, unavailable }, stateCoverage] = await Promise.all([
+  const [{ reports, unavailable }, stateCoverage, readiness] = await Promise.all([
     loadReports(typeFilter, fromIso),
     loadStateCoverage(),
+    loadMarketReadiness(),
   ]);
   const positionMap = extractPositionMap(readSampleReportHtml());
   const hasReports = reports.length > 0;
@@ -206,6 +221,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const dcCovered = coveredStates.some((s) => s.state_code === "DC");
   const coveredInstitutions = coveredStates.reduce((sum, s) => sum + s.institution_count, 0);
   const coveredFees = coveredStates.reduce((sum, s) => sum + s.fee_count, 0);
+  const readyMarkets = readiness?.filter((m) => m.ready).length ?? 0;
+  const closestMarket = readiness ? bestMarket(readiness.filter((m) => !m.ready)) : null;
 
   return (
     <div className="pb-24">
@@ -338,7 +355,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       <section className="mx-auto max-w-6xl px-6 pt-20">
         <SectionHeading eyebrow="Free state fee reports" title="Every state, built live from verified fee schedules.">
           Each state report compares fees there with the national picture and shows how banks and
-          credit unions differ. Darker states have more institutions with verified fees.
+          credit unions differ.{" "}
+          {readiness
+            ? `Darker states are closer to a full local peer comparison: ${MARKET_READY_MIN_RICH} banks or ${MARKET_READY_MIN_RICH} credit unions in the state with at least ${RICH_MIN_CATEGORIES} of the ${HEADLINE_FEE_KEYS.length} headline fees published.`
+            : "Darker states have more institutions with verified fees."}
         </SectionHeading>
         {stateCoverage ? (
           <>
@@ -347,7 +367,27 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               with verified fees across <b className="font-semibold text-[#1A1815]">{coveredStateCount}</b> states
               {dcCovered ? " plus DC" : ""} · <b className="font-semibold text-[#1A1815]">{coveredFees.toLocaleString()}</b> fee lines
             </p>
-            <StateReportGrid states={stateCoverage} />
+            {readiness && (
+              <p className="mb-4 text-[13px] text-[#6B6255]">
+                {readyMarkets > 0 ? (
+                  <>
+                    <b className="font-semibold text-[#1A1815]">{readyMarkets}</b> of {readiness.length} state
+                    markets have enough complete fee schedules for a full local comparison today.
+                  </>
+                ) : (
+                  <>No state market has enough complete fee schedules for a full local comparison yet.</>
+                )}
+                {closestMarket && closestMarket.rich > 0 && (
+                  <>
+                    {" "}
+                    Closest{readyMarkets > 0 ? " of the rest" : ""}: {STATE_NAMES[closestMarket.state_code] ?? closestMarket.state_code}{" "}
+                    {CHARTER_NOUN[closestMarket.charter_type] ?? closestMarket.charter_type.replace(/_/g, " ")}, with{" "}
+                    {closestMarket.rich} of {MARKET_READY_MIN_RICH}.
+                  </>
+                )}
+              </p>
+            )}
+            <StateReportGrid states={stateCoverage} readiness={readiness} />
           </>
         ) : (
           <p className="rounded-lg border border-dashed border-[#D5CBBF] bg-[#FDFBF8] px-5 py-4 text-[14px] text-[#6B6255]">
