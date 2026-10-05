@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Lock } from "lucide-react";
-import { getNationalIndexCached } from "@/lib/data-store";
+import { getPublicNationalIndex } from "@/lib/public-stats";
 import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import { benchmarkReportTitle, parseBenchmarkScope, type BenchmarkScope } from "@/lib/benchmark-report";
 import { buildBenchmarkRows, MIN_BENCHMARK_INSTITUTIONS, type BenchmarkRow } from "@/lib/benchmark-report-rows";
@@ -33,10 +33,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 async function loadRows(scope: BenchmarkScope): Promise<BenchmarkRow[]> {
-  if (scope.kind === "national") return buildBenchmarkRows(await getNationalIndexCached(), null);
+  if (scope.kind === "national") return buildBenchmarkRows(await getPublicNationalIndex(), null);
   const [district, national] = await Promise.all([
     getPeerIndexCached({ fed_districts: [scope.district] }),
-    getNationalIndexCached(),
+    getPublicNationalIndex(),
   ]);
   return buildBenchmarkRows(district, national);
 }
