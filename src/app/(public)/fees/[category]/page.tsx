@@ -54,12 +54,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export async function generateStaticParams() {
-  const { hasData } = await import("@/lib/data-store/connection");
-  if (!(await hasData())) return [];
-  return Object.keys(DISPLAY_NAMES).map((category) => ({ category }));
-}
-
 function WarmTable({
   headers,
   children,

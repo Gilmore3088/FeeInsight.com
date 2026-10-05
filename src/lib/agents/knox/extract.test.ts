@@ -255,7 +255,7 @@ describe("Knox agentic extraction", () => {
         "extract.family.services",
         KNOX_EXTRACT_STRATEGY.strategy,
       ]);
-      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["extract.table", 1, "text-hash", "ok", 2, 0]));
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["extract.table", 2, "text-hash", "ok", 2, 0]));
       // Only the rules attempt (the document's total) updates the playbook.
       expect(db.mock.calls.filter((call) => templateText(call[0]).includes("do_not_retry = "))).toHaveLength(1);
       const insertFlags = db.mock.calls

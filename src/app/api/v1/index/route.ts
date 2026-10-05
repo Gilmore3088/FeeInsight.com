@@ -2,12 +2,13 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
-import { validateApiKey } from "@/lib/api-auth";
+import { apiKeyCanExport, validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
 import { getCurrentUser } from "@/lib/auth";
 import { canExportData } from "@/lib/access";
 import crypto from "crypto";
+import { API_ATTRIBUTION } from "@/lib/constants";
 
 async function handleGET(request: NextRequest) {
   // API auth + rate limiting
@@ -39,7 +40,7 @@ async function handleGET(request: NextRequest) {
 
   if (format === "csv") {
     const user = await getCurrentUser();
-    if (!canExportData(user)) {
+    if (!apiKeyCanExport(authResult) && !canExportData(user)) {
       logApiUsage(authResult.organizationId, anonId, "api.v1.index.csv", {
         status: 403,
       }).catch(() => {});
@@ -135,6 +136,7 @@ async function handleGET(request: NextRequest) {
     },
     total: data.length,
     data,
+    attribution: API_ATTRIBUTION,
   }, {
     headers: {
       "X-RateLimit-Limit": String(rateResult.limit),

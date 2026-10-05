@@ -95,6 +95,11 @@ describe("Knox pass 2b: fee-family experts", () => {
     "Wire Transfer - Domestic Outgoing $20.00 Wire Transfer - Domestic Incoming FREE " +
     "ATM, Debit, and Visa Card Replacement $7.00 Card Replacement - RUSH $50.00 Notary - Non Member $5.00 Levy/Writ $50.00";
 
+  it("never takes a priceless table row as a section heading", () => {
+    const text = "Check Printing Fee | Prices vary\n\nWire Transfer Fee | $15.00 per transfer";
+    expect(fees(text).filter(([, , hint]) => hint === "check_printing")).toEqual([]);
+  });
+
   it("reads a PDF flattened to one line, one family per expert", () => {
     const result = runFreeSpecialists(flattened);
     expect(result.candidates.map((fee) => [fee.strategy, fee.feeName, fee.amount, fee.canonicalHint])).toEqual([

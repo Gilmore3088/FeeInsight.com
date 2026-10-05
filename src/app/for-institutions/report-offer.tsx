@@ -50,20 +50,22 @@ export function ReportOfferSection() {
   );
 }
 
+// Real rows from the sample report (Reports/studio/sample/), data pulled Oct 3, 2026.
+// Only the client bank is anonymized; peer medians are from 60 published schedules.
 const PROOF_ROWS = [
-  { fee: "Overdraft, per item", you: "$32.00", peerMedian: "$30.00", flag: "Above peer band" },
-  { fee: "Monthly maintenance, basic checking", you: "$5.00", peerMedian: "$6.95", flag: "Within band" },
+  { fee: "Returned deposited item", you: "$18.00", peerMedian: "$5.00", flag: "Above peer range" },
+  { fee: "Monthly maintenance, checking", you: "$10.00", peerMedian: "$7.50", flag: "Within range" },
 ];
 
-/** Illustrative excerpt of a report row; numbers are placeholders, not a real institution. */
+/** Excerpt of the sample Competitive Fee Position Report. */
 function ProofExcerpt() {
   return (
     <figure className="mt-8 overflow-hidden rounded-lg border border-warm-300 bg-warm-50">
       <figcaption className="flex items-center justify-between border-b border-warm-200 px-4 py-2">
         <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">
-          Illustrative excerpt
+          From the sample report
         </span>
-        <span className="text-[11px] text-warm-600">Fees, verified against disclosures</span>
+        <span className="text-[11px] text-warm-600">Sample Community Bank vs. 60 peer banks</span>
       </figcaption>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
@@ -88,7 +90,7 @@ function ProofExcerpt() {
         </table>
       </div>
       <p className="border-t border-warm-200 px-4 py-2 font-mono text-[11px] text-warm-600">
-        Source: [Institution] Fee Schedule (PDF), p.2 · collected [date]
+        Source: published fee schedules, Bank Fee Index · data pulled Oct 3, 2026
       </p>
     </figure>
   );

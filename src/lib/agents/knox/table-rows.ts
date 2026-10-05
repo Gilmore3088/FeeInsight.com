@@ -5,6 +5,7 @@ import {
   confidenceFor,
   detectFrequency,
   isConditionAmount,
+  notAZeroPrice,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
   type ExtractionRulesResult,
@@ -31,7 +32,7 @@ import {
  * the adapter; the extractor only sees `KnoxTableRow`.
  */
 
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 1 } as const;
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 2 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -127,14 +128,24 @@ function valueCellIndex(cells: string[], from: number): number {
 export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   for (const row of rows) {
-    const nameIndex = row.cells.findIndex((cell) => /[a-z]/i.test(cell) && amountsIn(cell).length === 0);
-    if (nameIndex < 0) continue;
-    const valueIndex = valueCellIndex(row.cells, nameIndex + 1);
+    const firstName = row.cells.findIndex((cell) => /[a-z]/i.test(cell) && amountsIn(cell).length === 0);
+    if (firstName < 0) continue;
+    const valueIndex = valueCellIndex(row.cells, firstName + 1);
     if (valueIndex < 0) continue;
+    // The name cell nearest the price names it ("STOP PAYMENT ORDER | NOTARY FEE | $6.00").
+    let nameIndex = valueIndex - 1;
+    while (nameIndex > firstName && !/[a-z]{3,}/i.test(row.cells[nameIndex])) nameIndex -= 1;
+    // A value cell that opens with a fee name of its own ("NSF Fee $22.00") is a row of
+    // its own; the line rules read it.
+    const valueLead = row.cells[valueIndex].split("$")[0];
+    if ((valueLead.match(/[a-z]{2,}/gi) ?? []).length >= 2 && !/^\W*(?:per|each|a|an|for|up to|plus)\b/i.test(valueLead)) continue;
     const nameCell = row.cells[nameIndex];
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);
-    if (!name) continue;
+    if (!name || /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i.test(name)) continue;
+    // A cell that opens mid-sentence ("authorize and pay an overdraft ...") is prose from
+    // an agreement laid out in columns, not a fee name.
+    if (/^[a-z]/.test(nameCell.trim())) continue;
 
     let hint = classifyFeeText(name);
     let feeName = name;
@@ -147,7 +158,7 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     const frequency = detectFrequency(`${nameCell} ${valueCell}`);
 
     if (ZERO_WORD.test(valueCell.replace(/[*.]+$/, "").trim())) {
-      if (passesDarwinChecks(hint, feeName, 0)) {
+      if (passesDarwinChecks(hint, feeName, 0) && !notAZeroPrice(hint, feeName)) {
         result.held.push({ shape: "zero", feeName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: hint, excerpt });
       }
       continue;
@@ -173,7 +184,7 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       continue;
     }
     if (first.value === 0) {
-      if (passesDarwinChecks(hint, feeName, 0)) {
+      if (passesDarwinChecks(hint, feeName, 0) && !notAZeroPrice(hint, feeName)) {
         result.held.push({ shape: "zero", feeName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: hint, excerpt });
       }
       continue;
