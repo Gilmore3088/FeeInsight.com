@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
+gets in.** James, 23:28 UTC ("nobody else should have access to API"). Every `/api/v1` request
+needs a key Fee Insight issued by hand; there is no free self-serve tier. David's key is
+Enterprise (all categories, institution detail, call reports, complaints, CSV, no limit). The
+site's own signed-in download buttons keep working without a key. Built in PR 161.
+
 **Free reports are instant; the institution report is paid and never promises a turnaround.**
 James, 21:41-22:20 UTC. The request form becomes a picker: a National report (email only) and a
 Fed district report (email plus district) are free and open at once; a report on one institution
