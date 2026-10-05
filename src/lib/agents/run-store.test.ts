@@ -934,6 +934,22 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
+  it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) return Promise.resolve([{ id: 101 }, { id: 102 }, { id: 103 }]);
+      if (text.includes("FROM agent_runs")) return Promise.resolve([runRow]);
+      if (text.includes("FROM agent_run_steps")) return Promise.resolve(queuedStepRows);
+      return Promise.resolve([]);
+    });
+    installTxMocks(queuedStepRows, runRow);
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() - 1 });
+
+    expect(result.selected).toBe(3);
+    expect(result.results.map((run) => run.runId)).toEqual([101]);
+  });
+
   it("still sends the Atlas daily brief while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
