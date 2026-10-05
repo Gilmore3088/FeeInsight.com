@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
@@ -67,12 +66,12 @@ export default async function ForInstitutionsPage() {
                   See the sample report
                   <ArrowRight className="h-4 w-4" />
                 </TrackLink>
-                <Link
-                  href="/subscribe"
+                <a
+                  href={REPORT_ANCHOR}
                   className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
                 >
-                  See pricing
-                </Link>
+                  What&apos;s in the report
+                </a>
               </div>
               <p className="mt-4 text-[13px] text-[#D5CBBF]">
                 <a href={REPORT_ANCHOR} className="underline underline-offset-2 hover:text-warm-150">
@@ -174,7 +173,7 @@ function AdvisorySection() {
               <ArrowRight className="h-4 w-4" />
             </TrackLink>
             <TrackLink
-              event="request_report"
+              event="request_report_click"
               eventProps={{ placement: "for_institutions_advisory" }}
               href={REPORT_ANCHOR}
               className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
