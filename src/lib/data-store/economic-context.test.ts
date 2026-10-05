@@ -22,4 +22,14 @@ describe("buildIndicatorSeries", () => {
     expect(buildIndicatorSeries("X", [{ observation_date: "2026-08-01", value: 1 }])?.year_ago).toBeNull();
     expect(buildIndicatorSeries("X", [{ observation_date: "2026-08-01", value: "n/a" }])).toBeNull();
   });
+
+  it("drops stored zeros as missing months, except where zero is a real reading", () => {
+    const rows = [
+      { observation_date: "2025-12-01", value: "4.3" },
+      { observation_date: "2025-11-01", value: "0" },
+      { observation_date: "2025-10-01", value: "4.2" },
+    ];
+    expect(buildIndicatorSeries("TXUR", rows)!.history.map((p) => p.value)).toEqual([4.2, 4.3]);
+    expect(buildIndicatorSeries("FEDFUNDS", rows)!.history.map((p) => p.value)).toEqual([4.2, 0, 4.3]);
+  });
 });

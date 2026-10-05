@@ -27,7 +27,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Fee Reports",
-  description: `See where your fees stand against the institutions you compete with. A free ${REPORT_OFFER.name}, live state fee reports, and published research from ${RESEARCH_IMPRINT}.`,
+  description: `See where your fees stand against the institutions you compete with. Free national and Fed district fee reports, the ${REPORT_OFFER.name}, live state fee reports, and published research from ${RESEARCH_IMPRINT}.`,
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
@@ -77,7 +77,7 @@ const STEPS = [
   },
   {
     title: "You get a board-ready PDF",
-    body: `Delivered by email, ${REPORT_OFFER.turnaround}. ${REPORT_OFFER.refreshLabel}.`,
+    body: `Delivered by email on the date we agree when we confirm your peer set. ${REPORT_OFFER.refreshLabel}.`,
   },
 ];
 
@@ -268,8 +268,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 </dd>
               </div>
               <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Turnaround</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">48 hours</dd>
+                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Next step</dt>
+                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">Reply in 1 business day</dd>
               </div>
               <div>
                 <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Format</dt>
@@ -339,8 +339,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               Tell us where to send it.
             </h2>
             <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-[#5A5347]">
-              Leave your institution and work email. We confirm your peer set within one business day,
-              then send the PDF. {REPORT_OFFER.priceLabel}.
+              Leave your institution and work email. {REPORT_OFFER.nextStep}, and we confirm your peer
+              set before any work starts.
             </p>
             <p className="mt-4 text-[13px] text-[#6B6255]">
               Prefer email?{" "}

@@ -25,6 +25,15 @@ Stored rows are unchanged.
 **Lesson:** check each regulator field's unit against an independent figure before showing it;
 a ratio that is right for banks may be in different units for credit unions.
 
+## 2026-10-05: Shutdown months stored as 0 in economic series
+**What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
+(found by the Hamilton Pro page thread).
+**Cause:** BLS never published some October 2025 shutdown months, and those months are stored in
+`fed_economic_indicators` as 0 instead of being left out.
+**Fix:** the state report economy reader treats a stored 0 as a missing month for every series
+except the fed funds rate, which can really be near 0 (fix PR off main, merged once green).
+**Lesson:** a 0 from an outside feed can mean "no data"; check whether 0 is possible for that series.
+
 ## 2026-10-05: API credit ran out and stopped all paid work
 **What happened:** at 21:45 UTC Rosetta got "Your credit balance is too low" from the Anthropic
 API. The provider guard turned on the provider stop (`automation_control` key `global`), which
@@ -34,6 +43,19 @@ the app's own $20 cap, so the account balance, not the app cap, was the limit.
 **Fix:** James added $500 of credit (22:18). Adding credit does not clear the stop: an admin must
 click Mark billing resolved, then Resume automation, on /admin (issue 153, step 0).
 **Lesson:** after topping up credit, check the provider stop on /admin; it stays on by design.
+
+## 2026-10-05: The live source check took down correct fees
+**What happened:** between 18:46 and 20:15 UTC the Hamilton source check took down 1,956 live fees
+in states other than Texas and California, 903 of them as `amount_is_a_threshold` (read-only query
+on `published_fee_records.rolled_back_reason`). Spot checks found correct fees among them:
+"Title Draft $50.00 Incoming Wire Fee (domestic) $18.00" took down the $18 wire fee.
+**Cause:** the check compared every fee on a line to the line's first price. Many stored schedules
+put several fees on one line, or flatten the whole schedule into one paragraph. The hand-checked
+Texas sample it was tuned on had one fee per line, so the gap didn't show.
+**Fix:** PR 132 gives each fee the price after its own name and restores earlier takedowns that
+now trace, on the next hourly passes.
+**Lesson:** test a rule that changes live data on a sample from several states and layouts, and
+run it as a dry run (counts and samples) before it writes.
 
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since

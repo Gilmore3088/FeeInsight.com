@@ -30,7 +30,7 @@ const REPORT_DESCRIPTION = `An anonymized ${REPORT_OFFER.name} for a ~$400M comm
 
 export const metadata: Metadata = {
   title: REPORT_TITLE,
-  description: `See what the free ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the lines outside the market range, the revenue lens, and a named peer comparison. Delivered in 48 hours.`,
+  description: `See what the ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the lines outside the market range, the revenue lens, and a named peer comparison.`,
   alternates: { canonical: SAMPLE_PATH },
   robots: { index: SAMPLE_REPORT_LIVE, follow: true },
   openGraph: {
@@ -141,10 +141,10 @@ export default function SampleReportPage() {
             className="text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815] sm:text-[2.5rem]"
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
           >
-            This is what your free report looks like.
+            This is what your institution report looks like.
           </h1>
           <p className="mt-4 max-w-[560px] text-[16px] leading-relaxed text-[#5A5347]">
-            Yours is built for your institution and your peer set, delivered in 48 hours. The report
+            Yours is built for your institution and your peer set. The report
             below was prepared for a real ~$400M community bank; only the client is anonymized, shown
             as Sample Community Bank. The eight peers are named — their fee schedules are public
             disclosures — and every figure is real, drawn from published fee schedules and public

@@ -5,7 +5,8 @@
  * limit, not a balance band like "Negative from $50.01 and more | $35"), not depend on a
  * balance band, and sit under wording of the fee's category. A row is a line, plus the
  * next short lines when the price sits under the name ("Overnight Courier Service" /
- * "$50.00" / "/Item"). Anything else is dropped rather than shown with a value we can't
+ * "$50.00" / "/Item"). When one line carries several fees, each price belongs to the words
+ * since the previous price. Anything else is dropped rather than shown with a value we can't
  * point to.
  */
 
@@ -82,20 +83,36 @@ function namesFee(line: string, stems: string[], atLeast?: number): boolean {
   return found >= (atLeast ?? Math.max(1, Math.ceil(stems.length * NAME_WORD_SHARE)));
 }
 
-function statesAmount(line: string, amount: number): SourceCheckFailure | null {
+function stemCount(text: string, stems: string[]): number {
+  const haystack = comparable(text);
+  return stems.filter((stem) => haystack.includes(stem)).length;
+}
+
+function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
   const tokens = moneyTokens(line);
   if (amount === 0) {
     return ZERO_WORDS.test(line) && !tokens.some((t) => t.value > 0 && !isThreshold(line, t)) ? null : "amount_not_the_fee";
   }
-  // The row's price is its first figure that is not a limit ("$4.00 | per check, minimum
-  // $500"; "Negative from $50.01 and more | $35").
-  const price = tokens.find((t) => !isThreshold(line, t));
-  if (!price || Math.abs(price.value - amount) >= 0.005) {
+  // A row's prices are its figures that are not limits ("$4.00 | per check, minimum
+  // $500"; "Negative from $50.01 and more | $35"). When one line carries several fees
+  // ("Title Draft $50.00 Incoming Wire Fee (domestic) $18.00", or a whole schedule
+  // flattened to one paragraph), each price belongs to the words since the previous
+  // price; the fee's price is the one after the words that name it best. A line that
+  // prints the price before the name ("$35 Overdraft Fee for each item") reads the
+  // words after each price instead.
+  const prices = tokens.filter((t) => !isThreshold(line, t));
+  const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
+  const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
+  const scores = Math.max(0, ...before) > 0 ? before : after;
+  const best = Math.max(0, ...scores);
+  const index = prices.findIndex((price, i) => scores[i] === best && Math.abs(price.value - amount) < 0.005);
+  if (best === 0 || index < 0) {
     return tokens.some((t) => Math.abs(t.value - amount) < 0.005) ? "amount_is_a_threshold" : "amount_not_the_fee";
   }
   // A fee that depends on a balance band ("Negative $25 or less | $5") has no single
   // comparable value, so it never stands in for the bank's fee.
-  return tokens.some((t) => t.start < price.start && isThreshold(line, t)) ? "tiered_fee" : null;
+  const from = index === 0 ? 0 : prices[index - 1].end;
+  return tokens.some((t) => t.start >= from && t.start < prices[index].start && isThreshold(line, t)) ? "tiered_fee" : null;
 }
 
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
@@ -160,7 +177,7 @@ export function checkFeeAgainstSource(
       !headings.some((above) => namesFee(above, stems)) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
-    const amountProblem = statesAmount(feeRow(lines, i), rounded);
+    const amountProblem = statesAmount(feeRow(lines, i), rounded, stems);
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
