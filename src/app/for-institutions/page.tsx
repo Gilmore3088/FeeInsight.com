@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -166,7 +166,7 @@ function AdvisorySection() {
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_advisory" }}
-              href={`mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Advisory`}
+              href="/contact?source=advisory"
               className={PRIMARY_BUTTON}
             >
               Talk to us
