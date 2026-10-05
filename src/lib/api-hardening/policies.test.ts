@@ -19,7 +19,7 @@ function normalizePath(path: string): string {
 
 function exportedMethods(path: string): string[] {
   const text = readFileSync(path, "utf8");
-  return Array.from(text.matchAll(/export const (GET|POST|PUT|PATCH|DELETE)\s*=\s*withApiRoutePolicy\b/g))
+  return Array.from(text.matchAll(/export const (GET|POST|PUT|PATCH|DELETE|OPTIONS)\s*=\s*withApiRoutePolicy\b/g))
     .map((match) => String(match[1]))
     .sort();
 }

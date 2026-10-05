@@ -306,12 +306,12 @@ export default async function ApiDocsPage() {
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
       <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
         <p className="text-[13px] text-[#6B6255]">
-          Rate limits are enforced per API key when present and by anonymous request source otherwise. Current window information is returned in response headers.
+          Each API key (or anonymous caller) gets one monthly allowance shared across all endpoints. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />
           <ResponseField name="X-RateLimit-Remaining" type="header" note="Requests remaining" />
-          <ResponseField name="X-RateLimit-Reset" type="header" note="UTC epoch timestamp when the window resets" />
+          <ResponseField name="X-RateLimit-Reset" type="header" note="ISO 8601 UTC time when the monthly window resets" />
         </div>
         <div className="mt-4 overflow-hidden rounded-lg border border-[#E8DFD1]/60">
           <table className="w-full text-left text-[13px]">

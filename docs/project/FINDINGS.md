@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: The public API gave away what its docs called Pro-only
+**What happened:** the API docs and spec said the free tier gets 6 spotlight categories and that
+category detail and institution detail (per-bank fees, call reports, complaints) need a Pro or
+Enterprise key. The code (`src/app/api/v1/*/route.ts`) checked none of it, so anonymous callers got
+everything. The "100 requests/month" was also counted per endpoint, unlimited keys sent
+`X-RateLimit-Limit: Infinity`, a database hiccup in usage tracking showed as "Rate limit exceeded",
+and bad inputs (`state=Texas`, `limit=0`) were ignored or caused errors.
+**Cause:** the docs were written ahead of the code, and each route had its own copy of the checks.
+**Fix:** the API audit PR (shared `src/lib/api-v1.ts`, route tests).
+**Lesson:** when docs promise a limit, add a route test that proves it.
+
 ## 2026-10-05: API credit ran out and stopped all paid work
 **What happened:** at 21:45 UTC Rosetta got "Your credit balance is too low" from the Anthropic
 API. The provider guard turned on the provider stop (`automation_control` key `global`), which

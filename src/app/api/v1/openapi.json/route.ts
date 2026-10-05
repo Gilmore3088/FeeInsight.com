@@ -6,7 +6,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.0.0",
+    version: "1.1.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Unauthenticated JSON reads are supported with free-tier rate limits; API keys are manually issued and are not self-serve from Account yet.",
     contact: {
@@ -35,16 +35,32 @@ const spec = {
         type: "apiKey",
         in: "query",
         name: "api_key",
-        description: "Pass a manually issued API key as a query parameter.",
+        description:
+          "Pass a manually issued API key as a query parameter. Prefer the Authorization header: keys in URLs end up in logs and browser history.",
       },
     },
     schemas: {
       Error: {
         type: "object",
+        description: "Every error has a readable message and a stable machine code.",
         properties: {
-          error: { type: "string" },
+          error: { type: "string", example: "state must be a two-letter code such as TX" },
+          code: {
+            type: "string",
+            enum: [
+              "invalid_api_key",
+              "invalid_parameter",
+              "not_found",
+              "plan_required",
+              "rate_limited",
+              "rate_limit_unavailable",
+            ],
+          },
+          upgrade_url: { type: "string", description: "Present on plan_required errors." },
+          limit: { type: "integer", description: "Present on rate_limited errors." },
+          reset: { type: "string", format: "date-time", description: "Present on rate_limited errors." },
         },
-        required: ["error"],
+        required: ["error", "code"],
       },
       FeeSummary: {
         type: "object",
@@ -247,6 +263,28 @@ const spec = {
         },
       },
     },
+    responses: {
+      BadRequest: {
+        description: "A query parameter is malformed or out of range (code invalid_parameter)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      Unauthorized: {
+        description: "The API key is unknown or revoked (code invalid_api_key)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      PlanRequired: {
+        description: "The request needs a Pro or Enterprise key (code plan_required)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      RateLimited: {
+        description: "The monthly allowance is used up (code rate_limited)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      Unavailable: {
+        description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+    },
     parameters: {
       FormatParam: {
         name: "format",
@@ -302,14 +340,11 @@ const spec = {
               },
             },
           },
-          "403": {
-            description: "CSV export requires a Seat License",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Error" },
-              },
-            },
-          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
           "404": {
             description: "Category not found",
             content: {
@@ -326,7 +361,7 @@ const spec = {
         operationId: "getFeeIndex",
         summary: "National & peer fee index",
         description:
-          "Returns the national fee index for all categories. Apply filters for peer benchmarking by state, charter type, or Fed district. Includes maturity indicators and bank/CU counts.",
+          "Returns the national fee index. The free tier gets the spotlight categories; Pro and Enterprise keys get every category. Apply filters for peer benchmarking by state, charter type, or Fed district. Includes maturity indicators and bank/CU counts.",
         tags: ["Index"],
         parameters: [
           {
@@ -399,6 +434,11 @@ const spec = {
               },
             },
           },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
         },
       },
     },
@@ -437,7 +477,7 @@ const spec = {
           {
             name: "has_fees",
             in: "query",
-            schema: { type: "string", enum: ["true"] },
+            schema: { type: "string", enum: ["true", "false"] },
             description: "Only institutions with at least one published fee",
           },
           {
@@ -476,6 +516,7 @@ const spec = {
                         page: { type: "integer" },
                         page_size: { type: "integer" },
                         pages: { type: "integer" },
+                        has_more: { type: "boolean", description: "True when a later page exists" },
                         data: {
                           type: "array",
                           items: {
@@ -490,14 +531,11 @@ const spec = {
               },
             },
           },
-          "400": {
-            description: "Invalid ID",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Error" },
-              },
-            },
-          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
           "404": {
             description: "Institution not found",
             content: {
@@ -529,11 +567,11 @@ const spec = {
   ],
   "x-rateLimit": {
     description:
-      "Rate limits are applied per API key when present and by anonymous request source otherwise. Free: 100 requests/month. Manually issued Pro keys: 10,000 requests/month. Enterprise: custom.",
+      "One monthly allowance per API key (or per anonymous caller) shared across all endpoints. Free: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted.",
     headers: {
       "X-RateLimit-Limit": "Maximum requests allowed in the current window",
       "X-RateLimit-Remaining": "Requests remaining in the current window",
-      "X-RateLimit-Reset": "UTC epoch timestamp when the window resets",
+      "X-RateLimit-Reset": "ISO 8601 UTC time when the monthly window resets",
     },
   },
 };
