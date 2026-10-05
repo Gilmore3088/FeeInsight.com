@@ -81,6 +81,10 @@ function connect(databaseUrl: string) {
     max: DATABASE_POOL_MAX,
     idle_timeout: 20,
     connect_timeout: 15,
+    // A frozen serverless instance never runs the client-side idle timer above, so its
+    // sockets stayed open on the server for its whole lifetime and filled every slot
+    // (Oct 5: 105 idle sessions from 31 instances). The server closes them instead.
+    connection: { idle_session_timeout: 60_000 },
     prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
     types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
   });
