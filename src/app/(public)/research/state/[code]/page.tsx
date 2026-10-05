@@ -11,7 +11,7 @@ import {
 } from "@/lib/fee-taxonomy";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { formatAmount } from "@/lib/format";
-import { STATE_NAMES, STATE_CODES } from "@/lib/us-states";
+import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
@@ -23,12 +23,6 @@ import { getPeerIndexCached, getStateStatsCached } from "@/lib/data-store/public
 
 interface PageProps {
   params: Promise<{ code: string }>;
-}
-
-export async function generateStaticParams() {
-  const { hasData } = await import("@/lib/data-store/connection");
-  if (!(await hasData())) return [];
-  return STATE_CODES.map((code) => ({ code }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
