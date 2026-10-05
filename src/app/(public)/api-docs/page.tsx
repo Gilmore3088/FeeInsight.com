@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
@@ -158,7 +159,7 @@ function Endpoint({
         </div>
       )}
 
-      <CodeBlock title="Example response">{responseExample}</CodeBlock>
+      <CodeBlock title="Example response · illustrative values, not live data">{responseExample}</CodeBlock>
     </div>
   );
 }
@@ -242,6 +243,46 @@ export default async function ApiDocsPage() {
         unions. {categoriesLabel} fee categories, national and peer medians, percentile ranges,
         and institution-level detail — all via a simple REST API.
       </p>
+
+      {/* Access first: what works today without a key, and how a Pro key is issued. */}
+      <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-[#E8DFD1] bg-white px-6 py-5">
+        <h2
+          id="getting-access"
+          className="text-[15px] font-bold text-[#1A1815]"
+          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        >
+          Getting access
+        </h2>
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-[#5A5347]">
+          <li>
+            <span className="font-semibold text-[#1A1815]">Free, no key.</span> Call any JSON endpoint
+            below. The free tier returns the 6 spotlight categories and allows 100 requests a month.
+          </li>
+          <li>
+            <span className="font-semibold text-[#1A1815]">{PRO_LABEL}, {MONTHLY_PRICE_LABEL} a month per seat.</span>{" "}
+            <Link href="/subscribe" className="font-medium text-[#A93D25] underline underline-offset-2">
+              Subscribe
+            </Link>{" "}
+            for all {categoriesLabel} categories and signed-in CSV exports from Account.
+          </li>
+          <li>
+            <span className="font-semibold text-[#1A1815]">API key.</span> Keys are issued by hand to{" "}
+            {PRO_LABEL} workspaces; there is no self-serve key page yet.{" "}
+            <a href={API_ACCESS_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+              Email us to request one
+            </a>{" "}
+            and we reply with the key and its limits.
+          </li>
+        </ol>
+        <p className="mt-3 text-[12px] text-[#6B6255]">
+          Example responses on this page show the real field names and shapes with illustrative
+          numbers. For today&apos;s figures, see the{" "}
+          <Link href="/fees" className="font-medium text-[#A93D25] underline underline-offset-2">
+            Fee Index
+          </Link>
+          . {summary.freshnessLabel}.
+        </p>
+      </section>
 
       {/* Quick links */}
       <div className="mt-5 flex flex-wrap gap-3 text-[13px]">
@@ -655,7 +696,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Status.</span>{" "}
-            Each category carries a status: Strong (20+ institutions with verified fees), Provisional (5 to 19), or Too few to benchmark (under 5, no median shown).
+            Each category carries a status: Strong (20+ institutions with published fees), Provisional (5 to 19), or Too few to benchmark (under 5, no median shown).
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}
@@ -663,7 +704,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Coverage.</span>{" "}
-            The dataset covers {summary.institutionsLabel} institutions with verified fees and is
+            The dataset covers {summary.institutionsLabel} institutions with published fees (of{" "}
+            {summary.monitoredLabel} monitored) and is
             refreshed on a rolling calendar. {summary.freshnessLabel}.
           </li>
         </ul>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
-import type { PublicStatsSummary } from "@/lib/public-stats";
+import { COVERAGE_LABELS, type PublicStatsSummary } from "@/lib/public-stats";
 import { US_STATES } from "@/lib/us-map-paths";
 
 interface LandingTrustStatsProps {
@@ -27,7 +27,7 @@ function coverageFill(verified: number, max: number): string {
 }
 
 /**
- * Coverage band: a US map shaded by verified institutions per state, two headline
+ * Coverage band: a US map shaded by institutions with published fees per state, two headline
  * numbers, and provenance as small tags. The map does the talking.
  */
 export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
@@ -48,7 +48,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
             </h2>
             {states.length > 0 && (
               <p className="mt-1.5 text-[13px] text-warm-700">
-                Darker states have more institutions with verified fees.{" "}
+                Darker states have more institutions with published fees.{" "}
                 <span className="font-semibold text-warm-900">
                   Tap a state to see its banks and credit unions.
                 </span>
@@ -60,11 +60,11 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                   viewBox="0 0 960 600"
                   className="mt-4 h-auto w-full"
                   role="img"
-                  aria-label={`Map of U.S. states shaded by institutions with verified fees; ${summary.statesLabel} states covered`}
+                  aria-label={`Map of U.S. states shaded by institutions with published fees; ${summary.statesLabel} states covered`}
                 >
                   {US_STATES.map((state) => {
                     const verified = byState.get(state.id)?.verified_institution_count ?? 0;
-                    const label = `${state.name}: ${verified.toLocaleString("en-US")} ${verified === 1 ? "institution" : "institutions"} with verified fees`;
+                    const label = `${state.name}: ${verified.toLocaleString("en-US")} ${verified === 1 ? "institution" : "institutions"} with published fees`;
                     return (
                       <Link
                         key={state.id}
@@ -95,7 +95,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                       <span key={c} className="h-2 w-5" style={{ backgroundColor: c }} />
                     ))}
                   </span>
-                  <span>More verified</span>
+                  <span>More published</span>
                 </div>
               </>
             )}
@@ -106,13 +106,13 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
               <dd className="text-3xl font-bold tabular-nums text-warm-900 sm:text-4xl">
                 {summary.institutionsLabel}
               </dd>
-              <dt className="mt-1 text-[12px] text-warm-600">Institutions verified</dt>
+              <dt className="mt-1 text-[12px] text-warm-600">{COVERAGE_LABELS.institutions}</dt>
             </div>
             <div>
               <dd className="text-3xl font-bold tabular-nums text-warm-900 sm:text-4xl">
                 {summary.categoriesLabel}
               </dd>
-              <dt className="mt-1 text-[12px] text-warm-600">Fee types tracked</dt>
+              <dt className="mt-1 text-[12px] text-warm-600">{COVERAGE_LABELS.categories}</dt>
             </div>
             {topStates.length > 0 && (
               <div className="col-span-2 lg:col-span-1">
