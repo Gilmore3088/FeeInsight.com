@@ -40,7 +40,7 @@ export function NationalSnapshot({ entries, totalInstitutions, selectedInstituti
         </p>
       </div>
       {rows.length === 0 ? (
-        <p className="px-5 py-6 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+        <p className="text-pretty px-5 py-6 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
           The national fee index is unavailable right now.
         </p>
       ) : (

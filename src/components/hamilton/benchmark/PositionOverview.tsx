@@ -83,10 +83,10 @@ export function PositionOverview({
         className="rounded-xl border p-6"
         style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
       >
-        <h2 className="text-base font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
+        <h2 className="text-balance text-base font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
           Nothing to compare yet
         </h2>
-        <p className="mt-1 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+        <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
           {positioning.ownFeeCount === 0
             ? `We have no published fees for ${positioning.institutionName} yet. The national picture below still applies.`
             : `${positioning.institutionName}'s published fees are in categories where ${positioning.benchmarkLabel} has too few institutions for a median.`}
@@ -98,7 +98,7 @@ export function PositionOverview({
   return (
     <section className="flex flex-col gap-4">
       {headline && (
-        <p className="text-lg font-medium leading-snug sm:text-xl" style={{ color: "var(--hamilton-on-surface)" }}>
+        <p className="text-balance text-lg font-medium leading-snug sm:text-xl" style={{ color: "var(--hamilton-on-surface)" }}>
           {headline}
         </p>
       )}
@@ -169,7 +169,7 @@ export function PositionOverview({
             );
           })}
         </ul>
-        <p className="border-t px-5 py-2.5 text-xs" style={{ borderColor: "var(--hamilton-border)", color: "var(--hamilton-text-tertiary)" }}>
+        <p className="text-pretty border-t px-5 py-2.5 text-xs" style={{ borderColor: "var(--hamilton-border)", color: "var(--hamilton-text-tertiary)" }}>
           Click a fee to simulate a change. {positioning.ownFeeCount} fees are published for this institution; the {entries.length} with a peer median and the largest gaps are shown.
         </p>
       </div>

@@ -101,7 +101,7 @@ export function HamiltonBriefing({
           <h2 className="text-sm font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
             Hamilton&apos;s briefing
           </h2>
-          <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+          <p className="text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
             State, local and regulatory context behind these fees
           </p>
         </div>
@@ -112,11 +112,11 @@ export function HamiltonBriefing({
         <div className="px-5 py-4">
           {thesis ? (
             <>
-              <p className="text-[15px] font-medium leading-relaxed" style={{ color: "var(--hamilton-on-surface)" }}>
+              <p className="text-pretty text-[15px] font-medium leading-relaxed" style={{ color: "var(--hamilton-on-surface)" }}>
                 {thesis.core_thesis}
               </p>
               {thesis.narrative_summary && (
-                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
+                <p className="mt-2 text-pretty text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
                   {thesis.narrative_summary}
                 </p>
               )}
@@ -126,7 +126,7 @@ export function HamiltonBriefing({
             </>
           ) : (
             <>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
+              <p className="text-pretty text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
                 Hamilton&apos;s written analysis is paused right now. The context below and every number on
                 this page come straight from published data.
               </p>
@@ -161,14 +161,14 @@ export function HamiltonBriefing({
                 )}
               </p>
             ) : (
-              <p className="mt-1 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+              <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
                 {Object.keys(state.medians).length === 0
                   ? `Too few ${state.stateName} institutions publish fees yet for state medians.`
                   : `None of these fees has a ${state.stateName} median yet.`}
               </p>
             )}
             {state.regulator && (
-              <p className="mt-1.5 text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
+              <p className="mt-1.5 text-pretty text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
                 State regulator:{" "}
                 {state.regulatorUrl ? (
                   <a href={state.regulatorUrl} target="_blank" rel="noreferrer" className="underline">
@@ -181,7 +181,7 @@ export function HamiltonBriefing({
               </p>
             )}
             {state.expertName && (
-              <p className="mt-1 text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+              <p className="mt-1 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
                 Hamilton&apos;s {state.stateName} desk is named for {state.expertName}. {state.expertBio}
               </p>
             )}
@@ -194,15 +194,15 @@ export function HamiltonBriefing({
             <SectionLabel>{district.name} Fed district</SectionLabel>
             {district.beigeBook ? (
               <>
-                <p className="mt-1 text-sm" style={{ color: "var(--hamilton-on-surface)" }}>
+                <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-on-surface)" }}>
                   &ldquo;{district.beigeBook.text}&rdquo;
                 </p>
-                <p className="mt-1 text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                <p className="mt-1 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
                   Federal Reserve Beige Book, {district.beigeBook.releaseDate}
                 </p>
               </>
             ) : (
-              <p className="mt-1 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+              <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
                 No Beige Book summary is stored for this district yet.
               </p>
             )}
@@ -213,7 +213,7 @@ export function HamiltonBriefing({
         <div className="px-5 py-4">
           <SectionLabel>Regulation</SectionLabel>
           {regulation.length === 0 ? (
-            <p className="mt-1 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+            <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
               No fee-related regulatory items in the news feed yet.
             </p>
           ) : (
@@ -223,7 +223,7 @@ export function HamiltonBriefing({
                   <a href={item.link} target="_blank" rel="noreferrer" className="text-sm no-underline hover:underline" style={{ color: "var(--hamilton-on-surface)" }}>
                     {item.title}
                   </a>
-                  <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                  <p className="text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
                     {item.source} · {item.topic}
                     {item.publishedAt && ` · ${formatDate(item.publishedAt)}`}
                   </p>

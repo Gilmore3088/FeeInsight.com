@@ -62,7 +62,7 @@ export function RecentChanges({ alerts, signals, selectedInstitutionId = null }:
         </Link>
       </div>
       {items.length === 0 ? (
-        <p className="px-5 py-6 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+        <p className="text-pretty px-5 py-6 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
           {selectedInstitutionId
             ? "No changes recorded for this institution yet. New fee publications and alerts will show up here."
             : "Choose your institution to see its fee changes and alerts here."}
@@ -78,7 +78,7 @@ export function RecentChanges({ alerts, signals, selectedInstitutionId = null }:
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="min-w-0 text-sm font-medium" style={{ color: "var(--hamilton-on-surface)" }}>
+                  <p className="min-w-0 text-pretty text-sm font-medium" style={{ color: "var(--hamilton-on-surface)" }}>
                     {item.isAlert && (
                       <span className="mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: "#fff1e6", color: "#9a3412" }}>
                         Alert

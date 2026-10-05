@@ -193,7 +193,7 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
           <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--hamilton-on-surface)" }}>
             Benchmark
           </h1>
-          <p className="mt-0.5 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+          <p className="mt-0.5 text-balance text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
             {positioning
               ? `${positioning.institutionName} compared with ${positioning.benchmarkLabel}`
               : "How fees compare with peers and the nation"}
@@ -234,10 +234,10 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
           style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
         >
           <div>
-            <h2 className="text-base font-semibold" style={{ color: "var(--hamilton-on-surface)" }}>
+            <h2 className="text-balance text-base font-semibold" style={{ color: "var(--hamilton-on-surface)" }}>
               See where your fees sit against your peers
             </h2>
-            <p className="mt-0.5 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+            <p className="mt-0.5 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
               Choose your institution and every published fee is drawn against its peer group.
             </p>
           </div>
