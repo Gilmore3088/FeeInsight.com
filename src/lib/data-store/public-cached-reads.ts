@@ -2,7 +2,7 @@ import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getFeeCategoryDetail } from "./fees";
-import { getPeerIndex } from "./fee-index";
+import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
@@ -71,4 +71,9 @@ export const getPublishedArticleSummariesCached = cachedPublicRead(
   getPublishedArticleSummaries,
   // No articles is a real answer here, not a failed read (failures throw), so cache it.
   () => false,
+);
+export const getStateFeeIndexesCached = cachedPublicRead(
+  "state-fee-indexes",
+  getStateFeeIndexes,
+  (indexes) => indexes.all.length === 0,
 );
