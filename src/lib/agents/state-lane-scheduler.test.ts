@@ -141,6 +141,16 @@ describe("state lane scheduler", () => {
     error.mockRestore();
   });
 
+  it("counts banks due a free search as backlog, so discovery runs hourly", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("PA");
+
+    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    expect(backlogQuery).toContain("inst.last_rescue_attempt_at IS NULL");
+    expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
+  });
+
   it("counts raw rows Darwin has not decided as backlog", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
@@ -181,11 +191,13 @@ describe("state lane scheduler", () => {
     expect(result.recheck).toBeNull();
     expect(result.idempotencyKey).toMatch(/^atlas:state-lane-backlog:PA:\d{4}-\d{2}-\d{2}T\d{2}$/);
     const args = startAgentRunMock.mock.calls[0][0];
-    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["fetch", "read", "extract", "classify", "publish"]);
+    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["discover", "fetch", "read", "extract", "classify", "publish"]);
     expect(args.params).toMatchObject({ lane_mode: "backlog" });
     expect(args.params.recheck).toBeUndefined();
-    // Magellan only fetches links found since the last fetch; it never searches or crawls.
+    // Magellan runs the free search and fetches links found since the last fetch; the paid
+    // find and public-discovery crawl stay on the full pass.
     expect(STATE_LANE_BACKLOG_STEPS.filter((step) => step.agent === "magellan")).toEqual([
+      expect.objectContaining({ key: "discover" }),
       expect.objectContaining({ key: "fetch", input: expect.objectContaining({ new_links_only: true }) }),
     ]);
   });
@@ -248,7 +260,7 @@ describe("state lane scheduler", () => {
     error.mockRestore();
   });
 
-  it("runs a daily full pass in a focus state while it still misses many links", async () => {
+  it("runs a daily full pass in any state while it still misses many links", async () => {
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 354 });
     await expect(stateLaneCadence("TX")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: true });
 
@@ -259,9 +271,9 @@ describe("state lane scheduler", () => {
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 50 });
     await expect(stateLaneCadence("CA")).resolves.toMatchObject({ fullDue: false, daily: false });
 
-    // Other states never go daily, however many links they miss.
+    // Every state goes daily during the bulk fill, not only the focus markets.
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 900 });
-    await expect(stateLaneCadence("PA")).resolves.toMatchObject({ fullDue: false, daily: false });
+    await expect(stateLaneCadence("PA")).resolves.toMatchObject({ fullDue: true, daily: true });
   });
 
   it("gives focus-state full passes bigger discovery and fetch batches, and wakes them tomorrow", async () => {

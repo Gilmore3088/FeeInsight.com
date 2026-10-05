@@ -23,6 +23,9 @@ Magellan owns institution source discovery and source fetching.
   `last_rescue_attempt_at > last_crawl_at`) is fetched first, regardless of the retry
   window, and the state's hourly backlog run fetches those links only
   (`new_links_only`), so a link found mid-month is read the same hour, not next month.
+- The free `discover` step runs in every hourly backlog run, not only the full pass, while
+  the state has a bank due a free search; discovery's own backoff decides who is due. The
+  paid find (`discover-paid`) stays on the full pass.
 
 ## Discovery (the find team)
 
