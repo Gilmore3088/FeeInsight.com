@@ -7,6 +7,7 @@ import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-col
 import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
+import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -697,6 +698,19 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
+      // Every live fee must be stated in the bank's own stored schedule: state lanes
+      // source-check a batch of institutions per step, after publishing, so fees
+      // published in this step are checked too.
+      const sourceCheck = stateCode || institutionId
+        ? await takeDownUntraceableFees(tx, {
+            runId: run.id,
+            batchId: `agentic-run-${run.id}`,
+            dryRun: run.runKind === "dry_run",
+            institutionId,
+            stateCode,
+          })
+        : null;
+      const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -706,7 +720,8 @@ async function executeAgenticStep(
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
-              recheckRollbacks > 0,
+              recheckRollbacks > 0 ||
+              sourceTakedowns > 0,
           });
       const outlierNote =
         outlierRollbacks.length > 0
@@ -720,13 +735,17 @@ async function executeAgenticStep(
         recheckRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
           : "";
+      const sourceNote =
+        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0
+          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}.`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -760,6 +779,19 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
+          source_check_fees: sourceCheck?.liveFeesChecked ?? 0,
+          source_check_traced: sourceCheck?.traced ?? 0,
+          source_check_relinked: sourceCheck?.relinked ?? 0,
+          source_check_takedowns: sourceTakedowns,
+          source_check_samples: (sourceCheck?.takedowns ?? []).slice(0, 10).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            fee_name: row.feeName,
+            amount: row.amount,
+            reason: row.reason,
           })),
           duplicate_collapses: duplicateCollapses.length,
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({

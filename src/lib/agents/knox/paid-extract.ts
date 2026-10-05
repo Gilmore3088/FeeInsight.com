@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
@@ -123,6 +124,11 @@ function lineHasAmount(line: string, amount: number): boolean {
  * Grounded means the source line is in the text and carries the amount, or the fee
  * name and the amount both appear in the text.
  */
+function statedInSource(text: string, name: string, amount: number): boolean {
+  const result = checkFeeAgainstSource(text, name, amount, ".");
+  return result.ok || result.reason === "tiered_fee";
+}
+
 export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | PaidRowRejection {
   const feeName = typeof row.fee_name === "string" ? row.fee_name.replace(/\s+/g, " ").trim().slice(0, 120) : "";
   const canonicalKey = typeof row.canonical_key === "string" ? row.canonical_key.trim() : "";
@@ -138,6 +144,12 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
   const lineGrounded = sourceLine.length >= 4 && haystack.includes(comparable(sourceLine)) && lineHasAmount(sourceLine, rounded);
   const nameGrounded = haystack.includes(comparable(feeName)) && (rounded === 0 ? lineHasAmount(text, 0) : lineHasAmount(text, rounded));
   if (!lineGrounded && !nameGrounded) return "not_in_text";
+  // The amount must be the fee on a row that names it, not a figure elsewhere in the text
+  // ("Negative from $50.01 and more | $35" never grounds $50.01): the same rule the
+  // live-fee source check and the report gate use.
+  if (!statedInSource(text, feeName, rounded) && !statedInSource(text, sourceLine.replace(/\$?\s*\d[\d,]*(?:\.\d+)?/g, " "), rounded)) {
+    return "not_in_text";
+  }
   const frequency = typeof row.frequency === "string" && row.frequency.trim() ? row.frequency.trim().toLowerCase() : null;
   return {
     feeName,

@@ -9,6 +9,8 @@ import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
+import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
+import { SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -291,10 +293,85 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            )
       ) AS backlog
     `;
-    return Boolean(row?.backlog);
+    return Boolean(row?.backlog) || (await stateHasUncheckedLiveFees(stateCode));
   } catch (error) {
     console.error("stateHasDocumentBacklog failed:", error);
     return false;
+  }
+}
+
+/**
+ * Live fees Hamilton has not checked yet: an institution not source-checked since its
+ * newest live fee, or a live Knox document not re-checked under today's rules. With a
+ * state code, true when that state has any; without one, the states that do.
+ */
+function uncheckedLiveFeeStates(stateCode: string | null) {
+  return sql<{ state_code: string }[]>`
+    WITH live AS (
+      SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fr.source,
+             fr.source_document_id, fr.outlier_flags,
+             MAX(fp.fee_published_id) OVER (PARTITION BY fp.institution_id) AS max_fee_id
+        FROM published_fee_records fp
+        JOIN institution_sources inst ON inst.id = fp.institution_id
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.rolled_back_at IS NULL
+         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+    )
+    SELECT DISTINCT live.state_code
+      FROM live
+     WHERE NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
+                AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                AND pa.institution_id = live.institution_id
+           )
+        OR (
+          live.source = 'knox'
+          AND live.source_document_id IS NOT NULL
+          AND NOT (COALESCE(live.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
+          AND NOT EXISTS (
+            SELECT 1 FROM pipeline_attempts pa
+             WHERE pa.input_fingerprint = ${knoxFreeSignature()}
+               AND pa.strategy = ${RULES_RECHECK_STRATEGY.strategy}
+               AND pa.strategy_version = ${RULES_RECHECK_STRATEGY.version}
+               AND pa.institution_id = live.institution_id
+               AND pa.source_document_id = live.source_document_id
+          )
+        )
+     ${stateCode ? sql`LIMIT 1` : sql``}
+  `;
+}
+
+export async function stateHasUncheckedLiveFees(stateCode: string): Promise<boolean> {
+  try {
+    return (await uncheckedLiveFeeStates(stateCode)).length > 0;
+  } catch (error) {
+    console.error("stateHasUncheckedLiveFees failed:", error);
+    return false;
+  }
+}
+
+/**
+ * A rules fix or a new source rule must reach every live fee within hours, not at each
+ * state's next monthly pass: wake sleeping lanes whose state has live fees Hamilton has
+ * not checked, so their hourly backlog passes run the checks in small batches.
+ */
+export async function wakeLanesWithUncheckedLiveFees(): Promise<number> {
+  try {
+    const states = (await uncheckedLiveFeeStates(null)).map((row) => String(row.state_code));
+    if (states.length === 0) return 0;
+    const woken = await sql`
+      UPDATE public.agent_state_lanes
+         SET next_run_after = NOW(),
+             updated_at = NOW()
+       WHERE state_code = ANY(${states}::text[])
+         AND next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+    `;
+    return woken.count;
+  } catch (error) {
+    console.error("wakeLanesWithUncheckedLiveFees failed:", error);
+    return 0;
   }
 }
 
@@ -514,7 +591,10 @@ export async function scheduleDueStateLaneRuns({
   now?: Date;
 } = {}): Promise<DueStateLaneScheduleResult> {
   const safeLimit = boundedLaneLimit(limit);
-  if (shouldRunNationwideLaneSync(now)) await syncStateLaneProfiles(sql);
+  if (shouldRunNationwideLaneSync(now)) {
+    await syncStateLaneProfiles(sql);
+    await wakeLanesWithUncheckedLiveFees();
+  }
 
   let dueRows: Array<{ state_code: string }>;
   try {
