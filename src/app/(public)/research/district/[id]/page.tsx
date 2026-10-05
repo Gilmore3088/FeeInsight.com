@@ -26,12 +26,6 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export async function generateStaticParams() {
-  const { hasData } = await import("@/lib/data-store/connection");
-  if (!(await hasData())) return [];
-  return Array.from({ length: 12 }, (_, i) => ({ id: String(i + 1) }));
-}
-
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const districtId = parseInt(id, 10);
