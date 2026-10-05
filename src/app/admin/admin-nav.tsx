@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ComponentType } from "react";
 import {
+  Activity,
   BookOpenText,
   Compass,
   ContactRound,
@@ -33,6 +34,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Atlas Control",
     items: [
       { href: "/admin", label: "Crew", role: "Your agents", icon: Orbit, exact: true },
+      { href: "/admin/live", label: "Live", role: "Banks moving through", icon: Activity },
       { href: "/admin/atlas/details", label: "Atlas", role: "Run controls", icon: Orbit },
       {
         href: "/admin/states",
