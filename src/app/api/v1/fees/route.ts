@@ -5,9 +5,10 @@ import { getFeeCategorySummaries, getFeeCategoryDetail } from "@/lib/data-store"
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canExportData } from "@/lib/access";
-import { validateApiKey } from "@/lib/api-auth";
+import { apiKeyCanExport, validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
+import { API_ATTRIBUTION } from "@/lib/constants";
 
 function getAnonymousId(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -94,6 +95,7 @@ async function handleGET(request: NextRequest) {
       by_asset_tier: detail.by_asset_tier,
       by_fed_district: detail.by_fed_district,
       by_state: detail.by_state,
+      attribution: API_ATTRIBUTION,
     };
 
     logApiUsage(organizationId, anonymousId, "api.fees.category", {
@@ -123,7 +125,7 @@ async function handleGET(request: NextRequest) {
 
   if (format === "csv") {
     const user = await getCurrentUser();
-    if (!canExportData(user)) {
+    if (!apiKeyCanExport(auth) && !canExportData(user)) {
       logApiUsage(organizationId, anonymousId, "api.fees.list", {
         format: "csv",
         status: 403,
@@ -164,6 +166,7 @@ async function handleGET(request: NextRequest) {
   const res = NextResponse.json({
     total: data.length,
     data,
+    attribution: API_ATTRIBUTION,
   });
   return addRateLimitHeaders(res, rateLimit);
 }

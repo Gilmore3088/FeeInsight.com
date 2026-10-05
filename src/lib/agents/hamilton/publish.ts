@@ -58,6 +58,10 @@ interface VerifiedFeeRow {
   amount: number | string | null;
   frequency: string | null;
   raw_agent_event_id: string | null;
+  /** The source document Knox read this fee from; null for rows without one. */
+  source_document_id?: number | string | null;
+  /** When that document was fetched; orders documents for the same fee. */
+  document_crawled_at?: string | Date | null;
   institution_name?: string | null;
 }
 
@@ -66,6 +70,8 @@ interface PriorPublishedFeeRow {
   amount: number | string | null;
   fee_name: string;
   published_at: string | Date;
+  source_document_id?: number | string | null;
+  document_crawled_at?: string | Date | null;
 }
 
 export interface HamiltonPublishResult {
@@ -306,11 +312,14 @@ async function selectVerifiedFees(
              fv.amount,
              fv.frequency,
              fr.agent_event_id AS raw_agent_event_id,
+             fr.source_document_id,
+             sd.crawled_at AS document_crawled_at,
              inst.institution_name,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
         JOIN institution_sources inst ON inst.id = fv.institution_id
        WHERE fv.review_status IN ('verified', 'approved')
          AND fv.outlier_flags ? 'agentic_darwin_verified'
@@ -445,30 +454,84 @@ async function insertPublishedFee(
   return inserted[0]?.fee_published_id == null ? null : Number(inserted[0].fee_published_id);
 }
 
-async function selectPriorPublishedFee(
+/** Live rows for the same fee (institution, canonical key, variant, frequency), newest first. */
+async function selectLivePublishedFees(
   db: SqlTag,
   row: VerifiedFeeRow,
-): Promise<PriorPublishedFeeRow | null> {
+): Promise<PriorPublishedFeeRow[]> {
   try {
-    const rows = await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
-      SELECT fee_published_id,
-             amount,
-             fee_name,
-             published_at
-        FROM published_fee_records
-       WHERE institution_id = ${Number(row.institution_id)}
-         AND canonical_fee_key = ${row.canonical_fee_key}
-         AND COALESCE(variant_type, '') = COALESCE(${row.variant_type}, '')
-         AND COALESCE(frequency, '') = COALESCE(${row.frequency}, '')
-         AND rolled_back_at IS NULL
-       ORDER BY published_at DESC, fee_published_id DESC
-       LIMIT 1
+    return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
+      SELECT fp.fee_published_id,
+             fp.amount,
+             fp.fee_name,
+             fp.published_at,
+             fr.source_document_id,
+             sd.crawled_at AS document_crawled_at
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
+       WHERE fp.institution_id = ${Number(row.institution_id)}
+         AND fp.canonical_fee_key = ${row.canonical_fee_key}
+         AND COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, '')
+         AND COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, '')
+         AND fp.rolled_back_at IS NULL
+       ORDER BY fp.published_at DESC, fp.fee_published_id DESC
     `);
-    return rows[0] ?? null;
   } catch (error) {
-    console.error("selectPriorPublishedFee failed:", error);
-    return null;
+    console.error("selectLivePublishedFees failed:", error);
+    return [];
   }
+}
+
+function sameDocument(a: number | string | null | undefined, b: number | string | null | undefined): boolean {
+  return a != null && b != null && String(a) === String(b);
+}
+
+function normalizedFeeName(name: string | null | undefined): string {
+  return (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function documentTime(value: string | Date | null | undefined): number | null {
+  if (value == null) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+export type PriorFeeDecision =
+  | { kind: "new" }
+  | { kind: "identical"; prior: PriorPublishedFeeRow }
+  | { kind: "older_document"; prior: PriorPublishedFeeRow }
+  | { kind: "additional_line" }
+  | { kind: "supersede"; prior: PriorPublishedFeeRow };
+
+/**
+ * How a verified row relates to the fee's live rows. A price change is recorded only
+ * when it really happened: the same fee line (same name) at a new amount in a newer
+ * document. One schedule can list several prices for one fee key (a $28 and a $15 stop
+ * payment for different channels), and a bank can publish several schedules; those are
+ * separate lines, published side by side. A row from an older document than a live
+ * line is stale and never replaces it.
+ */
+export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
+  if (live.length === 0) return { kind: "new" };
+  const amount = normalizedAmount(row.amount);
+  const identical = live.find((prior) => normalizedAmount(prior.amount) === amount);
+  if (identical) return { kind: "identical", prior: identical };
+  const rowTime = documentTime(row.document_crawled_at);
+  const fromOtherDocuments = live.filter((prior) => !sameDocument(prior.source_document_id, row.source_document_id));
+  if (rowTime == null) return { kind: "additional_line" };
+  const newer = fromOtherDocuments.find((prior) => {
+    const priorTime = documentTime(prior.document_crawled_at);
+    return priorTime != null && priorTime > rowTime;
+  });
+  if (newer) return { kind: "older_document", prior: newer };
+  const name = normalizedFeeName(row.fee_name);
+  const prior = fromOtherDocuments.find((candidate) => {
+    const priorTime = documentTime(candidate.document_crawled_at);
+    return priorTime != null && priorTime < rowTime && normalizedFeeName(candidate.fee_name) === name;
+  });
+  return prior ? { kind: "supersede", prior } : { kind: "additional_line" };
 }
 
 /**
@@ -771,6 +834,8 @@ async function flagMovedGuidesStale(
   }
 }
 
+const OLDER_DOCUMENT_REASON = "Older document than the live price";
+
 const NO_MOVEMENT = {
   previousFeePublishedId: null,
   previousAmount: null,
@@ -780,7 +845,9 @@ const NO_MOVEMENT = {
 
 function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome {
   if (result.status === "published") return "ok";
-  return result.reason === "Identical fee already published" || result.reason === "Duplicate published row"
+  return result.reason === "Identical fee already published" ||
+    result.reason === "Duplicate published row" ||
+    result.reason === OLDER_DOCUMENT_REASON
     ? "unchanged"
     : "rejected";
 }
@@ -854,23 +921,29 @@ export async function runHamiltonPublish(
       : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
-    const priorPublishedFee = skipReason ? null : await selectPriorPublishedFee(db, row);
+    const decision = skipReason ? null : decidePriorFee(row, await selectLivePublishedFees(db, row));
+    const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
-    } else if (
+    } else if (decision?.kind === "identical") {
       // Content-level dedupe: re-verification mints a new fee_verified_id, so the
       // lineage guard alone lets identical fee lines pile up in the catalog.
-      priorPublishedFee &&
-      normalizedAmount(priorPublishedFee.amount) === normalizedAmount(row.amount)
-    ) {
       result = {
         ...base,
         status: "skipped",
         reason: "Identical fee already published",
         feePublishedId: null,
         ...NO_MOVEMENT,
-        previousFeePublishedId: Number(priorPublishedFee.fee_published_id),
-        previousAmount: normalizedAmount(priorPublishedFee.amount),
+        previousFeePublishedId: Number(decision.prior.fee_published_id),
+        previousAmount: normalizedAmount(decision.prior.amount),
+      };
+    } else if (decision?.kind === "older_document") {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: OLDER_DOCUMENT_REASON,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
       };
     } else if (dryRun) {
       result = {

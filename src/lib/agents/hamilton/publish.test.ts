@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HAMILTON_PUBLISH_STRATEGY, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, runHamiltonPublish } from "./publish";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -73,6 +73,8 @@ const verifiedFee = {
   amount: "35.00",
   frequency: "per_item",
   raw_agent_event_id: "00000000-0000-4000-8000-000000000701",
+  source_document_id: 77,
+  document_crawled_at: "2026-10-01T00:00:00.000Z",
 };
 
 const priorPublishedFee = {
@@ -80,6 +82,8 @@ const priorPublishedFee = {
   amount: "30.00",
   fee_name: "Overdraft fee",
   published_at: "2026-07-01T00:00:00.000Z",
+  source_document_id: 12,
+  document_crawled_at: "2026-07-01T00:00:00.000Z",
 };
 
 describe("Hamilton agentic publish", () => {
@@ -176,8 +180,8 @@ describe("Hamilton agentic publish", () => {
 
     const selectSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(selectSql).toContain("FROM published_fee_records");
-    expect(selectSql).toContain("COALESCE(variant_type");
-    expect(selectSql).toContain("COALESCE(frequency");
+    expect(selectSql).toContain("COALESCE(fp.variant_type");
+    expect(selectSql).toContain("COALESCE(fp.frequency");
     expect(selectSql).toContain("rolled_back_at IS NULL");
 
     const callsJson = JSON.stringify(db.mock.calls);
@@ -303,6 +307,24 @@ describe("Hamilton agentic publish", () => {
 
     const change = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO fee_change_records"));
     expect(change?.slice(1)).toEqual(expect.arrayContaining([42, "overdraft", 30, 35, "increase"]));
+  });
+
+  it("publishes a second price from the same document as its own fee line", async () => {
+    const sameDocumentPrior = { ...priorPublishedFee, fee_name: "Stop payment (ACH)", source_document_id: 77 };
+    const db = createDbMock([{ ...verifiedFee, source_document_id: 77 }], [sameDocumentPrior]);
+
+    const result = await runHamiltonPublish({ runId: 111, db: asPublishDb(db) });
+
+    expect(result).toMatchObject({ publishedFees: 1, supersededFees: 0 });
+    expect(result.results[0]).toMatchObject({
+      status: "published",
+      supersededFeePublishedId: null,
+      movementDirection: null,
+      changeRecorded: false,
+    });
+    const text = writes(db).join("\n");
+    expect(text).not.toContain("UPDATE published_fee_records");
+    expect(text).not.toContain("INSERT INTO fee_change_records");
   });
 
   it("runs insert and supersede inside a savepoint when given a transaction", async () => {
@@ -478,5 +500,44 @@ describe("Hamilton agentic publish", () => {
 
       expect(result.outcomes).toEqual({ unchanged: 1 });
     });
+  });
+});
+
+describe("decidePriorFee", () => {
+  const row = { ...verifiedFee };
+  const live = (overrides: Record<string, unknown>) => ({ ...priorPublishedFee, ...overrides });
+
+  it("treats a fee with no live row as new", () => {
+    expect(decidePriorFee(row, [])).toEqual({ kind: "new" });
+  });
+
+  it("skips an amount already live on any line", () => {
+    const match = live({ fee_published_id: 602, amount: "35.00" });
+    expect(decidePriorFee(row, [live({ source_document_id: 77 }), match])).toEqual({ kind: "identical", prior: match });
+  });
+
+  it("keeps lines from the same document side by side", () => {
+    expect(decidePriorFee(row, [live({ source_document_id: 77 })])).toEqual({ kind: "additional_line" });
+  });
+
+  it("replaces the same-named line from an older document", () => {
+    const other = live({ fee_published_id: 603, fee_name: "Overdraft - business" });
+    const named = live({ fee_published_id: 604, fee_name: "Overdraft Fee ......" });
+    expect(decidePriorFee(row, [other, named])).toEqual({ kind: "supersede", prior: named });
+  });
+
+  it("adds a differently named line from a newer document instead of calling it a change", () => {
+    const other = live({ fee_published_id: 605, fee_name: "Returned item" });
+    expect(decidePriorFee(row, [other])).toEqual({ kind: "additional_line" });
+  });
+
+  it("never lets an older document replace a newer live price", () => {
+    const newer = live({ fee_published_id: 606, document_crawled_at: "2026-10-04T00:00:00.000Z" });
+    expect(decidePriorFee(row, [newer])).toEqual({ kind: "older_document", prior: newer });
+  });
+
+  it("does not record a change when either document's date is unknown", () => {
+    expect(decidePriorFee({ ...row, document_crawled_at: null }, [live({})])).toEqual({ kind: "additional_line" });
+    expect(decidePriorFee(row, [live({ document_crawled_at: null })])).toEqual({ kind: "additional_line" });
   });
 });

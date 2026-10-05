@@ -30,7 +30,10 @@ import { buildInsufficientEvidenceReport } from "@/lib/hamilton/report-readiness
 import {
   buildSelectedInstitutionReportData,
   buildSelectedInstitutionReportRules,
+  buildStateExpertReportData,
+  STATE_EXPERT_REPORT_RULES,
 } from "@/lib/hamilton/report-synthesis";
+import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -491,6 +494,16 @@ export async function generateReport(
       selectedPeerRanking,
       evidencePolicy,
     });
+    // The state expert's in-state levels for this institution (Postgres reads only).
+    const statePeers = buildStateExpertReportData({
+      summary: selectedInstitution?.state_code
+        ? await stateExpertSummary(selectedInstitution.state_code).catch(() => null)
+        : null,
+      selectedInstitutionId: selectedInstitution?.id ?? null,
+      selectedFeeDeltas,
+    });
+    const withStateRules = (context: string) =>
+      statePeers ? `${context}\n\n${STATE_EXPERT_REPORT_RULES}` : context;
 
     // 2-4. Generate the three sections in parallel — they're independent
     // (no shared state, no ordering constraint). Was sequential and took
@@ -505,6 +518,7 @@ export async function generateReport(
           period,
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
+          state_peers: statePeers,
           focus_category: params.focusCategory ?? null,
           categories: topCategories.map((c) => ({
             fee_category: c.fee_category,
@@ -515,7 +529,7 @@ export async function generateReport(
             maturity: c.maturity_tier,
           })),
         },
-        context: withTone(buildExecutiveSummaryContext(params, institutionName, period), params.narrativeTone),
+        context: withTone(withStateRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone),
       },
       {
         type: strategicSectionType,
@@ -525,6 +539,7 @@ export async function generateReport(
           period,
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
+          state_peers: statePeers,
           focus_category: params.focusCategory ?? null,
           top_fees: topCategories.slice(0, 5).map((c) => ({
             fee_category: c.fee_category,
@@ -534,7 +549,7 @@ export async function generateReport(
             institution_count: c.institution_count,
           })),
         },
-        context: withTone(buildStrategicContext(params, institutionName), params.narrativeTone),
+        context: withTone(withStateRules(buildStrategicContext(params, institutionName)), params.narrativeTone),
       },
       {
         type: "recommendation",
@@ -548,6 +563,7 @@ export async function generateReport(
           institution_name: institutionName,
           period,
           selected_institution: selectedInstitutionData,
+          state_peers: statePeers,
           focus_category: params.focusCategory ?? null,
           peer_anchored_fees: selectedInstitution
             ? selectedFeeDeltas.slice(0, 5)
@@ -560,7 +576,7 @@ export async function generateReport(
                 maturity: c.maturity_tier,
               })),
         },
-        context: withTone(buildRecommendationContext(params, institutionName), params.narrativeTone),
+        context: withTone(withStateRules(buildRecommendationContext(params, institutionName)), params.narrativeTone),
       },
     ];
 

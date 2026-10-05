@@ -205,3 +205,114 @@ export function buildSelectedInstitutionReportData(params: {
     evidence_policy: params.evidencePolicy,
   };
 }
+
+/** The fields of a state expert summary a report uses (see agents/hamilton/state-expert-summary). */
+export interface StateExpertSummaryInput {
+  stateCode: string;
+  stateName: string | null;
+  expertName: string;
+  institutionCount: number;
+  publishedFeeCount: number;
+  peerLevels: Array<{ canonicalFeeKey: string; p25: number; median: number; p75: number; count: number }>;
+  notableOutliers: Array<{
+    institutionId: number;
+    canonicalFeeKey: string;
+    amount: number;
+    peerMedian: number;
+    peerCount: number;
+  }>;
+}
+
+export interface StateExpertReportData {
+  state_code: string;
+  state_name: string | null;
+  state_expert: string;
+  institutions_in_state: number;
+  published_fees_in_state: number;
+  /** The selected institution's fees against the same fee's in-state levels. */
+  state_fee_deltas: Array<{
+    fee_name: string;
+    fee_category: string;
+    institution_amount: number;
+    state_median: number;
+    state_p25: number;
+    state_p75: number;
+    state_institution_count: number;
+    position: "above_state_median" | "below_state_median" | "at_state_median";
+  }>;
+  /** The state's best-covered fee levels. */
+  state_levels: Array<{ fee_category: string; median: number; p25: number; p75: number; institution_count: number }>;
+  /** The selected institution's fees Darwin held as far outside their state peers. */
+  selected_institution_state_outliers: Array<{
+    fee_category: string;
+    amount: number;
+    state_median: number;
+    state_peer_count: number;
+  }>;
+}
+
+const STATE_LEVELS_IN_REPORT = 10;
+
+/**
+ * The state expert's view for a report on one institution: its fees against in-state
+ * levels, the state's best-covered levels, and its own state outliers. Null when the
+ * state has no levels with enough peers.
+ */
+export function buildStateExpertReportData(params: {
+  summary: StateExpertSummaryInput | null;
+  selectedInstitutionId: number | null;
+  selectedFeeDeltas: Pick<SelectedInstitutionFeeDelta, "fee_name" | "fee_category" | "institution_amount">[];
+}): StateExpertReportData | null {
+  const summary = params.summary;
+  if (!summary || summary.peerLevels.length === 0) return null;
+  const levels = new Map(summary.peerLevels.map((level) => [level.canonicalFeeKey, level]));
+
+  const stateFeeDeltas = params.selectedFeeDeltas.flatMap((delta) => {
+    const level = levels.get(delta.fee_category);
+    if (!level) return [];
+    const gap = delta.institution_amount - level.median;
+    const position: StateExpertReportData["state_fee_deltas"][number]["position"] =
+      Math.abs(gap) < 0.01 ? "at_state_median" : gap > 0 ? "above_state_median" : "below_state_median";
+    return [{
+      fee_name: delta.fee_name,
+      fee_category: delta.fee_category,
+      institution_amount: delta.institution_amount,
+      state_median: level.median,
+      state_p25: level.p25,
+      state_p75: level.p75,
+      state_institution_count: level.count,
+      position,
+    }];
+  });
+
+  return {
+    state_code: summary.stateCode,
+    state_name: summary.stateName,
+    state_expert: summary.expertName,
+    institutions_in_state: summary.institutionCount,
+    published_fees_in_state: summary.publishedFeeCount,
+    state_fee_deltas: stateFeeDeltas,
+    state_levels: summary.peerLevels.slice(0, STATE_LEVELS_IN_REPORT).map((level) => ({
+      fee_category: level.canonicalFeeKey,
+      median: level.median,
+      p25: level.p25,
+      p75: level.p75,
+      institution_count: level.count,
+    })),
+    selected_institution_state_outliers: summary.notableOutliers
+      .filter((outlier) => outlier.institutionId === params.selectedInstitutionId)
+      .map((outlier) => ({
+        fee_category: outlier.canonicalFeeKey,
+        amount: outlier.amount,
+        state_median: outlier.peerMedian,
+        state_peer_count: outlier.peerCount,
+      })),
+  };
+}
+
+export const STATE_EXPERT_REPORT_RULES = `
+STATE PEER RULES:
+1. state_peers holds in-state fee levels from the state expert. Use state_peers.state_fee_deltas to say where the institution sits against banks and credit unions in its own state, citing the state median and the number of institutions behind it.
+2. When the state position differs from the peer-baseline position (above one median, below the other), say so; that difference is the local competitive read.
+3. Fees in selected_institution_state_outliers are far outside in-state peers. Name them as the institution's most exposed prices.
+`.trim();

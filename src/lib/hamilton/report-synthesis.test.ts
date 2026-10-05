@@ -3,6 +3,7 @@ import type { SelectedInstitutionFeeDelta } from "@/lib/hamilton/report-evidence
 import {
   buildSelectedInstitutionReportData,
   buildSelectedInstitutionReportRules,
+  buildStateExpertReportData,
 } from "./report-synthesis";
 
 function delta(overrides: Partial<SelectedInstitutionFeeDelta> = {}): SelectedInstitutionFeeDelta {
@@ -189,5 +190,52 @@ describe("selected institution report synthesis", () => {
     expect(reportData?.can_generate_verified_benchmark_conclusions).toBe(true);
     expect(reportData?.peer_fallback_reason).toBe("Saved peer set was too sparse.");
     expect(reportData?.evidence_policy).toBe("verified-only");
+  });
+});
+
+describe("buildStateExpertReportData", () => {
+  const summary = {
+    stateCode: "GA",
+    stateName: "Georgia",
+    expertName: "Robert W. Woodruff",
+    institutionCount: 210,
+    publishedFeeCount: 1450,
+    peerLevels: [
+      { canonicalFeeKey: "overdraft", p25: 28, median: 32, p75: 35, count: 60 },
+      { canonicalFeeKey: "stop_payment", p25: 25, median: 30, p75: 32, count: 40 },
+    ],
+    notableOutliers: [
+      { institutionId: 7, canonicalFeeKey: "nsf", amount: 45, peerMedian: 28, peerCount: 30 },
+      { institutionId: 9, canonicalFeeKey: "overdraft", amount: 60, peerMedian: 32, peerCount: 60 },
+    ],
+  };
+
+  it("places the institution's fees against in-state levels and keeps its own outliers", () => {
+    const data = buildStateExpertReportData({
+      summary,
+      selectedInstitutionId: 7,
+      selectedFeeDeltas: [
+        { fee_name: "Overdraft", fee_category: "overdraft", institution_amount: 35 },
+        { fee_name: "Stop payment", fee_category: "stop_payment", institution_amount: 30 },
+        { fee_name: "Wire out", fee_category: "wire_domestic_outgoing", institution_amount: 25 },
+      ],
+    });
+
+    expect(data?.state_expert).toBe("Robert W. Woodruff");
+    expect(data?.state_fee_deltas).toEqual([
+      expect.objectContaining({ fee_category: "overdraft", state_median: 32, position: "above_state_median" }),
+      expect.objectContaining({ fee_category: "stop_payment", state_median: 30, position: "at_state_median" }),
+    ]);
+    expect(data?.selected_institution_state_outliers).toEqual([
+      { fee_category: "nsf", amount: 45, state_median: 28, state_peer_count: 30 },
+    ]);
+    expect(data?.state_levels).toHaveLength(2);
+  });
+
+  it("returns null without a summary or any state levels", () => {
+    expect(buildStateExpertReportData({ summary: null, selectedInstitutionId: 7, selectedFeeDeltas: [] })).toBeNull();
+    expect(
+      buildStateExpertReportData({ summary: { ...summary, peerLevels: [] }, selectedInstitutionId: 7, selectedFeeDeltas: [] }),
+    ).toBeNull();
   });
 });
