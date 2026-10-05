@@ -1,7 +1,6 @@
 import { TrackLink } from "@/components/track-link";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
-import type { ReportFinding } from "@/lib/hosted-reports";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
@@ -20,10 +19,10 @@ const NEXT_STEPS = [
 ];
 
 /**
- * The bank and credit union path: what the report is, real findings from the public
+ * The bank and credit union path: what the report is, the real first pages of the public
  * sample, and the same request form as /for-institutions, so the lead is captured right here.
  */
-export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
+export function LandingBankOffer() {
   return (
     <section id="for-banks" className="scroll-mt-16 border-b border-[#E0D7C9] bg-white">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
@@ -48,11 +47,9 @@ export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
             ))}
           </ul>
 
-          {findings.length > 0 && (
-            <div className="mt-6">
-              <SampleFindings findings={findings.slice(0, 3)} />
-            </div>
-          )}
+          <div className="mt-6">
+            <SamplePages />
+          </div>
           <TrackLink
             event="see_sample_report"
             eventProps={{ placement: "home_bank_section" }}
@@ -84,34 +81,46 @@ export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
   );
 }
 
-/** A report "page" with the sample's real executive-summary findings, so the offer is concrete. */
-function SampleFindings({ findings }: { findings: ReportFinding[] }) {
+// Pages 1-3 of public/reports/sample-competitive-fee-position.pdf, rendered as images.
+// Re-render these whenever the sample PDF is regenerated so the preview matches it.
+const SAMPLE_PAGES = [
+  { src: "/reports/sample-preview/page-1.webp", label: "Cover" },
+  { src: "/reports/sample-preview/page-2.webp", label: "Summary of findings" },
+  { src: "/reports/sample-preview/page-3.webp", label: "Every fee against the peer range" },
+];
+
+/** The actual first three pages of the sample report, each opening the full sample. */
+function SamplePages() {
   return (
-    <figure className="min-w-0 rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-2 shadow-[0_1px_0_#E0D7C9,0_12px_32px_-18px_rgba(26,24,21,0.35)]">
-      <div className="rounded-md border border-[#EDE6DA] bg-white px-5 py-5 sm:px-6">
-        <div className="flex items-baseline justify-between gap-3 border-b-2 border-[#1A1815] pb-2">
-          <p className="text-[13px] font-semibold text-[#1A1815]" style={SERIF_STYLE}>
-            {REPORT_OFFER.name}
-          </p>
-          <p className="shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">Sample</p>
-        </div>
-        <ol className="divide-y divide-[#F0EBE3]">
-          {findings.map((finding) => (
-            <li key={finding.headline} className="grid grid-cols-[6.5rem_1fr] gap-4 py-4">
-              <div>
-                <p className="text-[1.3rem] font-semibold leading-tight tabular-nums text-[#C44B2E]" style={SERIF_STYLE}>
-                  {finding.stat}
-                </p>
-                <p className="mt-1 text-balance text-[11px] leading-snug text-[#6B6255]">{finding.statLabel}</p>
-              </div>
-              <p className="text-pretty text-[14px] font-semibold leading-snug text-[#1A1815]">{finding.headline}</p>
-            </li>
-          ))}
-        </ol>
-      </div>
-      <figcaption className="px-3 pb-1 pt-2.5 text-[11px] leading-snug text-[#6B6255]">
-        Findings from the sample report, prepared for a real ~$400M community bank with its name
-        removed. Your report covers your institution and your peers.
+    <figure className="min-w-0 rounded-lg bg-[#F4EEE5] p-3 sm:p-4">
+      <ul className="grid grid-cols-3 gap-2.5 sm:gap-4">
+        {SAMPLE_PAGES.map((page, index) => (
+          <li key={page.src} className="min-w-0">
+            <TrackLink
+              event="see_sample_report"
+              eventProps={{ placement: "home_sample_page", page: index + 1 }}
+              href={SAMPLE_REPORT_HREF}
+              className="group block"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- static pre-rendered page image */}
+              <img
+                src={page.src}
+                alt={`Sample report, page ${index + 1}: ${page.label}`}
+                width={850}
+                height={1100}
+                loading="lazy"
+                className="block h-auto w-full rounded-[3px] bg-white shadow-[0_1px_2px_rgba(26,24,21,0.12),0_10px_24px_-14px_rgba(26,24,21,0.45)] ring-1 ring-[#E0D7C9] transition-transform group-hover:-translate-y-0.5"
+              />
+              <span className="mt-2 block text-balance text-[11px] leading-snug text-[#5A5347] group-hover:text-[#A93D25]">
+                {page.label}
+              </span>
+            </TrackLink>
+          </li>
+        ))}
+      </ul>
+      <figcaption className="mt-3 text-pretty text-[11px] leading-snug text-[#6B6255]">
+        The first pages of the sample report, prepared for a real community bank ($300M to $1B in assets) with its
+        name removed. Your report covers your institution and your peers.
       </figcaption>
     </figure>
   );
