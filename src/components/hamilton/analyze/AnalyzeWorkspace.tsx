@@ -15,7 +15,7 @@ import { AnalyzeCTABar } from "./AnalyzeCTABar";
 import { AnalysisInputBar } from "./AnalysisInputBar";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
-import { parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
+import { humanizeAnswerText, parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
@@ -69,10 +69,14 @@ export function AnalyzeWorkspace({
   const [parsedResponse, setParsedResponse] = useState<ParsedResponse | null>(() => {
     if (!initialAnalysis) return null;
     return {
-      hamiltonView: initialAnalysis.hamiltonView,
-      whatThisMeans: initialAnalysis.whatThisMeans,
-      whyItMatters: initialAnalysis.whyItMatters,
-      evidence: initialAnalysis.evidence.metrics,
+      hamiltonView: humanizeAnswerText(initialAnalysis.hamiltonView),
+      whatThisMeans: humanizeAnswerText(initialAnalysis.whatThisMeans),
+      whyItMatters: initialAnalysis.whyItMatters.map(humanizeAnswerText),
+      evidence: initialAnalysis.evidence.metrics.map((m) => ({
+        ...m,
+        label: humanizeAnswerText(m.label),
+        value: humanizeAnswerText(m.value),
+      })),
       exploreFurther: initialAnalysis.exploreFurther,
     };
   });

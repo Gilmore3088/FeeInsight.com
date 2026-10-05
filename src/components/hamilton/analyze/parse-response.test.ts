@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, shapeHamiltonView, splitSentences } from "./parse-response";
+import { parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, humanizeAnswerText, shapeHamiltonView, splitSentences } from "./parse-response";
 
 describe("parseEvidenceMetrics", () => {
   it("keeps dates, ranges and hyphenated words inside the value", () => {
@@ -79,5 +79,19 @@ describe("parseFollowUps", () => {
       "How does the overdraft fee compare with Texas credit unions?",
       "Which peers moved first?",
     ]);
+  });
+});
+
+describe("humanizeAnswerText", () => {
+  it("replaces raw tier keys in any case and drops code backticks", () => {
+    expect(humanizeAnswerText("Peer tier `COMMUNITY_MID` vs community_small banks")).toBe(
+      "Peer tier $300M to $1B peers vs under $300M banks",
+    );
+  });
+
+  it("is applied to every parsed section", () => {
+    const parsed = parseAnalyzeResponse("## Hamilton's View\nCompared with community_mid peers.\n\n## Evidence\n- **Tier:** COMMUNITY_MID");
+    expect(parsed.hamiltonView).toBe("Compared with $300M to $1B peers.");
+    expect(parsed.evidence).toEqual([{ label: "Tier", value: "$300M to $1B peers" }]);
   });
 });

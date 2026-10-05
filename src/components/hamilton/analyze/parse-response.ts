@@ -11,7 +11,8 @@ export interface ParsedResponse {
  * Expects ## headings: Hamilton's View, What This Means, Why It Matters, Evidence, Explore Further.
  * Falls back to raw content in hamiltonView if sections are not found.
  */
-export function parseAnalyzeResponse(content: string): ParsedResponse {
+export function parseAnalyzeResponse(rawContent: string): ParsedResponse {
+  const content = humanizeAnswerText(rawContent);
   const sections = content.split(/^##\s+/m);
 
   function getSection(name: string): string {
@@ -44,6 +45,26 @@ export function parseAnalyzeResponse(content: string): ParsedResponse {
     evidence: parseEvidenceMetrics(evidenceRaw),
     exploreFurther: parseFollowUps(exploreFurtherRaw),
   };
+}
+
+// Asset-size tiers as a customer reads them; raw keys (community_mid,
+// COMMUNITY_MID) are database vocabulary and never reach the page.
+const TIER_WORDS: Record<string, string> = {
+  community_small: "under $300M",
+  community_mid: "$300M to $1B",
+  community_large: "$1B to $10B",
+  large_regional: "$50B to $250B",
+  super_regional: "over $250B",
+};
+
+/** Swap raw tier keys for plain words and drop code backticks from Hamilton's text. */
+export function humanizeAnswerText(text: string): string {
+  return text
+    .replace(
+      /\b(community_small|community_mid|community_large|large_regional|super_regional)\b(\s+(?:peers?|banks?|institutions?|credit unions?|tier|group|segment|cohort)\b)?/gi,
+      (_m, key: string, noun: string | undefined) => `${TIER_WORDS[key.toLowerCase()]}${noun ?? " peers"}`,
+    )
+    .replace(/`/g, "");
 }
 
 /**

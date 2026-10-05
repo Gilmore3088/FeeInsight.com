@@ -76,7 +76,7 @@ export function HamiltonViewPanel({ content, confidence, isStreaming }: Hamilton
       ) : (
         <div className="max-w-[68ch] space-y-4">
           <h2
-            className="text-2xl leading-snug text-balance md:text-[1.75rem]"
+            className="text-xl leading-snug text-balance md:text-2xl"
             style={{
               fontFamily: "var(--hamilton-font-serif)",
               color: "var(--hamilton-text-primary)",
