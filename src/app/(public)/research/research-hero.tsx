@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { PRODUCT_NAME } from "@/lib/constants";
+import { PrintButton } from "./print-button";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
 export const RESEARCH_SECTIONS = [
+  { id: "findings", label: "Key findings" },
   { id: "benchmarks", label: "Benchmarks" },
+  { id: "charters", label: "Banks vs CUs" },
   { id: "states", label: "States" },
   { id: "districts", label: "Fed districts" },
   { id: "library", label: "Studies & guides" },
@@ -86,6 +89,7 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
           <Link href="/methodology" className="text-[#F5EFE6]/75 hover:text-white">
             Methodology
           </Link>
+          <PrintButton className="rounded-full border border-white/25 px-3.5 py-1.5 font-semibold text-white hover:bg-white/10 print:hidden" />
         </div>
       </div>
     </section>
@@ -95,7 +99,7 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
 /** Sticky jump bar under the hero so a long page stays navigable. */
 export function ResearchSectionNav() {
   return (
-    <nav aria-label="Research sections" className="sticky top-14 z-30 border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur">
+    <nav aria-label="Research sections" className="print:hidden sticky top-14 z-30 border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur">
       <ul className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 py-2 sm:px-6">
         {RESEARCH_SECTIONS.map((s) => (
           <li key={s.id} className="shrink-0">

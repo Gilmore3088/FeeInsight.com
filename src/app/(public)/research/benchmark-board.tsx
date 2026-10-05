@@ -4,6 +4,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
 import { SectionHeading } from "./research-hero";
+import { ExhibitSource } from "./exhibits";
 
 /**
  * Everyday fees people ask about first. Flat-dollar categories only: foreign transaction
@@ -106,11 +107,11 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
   );
 }
 
-export function BenchmarkBoard({ benchmarks, institutionsLabel }: { benchmarks: FeeCategorySummary[]; institutionsLabel: string }) {
+export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchmarks: FeeCategorySummary[]; institutionsLabel: string; asOf: string | null }) {
   return (
-    <section id="benchmarks" className="scroll-mt-28">
+    <section id="benchmarks" className="scroll-mt-28 print:break-inside-avoid">
       <SectionHeading
-        eyebrow="National benchmarks"
+        eyebrow="Exhibit 1 · National benchmarks"
         title="The everyday fees, at a glance"
         action={
           <Link href="/fees" className="rounded-full border border-[#1A1815] px-4 py-2 text-[12px] font-semibold text-[#1A1815] transition-colors hover:bg-[#1A1815] hover:text-white">
@@ -133,6 +134,9 @@ export function BenchmarkBoard({ benchmarks, institutionsLabel }: { benchmarks: 
           Benchmarks are refreshing. Check back shortly.
         </p>
       )}
+      <ExhibitSource asOf={asOf}>
+        Median and 25th to 75th percentile of one value per institution. Fees shown only with at least 10 institutions.
+      </ExhibitSource>
     </section>
   );
 }
