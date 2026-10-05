@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Public reports stopped being produced
+**What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since
+Aug 10. `report_jobs` holds 12 finished files (Apr 7 to Aug 10, from the old runtime) and
+`published_reports` has 0 rows (read-only query, 19:58 UTC).
+**Cause:** the Generate button records an agent run, then stops with "render worker implementation
+is pending", because nothing calls `src/lib/report-engine/assemble-and-render.ts`. No cron
+schedules a quarterly or monthly report, though `src/lib/admin-queries.ts` still expects one.
+**Fix:** not yet fixed or assigned.
+**Lesson:** a retired runtime needs a replacement for every output it produced, and each scheduled
+output needs a visible "last produced" date.
+
 ## 2026-10-05: CLAUDE.md went stale
 **What happened:** CLAUDE.md told every session that all 25 reports were ready to review and send
 (they are on hold) and listed OCR, provider-assisted extraction and report rendering as unbuilt
