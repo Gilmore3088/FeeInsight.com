@@ -21,6 +21,7 @@ Darwin owns verification and classification.
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range (`envelopes.ts`) | needs_review |
+| `peer_outlier` | pass 2: not far outside the state's peer range (below) | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, source) not already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 
@@ -30,6 +31,17 @@ Darwin owns verification and classification.
 - Review signals carry `reason_counts` keyed by code, and the category range for
   `outside_envelope` rows.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
+- Pass 2 (`peer-checks.ts`, free, rows the rules accept), each its own strategy in
+  `pipeline_attempts` (stage `verify`, fingerprint `raw:<fee_raw_id>`):
+  - `verify.peer_range` v1: a positive amount below p25 / 3 or above p75 * 3 of its
+    state peers (asset-size tier level when it has 8+ institutions, else the state-wide
+    level; none with fewer than 8) is held as `needs_review` with reason code
+    `peer_outlier` and the range in the reason and in the review signal's
+    `peer_outliers`. Outcome `evidence_mismatch` when flagged, `ok` when inside.
+  - `verify.second_source` v1: the same fee in another stored document of the same
+    bank (an older copy or a sister document). Same amount: outcome `ok` and the
+    verified row gets the `second_source_agrees` flag. Different amount only:
+    `evidence_mismatch`, recorded as evidence, never blocking.
 - The ranges in `envelopes.ts` are hand-set and deliberately wide. Learned p1/p99 ranges
   (`category_envelopes`) remain planned work.
 

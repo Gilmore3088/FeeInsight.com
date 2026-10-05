@@ -15,6 +15,7 @@ import {
   Map,
   Orbit,
   ShieldCheck,
+  Target,
 } from "lucide-react";
 
 interface NavItem {
@@ -46,6 +47,13 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         icon: FileCheck2,
         badgeKey: "trustPending",
         activePrefixes: ["/admin/data-quality"],
+      },
+      {
+        href: "/admin/scoreboard",
+        label: "Scoreboard",
+        role: "Answer key + daily score",
+        icon: Target,
+        activePrefixes: ["/admin/answer-key"],
       },
       {
         href: "/admin/api-trust",

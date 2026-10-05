@@ -18,10 +18,16 @@ import {
   summarizePublicDiscoveryDiagnosis,
 } from "@/lib/agents/public-discovery";
 import { runRosettaRead } from "@/lib/agents/rosetta/read";
+import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
+import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
+import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
+import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
+import { runStateExpertStep } from "./state-expert/step";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -222,6 +228,11 @@ function numericRunParam(
   return undefined;
 }
 
+/** The lane's re-check mode (`recheck: 'quarterly'`), or null for a normal pass. */
+export function laneRecheckParam(params: Record<string, unknown>): "quarterly" | null {
+  return params.recheck === "quarterly" ? "quarterly" : null;
+}
+
 function stringRunParam(
   params: Record<string, unknown>,
   keys: string[],
@@ -300,10 +311,22 @@ async function executeAgenticStep(
         },
       };
     }
+    case "state-expert": {
+      return runStateExpertStep({
+        db: tx,
+        runId: run.id,
+        stateCode,
+        dryRun: run.runKind === "dry_run",
+      });
+    }
     case "discover":
     case "rescue": {
+      // A quarterly re-check run asks discovery to re-validate every link and re-search
+      // dead and needs-human banks; Magellan reads `recheck` from the run params.
+      const recheck = laneRecheckParam(params);
       const discovery = await runMagellanDiscovery({
         runId: run.id,
+        stepId: step.id,
         mode: step.stepKey === "rescue" ? "rescue" : "discover",
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
@@ -321,19 +344,31 @@ async function executeAgenticStep(
           retry_after: discovery.retryAfter,
           failures: discovery.failures,
           attempted_urls: discovery.attemptedUrls,
+          discovery_codes: discovery.codes,
+          found_by: discovery.foundBy,
+          method_version: discovery.methodVersion,
+          learning_log: discovery.learning,
+          second_documents_status: discovery.secondDocuments?.status ?? null,
+          second_documents_checked: discovery.secondDocuments?.checked ?? 0,
+          second_documents_found: discovery.secondDocuments?.found ?? 0,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
+          recheck,
           sample_results: discovery.results.slice(0, 10).map((result) => ({
             institution_id: result.institutionId,
             outcome: result.outcome,
+            code: result.code,
+            found_by: result.foundBy,
             url: result.url,
             confidence: result.confidence,
             reason: result.reason,
+            platform: result.platform,
           })),
         },
       };
     }
     case "fetch": {
+      const recheck = laneRecheckParam(params);
       const fetched = await runMagellanFetch({
         runId: run.id,
         stepId: step.id,
@@ -358,6 +393,7 @@ async function executeAgenticStep(
           fetched_bytes: fetched.bytes,
           fetch_limit: fetched.limit,
           dry_run: fetched.dryRun,
+          recheck,
           outcomes: fetched.outcomes,
           learning_log: fetched.learning,
           sample_results: fetched.results.slice(0, 10).map((result) => ({
@@ -370,6 +406,41 @@ async function executeAgenticStep(
             attempt_outcome: result.attemptOutcome,
             reason: result.reason,
           })),
+        },
+      };
+    }
+    case "discover-paid":
+    case "read-paid":
+    case "extract-paid": {
+      const runner = step.stepKey === "discover-paid"
+        ? runMagellanPaidFind
+        : step.stepKey === "read-paid"
+          ? runRosettaPaidRead
+          : runKnoxPaidExtract;
+      const paid = await runner({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        limit: numericRunParam(params, ["paid_limit"]),
+        stateCode,
+        db: tx,
+      });
+      const dollars = (paid.costMicrousd / 1_000_000).toFixed(2);
+      return {
+        status: "completed",
+        summary: paid.budgetStopped && paid.processed === 0
+          ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
+          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? " (stopped at the budget cap)" : ""}.`,
+        detail: {
+          selected: paid.selected,
+          processed: paid.processed,
+          succeeded: paid.succeeded,
+          failed: paid.failed,
+          budget_stopped: paid.budgetStopped,
+          budget_reason: paid.budgetReason,
+          cost_microusd: paid.costMicrousd,
+          dry_run: paid.dryRun,
+          sample_results: paid.results.slice(0, 10),
         },
       };
     }
@@ -399,6 +470,10 @@ async function executeAgenticStep(
           read_from_vault: read.readFromVault,
           reread_documents: read.reread,
           table_rows: read.tableRows,
+          ocr_read: read.ocrRead,
+          js_fallback_read: read.jsFallbackRead,
+          handed_to_magellan: read.handedToMagellan,
+          deferred_scans: read.deferred,
           triaged_texts: read.triagedTexts,
           formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
@@ -802,6 +877,40 @@ async function executeAgenticStep(
         detail: { ...result },
       };
     }
+    case "score-answer-key": {
+      const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const score = result.score;
+      return {
+        status: "completed",
+        summary: summarizeAnswerKeyScore(result),
+        detail: {
+          schema_ready: result.schemaReady,
+          score_run_id: result.scoreRunId,
+          scorer_version: score?.scorerVersion ?? null,
+          banks_scored: score?.banksScored ?? 0,
+          fees_expected: score?.feesExpected ?? 0,
+          precision: score?.overall.precision ?? null,
+          recall: score?.overall.recall ?? null,
+          by_stage: score?.byStage ?? {},
+          by_document_type: score?.byDocumentType ?? {},
+          by_category: score?.byCategory ?? {},
+          dry_run: result.dryRun,
+        },
+      };
+    }
+    case "scoreboard-snapshot": {
+      const result = await runScoreboardSnapshot({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      return {
+        status: "completed",
+        summary: summarizeScoreboard(result),
+        detail: {
+          schema_ready: result.schemaReady,
+          stored: result.stored,
+          snapshot_date: result.snapshotDate,
+          ...result.numbers,
+        },
+      };
+    }
     case "assemble":
     case "render": {
       return {
@@ -1187,10 +1296,10 @@ async function updateStateLaneTerminalStatus(
                WHEN ${status} = 'failed' THEN lane.failure_count + 1
                ELSE lane.failure_count
              END,
-             next_run_after = CASE
-               WHEN ${status} = 'completed' THEN NOW() + (lane.freshness_target_hours * INTERVAL '1 hour')
-               ELSE NOW() + INTERVAL '1 hour'
-             END,
+             -- Check back within the hour either way: the scheduler then decides whether
+             -- the state is due a monthly full pass, has a backlog to catch up on, or is
+             -- idle until next month (state-lane-scheduler.ts).
+             next_run_after = NOW() + INTERVAL '1 hour',
              lease_token = NULL,
              lease_expires_at = NULL,
              updated_at = NOW()
@@ -1493,13 +1602,26 @@ export async function executeAgentRun(
     if (nextStepKey && isProviderStep(nextStepKey)) {
       const gate = await providerStepGate(options.allowProviderSteps ?? true);
       if (!gate.allowed) {
-        return {
-          runId,
-          status: lastResult?.status ?? existing.status,
-          terminal: false,
-          executedSteps,
-          message: `Provider step "${nextStepKey}" is waiting: ${gate.reason}`,
-        };
+        // A paid pass is optional: when the budget or the stop blocks it, record it as
+        // skipped and let the free steps behind it run. It never stalls the run.
+        const blocked = await prepareNextAgenticStep(runId);
+        if (blocked.kind !== "ready") {
+          return {
+            runId,
+            status: blocked.kind === "missing" ? "missing" : blocked.status,
+            terminal: blocked.kind === "missing" || blocked.kind === "terminal",
+            executedSteps,
+            message: blocked.kind === "missing" ? "Agent run not found." : blocked.message,
+          };
+        }
+        lastResult = await finishAgenticStep(runId, blocked.prepared.step, {
+          status: "skipped",
+          summary: `Paid pass skipped: ${gate.reason}.`,
+          detail: { budget_stopped: true, budget_reason: gate.reason, processed: 0 },
+        });
+        executedSteps += 1;
+        if (lastResult.terminal) return { ...lastResult, executedSteps };
+        continue;
       }
     }
 
@@ -1530,6 +1652,7 @@ export async function executeAgentRun(
         step.stepKey === "rescue" ||
         step.stepKey === "fetch" ||
         step.stepKey === "read" ||
+        isProviderStep(step.stepKey) ||
         step.stepKey === "public-discovery" ||
         step.stepKey === "public-audit" ||
         isRegistryStepKey(step.stepKey)
@@ -1865,10 +1988,11 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   }
 
   // Deterministic runs are always accepted (a pipeline pause leaves them queued).
-  // Runs that include a provider step are blocked at launch while the provider
-  // automation stop is active, so no paid work is queued behind a stop.
+  // Runs made only of provider steps are blocked at launch while the provider
+  // automation stop is active. Mixed runs (a state lane with its paid last passes)
+  // are accepted: their paid steps are skipped at execution, the free ones still run.
   try {
-    if (input.steps.some((step) => isProviderStep(step.key))) {
+    if (input.steps.length > 0 && input.steps.every((step) => isProviderStep(step.key))) {
       await assertAutomationEnabled("agent run launch");
     }
   } catch (error) {

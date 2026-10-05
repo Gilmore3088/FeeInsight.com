@@ -6,9 +6,23 @@ const nextConfig: NextConfig = {
 
   // Hosted/sample Competitive Fee Position reports are read from disk at request time
   // (src/lib/hosted-reports.ts); make sure the studio files ship with the server bundle.
+  // Rosetta's free OCR (src/lib/agents/rosetta/ocr.ts) runs tesseract.js in a worker
+  // thread that loads its script, WebAssembly core and English model from disk, so the
+  // package stays external and those files ship with the routes that run agent steps.
+  serverExternalPackages: ["tesseract.js", "tesseract.js-core"],
   outputFileTracingIncludes: {
     "/r/**": ["./Reports/studio/out/*.html", "./Reports/studio/hosted-reports.json"],
     "/reports/sample-competitive-fee-position": ["./Reports/studio/sample/*.html"],
+    "/api/admin/**": [
+      "./node_modules/tesseract.js/package.json",
+      "./node_modules/tesseract.js/src/**",
+      "./node_modules/tesseract.js-core/package.json",
+      "./node_modules/tesseract.js-core/index.js",
+      "./node_modules/tesseract.js-core/tesseract-core*lstm*",
+      "./node_modules/@tesseract.js-data/eng/package.json",
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/**",
+      "./node_modules/{bmp-js,idb-keyval,is-url,regenerator-runtime,wasm-feature-detect,zlibjs}/**",
+    ],
   },
 
   async headers() {

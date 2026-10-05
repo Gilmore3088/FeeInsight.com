@@ -10,6 +10,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
+
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
 
@@ -93,10 +95,93 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
       "Member FDIC. Equal Housing Lender.",
     ]),
   },
+  // Only in the site map: the homepage has no fee link and no guessed path matches.
+  "https://www.maple-test-bank.com/": {
+    type: "text/html",
+    body: page("Maple Test Bank", `<a href="/about">About</a> <a href="/contact">Contact</a>`),
+  },
+  "https://www.maple-test-bank.com/sitemap.xml": {
+    type: "application/xml",
+    body: `<?xml version="1.0"?><urlset>
+      <url><loc>https://www.maple-test-bank.com/about</loc></url>
+      <url><loc>https://www.maple-test-bank.com/legal/disclosures/schedule-of-fees</loc></url>
+    </urlset>`,
+  },
+  "https://www.maple-test-bank.com/legal/disclosures/schedule-of-fees": {
+    type: "text/html",
+    body: page("Schedule of Fees | Maple Test Bank", FEE_TABLE.replace("$32.00", "$27.00")),
+  },
+  // Only through a hub page: the homepage links to Disclosures, which links to the PDF.
+  "https://www.birch-test-bank.com/": {
+    type: "text/html",
+    body: page("Birch Test Bank", `<a href="/about">About</a> <a href="/resources/disclosures">Disclosures</a>`),
+  },
+  "https://www.birch-test-bank.com/resources/disclosures": {
+    type: "text/html",
+    body: page("Disclosures | Birch Test Bank", `<ul>
+      <li><a href="/resources/privacy-notice.pdf">Privacy Notice</a></li>
+      <li><a href="/resources/documents/consumer-schedule-of-fees.pdf">Consumer Schedule of Fees</a></li>
+    </ul>`),
+  },
+  "https://www.birch-test-bank.com/resources/documents/consumer-schedule-of-fees.pdf": {
+    type: "application/pdf",
+    body: feePdf([
+      "Birch Test Bank Schedule of Fees",
+      "Overdraft fee per item $36.00",
+      "Returned item NSF fee $36.00",
+      "Monthly maintenance fee $6.00",
+      "Stop payment request $31.00",
+      "Outgoing domestic wire transfer $29.00",
+      "Cashier's check $9.00",
+      "Paper statement fee $2.00",
+      "Foreign ATM withdrawal $2.50",
+      "Incoming domestic wire transfer $12.00",
+      "Account research per hour $25.00",
+      "Fees are subject to change. See your account agreement for details.",
+      "Member FDIC. Equal Housing Lender.",
+    ]),
+  },
+  // A scanner's PDF: page images only, no text objects. Rosetta's free OCR reads it.
+  "https://www.ottercreek-test-bank.com/fee-schedule.pdf": {
+    type: "application/pdf",
+    body: scannedFeePdf([
+      "OTTER CREEK TEST BANK",
+      "SCHEDULE OF FEES",
+      "OVERDRAFT FEE PER ITEM          $33.00",
+      "MONTHLY MAINTENANCE FEE         $9.00",
+      "STOP PAYMENT                    $31.00",
+      "OUTGOING DOMESTIC WIRE          $27.00",
+      "PAPER STATEMENT FEE             $4.00",
+    ]),
+  },
+  // Overdraft far below its Vermont peers: Darwin's peer check must hold it for review.
+  "https://www.aspen-test-bank.com/fees": {
+    type: "text/html",
+    body: page("Fee Schedule | Aspen Test Bank", FEE_TABLE.replace("$32.00", "$5.00")),
+  },
   "https://www.champlain-test-cu.org/fees": {
     type: "text/html",
     body: page("Fee Schedule | Champlain Test Credit Union", FEE_TABLE.replace("$32.00", "$29.00")),
   },
+};
+
+/**
+ * A fee page with no table and no line that carries both a name and a "$" price: names and
+ * prices on separate lines, a heading the bare directions under it belong to, and a dot
+ * leader with no "$". Only Knox's pass 2 specialists (extract.table, extract.family.*) read it.
+ */
+const STACKED_FEES = `
+  <h1>Fees and Service Charges</h1>
+  <p>Courtesy Pay</p><p>$31.00</p>
+  <p>Card Replacement</p><p>$10.00</p>
+  <h2>Wire Transfers</h2>
+  <p>Incoming Domestic</p><p>$14.00</p>
+  <p>Outgoing Domestic</p><p>$26.00</p>
+  <p>Stop Payment .................. 33.00</p>`;
+
+SITE["https://www.willow-test-bank.com/fees"] = {
+  type: "text/html",
+  body: page("Fees | Willow Test Bank", STACKED_FEES),
 };
 
 function stubFetch() {
@@ -125,7 +210,39 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       VALUES
         ('Green Mountain Test Bank', 'https://www.greenmountain-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Burlington', 900000, 'E2E-1', 'e2e', 'active'),
         ('Lakeside Test Bank', 'https://www.lakeside-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Rutland', 700000, 'E2E-3', 'e2e', 'active'),
-        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active')
+        ('Maple Test Bank', 'https://www.maple-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Stowe', 500000, 'E2E-4', 'e2e', 'active'),
+        ('Birch Test Bank', 'https://www.birch-test-bank.com/', NULL, 'bank', 'Vermont', ${STATE}, 'Barre', 450000, 'E2E-5', 'e2e', 'active'),
+        ('Champlain Test Credit Union', 'https://www.champlain-test-cu.org/', 'https://www.champlain-test-cu.org/fees', 'credit_union', 'Vermont', ${STATE}, 'Montpelier', 400000, 'E2E-2', 'e2e', 'active'),
+        ('Otter Creek Test Bank', 'https://www.ottercreek-test-bank.com/', 'https://www.ottercreek-test-bank.com/fee-schedule.pdf', 'bank', 'Vermont', ${STATE}, 'Middlebury', 300000, 'E2E-6', 'e2e', 'active'),
+        ('Willow Test Bank', 'https://www.willow-test-bank.com/', 'https://www.willow-test-bank.com/fees', 'bank', 'Vermont', ${STATE}, 'Woodstock', 250000, 'E2E-7', 'e2e', 'active'),
+        ('Aspen Test Bank', 'https://www.aspen-test-bank.com/', 'https://www.aspen-test-bank.com/fees', 'bank', 'Vermont', ${STATE}, 'Middlebury', 600000, 'E2E-8', 'e2e', 'active')
+    `;
+    // Nine Vermont peers (community_mid) with overdraft already published at $28-$34,
+    // so the state expert has a peer level for Darwin's peer check. No website: the
+    // lane never tries to crawl them.
+    await sql`
+      WITH peers AS (
+        INSERT INTO institution_sources
+          (institution_name, charter_type, state, state_code, asset_size, source, status, rescue_status)
+        SELECT 'Peer Test Bank ' || g, 'bank', 'Vermont', ${STATE}, 500000, 'e2e', 'active', 'dead'
+          FROM generate_series(1, 9) g
+        RETURNING id
+      ), raw AS (
+        INSERT INTO raw_fee_observations (institution_id, agent_event_id, fee_name, amount, source, source_url)
+        SELECT id, gen_random_uuid(), 'Overdraft fee', 28 + (id % 7), 'manual_import', 'https://peer.example/fees'
+          FROM peers
+        RETURNING fee_raw_id, institution_id, amount
+      ), verified AS (
+        INSERT INTO verified_fee_observations
+          (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, source_url)
+        SELECT fee_raw_id, institution_id, 'overdraft', gen_random_uuid(), 'Overdraft fee', amount, 'https://peer.example/fees'
+          FROM raw
+        RETURNING fee_verified_id, institution_id, amount
+      )
+      INSERT INTO published_fee_records
+        (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, source_url)
+      SELECT fee_verified_id, institution_id, 'overdraft', gen_random_uuid(), 'Overdraft fee', amount, 'https://peer.example/fees'
+        FROM verified
     `;
   });
 
@@ -134,11 +251,14 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     await sql?.end({ timeout: 1 });
   });
 
+  let laneRunId = 0;
+
   it("takes a homepage to published fees through every lane step", async () => {
     const { startStateLaneRun } = await import("@/lib/agents/state-lane-scheduler");
     const { executeAgentRun, getAgentRunSteps } = await import("@/lib/agents/run-store");
 
     const started = await startStateLaneRun({ stateCode: STATE, triggeredBy: "e2e", triggerSource: "admin" });
+    laneRunId = started.run.id;
     for (let tick = 0; tick < 20; tick += 1) {
       const result = await executeAgentRun(started.run.id, { maxSteps: 10, allowProviderSteps: false });
       if (result.terminal || result.executedSteps === 0) break;
@@ -155,8 +275,13 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
        ORDER BY c.institution_id, c.fee_category
     `;
 
-    for (const step of summary.filter((s) => ["discover", "fetch", "read", "extract", "classify", "publish"].includes(s.key))) {
+    for (const step of summary.filter((s) => ["state-expert", "discover", "fetch", "read", "extract", "classify", "publish"].includes(s.key))) {
       expect(step, step.key).toMatchObject({ status: "completed" });
+    }
+    // With no paid budget configured, each paid last pass is skipped and the free steps
+    // behind it still run.
+    for (const key of ["discover-paid", "read-paid", "extract-paid"]) {
+      expect(summary.find((s) => s.key === key), key).toMatchObject({ status: "skipped" });
     }
     const published = (name: string) =>
       Object.fromEntries(
@@ -192,5 +317,213 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       wire_domestic_incoming: 12,
       account_research: 25,
     });
+    // Found only in the site map (pass 1, discover.sitemap), read from HTML.
+    expect(published("Maple Test Bank")).toEqual({ ...tableFees, overdraft: 27 });
+    // Found only one click deep through the Disclosures hub page (discover.hub_pages), read from a PDF.
+    expect(published("Birch Test Bank")).toEqual({
+      overdraft: 36,
+      nsf: 36,
+      monthly_maintenance: 6,
+      stop_payment: 31,
+      wire_domestic_outgoing: 29,
+      cashiers_check: 9,
+      paper_statement: 2,
+      atm_non_network: 2.5,
+      wire_domestic_incoming: 12,
+      account_research: 25,
+    });
+
+    // Every specialist that ran is in the attempt log with its own strategy and outcome.
+    const tries = await sql`
+      SELECT inst.institution_name, pa.strategy, pa.outcome, pa.detail->>'code' AS code
+        FROM pipeline_attempts pa
+        JOIN institution_sources inst ON inst.id = pa.institution_id
+       WHERE inst.state_code = ${STATE} AND pa.stage = 'discover'
+       ORDER BY pa.id
+    `;
+    const triesFor = (name: string) =>
+      tries.filter((row) => row.institution_name === name).map((row) => [String(row.strategy), String(row.outcome)]);
+    expect(triesFor("Maple Test Bank")).toEqual([
+      ["discover.homepage_links", "no_candidates"],
+      ["discover.sitemap", "ok"],
+    ]);
+    expect(triesFor("Birch Test Bank")).toEqual([
+      ["discover.homepage_links", "no_candidates"],
+      ["discover.sitemap", "no_candidates"],
+      ["discover.hub_pages", "ok"],
+    ]);
+    expect(tries.find((row) => row.institution_name === "Birch Test Bank" && row.strategy === "discover.hub_pages")?.code).toBe("found_deep");
+    // A scanned PDF with no text layer: free OCR (pass 2) read it in the same read step,
+    // and Knox extracted its fees like any other text.
+    expect(published("Otter Creek Test Bank")).toEqual({
+      overdraft: 33,
+      monthly_maintenance: 9,
+      stop_payment: 31,
+      wire_domestic_outgoing: 27,
+      paper_statement: 4,
+    });
+
+    // The HTML fee table was also stored as structured rows for Knox (table_rows contract).
+    const texts = await sql`
+      SELECT inst.institution_name, adt.status, adt.reader, adt.table_rows
+        FROM agent_source_texts adt
+        JOIN institution_sources inst ON inst.id = adt.institution_id
+       WHERE inst.state_code = ${STATE} AND adt.status = 'completed'
+    `;
+    const byName = Object.fromEntries(texts.map((row) => [String(row.institution_name), row]));
+    const greenRows = (byName["Green Mountain Test Bank"].table_rows as { version: number; rows: Array<Record<string, unknown>> });
+    expect(byName["Green Mountain Test Bank"].reader).toBe("read.html_dom");
+    expect(greenRows.version).toBe(1);
+    expect(greenRows.rows[0]).toMatchObject({ cells: ["Service", "Fee"], header: true, origin: "html_table" });
+    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (per item)", "$32.00"], header: false, origin: "html_table" });
+    expect(greenRows.rows).toHaveLength(10);
+    expect(byName["Otter Creek Test Bank"].reader).toBe("read.ocr_tesseract");
+    const attempts = await sql`
+      SELECT pa.strategy, pa.outcome
+        FROM pipeline_attempts pa
+        JOIN institution_sources inst ON inst.id = pa.institution_id
+       WHERE inst.institution_name = 'Otter Creek Test Bank' AND pa.stage = 'read'
+       ORDER BY pa.id
+    `;
+    expect(attempts.map((row) => `${row.strategy}:${row.outcome}`)).toEqual(
+      expect.arrayContaining(["read.pdf_layout:scanned_pdf", "read.ocr_tesseract:ok"]),
+    );
+    // Stacked name/price lines and a "$"-less dot leader: read only by the pass 2 specialists.
+    expect(published("Willow Test Bank")).toEqual({
+      overdraft: 31,
+      card_replacement: 10,
+      wire_domestic_incoming: 14,
+      wire_domestic_outgoing: 26,
+      stop_payment: 33,
+    });
   }, 120_000);
+
+  it("refreshes the Vermont expert's memory and holds a peer outlier for review", async () => {
+    expect(laneRunId).toBeGreaterThan(0);
+    const { getAgentRunSteps } = await import("@/lib/agents/run-store");
+    const steps = await getAgentRunSteps(laneRunId);
+    expect(steps.slice(0, 2).map((step) => step.stepKey)).toEqual(["enhance", "state-expert"]);
+    const expertStep = steps.find((step) => step.stepKey === "state-expert");
+    expect(expertStep?.status).toBe("completed");
+
+    const [memory] = await sql`SELECT * FROM state_memory WHERE state_code = ${STATE}`;
+    expect(memory).toMatchObject({ expert_name: "Justin S. Morrill" });
+    expect(Number(memory.last_agent_run_id)).toBe(laneRunId);
+    expect(memory.regulator).toMatchObject({ agency: "Vermont Department of Financial Regulation" });
+    expect(memory.peer_levels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ canonicalFeeKey: "overdraft", tier: "all", count: 9 }),
+      expect.objectContaining({ canonicalFeeKey: "overdraft", tier: "community_mid", count: 9 }),
+    ]));
+
+    // Darwin flagged Aspen's $5 overdraft (peer range p25/3 .. p75*3) into review.
+    const flags = await sql`
+      SELECT pa.outcome, pa.detail
+        FROM pipeline_attempts pa
+        JOIN institution_sources inst ON inst.id = pa.institution_id
+       WHERE pa.agent_run_id = ${laneRunId}
+         AND pa.strategy = 'verify.peer_range'
+         AND inst.institution_name = 'Aspen Test Bank'
+         AND pa.detail->>'canonical_fee_key' = 'overdraft'
+    `;
+    expect(flags).toHaveLength(1);
+    expect(flags[0].outcome).toBe("evidence_mismatch");
+    expect(flags[0].detail).toMatchObject({ peer_outlier: true, decision: "needs_review", amount: 5 });
+    expect(String(flags[0].detail.reason)).toContain("outside the community mid state peer range");
+
+    // The good banks' overdrafts passed the same check.
+    const passed = await sql`
+      SELECT COUNT(*)::int AS n FROM pipeline_attempts
+       WHERE agent_run_id = ${laneRunId} AND strategy = 'verify.peer_range' AND outcome = 'ok'
+    `;
+    expect(passed[0].n).toBeGreaterThanOrEqual(3);
+
+    // The outlier is held back; the bank's other fees publish.
+    const aspen = await sql`
+      SELECT c.fee_category FROM published_fee_catalog c
+        JOIN institution_sources inst ON inst.id = c.institution_id
+       WHERE inst.institution_name = 'Aspen Test Bank'
+    `;
+    const categories = aspen.map((row) => String(row.fee_category));
+    expect(categories).not.toContain("overdraft");
+    expect(categories).toEqual(expect.arrayContaining(["nsf", "monthly_maintenance", "stop_payment"]));
+
+    // Hamilton's report hook sees the expert, the peer level and the outlier.
+    const { stateExpertSummary } = await import("@/lib/agents/hamilton/state-expert-summary");
+    const report = await stateExpertSummary(STATE);
+    expect(report).toMatchObject({ expertName: "Justin S. Morrill", source: "memory" });
+    expect(report?.peerLevels.map((level) => level.canonicalFeeKey)).toContain("overdraft");
+    expect(report?.notableOutliers).toEqual([
+      expect.objectContaining({ institutionName: "Aspen Test Bank", canonicalFeeKey: "overdraft", amount: 5 }),
+    ]);
+  }, 60_000);
+
+  it("scores the lane run against a confirmed answer key and records the scoreboard", async () => {
+    const { startAgentRun, executeAgentRun, getAgentRunSteps } = await import("@/lib/agents/run-store");
+    const [bank] = await sql`SELECT id FROM institution_sources WHERE cert_number = 'E2E-1'`;
+    const institutionId = Number(bank.id);
+    await sql`DELETE FROM answer_key_institutions WHERE institution_id = ${institutionId}`;
+    const [entry] = await sql`
+      INSERT INTO answer_key_institutions (institution_id, document_url, document_type, status, confirmed_by, confirmed_at)
+      VALUES (${institutionId}, 'https://greenmountain-test-bank.com/disclosures/fee-schedule/', 'html', 'confirmed', 'e2e', NOW())
+      RETURNING id
+    `;
+    const fees: Array<[string, number]> = [
+      ["overdraft", 32], ["nsf", 30], ["monthly_maintenance", 12], ["stop_payment", 35],
+      ["wire_domestic_outgoing", 25], ["wire_domestic_incoming", 15], ["atm_non_network", 3],
+      ["cashiers_check", 10], ["paper_statement", 3],
+    ];
+    for (const [key, amount] of fees) {
+      await sql`
+        INSERT INTO answer_key_fees (answer_key_institution_id, canonical_key, amount, amount_kind, status, confirmed_by, confirmed_at)
+        VALUES (${entry.id}, ${key}, ${amount}, 'fixed', 'confirmed', 'e2e', NOW())
+      `;
+    }
+
+    const started = await startAgentRun({
+      agent: "atlas",
+      kind: "workflow",
+      title: "E2E scoreboard",
+      triggeredBy: "e2e",
+      triggerSource: "admin",
+      idempotencyKey: `e2e:scoreboard:${Date.now()}`,
+      steps: [
+        { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
+        { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
+      ],
+    });
+    await executeAgentRun(started.run.id, { maxSteps: 2, allowProviderSteps: false });
+    const steps = await getAgentRunSteps(started.run.id);
+    expect(steps.map((step) => [step.stepKey, step.status])).toEqual([
+      ["score-answer-key", "completed"],
+      ["scoreboard-snapshot", "completed"],
+    ]);
+
+    const [scoreRun] = await sql`
+      SELECT precision, recall, by_stage, by_bank FROM answer_key_score_runs
+       WHERE agent_run_id = ${started.run.id}
+    `;
+    expect(Number(scoreRun.precision)).toBe(1);
+    expect(Number(scoreRun.recall)).toBe(1);
+    const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);
+    expect(bankScore).toMatchObject({ precision: 1, recall: 1, missing: [], extra: [] });
+    for (const stage of ["magellan", "rosetta", "knox", "darwin", "hamilton"]) {
+      expect((scoreRun.by_stage as Record<string, Record<string, unknown>>)[stage], stage).toMatchObject({ precision: 1, recall: 1 });
+    }
+
+    const [event] = await sql`
+      SELECT e.detail FROM agent_run_events e
+        JOIN agent_run_steps s ON s.id = e.step_id
+       WHERE e.agent_run_id = ${started.run.id} AND s.step_key = 'score-answer-key' AND e.event_type = 'step.finished'
+    `;
+    expect(event.detail).toMatchObject({ banks_scored: 1, precision: 1, recall: 1 });
+
+    const [snapshot] = await sql`
+      SELECT accuracy_precision, accuracy_recall, depth_median_categories, coverage_denominator, knox_yield_sample_size
+        FROM pipeline_scoreboard_snapshots WHERE agent_run_id = ${started.run.id}
+    `;
+    expect(Number(snapshot.accuracy_precision)).toBe(1);
+    expect(Number(snapshot.accuracy_recall)).toBe(1);
+    expect(Number(snapshot.depth_median_categories)).toBeGreaterThan(0);
+    expect(Number(snapshot.knox_yield_sample_size)).toBe(1);
+  }, 60_000);
 });

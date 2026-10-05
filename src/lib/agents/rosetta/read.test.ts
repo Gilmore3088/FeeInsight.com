@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
-import { REREAD_MAX_KNOX_FEES, runRosettaRead } from "./read";
+import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION, runRosettaRead } from "./read";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -221,7 +221,7 @@ describe("Rosetta agentic read", () => {
       sourceDocumentId: 503,
       status: "needs_ocr",
       documentType: "pdf",
-      error: "No embedded PDF text found across 4 pages; OCR required",
+      error: expect.stringContaining("No embedded PDF text found across 4 pages; OCR required"),
     });
   });
 
@@ -299,7 +299,7 @@ describe("Rosetta agentic read", () => {
     const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
     expect(unsafeSql).toContain("upper(btrim(ct.state_code))");
     expect(unsafeSql).toContain("institution_source_profiles");
-    expect(unsafeSql).toContain("profile.read_strategy IN ('pdf_text', 'html_dom')");
+    expect(unsafeSql).toContain("profile.read_strategy IN ('pdf_text', 'html_dom', 'ocr', 'browser_render')");
   });
 
   describe("with the learning core", () => {
@@ -380,7 +380,7 @@ describe("Rosetta agentic read", () => {
         {
           ...htmlCandidate,
           do_not_retry: [
-            { stage: "read", strategy: "read.html_dom", version: 2, fingerprint: "source-hash", outcome: "js_required", at: "2026-09-01T00:00:00Z" },
+            { stage: "read", strategy: "read.html_dom", version: ROSETTA_READ_VERSION, fingerprint: "source-hash", outcome: "js_required", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);
@@ -448,7 +448,7 @@ describe("Rosetta agentic read", () => {
       expect(query).toContain("fr.source_document_id = adt.source_document_id");
       expect(query).toContain("ORDER BY is_reread ASC");
       expect(query).toMatch(/SELECT COUNT\(\*\) FROM raw_fee_observations fr[\s\S]*\) < \$\d+/);
-      expect(params).toContain(2);
+      expect(params).toContain(ROSETTA_READ_VERSION);
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });
 
@@ -562,6 +562,167 @@ describe("Rosetta agentic read", () => {
       const statusUpdates = db.mock.calls.filter((call) => templateText(call[0]).includes("SET status = 'wrong_document'"));
       expect(statusUpdates).toHaveLength(1);
       expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
+    });
+  });
+
+  describe("pass 2 specialists", () => {
+    const feeLines = ["SCHEDULE OF FEES", "OVERDRAFT FEE | $33.00", "STOP PAYMENT | $31.00", "MONTHLY MAINTENANCE FEE | $9.00"];
+
+    function specialistDb(rows: Array<Record<string, unknown>>): DbMock {
+      const db = vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("vault_schema_ready")) return Promise.resolve([{ vault_schema_ready: true }]);
+        if (text.includes("rosetta_text_columns_ready")) return Promise.resolve([{ rosetta_text_columns_ready: true }]);
+        if (text.includes("INSERT INTO agent_source_texts")) return Promise.resolve([{ id: 901 }]);
+        if (text.includes("UPDATE institution_sources inst")) return Promise.resolve([{ id: 42 }]);
+        return Promise.resolve([]);
+      }) as DbMock;
+      db.unsafe = vi.fn((query: string) => Promise.resolve(query.includes("FROM source_documents") ? rows : []));
+      return db;
+    }
+
+    function attempts(db: DbMock): Array<[string, string]> {
+      return db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))
+        .map((call) => [call[4] as string, call[7] as string]);
+    }
+
+    function ocrReader(text: string, confidence = 90) {
+      return {
+        read: vi.fn(async () => ({ text, pages: [text], pageCount: 1, imagePages: 1, confidence })),
+        close: vi.fn(async () => undefined),
+      };
+    }
+
+    const scan = { ...htmlCandidate, document_url: "https://testbank.example/scan.pdf" };
+    const pdfFetch = () => vi.fn().mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 scan"), "application/pdf"));
+    const noText = () => vi.fn().mockResolvedValueOnce({ totalPages: 1, text: "" });
+
+    it("escalates a scan to free OCR in the same read and stores its table rows", async () => {
+      const db = specialistDb([scan]);
+      const reader = ocrReader(feeLines.join("\n"));
+
+      const result = await runRosettaRead({ runId: 701, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: noText(), scannedPdfReader: reader });
+
+      expect(reader.read).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ completed: 1, needsOcr: 0, ocrRead: 1, outcomes: { scanned_pdf: 1, ok: 1 } });
+      expect(result.results[0]).toMatchObject({ status: "completed", reader: "read.ocr_tesseract", format: "pdf_scanned" });
+      expect(result.results[0].rows.map((row) => row.cells)).toEqual([
+        ["OVERDRAFT FEE", "$33.00"],
+        ["STOP PAYMENT", "$31.00"],
+        ["MONTHLY MAINTENANCE FEE", "$9.00"],
+      ]);
+      expect(attempts(db)).toEqual([
+        ["read.pdf_layout", "scanned_pdf"],
+        ["read.ocr_tesseract", "ok"],
+        ["read.table_rows", "ok"],
+        ["read.page_check", "ok"],
+      ]);
+      const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET table_rows ="));
+      expect(update).toBeDefined();
+      const stored = JSON.parse(update![1] as string);
+      expect(stored.version).toBe(1);
+      expect(stored.rows[0]).toMatchObject({ origin: "ocr_layout", cells: ["OVERDRAFT FEE", "$33.00"] });
+      expect(update![2]).toBe("read.ocr_tesseract");
+      // The caller owns an injected reader; the run does not close it.
+      expect(reader.close).not.toHaveBeenCalled();
+    });
+
+    it("leaves an unreliable OCR result for the paid pass", async () => {
+      const db = specialistDb([scan]);
+
+      const result = await runRosettaRead({
+        runId: 702,
+        db: asReadDb(db),
+        fetchImpl: pdfFetch(),
+        pdfTextExtractor: noText(),
+        scannedPdfReader: ocrReader(feeLines.join("\n"), 31),
+      });
+
+      expect(result).toMatchObject({ completed: 0, needsOcr: 1 });
+      expect(result.results[0].error).toContain("OCR confidence 31");
+      expect(attempts(db)).toEqual([
+        ["read.pdf_layout", "scanned_pdf"],
+        ["read.ocr_tesseract", "rejected"],
+      ]);
+    });
+
+    it("defers scans past this run's OCR allowance without writing anything", async () => {
+      const db = specialistDb([scan]);
+      const reader = ocrReader("unused");
+
+      const result = await runRosettaRead({
+        runId: 703,
+        db: asReadDb(db),
+        fetchImpl: pdfFetch(),
+        pdfTextExtractor: noText(),
+        scannedPdfReader: reader,
+        ocrDocumentsPerRun: 0,
+      });
+
+      expect(result).toMatchObject({ deferred: 1, needsOcr: 0 });
+      expect(reader.read).not.toHaveBeenCalled();
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).not.toContain("INSERT INTO agent_source_texts");
+      expect(attempts(db)).toEqual([]);
+    });
+
+    it("reads a JavaScript page from the data it embeds", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const shell = `<html><body><div id="__next"></div><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+        props: { fees: [{ name: "Overdraft fee", amount: 35 }, { name: "Stop payment fee", amount: 30 }, { name: "NSF fee", amount: 35 }] },
+      })}</script></body></html>`;
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(shell));
+
+      const result = await runRosettaRead({ runId: 704, db: asReadDb(db), fetchImpl });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ completed: 1, jsFallbackRead: 1, outcomes: { js_required: 1, ok: 1 } });
+      expect(result.results[0]).toMatchObject({ reader: "read.js_fallback", format: "html_js" });
+      expect(JSON.stringify(db.mock.calls)).toContain("Overdraft fee | $35.00");
+      expect(attempts(db).slice(0, 2)).toEqual([
+        ["read.html_dom", "js_required"],
+        ["read.js_fallback", "ok"],
+      ]);
+    });
+
+    it("follows a JavaScript page's link to its PDF version", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const shell = `<div id="root"></div><noscript>Please enable JavaScript</noscript><a href="/docs/fee-schedule.pdf">Fee schedule (PDF)</a>`;
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(shell))
+        .mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 text"), "application/pdf"));
+      const pdfText = ["Schedule of Fees", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00", "x".repeat(300)].join("\n");
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text: pdfText, pages: [pdfText] });
+
+      const result = await runRosettaRead({ runId: 705, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(fetchImpl.mock.calls[1][0]).toBe("https://testbank.example/docs/fee-schedule.pdf");
+      expect(result).toMatchObject({ completed: 1, jsFallbackRead: 1 });
+      expect(result.results[0]).toMatchObject({ sourceUrl: "https://testbank.example/docs/fee-schedule.pdf" });
+      expect(result.results[0].rows.map((row) => row.origin)).toEqual(["pdf_layout", "pdf_layout", "pdf_layout"]);
+    });
+
+    it("hands a JavaScript page with no free route to Magellan's paid finder", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const fetchImpl = vi.fn(async (url: string) =>
+        url === htmlCandidate.document_url ? response("<div id=app></div>") : response("missing", "text/html", 404),
+      );
+
+      const result = await runRosettaRead({ runId: 706, db: asReadDb(db), fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(4);
+      expect(result).toMatchObject({ skipped: 1, empty: 0, handedToMagellan: 1, sentBackToMagellan: 0 });
+      expect(result.results[0]).toMatchObject({ status: "skipped", handoff: "magellan_paid_find", attemptOutcome: "js_required" });
+      expect(attempts(db)).toEqual([
+        ["read.html_dom", "js_required"],
+        ["read.js_fallback", "js_required"],
+      ]);
+      const values = JSON.stringify(db.mock.calls);
+      expect(values).toContain("rosetta_js_required");
+      expect(values).toContain('"browser_render"');
     });
   });
 });

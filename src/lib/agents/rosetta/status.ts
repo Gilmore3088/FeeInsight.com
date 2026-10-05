@@ -34,7 +34,7 @@ export async function getRosettaStatus(): Promise<RosettaStatus> {
           LEFT JOIN agent_source_texts text
             ON text.source_document_id = doc.id
            AND text.source_hash IS NOT DISTINCT FROM doc.content_hash
-           AND text.status IN ('completed', 'empty', 'needs_ocr')
+           AND text.status IN ('completed', 'empty', 'needs_ocr', 'skipped')
          WHERE doc.status = 'success'
            AND doc.document_url IS NOT NULL
            AND text.id IS NULL

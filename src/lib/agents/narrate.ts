@@ -22,6 +22,13 @@ function where(stateCode: string | null | undefined): string {
   return stateCode ? `in ${stateCode}` : "across all states";
 }
 
+/** A 0..1 rate as "93.5%", or "n/a" when there is nothing to divide. */
+function percentOf(value: unknown): string {
+  if (value == null || value === "") return "n/a";
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? `${(parsed * 100).toFixed(1)}%` : "n/a";
+}
+
 function joinParts(parts: Array<string | null | false>): string {
   const kept = parts.filter((part): part is string => Boolean(part));
   return kept.length > 0 ? `: ${kept.join(", ")}` : "";
@@ -37,6 +44,23 @@ export function narrateStepFinished(
   switch (stepKey) {
     case "enhance":
       return `Checked institution records ${scope}: ${count(n(detail, "total_institutions"), "institution")}, ${count(n(detail, "backlog_missing_urls"), "missing fee URL")}.`;
+    case "state-expert": {
+      if (typeof detail.expert_name !== "string") return `State expert had nothing to refresh ${scope}.`;
+      return `${detail.expert_name} refreshed the ${String(detail.state_code ?? stateCode ?? "state")} memory: ${count(n(detail, "institutions"), "institution")}, ${count(n(detail, "published_fees"), "published fee")}, peer levels for ${count(n(detail, "fee_categories_with_peers"), "fee category", "fee categories")}${joinParts([
+        typeof detail.top_platform === "string" && `most common platform ${detail.top_platform}`,
+        typeof detail.top_reader_strategy === "string" && `best reader ${detail.top_reader_strategy}`,
+      ]).replace(/^: /, ", ")}.`;
+    }
+    case "discover-paid":
+    case "read-paid":
+    case "extract-paid": {
+      const job = stepKey === "discover-paid" ? "find fee schedules" : stepKey === "read-paid" ? "read documents" : "extract fees";
+      const processed = n(detail, "processed");
+      const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
+      if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
+      if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
+      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? ", stopped at the budget cap" : ""}.`;
+    }
     case "discover":
     case "rescue": {
       const processed = n(detail, "processed_institutions");
@@ -45,6 +69,7 @@ export function narrateStepFinished(
         n(detail, "retry_after") > 0 && `${n(detail, "retry_after")} to retry later`,
         n(detail, "dead_institutions") > 0 && `${n(detail, "dead_institutions")} with no schedule found`,
         n(detail, "needs_human") > 0 && `${n(detail, "needs_human")} need a person`,
+        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "second fee document")} for banks with few fees`,
       ])}.`;
     }
     case "fetch": {
@@ -74,7 +99,10 @@ export function narrateStepFinished(
           : `Had no new documents to read ${scope}.${formatsNote}`;
       }
       return `Read ${count(n(detail, "text_artifacts"), "document")} ${scope}${joinParts([
+        n(detail, "ocr_read") > 0 && `${n(detail, "ocr_read")} scans read with free OCR`,
+        n(detail, "js_fallback_read") > 0 && `${n(detail, "js_fallback_read")} JavaScript pages read from their data or PDF version`,
         n(detail, "needs_ocr") > 0 && `${n(detail, "needs_ocr")} are scans that need OCR`,
+        n(detail, "handed_to_magellan") > 0 && `${n(detail, "handed_to_magellan")} JavaScript-only pages handed to Magellan`,
         n(detail, "failed_reads") > 0 && `${n(detail, "failed_reads")} failed`,
         n(detail, "empty_documents") > 0 && `${n(detail, "empty_documents")} were empty`,
         n(detail, "skipped_known_failures") > 0 && `${n(detail, "skipped_known_failures")} skipped (failed before, unchanged since)`,
@@ -141,6 +169,17 @@ export function narrateStepFinished(
     case "registry-fred":
     case "registry-state-regulators":
       return narrateRegistryStep(stepKey, detail);
+    case "score-answer-key": {
+      if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
+      const banks = n(detail, "banks_scored");
+      if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
+      return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
+    }
+    case "scoreboard-snapshot": {
+      const coverage = (detail.coverage ?? {}) as Detail;
+      const accuracy = (detail.accuracy ?? {}) as Detail;
+      return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+    }
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
@@ -233,8 +272,12 @@ function shorten(message: string, max = 140): string {
 /** Which crew member a step key belongs to, for steps recorded without an agent. */
 export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
+  "state-expert": "atlas",
   "daily-brief": "atlas",
+  "score-answer-key": "atlas",
+  "scoreboard-snapshot": "atlas",
   discover: "magellan",
+  "discover-paid": "magellan",
   rescue: "magellan",
   fetch: "magellan",
   "public-discovery": "magellan",
@@ -250,7 +293,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-fred": "magellan",
   "registry-state-regulators": "magellan",
   read: "rosetta",
+  "read-paid": "rosetta",
   extract: "knox",
+  "extract-paid": "knox",
   review: "knox",
   classify: "darwin",
   verify: "darwin",

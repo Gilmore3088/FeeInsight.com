@@ -1,100 +1,62 @@
+import { createHash } from "crypto";
+
 import { sql } from "@/lib/data-store/connection";
 import {
   normalizeStateCode,
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
-import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { documentVaultSchemaReady } from "@/lib/agents/document-vault";
-import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
+
+import { fetchWithTimeout } from "./find-validate";
+import {
+  FINDER_ORDER,
+  FINDERS,
+  finderOutcome,
+  FOUND_CODES,
+  MIN_LINK_SCORE,
+  pageLinks,
+  sameSite,
+  urlIdentity,
+  type FinderKey,
+  type FinderResult,
+  type FoundDocument,
+  type SearchContext,
+  type TrailEntry,
+} from "./finders";
+import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
+import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
+import { countAnchors, detectPlatform, looksJavaScriptBuilt } from "./site-signals";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
 export const MAGELLAN_DISCOVERY_DEFAULT_LIMIT = 25;
 export const MAGELLAN_DISCOVERY_MAX_LIMIT = 50;
-export const MAGELLAN_DISCOVERY_MIN_CONFIDENCE = 0.72;
+export const MAGELLAN_DISCOVERY_MIN_CONFIDENCE = MIN_LINK_SCORE;
 
 const DISCOVERY_METHOD = "magellan_agentic_discovery";
-const REQUEST_TIMEOUT_MS = 10_000;
-const MAX_LINKS_TO_SCORE = 120;
-const MAX_CANDIDATE_FETCHES = 3;
-/** Misses recorded before homepage links were tried ahead of guessed paths. */
-export const HOMEPAGE_LINKS_FIRST_SINCE = "2026-10-05T00:00:00Z";
-
-const FEE_CONTENT_KEYWORDS = [
-  "monthly maintenance fee",
-  "overdraft fee",
-  "nsf fee",
-  "insufficient funds",
-  "atm fee",
-  "wire transfer fee",
-  "service charge",
-  "account fee",
-  "statement fee",
-  "returned item",
-  "stop payment",
-  "truth in savings",
-  "schedule of fees",
-  "fee schedule",
-  "fee disclosure",
-];
-
-const STRONG_LINK_PHRASES = [
-  "schedule of fees",
-  "fee schedule",
-  "fee disclosure",
-  "fee disclosures",
-  "truth in savings",
-  "service charges",
-  "consumer fees",
-  "business fees",
-  "account fees",
-  "rates and fees",
-];
-
-const MEDIUM_LINK_PHRASES = [
-  "fees",
-  "disclosures",
-  "documents",
-  "forms",
-  "terms",
-  "rates",
-  "personal checking",
-  "business checking",
-];
-
-const NEGATIVE_LINK_PHRASES = [
-  "privacy",
-  "career",
-  "jobs",
-  "mortgage",
-  "loan rates",
-  "donation",
-  "facebook",
-  "instagram",
-  "linkedin",
-  "youtube",
-  "complaint",
-  "annual report",
-];
-
-const COMMON_PATHS = [
-  "/fees",
-  "/fee-schedule",
-  "/fee-schedule.pdf",
-  "/schedule-of-fees",
-  "/schedule-of-fees.pdf",
-  "/rates-and-fees",
-  "/personal/fees",
-  "/personal-banking/fees",
-  "/personal/checking/fees",
-  "/personal/disclosures",
-  "/disclosures",
-  "/resources/disclosures",
-  "/documents/fee-schedule",
-  "/wp-content/uploads/fee-schedule.pdf",
-];
+/**
+ * The find team's method version, stored on every attempt (`detail.method_version`).
+ * Bump it whenever a specialist is added or changed: every bank whose last search used
+ * an older method is searched again at once, whatever its backoff.
+ * 1: homepage links and guessed paths. 2: the find team (known link, homepage links,
+ * site maps, hub pages, platform paths, guessed paths; peer hint and bounded crawl).
+ */
+export const DISCOVERY_METHOD_VERSION = 2;
+/** One bank never takes longer than this. */
+const INSTITUTION_BUDGET_MS = 45_000;
+// The tick starts no step after 180 s of its 300 s limit, so a step must end within ~110 s:
+// no bank starts after STEP_START_BUDGET_MS and none runs past STEP_HARD_BUDGET_MS.
+const STEP_START_BUDGET_MS = 75_000;
+const STEP_HARD_BUDGET_MS = 100_000;
+/** Pause between crawl requests to one site. */
+const DEFAULT_POLITE_DELAY_MS = 250;
+const MAX_TRAIL = 60;
+/** Searches cut short by time before a bank is treated as a miss rather than retried in 12 hours. */
+const OUT_OF_TIME_RETRIES = 2;
 
 interface DiscoveryCandidateRow {
   id: number | string;
@@ -107,39 +69,73 @@ interface DiscoveryCandidateRow {
   profile_source_kind?: string | null;
   profile_read_strategy?: string | null;
   profile_locked_by_correction?: boolean | string | null;
+  profile_consecutive_failures?: number | string | null;
 }
 
-interface LinkCandidate {
-  url: string;
-  label: string;
-  score: number;
-  source: "homepage_link" | "common_path";
-  reasons: string[];
+export type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_after" | "failure";
+
+/** Where discovery stopped for a bank, in one word (logged on every attempt). */
+export type DiscoveryCode =
+  | "locked"
+  | "no_website"
+  | "unreachable"
+  | "blocked"
+  | (typeof FOUND_CODES)[FinderKey]
+  | "found_paid_search"
+  | "js_homepage"
+  | "no_fee_links"
+  | "candidates_failed"
+  | "out_of_time";
+
+/** One specialist's part of a bank's search. */
+export interface FinderRunSummary {
+  key: FinderKey;
+  strategy: string;
+  version: number;
+  pass: 1 | 2;
+  outcome: AttemptOutcome;
+  fetches: number;
+  durationMs: number;
+  note?: string;
+  trail: TrailEntry[];
 }
 
-type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_after" | "failure";
-
-interface CandidateDiscoveryResult {
+export interface CandidateDiscoveryResult {
   institutionId: number;
   institutionName: string;
   stateCode: string | null;
   outcome: DiscoveryOutcome;
+  code: DiscoveryCode;
   url: string | null;
   documentType: string | null;
   confidence: number | null;
   reason: string;
   method: string;
   attemptedUrls: number;
+  /** The specialist that found the link, when one did. */
+  foundBy: FinderKey | null;
+  /** The homepage after redirects, when it moved to another domain. */
+  movedTo: string | null;
+  platform: string | null;
+  /** sha256 of the homepage HTML: the input fingerprint of this search. */
+  homepageHash: string | null;
+  finders: FinderRunSummary[];
+  durationMs: number;
 }
 
 export interface RunMagellanDiscoveryOptions {
   runId: number;
+  stepId?: number;
   mode?: "discover" | "rescue";
   limit?: number;
   dryRun?: boolean;
   stateCode?: string;
   db?: SqlTag;
   fetchImpl?: Fetcher;
+  /** Pause between crawl requests (tests pass 0). */
+  politeDelayMs?: number;
+  /** Look for second documents of thin banks after the main search (default true in `discover` mode). */
+  secondDocuments?: boolean;
 }
 
 export interface RunMagellanDiscoveryResult {
@@ -151,6 +147,13 @@ export interface RunMagellanDiscoveryResult {
   retryAfter: number;
   failures: number;
   attemptedUrls: number;
+  /** Counts by discovery code: where each bank stopped. */
+  codes: Partial<Record<DiscoveryCode, number>>;
+  /** Finds per specialist. */
+  foundBy: Partial<Record<FinderKey, number>>;
+  learning: boolean;
+  methodVersion: number;
+  secondDocuments: RunSecondDocumentFindResult | null;
   limit: number;
   dryRun: boolean;
   results: CandidateDiscoveryResult[];
@@ -165,7 +168,6 @@ function boundedLimit(value: unknown): number {
 function normalizeWebsiteUrl(value: string | null): URL | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-
   for (const candidate of [trimmed, `https://${trimmed}`]) {
     try {
       const url = new URL(candidate);
@@ -200,195 +202,6 @@ function profileDocumentType(row: DiscoveryCandidateRow): string | null {
     : null;
 }
 
-function cleanText(value: string): string {
-  return value
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/gi, "\"")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeCandidateUrl(rawHref: string, baseUrl: URL): string | null {
-  const trimmed = rawHref.trim();
-  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("mailto:") || trimmed.startsWith("tel:")) {
-    return null;
-  }
-
-  try {
-    const url = new URL(trimmed, baseUrl);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (url.hostname.replace(/^www\./, "") !== baseUrl.hostname.replace(/^www\./, "")) return null;
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function scoreCandidate(url: string, label: string, source: LinkCandidate["source"]): LinkCandidate {
-  const lower = `${label} ${url}`.toLowerCase().replace(/[-_]+/g, " ");
-  let score = source === "common_path" ? 0.45 : 0.3;
-  const reasons: string[] = [];
-
-  for (const phrase of STRONG_LINK_PHRASES) {
-    if (lower.includes(phrase)) {
-      score += 0.35;
-      reasons.push(phrase);
-    }
-  }
-  for (const phrase of MEDIUM_LINK_PHRASES) {
-    if (lower.includes(phrase)) {
-      score += 0.12;
-      reasons.push(phrase);
-    }
-  }
-  for (const phrase of NEGATIVE_LINK_PHRASES) {
-    if (lower.includes(phrase)) {
-      score -= 0.35;
-      reasons.push(`negative:${phrase}`);
-    }
-  }
-  if (url.toLowerCase().endsWith(".pdf")) {
-    score += 0.1;
-    reasons.push("pdf");
-  }
-
-  return {
-    url,
-    label,
-    score: Math.max(0, Math.min(score, 0.98)),
-    source,
-    reasons,
-  };
-}
-
-function sourceRank(candidate: LinkCandidate): number {
-  return candidate.source === "homepage_link" ? 0 : 1;
-}
-
-function extractLinkCandidates(html: string, baseUrl: URL): LinkCandidate[] {
-  const candidates = new Map<string, LinkCandidate>();
-  const linkRegex = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = linkRegex.exec(html)) !== null && candidates.size < MAX_LINKS_TO_SCORE) {
-    const url = normalizeCandidateUrl(match[1], baseUrl);
-    if (!url) continue;
-    const label = cleanText(match[2]).slice(0, 140);
-    const scored = scoreCandidate(url, label, "homepage_link");
-    if (scored.score >= 0.5) candidates.set(url, scored);
-  }
-
-  for (const path of COMMON_PATHS) {
-    const url = new URL(path, baseUrl.origin).toString();
-    const scored = scoreCandidate(url, path, "common_path");
-    const current = candidates.get(url);
-    if (!current) candidates.set(url, scored);
-    // A guessed path that is also linked from the homepage stays a homepage link.
-    else if (scored.score > current.score) candidates.set(url, { ...current, score: scored.score });
-  }
-
-  // A link the bank actually published beats a guessed path: guesses start with a
-  // higher base score, so without this the top fetches were all guesses that 404.
-  return [...candidates.values()]
-    .filter((candidate) => candidate.score >= MAGELLAN_DISCOVERY_MIN_CONFIDENCE)
-    .sort((a, b) => sourceRank(a) - sourceRank(b) || b.score - a.score)
-    .slice(0, MAX_CANDIDATE_FETCHES);
-}
-
-async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetchImpl(url, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": crawlerUserAgent("Magellan"),
-        Accept: "text/html,application/pdf;q=0.9,*/*;q=0.5",
-      },
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function validateLinkCandidate(
-  candidate: LinkCandidate,
-  fetchImpl: Fetcher,
-): Promise<{ ok: boolean; documentType: string | null; confidence: number; reason: string }> {
-  const response = await fetchWithTimeout(fetchImpl, candidate.url);
-  if (!response.ok) {
-    return {
-      ok: false,
-      documentType: null,
-      confidence: 0,
-      reason: `Candidate HTTP ${response.status}`,
-    };
-  }
-
-  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  const looksLikePdf = contentType.includes("application/pdf") || candidate.url.toLowerCase().endsWith(".pdf");
-  if (looksLikePdf) {
-    return {
-      ok: true,
-      documentType: "pdf",
-      confidence: Math.max(candidate.score, 0.82),
-      reason: `PDF candidate matched ${candidate.reasons.join(", ") || "fee URL pattern"}`,
-    };
-  }
-
-  if (!contentType.includes("text/html")) {
-    return {
-      ok: false,
-      documentType: null,
-      confidence: 0,
-      reason: `Unsupported content type ${contentType || "unknown"}`,
-    };
-  }
-
-  const rawBody = await response.text();
-  const body = rawBody.toLowerCase();
-  const keywordMatches = FEE_CONTENT_KEYWORDS.filter((keyword) => body.includes(keyword)).length;
-  // Fee words in a footer ("Fee Schedule | Truth in Savings") are not a fee page: the page
-  // must actually list fees with amounts, or at least not clearly fail the fee-page check.
-  const page = scoreFeePage(htmlToScoringText(rawBody));
-  if (page.verdict === "wrong_document") {
-    return {
-      ok: false,
-      documentType: null,
-      confidence: candidate.score,
-      reason: `Candidate page is not a fee schedule (${page.reason})`,
-    };
-  }
-  if (page.verdict === "fee_page" || keywordMatches >= 2 || (candidate.score >= 0.88 && keywordMatches >= 1)) {
-    return {
-      ok: true,
-      documentType: "html",
-      confidence: Math.max(candidate.score, page.verdict === "fee_page" ? 0.88 : keywordMatches >= 2 ? 0.84 : 0.78),
-      reason: `${keywordMatches} fee keywords, ${page.feeLines} fee lines found on candidate page`,
-    };
-  }
-
-  return {
-    ok: false,
-    documentType: null,
-    confidence: candidate.score,
-    reason: `${keywordMatches} fee keywords found on candidate page`,
-  };
-}
-
-function urlIdentity(value: string): string {
-  try {
-    const url = new URL(value);
-    url.hash = "";
-    return `${url.host.toLowerCase().replace(/^www\./, "")}${url.pathname.replace(/\/+$/, "")}${url.search}`;
-  } catch {
-    return value.trim().toLowerCase();
-  }
-}
-
 async function loadRejectedUrls(db: SqlTag, institutionIds: number[]): Promise<Map<number, Set<string>>> {
   const byInstitution = new Map<number, Set<string>>();
   if (institutionIds.length === 0) return byInstitution;
@@ -409,147 +222,235 @@ async function loadRejectedUrls(db: SqlTag, institutionIds: number[]): Promise<M
   return byInstitution;
 }
 
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function blockedStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 429;
+}
+
+const NO_KNOWLEDGE: PlatformLearner = {
+  platformPaths: async () => [],
+  peerPaths: async () => [],
+  recordFind: async () => undefined,
+};
+
+/** One bank's search: the specialists in order, stopping at the first validated hit. */
 async function discoverForInstitution(
   row: DiscoveryCandidateRow,
-  fetchImpl: Fetcher,
-  rejectedUrls: Set<string> = new Set(),
+  options: {
+    fetchImpl: Fetcher;
+    rejectedUrls?: Set<string>;
+    knowledge: PlatformLearner;
+    deadline: number;
+    politeDelayMs: number;
+  },
 ): Promise<CandidateDiscoveryResult> {
+  const startedAt = Date.now();
   const institutionId = Number(row.id);
   const institutionName = String(row.institution_name);
   const stateCode = normalizeStateCode(row.state_code);
-  const correctedUrl = lockedByCorrection(row)
-    ? normalizeHttpUrl(row.profile_canonical_source_url)
-    : null;
+  const finders: FinderRunSummary[] = [];
+  let attemptedUrls = 0;
+  let movedTo: string | null = null;
+  let platform: string | null = null;
+  let homepageHash: string | null = null;
+  const finish = (
+    fields: Pick<CandidateDiscoveryResult, "outcome" | "code" | "reason"> &
+      Partial<Pick<CandidateDiscoveryResult, "url" | "documentType" | "confidence" | "foundBy">>,
+  ): CandidateDiscoveryResult => ({
+    institutionId,
+    institutionName,
+    stateCode,
+    url: null,
+    documentType: null,
+    confidence: null,
+    foundBy: null,
+    method: DISCOVERY_METHOD,
+    attemptedUrls,
+    movedTo,
+    platform,
+    homepageHash,
+    finders,
+    durationMs: Date.now() - startedAt,
+    ...fields,
+  });
+
+  const correctedUrl = lockedByCorrection(row) ? normalizeHttpUrl(row.profile_canonical_source_url) : null;
   if (correctedUrl) {
-    return {
-      institutionId,
-      institutionName,
-      stateCode,
+    return finish({
       outcome: "discovered",
+      code: "locked",
       url: correctedUrl,
       documentType: profileDocumentType(row),
       confidence: 1,
       reason: "Locked source correction supplied canonical source URL",
-      method: DISCOVERY_METHOD,
-      attemptedUrls: 0,
-    };
+    });
   }
 
   const baseUrl = normalizeWebsiteUrl(row.website_url);
   if (!baseUrl) {
-    return {
-      institutionId,
-      institutionName,
-      stateCode,
-      outcome: "needs_human",
-      url: null,
-      documentType: null,
-      confidence: null,
-      reason: "Invalid or missing website_url",
-      method: DISCOVERY_METHOD,
-      attemptedUrls: 0,
-    };
+    return finish({ outcome: "needs_human", code: "no_website", reason: "Invalid or missing website_url" });
   }
 
+  // The homepage is read once and shared by every specialist; its request is logged on
+  // the homepage-links attempt.
+  const homepageTrail: TrailEntry = { url: baseUrl.toString(), source: "homepage", foundOn: null, label: "", score: 0, verdict: "" };
+  const homepageStarted = Date.now();
+  const homepageFailure = (outcome: AttemptOutcome) =>
+    finders.push({
+      key: "homepageLinks",
+      ...FINDERS.homepageLinks,
+      outcome,
+      fetches: 1,
+      durationMs: Date.now() - homepageStarted,
+      trail: [homepageTrail],
+    });
   let homepage: Response;
+  attemptedUrls += 1;
   try {
-    homepage = await fetchWithTimeout(fetchImpl, baseUrl.toString());
+    homepage = await fetchWithTimeout(options.fetchImpl, baseUrl.toString());
   } catch (error) {
-    return {
-      institutionId,
-      institutionName,
-      stateCode,
-      outcome: "retry_after",
-      url: null,
-      documentType: null,
-      confidence: null,
-      reason: `Homepage fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-      method: DISCOVERY_METHOD,
-      attemptedUrls: 1,
-    };
+    homepageTrail.verdict = "fetch_failed";
+    const message = error instanceof Error ? error.message : String(error);
+    homepageFailure(/abort|timed? ?out/i.test(message) ? "timeout" : "network_error");
+    return finish({ outcome: "retry_after", code: "unreachable", reason: `Homepage fetch failed: ${message}` });
+  }
+  homepageTrail.verdict = `http_${homepage.status}`;
+  if (!homepage.ok) {
+    const blocked = blockedStatus(homepage.status);
+    homepageFailure(homepage.status === 429 ? "http_429" : blocked ? "http_403" : homepage.status >= 500 ? "http_5xx" : homepage.status === 404 ? "http_404" : "http_other");
+    // A bot wall is a miss (re-checked on the monthly schedule); anything else is transient.
+    return finish({
+      outcome: blocked ? "dead" : "retry_after",
+      code: blocked ? "blocked" : "unreachable",
+      reason: `Homepage HTTP ${homepage.status}`,
+    });
   }
 
-  if (!homepage.ok) {
-    return {
-      institutionId,
-      institutionName,
-      stateCode,
-      outcome: "retry_after",
-      url: null,
-      documentType: null,
-      confidence: null,
-      reason: `Homepage HTTP ${homepage.status}`,
-      method: DISCOVERY_METHOD,
-      attemptedUrls: 1,
-    };
+  // A redirect to another domain (rebrand, merger): search the site it lands on.
+  let site = baseUrl;
+  try {
+    const landed = homepage.url ? new URL(homepage.url) : null;
+    if (landed && !sameSite(landed, baseUrl)) {
+      movedTo = landed.origin;
+      site = new URL(landed.origin);
+    }
+  } catch {
+    // keep the original site
   }
 
   const html = await homepage.text();
-  // Pages already read and found not to be fee schedules are never proposed again.
-  const candidates = extractLinkCandidates(html, baseUrl).filter(
-    (candidate) => !rejectedUrls.has(urlIdentity(candidate.url)),
-  );
-  if (candidates.length === 0) {
-    return {
-      institutionId,
-      institutionName,
-      stateCode,
-      outcome: "dead",
-      url: null,
-      documentType: null,
-      confidence: null,
-      reason: "No fee-like links found on homepage",
-      method: DISCOVERY_METHOD,
-      attemptedUrls: 1,
-    };
-  }
+  homepageHash = sha256Text(html);
+  platform = detectPlatform(html);
+  const ctx: SearchContext = {
+    institutionId,
+    stateCode,
+    site,
+    fetchImpl: options.fetchImpl,
+    rejected: options.rejectedUrls ?? new Set(),
+    tried: new Set([urlIdentity(site.toString())]),
+    homepageHtml: html,
+    homepageLinks: pageLinks(html, site),
+    platform,
+    knownUrl: normalizeHttpUrl(row.profile_canonical_source_url),
+    deadline: options.deadline,
+    politeDelayMs: options.politeDelayMs,
+    knowledge: options.knowledge,
+    pages: new Map([[urlIdentity(site.toString()), html]]),
+  };
 
-  let attemptedUrls = 1;
   let lastReason = "No candidate validated";
-  for (const candidate of candidates) {
-    attemptedUrls += 1;
+  let ranOutOfTime = false;
+  for (const { key, run } of FINDER_ORDER) {
+    if (Date.now() > options.deadline) {
+      ranOutOfTime = true;
+      break;
+    }
+    const finderStarted = Date.now();
+    let result: FinderResult;
     try {
-      const validation = await validateLinkCandidate(candidate, fetchImpl);
-      lastReason = validation.reason;
-      if (validation.ok) {
-        return {
-          institutionId,
-          institutionName,
-          stateCode,
-          outcome: "discovered",
-          url: candidate.url,
-          documentType: validation.documentType,
-          confidence: validation.confidence,
-          reason: validation.reason,
-          method: DISCOVERY_METHOD,
-          attemptedUrls,
-        };
-      }
+      result = await run(ctx);
     } catch (error) {
-      lastReason = `Candidate fetch failed: ${error instanceof Error ? error.message : String(error)}`;
+      result = { found: null, trail: [], fetches: 0, ran: true, outOfTime: false, note: `error: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    if (key === "homepageLinks") {
+      result = { ...result, trail: [homepageTrail, ...result.trail], fetches: result.fetches + 1 };
+    }
+    attemptedUrls += result.fetches - (key === "homepageLinks" ? 1 : 0);
+    if (!result.ran) continue;
+    finders.push({
+      key,
+      ...FINDERS[key],
+      outcome: finderOutcome(result),
+      fetches: result.fetches,
+      durationMs: Date.now() - finderStarted,
+      note: result.note,
+      trail: result.trail.slice(0, MAX_TRAIL),
+    });
+    const lastVerdict = [...result.trail].reverse().find((entry) => entry.verdict && !["robots", "sitemap_file", "homepage"].includes(entry.source));
+    if (lastVerdict) lastReason = `${FINDERS[key].strategy}: ${lastVerdict.url} ${lastVerdict.verdict}`;
+    if (result.found) return foundResult(finish, key, result.found);
+    if (result.outOfTime) {
+      ranOutOfTime = true;
+      break;
     }
   }
 
-  return {
-    institutionId,
-    institutionName,
-    stateCode,
+  if (ranOutOfTime) {
+    // Cut short: search again in 12 hours, unless the site keeps running out of time.
+    const failures = Number(row.profile_consecutive_failures ?? 0);
+    return finish({
+      outcome: failures >= OUT_OF_TIME_RETRIES ? "dead" : "retry_after",
+      code: "out_of_time",
+      reason: `Search stopped after ${Math.round((Date.now() - startedAt) / 1000)}s; ${lastReason}`,
+    });
+  }
+  const sawCandidates = finders.some((finder) =>
+    finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page"].includes(entry.source)),
+  );
+  if (!sawCandidates && looksJavaScriptBuilt(html) && countAnchors(html) < 5) {
+    return finish({ outcome: "dead", code: "js_homepage", reason: "Homepage is built by JavaScript; no links to follow without a browser" });
+  }
+  return finish({
     outcome: "dead",
-    url: null,
-    documentType: null,
-    confidence: null,
-    reason: lastReason,
-    method: DISCOVERY_METHOD,
-    attemptedUrls,
-  };
+    code: sawCandidates ? "candidates_failed" : "no_fee_links",
+    reason: sawCandidates ? lastReason : "No fee-like links on the homepage, site map, hub pages or crawl",
+  });
 }
 
+function foundResult(
+  finish: (fields: Pick<CandidateDiscoveryResult, "outcome" | "code" | "reason"> & Partial<CandidateDiscoveryResult>) => CandidateDiscoveryResult,
+  key: FinderKey,
+  found: FoundDocument,
+): CandidateDiscoveryResult {
+  return finish({
+    outcome: "discovered",
+    code: FOUND_CODES[key],
+    url: found.url,
+    documentType: found.documentType,
+    confidence: found.confidence,
+    reason: found.reason,
+    foundBy: key,
+  });
+}
+
+/**
+ * Banks due for a search. Nothing is dead forever:
+ * - never searched, or pending/`retry_after` older than 12 hours;
+ * - a miss (`dead`, `needs_human`) after a month, then after a quarter once it has
+ *   missed twice in a row (`consecutive_failures` on the bank's profile);
+ * - any miss at once when its last search used an older discovery method version.
+ */
 async function selectCandidates(
   db: SqlTag,
   limit: number,
-  stateCode?: string,
+  stateCode: string | undefined,
+  learning: boolean,
 ): Promise<DiscoveryCandidateRow[]> {
   const normalizedState = normalizeStateCode(stateCode);
+  const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
   return db<DiscoveryCandidateRow[]>`
     SELECT inst.id,
            inst.institution_name,
@@ -560,7 +461,8 @@ async function selectCandidates(
            profile.canonical_source_url AS profile_canonical_source_url,
            profile.source_kind AS profile_source_kind,
            profile.read_strategy AS profile_read_strategy,
-           profile.locked_by_correction AS profile_locked_by_correction
+           profile.locked_by_correction AS profile_locked_by_correction,
+           profile.consecutive_failures AS profile_consecutive_failures
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
@@ -568,36 +470,49 @@ async function selectCandidates(
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
-       AND (
-         COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
-         -- Marked dead only because guessed paths 404'd before homepage links ranked
-         -- first; each gets one search with the fixed ranking.
-         OR (
-           inst.rescue_status = 'dead'
-           AND inst.failure_reason_note LIKE 'Candidate HTTP 4%'
-           AND inst.failure_reason_updated_at < ${HOMEPAGE_LINKS_FIRST_SINCE}::timestamptz
-         )
-       )
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
        AND (
          profile.locked_by_correction IS TRUE
          OR inst.last_rescue_attempt_at IS NULL
-         OR inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'
+         OR (
+           COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
+           AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'
+         )
+         OR (
+           inst.rescue_status IN ('dead', 'needs_human')
+           AND (
+             inst.last_rescue_attempt_at < NOW() - CASE
+               WHEN COALESCE(profile.consecutive_failures, 0) >= 2 THEN INTERVAL '90 days'
+               ELSE INTERVAL '30 days'
+             END
+             OR (
+               ${learning}::boolean
+               AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'
+               AND NOT EXISTS (
+                 SELECT 1 FROM pipeline_attempts pa
+                  WHERE pa.institution_id = inst.id
+                    AND pa.stage = 'discover'
+                    AND pa.detail @> ${currentMethod}::jsonb
+               )
+             )
+           )
+         )
        )
      ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.last_rescue_attempt_at IS NULL THEN 0 ELSE 1 END,
-       inst.last_rescue_attempt_at NULLS FIRST,
        CASE WHEN inst.rescue_status = 'retry_after' THEN 1 ELSE 0 END,
+       inst.last_rescue_attempt_at NULLS FIRST,
        inst.asset_size DESC NULLS LAST,
        inst.id ASC
      LIMIT ${limit}
   `;
 }
 
-async function recordDiscoveryResult(
+/** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
+export async function recordDiscoveryResult(
   db: SqlTag,
   result: CandidateDiscoveryResult,
 ): Promise<void> {
@@ -610,12 +525,14 @@ async function recordDiscoveryResult(
           ? "dead"
           : "retry_after";
   const failureReason = result.outcome === "discovered" ? null : `magellan_${result.outcome}`;
-  const failureNote = result.outcome === "discovered" ? null : result.reason;
+  const failureNote = result.outcome === "discovered" ? null : `${result.code}: ${result.reason}`;
 
   await db`
     UPDATE institution_sources
        SET fee_schedule_url = COALESCE(${result.url}, fee_schedule_url),
            document_type = COALESCE(${result.documentType}, document_type),
+           website_url = COALESCE(${result.movedTo}, website_url),
+           cms_platform = COALESCE(cms_platform, ${result.platform}),
            rescue_status = ${rescueStatus},
            last_rescue_attempt_at = NOW(),
            failure_reason = ${failureReason},
@@ -646,6 +563,7 @@ async function recordDiscoveryResult(
       last_failure_at,
       last_failure_reason,
       consecutive_failures,
+      platform,
       created_at,
       updated_at
     )
@@ -659,6 +577,7 @@ async function recordDiscoveryResult(
       CASE WHEN ${result.outcome} = 'discovered' THEN NULL ELSE NOW() END,
       ${result.outcome === "discovered" ? null : result.reason},
       CASE WHEN ${result.outcome} = 'discovered' THEN 0 ELSE 1 END,
+      ${result.platform},
       NOW(),
       NOW()
     FROM institution_sources inst
@@ -698,8 +617,72 @@ async function recordDiscoveryResult(
         WHEN ${result.outcome} = 'discovered' THEN 0
         ELSE institution_source_profiles.consecutive_failures + 1
       END,
+      platform = COALESCE(EXCLUDED.platform, institution_source_profiles.platform),
       updated_at = NOW()
   `;
+}
+
+/** One `pipeline_attempts` row per specialist that ran (stage `discover`). */
+async function recordFinderAttempts(
+  db: SqlTag,
+  row: DiscoveryCandidateRow,
+  result: CandidateDiscoveryResult,
+  options: { runId: number; stepId: number | null },
+): Promise<void> {
+  const base = {
+    method_version: DISCOVERY_METHOD_VERSION,
+    website: row.website_url,
+    moved_to: result.movedTo,
+    platform: result.platform,
+  };
+  if (result.finders.length === 0) {
+    // Locked correction or no website: one attempt for the search as a whole.
+    await recordAttempt(db, {
+      institutionId: result.institutionId,
+      stage: "discover",
+      strategy: result.code === "locked" ? FINDERS.knownLink.strategy : FINDERS.homepageLinks.strategy,
+      version: result.code === "locked" ? FINDERS.knownLink.version : FINDERS.homepageLinks.version,
+      fingerprint: result.homepageHash,
+      outcome: result.code === "locked" ? "ok" : "invalid_url",
+      yieldCount: result.url ? 1 : 0,
+      costMicrousd: 0,
+      durationMs: result.durationMs,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: { ...base, pass: 1, code: result.code, url: result.url, reason: result.reason },
+    });
+    return;
+  }
+  const last = result.finders.length - 1;
+  for (const [index, finder] of result.finders.entries()) {
+    const found = index === last && result.outcome === "discovered";
+    await recordAttempt(db, {
+      institutionId: result.institutionId,
+      stage: "discover",
+      strategy: finder.strategy,
+      version: finder.version,
+      fingerprint: result.homepageHash,
+      outcome: finder.outcome,
+      yieldCount: found ? 1 : 0,
+      costMicrousd: 0,
+      durationMs: finder.durationMs,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: {
+        ...base,
+        pass: finder.pass,
+        // The search's end code goes on its last specialist only.
+        code: index === last ? result.code : null,
+        url: found ? result.url : null,
+        document_type: found ? result.documentType : null,
+        confidence: found ? result.confidence : null,
+        reason: index === last ? result.reason : null,
+        note: finder.note ?? null,
+        pages_fetched: finder.fetches,
+        trail: finder.trail,
+      },
+    });
+  }
 }
 
 export async function runMagellanDiscovery(
@@ -709,18 +692,57 @@ export async function runMagellanDiscovery(
   const fetchImpl = options.fetchImpl ?? fetch;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
-  const rows = await selectCandidates(db, limit, options.stateCode);
+  const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
+  const learning = !dryRun && (await learningSchemaReady(db));
+  const rows = await selectCandidates(db, limit, options.stateCode, learning);
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, Set<string>>();
+  const knowledge = dryRun ? NO_KNOWLEDGE : createPlatformLearner(db);
 
+  const startedAt = Date.now();
+  const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
   const results: CandidateDiscoveryResult[] = [];
   for (const row of rows) {
-    const result = await discoverForInstitution(row, fetchImpl, rejected.get(Number(row.id)));
+    // Banks not reached this step stay due and are picked up by the next one.
+    if (Date.now() - startedAt > STEP_START_BUDGET_MS) break;
+    const institutionId = Number(row.id);
+    const result = await discoverForInstitution(row, {
+      fetchImpl,
+      rejectedUrls: rejected.get(institutionId),
+      knowledge,
+      deadline: Math.min(Date.now() + INSTITUTION_BUDGET_MS, stepDeadline),
+      politeDelayMs,
+    });
     results.push(result);
-    if (!dryRun) await recordDiscoveryResult(db, result);
+    if (dryRun) continue;
+    await recordDiscoveryResult(db, result);
+    if (learning) await recordFinderAttempts(db, row, result, { runId: options.runId, stepId: options.stepId ?? null });
+    if (result.outcome === "discovered" && result.url && result.code !== "locked") {
+      await knowledge.recordFind({ platform: result.platform, url: result.url, foundByPlatformPath: result.foundBy === "platformPaths" || result.foundBy === "peerHint" });
+    }
   }
 
+  const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
+  const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
+    ? await runSecondDocumentFind({
+        db,
+        fetchImpl,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        deadline: stepDeadline,
+        dryRun,
+        learning,
+      })
+    : null;
+
+  const codes: Partial<Record<DiscoveryCode, number>> = {};
+  const foundBy: Partial<Record<FinderKey, number>> = {};
+  for (const result of results) {
+    codes[result.code] = (codes[result.code] ?? 0) + 1;
+    if (result.foundBy) foundBy[result.foundBy] = (foundBy[result.foundBy] ?? 0) + 1;
+  }
   return {
     selected: rows.length,
     processed: results.length,
@@ -730,6 +752,11 @@ export async function runMagellanDiscovery(
     retryAfter: results.filter((result) => result.outcome === "retry_after").length,
     failures: results.filter((result) => result.outcome === "failure").length,
     attemptedUrls: results.reduce((total, result) => total + result.attemptedUrls, 0),
+    codes,
+    foundBy,
+    learning,
+    methodVersion: DISCOVERY_METHOD_VERSION,
+    secondDocuments,
     limit,
     dryRun,
     results,

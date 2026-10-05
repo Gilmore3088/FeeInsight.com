@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropic as createAnthropicLanguageModel } from "@ai-sdk/anthropic";
 
+/** SDK types for modules that build typed Messages requests through this provider. */
+export type { Anthropic };
+
 /**
  * The one model setting for Hamilton (Pro reports, briefing, Analyze, Simulate, admin
  * chat). Override per environment with HAMILTON_MODEL.

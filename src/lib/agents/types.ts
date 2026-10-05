@@ -93,7 +93,8 @@ export interface AgentRunEventSnapshot {
  * provider budget policy and the global (provider) automation stop. Every other step
  * is deterministic and is paused only by the separate pipeline control.
  */
-export const PROVIDER_STEP_KEYS: readonly string[] = [];
+/** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
+export const PROVIDER_STEP_KEYS: readonly string[] = ["discover-paid", "read-paid", "extract-paid"];
 
 export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);
@@ -108,4 +109,9 @@ export const MAX_STEP_ATTEMPTS = 3;
  * Steps that report on the pipeline rather than change data. They still run while
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
  */
-export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = ["daily-brief", "fee-alert-dispatch"];
+export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
+  "daily-brief",
+  "fee-alert-dispatch",
+  "score-answer-key",
+  "scoreboard-snapshot",
+];
