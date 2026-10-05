@@ -61,7 +61,7 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
   switch (input.placement) {
     case "institution_alerts":
       return [
-        "We'll email you when a verified change to this institution's published fee schedule lands in the index.",
+        `Fee-change alerts go to free accounts: create one and follow this institution to get an email when its published fee schedule changes: ${absolute(input.institutionId !== null ? `/register?from=${encodeURIComponent(`/institution/${input.institutionId}`)}` : "/register")}`,
         input.institutionId !== null ? `Current profile: ${absolute(`/institution/${input.institutionId}`)}` : "",
       ];
     case "state_benchmark":
@@ -88,7 +88,7 @@ export function buildCaptureConfirmation(
     ...deliveryLines(input).filter(Boolean),
     "",
     links.confirmUrl
-      ? "Confirm your address with the button below so we can keep sending updates. If you didn't sign up, ignore this email and you won't hear from us again."
+      ? "Confirm your address with the button below. If you didn't sign up, ignore this email and you won't hear from us again."
       : "If you didn't sign up, reply to this email and we'll remove you.",
     "",
     `Want this for your own institution and market? ${REPORT_OFFER_LINE}: ${absolute(REPORT_REQUEST_PATH)}`,
