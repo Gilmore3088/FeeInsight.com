@@ -71,9 +71,10 @@ describe("state lane scheduler", () => {
     expect(input("extract")).toEqual({ extract_limit: STATE_LANE_DOCUMENT_BATCH });
   });
 
-  it("verifies Darwin's maximum batch per pass, in full and backlog runs", () => {
+  it("verifies and publishes the maximum batch per pass, in full and backlog runs", () => {
     for (const steps of [STATE_LANE_STEPS, STATE_LANE_BACKLOG_STEPS]) {
       expect(steps.find((step) => step.key === "classify")?.input).toEqual({ verify_limit: 500 });
+      expect(steps.find((step) => step.key === "publish")?.input).toEqual({ publish_limit: 500 });
     }
   });
 
@@ -197,6 +198,13 @@ describe("state lane scheduler", () => {
     });
     expect(recheck.recheck).toBe("quarterly");
     expect(startAgentRunMock.mock.calls[1][0].params).toMatchObject({ recheck: "quarterly" });
+  });
+
+  it("counts only full passes that ran the state expert toward this month", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true });
+    await stateLaneCadence("PA");
+    const query = templateText(sqlMock.mock.calls[0][0]);
+    expect(query).toContain("step.step_key = 'state-expert'");
   });
 
   it("falls back to a full pass without a re-check when the cadence check fails", async () => {
