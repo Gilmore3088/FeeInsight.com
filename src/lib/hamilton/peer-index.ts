@@ -85,12 +85,28 @@ export function parseSavedPeerSetFilters(peerSet: Pick<SavedPeerSet, "tiers" | "
   });
 }
 
+/** Asset ranges for both tier vocabularies (institution segments and FDIC tiers). */
+const ASSET_TIER_RANGES: Record<string, string> = {
+  community_small: "under $300M",
+  community_mid: "$300M to $1B",
+  community_large: "$1B to $10B",
+  regional: "$10B to $50B",
+  large_regional: "$50B to $250B",
+  super_regional: "over $250B",
+  micro: "under $100M",
+  community: "$100M to $1B",
+  midsize: "$1B to $10B",
+  mega: "over $250B",
+};
+
 export function describePeerFilters(filters: HamiltonPeerFilters | null): string {
   if (!filters) return "Verified national index";
   const parts: string[] = [];
   if (filters.state_code) parts.push(filters.state_code);
   if (filters.charter_type) parts.push(filters.charter_type.replace(/_/g, " "));
-  if (filters.asset_tiers?.length) parts.push(filters.asset_tiers.join("/"));
+  if (filters.asset_tiers?.length) {
+    parts.push(filters.asset_tiers.map((tier) => ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " ")).join(" or "));
+  }
   if (filters.fed_districts?.length) {
     parts.push(`Fed district ${filters.fed_districts.join("/")}`);
   }

@@ -411,7 +411,8 @@ export async function generateReport(
       selectedVerifiedFees.length > 0 ||
       selectedProvisionalFees.length > 0 ||
       pipelineFeeCount > 0;
-    const latestFinancial = selectedFinancials[0] ?? null;
+    // ffiec rows duplicate fdic quarters at other scales; reports read the thousands-scale sources.
+    const latestFinancial = selectedFinancials.find((record) => record.source !== "ffiec") ?? null;
 
     if (
       params.institutionId &&
@@ -478,6 +479,7 @@ export async function generateReport(
       latestFinancial: latestFinancial
         ? {
             report_date: latestFinancial.report_date,
+            source: latestFinancial.source,
             total_assets: latestFinancial.total_assets,
             total_deposits: latestFinancial.total_deposits,
             service_charge_income: latestFinancial.service_charge_income,
@@ -654,15 +656,15 @@ export async function generateReport(
 
     const snapshotRows = selectedFeeDeltas.slice(0, 5).map((delta) => ({
       label: delta.fee_category.replace(/_/g, " "),
-      current: `${formatAmount(delta.institution_amount)} ${delta.evidence_tier}`,
-      proposed: `${formatAmount(delta.peer_median)} ${peerIndex.label} median`,
+      current: `${formatAmount(delta.institution_amount)} (${delta.evidence_tier})`,
+      proposed: `${formatAmount(delta.peer_median)} peer median`,
     }));
     const tradeoffRows =
       selectedInstitution && selectedFeeDeltas.length > 0
         ? selectedFeeDeltas.slice(0, 3).map((delta) => ({
             label: delta.fee_category.replace(/_/g, " "),
             value:
-              `${formatAmount(delta.institution_amount)} vs ${formatAmount(delta.peer_median)} ${peerIndex.label} median ` +
+              `${formatAmount(delta.institution_amount)} vs ${formatAmount(delta.peer_median)} peer median ` +
               `(${formatSignedAmount(delta.delta_amount)})`,
           }))
         : topCategories.slice(0, 3).map((c) => ({
@@ -686,16 +688,13 @@ export async function generateReport(
       implementationNotes: [
         `Report generated ${new Date().toLocaleDateString()}`,
         `Analysis period: ${period}`,
-        `Peer baseline: ${peerIndex.label}`,
-        peerIndex.fallbackReason ? `Peer fallback: ${peerIndex.fallbackReason}` : "Peer baseline did not require fallback",
-        `Data covers ${indexData.length} fee categories across the selected peer baseline`,
+        `Peer group: ${peerIndex.label}`,
+        ...(peerIndex.fallbackReason ? [`Peer group note: ${peerIndex.fallbackReason}`] : []),
+        `Covers ${indexData.length} fee categories in the peer group`,
         selectedInstitution
-          ? `Selected institution evidence policy: ${evidencePolicy}`
-          : "All figures are pipeline-verified from published fee schedules",
-        selectedInstitution
-          ? `Selected institution deterministic fee deltas available: ${selectedFeeDeltas.length}`
-          : "No selected institution deltas were requested",
-        "Verified benchmark conclusions exclude provisional rows unless explicitly labeled otherwise.",
+          ? `${selectedFeeDeltas.length} of ${selectedInstitution.institution_name}'s fees compared with the peer median`
+          : "Figures come from published fee schedules",
+        "Verified benchmark conclusions exclude provisional fees; provisional figures are labeled.",
       ],
       exportControls: {
         pdfEnabled: true,
