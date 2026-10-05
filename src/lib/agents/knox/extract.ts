@@ -8,6 +8,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
+import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
@@ -156,6 +157,20 @@ async function selectTextArtifacts(
               WHERE thin.source = 'knox'
                 AND thin.source_document_id = adt.source_document_id
            ) < $${params.length}`;
+    // Hamilton's rules re-check found fees today's rules read from this document that
+    // are not live (an older version missed them): extract it again.
+    const signatureParam = `$${params.push(knoxFreeSignature())}`;
+    thinTextReextract += `
+           OR EXISTS (
+             SELECT 1
+               FROM pipeline_attempts recheck
+              WHERE recheck.stage = 'publish'
+                AND recheck.strategy = '${RULES_RECHECK_STRATEGY.strategy}'
+                AND recheck.institution_id = adt.institution_id
+                AND recheck.source_document_id = adt.source_document_id
+                AND recheck.input_fingerprint = ${signatureParam}
+                AND COALESCE((recheck.detail->>'${MISSING_FEES_DETAIL}')::int, 0) > 0
+           )`;
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
