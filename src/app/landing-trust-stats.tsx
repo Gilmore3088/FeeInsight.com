@@ -43,7 +43,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center lg:gap-10">
           <div className="min-w-0">
-            <h2 className="text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
+            <h2 className="text-balance text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
               Where we track fees
             </h2>
             {states.length > 0 && (

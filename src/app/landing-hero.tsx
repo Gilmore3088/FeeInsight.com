@@ -70,7 +70,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             <span aria-hidden="true" className="h-px w-5 bg-[#C44B2E]/60" />
             Powered by <span className="text-[#5A5347]">{SITE_DOMAIN_DISPLAY}</span>
           </p>
-          <p className="mt-5 text-[16px] leading-relaxed text-[#3D3830] sm:text-[18px]">
+          <p className="mt-5 text-pretty text-[16px] leading-relaxed text-[#3D3830] sm:text-[18px]">
             What {/\d/.test(institutionsLabel) ? `${institutionsLabel} ` : ""}U.S. banks and credit unions charge, taken from their own
             published fee schedules. Free to search for anyone checking their bank; benchmarks for
             the banks themselves.
@@ -154,7 +154,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             hidden={active !== "benchmark"}
             className="max-w-2xl"
           >
-            <p className="text-[16px] leading-relaxed text-[#1A1815]">
+            <p className="text-pretty text-[16px] leading-relaxed text-[#1A1815]">
               See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
               take to your pricing committee. Free for your institution ({REPORT_OFFER.valueLabel}),{" "}
               {REPORT_OFFER.turnaround}.

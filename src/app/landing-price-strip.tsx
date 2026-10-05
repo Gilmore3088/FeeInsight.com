@@ -77,7 +77,7 @@ export function LandingPriceStrip({
             >
               What banks charge
             </h2>
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-[#5A5347]">
+            <p className="mt-1.5 max-w-2xl text-pretty text-[13px] leading-relaxed text-[#5A5347]">
               The big number is the median: half of institutions charge more, half charge less. The
               shaded bar shows where the middle half of institutions fall.
             </p>

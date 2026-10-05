@@ -31,10 +31,10 @@ export function LandingBankOffer({ findings }: { findings: ReportFinding[] }) {
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
             For banks and credit unions
           </p>
-          <h2 className="mt-2 text-[1.75rem] leading-tight text-[#1A1815] sm:text-[2.1rem]" style={SERIF_STYLE}>
+          <h2 className="mt-2 text-balance text-[1.75rem] leading-tight text-[#1A1815] sm:text-[2.1rem]" style={SERIF_STYLE}>
             See where your fees sit against your competitors
           </h2>
-          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[#5A5347]">
+          <p className="mt-3 max-w-xl text-pretty text-[15px] leading-relaxed text-[#5A5347]">
             The {REPORT_OFFER.name} is free for your institution ({REPORT_OFFER.valueLabel}). We
             read your fee schedule and your competitors&apos;, then show where you stand.
           </p>
@@ -102,9 +102,9 @@ function SampleFindings({ findings }: { findings: ReportFinding[] }) {
                 <p className="text-[1.3rem] font-semibold leading-tight tabular-nums text-[#C44B2E]" style={SERIF_STYLE}>
                   {finding.stat}
                 </p>
-                <p className="mt-1 text-[11px] leading-snug text-[#6B6255]">{finding.statLabel}</p>
+                <p className="mt-1 text-balance text-[11px] leading-snug text-[#6B6255]">{finding.statLabel}</p>
               </div>
-              <p className="text-[14px] font-semibold leading-snug text-[#1A1815]">{finding.headline}</p>
+              <p className="text-pretty text-[14px] font-semibold leading-snug text-[#1A1815]">{finding.headline}</p>
             </li>
           ))}
         </ol>
