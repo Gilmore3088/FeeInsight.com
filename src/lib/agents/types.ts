@@ -112,6 +112,7 @@ export const MAX_STEP_ATTEMPTS = 3;
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "daily-brief",
   "fee-alert-dispatch",
+  "lead-watch",
   "score-answer-key",
   "scoreboard-snapshot",
 ];

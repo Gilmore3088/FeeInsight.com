@@ -17,6 +17,10 @@
       "schedule": "23 13 * * *"
     },
     {
+      "path": "/api/admin/crew/lead-watch",
+      "schedule": "41 * * * *"
+    },
+    {
       "path": "/api/admin/crew/scoreboard",
       "schedule": "17 12 * * *"
     },

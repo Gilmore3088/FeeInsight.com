@@ -19,6 +19,10 @@ Magellan owns institution source discovery and source fetching.
   `duplicate_of_id`, and a unique partial index enforces the rule.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
+- A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and
+  `last_rescue_attempt_at > last_crawl_at`) is fetched first, regardless of the retry
+  window, and the state's hourly backlog run fetches those links only
+  (`new_links_only`), so a link found mid-month is read the same hour, not next month.
 
 ## Discovery (the find team)
 

@@ -153,7 +153,7 @@ export function validateHamiltonReportArtifact(
   if (
     selectedFeeDeltas.length > 0 &&
     !report.implementationNotes.some((note) =>
-      /verified benchmark conclusions exclude provisional rows/i.test(note),
+      /verified benchmark conclusions exclude provisional/i.test(note),
     )
   ) {
     return {

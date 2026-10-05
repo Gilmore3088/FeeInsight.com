@@ -3,10 +3,24 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
 import { getCharterLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
+import { HEADLINE_FEE_KEYS, isInstitutionRich } from "@/lib/data-store/market-readiness";
+import { getHeadlineCoverageLabel } from "../institution/[id]/enum-labels";
 import { hasVerifiedFees } from "./directory-sort";
 
-function statusChip(row: InstitutionSearchResult): { label: string; className: string } {
-  // "Fees published", never "verified": a published fee is not a checked, complete schedule.
+/** Headline categories published per institution id; null when the count could not be read. */
+export type HeadlineCoverage = Map<number, number> | null;
+
+function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): { label: string; className: string } {
+  // Completeness, never "verified": a published fee is not a checked, complete schedule.
+  const categories = coverage?.get(row.id);
+  if (hasVerifiedFees(row) && categories !== undefined) {
+    return {
+      label: getHeadlineCoverageLabel(categories, HEADLINE_FEE_KEYS.length),
+      className: isInstitutionRich(categories)
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+        : "border-[#E0D7C9] bg-white text-[#5A5347]",
+    };
+  }
   if (hasVerifiedFees(row)) {
     return { label: "Fees published", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
   }
@@ -58,8 +72,16 @@ function locationLabel(row: InstitutionSearchResult): string {
   return [toTitleCase(row.city), row.state_code].filter(Boolean).join(", ");
 }
 
-function StatusChip({ row, small = false }: { row: InstitutionSearchResult; small?: boolean }) {
-  const chip = statusChip(row);
+function StatusChip({
+  row,
+  coverage,
+  small = false,
+}: {
+  row: InstitutionSearchResult;
+  coverage: HeadlineCoverage;
+  small?: boolean;
+}) {
+  const chip = statusChip(row, coverage);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-md border font-medium ${chip.className} ${
@@ -92,9 +114,11 @@ const TH_CLASS = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider
 
 export function InstitutionResultsTable({
   rows,
+  coverage,
   focus = null,
 }: {
   rows: InstitutionSearchResult[];
+  coverage: HeadlineCoverage;
   focus?: FeeFocus | null;
 }) {
   return (
@@ -123,7 +147,7 @@ export function InstitutionResultsTable({
                     <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
                   </Link>
                   <div className="mt-1 md:hidden">
-                    <StatusChip row={row} small />
+                    <StatusChip row={row} coverage={coverage} small />
                   </div>
                 </td>
                 <td className="px-4 py-3 text-[#6B6255]">{locationLabel(row)}</td>
@@ -144,7 +168,7 @@ export function InstitutionResultsTable({
                   <FeeCount row={row} />
                 </td>
                 <td className="hidden px-4 py-3 md:table-cell">
-                  <StatusChip row={row} />
+                  <StatusChip row={row} coverage={coverage} />
                 </td>
               </tr>
             ))}
@@ -157,9 +181,11 @@ export function InstitutionResultsTable({
 
 export function InstitutionMobileCards({
   rows,
+  coverage,
   focus = null,
 }: {
   rows: InstitutionSearchResult[];
+  coverage: HeadlineCoverage;
   focus?: FeeFocus | null;
 }) {
   return (
@@ -180,7 +206,7 @@ export function InstitutionMobileCards({
                 {locationLabel(row) && <span>{locationLabel(row)}</span>}
               </div>
               <div className="mt-2">
-                <StatusChip row={row} small />
+                <StatusChip row={row} coverage={coverage} small />
               </div>
             </div>
             <div className="shrink-0 text-right text-sm">
