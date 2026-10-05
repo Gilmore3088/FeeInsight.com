@@ -248,7 +248,7 @@ describe("state lane scheduler", () => {
     error.mockRestore();
   });
 
-  it("runs a daily full pass in a focus state while it still misses many links", async () => {
+  it("runs a daily full pass in any state while it still misses many links", async () => {
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 354 });
     await expect(stateLaneCadence("TX")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: true });
 
@@ -259,9 +259,9 @@ describe("state lane scheduler", () => {
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 50 });
     await expect(stateLaneCadence("CA")).resolves.toMatchObject({ fullDue: false, daily: false });
 
-    // Other states never go daily, however many links they miss.
+    // Every state goes daily during the bulk fill, not only the focus markets.
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 900 });
-    await expect(stateLaneCadence("PA")).resolves.toMatchObject({ fullDue: false, daily: false });
+    await expect(stateLaneCadence("PA")).resolves.toMatchObject({ fullDue: true, daily: true });
   });
 
   it("gives focus-state full passes bigger discovery and fetch batches, and wakes them tomorrow", async () => {

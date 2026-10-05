@@ -40,14 +40,18 @@ export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
 
 /**
  * Focus report markets (James, 2026-10-05: Texas and California). Their full passes look
- * for and fetch twice the default links (Magellan's maximum), and run daily instead of monthly while more than
- * FOCUS_STATE_DAILY_MISSING_LINKS active institutions still have no fee schedule link.
+ * for and fetch twice the default links (Magellan's maximum).
  */
 export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; fetch_limit: number }> = {
   TX: { discovery_limit: 50, fetch_limit: 50 },
   CA: { discovery_limit: 50, fetch_limit: 50 },
 };
-export const FOCUS_STATE_DAILY_MISSING_LINKS = 50;
+/**
+ * Bulk fill (James, 2026-10-05): every state runs a daily full pass instead of a monthly one
+ * while more than this many of its active institutions still have no fee schedule link, then
+ * falls back to the monthly refresh on its own.
+ */
+export const DAILY_FULL_PASS_MISSING_LINKS = 50;
 
 export type StateLaneRecheck = "quarterly";
 
@@ -421,7 +425,6 @@ export interface StateLaneCadence {
  */
 export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
   try {
-    const focus = stateCode in FOCUS_STATE_LANE_PARAMS;
     const [row] = await sql<{
       full_this_month: boolean;
       full_today: boolean;
@@ -451,12 +454,12 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
              AND run.started_at >= date_trunc('day', NOW(), 'UTC')
         ) AS full_today,
-        CASE WHEN ${focus} THEN (
+        (
           SELECT count(*)::int FROM public.institution_sources inst
            WHERE upper(btrim(inst.state_code)) = ${stateCode}
              AND COALESCE(inst.status, 'active') = 'active'
              AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
-        ) ELSE 0 END AS missing_links,
+        ) AS missing_links,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
            WHERE run.run_kind = 'workflow_lane'
@@ -467,7 +470,7 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
         ) AS recheck_this_quarter
     `;
-    const daily = focus && Number(row?.missing_links ?? 0) > FOCUS_STATE_DAILY_MISSING_LINKS;
+    const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS;
     return {
       fullDue: daily ? !row?.full_today : !row?.full_this_month,
       recheckDue: !row?.recheck_this_quarter,
