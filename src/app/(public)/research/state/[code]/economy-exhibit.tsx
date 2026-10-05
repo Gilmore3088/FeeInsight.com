@@ -1,6 +1,7 @@
 import type { IndicatorSeries, StateEconomicContext } from "@/lib/data-store/economic-context";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { SectionHeading } from "../../research-hero";
+import { lastMonths, TrendChart, yoySeries, type TrendLine } from "./trend-chart";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
@@ -67,52 +68,60 @@ export function leadSentences(text: string, count: number): { lead: string; rest
   return { lead: sentences.slice(0, count).join(" "), rest: sentences.slice(count).join(" ") };
 }
 
-function Sparkline({ series }: { series: IndicatorSeries }) {
-  const values = series.history.map((p) => p.value);
-  if (values.length < 3) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const points = values.map((v, i) => `${(i / (values.length - 1)) * 100},${28 - ((v - min) / span) * 24}`).join(" ");
-  return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="mt-3 h-8 w-full" aria-hidden="true">
-      <polyline points={points} fill="none" stroke="#C44B2E" strokeWidth="1.6" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 interface Tile {
   key: string;
   label: string;
   value: string;
   change: string | null;
   note: string;
-  series: IndicatorSeries;
+  latest: string;
+  chartLabel: string;
+  lines: TrendLine[];
+  format: (v: number) => string;
 }
+
+const pct2 = (v: number) => `${v.toFixed(2)}%`;
+/** Axis label: whole numbers drop the decimal, so ticks read "+4%" rather than "+4.0%". */
+const signedPct = (v: number) =>
+  v === 0 ? "0%" : `${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(Number.isInteger(v) ? 0 : 1)}%`;
 
 function buildTiles(stateName: string, ctx: StateEconomicContext): Tile[] {
   const tiles: Tile[] = [];
   const ur = ctx.state_unemployment;
   if (ur) {
+    const us = ctx.national_unemployment;
     tiles.push({
       key: "ur",
       label: `${stateName} unemployment rate`,
       value: `${ur.latest.value.toFixed(1)}%`,
       change: ur.year_ago ? `${signed(ur.latest.value - ur.year_ago.value, 1, " pts")} vs a year ago` : null,
       note: `${monthLabel(ur.latest.date)} · BLS via FRED`,
-      series: ur,
+      latest: ur.latest.date,
+      chartLabel: `${stateName} unemployment rate${us ? " against the U.S. rate" : ""}, monthly`,
+      lines: [
+        { label: stateName, points: lastMonths(ur.history), tone: "primary" },
+        ...(us ? [{ label: "United States", points: lastMonths(us.history), tone: "compare" as const }] : []),
+      ],
+      format: (v) => `${v.toFixed(Number.isInteger(v) ? 0 : 1)}%`,
     });
   }
   const jobs = ctx.state_payrolls;
   const jobsYoy = yoyPct(jobs);
   if (jobs) {
+    // Job counts climb steadily; the 12-month change is what shows hiring speeding up or slowing.
+    const growth = lastMonths(yoySeries(jobs.history));
     tiles.push({
       key: "jobs",
       label: `${stateName} payroll jobs`,
       value: jobsYoy != null ? signed(jobsYoy) : `${Math.round(jobs.latest.value).toLocaleString()}k`,
       change: jobsYoy != null ? `${Math.round(jobs.latest.value).toLocaleString()}k jobs, change vs a year ago` : null,
       note: `${monthLabel(jobs.latest.date)} · BLS via FRED`,
-      series: jobs,
+      latest: jobs.latest.date,
+      chartLabel: `${stateName} payroll jobs, change from a year earlier`,
+      lines: growth.length >= 2
+        ? [{ label: `${stateName} jobs, 12-month change`, points: growth, tone: "primary" }]
+        : [{ label: `${stateName} jobs (thousands)`, points: lastMonths(jobs.history), tone: "primary" }],
+      format: growth.length >= 2 ? signedPct : (v) => `${Math.round(v).toLocaleString()}k`,
     });
   }
   const bank = ctx.cpi_bank_services;
@@ -120,6 +129,10 @@ function buildTiles(stateName: string, ctx: StateEconomicContext): Tile[] {
   if (bank && bankYoy != null) {
     // Compare over the same 12 months, so a lagging series is never set against a newer one.
     const allYoy = yoyAt(ctx.cpi_all_items, bank.latest.date);
+    const bankTrend = lastMonths(yoySeries(bank.history));
+    const allTrend = ctx.cpi_all_items
+      ? yoySeries(ctx.cpi_all_items.history).filter((p) => p.date <= bank.latest.date)
+      : [];
     tiles.push({
       key: "bank-cpi",
       label: "Prices for bank services",
@@ -128,7 +141,13 @@ function buildTiles(stateName: string, ctx: StateEconomicContext): Tile[] {
         ? `vs ${signed(allYoy)} for all consumer prices, 12 months to ${monthLabel(bank.latest.date)}`
         : `12 months to ${monthLabel(bank.latest.date)}`,
       note: `${monthLabel(bank.latest.date)} · BLS consumer price index`,
-      series: bank,
+      latest: bank.latest.date,
+      chartLabel: "Bank services prices against all consumer prices, change from a year earlier",
+      lines: [
+        { label: "Bank services", points: bankTrend, tone: "primary" },
+        ...(allTrend.length >= 2 ? [{ label: "All consumer prices", points: allTrend, tone: "compare" as const }] : []),
+      ],
+      format: signedPct,
     });
   }
   const ff = ctx.fed_funds;
@@ -139,7 +158,10 @@ function buildTiles(stateName: string, ctx: StateEconomicContext): Tile[] {
       value: `${ff.latest.value.toFixed(2)}%`,
       change: ff.year_ago ? `${signed(ff.latest.value - ff.year_ago.value, 2, " pts")} vs a year ago` : null,
       note: `${monthLabel(ff.latest.date)} · Federal Reserve via FRED`,
-      series: ff,
+      latest: ff.latest.date,
+      chartLabel: "Effective federal funds rate, monthly",
+      lines: [{ label: "Fed funds rate", points: lastMonths(ff.history), tone: "primary" }],
+      format: (v) => (Number.isInteger(v) ? `${v}%` : pct2(v)),
     });
   }
   return tiles;
@@ -179,7 +201,7 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
       </SectionHeading>
 
       {tiles.length > 0 && (
-        <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-7 grid gap-4 md:grid-cols-2">
           {tiles.map((t) => (
             <div key={t.key} className="flex flex-col rounded-2xl border border-[#E8DFD1] bg-white p-5">
               <p className="text-[12px] font-semibold text-[#5A5347]">{t.label}</p>
@@ -187,9 +209,9 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
                 {t.value}
               </p>
               {t.change && <p className="mt-2 text-[12px] text-[#5A5347]">{t.change}</p>}
-              <Sparkline series={t.series} />
+              <TrendChart lines={t.lines} format={t.format} label={t.chartLabel} />
               <p className="mt-auto pt-2 text-[10px] uppercase tracking-wider text-[#8A8072]">
-                {isStale(t.series.latest.date) ? `Latest published ${t.note}` : t.note}
+                {isStale(t.latest) ? `Latest published ${t.note}` : t.note}
               </p>
             </div>
           ))}

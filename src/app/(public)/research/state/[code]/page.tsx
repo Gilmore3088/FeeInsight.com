@@ -72,6 +72,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 const EMPTY_ECONOMY: StateEconomicContext = {
   state_unemployment: null,
   state_payrolls: null,
+  national_unemployment: null,
   fed_funds: null,
   cpi_all_items: null,
   cpi_bank_services: null,
