@@ -11,6 +11,14 @@ import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution"
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import type { HamiltonRequestContract } from "@/lib/hamilton/request-contract";
 
+const PEER_TIER_RANGES: Record<string, string> = {
+  micro: "assets under $100M",
+  community: "assets $100M to $1B",
+  midsize: "assets $1B to $10B",
+  regional: "assets $10B to $250B",
+  mega: "assets over $250B",
+};
+
 type HamiltonBriefingContract = Pick<
   HamiltonRequestContract,
   "audience" | "intent" | "evidencePolicy" | "institutionId"
@@ -72,7 +80,8 @@ export async function buildHamiltonInstitutionBriefing(
           })),
         ].slice(0, 18)
       : [];
-  const latestFinancial = financials[0] ?? null;
+  // ffiec rows duplicate fdic quarters in other units; the briefing reads the thousands-scale sources.
+  const latestFinancial = financials.find((record) => record.source !== "ffiec") ?? null;
   const status = inst.fee_publication_status ?? "unavailable";
 
   return `\n\nSELECTED INSTITUTION CONTEXT (treat this as the active institution; do not ask the user to identify it again):
@@ -91,6 +100,7 @@ export async function buildHamiltonInstitutionBriefing(
 - Quality signals: ${(inst.quality_signals ?? []).map((signal) => `${signal.code}: ${signal.label}`).join("; ") || "none"}
 - Latest source status: ${inst.latest_source_status ?? "unknown"}; collected at: ${inst.latest_source_collected_at ?? "unknown"}
 - Visible fee rows sample: ${JSON.stringify(feeRows.length > 0 ? feeRows : pipelineFeeRows)}
+- Call Report figures below (financial record, revenue trend, peer ranking) are in thousands of dollars; fee_income_ratio is a fraction (0.068 = 6.8%). Peer ranking tier: ${peerRanking ? `${peerRanking.tier} (${PEER_TIER_RANGES[peerRanking.tier] ?? "by total assets"}), the peer group for the revenue rank` : "none"}.
 - Latest financial record: ${latestFinancial ? JSON.stringify({
     report_date: latestFinancial.report_date,
     source: latestFinancial.source,
@@ -111,6 +121,8 @@ Selected institution workflow:
 - Evidence policy: ${contract.evidencePolicy}
 - Separate verified evidence from provisional evidence.
 - Do not use provisional fee rows in verified benchmark or score conclusions unless explicitly labeled as provisional/directional.
-- When data quality is weak, state the gap and give concrete diligence steps instead of filling in generic analysis.
-- Prefer investor-grade, consulting-grade synthesis: implications, peer positioning, risks, data caveats, and next decisions.\n`;
+- ${contract.audience === "admin"
+    ? "When data quality is weak, state the gap and give concrete diligence steps instead of filling in generic analysis."
+    : "When data quality is weak, leave the weak rows out and say in one short sentence how confident the answer is. Do not describe duplicates, stale sources, provisional rows, missing source links or unit problems: those are internal data-quality work, not findings for the customer."}
+- Prefer investor-grade, consulting-grade synthesis: implications, peer positioning, risks, and next decisions.\n`;
 }

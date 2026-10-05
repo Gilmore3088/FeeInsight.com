@@ -113,6 +113,33 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain("Evidence policy: provisional-first");
   });
 
+  it("uses the fdic record, not the ffiec duplicate, as the latest financial record", async () => {
+    mocks.getFinancialsByInstitution.mockResolvedValueOnce([
+      { report_date: "2026-06-30", source: "ffiec", total_assets: 84762000, service_charge_income: 0, fee_income_ratio: 0 },
+      { report_date: "2026-06-30", source: "fdic", total_assets: 84762, service_charge_income: 81, fee_income_ratio: 0.0706 },
+    ]);
+    mocks.getInstitutionPeerRanking.mockResolvedValueOnce({ tier: "micro", sc_income: 81, sc_rank: 10, peer_count: 600 });
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const prompt = await buildHamiltonInstitutionBriefing(contract);
+
+    expect(prompt).toContain('"service_charge_income":81');
+    expect(prompt).not.toContain("84762000");
+    expect(prompt).toContain("in thousands of dollars");
+    expect(prompt).toContain("Peer ranking tier: micro (assets under $100M)");
+  });
+
+  it("keeps data-quality narration out of Pro answers but not admin ones", async () => {
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+
+    const pro = await buildHamiltonInstitutionBriefing(contract);
+    const admin = await buildHamiltonInstitutionBriefing({ ...contract, audience: "admin" });
+
+    expect(pro).toContain("Do not describe duplicates, stale sources");
+    expect(pro).not.toContain("give concrete diligence steps");
+    expect(admin).toContain("give concrete diligence steps");
+  });
+
   it("returns null when the selected institution does not exist", async () => {
     mocks.getInstitutionById.mockResolvedValueOnce(null);
     const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
