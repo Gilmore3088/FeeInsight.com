@@ -3,6 +3,7 @@
 import { createCheckoutSession } from "@/lib/stripe-actions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { trackEvent } from "@/lib/analytics";
 
 interface SubscribeButtonProps {
   priceId: string;
@@ -32,6 +33,9 @@ export function SubscribeButton({
   const autoStarted = useRef(false);
 
   const startCheckout = useCallback(async () => {
+    // A signed-out visitor's click was already counted on the register link; the
+    // post-signup auto-start continues that same checkout.
+    if (!autoStart) trackEvent("checkout_start", { mode, signed_in: true });
     setPending(true);
     setError(null);
     try {
@@ -54,7 +58,7 @@ export function SubscribeButton({
         setPending(false);
       }
     }
-  }, [priceId, mode, returnTo, router]);
+  }, [priceId, mode, returnTo, router, autoStart]);
 
   useEffect(() => {
     if (!autoStart || autoStarted.current || !priceId) return;
