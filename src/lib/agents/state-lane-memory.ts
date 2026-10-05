@@ -408,6 +408,26 @@ export async function syncStateLaneProfiles(
           ELSE COALESCE(public.institution_source_profiles.read_strategy, EXCLUDED.read_strategy)
         END,
         updated_at = NOW()
+      -- The scheduler syncs every profile on every tick. Rewriting thousands of unchanged
+      -- rows each time churned the table and starved the database, so only rows whose
+      -- SET values above would actually change are updated.
+      WHERE public.institution_source_profiles.state_code IS DISTINCT FROM EXCLUDED.state_code
+         OR (
+           NOT COALESCE(public.institution_source_profiles.locked_by_correction, FALSE)
+           AND (
+             (public.institution_source_profiles.canonical_source_url IS NULL
+               AND EXCLUDED.canonical_source_url IS NOT NULL)
+             OR (public.institution_source_profiles.read_strategy IS NULL
+               AND EXCLUDED.read_strategy IS NOT NULL)
+             OR (
+               public.institution_source_profiles.source_kind IS DISTINCT FROM EXCLUDED.source_kind
+               AND NOT (
+                 public.institution_source_profiles.source_kind = 'scanned_pdf'
+                 AND EXCLUDED.source_kind IN ('pdf', 'unknown')
+               )
+             )
+           )
+         )
       RETURNING institution_id
     `;
 
@@ -466,6 +486,13 @@ export async function syncStateLaneProfiles(
       FROM lane_counts
       LEFT JOIN correction_counts ON correction_counts.state_code = lane_counts.state_code
      WHERE lane.state_code = lane_counts.state_code
+       AND (
+         lane.backlog_missing_urls, lane.backlog_stale_sources, lane.backlog_ocr,
+         lane.backlog_manual_review, lane.failure_count, lane.correction_count
+       ) IS DISTINCT FROM (
+         lane_counts.missing_urls, lane_counts.stale_sources, lane_counts.ocr_backlog,
+         lane_counts.manual_backlog, lane_counts.failures, COALESCE(correction_counts.corrections, 0)
+       )
     `;
 
     const [summary] = await db`
