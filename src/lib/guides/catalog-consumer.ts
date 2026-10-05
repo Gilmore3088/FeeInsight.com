@@ -101,7 +101,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Online-only banks are the outliers. Several have removed the overdraft fee entirely, usually paired with a small no-fee cushion: they will cover you up to $50 or $100 and simply ask you to bring the balance back up.",
+            text: "Online-only banks are the outliers. Several have removed the overdraft fee entirely, usually paired with a small no-fee cushion: they cover a small shortfall and simply ask you to bring the balance back up.",
           },
           {
             type: "comparison",
@@ -214,7 +214,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "warning",
-            text: "The company you were paying may charge you a returned payment fee of their own, often $25 to $40. One bounced payment can cost you twice.",
+            text: "The company you were paying may charge you a returned payment fee of their own. One bounced payment can cost you twice.",
           },
         ],
       },
@@ -367,7 +367,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Across {{atm_non_network.institutions}} institutions, the median out-of-network ATM fee charged by your own bank is {{atm_non_network.median}}, with most falling between {{atm_non_network.p25}} and {{atm_non_network.p75}}. Add the machine owner's surcharge on top, and a single withdrawal commonly costs more than $5.",
+            text: "Across {{atm_non_network.institutions}} institutions, the median out-of-network ATM fee charged by your own bank is {{atm_non_network.median}}, with most falling between {{atm_non_network.p25}} and {{atm_non_network.p75}}. Add the machine owner's surcharge on top, and a single withdrawal costs both fees together.",
           },
           {
             type: "paragraph",
@@ -528,7 +528,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "International wires can also pick up intermediary bank charges in transit. Money routed through a correspondent bank can arrive $15 to $30 lighter than expected, and neither your bank nor the recipient's set that charge.",
+            text: "International wires can also pick up intermediary bank charges in transit. Money routed through a correspondent bank can arrive lighter than expected, and neither your bank nor the recipient's set that charge.",
           },
           {
             type: "paragraph",
@@ -550,7 +550,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Within any institution, initiating a wire online is frequently cheaper than doing it at a branch — sometimes by $10 or more for the identical transfer. If your bank offers both, the counter is the expensive option.",
+            text: "Within any institution, initiating a wire online is frequently cheaper than doing it at a branch for the identical transfer. If your bank offers both, the counter is the expensive option.",
           },
           {
             type: "comparison",
@@ -837,7 +837,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Choosing dollars is called dynamic currency conversion, and it hands the exchange rate to the merchant or the machine operator rather than the card network. Their rate is routinely 3% to 7% worse. You will still often pay your card's foreign transaction fee on top.",
+            text: "Choosing dollars is called dynamic currency conversion, and it hands the exchange rate to the merchant or the machine operator rather than the card network. Their rate is usually worse than the network rate. You will still often pay your card's foreign transaction fee on top.",
           },
           {
             type: "callout",
@@ -870,7 +870,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "There is no federal cap on foreign transaction fees. Card issuers set them, and the 3% figure is a market convention rather than a regulated ceiling.",
+            text: "There is no federal cap on foreign transaction fees. Card issuers set them as a business choice; no regulation sets a ceiling.",
           },
           {
             type: "callout",
@@ -1240,7 +1240,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "An early closure fee is charged for closing an account shortly after opening it, usually within 90 to 180 days. It exists to discourage people from opening accounts purely to collect a sign-up bonus.",
+            text: "An early closure fee is charged for closing an account shortly after opening it, within a window the account agreement sets. It exists to discourage people from opening accounts purely to collect a sign-up bonus.",
           },
           {
             type: "paragraph",
