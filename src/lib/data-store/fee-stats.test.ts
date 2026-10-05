@@ -26,6 +26,14 @@ describe("fee statistics contract", () => {
     expect(stats.median_amount).toBe(30);
   });
 
+  it("counts a bank's tiered overdraft at its highest (standard) tier", () => {
+    const tiers = [5, 20, 35].map((amount) => ({ institution_id: 7, amount, fee_category: "overdraft" }));
+    expect(valuePerInstitution(tiers).get(7)).toBe(35);
+    // A $0 NSF beside tiered overdraft is its own category and keeps the median rule.
+    expect(valuePerInstitution([{ institution_id: 7, amount: 0, fee_category: "nsf" }]).get(7)).toBe(0);
+    expect(valuePerInstitution([5, 20, 35].map((amount) => ({ institution_id: 7, amount, fee_category: "nsf" }))).get(7)).toBe(20);
+  });
+
   it("includes $0 fees in the median", () => {
     const stats = summarizeFees(rowsFor([0, 0, 0, 25, 30]));
     expect(stats.median_amount).toBe(0);

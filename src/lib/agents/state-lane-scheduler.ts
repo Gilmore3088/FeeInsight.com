@@ -10,7 +10,7 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
-import { SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -40,14 +40,18 @@ export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
 
 /**
  * Focus report markets (James, 2026-10-05: Texas and California). Their full passes look
- * for and fetch twice the default links (Magellan's maximum), and run daily instead of monthly while more than
- * FOCUS_STATE_DAILY_MISSING_LINKS active institutions still have no fee schedule link.
+ * for and fetch twice the default links (Magellan's maximum).
  */
 export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; fetch_limit: number }> = {
   TX: { discovery_limit: 50, fetch_limit: 50 },
   CA: { discovery_limit: 50, fetch_limit: 50 },
 };
-export const FOCUS_STATE_DAILY_MISSING_LINKS = 50;
+/**
+ * Bulk fill (James, 2026-10-05): every state runs a daily full pass instead of a monthly one
+ * while more than this many of its active institutions still have no fee schedule link, then
+ * falls back to the monthly refresh on its own.
+ */
+export const DAILY_FULL_PASS_MISSING_LINKS = 50;
 
 export type StateLaneRecheck = "quarterly";
 
@@ -135,15 +139,17 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 ];
 
 /**
- * Steps an hourly backlog run takes: fetch fee links found since their bank's last
- * fetch (one download each, so a link found mid-month is not left until next month),
- * then re-read, re-extract, verify and publish the documents the state already has.
- * Magellan's discover and public-discovery steps stay on the state's full crawl
- * cadence, so backlog runs never search or crawl bank websites. A re-read downloads a
+ * Steps an hourly backlog run takes: search banks that are due a free search and still
+ * have no fee link (James, 2026-10-05: free discovery is never held to the monthly
+ * cadence), fetch fee links found since their bank's last fetch, then re-read,
+ * re-extract, verify and publish the documents the state already has. Discovery's own
+ * backoff (12 hours after a miss that may clear, a month or a quarter after a dead end)
+ * keeps a bank from being searched more often than that. The paid find and
+ * public-discovery steps stay on the state's full-pass cadence. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["fetch", "read", "extract", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "classify", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch newly found fee links", input: { ...step.input, new_links_only: true } } : step));
@@ -297,6 +303,26 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
              )
            )
       ) OR EXISTS (
+        -- A bank with no fee link that is due a free search: never searched, or a miss
+        -- that may clear (pending, retry_after) last tried over 12 hours ago. Matches
+        -- the first two cases of Magellan's selectCandidates, so a lane never loops on it.
+        SELECT 1
+          FROM institution_sources inst
+          LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND COALESCE(inst.status, 'active') = 'active'
+           AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+           AND NULLIF(btrim(inst.website_url), '') IS NOT NULL
+           AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+           AND (
+             inst.last_rescue_attempt_at IS NULL
+             OR (
+               COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
+               AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'
+             )
+           )
+      ) OR EXISTS (
         -- A fee link found after the bank's last fetch.
         SELECT 1
           FROM institution_sources inst
@@ -339,13 +365,14 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
   return sql<{ state_code: string }[]>`
     WITH live AS (
       SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fr.source,
-             fr.source_document_id, fr.outlier_flags,
+             fr.source_document_id, fr.outlier_flags, fp.rolled_back_at,
              MAX(fp.fee_published_id) OVER (PARTITION BY fp.institution_id) AS max_fee_id
         FROM published_fee_records fp
         JOIN institution_sources inst ON inst.id = fp.institution_id
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-       WHERE fp.rolled_back_at IS NULL
+       -- Source-check takedowns count too: the source check re-checks and restores them.
+       WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`})
          AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
     )
     SELECT DISTINCT live.state_code
@@ -357,7 +384,8 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
                 AND pa.institution_id = live.institution_id
            )
         OR (
-          live.source = 'knox'
+          live.rolled_back_at IS NULL
+          AND live.source = 'knox'
           AND live.source_document_id IS NOT NULL
           AND NOT (COALESCE(live.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
           AND NOT EXISTS (
@@ -421,7 +449,6 @@ export interface StateLaneCadence {
  */
 export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
   try {
-    const focus = stateCode in FOCUS_STATE_LANE_PARAMS;
     const [row] = await sql<{
       full_this_month: boolean;
       full_today: boolean;
@@ -451,12 +478,12 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
              AND run.started_at >= date_trunc('day', NOW(), 'UTC')
         ) AS full_today,
-        CASE WHEN ${focus} THEN (
+        (
           SELECT count(*)::int FROM public.institution_sources inst
            WHERE upper(btrim(inst.state_code)) = ${stateCode}
              AND COALESCE(inst.status, 'active') = 'active'
              AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
-        ) ELSE 0 END AS missing_links,
+        ) AS missing_links,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
            WHERE run.run_kind = 'workflow_lane'
@@ -467,7 +494,7 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
         ) AS recheck_this_quarter
     `;
-    const daily = focus && Number(row?.missing_links ?? 0) > FOCUS_STATE_DAILY_MISSING_LINKS;
+    const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS;
     return {
       fullDue: daily ? !row?.full_today : !row?.full_this_month,
       recheckDue: !row?.recheck_this_quarter,

@@ -91,7 +91,7 @@ export function buildCaptureConfirmation(
       ? "Confirm your address with the button below. If you didn't sign up, ignore this email and you won't hear from us again."
       : "If you didn't sign up, reply to this email and we'll remove you.",
     "",
-    `Want this for your own institution and market? ${REPORT_OFFER_LINE}: ${absolute(REPORT_REQUEST_PATH)}`,
+    `Want your market or your own institution? ${REPORT_OFFER_LINE}: ${absolute(REPORT_REQUEST_PATH)}`,
   ];
   if (links.unsubscribeUrl) lines.push("", `Unsubscribe: ${links.unsubscribeUrl}`);
   return {

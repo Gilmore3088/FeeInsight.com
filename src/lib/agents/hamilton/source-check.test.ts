@@ -91,6 +91,19 @@ describe("takeDownUntraceableFees", () => {
     expect(SOURCE_CHECK_REASON).toBe("source_check_untraceable");
   });
 
+  it("restores an earlier takedown that now traces and leaves the rest down", async () => {
+    const { db, calls } = createDb([
+      { ...fee(3, "Overnight Courier Service", "50"), taken_down: true },
+      { ...fee(1, "Overdraft Protection Items - Negative from", "50.01"), taken_down: true },
+    ]);
+    const result = await takeDownUntraceableFees(db, { runId: 6, batchId: "b", dryRun: true, stateCode: "TX" });
+
+    expect(result.restored).toBe(1);
+    expect(result.takedowns).toEqual([]);
+    expect(result.liveFeesChecked).toBe(1);
+    expect(calls[0]).toContain("rolled_back_reason LIKE");
+  });
+
   it("writes nothing on a dry run", async () => {
     const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
     const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });

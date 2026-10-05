@@ -95,7 +95,7 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
 
 /**
  * One institution's value per category under the statistics contract (the median of its
- * approved, sourced amounts), so "your fee" is measured the same way as the benchmark.
+ * approved, sourced amounts; overdraft's highest tier), so "your fee" is measured the same way as the benchmark.
  */
 export async function getInstitutionFeeValues(
   institutionId: number,
@@ -118,10 +118,10 @@ export async function getInstitutionFeeValues(
     params as never[],
   ) as { fee_category: string; amount: number | string | null }[];
 
-  const byCategory = new Map<string, { institution_id: number; amount: number | string | null }[]>();
+  const byCategory = new Map<string, { institution_id: number; amount: number | string | null; fee_category: string }[]>();
   for (const row of rows) {
     const list = byCategory.get(row.fee_category) ?? [];
-    list.push({ institution_id: institutionId, amount: row.amount });
+    list.push({ institution_id: institutionId, amount: row.amount, fee_category: row.fee_category });
     byCategory.set(row.fee_category, list);
   }
   const values = new Map<string, number>();
@@ -310,12 +310,13 @@ export async function getDistrictMedianByCategory(
   }
 
   const rows = await sql.unsafe(
-    `SELECT ef.amount, ct.fed_district, ef.institution_id
+    `SELECT ef.fee_category, ef.amount, ct.fed_district, ef.institution_id
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${conditions.join(" AND ")}`,
     params
   ) as {
+    fee_category: string;
     amount: number | null;
     fed_district: number;
     institution_id: number;
