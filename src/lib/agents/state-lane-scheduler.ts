@@ -19,6 +19,13 @@ import { SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
  */
 export const STATE_LANE_DOCUMENT_BATCH = 50;
 /**
+ * States whose lanes read and extract a bigger batch per run. Texas re-reads and
+ * re-extracts its ~358 stored documents under the current rules first (2026-10-05);
+ * 100 while the database watch runs, 200 after a clean night. Capped by
+ * ROSETTA_READ_MAX_LIMIT and KNOX_EXTRACT_MAX_LIMIT.
+ */
+export const STATE_LANE_DOCUMENT_BATCH_BY_STATE: Readonly<Record<string, number>> = { TX: 100 };
+/**
  * Cadence. Each state gets one full pass a month (the state expert refreshes its memory,
  * Magellan discovers and fetches, every later step runs). The first full pass of each
  * calendar quarter is a re-check (`recheck: 'quarterly'` in the run params): discovery
@@ -140,6 +147,18 @@ export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STE
 );
 
 export type StateLaneMode = "full" | "backlog";
+
+/** The lane's steps, with the state's read and extract batch applied. */
+export function stateLaneSteps(stateCode: string, mode: StateLaneMode): AgentRunStepDefinition[] {
+  const steps = mode === "backlog" ? STATE_LANE_BACKLOG_STEPS : STATE_LANE_STEPS;
+  const batch = STATE_LANE_DOCUMENT_BATCH_BY_STATE[stateCode];
+  if (!batch) return steps;
+  return steps.map((step) => {
+    if (step.key === "read") return { ...step, input: { ...step.input, read_limit: batch } };
+    if (step.key === "extract") return { ...step, input: { ...step.input, extract_limit: batch } };
+    return step;
+  });
+}
 
 export interface StateLaneStartInput {
   stateCode: string;
@@ -553,7 +572,7 @@ export async function startStateLaneRun(
     triggeredBy: input.triggeredBy,
     triggerSource: input.triggerSource ?? "schedule",
     idempotencyKey,
-    steps: mode === "backlog" ? STATE_LANE_BACKLOG_STEPS : STATE_LANE_STEPS,
+    steps: stateLaneSteps(stateCode, mode),
     summary: mode === "backlog"
       ? `Atlas backlog pass accepted for ${stateCode}: re-read, re-extract, verify and publish stored documents only. Discovery and fetch wait for the next full lane run.`
       : `Atlas state lane accepted for ${stateCode}${recheck ? " as the quarterly re-check: discovery re-validates every link and re-searches dead and needs-human banks" : ""}. All worker selectors are scoped to institution_sources.state_code.`,

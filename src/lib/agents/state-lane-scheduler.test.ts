@@ -21,6 +21,7 @@ import {
   STATE_LANE_BACKLOG_RETRY_MINUTES,
   STATE_LANE_BACKLOG_STEPS,
   STATE_LANE_DOCUMENT_BATCH,
+  STATE_LANE_DOCUMENT_BATCH_BY_STATE,
   STATE_LANE_STEPS,
   laneIdempotencyKey,
   nextDayStart,
@@ -30,7 +31,10 @@ import {
   startStateLaneRun,
   stateHasDocumentBacklog,
   stateLaneCadence,
+  stateLaneSteps,
 } from "./state-lane-scheduler";
+import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
+import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -83,6 +87,18 @@ describe("state lane scheduler", () => {
     const input = (key: string) => STATE_LANE_STEPS.find((step) => step.key === key)?.input;
     expect(input("read")).toEqual({ read_limit: STATE_LANE_DOCUMENT_BATCH });
     expect(input("extract")).toEqual({ extract_limit: STATE_LANE_DOCUMENT_BATCH });
+  });
+
+  it("reads and extracts a state's own batch when it has one, in full and backlog runs", () => {
+    for (const mode of ["full", "backlog"] as const) {
+      const steps = stateLaneSteps("TX", mode);
+      expect(steps.find((step) => step.key === "read")?.input).toEqual({ read_limit: STATE_LANE_DOCUMENT_BATCH_BY_STATE.TX });
+      expect(steps.find((step) => step.key === "extract")?.input).toEqual({ extract_limit: STATE_LANE_DOCUMENT_BATCH_BY_STATE.TX });
+      expect(steps.find((step) => step.key === "classify")?.input).toEqual({ verify_limit: 500 });
+    }
+    expect(stateLaneSteps("OH", "full")).toBe(STATE_LANE_STEPS);
+    expect(STATE_LANE_DOCUMENT_BATCH_BY_STATE.TX).toBeLessThanOrEqual(ROSETTA_READ_MAX_LIMIT);
+    expect(STATE_LANE_DOCUMENT_BATCH_BY_STATE.TX).toBeLessThanOrEqual(KNOX_EXTRACT_MAX_LIMIT);
   });
 
   it("verifies and publishes the maximum batch per pass, in full and backlog runs", () => {
