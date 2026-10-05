@@ -214,4 +214,27 @@ describe("Knox extract.rules", () => {
   it("v5 reads a price written without a leading zero", () => {
     expect(extractFromSegment("Photocopy – $.25 each").candidates).toMatchObject([{ canonicalHint: "document_reproduction", amount: 0.25 }]);
   });
+
+  it.each([
+    ["Billpay Monthly Fee", "bill_pay"],
+    ["Lien Release Fee", "mortgage_lien_release"],
+    ["Loan Modification", "mortgage_modification"],
+    ["Daily overdraft fee", "continuous_od"],
+  ])("v5 (second Texas holdout) classifies %s as %s", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    "Community Bank Debit Card Service Charge Fee (monthly per card)",
+    "Debit Card Pin Replacement",
+    "ATM (HFCU Non-Member)",
+  ])("v5 (second Texas holdout) files no category for %s", (name) => {
+    expect(classifyFeeText(name)).toBeNull();
+  });
+
+  it("v5 never reads a fee cap as a price", () => {
+    expect(
+      extractFromSegment("Cash Advance | $2 or 1% of the amount of each cash advance, whichever is greater (maximum fee $30)").candidates,
+    ).toMatchObject([{ canonicalHint: "cash_advance", amount: 2 }]);
+  });
 });

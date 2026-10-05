@@ -94,7 +94,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "card_dispute", pattern: /\b(?:card|transaction) disputes?\b|\b(?:debit|credit|card)\b.{0,15}\bchargebacks?\b/i },
   {
     key: "continuous_od",
-    pattern: /\b(continuous|sustained|extended).{0,30}\boverdraft\b|\boverdraft\b.{0,20}\b(continuous|sustained|extended)\b/i,
+    pattern: /\b(continuous|sustained|extended|daily).{0,30}\boverdraft\b|\bdays? in overdraft\b|\boverdraft\b.{0,20}\b(continuous|sustained|extended)\b/i,
   },
   {
     key: "od_protection_transfer",
@@ -160,7 +160,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   { key: "estatement_fee", pattern: /\be[-\s]?statement\b/i },
   { key: "ach_origination", pattern: /\bACH.{0,30}\b(origination|batch)\b/i },
-  { key: "bill_pay", pattern: /\bbill pay(ments?)?\b/i },
+  { key: "bill_pay", pattern: /\bbill ?pay(ments?)?\b/i },
   { key: "mobile_deposit", pattern: /\bmobile deposit\b/i },
   { key: "zelle_fee", pattern: /\bzelle\b/i },
   { key: "coin_counting", pattern: /\bcoin (counting|processing)\b/i },
@@ -174,12 +174,14 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   { key: "garnishment_levy", pattern: /\b(garnish\w*|levy|levies|attachments?)\b/i },
   { key: "vehicle_title", pattern: /\btitle\b.{0,20}\blien\b|\blien\b.{0,20}\btitle\b|\bvehicle title\b/i },
-  { key: "legal_process", pattern: /\b(legal process|subpoena|court order|lien release)\b/i },
+  { key: "mortgage_lien_release", pattern: /\blien release|\brelease of (?:real estate |mortgage )?liens?\b/i },
+  { key: "legal_process", pattern: /\b(legal process|subpoena|court order)\b/i },
   { key: "subordination", pattern: /\bsubordination\b/i },
   { key: "other_lending_fee", pattern: /\bloan application\b/i },
   { key: "account_verification", pattern: /\b(account verification|verification of (deposit|account)s?)\b/i },
   { key: "balance_inquiry", pattern: /\bbalance inquiry\b/i },
-  { key: "other_lending_fee", pattern: /\bskip[- ]a[- ]pay(ment)?\b|\bloan (processing|extension|modification)\b/i },
+  { key: "mortgage_modification", pattern: /\bloan modification\b/i },
+  { key: "other_lending_fee", pattern: /\bskip[- ]a[- ]pay(ment)?\b|\bloan (processing|extension)\b/i },
   { key: "late_payment", pattern: /\blate (payment|charge|fee)\b/i },
   { key: "loan_origination", pattern: /\bloan origination\b/i },
   { key: "appraisal_fee", pattern: /\bappraisal\b/i },
@@ -216,7 +218,7 @@ export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth
  * threshold ("below $500"), a cap ("maximum of $175"), a rate base ("per $1,000").
  */
 const CONDITION_BEFORE =
-  /\b(below|above|over|under|less than|more than|greater than|at least|minimum(?: daily| average)?(?: balance| deposit)?(?: of)?|min\.?|maximum(?: of)?|max\.?|up to|exceeds?|exceeding|in excess of|negative|balances? of|deposits? of|totaling|first|cap of|limit of|between|per|and|or)\s*[-–(]?\s*$/i;
+  /\b(below|above|over|under|less than|more than|greater than|at least|minimum(?: daily| average)?(?: balance| deposit)?(?: of)?|min\.?|maximum(?: fee)?(?: of)?|max\.?(?: fee)?|up to|exceeds?|exceeding|in excess of|negative|balances? of|deposits? of|totaling|first|cap of|limit of|between|per|and|or)\s*[-–(]?\s*$/i;
 /** Words just after an amount that make it a threshold: "$500 or more". */
 const CONDITION_AFTER = /^(?:\+|\s*(?:or more|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit))/i;
 
@@ -274,6 +276,12 @@ export function classifyPatternKey(value: string): string | null {
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
+  // A PIN reissue is not a card replacement.
+  if (key === "card_replacement" && /\bPIN\b/i.test(text)) return null;
+  // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
+  if (key === "atm_non_network" && /\bnon[-\s]?(?:member|customer)s?\b/i.test(text)) return null;
+  // A card, loan or service's own monthly charge is not the account's maintenance fee.
+  if (key === "monthly_maintenance" && /\b(cards?|loans?|bill ?pay|EDI|safe deposit|box)\b/i.test(text)) return null;
   return key;
 }
 

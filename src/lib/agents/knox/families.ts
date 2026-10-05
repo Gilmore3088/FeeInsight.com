@@ -151,7 +151,8 @@ export function priceWindows(text: string): PriceWindow[] {
     const values = valuesIn(line);
     if (values.length === 0) {
       pending = line.length <= 160 ? line : null;
-      if (looksLikeHeading(line)) heading = line;
+      // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.
+      if (looksLikeHeading(line) && !line.includes(CELL_SEPARATOR)) heading = line;
       return;
     }
     let nameStart = 0;
