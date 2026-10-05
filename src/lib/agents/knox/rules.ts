@@ -103,7 +103,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
     key: "deposited_item_return",
-    pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|chargebacks?)\b/i,
+    pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|charge[- ]?backs?)\b/i,
   },
   { key: "overdraft", pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b/i },
   {
@@ -346,6 +346,9 @@ export function usableName(name: string): boolean {
 
 /** "$5.00 Monthly fee for paper statements": the words after an opening price name it only when they say it is a fee ("$5 gift cards" is a gift card worth $5). */
 function priceFirstHint(after: string): string | null {
+  // A price that ends its table cell ("... $1 | Overdraft Charge ....... $35") belongs
+  // to the cell before it, never to the next cell's fee.
+  if (after.includes(CELL_SEPARATOR.trim())) return null;
   return /\b(fee|charge|cost)s?\b/i.test(after) ? classifyFeeText(after) : null;
 }
 
