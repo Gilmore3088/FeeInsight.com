@@ -24,6 +24,7 @@ import {
   sortVerifiedFirst,
 } from "./directory-sort";
 import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
+import { getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
 
 export const metadata: Metadata = {
   title: `Find Your Bank — Search the ${PRODUCT_NAME}`,
@@ -106,6 +107,16 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
       : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
     focusCategory ? getCachedFeeCategorySummaries() : Promise.resolve([]),
   ]);
+
+  // One read for the visible page only. On failure the rows fall back to "Fees published"
+  // rather than showing a made-up count.
+  const coverage =
+    results.rows.length > 0
+      ? await getInstitutionHeadlineCoverage(results.rows.map((row) => row.id)).catch((error: unknown) => {
+          console.error("Directory headline coverage failed:", error);
+          return null;
+        })
+      : null;
 
   const focus: FeeFocus | null = focusCategory
     ? {
@@ -237,8 +248,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               </p>
             </div>
 
-            <InstitutionMobileCards rows={results.rows} focus={focus} />
-            <InstitutionResultsTable rows={results.rows} focus={focus} />
+            <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
+            <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
             <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
           </section>
         )}
