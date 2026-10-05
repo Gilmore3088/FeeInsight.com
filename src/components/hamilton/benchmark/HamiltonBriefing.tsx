@@ -9,11 +9,10 @@
 import Link from "next/link";
 import { formatAmount } from "@/lib/format";
 import type { ThesisOutput } from "@/lib/hamilton/types";
-import type {
-  ExpertDistrictContext,
-  ExpertRegulatoryItem,
-  ExpertStateContext,
-} from "@/lib/hamilton/expert-context";
+import { beigeBookSummary, type ExpertStateContext } from "@/lib/hamilton/expert-context";
+import type { StateEconomicContext } from "@/lib/data-store/economic-context";
+import { SOURCE_LABELS } from "@/lib/data-store/news";
+import { EconomyTiles, monthLabel } from "./EconomyTiles";
 import type { InstitutionPositioning } from "@/lib/hamilton/institution-position";
 import { headlineFor } from "./PositionOverview";
 
@@ -24,8 +23,29 @@ interface HamiltonBriefingProps {
   analyzeHref: string;
   positioning: InstitutionPositioning | null;
   state: ExpertStateContext | null;
-  district: ExpertDistrictContext | null;
-  regulation: ExpertRegulatoryItem[];
+  /** State economy, district Beige Book and regulator news from the shared reader. */
+  economy: StateEconomicContext | null;
+  districtName: string | null;
+}
+
+const THEME_LABELS: Record<string, string> = {
+  growth: "Growth",
+  employment: "Jobs",
+  prices: "Prices",
+  lending_conditions: "Lending",
+};
+
+const TOPIC_LABELS: Record<string, string> = {
+  overdraft: "Overdraft & NSF",
+  fees_pricing: "Fees & pricing",
+  rulemaking_compliance: "Rulemaking",
+  consumer_lending: "Consumer lending",
+};
+
+function sentimentColors(sentiment: string): { backgroundColor: string; color: string } {
+  if (sentiment === "positive") return { backgroundColor: "#ecfdf5", color: "#047857" };
+  if (sentiment === "negative") return { backgroundColor: "#fff7ed", color: "#c2410c" };
+  return { backgroundColor: "var(--hamilton-surface-container-low)", color: "var(--hamilton-text-secondary)" };
 }
 
 function formatDate(iso: string | null): string {
@@ -81,9 +101,11 @@ export function HamiltonBriefing({
   analyzeHref,
   positioning,
   state,
-  district,
-  regulation,
+  economy,
+  districtName,
 }: HamiltonBriefingProps) {
+  const beigeBook = economy?.beige_book ?? null;
+  const regulation = (economy?.regulatory ?? []).slice(0, 3);
   const comparison = stateComparison(positioning, state);
   const headline = positioning ? headlineFor(positioning) : null;
   const lead = thesis?.core_thesis ?? headline;
@@ -154,6 +176,16 @@ export function HamiltonBriefing({
         )}
       </div>
 
+      {/* Macro backdrop: the state economy and bank-service prices */}
+      {state && (
+        <div className="border-t px-6 py-4" style={{ borderColor: "var(--hamilton-border)" }}>
+          <div className="mb-2.5">
+            <SectionLabel>{state.stateName} economy</SectionLabel>
+          </div>
+          <EconomyTiles stateName={state.stateName} economy={economy} />
+        </div>
+      )}
+
       {/* Context: state, Fed district and regulation side by side */}
       <div
         className="grid grid-cols-1 divide-y border-t lg:grid-cols-3 lg:divide-x lg:divide-y-0"
@@ -207,19 +239,47 @@ export function HamiltonBriefing({
         </div>
 
         <div className="px-6 py-4">
-          <SectionLabel>{district ? `${district.name} Fed district` : "Fed district"}</SectionLabel>
-          {district?.beigeBook ? (
+          <SectionLabel>{districtName ? `${districtName} Fed district` : "Fed district"}</SectionLabel>
+          {beigeBook ? (
             <>
-              <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-on-surface)" }}>
-                &ldquo;{district.beigeBook.text}&rdquo;
+              {beigeBook.themes.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {beigeBook.themes.map((theme) => (
+                    <span
+                      key={theme.category}
+                      title={theme.summary}
+                      className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                      style={sentimentColors(theme.sentiment)}
+                    >
+                      {THEME_LABELS[theme.category] ?? theme.category}: {theme.sentiment}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-pretty text-sm" style={{ color: "var(--hamilton-on-surface)" }}>
+                &ldquo;{beigeBookSummary(beigeBook.summary)}&rdquo;
               </p>
-              <p className="mt-1 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Federal Reserve Beige Book, {district.beigeBook.releaseDate}
+              {beigeBook.banking && (
+                <p className="mt-2 text-pretty text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
+                  <span className="font-semibold">{beigeBook.banking.section_name}:</span>{" "}
+                  {beigeBookSummary(beigeBook.banking.text, 200)}
+                </p>
+              )}
+              <p className="mt-1.5 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                Federal Reserve Beige Book, {monthLabel(beigeBook.release_date)}
+                {beigeBook.source_url && (
+                  <>
+                    {" · "}
+                    <a href={beigeBook.source_url} target="_blank" rel="noreferrer" className="underline">
+                      Full report
+                    </a>
+                  </>
+                )}
               </p>
             </>
           ) : (
             <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-              {district
+              {districtName
                 ? "No Beige Book summary is stored for this district yet."
                 : "Choose your institution to see its Federal Reserve district outlook."}
             </p>
@@ -240,8 +300,8 @@ export function HamiltonBriefing({
                     {item.title}
                   </a>
                   <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                    {item.source} · {item.topic}
-                    {item.publishedAt && ` · ${formatDate(item.publishedAt)}`}
+                    {SOURCE_LABELS[item.source.toUpperCase()] ?? item.source} · {TOPIC_LABELS[item.topic] ?? item.topic}
+                    {item.published_at && ` · ${formatDate(item.published_at)}`}
                   </p>
                 </li>
               ))}

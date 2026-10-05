@@ -4,6 +4,8 @@ import type { InstitutionPositioning } from "@/lib/hamilton/institution-position
 import type { AlertEntry, PositioningEntry, SignalEntry } from "@/lib/hamilton/home-data";
 import { HamiltonBriefing, stateComparison } from "./HamiltonBriefing";
 import type { ExpertStateContext } from "@/lib/hamilton/expert-context";
+import type { IndicatorSeries, StateEconomicContext } from "@/lib/data-store/economic-context";
+import { buildEconomyTiles, EconomyTiles, isStale } from "./EconomyTiles";
 import { NationalSnapshot } from "./NationalSnapshot";
 import { PositionOverview, headlineFor, positionTone } from "./PositionOverview";
 import { mergeChanges, RecentChanges } from "./RecentChanges";
@@ -118,15 +120,58 @@ const texas: ExpertStateContext = {
   },
 };
 
+const series = (id: string, latest: number, yearAgo: number, date = "2026-08-01"): IndicatorSeries => {
+  const y = new Date(`${date}T00:00:00Z`);
+  y.setUTCFullYear(y.getUTCFullYear() - 1);
+  const yDate = y.toISOString().slice(0, 10);
+  return { series_id: id, latest: { date, value: latest }, year_ago: { date: yDate, value: yearAgo }, history: [{ date: yDate, value: yearAgo }, { date, value: latest }] };
+};
+
+const economy: StateEconomicContext = {
+  state_unemployment: series("TXUR", 4.1, 3.9),
+  state_payrolls: series("TXNA", 14280, 14000),
+  fed_funds: series("FEDFUNDS", 4.33, 5.33, "2026-09-01"),
+  cpi_all_items: series("CUUR0000SA0", 103, 100, "2025-12-01"),
+  cpi_bank_services: series("CUUR0000SEMC01", 104, 100, "2025-12-01"),
+  beige_book: {
+    release_date: "August 2026",
+    source_url: "https://www.federalreserve.gov/beige",
+    summary: "Economic activity grew slightly.",
+    banking: null,
+    themes: [{ category: "lending_conditions", sentiment: "negative", summary: "Loan demand softened." }],
+  },
+  regulatory: [{ title: "Overdraft rule", link: "https://example.gov/rule", source: "cfpb", topic: "overdraft", published_at: "2026-04-07T00:00:00.000Z" }],
+};
+
 const briefingProps = {
   thesis: null,
   blockingPolicies: ["agent:hamilton"],
   analyzeHref: "/pro/analyze",
   positioning,
   state: texas,
-  district: { district: 11, name: "Dallas", beigeBook: { text: "Economic activity grew slightly.", releaseDate: "October 2025" } },
-  regulation: [{ title: "Overdraft rule", link: "https://example.gov/rule", source: "CFPB", topic: "Overdraft & NSF", publishedAt: "2026-04-07T00:00:00.000Z" }],
+  economy,
+  districtName: "Dallas",
 };
+
+describe("EconomyTiles", () => {
+  it("shows state jobs, bank-service prices against all prices, and the fed funds rate", () => {
+    const tiles = buildEconomyTiles("Texas", economy);
+    expect(tiles.map((t) => t.value)).toEqual(["4.1%", "+2.0%", "+4.0%", "4.33%"]);
+    expect(tiles[2].change).toBe("vs +3.0% for all consumer prices");
+    expect(tiles[0].change).toBe("+0.2 pts vs a year ago");
+  });
+
+  it("labels old data as the latest published", () => {
+    expect(isStale("2025-12-01", new Date(Date.UTC(2026, 9, 5)))).toBe(true);
+    expect(isStale("2026-08-01", new Date(Date.UTC(2026, 9, 5)))).toBe(false);
+  });
+
+  it("never invents figures that aren't stored yet", () => {
+    const empty = { ...economy, state_unemployment: null, state_payrolls: null, fed_funds: null, cpi_bank_services: null };
+    expect(buildEconomyTiles("Texas", empty)).toEqual([]);
+    expect(renderToStaticMarkup(<EconomyTiles stateName="Texas" economy={empty} />)).toContain("after the next data run");
+  });
+});
 
 describe("HamiltonBriefing", () => {
   it("compares the institution with its state median", () => {
@@ -139,8 +184,10 @@ describe("HamiltonBriefing", () => {
     const html = renderToStaticMarkup(<HamiltonBriefing {...briefingProps} isAdmin={false} />);
     expect(html).toContain("Texas Department of Banking");
     expect(html).toContain("Dallas Fed district");
-    expect(html).toContain("Beige Book, October 2025");
-    expect(html).toContain("CFPB · Overdraft &amp; NSF · Apr 7, 2026");
+    expect(html).toContain("Beige Book, August 2026");
+    expect(html).toContain("Lending: negative");
+    expect(html).toContain("Overdraft &amp; NSF · Apr 7, 2026");
+    expect(html).toContain("Texas unemployment");
   });
 
   it("never invents analysis when it is off, and tells only admins why", () => {

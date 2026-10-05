@@ -23,11 +23,9 @@ import { PositionOverview } from "@/components/hamilton/benchmark/PositionOvervi
 import { NationalSnapshot } from "@/components/hamilton/benchmark/NationalSnapshot";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
 import { HamiltonBriefing } from "@/components/hamilton/benchmark/HamiltonBriefing";
-import {
-  fetchDistrictContext,
-  fetchRegulatoryContext,
-  fetchStateContext,
-} from "@/lib/hamilton/expert-context";
+import { fetchStateContext } from "@/lib/hamilton/expert-context";
+import { getStateEconomicContextCached } from "@/lib/data-store/public-cached-reads";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
 
 export const dynamic = "force-dynamic";
 
@@ -93,10 +91,8 @@ async function loadInstitutionPositioning(
   }
 }
 
-/** State, district and regulatory context: slow-moving, so cached for hours (one cheap query each). */
+/** State medians, regulator and expert: slow-moving, so cached for hours. */
 const getCachedStateContext = unstable_cache(fetchStateContext, ["hamilton-expert-state"], { revalidate: 21600 });
-const getCachedDistrictContext = unstable_cache(fetchDistrictContext, ["hamilton-expert-district"], { revalidate: 21600 });
-const getCachedRegulatoryContext = unstable_cache(fetchRegulatoryContext, ["hamilton-expert-regulation"], { revalidate: 3600 });
 
 export const metadata: Metadata = { title: "Benchmark" };
 
@@ -171,11 +167,14 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
   const { positioning, unavailable: positioningUnavailable } =
     await loadInstitutionPositioning(selectedInstitutionId);
 
-  const [state, district, regulation] = await Promise.all([
+  // Economy, Beige Book and regulator news come from the same reader as the public state reports.
+  const [state, economy] = await Promise.all([
     positioning?.stateCode ? getCachedStateContext(positioning.stateCode).catch(() => null) : null,
-    positioning?.fedDistrict ? getCachedDistrictContext(positioning.fedDistrict).catch(() => null) : null,
-    getCachedRegulatoryContext(3).catch(() => []),
+    positioning?.stateCode
+      ? getStateEconomicContextCached(positioning.stateCode, positioning.fedDistrict ?? null).catch(() => null)
+      : null,
   ]);
+  const districtName = positioning?.fedDistrict ? DISTRICT_NAMES[positioning.fedDistrict] ?? null : null;
 
   const topCategory = positioning?.topGap?.feeCategory ?? null;
   const simulateHref = hrefWithInstitutionContext(
@@ -251,8 +250,8 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
         analyzeHref={analyzeHref}
         positioning={positioning}
         state={state}
-        district={district}
-        regulation={regulation}
+        economy={economy}
+        districtName={districtName}
       />
 
       <Suspense fallback={<ChangesSkeleton />}>
