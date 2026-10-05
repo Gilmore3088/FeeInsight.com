@@ -7,6 +7,7 @@ import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-col
 import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
+import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -51,10 +52,23 @@ import {
 
 const ACTIVE_STATUSES = ["queued", "running", "cancel_requested"];
 const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "report", "manual_repair", "dry_run"] as const;
-const AGENTIC_SUMMARY =
-  "Agentic run advanced through the TypeScript run ledger with committed step events. Magellan can reduce missing fee URLs, fetch source documents, and inventory public discovery routes; Rosetta can normalize HTML/text/PDF source documents and route scanned PDFs to OCR; Knox can extract conservative raw fee observations and classify public page findings; Darwin can verify canonical-hinted raw rows and cluster public findings; Hamilton can publish eligible verified rows into the Tier-3 ledger and summarize public discovery diagnosis. Durable queues, scanned-PDF OCR, provider extraction, browser-render screenshots, and adversarial review depth remain gated until each agent module is implemented.";
+const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
 type SqlTag = typeof sql;
+
+/** A completed run's summary is what its steps actually reported, never stock text. */
+export async function completedRunSummary(db: SqlTag, runId: number, completed: number, total: number): Promise<string> {
+  const steps = await db<Array<{ summary: string | null }>>`
+    SELECT summary
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND summary IS NOT NULL
+     ORDER BY sequence, id
+  `;
+  const head = `Completed ${completed} of ${total} step${total === 1 ? "" : "s"}.`;
+  const text = [head, ...steps.map((step) => String(step.summary).trim()).filter(Boolean)].join(" ");
+  return text.length > RUN_SUMMARY_MAX_LENGTH ? `${text.slice(0, RUN_SUMMARY_MAX_LENGTH - 1)}…` : text;
+}
 
 interface AgenticStepExecution {
   status: Extract<AgentRunStepStatus, "completed" | "skipped">;
@@ -697,6 +711,19 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
+      // Every live fee must be stated in the bank's own stored schedule: state lanes
+      // source-check a batch of institutions per step, after publishing, so fees
+      // published in this step are checked too.
+      const sourceCheck = stateCode || institutionId
+        ? await takeDownUntraceableFees(tx, {
+            runId: run.id,
+            batchId: `agentic-run-${run.id}`,
+            dryRun: run.runKind === "dry_run",
+            institutionId,
+            stateCode,
+          })
+        : null;
+      const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -706,7 +733,8 @@ async function executeAgenticStep(
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
-              recheckRollbacks > 0,
+              recheckRollbacks > 0 ||
+              sourceTakedowns > 0,
           });
       const outlierNote =
         outlierRollbacks.length > 0
@@ -720,13 +748,17 @@ async function executeAgenticStep(
         recheckRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
           : "";
+      const sourceNote =
+        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0
+          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}.`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -760,6 +792,19 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
+          source_check_fees: sourceCheck?.liveFeesChecked ?? 0,
+          source_check_traced: sourceCheck?.traced ?? 0,
+          source_check_relinked: sourceCheck?.relinked ?? 0,
+          source_check_takedowns: sourceTakedowns,
+          source_check_samples: (sourceCheck?.takedowns ?? []).slice(0, 10).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            fee_name: row.feeName,
+            amount: row.amount,
+            reason: row.reason,
           })),
           duplicate_collapses: duplicateCollapses.length,
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
@@ -1126,13 +1171,15 @@ async function prepareNextAgenticStep(runId: number): Promise<
           message: failed.error ?? "Agent run has a failed step.",
         };
       }
+      const finishedSteps = steps.filter((candidate) => candidate.status === "completed" || candidate.status === "skipped").length;
+      const summary = await completedRunSummary(tx, runId, finishedSteps, steps.length);
       await tx`
         UPDATE agent_runs
            SET status = 'completed',
-               progress_current = ${steps.filter((candidate) => candidate.status === "completed" || candidate.status === "skipped").length},
+               progress_current = ${finishedSteps},
                progress_total = ${steps.length},
                current_stage = NULL,
-               summary = COALESCE(summary, ${AGENTIC_SUMMARY}),
+               summary = COALESCE(summary, ${summary}),
                completed_at = COALESCE(completed_at, NOW()),
                updated_at = NOW()
          WHERE id = ${runId}
@@ -1292,13 +1339,14 @@ async function finishAgenticStep(
       };
     }
 
+    const summary = await completedRunSummary(tx, runId, completed, total);
     await tx`
       UPDATE agent_runs
          SET status = 'completed',
              progress_current = ${completed},
              progress_total = ${total},
              current_stage = NULL,
-             summary = ${AGENTIC_SUMMARY},
+             summary = ${summary},
              error_summary = NULL,
              completed_at = NOW(),
              updated_at = NOW()
@@ -1309,7 +1357,7 @@ async function finishAgenticStep(
         (agent_run_id, event_type, status, message, detail)
       VALUES
         (${runId}, 'run.completed', 'completed',
-         ${AGENTIC_SUMMARY},
+         ${summary},
          ${JSON.stringify({ completed_steps: completed, total_steps: total })}::jsonb)
     `;
     await updateStateLaneTerminalStatus(tx, runId, "completed");

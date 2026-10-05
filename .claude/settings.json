@@ -21,10 +21,10 @@
       "Bash(npx supabase db push*)",
       "Bash(npx supabase db reset*)",
       "Bash(npx supabase migration*)"
-    ]
+    ],
     "allow": [
       "Edit(src/lib/agents/**)",
       "Write(src/lib/agents/**)"
-    ],
+    ]
   }
 }

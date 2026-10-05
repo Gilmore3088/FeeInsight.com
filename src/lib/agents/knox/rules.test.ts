@@ -7,6 +7,25 @@ function fees(text: string): Array<[string, number, string]> {
 }
 
 describe("Knox extract.rules", () => {
+  it("takes the price cell, never a tier or threshold figure in the label (Texar FCU)", () => {
+    const fees = (segment: string) => extractFromSegment(segment).candidates.map((c) => [c.canonicalHint, c.amount]);
+    expect(fees("Overdraft Protection Items - Negative $25 or less | $5")).toEqual([["overdraft", 5]]);
+    expect(fees("Overdraft Protection Items - Negative from $25.01 to $50 | $20")).toEqual([["overdraft", 20]]);
+    expect(fees("Overdraft Protection Items - Negative from $50.01 and more | $35")).toEqual([["overdraft", 35]]);
+    expect(fees("Visa® gift card ($1,000 max.) | $5")).toEqual([["gift_card_purchase", 5]]);
+    expect(fees("Check Cashing Fee (Combined Account Balances < $300 or Third-Party Checks) | $5.00 per item")).toEqual([["check_cashing", 5]]);
+  });
+
+  it("keeps a label figure that is its own price or belongs to a fee run into the label", () => {
+    const fees = (segment: string) => extractFromSegment(segment).candidates.map((c) => [c.canonicalHint, c.amount]);
+    expect(fees("ACH Origination ..................... $15.00 | $700 (refinance)")).toContainEqual(["ach_origination", 15]);
+    expect(fees("Replacement Debit card fee (per occurrence) $10.00 RUSH Replacement Debit card fee | $20.00")).toEqual([
+      ["card_replacement", 10],
+      ["rush_card", 20],
+    ]);
+    expect(fees("Account Research ($50.00 per hour for research) | $50.00 minimum")).toEqual([["account_research", 50]]);
+  });
+
   it("reads thousands with and without a comma", () => {
     expect(amountsIn("Appraisal $1500").map((amount) => amount.value)).toEqual([1500]);
     expect(amountsIn("Appraisal $1,500.00").map((amount) => amount.value)).toEqual([1500]);
@@ -15,6 +34,7 @@ describe("Knox extract.rules", () => {
 
   it("files an overdraft or returned-item service charge under overdraft or NSF, not maintenance", () => {
     expect(classifyFeeText("Overdraft service charge")).toBe("overdraft");
+    expect(classifyFeeText("Debit Card Overdraft Fee overdrafts initiated by debit card will be declined at no cost")).toBeNull();
     expect(classifyFeeText("Cashier\u2019s check")).toBe("cashiers_check");
     expect(classifyFeeText("Returned item service charge")).toBe("nsf");
     expect(classifyFeeText("Monthly service charge")).toBe("monthly_maintenance");

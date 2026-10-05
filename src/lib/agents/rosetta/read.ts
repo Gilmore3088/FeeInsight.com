@@ -66,7 +66,7 @@ type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
 export const ROSETTA_READ_DEFAULT_LIMIT = 25;
-export const ROSETTA_READ_MAX_LIMIT = 50;
+export const ROSETTA_READ_MAX_LIMIT = 100;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_TEXT_DOCUMENT_BYTES = 8 * 1024 * 1024;
@@ -1046,8 +1046,30 @@ export async function recordReadResult(
 }
 
 /**
- * The page Rosetta read is not a fee schedule. Remember the URL so discovery never
- * proposes it again and, unless a person locked this source, send the institution
+ * A document link that is gone (HTTP 404/410), or that blocked us (HTTP 401/403) on an
+ * earlier read as well, cannot be read again from this URL. Rosetta sends the bank back
+ * to Magellan so the next discovery pass finds its current fee page (and, if the free
+ * finders fail, Magellan's paid finder). A single 403 can be a passing bot challenge,
+ * so a block counts only when it repeats.
+ */
+export async function isUnreachableLink(db: SqlTag, result: ReadResult): Promise<boolean> {
+  if (result.status !== "failed") return false;
+  if (result.attemptOutcome === "http_404" || result.attemptOutcome === "http_410") return true;
+  if (result.attemptOutcome !== "http_403") return false;
+  const earlier = await db<{ blocked: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM pipeline_attempts pa
+       WHERE pa.source_document_id = ${result.sourceDocumentId}
+         AND pa.stage = 'read'
+         AND pa.outcome = 'http_403'
+    ) AS blocked
+  `;
+  return earlier[0]?.blocked === true;
+}
+
+/**
+ * The page Rosetta read is not a fee schedule. Remember the URL (once, with the latest
+ * date) so discovery does not propose it again for a while and follows its links, and, unless a person locked this source, send the institution
  * back to Magellan to find the real fee page. Only the institution's latest document
  * can trigger this, so an old version never undoes a newer, correct URL.
  */
@@ -1059,13 +1081,20 @@ export async function sendBackToMagellan(
     url: string | null;
     reason: string;
     /** `rosetta_js_required` hands a JavaScript-only page to Magellan's paid finder. */
-    failureReason?: "rosetta_wrong_document" | "rosetta_js_required";
+    failureReason?: "rosetta_wrong_document" | "rosetta_js_required" | "rosetta_dead_link";
+    /** Clear the institution's link only while it still points at this URL. */
+    onlyIfCurrentUrl?: boolean;
   },
 ): Promise<boolean> {
+  const onlyIfCurrentUrl = input.onlyIfCurrentUrl === true;
   const rejected = JSON.stringify([{ url: input.url, reason: input.reason, at: new Date().toISOString() }]);
   await db`
     UPDATE institution_source_profiles
-       SET rejected_source_urls = COALESCE(rejected_source_urls, '[]'::jsonb) || ${rejected}::jsonb,
+       SET rejected_source_urls = (
+             SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+              WHERE entry->>'url' IS DISTINCT FROM ${input.url}
+           ) || ${rejected}::jsonb,
            canonical_source_url = CASE WHEN locked_by_correction THEN canonical_source_url ELSE NULL END,
            updated_at = NOW()
      WHERE institution_id = ${input.institutionId}
@@ -1078,6 +1107,7 @@ export async function sendBackToMagellan(
            failure_reason_note = ${input.url},
            failure_reason_updated_at = NOW()
      WHERE inst.id = ${input.institutionId}
+       AND (${onlyIfCurrentUrl}::boolean IS FALSE OR btrim(inst.fee_schedule_url) = ${input.url ?? ""})
        AND NOT EXISTS (
          SELECT 1 FROM institution_source_profiles profile
           WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
@@ -1248,6 +1278,19 @@ export async function runRosettaRead(
         ) {
           if (result.handoff) handedToMagellan += 1;
           else sentBack += 1;
+        }
+      } else if (await isUnreachableLink(db, result)) {
+        if (
+          await sendBackToMagellan(db, {
+            institutionId: result.institutionId,
+            sourceDocumentId: result.sourceDocumentId,
+            url: result.sourceUrl,
+            reason: result.error ?? `Link unreachable (${result.attemptOutcome})`,
+            failureReason: "rosetta_dead_link",
+            onlyIfCurrentUrl: true,
+          })
+        ) {
+          sentBack += 1;
         }
       }
       if (learning && result.attemptOutcome) {
