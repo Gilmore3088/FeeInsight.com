@@ -27,9 +27,9 @@ describe("outcomes", () => {
   it("matches the pipeline_attempts CHECK constraints in the migration", () => {
     const read = (name: string) => readFileSync(join(process.cwd(), "supabase/migrations", name), "utf8");
     // The latest definition of the outcome CHECK must list every outcome.
-    const latestOutcomeCheck = read("20270103000000_repair_double_encoded_jsonb.sql");
+    const latestOutcomeCheck = read("20261003132125_repair_double_encoded_jsonb.sql");
     for (const outcome of ATTEMPT_OUTCOMES) expect(latestOutcomeCheck).toContain(`'${outcome}'`);
-    const core = read("20270102020000_learning_core.sql");
+    const core = read("20261002233217_learning_core.sql");
     for (const stage of ATTEMPT_STAGES) expect(core).toContain(`'${stage}'`);
   });
 

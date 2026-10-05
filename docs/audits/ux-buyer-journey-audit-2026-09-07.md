@@ -111,7 +111,7 @@ signed-out save box asks for a password as well as an email, because the site ha
 password-reset flow to finish an email-only account.
 
 **Not done here.** Neither the consumer-guides migration nor the new
-`20270104000000_fee_alert_dispatch_support.sql` is applied to production: this
+`20261004002919_fee_alert_dispatch_support.sql` is applied to production: this
 environment has no database credentials. The email sender (`TRANSACTIONAL_EMAIL_FROM`,
 `RESEND_API_KEY`) is already configured in production, so fee alerts send once the run
 reaches production. Signups have a honeypot but no per-IP throttle.
