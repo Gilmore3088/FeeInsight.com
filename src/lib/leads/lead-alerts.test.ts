@@ -40,8 +40,15 @@ describe("lead alerts", () => {
 
   it("marks the lead email_failed when James's notification failed", async () => {
     await handleLeadDeliveryOutcome(LEAD, { notification: FAILED, confirmation: SENT });
-    expect(issued(0).text).toContain("UPDATE leads SET status = 'email_failed'");
+    expect(issued(0).text).toContain("UPDATE leads SET status = ? WHERE lower(email) = lower(?)");
+    expect(issued(0).values[0]).toBe("email_failed");
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("marks only the submission's own row when its id is known", async () => {
+    await handleLeadDeliveryOutcome({ ...LEAD, id: 31 }, { notification: FAILED, confirmation: SENT });
+    expect(issued(0).text).toContain("UPDATE leads SET status = ? WHERE id = ?");
+    expect(issued(0).values).toEqual(["email_failed", 31]);
   });
 
   it("alerts James at once when only the requester's confirmation failed", async () => {

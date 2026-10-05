@@ -102,11 +102,21 @@ describe("POST /api/leads", () => {
 
   it("uses a real name as the fill candidate for a placeholder-only lead", async () => {
     sqlMock.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([]);
-    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "capture_homepage" });
     const update = issued(1);
     expect(update.values[1]).toBe("Dana Lee");
     expect(update.values).toContain("Example CU");
-    expect(update.values).toContain("report");
+    expect(update.values).toContain("capture_homepage");
+  });
+
+  it("stores a report request from a known email as its own new row", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: 15 }]).mockResolvedValueOnce([{ id: 42 }]);
+    await post({ name: "James", email: "JLGilmore2@gmail.com", company: "First National Bank Alaska", source: "report" });
+    const insert = issued(1);
+    expect(insert.text).toContain("INSERT INTO leads");
+    expect(insert.text).toContain("RETURNING id");
+    expect(insert.values).toContain("First National Bank Alaska");
+    expect(sqlMock.mock.calls.map((_, i) => issued(i).text).some((text) => text.includes("UPDATE leads"))).toBe(false);
   });
 
   it("sends the footer newsletter signup the monthly-index confirmation", async () => {
@@ -254,7 +264,7 @@ describe("POST /api/leads", () => {
   });
   it("accumulates sources by exact member, so a report request is not hidden by a capture source", async () => {
     sqlMock.mockResolvedValueOnce([{ id: 9 }]).mockResolvedValueOnce([]);
-    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "newsletter" });
     const update = issued(1);
     expect(update.text).toContain("WHEN ? = ANY(string_to_array(source, ',')) THEN source");
     expect(update.text).not.toContain("position(? in source)");
@@ -333,20 +343,23 @@ describe("POST /api/leads", () => {
       expect(append.values).toEqual([attribution, "cmo@bank.com", attribution]);
     });
 
-    it("appends a returning lead's new report request to use_case", async () => {
-      sqlMock.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    it("keeps a returning lead's new report request on its own row", async () => {
+      sqlMock.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([{ id: 8 }]);
       await post({ name: "Pat", email: "cmo@bank.com", source: "report", company: "First Bank", use_case: "competitive-fee-position-report", institutionId: 4802 });
-      const append = issued(2);
-      expect(append.text).toContain("UPDATE leads SET use_case = use_case || '; ' || ?");
-      expect(append.values[0]).toBe("competitive-fee-position-report; institution_id=4802");
+      const insert = issued(1);
+      expect(insert.text).toContain("INSERT INTO leads");
+      expect(insert.values[4]).toBe("competitive-fee-position-report; institution_id=4802");
     });
 
     it("marks the lead email_failed when James's notification fails", async () => {
       reportNotifyMock.mockResolvedValue({ notification: { status: "failed", error: "Resend 500" }, confirmation: SENT });
-      sqlMock.mockResolvedValue([]);
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 31 }]).mockResolvedValue([]);
       await post({ name: "Pat", email: "cmo@bank.com", source: "report", company: "First Bank" });
-      const updates = sqlMock.mock.calls.map((_, i) => issued(i).text).filter((text) => text.includes("status = 'email_failed'"));
+      const updates = sqlMock.mock.calls.map((_, i) => issued(i)).filter(({ values }) => values.includes("email_failed"));
       expect(updates).toHaveLength(1);
+      // Only this request's row turns red, not earlier requests from the same email.
+      expect(updates[0].text).toContain("WHERE id = ?");
+      expect(updates[0].values).toEqual(["email_failed", 31]);
     });
 
     it.each(["capture_report_sample", "capture_homepage"])("accepts a personal email for %s", async (source) => {
