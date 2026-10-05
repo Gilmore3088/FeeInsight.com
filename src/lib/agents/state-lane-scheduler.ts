@@ -8,6 +8,7 @@ import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
+import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -91,6 +92,9 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     key: "publish",
     agent: "hamilton",
     title: "Publish verified state fee intelligence",
+    // Hamilton's per-step maximum, matching Darwin's: at 100 a pass published a third of
+    // what Darwin verified (PA 2026-10-05: 302 verified, 102 published).
+    input: { publish_limit: HAMILTON_PUBLISH_MAX_LIMIT },
   },
   {
     key: "public-discovery",
