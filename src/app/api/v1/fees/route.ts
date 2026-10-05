@@ -1,7 +1,8 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { getFeeCategorySummaries, getFeeCategoryDetail } from "@/lib/data-store";
+import { getFeeCategoryDetail } from "@/lib/data-store";
+import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canExportData } from "@/lib/access";
@@ -108,7 +109,7 @@ async function handleGET(request: NextRequest) {
   }
 
   // All categories summary
-  const summaries = await getFeeCategorySummaries();
+  const summaries = await getCachedFeeCategorySummaries();
 
   const data = summaries.map((s) => ({
     category: s.fee_category,
