@@ -9,6 +9,7 @@ export * from "./saved-peers";
 export * from "./fed";
 export * from "./fee-index";
 export * from "./market";
+export * from "./market-readiness";
 export * from "./geographic";
 export * from "./fee-revenue";
 export * from "./articles";
