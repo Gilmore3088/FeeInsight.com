@@ -4,12 +4,17 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Find FDIC financial fields for deposit-account service charges
+      - name: FFIEC CDR bulk download form
         run: |
-          set -u
-          curl -sSfL "https://api.fdic.gov/banks/docs/risview_properties.yaml" -o ris.yaml || curl -sSfL "https://banks.data.fdic.gov/docs/risview_properties.yaml" -o ris.yaml
-          wc -l ris.yaml
-          grep -n -i -B2 -A6 "overdraft\|H032\|H033\|H034\|H035\|maintenance charge\|automated teller\|ISERCHG" ris.yaml | head -200
-      - name: Sample one large bank
+          curl -sSL -A "Mozilla/5.0" -c jar.txt "https://cdr.ffiec.gov/public/PWS/DownloadBulkData.aspx" -o form.html -w "%{http_code} %{url_effective}\n" || true
+          wc -c form.html || true
+          grep -o '<select[^>]*>' form.html | head -20 || true
+          grep -o '<option[^>]*>[^<]*' form.html | head -80 || true
+          grep -o 'name="[^"]*"' form.html | sort -u | head -60 || true
+      - name: NCUA 5300 account descriptions mentioning overdraft or fees
         run: |
-          curl -sS "https://api.fdic.gov/banks/financials?filters=CERT:628&sort_by=REPDTE&sort_order=DESC&limit=1&fields=CERT,REPDTE,ISERCHGQ" | head -c 2000
+          curl -sSL -A "Mozilla/5.0" "https://ncua.gov/files/publications/analysis/call-report-data-2026-06.zip" -o ncua.zip -w "%{http_code}\n" || true
+          unzip -o -q ncua.zip -d ncua || true
+          ls ncua | head -40
+          f=$(ls ncua | grep -i "acctdesc" | head -1); echo "desc file: $f"
+          [ -n "$f" ] && grep -i "overdraft\|nsf\|non-sufficient\|insufficient\|fee income\|courtesy pay" "ncua/$f" | head -60 || true
