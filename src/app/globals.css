@@ -1322,3 +1322,31 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
     animation: none !important;
   }
 }
+
+/* ─── Live flow board (/admin/live) ───
+   A dot travels the connector into an agent while that agent works, and a bank
+   card slides in when an agent finishes with it. Off under prefers-reduced-motion. */
+@keyframes flow-travel {
+  0%   { left: 0%;   opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+@keyframes flow-travel-down {
+  0%   { top: 0%;   opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+@keyframes flow-card-in {
+  0%   { transform: translateX(-12px); opacity: 0; background-color: var(--flow-flash, transparent); }
+  40%  { transform: translateX(0);     opacity: 1; }
+  100% { background-color: transparent; }
+}
+.flow-dot { animation: flow-travel 1.8s linear infinite; }
+.flow-dot-down { animation: flow-travel-down 1.8s linear infinite; }
+.flow-card-new { animation: flow-card-in 1.6s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .flow-dot, .flow-dot-down, .flow-card-new { animation: none !important; }
+  .flow-dot, .flow-dot-down { display: none; }
+}

@@ -24,7 +24,7 @@ export default async function LivePage() {
       <header>
         <Breadcrumbs items={[{ label: "Atlas", href: "/admin" }, { label: "Live" }]} />
         <h1 className="admin-display-title mt-2">Live</h1>
-        <p className="admin-lede mt-1">Each bank moves top to bottom. This shows who is handling what, and what just happened.</p>
+        <p className="admin-lede mt-1">Watch banks move through the agents, step by step, as they work.</p>
       </header>
       <LiveFlow initial={{ ...snapshot, waiting }} />
     </div>
