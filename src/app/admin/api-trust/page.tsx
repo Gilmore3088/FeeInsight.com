@@ -63,6 +63,7 @@ export default async function ApiTrustPage() {
               Budget policies are fail-closed. Automation remains blocked until global provider caps and cron tick caps are explicitly enabled.
             </p>
           </div>
+          <div className="flex flex-wrap gap-2">
           <Link
             href="/admin#atlas-safety"
             className="inline-flex items-center justify-center gap-2 rounded-md border border-black/[0.08] px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/[0.1] dark:text-gray-200 dark:hover:bg-white/[0.05]"
@@ -70,6 +71,14 @@ export default async function ApiTrustPage() {
             <ShieldCheck className="size-4" />
             Atlas safety
           </Link>
+          <Link
+            href="/admin/api-keys"
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/[0.08] px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/[0.1] dark:text-gray-200 dark:hover:bg-white/[0.05]"
+          >
+            <LockKeyhole className="size-4" />
+            API keys
+          </Link>
+          </div>
         </div>
 
         <div className={`mt-5 rounded-md border px-4 py-3 ${
