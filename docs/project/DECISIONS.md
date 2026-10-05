@@ -18,6 +18,11 @@ $13.67 for 356 institutions on Oct 5 (about $0.04 each, about $80 a day at full 
 the fill the caps come back down; paid steps skip text they already read, so a refresh only pays
 for changed schedules.
 
+**No Plausible.** James, 20:51 UTC. He doesn't use it; dormant Plausible code led a session to
+ask him to set up a Plausible goal. Its script, CSP host, env var and docs are removed and
+`plausible-kill` keeps them out. `trackEvent` stays as the one hook for a future provider; page
+views come from Vercel Analytics and report requests are leads in /admin/leads.
+
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).
 Daily checkpoints, findings, decisions and a changelog now live in this folder.

@@ -262,25 +262,39 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free tier is limited to 6 spotlight categories.",
+          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free tier is limited to 6 spotlight categories. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
         tags: ["Fees"],
         parameters: [
+          {
+            name: "category",
+            in: "query",
+            required: false,
+            schema: { type: "string" },
+            description:
+              "Fee category slug (e.g., overdraft, nsf, monthly_maintenance). When set, returns that category's detail instead of the list.",
+            example: "overdraft",
+          },
           { $ref: "#/components/parameters/FormatParam" },
         ],
         responses: {
           "200": {
-            description: "Fee category list",
+            description: "Fee category list, or one category's detail when `category` is set",
             content: {
               "application/json": {
                 schema: {
-                  type: "object",
-                  properties: {
-                    total: { type: "integer", example: 60 },
-                    data: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/FeeSummary" },
+                  oneOf: [
+                    {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer", example: 60 },
+                        data: {
+                          type: "array",
+                          items: { $ref: "#/components/schemas/FeeSummary" },
+                        },
+                      },
                     },
-                  },
+                    { $ref: "#/components/schemas/FeeCategoryDetail" },
+                  ],
                 },
               },
               "text/csv": {
@@ -293,38 +307,6 @@ const spec = {
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/Error" },
-              },
-            },
-          },
-        },
-      },
-    },
-    "/fees?category={category}": {
-      get: {
-        operationId: "getFeeCategoryDetail",
-        summary: "Get fee category detail",
-        description:
-          "Detailed breakdown for a single fee category including segmentation by charter type, asset tier, Fed district, and state. Pro and Enterprise only.",
-        tags: ["Fees"],
-        parameters: [
-          {
-            name: "category",
-            in: "query",
-            required: true,
-            schema: { type: "string" },
-            description:
-              "Fee category slug (e.g., overdraft, nsf, monthly_maintenance)",
-            example: "overdraft",
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Category detail with segmentation breakdowns",
-            content: {
-              "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/FeeCategoryDetail",
-                },
               },
             },
           },
@@ -425,9 +407,17 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions with fee data. Filter by state and charter type. Maximum 200 results per page.",
+          "Paginated list of financial institutions with fee data. Filter by state and charter type. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only).",
         tags: ["Institutions"],
         parameters: [
+          {
+            name: "id",
+            in: "query",
+            required: false,
+            schema: { type: "integer" },
+            description: "Institution ID. When set, returns that institution's detail instead of the list.",
+            example: 123,
+          },
           {
             name: "state",
             in: "query",
@@ -474,54 +464,28 @@ const spec = {
         ],
         responses: {
           "200": {
-            description: "Paginated institution list",
+            description: "Paginated institution list, or one institution's detail when `id` is set",
             content: {
               "application/json": {
                 schema: {
-                  type: "object",
-                  properties: {
-                    total: { type: "integer" },
-                    page: { type: "integer" },
-                    page_size: { type: "integer" },
-                    pages: { type: "integer" },
-                    data: {
-                      type: "array",
-                      items: {
-                        $ref: "#/components/schemas/InstitutionSummary",
+                  oneOf: [
+                    {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        page_size: { type: "integer" },
+                        pages: { type: "integer" },
+                        data: {
+                          type: "array",
+                          items: {
+                            $ref: "#/components/schemas/InstitutionSummary",
+                          },
+                        },
                       },
                     },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    "/institutions?id={id}": {
-      get: {
-        operationId: "getInstitutionDetail",
-        summary: "Get institution detail",
-        description:
-          "Returns a single institution's profile with all extracted fees. Pro and Enterprise only.",
-        tags: ["Institutions"],
-        parameters: [
-          {
-            name: "id",
-            in: "query",
-            required: true,
-            schema: { type: "integer" },
-            description: "Institution ID",
-            example: 123,
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Institution profile with fees",
-            content: {
-              "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/InstitutionDetail",
+                    { $ref: "#/components/schemas/InstitutionDetail" },
+                  ],
                 },
               },
             },
