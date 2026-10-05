@@ -185,6 +185,9 @@ describe("Darwin agentic verification", () => {
       expect(verificationReasonCode({ ...row, amount: null }, "overdraft")).toBe("invalid_amount");
       expect(verificationReasonCode({ ...row, amount: "-5" }, "overdraft")).toBe("invalid_amount");
       expect(verificationReasonCode({ ...row, amount: "350.00" }, "overdraft")).toBe("outside_envelope");
+      // A $2 "overdraft" is a transfer fee or a threshold, not a per-item price.
+      expect(verificationReasonCode({ ...row, amount: "2.00" }, "overdraft")).toBe("outside_envelope");
+      expect(verificationReasonCode({ ...row, amount: "5.00" }, "overdraft")).toBeNull();
       expect(verificationReasonCode({ ...row, amount: "350.00" }, "safe_deposit_box")).toBeNull();
     });
 
