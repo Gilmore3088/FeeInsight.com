@@ -48,7 +48,7 @@ export function ReportCard() {
             {REPORT_OFFER.name}
           </div>
           <h2 className="text-xl text-[#1A1815]" style={SERIF}>
-            {REPORT_PRICE_LABEL} ({REPORT_OFFER.valueLabel}), {REPORT_OFFER.turnaround}
+            {REPORT_PRICE_LABEL}, {REPORT_OFFER.turnaround}
           </h2>
           <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm text-[#5A5347] sm:grid-cols-2">
             {REPORT_BULLETS.map((bullet) => (
@@ -73,7 +73,7 @@ export function ReportCard() {
         </div>
         <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "pricing_report" }}
             href={REPORT_ANCHOR_HREF}
             className={PRIMARY_BUTTON_CLASS}

@@ -16,6 +16,7 @@ import {
   parseInstitutionId,
   parseSrc,
 } from "./lead-notifications";
+import { isRequestLead } from "@/lib/leads/lead-status";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_SOURCE = "website";
@@ -97,9 +98,9 @@ async function handlePOST(request: NextRequest) {
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
         WHERE lower(email) = lower(${email})`;
-      if (placement && useCase) {
-        // Capture attribution accumulates too: a returning lead signing up from a new
-        // placement keeps its earlier use_case and gains this placement's context.
+      if ((placement || isRequestLead(source)) && useCase) {
+        // Attribution accumulates too: a returning lead signing up from a new placement,
+        // or asking for another report, keeps its earlier use_case and gains this one.
         await sql`
           UPDATE leads SET use_case = use_case || '; ' || ${useCase}
           WHERE lower(email) = lower(${email})

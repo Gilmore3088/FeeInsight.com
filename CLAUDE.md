@@ -1,4 +1,4 @@
-# feeschedule-hub — Bank Fee Index
+# feeinsight.com — Bank Fee Index
 
 ## Brand
 Fee Insight is the company and site (feeinsight.com). Bank Fee Index is its product

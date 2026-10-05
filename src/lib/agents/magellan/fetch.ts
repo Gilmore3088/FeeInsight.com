@@ -86,6 +86,8 @@ export interface RunMagellanFetchOptions {
   limit?: number;
   institutionId?: number;
   stateCode?: string;
+  /** Only banks whose fee link was found after their last fetch (hourly backlog runs). */
+  newLinksOnly?: boolean;
   dryRun?: boolean;
   db?: SqlTag;
   fetchImpl?: Fetcher;
@@ -314,6 +316,7 @@ async function selectCandidates(
   limit: number,
   institutionId?: number,
   stateCode?: string,
+  newLinksOnly = false,
 ): Promise<FetchCandidateRow[]> {
   const normalizedState = normalizeStateCode(stateCode);
   if (institutionId) {
@@ -360,8 +363,15 @@ async function selectCandidates(
          OR (inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> '')
        )
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
+       -- A link discovery found after the last fetch is fetched at once, first, and is
+       -- all an hourly backlog run fetches.
+       AND (NOT ${newLinksOnly}::boolean OR (
+         inst.rescue_status = 'rescued'
+         AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+       ))
        AND (
          inst.last_crawl_at IS NULL
+         OR (inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at)
          OR inst.last_crawl_at < NOW() - CASE
            WHEN COALESCE(inst.consecutive_failures, 0) >= 3 THEN INTERVAL '7 days'
            WHEN COALESCE(inst.consecutive_failures, 0) > 0 THEN INTERVAL '24 hours'
@@ -371,6 +381,7 @@ async function selectCandidates(
      ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.last_crawl_at IS NULL THEN 0 ELSE 1 END,
+       CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END,
        inst.last_crawl_at ASC NULLS FIRST,
        COALESCE(inst.consecutive_failures, 0) ASC,
        inst.asset_size DESC NULLS LAST,
@@ -696,7 +707,7 @@ export async function runMagellanFetch(
   const fetchImpl = options.fetchImpl ?? fetch;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
-  const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode);
+  const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode, Boolean(options.newLinksOnly));
   const learning = !dryRun && rows.length > 0 && (await learningSchemaReady(db));
   const vaultSchema = learning && (await documentVaultSchemaReady(db));
   const vault = options.vault ?? getDocumentVault();

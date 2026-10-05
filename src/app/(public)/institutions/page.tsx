@@ -24,6 +24,7 @@ import {
   sortVerifiedFirst,
 } from "./directory-sort";
 import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
+import { getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
 
 export const metadata: Metadata = {
   title: `Find Your Bank — Search the ${PRODUCT_NAME}`,
@@ -55,7 +56,7 @@ interface DirectoryResults {
 }
 
 /**
- * Verified-first ordering across the whole result set when it fits in one
+ * Published-first ordering across the whole result set when it fits in one
  * window; otherwise the current page is sorted on its own.
  */
 async function loadResults(params: {
@@ -106,6 +107,16 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
       : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
     focusCategory ? getCachedFeeCategorySummaries() : Promise.resolve([]),
   ]);
+
+  // One read for the visible page only. On failure the rows fall back to "Fees published"
+  // rather than showing a made-up count.
+  const coverage =
+    results.rows.length > 0
+      ? await getInstitutionHeadlineCoverage(results.rows.map((row) => row.id)).catch((error: unknown) => {
+          console.error("Directory headline coverage failed:", error);
+          return null;
+        })
+      : null;
 
   const focus: FeeFocus | null = focusCategory
     ? {
@@ -173,7 +184,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
                 they compare.
               </p>
               <p className="mt-1 text-sm text-[#6B6255]">
-                Verified fee schedules for {stats.institutionsLabel} institutions and growing.
+                Published fees for {stats.institutionsLabel} institutions and growing.
               </p>
               <div className="mt-5 max-w-2xl">
                 <InstitutionSearchBar
@@ -185,8 +196,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </div>
 
             <div className="grid grid-cols-3 divide-x divide-[#E0D7C9] border-y border-[#E0D7C9] bg-[#FDFBF8]">
-              <DirectoryStat label="Institutions with verified fees" value={stats.institutionsLabel} />
-              <DirectoryStat label="Verified fees" value={stats.observationsLabel} />
+              <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
+              <DirectoryStat label="Published fees" value={stats.observationsLabel} />
               <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
             </div>
           </div>
@@ -233,12 +244,12 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
                     {" "}for <strong className="text-[#1A1815]">{query}</strong>
                   </span>
                 )}
-                . Institutions with verified fees are listed first.
+                . Institutions with published fees are listed first.
               </p>
             </div>
 
-            <InstitutionMobileCards rows={results.rows} focus={focus} />
-            <InstitutionResultsTable rows={results.rows} focus={focus} />
+            <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
+            <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
             <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
           </section>
         )}

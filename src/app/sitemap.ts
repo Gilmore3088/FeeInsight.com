@@ -8,7 +8,7 @@ import {
 } from "@/lib/data-store";
 import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
-import { SITE_URL } from "@/lib/constants";
+import { SAMPLE_REPORT_LIVE, SITE_URL } from "@/lib/constants";
 
 const BASE_URL = SITE_URL;
 const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
@@ -112,7 +112,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // and the sample stay listed.
   const reportPages: Entry[] = [
     entry("/reports", now, "weekly", reportsPriority),
-    entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7),
+    ...(SAMPLE_REPORT_LIVE ? [entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7)] : []),
   ];
 
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)

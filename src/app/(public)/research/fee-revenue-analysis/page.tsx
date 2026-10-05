@@ -29,7 +29,10 @@ export default async function FeeRevenueAnalysisPage() {
   if (!canAccessPremium(user)) {
     return (
       <div className="max-w-3xl mx-auto py-16 px-4">
-        <UpgradeGate message="Fee-to-Revenue Analysis" />
+        <UpgradeGate
+          message="Fee-to-revenue analysis"
+          locked="How published fee schedules line up with service-charge income from call reports, broken out by asset tier and charter type."
+        />
       </div>
     );
   }
