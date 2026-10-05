@@ -35,6 +35,8 @@ function summary(overrides: Partial<FeeCategorySummary> & { fee_category: string
     bank_count: 60,
     cu_count: 40,
     zero_count: 7,
+    bank_median_amount: null,
+    cu_median_amount: null,
     ...overrides,
   };
 }
