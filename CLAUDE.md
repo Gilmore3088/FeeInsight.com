@@ -16,7 +16,6 @@ expertise. Kept fully separate from the CSI day job.
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.
-- No Firecrawl. Use plain fetches.
 - Fix PRs may merge once CI is green. Redesigns and design work wait for James's review.
 
 ## Project memory
@@ -68,6 +67,7 @@ Most are enforced by `scripts/ci-guards.sh` (`npm run guard:legacy` runs them al
 - No Supabase Edge Functions as a parallel runtime; use typed Next routes and agent modules.
 - No `ops_jobs`, `ops_job_id`, `modal_call_id`, `modalCallId`, or `spawnJob`.
 - No hidden provider calls while billing/provider health is broken.
+- Do not use the Firecrawl connector (it bills James's own account; `.claude/settings.json` denies it). For live pages use plain fetches, WebFetch, Vercel previews, or the pre-installed Playwright Chromium for JavaScript-built pages.
 - Every agent action creates or updates a visible agent run/step/event.
 - No public prelaunch proxy gate that serves a parallel static site instead of the App Router pages.
 - Never read `extracted_fees` (archived; `fee-read-model-kill`). Read `published_fee_catalog`.
