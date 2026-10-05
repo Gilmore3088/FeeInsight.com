@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
 import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
 import { matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
@@ -228,13 +229,62 @@ describe("registry Federal Reserve workers", () => {
         ],
       ],
     ]);
-    const fetchImpl = vi.fn().mockResolvedValue(new Response("observation_date,UNRATE\n2026-08-01,4.2\n"));
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("observation_date,X\n2026-08-01,4.2\n"));
 
     const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ series: 1, refreshedSeries: 1, observations: 1 });
+    // UNRATE plus the required series; the NY Fed series belongs to another loader.
+    const expected = 1 + REQUIRED_FRED_SERIES.length;
+    expect(fetchImpl).toHaveBeenCalledTimes(expected);
+    expect(result).toMatchObject({ series: expected, refreshedSeries: expected, observations: expected });
     expect(statements.some((s) => s.text.includes("INSERT INTO fed_economic_indicators"))).toBe(true);
+  });
+});
+
+describe("registry FRED worker: BLS and required series", () => {
+  it("pulls BLS CPI series from the BLS API and seeds the GDP price index", async () => {
+    const { db, statements } = createDb([
+      [
+        "FROM fed_economic_indicators",
+        () => [{ series_id: "CUUR0000SEMC01", series_title: "CPI: Checking Account and Other Bank Services", fed_district: null, units: null, frequency: "Monthly" }],
+      ],
+    ]);
+    const bls = {
+      status: "REQUEST_SUCCEEDED",
+      Results: { series: [{ seriesID: "CUUR0000SEMC01", data: [
+        { year: "2026", period: "M08", value: "301.5" },
+        { year: "2025", period: "M13", value: "290.0" },
+      ] }] },
+    };
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      url.includes("api.bls.gov")
+        ? new Response(JSON.stringify(bls))
+        : new Response("observation_date,GDPCTPI\n2026-04-01,128.4\n"),
+    );
+
+    const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+
+    const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(urls).toEqual(expect.arrayContaining([
+      "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SEMC01",
+      expect.stringContaining("fredgraph.csv?id=GDPCTPI"),
+    ]));
+    expect(result).toMatchObject({ series: 1 + REQUIRED_FRED_SERIES.length, missingSeries: [] });
+    const inserts = statements.filter((s) => s.text.includes("INSERT INTO fed_economic_indicators"));
+    expect(inserts.map((s) => s.values[0])).toEqual(expect.arrayContaining(["CUUR0000SEMC01", "GDPCTPI"]));
+    const blsRows = payloadOf(inserts.find((s) => s.values[0] === "CUUR0000SEMC01")!.values);
+    expect(blsRows).toEqual([{ observation_date: "2026-08-01", value: 301.5 }]);
+  });
+});
+
+describe("required FRED series", () => {
+  it("covers unemployment and payroll jobs for the 50 states and DC, tagged with their Fed district", () => {
+    const ids = REQUIRED_FRED_SERIES.map((s) => s.series_id);
+    expect(ids).toContain("GDPCTPI");
+    expect(ids.filter((id) => /^[A-Z]{2}UR$/.test(id))).toHaveLength(51);
+    expect(ids.filter((id) => /^[A-Z]{2}NA$/.test(id))).toHaveLength(51);
+    expect(REQUIRED_FRED_SERIES.find((s) => s.series_id === "WYUR")).toMatchObject({ fed_district: 10, units: "Percent" });
+    expect(REQUIRED_FRED_SERIES.find((s) => s.series_id === "DCNA")?.series_title).toBe("All Employees: Total Nonfarm in the District of Columbia");
   });
 });
 
