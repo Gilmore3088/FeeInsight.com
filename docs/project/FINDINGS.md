@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Deposit bag prices published as night deposit fees
+**What happened:** the Pro page showed Texas National Bank of Jacksonville's night deposit fee as
+$3.00; the source line is "Zipper Bags $3.00", a supply the bank sells. A read-only query at 23:45
+UTC found 262 of 339 live night deposit fees (189 institutions, 14 in Texas) are bag prices.
+**Cause:** Knox's rule files "deposit bags" and "zipper bags" under night deposit (on purpose, so
+the line is recognized), and no category guard covered night deposit, so Darwin and Hamilton let
+them through.
+**Fix:** the category guard (v5) now rejects bag and supply prices under night deposit, keeping lost
+or replaced keys, bag rentals and per-month charges. New rows stop at Darwin; live ones come down
+with /admin/atlas/details > Misfiled fees (dry run first).
+**Lesson:** a Knox pattern that recognizes a non-fee line needs a guard rule that rejects it.
+
 ## 2026-10-05: Shutdown months stored as 0 in economic series
 **What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
 (found by the Hamilton Pro page thread).

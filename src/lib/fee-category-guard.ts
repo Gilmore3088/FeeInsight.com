@@ -91,12 +91,19 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(deposit(ed)? (item|check)|return(ed)? deposit|deposit return|chargeback)/i,
     exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction)/i,
   },
+  // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
+  // fee for the night deposit service ("Zipper Bags $3.00" is not a night deposit fee).
+  // A lost or replaced key, a bag rental and a monthly or annual charge per bag are fees.
+  night_deposit: {
+    include: /(night|depository|after[- ]hours|drop box)/i,
+    exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
+  },
 };
 
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 4;
+export const CATEGORY_GUARD_VERSION = 5;
 
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
