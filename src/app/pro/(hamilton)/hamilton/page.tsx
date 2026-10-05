@@ -108,7 +108,7 @@ interface HamiltonHomePageProps {
 }
 
 function ChangesSkeleton() {
-  return <div className="skeleton rounded-xl" style={{ minHeight: "14rem" }} />;
+  return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
 }
 
 /** Signals and alerts are fresh on every load (never cached). */
@@ -221,14 +221,7 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
         </div>
       </header>
 
-      {positioning ? (
-        <PositionOverview positioning={positioning} state={state} />
-      ) : positioningUnavailable ? (
-        <p role="status" className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-          Your institution&apos;s position couldn&apos;t load just now.{" "}
-          <Link href="/pro/hamilton" className="underline">Try again</Link>
-        </p>
-      ) : (
+      {!positioning && !positioningUnavailable && (
         <section
           className="flex flex-wrap items-center justify-between gap-4 rounded-xl border p-5"
           style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
@@ -251,21 +244,29 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
         </section>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[3fr_2fr]">
-        <HamiltonBriefing
-          thesis={data.thesis}
-          blockingPolicies={writing.blockingPolicies}
-          isAdmin={isAdmin}
-          analyzeHref={analyzeHref}
-          positioning={positioning}
-          state={state}
-          district={district}
-          regulation={regulation}
-        />
-        <Suspense fallback={<ChangesSkeleton />}>
-          <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
-        </Suspense>
-      </div>
+      <HamiltonBriefing
+        thesis={data.thesis}
+        blockingPolicies={writing.blockingPolicies}
+        isAdmin={isAdmin}
+        analyzeHref={analyzeHref}
+        positioning={positioning}
+        state={state}
+        district={district}
+        regulation={regulation}
+      />
+
+      <Suspense fallback={<ChangesSkeleton />}>
+        <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
+      </Suspense>
+
+      {positioning ? (
+        <PositionOverview positioning={positioning} state={state} showHeadline={false} />
+      ) : positioningUnavailable ? (
+        <p role="status" className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+          Your institution&apos;s position couldn&apos;t load just now.{" "}
+          <Link href="/pro/hamilton" className="underline">Try again</Link>
+        </p>
+      ) : null}
 
       <NationalSnapshot
         entries={data.positioning}

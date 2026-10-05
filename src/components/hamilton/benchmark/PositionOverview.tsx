@@ -65,9 +65,12 @@ function Tile({ label, value, color, note }: { label: string; value: number; col
 export function PositionOverview({
   positioning,
   state = null,
+  showHeadline = true,
 }: {
   positioning: InstitutionPositioning;
   state?: ExpertStateContext | null;
+  /** Off when Hamilton's briefing above already leads with the headline. */
+  showHeadline?: boolean;
 }) {
   const institutionId = String(positioning.institutionId);
   const entries = positioning.entries;
@@ -97,7 +100,7 @@ export function PositionOverview({
 
   return (
     <section className="flex flex-col gap-4">
-      {headline && (
+      {showHeadline && headline && (
         <p className="text-balance text-lg font-medium leading-snug sm:text-xl" style={{ color: "var(--hamilton-on-surface)" }}>
           {headline}
         </p>

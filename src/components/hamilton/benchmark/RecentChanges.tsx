@@ -1,6 +1,6 @@
 /**
- * RecentChanges — one list of what changed for the selected institution: the user's
- * active priority alerts first, then recent Hamilton signals, without repeats.
+ * RecentChanges — a slim callout of what changed for the selected institution: the
+ * user's active priority alerts first, then recent Hamilton signals, without repeats.
  * Server component — no "use client".
  */
 
@@ -45,59 +45,48 @@ interface RecentChangesProps {
   selectedInstitutionId?: string | null;
 }
 
+/** A slim callout of the latest three changes, for the top of the Benchmark page. */
 export function RecentChanges({ alerts, signals, selectedInstitutionId = null }: RecentChangesProps) {
-  const items = mergeChanges(alerts, signals);
+  const items = mergeChanges(alerts, signals, 3);
   const monitorHref = hrefWithInstitutionContext("/pro/monitor", selectedInstitutionId);
   return (
     <section
-      className="flex flex-col rounded-xl border"
-      style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
+      aria-label="What changed"
+      className="flex flex-col gap-2 rounded-lg border px-4 py-3 md:flex-row md:items-center md:gap-5"
+      style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-low)" }}
     >
-      <div className="flex items-baseline justify-between gap-3 border-b px-5 py-3" style={{ borderColor: "var(--hamilton-border)" }}>
-        <h2 className="text-sm font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
-          What changed
-        </h2>
-        <Link href={monitorHref} className="text-xs font-medium no-underline hover:underline" style={{ color: "var(--hamilton-primary)" }}>
-          Open Monitor →
-        </Link>
-      </div>
+      <h2 className="shrink-0 text-xs font-semibold" style={{ color: "var(--hamilton-text-secondary)", fontFamily: "var(--hamilton-font-sans)" }}>
+        What changed
+      </h2>
       {items.length === 0 ? (
-        <p className="text-pretty px-5 py-6 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+        <p className="min-w-0 flex-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
           {selectedInstitutionId
-            ? "No changes recorded for this institution yet. New fee publications and alerts will show up here."
-            : "Choose your institution to see its fee changes and alerts here."}
+            ? "No changes recorded for this institution yet."
+            : "Choose your institution to see its fee changes and alerts."}
         </p>
       ) : (
-        <ul className="divide-y" style={{ borderColor: "var(--hamilton-border)" }}>
+        <ul className="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-row md:gap-5">
           {items.map((item) => (
-            <li key={item.key} className="flex gap-3 px-5 py-3">
+            <li key={item.key} className="flex min-w-0 items-baseline gap-2 md:flex-1">
               <span
-                className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full"
+                className="inline-block h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"
                 style={{ backgroundColor: SEVERITY_COLORS[item.severity] ?? SEVERITY_COLORS.low }}
                 aria-hidden="true"
               />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="min-w-0 text-pretty text-sm font-medium" style={{ color: "var(--hamilton-on-surface)" }}>
-                    {item.isAlert && (
-                      <span className="mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: "#fff1e6", color: "#9a3412" }}>
-                        Alert
-                      </span>
-                    )}
-                    {item.title}
-                  </p>
-                  <span className="shrink-0 text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                    {timeAgo(item.createdAt)}
-                  </span>
-                </div>
-                <p className="mt-0.5 line-clamp-2 text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
-                  {item.body}
-                </p>
-              </div>
+              <span className="min-w-0 truncate text-sm" style={{ color: "var(--hamilton-on-surface)" }} title={item.body}>
+                {item.isAlert && <span className="mr-1 font-semibold" style={{ color: "#9a3412" }}>Alert:</span>}
+                {item.title}
+              </span>
+              <span className="shrink-0 text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                {timeAgo(item.createdAt)}
+              </span>
             </li>
           ))}
         </ul>
       )}
+      <Link href={monitorHref} className="shrink-0 text-xs font-medium no-underline hover:underline" style={{ color: "var(--hamilton-primary)" }}>
+        All changes →
+      </Link>
     </section>
   );
 }

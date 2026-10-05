@@ -1,7 +1,7 @@
 /**
- * HamiltonBriefing — Hamilton as the banking expert beside the numbers: its written
- * read (the AI thesis) when one exists, then the state, Fed district and regulatory
- * context it draws on. Every context line is a stored fact shown with its source and
+ * HamiltonBriefing — the lead of the Benchmark page: Hamilton as the banking expert.
+ * Its written read (the AI thesis) when one exists, the institution's largest gap from
+ * published data, then the state, Fed district and regulatory context side by side. Every context line is a stored fact shown with its source and
  * date; nothing here is placeholder or sample text.
  * Server component — no "use client".
  */
@@ -15,6 +15,7 @@ import type {
   ExpertStateContext,
 } from "@/lib/hamilton/expert-context";
 import type { InstitutionPositioning } from "@/lib/hamilton/institution-position";
+import { headlineFor } from "./PositionOverview";
 
 interface HamiltonBriefingProps {
   thesis: ThesisOutput | null;
@@ -84,133 +85,148 @@ export function HamiltonBriefing({
   regulation,
 }: HamiltonBriefingProps) {
   const comparison = stateComparison(positioning, state);
+  const headline = positioning ? headlineFor(positioning) : null;
+  const lead = thesis?.core_thesis ?? headline;
   return (
     <section
       className="rounded-xl border"
       style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
     >
-      <div className="flex items-center gap-2.5 border-b px-5 py-3" style={{ borderColor: "var(--hamilton-border)" }}>
-        <span
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-          style={{ background: "var(--hamilton-gradient-cta)" }}
-          aria-hidden="true"
-        >
-          H
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
-            Hamilton&apos;s briefing
-          </h2>
-          <p className="text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-            State, local and regulatory context behind these fees
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3.5" style={{ borderColor: "var(--hamilton-border)" }}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+            style={{ background: "var(--hamilton-gradient-cta)" }}
+            aria-hidden="true"
+          >
+            H
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold" style={{ color: "var(--hamilton-on-surface)", fontFamily: "var(--hamilton-font-sans)" }}>
+              Hamilton&apos;s briefing
+            </h2>
+            <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+              Your fees read against state, local and regulatory context
+            </p>
+          </div>
         </div>
+        <Link href={analyzeHref} className="text-sm font-medium no-underline hover:underline" style={{ color: "var(--hamilton-primary)" }}>
+          Ask Hamilton a follow-up →
+        </Link>
       </div>
 
-      <div className="flex flex-col divide-y" style={{ borderColor: "var(--hamilton-border)" }}>
-        {/* Hamilton's written read */}
-        <div className="px-5 py-4">
-          {thesis ? (
-            <>
-              <p className="text-pretty text-[15px] font-medium leading-relaxed" style={{ color: "var(--hamilton-on-surface)" }}>
-                {thesis.core_thesis}
+      {/* Lead: Hamilton's written read, then the largest gap from published data */}
+      <div className="px-6 py-5">
+        {lead && (
+          <p className="text-balance text-xl font-medium leading-snug sm:text-2xl" style={{ color: "var(--hamilton-on-surface)" }}>
+            {lead}
+          </p>
+        )}
+        {thesis?.narrative_summary && (
+          <p className="mt-2 max-w-3xl text-pretty text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
+            {thesis.narrative_summary}
+          </p>
+        )}
+        {thesis && headline && (
+          <p className="mt-3 text-pretty text-sm font-medium" style={{ color: "var(--hamilton-on-surface)" }}>
+            For your institution: {headline}
+          </p>
+        )}
+        {!thesis && (
+          <>
+            <p className={`${lead ? "mt-2 " : ""}max-w-3xl text-pretty text-sm leading-relaxed`} style={{ color: "var(--hamilton-text-secondary)" }}>
+              Hamilton&apos;s written analysis is paused right now. Everything in this briefing comes straight from
+              published fee data and the sources named below.
+            </p>
+            {isAdmin && blockingPolicies.length > 0 && (
+              <p className="mt-2 rounded-md px-3 py-2 text-xs" style={{ backgroundColor: "#fff7ed", color: "#9a3412" }}>
+                Admin only: AI spending is switched off for{" "}
+                {blockingPolicies.map((key, i) => (
+                  <span key={key}>
+                    {i > 0 && ", "}
+                    <code>{key}</code>
+                  </span>
+                ))}
+                . Turn these on with spending caps to bring the analysis back.
               </p>
-              {thesis.narrative_summary && (
-                <p className="mt-2 text-pretty text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
-                  {thesis.narrative_summary}
-                </p>
-              )}
-              <Link href={analyzeHref} className="mt-2 inline-block text-xs font-medium no-underline hover:underline" style={{ color: "var(--hamilton-primary)" }}>
-                Ask Hamilton a follow-up →
-              </Link>
-            </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Context: state, Fed district and regulation side by side */}
+      <div
+        className="grid grid-cols-1 divide-y border-t lg:grid-cols-3 lg:divide-x lg:divide-y-0"
+        style={{ borderColor: "var(--hamilton-border)" }}
+      >
+        <div className="px-6 py-4">
+          <SectionLabel>{state ? state.stateName : "State"}</SectionLabel>
+          {!state ? (
+            <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+              Choose your institution to see how its fees compare within its state.
+            </p>
           ) : (
             <>
-              <p className="text-pretty text-sm leading-relaxed" style={{ color: "var(--hamilton-text-secondary)" }}>
-                Hamilton&apos;s written analysis is paused right now. The context below and every number on
-                this page come straight from published data.
-              </p>
-              {isAdmin && blockingPolicies.length > 0 && (
-                <p className="mt-2 rounded-md px-3 py-2 text-xs" style={{ backgroundColor: "#fff7ed", color: "#9a3412" }}>
-                  Admin only: AI spending is switched off for{" "}
-                  {blockingPolicies.map((key, i) => (
-                    <span key={key}>
-                      {i > 0 && ", "}
-                      <code>{key}</code>
+              {comparison ? (
+                <p className="mt-1 text-pretty text-sm font-medium" style={{ color: "var(--hamilton-on-surface)" }}>
+                  {comparison.line}
+                  {comparison.biggest && (
+                    <span className="font-normal" style={{ color: "var(--hamilton-text-secondary)" }}>
+                      {" "}Widest gap: {comparison.biggest.name}, {formatAmount(comparison.biggest.yours)} against a state median of{" "}
+                      {formatAmount(comparison.biggest.median)}.
                     </span>
-                  ))}
-                  . Turn these on with spending caps to bring the analysis back.
+                  )}
+                </p>
+              ) : (
+                <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+                  {Object.keys(state.medians).length === 0
+                    ? `Too few ${state.stateName} institutions publish fees yet for state medians.`
+                    : `None of these fees has a ${state.stateName} median yet.`}
+                </p>
+              )}
+              {state.regulator && (
+                <p className="mt-2 text-pretty text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
+                  State regulator:{" "}
+                  {state.regulatorUrl ? (
+                    <a href={state.regulatorUrl} target="_blank" rel="noreferrer" className="underline">
+                      {state.regulator}
+                    </a>
+                  ) : (
+                    state.regulator
+                  )}
+                  {state.creditUnionRegulator && ` (credit unions: ${state.creditUnionRegulator})`}
+                </p>
+              )}
+              {state.expertName && (
+                <p className="mt-1 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                  Hamilton&apos;s {state.stateName} desk is named for {state.expertName}. {state.expertBio}
                 </p>
               )}
             </>
           )}
         </div>
 
-        {/* State */}
-        {state && (
-          <div className="px-5 py-4">
-            <SectionLabel>{state.stateName}</SectionLabel>
-            {comparison ? (
-              <p className="mt-1 text-sm font-medium" style={{ color: "var(--hamilton-on-surface)" }}>
-                {comparison.line}
-                {comparison.biggest && (
-                  <span className="font-normal" style={{ color: "var(--hamilton-text-secondary)" }}>
-                    {" "}Widest gap: {comparison.biggest.name}, {formatAmount(comparison.biggest.yours)} against a state median of{" "}
-                    {formatAmount(comparison.biggest.median)}.
-                  </span>
-                )}
+        <div className="px-6 py-4">
+          <SectionLabel>{district ? `${district.name} Fed district` : "Fed district"}</SectionLabel>
+          {district?.beigeBook ? (
+            <>
+              <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-on-surface)" }}>
+                &ldquo;{district.beigeBook.text}&rdquo;
               </p>
-            ) : (
-              <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-                {Object.keys(state.medians).length === 0
-                  ? `Too few ${state.stateName} institutions publish fees yet for state medians.`
-                  : `None of these fees has a ${state.stateName} median yet.`}
-              </p>
-            )}
-            {state.regulator && (
-              <p className="mt-1.5 text-pretty text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
-                State regulator:{" "}
-                {state.regulatorUrl ? (
-                  <a href={state.regulatorUrl} target="_blank" rel="noreferrer" className="underline">
-                    {state.regulator}
-                  </a>
-                ) : (
-                  state.regulator
-                )}
-                {state.creditUnionRegulator && ` (credit unions: ${state.creditUnionRegulator})`}
-              </p>
-            )}
-            {state.expertName && (
               <p className="mt-1 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Hamilton&apos;s {state.stateName} desk is named for {state.expertName}. {state.expertBio}
+                Federal Reserve Beige Book, {district.beigeBook.releaseDate}
               </p>
-            )}
-          </div>
-        )}
+            </>
+          ) : (
+            <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
+              {district
+                ? "No Beige Book summary is stored for this district yet."
+                : "Choose your institution to see its Federal Reserve district outlook."}
+            </p>
+          )}
+        </div>
 
-        {/* Fed district */}
-        {district && (
-          <div className="px-5 py-4">
-            <SectionLabel>{district.name} Fed district</SectionLabel>
-            {district.beigeBook ? (
-              <>
-                <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-on-surface)" }}>
-                  &ldquo;{district.beigeBook.text}&rdquo;
-                </p>
-                <p className="mt-1 text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                  Federal Reserve Beige Book, {district.beigeBook.releaseDate}
-                </p>
-              </>
-            ) : (
-              <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-                No Beige Book summary is stored for this district yet.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Regulation */}
-        <div className="px-5 py-4">
+        <div className="px-6 py-4">
           <SectionLabel>Regulation</SectionLabel>
           {regulation.length === 0 ? (
             <p className="mt-1 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
@@ -220,10 +236,10 @@ export function HamiltonBriefing({
             <ul className="mt-1 flex flex-col gap-2">
               {regulation.map((item) => (
                 <li key={item.link}>
-                  <a href={item.link} target="_blank" rel="noreferrer" className="text-sm no-underline hover:underline" style={{ color: "var(--hamilton-on-surface)" }}>
+                  <a href={item.link} target="_blank" rel="noreferrer" className="text-pretty text-sm no-underline hover:underline" style={{ color: "var(--hamilton-on-surface)" }}>
                     {item.title}
                   </a>
-                  <p className="text-pretty text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
+                  <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
                     {item.source} · {item.topic}
                     {item.publishedAt && ` · ${formatDate(item.publishedAt)}`}
                   </p>

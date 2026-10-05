@@ -91,6 +91,13 @@ describe("RecentChanges", () => {
     expect(items[0].isAlert).toBe(true);
   });
 
+  it("shows at most three changes in the callout", () => {
+    const signals = ["a", "b", "c", "d"].map((id) => signal(id, `Change ${id}`));
+    const html = renderToStaticMarkup(<RecentChanges alerts={[]} signals={signals} selectedInstitutionId="2945" />);
+    expect(html).toContain("Change c");
+    expect(html).not.toContain("Change d");
+  });
+
   it("links to Monitor with institution context", () => {
     const html = renderToStaticMarkup(<RecentChanges alerts={[]} signals={[]} selectedInstitutionId="2945" />);
     expect(html).toContain('href="/pro/monitor?instId=2945"');
@@ -142,6 +149,13 @@ describe("HamiltonBriefing", () => {
     expect(admin).toContain("agent:hamilton");
     const customer = renderToStaticMarkup(<HamiltonBriefing {...briefingProps} isAdmin={false} />);
     expect(customer).not.toContain("agent:hamilton");
+  });
+
+  it("leads with the institution's largest gap from published data", () => {
+    const html = renderToStaticMarkup(<HamiltonBriefing {...briefingProps} isAdmin={false} />);
+    expect(html).toContain("Overdraft is 25% above the peer median");
+    const chart = renderToStaticMarkup(<PositionOverview positioning={positioning} showHeadline={false} />);
+    expect(chart).not.toContain("Overdraft is 25% above");
   });
 
   it("draws the state median on the position chart", () => {

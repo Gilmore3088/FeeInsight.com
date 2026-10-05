@@ -88,7 +88,7 @@ export async function fetchDistrictContext(district: number): Promise<ExpertDist
     SELECT content_text, release_date
       FROM fed_beige_book
      WHERE fed_district = ${district} AND section_name = 'Summary of Economic Activity'
-     ORDER BY release_date DESC
+     ORDER BY release_code DESC
      LIMIT 1
   `.catch(() => []);
   const text = row ? beigeBookSummary(String(row.content_text ?? "")) : "";
