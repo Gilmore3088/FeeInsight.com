@@ -1,3 +1,4 @@
+import { readerFeeConditions } from "@/lib/fee-conditions";
 import {
   getFeesByInstitution,
   getFinancialsByInstitution,
@@ -90,7 +91,7 @@ export async function buildHamiltonInstitutionBriefing(
             category: null,
             amount: fee.amount,
             frequency: fee.frequency,
-            conditions: fee.conditions,
+            conditions: readerFeeConditions(fee.conditions),
             status: "provisional",
             confidence: fee.extraction_confidence,
             pipeline_stage: "raw_unverified",
