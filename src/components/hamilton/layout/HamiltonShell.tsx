@@ -5,6 +5,7 @@ import type { User } from "@/lib/auth";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import { HamiltonTopNav } from "./HamiltonTopNav";
 import { HamiltonContextBar } from "./HamiltonContextBar";
+import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonLeftRail } from "./HamiltonLeftRail";
 
 interface SavedAnalysis {
@@ -25,11 +26,17 @@ interface RecentScenario {
 interface HamiltonShellProps {
   user: User;
   isAdmin: boolean;
+  /** Admin is previewing the customer experience */
+  viewAsCustomer?: boolean;
   institutionContext: {
     name: string | null;
     type: string | null;
     assetTier: string | null;
     fedDistrict: number | null;
+    city?: string | null;
+    stateCode?: string | null;
+    feesCheckedAt?: string | null;
+    makeDefaultHref?: string | null;
     feePublicationLabel?: string | null;
     publishedFeeCount?: number | null;
     provisionalFeeCount?: number | null;
@@ -55,6 +62,7 @@ interface HamiltonShellProps {
 export function HamiltonShell({
   user,
   isAdmin,
+  viewAsCustomer = false,
   institutionContext,
   selectedInstitutionId,
   activeHref,
@@ -71,20 +79,32 @@ export function HamiltonShell({
     >
       {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
       {isAdmin && (
-        <div className="bg-gray-900 text-white flex items-center justify-between px-4 py-1.5 text-xs">
-          <span className="text-gray-400">Admin Mode - viewing Hamilton Pro</span>
-          <Link
-            href="/admin"
-            className="text-blue-400 hover:text-blue-300 font-medium no-underline"
-          >
-            Back to Admin
-          </Link>
+        <div className="bg-gray-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs">
+          <span className="text-gray-400">
+            {viewAsCustomer
+              ? "Viewing as a customer: Hamilton answers exactly as a paying customer sees it"
+              : "Admin view: Hamilton answers with pipeline detail"}
+          </span>
+          <span className="flex items-center gap-4">
+            <form action={setViewAsCustomer}>
+              <input type="hidden" name="mode" value={viewAsCustomer ? "admin" : "customer"} />
+              <button type="submit" className="text-blue-400 hover:text-blue-300 font-medium">
+                {viewAsCustomer ? "Back to admin view" : "View as customer"}
+              </button>
+            </form>
+            <Link
+              href="/admin"
+              className="text-blue-400 hover:text-blue-300 font-medium no-underline"
+            >
+              Back to Admin
+            </Link>
+          </span>
         </div>
       )}
 
       {/* Top navigation */}
       <HamiltonTopNav
-        isAdmin={isAdmin}
+        isAdmin={isAdmin && !viewAsCustomer}
         activeHref={activeHref}
         user={user}
         selectedInstitutionId={selectedInstitutionId}

@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { HamiltonPageSkeleton } from "@/components/hamilton/layout/HamiltonPageSkeleton";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { isViewAsCustomerCookie, VIEW_AS_CUSTOMER_COOKIE } from "@/lib/hamilton/view-as";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -83,12 +84,13 @@ async function HamiltonLayoutInner({
     artifactInstitutionId,
   });
   const isArtifactContext = !selectedInstId && Boolean(artifactInstitutionId);
-  const { institution: selectedInstitution, source: selectedSource } =
+  const { institution: selectedInstitution, source: selectedSource, isWorkspaceBank } =
     await resolveHamiltonInstitutionContext({
       userId: user.id,
       instId: contextInstitutionId,
       intent: selectedIntent,
       persistUrlSelection: shouldPersistUrlInstitutionSelection(selectedInstId),
+      makeDefault: requestSearchParams.get("setBank") === "1",
       transientSource: isArtifactContext ? "artifact" : undefined,
     });
   const selectedInstitutionId = selectedInstitution?.id.toString() ?? null;
@@ -98,6 +100,17 @@ async function HamiltonLayoutInner({
         type: selectedInstitution.charterType,
         assetTier: selectedInstitution.assetTierLabel ?? selectedInstitution.assetTier,
         fedDistrict: selectedInstitution.fedDistrict,
+        city: selectedInstitution.city,
+        stateCode: selectedInstitution.stateCode,
+        feesCheckedAt: selectedInstitution.latestSourceCollectedAt,
+        makeDefaultHref:
+          isWorkspaceBank === false
+            ? `${pathname}?${(() => {
+                const next = new URLSearchParams(requestSearchParams);
+                next.set("setBank", "1");
+                return next.toString();
+              })()}`
+            : null,
         feePublicationLabel: selectedInstitution.feePublicationLabel,
         publishedFeeCount: selectedInstitution.publishedFeeCount,
         provisionalFeeCount: selectedInstitution.provisionalFeeCount,
@@ -109,6 +122,7 @@ async function HamiltonLayoutInner({
         type: user.institution_type,
         assetTier: user.asset_tier,
         fedDistrict: user.fed_district ?? null,
+        stateCode: user.state_code ?? null,
         feePublicationLabel: null,
         publishedFeeCount: null,
         provisionalFeeCount: null,
@@ -212,6 +226,7 @@ async function HamiltonLayoutInner({
     <HamiltonShell
       user={user}
       isAdmin={isAdmin}
+      viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}
       activeHref={activeHref}
