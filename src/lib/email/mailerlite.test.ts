@@ -52,6 +52,8 @@ describe("MailerLite sync", () => {
     expect(mailerLiteGroupForSource("capture_state")).toBe("watch");
     expect(mailerLiteGroupForSource("newsletter,capture_institution,report")).toBe("report");
     expect(mailerLiteGroupForSource("capture_report_sample")).toBe("report");
+    expect(mailerLiteGroupForSource("report_district")).toBe("report");
+    expect(mailerLiteGroupForSource("report_national")).toBe("report");
     expect(mailerLiteGroupForSource(null)).toBe("news");
   });
 
