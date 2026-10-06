@@ -6,8 +6,16 @@
  */
 import { useState, type ReactNode } from "react";
 
-export function LensSwitch({ finance, market }: { finance: ReactNode; market: ReactNode }) {
-  const [lens, setLens] = useState<"finance" | "market">("finance");
+export function LensSwitch({
+  finance,
+  market,
+  initial = "finance",
+}: {
+  finance: ReactNode;
+  market: ReactNode;
+  initial?: "finance" | "market";
+}) {
+  const [lens, setLens] = useState<"finance" | "market">(initial);
   const tab = (key: "finance" | "market", label: string) => (
     <button
       type="button"

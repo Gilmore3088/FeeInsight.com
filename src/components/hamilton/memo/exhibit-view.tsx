@@ -305,7 +305,7 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   );
 }
 
-/** The engine's one exhibit, drawn the same on Research, Model, Reports and Ask. */
+/** The engine's one exhibit, drawn the same on Research, Model, Reports and Ask. Storyline-only kinds are drawn by StoryExhibitView. */
 export function ExhibitView({ exhibit, number, title }: { exhibit: ExhibitSpec; number?: number; title?: string }) {
   return (
     <ExhibitFrame title={title ?? exhibit.title} sources={exhibit.sources} note={exhibit.note} number={number}>
@@ -317,9 +317,9 @@ export function ExhibitView({ exhibit, number, title }: { exhibit: ExhibitSpec; 
         ) : (
           <p className="text-sm text-warm-700">No named competitor publishes this fee yet.</p>
         )
-      ) : (
+      ) : exhibit.kind === "trend" ? (
         <Trend x={exhibit} />
-      )}
+      ) : null}
     </ExhibitFrame>
   );
 }

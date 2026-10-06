@@ -83,12 +83,13 @@ export function StorylineView({ story, nextSteps }: { story: Storyline; nextStep
       ) : null}
 
       {story.exhibits.map((item, i) => (
-        <StoryExhibitView key={item.id} item={item} number={i + 1} />
+        <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} />
       ))}
 
       <section>
         <Kicker>What it means for you</Kicker>
         <LensSwitch
+          initial={story.defaultView ?? "finance"}
           finance={<LensList facts={story.lenses.finance} empty="Nothing on file for the board view yet." />}
           market={<LensList facts={story.lenses.market} empty="Nothing on file for the market view yet." />}
         />

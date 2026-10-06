@@ -40,6 +40,7 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
     }
     return out;
   }
+  if (exhibit.kind !== "trend") return [];
   const series = exhibit.series[0];
   if (!series || series.points.length === 0) return [];
   const fmt = (v: number) => (exhibit.unit === "percent" ? `${v.toFixed(1)}%` : fmtMoney(v));

@@ -10,9 +10,8 @@ import { Loader2 } from "lucide-react";
 import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/lib/hamilton/workspace/types";
 import { EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
-import { SegmentTable, type SegmentData } from "@/components/hamilton/memo/segment-table";
+import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
-import type { Storyline } from "@/components/hamilton/storyline/types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
@@ -208,10 +207,12 @@ export function StructuredAsk({
 
   const q = response.question ?? response.answer?.question ?? null;
   // The market slice the question named ("$10B and up"), when the engine sends it.
-  const segment = (response as AskResponse & { segment?: SegmentData | null }).segment ?? null;
+  const segment = response.segment ?? null;
   // The storyline answer (engine 1.6.0), when the engine sends one.
-  const storyline = (response.answer as (typeof response.answer & { storyline?: Storyline | null }) | undefined)?.storyline ?? null;
-  const exhibitOwn = response.answer?.exhibit && response.answer.exhibit.kind !== "trend" ? response.answer.exhibit : null;
+  const storyline = response.answer?.storyline ?? null;
+  const answerExhibit = response.answer?.exhibit ?? null;
+  const exhibitOwn =
+    answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
   return (
     <div className="flex flex-col gap-5">
       {response.answer && storyline ? (
