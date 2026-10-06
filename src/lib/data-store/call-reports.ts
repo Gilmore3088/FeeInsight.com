@@ -41,9 +41,34 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
   // institution_financial_records has institution_id, not cert_number/charter_type directly.
   // JOIN to institution_sources for charter_type and cert_number.
   // report_date is TEXT (e.g. '2024-12-31') — cast to date for DATE_TRUNC.
+  // NCUA 5300 income lines are year-to-date: a credit union's quarter is its YTD minus
+  // the prior quarter's YTD in the same year (Q1 stands alone). FDIC rows are already
+  // quarterly. Summing NCUA YTD as quarters inflated Q2-Q4 credit union income up to 4x.
   const rows = await sql.unsafe(
-    `SELECT
-       TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
+    `WITH filed AS (
+       SELECT inf.institution_id,
+              inf.source,
+              inf.report_date,
+              inf.report_date::date AS rd,
+              inf.service_charge_income AS amount,
+              LAG(inf.service_charge_income) OVER w AS prior_amount,
+              LAG(inf.report_date::date) OVER w AS prior_rd
+         FROM institution_financial_records inf
+        WHERE ${SAME_SCALE_SOURCES}
+       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
+                    ORDER BY inf.report_date::date)
+     ),
+     quarterly AS (
+       SELECT institution_id, report_date, rd,
+              CASE
+                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
+                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
+                ELSE NULL
+              END AS service_charge_income
+         FROM filed
+     )
+     SELECT
+       TO_CHAR(DATE_TRUNC('quarter', inf.rd), 'YYYY-"Q"Q')       AS quarter,
        MIN(inf.report_date)                                     AS quarter_date,
        SUM(inf.service_charge_income)                           AS total_service_charges,
        COUNT(DISTINCT ct.cert_number)                           AS total_institutions,
@@ -51,12 +76,11 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
                                                                  AS bank_service_charges,
        SUM(CASE WHEN ct.charter_type = 'credit_union' THEN inf.service_charge_income ELSE 0 END)
                                                                  AS cu_service_charges
-     FROM institution_financial_records inf
+     FROM quarterly inf
      JOIN institution_sources ct ON ct.id = inf.institution_id
      WHERE inf.service_charge_income > 0
-       AND ${SAME_SCALE_SOURCES}
-     GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
-     ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
+     GROUP BY DATE_TRUNC('quarter', inf.rd)
+     ORDER BY DATE_TRUNC('quarter', inf.rd) DESC
      LIMIT $1`,
     [quarterCount]
   ) as {

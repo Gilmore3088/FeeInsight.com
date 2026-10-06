@@ -452,3 +452,39 @@ five minutes and finishes about two, so about 20 lane runs (roughly 50 minutes o
 queued ahead of any new report run. Read-only check at 03:08 UTC: 17 lane runs queued ahead of the two
 report runs.
 **Fix:** same PR: the tick takes queued report runs before pipeline runs; the rest keeps its order.
+
+## 2026-10-06: The National report carried fixed claims and advice, and misstated fee income
+**What happened:** the Q4 2026 National report (run 1309) was titled "The Death of Fee-Based
+Differentiation", showed "5 Truths", "SO WHAT" boxes and a "What Winning Institutions Do Next"
+page, showed service charges as "$0.0B", and said 2,075 institutions.
+**Cause:** the title, the truths' wording, every box and the playbook were fixed text in
+`templates/national-quarterly.ts`, and the section prompts told Hamilton the conclusion (for
+example "the data confirms fee revenue is dominated by NSF/overdraft", which call reports cannot
+show). Call-report income is in thousands of dollars but was divided as dollars. NCUA 5300 fee
+income is year to date, and `getRevenueTrend` summed it as quarterly: Q2 2026 read $14.49B and a
+64% bank share; per quarter it is $11.97B and 78% (read-only check, 03:40 UTC). The institution
+count was the largest single category's count, not the site's count (2,669).
+**Fix:** same PR: headings and cards state payload figures only; no fixed claims, advice or
+playbook; prompts ask for what the data shows and never for advice (Hamilton voice 3.3.0);
+NCUA income converted to quarters; thousands formatted correctly; the count comes from
+`getPublicStatsSummary`.
+
+## 2026-10-06: Recorded fee changes are mostly not price changes
+**What happened:** of 9 increases and decreases in `fee_change_records` in the last 30 days, 7
+were not changes: a page that lists two prices for one fee (Canyon View FCU returned deposit $3
+and $10, First National Bank of Mount Dora monthly fee $5 and $32, Morgantown notary $5 and $10)
+or two different fees in one category (True North "Express Checking Plus" $5 against "True
+Options" $10). Only New Hampshire FCU's two changes hold up (Oct 2024 schedule to Aug 2026).
+**Cause:** the publisher records a change when a newer document carries the fee at a new amount,
+even when that document also states the old amount.
+**Fix:** the Monthly Pulse now reports a change only when the old and new rows share a fee name,
+the earlier schedule states the old price, and the newest schedule states the new price but not
+the old one (`checkFeeAgainstSource`). The publisher still records the extra rows; fixing it there
+is still open.
+
+## 2026-10-06: The shared source check misreads one-line dotted-leader schedules
+**What happened:** on Commonwealth FCU's schedule, which is stored as one long line ("Greater
+than $100.00 ..... $10.00 Returned Deposited Item ..... $32.00"), `checkFeeAgainstSource` says
+"Returned Deposited Item" is $10 and that $32 is "amount_not_the_fee".
+**Cause:** in dotted-leader layouts the price follows the name, but the check took the amount just
+before the name. Not fixed yet; it affects any schedule stored without line breaks.
