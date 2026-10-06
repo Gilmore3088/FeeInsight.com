@@ -35,6 +35,13 @@ const LOW_YIELD_RATIO = 0.5;
  * (document, fee name, amount) keeps fees found the first time from being inserted twice.
  */
 export const KNOX_REEXTRACT_MAX_FEES = 5;
+/**
+ * Banks at or above this size (thousands of dollars, as `institution_sources.asset_size`
+ * stores it: $10B) have the current copy of each page re-read once per rules version,
+ * whatever it held before. The rules re-check only reaches documents with live fees, so a
+ * large bank's missing overdraft fee would otherwise wait for a new copy of its page.
+ */
+export const KNOX_REREAD_ASSET_FLOOR = 10_000_000;
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
 
@@ -198,6 +205,17 @@ async function selectTextArtifacts(
                 AND recheck.input_fingerprint = ${signatureParam}
                 AND COALESCE((recheck.detail->>'${MISSING_FEES_DETAIL}')::int, 0) > 0
            )`;
+    // A large bank's current page is read again once per rules version.
+    const assetParam = `$${params.push(KNOX_REREAD_ASSET_FLOOR)}`;
+    thinTextReextract += `
+           OR (
+             COALESCE(inst.asset_size, 0) >= ${assetParam}${currentCopy ? `
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )` : ""}
+           )`;
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
@@ -257,9 +275,19 @@ async function selectTextArtifacts(
             WHERE adt.text_hash IS NOT NULL
               AND prior.institution_id = adt.institution_id
               AND prior.text_hash = adt.text_hash
-              AND prior.id <> adt.id
+              AND prior.id <> adt.id${currentCopy ? `
+              -- An older copy's rows never block the page's current copy, or a page whose
+              -- text did not change would never be read again.
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM source_documents mine
+                  JOIN source_documents theirs ON theirs.id = prior.source_document_id
+                 WHERE mine.id = adt.source_document_id
+                   AND mine.superseded_by_id IS NULL
+                   AND theirs.superseded_by_id IS NOT NULL
+              )` : ""}
          )
-       ORDER BY adt.updated_at DESC, adt.id DESC
+       ORDER BY ${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ` : ""}adt.updated_at DESC, adt.id DESC
        LIMIT $1
     `,
     params,

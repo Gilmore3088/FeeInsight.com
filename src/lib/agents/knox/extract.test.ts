@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -235,6 +235,16 @@ describe("Knox agentic extraction", () => {
       expect(sqlText).toContain('|| \'["superseded_by_newer_copy"]\'::jsonb');
     });
 
+    it("lets a current copy be read when only an older copy of the same text holds rows", async () => {
+      const db = currentCopyDb([], []);
+
+      await runKnoxExtract({ runId: 108, db: asExtractDb(db) });
+
+      const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(unsafeSql).toContain("AND mine.superseded_by_id IS NULL");
+      expect(unsafeSql).toContain("AND theirs.superseded_by_id IS NOT NULL");
+    });
+
     it("leaves older copies alone before the current-copy column exists", async () => {
       const db = createDbMock([textArtifact]);
 
@@ -280,6 +290,10 @@ describe("Knox agentic extraction", () => {
       // A text with few fees goes back to Knox when the rules version moves.
       expect(query).toContain("FROM raw_fee_observations thin");
       expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
+      // A large bank's page is read again once per rules version, ahead of other texts.
+      expect(query).toContain("COALESCE(inst.asset_size, 0) >=");
+      expect(params).toEqual(expect.arrayContaining([KNOX_REREAD_ASSET_FLOOR]));
+      expect(query).toContain(`ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`);
     });
 
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {

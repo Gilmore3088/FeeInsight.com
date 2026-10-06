@@ -33,6 +33,12 @@ Knox owns conservative raw fee extraction.
   category Knox has already read from the current copy, so a fee the newer read misses
   still goes to Darwin. Verified rows are left alone; live fees a newer copy dropped are
   Hamilton's (`hamilton/newer-copy-retire.ts`).
+- An older copy's rows never stop the current copy from being read: a page re-fetched with
+  the same text used to be skipped as "already extracted under another document", so it was
+  never read again by a newer rules version.
+- Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
+  once per rules version, ahead of other texts. The rules re-check only reaches documents
+  with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
   name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
