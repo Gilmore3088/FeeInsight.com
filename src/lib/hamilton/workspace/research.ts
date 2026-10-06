@@ -7,7 +7,14 @@
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
-import { getInstitutionFeeRows, getInstitutionFeeValues, getPeerFeeValues, getSegmentFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
+import {
+  getFeeValuesForInstitutions,
+  getInstitutionFeeRows,
+  getInstitutionFeeValues,
+  getPeerFeeValues,
+  getSegmentFeeValues,
+  type PeerFeeValue,
+} from "@/lib/data-store/fee-index";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
@@ -32,8 +39,10 @@ import {
   WORKSPACE_ENGINE_VERSION,
   type Briefing,
   type EconomicBackdrop,
+  type ChangeEvent,
   type Fact,
   type FeeResearch,
+  type FeeStructureSet,
   type InstitutionFinancials,
   type LocalMarketInfo,
   type MarketIncome,
@@ -465,6 +474,42 @@ async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: As
   }
 }
 
+/** The fees around overdraft and NSF that show how a group structures them. */
+export const STRUCTURE_COLUMNS: { category: string; label: string }[] = [
+  { category: "overdraft", label: "Overdraft fee" },
+  { category: "nsf", label: "NSF fee" },
+  { category: "od_daily_cap", label: "Daily cap" },
+  { category: "od_protection_transfer", label: "Transfer fee" },
+  { category: "continuous_od", label: "Continuous OD" },
+];
+const STRUCTURE_FEES = new Set(["overdraft", "nsf", "od_daily_cap", "nsf_daily_cap", "od_protection_transfer", "continuous_od"]);
+
+async function loadStructure(
+  base: WorkspaceBase,
+  group: { label: string; members: { institutionId: number; institutionName: string }[] },
+): Promise<FeeStructureSet | null> {
+  if (group.members.length === 0) return null;
+  try {
+    const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
+    const values = await getFeeValuesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
+    const row = (institutionId: number, name: string, own: boolean) => ({
+      institutionId,
+      name,
+      own,
+      values: Object.fromEntries(values.get(institutionId) ?? new Map<string, number>()),
+    });
+    return {
+      groupLabel: group.label,
+      columns: STRUCTURE_COLUMNS,
+      rows: [row(base.institutionId, base.institutionName, true), ...group.members.map((m) => row(m.institutionId, m.institutionName, false))],
+      source: FEE_SOURCE,
+    };
+  } catch (error) {
+    console.error("[hamilton-research] structure read failed", { error });
+    return null;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
@@ -492,6 +537,19 @@ export async function getFeeResearch(
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValue);
   const sorted = peers.map((p) => p.amount).sort((a, b) => a - b);
   const current = base.ownValues.get(feeCategory) ?? null;
+  const structureGroup =
+    segment && !segment.problem
+      ? { label: segment.segment.label, members: segment.members }
+      : local.competitors && local.competitors.length >= MIN_PEERS_FOR_POSITION
+        ? { label: "competitors in your market", members: local.competitors }
+        : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
+  const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
+  const changeEvents: ChangeEvent[] = changes.map((c) => ({
+    date: c.changedAt.slice(0, 10),
+    institutionName: c.institutionName,
+    from: c.oldAmount,
+    to: c.newAmount,
+  }));
   const recentChanges: Fact[] = changes
     .filter((c) => c.oldAmount !== null && c.newAmount !== null)
     .slice(0, 10)
@@ -524,6 +582,8 @@ export async function getFeeResearch(
     regulation: [...feeRules(feeCategory, base.charterType), ...feeRegulatoryNews(articles, feeCategory)],
     economy,
     segment,
+    changeEvents,
+    structure,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),

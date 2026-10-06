@@ -9,11 +9,15 @@ MailerLite: planning, writing, A/B testing, scoring and learning. It never sends
    from MailerLite, scores it (`scoreCampaign`: 0.3 × opens + 2 × clicks − 10 × unsubscribes,
    0 to 100) and upserts one `pipeline_feedback` row per campaign (`kind = campaign_result`,
    `about_strategy = marketing.<format>`). Sends under 100 recipients get weight 0.1. It also
-   stores this month's national figures (`kind = market_snapshot`) so next month can say what moved.
+   stores this month's national figures (`kind = market_snapshot`); next month the writer gets only
+   last month's institution counts, labeled as coverage, never last month's medians (a median
+   that differs mostly reflects which institutions were added, not a price move).
 2. `marketing-write` (paid, `PROVIDER_STEP_KEYS`, Hamilton's key and budget): `planMonth` picks
    two formats from `MARKETING_FORMATS` that have not run in the last three months, best past
-   score first. Facts come only from `fee_index_cache` (national, as the public report shows)
-   and `published_fee_catalog` (bank vs credit union and one state, 20+ institutions each).
+   score first. National facts come from `getNationalIndexCached` (as the public report shows,
+   with its freshness and method-version checks); bank vs credit union and one state come from
+   `published_fee_catalog` under the `fee-stats.ts` contract (sourced rows, one value per
+   institution), 20+ institutions each.
    The model writes copy and two subjects; tables are rendered from the facts, never by the
    model. Every number in the copy must be in the facts (`unbackedNumbers`), and banned phrases
    ("raise your fee", turnaround promises, the product name outside the footer) reject the

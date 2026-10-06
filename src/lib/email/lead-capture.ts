@@ -80,7 +80,7 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
       ];
     case "national_index":
       return [
-        "New national medians, notable fee changes, and one chart, no more than once a month.",
+        "New national medians and one table worth bringing to a pricing meeting, no more than once a month.",
         `Current index: ${absolute("/research/national-fee-index")}`,
         stateEditionLine(input.stateCode),
       ];
