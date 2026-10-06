@@ -42,7 +42,7 @@ function captureEventProps(placement: LeadCapturePlacement, stateCode: string | 
   return stateCode ? { placement, state: stateCode } : { placement };
 }
 
-const DEFAULT_SUCCESS = "Check your inbox — confirm your email and your first update is on its way.";
+const DEFAULT_SUCCESS = "Check your inbox and confirm your email to start getting updates.";
 const SIGNED_UP_NO_EMAIL = "You're signed up.";
 const SAMPLE_REPORT_PDF_HREF = "/reports/sample-competitive-fee-position.pdf";
 

@@ -5,7 +5,7 @@ import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 
 const INQUIRY_TYPES = [
-  { value: "report", label: "Competitive Fee Position Report (free)" },
+  { value: "report", label: "Competitive Fee Position Report (priced on request)" },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },

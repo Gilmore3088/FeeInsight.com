@@ -343,10 +343,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               set before any work starts.
             </p>
             <p className="mt-4 text-[13px] text-[#6B6255]">
-              Prefer email?{" "}
-              <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#A93D25] underline-offset-2 hover:underline">
-                {CONTACT_EMAIL}
-              </a>
+              Prefer to write?{" "}
+              <Link href="/contact?source=report" className="text-[#A93D25] underline-offset-2 hover:underline">
+                Send us a message
+              </Link>
             </p>
           </div>
           <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" />

@@ -10,6 +10,7 @@ import { getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { sql } from "@/lib/data-store/connection";
 import { generateGlobalThesis } from "./generate";
+import { hasAnthropicApiKey } from "@/lib/ai-provider";
 import { recordProRequest } from "@/lib/agents/run-store";
 import type { ThesisOutput, ThesisSummaryPayload } from "./types";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
@@ -161,9 +162,14 @@ export async function fetchHomeBriefingData(
     derived_tensions: [],
   };
 
+  // Preview deployments and builds share the production database but carry no
+  // ANTHROPIC_API_KEY. They cannot write a thesis, and logging that as a failed
+  // pro.thesis step put a false alarm on the admin Crew page. Production still logs it.
+  const thesisCannotRunHere = !hasAnthropicApiKey() && process.env.VERCEL_ENV !== "production";
+
   let thesis: ThesisOutput | null = null;
   try {
-    thesis = includeThesis && allEntries.length > 0
+    thesis = includeThesis && allEntries.length > 0 && !thesisCannotRunHere
       ? await generateGlobalThesis({ scope: "monthly_pulse", data: thesisSummary })
       : null;
     if (thesis) {

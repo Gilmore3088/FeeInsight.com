@@ -2,8 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -105,7 +104,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           page,
         })
       : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
-    focusCategory ? getCachedFeeCategorySummaries() : Promise.resolve([]),
+    focusCategory ? getPublicCategorySummaries() : Promise.resolve([]),
   ]);
 
   // One read for the visible page only. On failure the rows fall back to "Fees published"

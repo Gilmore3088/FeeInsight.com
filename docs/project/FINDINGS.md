@@ -26,6 +26,26 @@ state. A county-level assignment would need county FIPS on each institution.
 **Lesson:** when a report names a Fed district, say which states it covers, and expect thin
 coverage in districts whose split states went elsewhere.
 
+## 2026-10-05: Rosetta kept re-downloading dead links, and the live board miscounted
+**What happened:** James's screen recording of /admin/live (22:36 UTC) showed banks failing in
+Rosetta with "page not found" that had no working document, the same bank more than once, and
+counts that disagreed between Knox, Darwin and Hamilton. Prod (read-only, 22:40 UTC): Rosetta
+logged 1,677 read 404s on 247 documents in 24 hours (LINKBANK's two old copies 9 and 10 times
+each). 480 of the 572 unread "success" documents had a newer download for the same bank.
+**Cause:** Rosetta picked any `source_documents` row with status `success`, including old
+February-April rows with no vault copy whose bank Magellan had since failed to download (404).
+It fetched the dead link, sent the bank back to Magellan, and picked the same row again next
+pass, because 404 is not a permanent outcome. On the board, Darwin's and Hamilton's per-bank
+counts came from the step's first ten fee rows (`sample_results`), not its real totals (one
+Darwin step checked 74 fees but the board saw 10), and a bank with several documents showed once
+per document.
+**Fix:** PR 155. Rosetta reads only a bank's current document and skips a no-copy row whose
+link already returned 404/410; Rosetta's "banks in line" uses the same rule (1,408 to 640). Fee
+steps record `institution_results` with every bank's real totals; each board column shows a bank
+once; "On the site" shows the bank's live fee total.
+**Lesson:** a picker over a history table must say which row is current. Board numbers must come
+from totals, never from a sample written for debugging.
+
 ## 2026-10-05: Credit union capital ratio shown as about 1,100%
 **What happened:** Pro institution pages, the API and Hamilton's briefings showed credit union
 "Tier 1 capital ratio" around 1,100% (a $1.1B credit union showed 1,090 for Q2 2026). The NCUA
@@ -246,3 +266,24 @@ it was a repair result.
 run on code with no state-expert step.
 **Fix:** PR 84 (merged 18:02) counts only full passes that include a state-expert step.
 **Lesson:** a cadence change must say how it treats passes that ran before it.
+
+## 2026-10-06: Paid passes skipped after the tick got bigger
+**What happened:** from 22:26 UTC on Oct 5 to 00:22 UTC on Oct 6, 13 paid passes (discover-paid,
+read-paid, extract-paid) were recorded as skipped, and the Crew page showed "4 agent ticks were
+blocked in the last hour".
+**Cause:** PR 149 raised the tick to 10 runs x 10 steps. The budget check treated that as 100
+possible paid calls against the tick policy's cap of 30 and refused paid steps for the whole tick,
+and a refused paid step is skipped for good.
+**Fix:** PR for this finding: the check now gives paid steps to only as many runs as the cap covers
+(3 at 30 calls and 10 steps); the other runs do free steps and leave their paid step queued.
+**Lesson:** a change to tick size must be checked against the tick budget policy.
+
+## 2026-10-06: Preview builds logged false "missing_key" thesis failures
+**What happened:** the Crew page reported 3 of 5 `pro.thesis` steps failing with `missing_key`
+while production theses succeeded.
+**Cause (inferred from timing, not traced to a deployment):** preview deployments and builds use the
+production database but have no `ANTHROPIC_API_KEY`, and rendering the Hamilton page there logged a
+failed thesis to the shared run ledger.
+**Fix:** same PR: without a key outside production the thesis is not attempted or logged.
+Production still logs a missing key.
+**Lesson:** anything a preview writes to the shared ledger shows on the production Crew page.

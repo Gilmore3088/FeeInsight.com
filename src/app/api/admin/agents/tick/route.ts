@@ -107,6 +107,7 @@ async function handleGET(request: NextRequest) {
   let budgetPolicyId: number | null = null;
   let maxProviderCallsPerRun: number | null = null;
   let maxEstimatedCostMicrousd: number | null = null;
+  let providerRunLimit: number | null = null;
 
   if (await hasQueuedProviderSteps()) {
     const budget = await assertCronTickBudgetAllowed({
@@ -127,6 +128,7 @@ async function handleGET(request: NextRequest) {
       budgetPolicyId = budget.policyId ?? null;
       maxProviderCallsPerRun = budget.maxProviderCalls ?? null;
       maxEstimatedCostMicrousd = budget.maxEstimatedMicrousd ?? null;
+      providerRunLimit = budget.maxRuns ?? null;
     }
   }
 
@@ -141,6 +143,7 @@ async function handleGET(request: NextRequest) {
     budgetPolicyId,
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
+    providerRunLimit,
     deadlineAt: tickStartedAt + STEP_START_BUDGET_MS,
   });
   return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
