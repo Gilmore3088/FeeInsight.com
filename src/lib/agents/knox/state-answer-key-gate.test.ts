@@ -12,15 +12,17 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * show how Texas-tuned rules carry to other states. Floors are today's counts per state; raise
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
+// v16 counts only reads that pass Knox's self-check; main at v15 scored 657 right / 51 wrong
+// on that basis.
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 123, wrong: 9 },
-  FL: { right: 96, wrong: 7 },
-  GA: { right: 142, wrong: 13 },
-  IL: { right: 86, wrong: 7 },
-  MI: { right: 104, wrong: 0 },
-  MN: { right: 92, wrong: 14 },
+  CA: { right: 114, wrong: 9 },
+  FL: { right: 95, wrong: 7 },
+  GA: { right: 141, wrong: 12 },
+  IL: { right: 84, wrong: 7 },
+  MI: { right: 101, wrong: 0 },
+  MN: { right: 85, wrong: 8 },
   NY: { right: 38, wrong: 8 },
-  all: { right: 681, wrong: 58 },
+  all: { right: 658, wrong: 51 },
 };
 
 const fixture = JSON.parse(
@@ -33,6 +35,7 @@ describe("Knox answer-key gate (seven states)", () => {
   });
 
   for (const [state, floor] of Object.entries(FLOORS)) {
+    // The self-check traces every read against its text, so a whole fixture takes several seconds.
     it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones (${state})`, () => {
       const documents = state === "all" ? fixture.keys : fixture.keys.filter((document) => document.state === state);
       const score = scoreAnswerKeys(documents);
@@ -43,6 +46,6 @@ describe("Knox answer-key gate (seven states)", () => {
         `wrong: ${score.errors.map((error) => `${error.tid} ${error.fee} (${error.kind})`).join(", ")}`;
       expect(score.right, summary).toBeGreaterThanOrEqual(floor.right);
       expect(wrong, summary).toBeLessThanOrEqual(floor.wrong);
-    });
+    }, 60_000);
   }
 });

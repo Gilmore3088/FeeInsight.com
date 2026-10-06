@@ -15,8 +15,10 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * same PR. When it trades a right fee for something worth more, say so in the PR and lower
  * the floor there; never lower it silently.
  */
+// v16 counts only reads that pass Knox's self-check (the shared accuracy check Darwin
+// applies before publishing). Main at v15 scored 443 right / 16 wrong on that same basis.
 const FLOORS = {
-  all: { right: 460, wrong: 18 },
+  all: { right: 443, wrong: 16 },
   holdout: { right: 43, wrong: 6 },
 };
 
@@ -31,6 +33,7 @@ describe("Knox answer-key gate (Texas)", () => {
   });
 
   for (const [name, floor] of Object.entries(FLOORS)) {
+    // The self-check traces every read against its text, so a whole fixture takes several seconds.
     it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones (${name})`, () => {
       const documents = name === "all" ? fixture.keys : fixture.keys.filter((document) => document.set === name);
       const score = scoreAnswerKeys(documents);
@@ -41,6 +44,6 @@ describe("Knox answer-key gate (Texas)", () => {
         `wrong: ${score.errors.map((error) => `${error.tid} ${error.fee} (${error.kind})`).join(", ")}`;
       expect(score.right, summary).toBeGreaterThanOrEqual(floor.right);
       expect(wrong, summary).toBeLessThanOrEqual(floor.wrong);
-    });
+    }, 60_000);
   }
 });

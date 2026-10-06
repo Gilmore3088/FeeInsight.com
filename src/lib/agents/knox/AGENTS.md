@@ -67,6 +67,17 @@ cutoff, account activity printouts and a debit card's own monthly charge have no
 category (the keys file them as unmapped), so Knox still leaves them out. A rules
 change scores both gates; a fix that helps Texas and hurts another state fails.
 
+v16 (rules 16) adds Knox's self-check: every free find, and every $0 row, is checked against
+its text with the shared accuracy check (`checkFeeAgainstSource`, the rule Darwin applies
+before publishing). A find that doesn't trace is held for review as `untraced`
+(`knox_review:untraced`) instead of going to Darwin, where it would be rejected as
+`not_in_source`; a later specialist that reads the same fee under a traceable name keeps it.
+Each specialist run records `self_check_failed`. Since v16 the gates count only reads that
+pass the self-check, which is what can be published: Texas 443 of 459 (main at v15 scored 443
+of 459 on that basis), held out 43 of 49; seven states 658 of 709 (main: 657 of 708). The held
+`untraced` rows show where the shared check can't yet read a layout (a price on the line
+after a dot leader, FREE/NONE on a flattened line, a note line between name and price).
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

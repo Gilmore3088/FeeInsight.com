@@ -991,3 +991,24 @@ a visible `read.reopen` attempt per text, and one more read through the script f
 fee changes; a page that still is not a fee page is rejected again the normal way.
 **Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
 under the new one; a ban written by a judgment the code no longer makes outlives its reason.
+
+## 2026-10-06: Knox sent Darwin fees the shared accuracy check can't trace
+**What happened:** the Knox audit found Knox never checked its own reads against the line they
+came from; only the paid pass did. Darwin rejects such reads as `not_in_source` (PR 200), so
+they reached the raw tier and died there, and a fee read twice could keep the untraceable name.
+**Fix:** same PR (Knox v16): the free team runs `checkFeeAgainstSource` on every find and $0 row.
+Untraceable ones are held for review as `untraced`, and a traceable reading of the same fee wins.
+On the answer keys, counted the way Darwin publishes, v16 matches or beats main (Texas 443 right
+/ 16 wrong both; seven states 658 / 51 against 657 / 51). Dry run on 117 sampled live documents:
+the rules re-check would keep 1,413 of 1,437 live fees against 1,416 today. The 3 that come down
+are a $5 business counter-check price read as consumer (document 12657) and two safe deposit
+fees at document 10091 that are live under shifted names ("Drill box fee" at $25, a
+disclaimer at $200); Hamilton's source check applies the same rule and would pull them too.
+**Still open:** the shared check misses real fees in some layouts: a price on the line after a
+dot leader, FREE/NONE on a PDF flattened to one line, a note line ("(up to $1,000)", "If checks
+are not on order") between a name and its price, and long dot-leader lines split mid-row. These
+fees are held as `untraced` now rather than lost silently; fixing them belongs in
+`src/lib/custom-report/source-check.ts`, which every gate shares.
+**Lesson:** an extractor should apply the publish gate's own check before it hands a fee on,
+so a disagreement shows up as a held row, not a silent rejection two agents later.
+

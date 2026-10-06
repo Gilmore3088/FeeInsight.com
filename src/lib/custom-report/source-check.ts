@@ -158,6 +158,18 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after);
 }
 
+// Callers check many fees against one text in a row (Knox's self-check, a document's
+// live fees); split it once.
+let lastText: string | null = null;
+let lastLines: string[] = [];
+function cachedSourceLines(text: string): string[] {
+  if (text !== lastText) {
+    lastLines = sourceLines(text);
+    lastText = text;
+  }
+  return lastLines;
+}
+
 /**
  * Pure: is this published fee stated in its source text? Returns the source line that
  * carries it, or the first reason it is not traceable. `categoryPattern` is the report
@@ -170,7 +182,7 @@ export function checkFeeAgainstSource(
   categoryPattern: string,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
-  const lines = sourceLines(text);
+  const lines = cachedSourceLines(text);
   const stems = nameStems(feeName);
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
   const rounded = Math.round(amount * 100) / 100;
