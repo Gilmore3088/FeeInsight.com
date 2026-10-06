@@ -122,7 +122,7 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Free lookup → Report (free) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
+            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
             per seat, or {ANNUAL_PRICE_LABEL}/yr) → {SITE_NAME} Advisory (custom)
           </p>
         </div>
