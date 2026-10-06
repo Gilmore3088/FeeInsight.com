@@ -13,6 +13,22 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
+**What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
+fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
+failed two or more fetches in a row (one 11 times). Separately, 42 banks' fee links redirected to a
+homepage in the week to 2026-10-06 (for example a credit union's old fee PDF now landing on a renamed
+credit union's home page), and Magellan stored each homepage as the bank's fee document.
+**Cause:** a failed fetch only counted a failure and retried later (24 hours, then weekly). Discovery
+searches only banks with no fee link, so nothing looked for the bank's new page. Only Rosetta sent dead
+links back, and only for documents it was re-reading. A redirect was followed blindly, and the final
+address (the homepage) became the profile's fetch address.
+**Fix:** this PR: a 404/410, or a deep link that redirects to a homepage, now clears the fee link
+(unless a person locked it), records the URL as rejected and marks the bank due a search
+(`failure_reason = 'magellan_dead_link'`). 403 is left alone because a bot block can pass.
+**Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
+loop on a dead address is a silent failure.
+
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
 the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
