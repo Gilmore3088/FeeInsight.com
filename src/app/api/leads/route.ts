@@ -6,11 +6,14 @@ import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
+  NEWSLETTER_SOURCE,
   buildCaptureAttribution,
   isEmailOnlySource,
   parseStateCode,
   placementForSource,
+  stateFromUseCase,
 } from "@/lib/lead-capture";
+import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import {
   REPORT_SOURCE,
   buildBenchmarkUseCase,
@@ -64,7 +67,8 @@ async function handlePOST(request: NextRequest) {
     const role = cleanText(body.role);
     const institutionId =
       source === REPORT_SOURCE || placement ? parseInstitutionId(body.institutionId) : null;
-    const stateCode = placement ? parseStateCode(body.state) : null;
+    // The newsletter form may name a state too, for that state's monthly edition.
+    const stateCode = placement || source === NEWSLETTER_SOURCE ? parseStateCode(body.state) : null;
     const institutionName = placement
       ? cleanText(body.institutionName)?.slice(0, MAX_INSTITUTION_NAME_LENGTH) ?? null
       : null;
@@ -78,7 +82,9 @@ async function handlePOST(request: NextRequest) {
         ? buildBenchmarkUseCase(benchmarkScope, src)
         : source === REPORT_SOURCE
           ? buildReportUseCase(cleanText(body.use_case), institutionId, src, { stateCode: reportState, competitors })
-          : cleanText(body.use_case);
+          : source === NEWSLETTER_SOURCE && stateCode
+            ? `state=${stateCode}`
+            : cleanText(body.use_case);
 
     if (benchmark && !benchmarkScope) {
       return NextResponse.json({ error: "Pick a Fed district for the district report" }, { status: 400 });
@@ -105,8 +111,14 @@ async function handlePOST(request: NextRequest) {
     // A signup folds into the newest signup row for this email. Request rows are never
     // touched by a signup: appending capture sources to them changed their history and
     // could reopen an answered request.
-    const known = await sql<{ id: number | string; source: string | null }[]>`
-      SELECT id, source FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
+    const known = await sql<{
+      id: number | string;
+      source: string | null;
+      use_case?: string | null;
+      email_confirmed_at?: string | Date | null;
+      email_unsubscribed_at?: string | Date | null;
+    }[]>`
+      SELECT id, source, use_case, email_confirmed_at, email_unsubscribed_at FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
     const existing = isRequestLead(source) ? undefined : known.find((row) => !isRequestLead(row.source));
     let leadId: number | null = null;
 
@@ -134,7 +146,7 @@ async function handlePOST(request: NextRequest) {
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
         WHERE id = ${existing.id}`;
-      if ((placement || benchmarkScope) && useCase) {
+      if ((placement || benchmarkScope || (source === NEWSLETTER_SOURCE && stateCode)) && useCase) {
         // Attribution accumulates too: a returning lead signing up from a new placement,
         // or asking for another free report, keeps its earlier use_case and gains this one.
         await sql`
@@ -171,6 +183,20 @@ async function handlePOST(request: NextRequest) {
           status = CASE WHEN ${held} AND status = ${NEW_LEAD_STATUS} THEN 'held' ELSE status END
           WHERE id = ${leadId}`;
       }
+    }
+
+    // A reader who already confirmed doesn't wait for another click: the new source and
+    // state go to MailerLite now (the confirm sync does this for everyone else).
+    const confirmed = existing && existing.email_confirmed_at && !existing.email_unsubscribed_at;
+    if (confirmed && !isRequestLead(source)) {
+      const sources = [...new Set([...known.map((row) => row.source ?? ""), source].join(",").split(",").map((s) => s.trim()).filter(Boolean))];
+      const sync = await syncLeadToMailerLite({
+        email,
+        subscribed: true,
+        source: sources.join(","),
+        state: stateCode ?? known.map((row) => stateFromUseCase(row.use_case)).find(Boolean) ?? null,
+      });
+      if (sync.status === "failed") console.error("[api/leads] MailerLite sync failed", { error: sync.error });
     }
 
     // Storage is done; email is best-effort and its status rides along for the client.

@@ -37,7 +37,12 @@ vi.mock("@/lib/email/resend", async (importOriginal) => ({
   sendResendEmail: vi.fn(() => Promise.resolve({ status: "sent", providerId: "alert_1" })),
 }));
 
+vi.mock("@/lib/email/mailerlite", () => ({
+  syncLeadToMailerLite: vi.fn(() => Promise.resolve({ status: "disabled", reason: "test" })),
+}));
+
 import { sql } from "@/lib/data-store/connection";
+import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import { sendBenchmarkReportNotifications } from "@/lib/email/benchmark-report";
 import {
@@ -52,6 +57,7 @@ const reportNotifyMock = sendReportRequestNotifications as unknown as ReturnType
 const contactNotifyMock = sendContactRequestNotifications as unknown as ReturnType<typeof vi.fn>;
 const captureNotifyMock = sendLeadCaptureNotifications as unknown as ReturnType<typeof vi.fn>;
 const benchmarkNotifyMock = sendBenchmarkReportNotifications as unknown as ReturnType<typeof vi.fn>;
+const syncMock = syncLeadToMailerLite as unknown as ReturnType<typeof vi.fn>;
 const SENT = { status: "sent", providerId: "em_1" };
 
 function post(body: Record<string, unknown>) {
@@ -127,6 +133,28 @@ describe("POST /api/leads", () => {
     const insert = issued(1);
     expect(insert.text).toContain("INSERT INTO leads");
     expect(insert.values).toEqual(["Newsletter signup", "a@b.co", null, null, null, "newsletter"]);
+  });
+
+  it("keeps the state a newsletter reader picks, for their state's edition", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    await post({ name: "Newsletter signup", email: "a@b.co", source: "newsletter", state: "tx" });
+    expect(issued(1).values).toEqual(["Newsletter signup", "a@b.co", null, null, "state=TX", "newsletter"]);
+  });
+
+  it("sends an already-confirmed reader's new source and state straight to MailerLite", async () => {
+    syncMock.mockClear();
+    sqlMock
+      .mockResolvedValueOnce([{ id: 7, source: "newsletter", use_case: null, email_confirmed_at: "2026-10-01", email_unsubscribed_at: null }])
+      .mockResolvedValue([]);
+    await post({ email: "vp@bank.example", source: "capture_state", state: "TX" });
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,capture_state", state: "TX" });
+  });
+
+  it("waits for the confirm click when the reader hasn't confirmed", async () => {
+    syncMock.mockClear();
+    sqlMock.mockResolvedValueOnce([{ id: 7, source: "newsletter", email_confirmed_at: null }]).mockResolvedValue([]);
+    await post({ email: "vp@bank.example", source: "capture_state", state: "TX" });
+    expect(syncMock).not.toHaveBeenCalled();
   });
 
   it("does not overwrite an existing qualified lead on newsletter signup", async () => {

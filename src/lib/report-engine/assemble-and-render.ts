@@ -17,6 +17,7 @@ import { assembleNationalQuarterly, buildThesisSummary } from '@/lib/report-asse
 import { assembleMonthlyPulse } from '@/lib/report-assemblers/monthly-pulse';
 import { assembleStateIndex } from '@/lib/report-assemblers/state-index';
 import { assembleRegulatoryContext } from '@/lib/report-assemblers/regulatory-context';
+import { assembleNationalTrends } from '@/lib/report-assemblers/national-trends';
 import { assemblePeerCompetitivePayload } from '@/lib/report-assemblers/peer-competitive';
 import type { PeerCompetitiveFilters } from '@/lib/report-assemblers/peer-competitive';
 import { renderNationalQuarterlyReport } from '@/lib/report-templates/templates/national-quarterly';
@@ -78,9 +79,13 @@ export async function assembleAndRender(
   try {
     switch (reportType) {
       case 'national_index': {
-        const [payload, regulatory] = await Promise.all([
+        const [payload, regulatory, trends] = await Promise.all([
           assembleNationalQuarterly(),
           assembleRegulatoryContext(),
+          assembleNationalTrends().catch((err) => {
+            console.warn('[assembleAndRender] national trends unavailable:', err instanceof Error ? err.message : String(err));
+            return null;
+          }),
         ]);
 
         // Phase 33: Generate global thesis before sections (per D-01, D-04)
@@ -276,6 +281,7 @@ export async function assembleAndRender(
         return renderNationalQuarterlyReport({
           data: payload,
           regulatory,
+          trends,
           narratives: {
             executive_summary,
             fee_differentiation,
