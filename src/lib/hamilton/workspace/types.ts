@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.5.0";
+export const WORKSPACE_ENGINE_VERSION = "1.6.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -221,6 +221,24 @@ export interface RevenueLine {
   combinedWith?: string;
 }
 
+/** A published price change, as seen on the institution's schedule. */
+export interface ChangeEvent {
+  date: string;
+  institutionName: string;
+  from: number | null;
+  to: number | null;
+}
+
+/** The fees around overdraft and NSF, for the bank and the group it is compared with. */
+export interface FeeStructureSet {
+  /** e.g. "institutions with $10 billion or more in assets" or "peers (Banks in Texas)". */
+  groupLabel: string;
+  columns: { category: string; label: string }[];
+  /** The bank first, then the group in its display order. Amounts by fee category. */
+  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number> }[];
+  source: SourceRef;
+}
+
 /** Everything Research shows for one fee. */
 /**
  * A slice of the market the reader names in a question: "$10B and up", "credit unions
@@ -306,6 +324,10 @@ export interface FeeResearch {
   economy?: EconomicBackdrop | null;
   /** The segment the question named, when it named one. */
   segment?: SegmentResearch | null;
+  /** Price changes in the bank's state that the schedules bear out, newest first. */
+  changeEvents?: ChangeEvent[];
+  /** How the comparison group structures overdraft and NSF, beyond the price. */
+  structure?: FeeStructureSet | null;
   provenance: Provenance;
 }
 
