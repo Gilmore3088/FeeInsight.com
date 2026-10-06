@@ -112,4 +112,57 @@ describe("/api/v1/institutions", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("keeps the fee ranking behind a paid key", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?fee_category=overdraft"));
+
+    expect(response.status).toBe(403);
+    expect(searchInstitutions).not.toHaveBeenCalled();
+  });
+
+  it("ranks institutions by one fee for an enterprise key", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
+    vi.mocked(searchInstitutions).mockResolvedValue({
+      rows: [
+        { id: 5, institution_name: "Bank A", state_code: "TX", city: "Austin", charter_type: "bank", asset_size: 50, asset_size_tier: "regional", published_fee_count: 31, focus_fee_amount: 36 },
+        { id: 6, institution_name: "Bank B", state_code: "TX", city: "Waco", charter_type: "bank", asset_size: 20, asset_size_tier: "community_mid", published_fee_count: 12, focus_fee_amount: null },
+      ],
+      total: 2,
+    } as never);
+
+    const response = await GET(
+      new NextRequest("https://feeinsight.com/api/v1/institutions?fee_category=overdraft&sort=lowest&state=TX"),
+    );
+    const body = await response.json();
+
+    expect(searchInstitutions).toHaveBeenCalledWith(
+      expect.objectContaining({ fee_category: "overdraft", fee_sort: "asc", state_code: "TX" }),
+    );
+    expect(body.sort).toBe("lowest");
+    expect(body.data.map((d: { fee_amount: number | null }) => d.fee_amount)).toEqual([36, null]);
+  });
+
+  it("rejects an unknown fee category", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?fee_category=not_a_fee"));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("filters the list by asset tier and city", async () => {
+    await GET(
+      new NextRequest("https://feeinsight.com/api/v1/institutions?asset_tier=community_small,community_mid&city=Austin"),
+    );
+
+    expect(getInstitutionsByFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ asset_tiers: ["community_small", "community_mid"], city: "Austin" }),
+    );
+  });
+
+  it("rejects an unknown asset tier", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?asset_tier=huge"));
+
+    expect(response.status).toBe(400);
+  });
 });
