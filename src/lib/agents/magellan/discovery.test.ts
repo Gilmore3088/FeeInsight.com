@@ -296,12 +296,14 @@ describe("Magellan agentic discovery", () => {
   });
 
   describe("pass 2 specialists", () => {
-    it("uses a path that worked for a same-platform bank in the same state", async () => {
-      const db = createDbMock([bank(60, "https://q2bank.example")], (text) =>
-        text.includes("AS url") && text.includes("upper(btrim(inst.state_code))")
-          ? [{ id: 61, url: "https://peer.example/about/deposit-pricing" }]
-          : undefined,
-      );
+    it("uses a path that produced live fees for a same-platform bank elsewhere", async () => {
+      const db = createDbMock([bank(60, "https://q2bank.example")], (text) => {
+        if (text.includes("to_regclass('public.pipeline_feedback')")) return [{ ready: true }];
+        if (text.includes("AS url") && text.includes("FROM pipeline_feedback")) {
+          return [{ id: 61, url: "https://peer.example/about/deposit-pricing", rejected: [], yield_kind: "produced_live_fees", live_fees: 12 }];
+        }
+        return undefined;
+      });
       const fetchImpl = site({
         "https://q2bank.example/": () => response('<script src="https://cdn.q2ebanking.com/x.js"></script><p>Hi</p>'),
         "https://q2bank.example/about/deposit-pricing": () => response(FEE_TABLE),
