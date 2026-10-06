@@ -704,6 +704,49 @@ export function figureFindings(findings: FigureFinding[]): string {
   return `<div class="figure-findings">${items}\n</div>`;
 }
 
+// ─── Release List ─────────────────────────────────────────────────────────────
+
+export interface ReleaseListItem {
+  /** Short date shown in the margin, e.g. "Oct 2". */
+  date: string;
+  /** Who issued it, e.g. "FDIC, Federal Reserve". */
+  source: string;
+  title: string;
+  /** Link to the original release; http(s) only. */
+  href?: string | null;
+}
+
+export interface ReleaseListGroup {
+  title: string;
+  items: ReleaseListItem[];
+  /** Line under the group, e.g. "4 more in this window". */
+  note?: string;
+}
+
+/** Dated, sourced items grouped under small headings (agency releases, fee changes). */
+export function releaseList(groups: ReleaseListGroup[]): string {
+  return groups
+    .filter((g) => g.items.length > 0)
+    .map((g) => {
+      const items = g.items
+        .map((i) => {
+          const safeHref = i.href && /^https?:\/\//i.test(i.href) ? i.href : null;
+          const title = safeHref
+            ? `<a href="${escapeHtml(safeHref)}">${escapeHtml(i.title)}</a>`
+            : escapeHtml(i.title);
+          return `<li class="release-item"><span class="release-date">${escapeHtml(i.date)}</span><span class="release-body"><span class="release-source">${escapeHtml(i.source)}</span> ${title}</span></li>`;
+        })
+        .join("");
+      return `
+<div class="release-group">
+  <div class="release-group-title">${escapeHtml(g.title)}</div>
+  <ul class="release-list">${items}</ul>
+  ${g.note ? `<div class="release-note">${escapeHtml(g.note)}</div>` : ""}
+</div>`;
+    })
+    .join("");
+}
+
 // ─── Report Section ───────────────────────────────────────────────────────────
 
 /**

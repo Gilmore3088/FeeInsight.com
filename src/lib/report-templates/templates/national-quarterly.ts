@@ -50,6 +50,7 @@ import {
   type NationalQuarterlyPayload,
 } from "@/lib/report-assemblers/national-quarterly";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { developmentsContent, feeChangesContent } from "./developments";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
@@ -202,6 +203,16 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     },
     {
       number: "05",
+      title: "Fee Changes at the Same Banks",
+      description: "Price changes confirmed against each bank's own schedules",
+    },
+    {
+      number: "06",
+      title: "Regulatory and Industry Developments",
+      description: "Federal Reserve, FDIC, OCC and CFPB releases from the last 90 days",
+    },
+    {
+      number: "07",
       title: "Data Coverage",
       description: "How much of each category is published",
     },
@@ -210,7 +221,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       description: "Rates, prices and Beige Book notes from the Federal Reserve",
     },
     {
-      number: "06",
+      number: "08",
       title: "What to Watch",
       description: "Questions the next quarters of data can settle",
     },
@@ -536,7 +547,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Ch4: The Industry Blind Spot ──────────────────────────────────────────
   const ch4 = [
-    chapterDivider("05", "Data Coverage"),
+    chapterDivider("07", "Data Coverage"),
     statCardRow([
       {
         label: "Categories with Data",
@@ -559,7 +570,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Ch5: The Future of Fee Strategy ───────────────────────────────────────
   const ch5 = [
-    chapterDivider("06", "What to Watch"),
+    chapterDivider("08", "What to Watch"),
     statCardRow([
       {
         label: "Typical price spread",
@@ -578,6 +589,17 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       },
     ]),
     hamiltonNarrativeBlock(narratives.future_strategy.narrative),
+  ].join("\n");
+
+  // ── Fee changes and agency releases ──────────────────────────────────────
+  // Payloads stored before these fields existed render the chapters' "not read" line.
+  const changesChapter = [
+    chapterDivider("05", "Fee Changes at the Same Banks"),
+    feeChangesContent(data.fee_changes, { label: "U.S." }),
+  ].join("\n");
+  const developmentsChapter = [
+    chapterDivider("06", "Regulatory and Industry Developments"),
+    developmentsContent(data.developments, data.report_date),
   ].join("\n");
 
   // ── Methodology ───────────────────────────────────────────────────────────
@@ -626,6 +648,8 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     layoutAnalytical(ch2),
     layoutAnalytical(ch3Regional),
     layoutAnalytical(ch3),
+    layoutAnalytical(changesChapter),
+    layoutAnalytical(developmentsChapter),
     layoutAnalytical(ch4),
     economicContext ? layoutAnalytical(economicContext) : "",
     layoutStatement(ch5),

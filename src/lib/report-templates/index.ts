@@ -39,6 +39,7 @@ export {
   figureFindings,
   reportSection,
   emptyNotice,
+  releaseList,
   escapeHtml,
 } from "./base/components";
 
@@ -53,6 +54,8 @@ export type {
   HorizontalBarChartProps,
   ColumnChartProps,
   ColumnChartColumn,
+  ReleaseListGroup,
+  ReleaseListItem,
   TocEntry,
   NumberedFinding,
   InsightCardProps,

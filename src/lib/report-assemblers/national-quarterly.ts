@@ -22,6 +22,7 @@ import { getBeigeBookHeadlines, getBeigeBookThemes, getFredSummary } from "@/lib
 import type { BeigeBookTheme } from "@/lib/data-store/fed";
 import { getDisplayName, FEE_TIERS } from "@/lib/fee-taxonomy";
 import type { DataManifest } from "@/lib/report-engine/types";
+import { loadDevelopments, loadFeeChanges, type DevelopmentsBlock, type FeeChangesBlock } from "./developments";
 import type { ThesisSummaryPayload } from "@/lib/hamilton/types";
 
 // ─── Payload Types ─────────────────────────────────────────────────────────────
@@ -146,6 +147,10 @@ export interface NationalQuarterlyPayload {
   income_series: IncomeQuarterRow[];
   /** Every institution's overdraft fee, counted into price bands. */
   overdraft_distribution: { label: string; count: number }[];
+  /** Federal agency releases in the last 90 days; null when the read failed. */
+  developments?: DevelopmentsBlock | null;
+  /** Confirmed fee price changes at the same banks in the last 90 days; null when the read failed. */
+  fee_changes?: FeeChangesBlock | null;
   manifest: DataManifest;
 }
 
@@ -497,9 +502,25 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     console.warn("[assembler] regional index query failed, skipping:", e);
   }
 
+  // Query 9: agency releases and confirmed fee changes, last 90 days
+  let developments: DevelopmentsBlock | null = null;
+  let fee_changes: FeeChangesBlock | null = null;
+  try {
+    developments = await loadDevelopments(now);
+    manifestEntries.push({ sql: "reg_articles, last 90 days", row_count: developments.items.length, executed_at: assembled_at });
+  } catch (e) {
+    console.error("[assembler] agency release read failed; the section says so:", e);
+  }
+  try {
+    fee_changes = await loadFeeChanges(now);
+    manifestEntries.push({ sql: "fee_change_records, last 90 days, confirmed against schedules", row_count: fee_changes.changes.length, executed_at: assembled_at });
+  } catch (e) {
+    console.error("[assembler] fee change read failed; the section says so:", e);
+  }
+
   // Compute data_hash over assembled payload content
   const data_hash = createHash("sha256")
-    .update(JSON.stringify({ categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, overdraft_distribution }))
+    .update(JSON.stringify({ categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, overdraft_distribution, developments, fee_changes }))
     .digest("hex");
 
   const pipeline_commit = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
@@ -526,6 +547,8 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     regional,
     income_series,
     overdraft_distribution,
+    developments,
+    fee_changes,
     manifest: {
       queries: manifestEntries,
       data_hash,

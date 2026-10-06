@@ -78,9 +78,34 @@ function sameFeeName(a: string, b: string): boolean {
 }
 
 /**
+ * Every dollar amount a schedule states, counted ("$5.00" and "$5" stay distinct, as
+ * printed). Two texts with the same counts are two readings of one edition: a real price
+ * change removes the old price or adds the new one somewhere in the text.
+ */
+export function statedAmounts(text: string | null | undefined): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const m of (text ?? "").matchAll(/\$\s?\d[\d,]*(?:\.\d+)?/g)) {
+    const key = m[0].replace(/[\s,]/g, "");
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+export function sameEdition(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = statedAmounts(a);
+  const y = statedAmounts(b);
+  if (x.size === 0 || x.size !== y.size) return false;
+  for (const [k, n] of x) if (y.get(k) !== n) return false;
+  return true;
+}
+
+/**
  * Pure: did the bank change this fee? Yes only when the old and new prices sit on the
  * same fee line (same name), the earlier schedule states the old price, and the newest
  * schedule states the new price and no longer states the old one for that fee.
+ * Two readings of the same edition (both texts state exactly the same dollar amounts) are
+ * not a change: a PDF read twice can pair a fee with a neighbouring column's price. Nor is
+ * it a change when the earlier schedule already stated the new price for that fee.
  */
 export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
   const oldAmount = row.old_amount == null ? null : Number(row.old_amount);
@@ -91,6 +116,8 @@ export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
   const newStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, newAmount, ".");
   if (!newStated.ok) return null;
   if (!checkFeeAgainstSource(row.old_document_text, row.fee_name, oldAmount, ".").ok) return null;
+  if (checkFeeAgainstSource(row.old_document_text, row.fee_name, newAmount, ".").ok) return null;
+  if (sameEdition(row.old_document_text, row.new_document_text)) return null;
   const oldStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, oldAmount, ".");
   if (oldStated.ok || oldStated.reason === "tiered_fee") return null;
   const changedAt = row.changed_at instanceof Date ? row.changed_at.toISOString() : String(row.changed_at);
@@ -179,6 +206,16 @@ const COVERAGE_SQL = `
 `;
 
 // ─── Assembler ────────────────────────────────────────────────────────────────
+
+/** Recorded price changes since `windowStartIso`, and the ones each bank's schedules bear out. */
+export async function loadConfirmedFeeChanges(
+  windowStartIso: string,
+): Promise<{ changes: PulseChange[]; recorded: number }> {
+  const sql = getSql();
+  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStartIso])) as unknown as RecordedChangeRow[];
+  const changes = recorded.map(confirmFeeChange).filter((c): c is PulseChange => c !== null);
+  return { changes, recorded: recorded.length };
+}
 
 export async function assembleMonthlyPulse(now = new Date()): Promise<MonthlyPulsePayload> {
   const sql = getSql();

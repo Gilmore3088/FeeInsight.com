@@ -26,6 +26,8 @@ import { formatAmount } from "@/lib/format";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { HAMILTON_ATTRIBUTION, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 import type { StateReportData } from "@/lib/research-report/state-report-data";
+import type { DevelopmentsBlock, FeeChangesBlock, StateRegulatorRef } from "@/lib/report-assemblers/developments";
+import { feeChangesContent, stateDevelopmentsContent } from "./developments";
 import {
   POSITION_AXIS_MAX_PCT,
   STATE_FINDING_MIN_INSTITUTIONS,
@@ -38,6 +40,15 @@ export interface StateFeeIndexReportInput {
   data: StateReportData;
   /** ISO date (YYYY-MM-DD) the report was generated. */
   generatedAt: string;
+  /**
+   * Fee changes and agency releases for the report window. Left out (no sections) when
+   * not loaded; a field that is null means its read failed, and the section says so.
+   */
+  context?: {
+    feeChanges: FeeChangesBlock | null;
+    developments: DevelopmentsBlock | null;
+    regulator: StateRegulatorRef | null;
+  };
 }
 
 /** Differences under this (in percent) read as "in line", as on the public page. */
@@ -279,10 +290,28 @@ function methodologyLine(data: StateReportData, generatedAt: string): string {
   ].join(" ");
 }
 
+function changesSection(data: StateReportData, context: NonNullable<StateFeeIndexReportInput["context"]>): string {
+  return reportSection(
+    { label: "Fee changes", title: `Price changes at ${data.stateName} institutions` },
+    feeChangesContent(context.feeChanges, { stateCode: data.stateCode, label: data.stateName }),
+  );
+}
+
+function developmentsSection(
+  data: StateReportData,
+  context: NonNullable<StateFeeIndexReportInput["context"]>,
+  generatedAt: string,
+): string {
+  return reportSection(
+    { label: "Regulatory developments", title: `Regulation and supervision affecting ${data.stateName} institutions` },
+    stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt),
+  );
+}
+
 // ─── Renderer ──────────────────────────────────────────────────────────────────
 
 export function renderStateFeeIndexReport(input: StateFeeIndexReportInput): string {
-  const { data, generatedAt } = input;
+  const { data, generatedAt, context } = input;
   const title = `${data.stateName} Bank and Credit Union Fees`;
 
   const cover = coverPage({
@@ -301,6 +330,8 @@ export function renderStateFeeIndexReport(input: StateFeeIndexReportInput): stri
     everydaySection(data),
     positionSection(data),
     charterSection(data),
+    context ? changesSection(data, context) : "",
+    context ? developmentsSection(data, context, generatedAt) : "",
     coverageSection(data),
     fullTableSection(data),
     footnote(methodologyLine(data, generatedAt)),

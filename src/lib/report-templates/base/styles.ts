@@ -448,6 +448,73 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   font-style: italic;
 }
 
+/* Release list (agency releases, fee changes) */
+.release-group {
+  margin: 18px 0 8px;
+}
+
+.release-group-title {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: ${PALETTE.accent};
+  margin-bottom: 6px;
+}
+
+.release-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid ${PALETTE.border};
+}
+
+.release-item {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid ${PALETTE.borderLight};
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.release-date {
+  flex: 0 0 48px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9.5px;
+  color: ${PALETTE.textMuted};
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+
+.release-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.release-source {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9.5px;
+  font-weight: 600;
+  color: ${PALETTE.textDark3};
+  margin-right: 4px;
+}
+
+.release-body a {
+  color: ${PALETTE.text};
+  text-decoration: none;
+  border-bottom: 1px solid ${PALETTE.border};
+}
+
+.release-note {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  color: ${PALETTE.textMuted};
+  font-style: italic;
+  margin-top: 4px;
+}
+
 /* Column chart (stacked) */
 .col-chart {
   margin: 24px 0;
@@ -1292,6 +1359,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   .report-table-caption,
   .h-bar-title,
   .col-chart-legend,
+  .release-group-title,
   .comparison-chart-title,
   .comparison-chart-header,
   .playbook-heading {
@@ -1359,6 +1427,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
     display: table-header-group;
   }
 
+  .release-item,
   .report-table tr,
   .compact-table tr {
     break-inside: avoid;

@@ -25,6 +25,7 @@ import { renderMonthlyPulseReport } from '@/lib/report-templates/templates/month
 import { renderPeerCompetitiveReport } from '@/lib/report-templates/templates/peer-competitive';
 import { runEditorReview } from '@/lib/report-engine/editor';
 import type { SectionOutput, ThesisOutput, ValidatedSection } from '@/lib/hamilton/types';
+import { loadStateReportContext } from '@/lib/report-assemblers/developments';
 import type { ReportType } from '@/lib/report-engine/types';
 
 // ─── Fallback Narrative ────────────────────────────────────────────────────────
@@ -294,7 +295,8 @@ export async function assembleAndRender(
         const data = await loadStateReportData(stateCode, {
           includeAllCategories: params.include_all_categories === true,
         });
-        return renderStateFeeIndexReport({ data, generatedAt: new Date().toISOString().slice(0, 10) });
+        const context = await loadStateReportContext(stateCode);
+        return renderStateFeeIndexReport({ data, generatedAt: new Date().toISOString().slice(0, 10), context });
       }
 
       case 'monthly_pulse': {
