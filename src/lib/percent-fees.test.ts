@@ -64,6 +64,13 @@ describe("percentage fees", () => {
     expect(checkRateAgainstSource(row, "Cash Advance Fee", 1, ".").ok).toBe(false);
   });
 
+  it("takes the fee word from a heading just above, never for an interest row", () => {
+    const coins = "Coin Counting Fees\nCoin Counting | 10% of total";
+    expect(checkRateAgainstSource(coins, "Coin Counting", 10, ".").ok).toBe(true);
+    const savings = "Savings Fees\nKasasa Saver | 2.5% APY on balances to $25,000";
+    expect(checkRateAgainstSource(savings, "Kasasa Saver", 2.5, ".").ok).toBe(false);
+  });
+
   it("never reads the end of a range as the bank's rate", () => {
     expect(checkRateAgainstSource("Most cards charge the typical 2.5-3.5% foreign transaction fee.", "foreign transaction fee", 3.5, ".").ok).toBe(false);
   });

@@ -316,7 +316,7 @@ export function checkFeeAgainstSource(
  * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
-const RATE_FEE_WORDS = /\b(fee|charge|assessment|assessed)\b/i;
+const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
 
 /**
  * Pure: is this percentage fee stated in its source text? The rate's twin of
@@ -350,11 +350,13 @@ export function checkRateAgainstSource(
       best = "amount_not_the_fee";
       continue;
     }
-    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row}`)) {
+    // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
+    // Counting | 10% of total"); interest wording is judged on the row itself.
+    const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
+    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`)) {
       best = "amount_not_the_fee";
       continue;
     }
-    const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
     if (!category.test(context)) {
       best = "category_not_in_text";
       continue;
