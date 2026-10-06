@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/quote-check";
+import { recordRequestedInstitution } from "@/lib/data-store/report-payments";
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
@@ -11,7 +12,6 @@ import {
   isEmailOnlySource,
   parseStateCode,
   placementForSource,
-  stateFromUseCase,
 } from "@/lib/lead-capture";
 import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import {
@@ -26,6 +26,7 @@ import {
   parseSrc,
 } from "./lead-notifications";
 import { isRequestLead } from "@/lib/leads/lead-status";
+import { knownReaderEmail } from "@/lib/leads/known-reader";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -62,7 +63,9 @@ async function handlePOST(request: NextRequest) {
     const name =
       cleanText(body.name) ??
       (isEmailOnlySource(source) || benchmark ? NEWSLETTER_PLACEHOLDER_NAME : null);
-    const email = cleanText(body.email);
+    // A confirmed reader asking for a free report isn't asked to type their email again:
+    // the form sends none and the signed cookie from their confirm link supplies it.
+    const email = cleanText(body.email) ?? (benchmark ? await knownReaderEmail(request).catch(() => null) : null);
     const company = cleanText(body.company);
     const role = cleanText(body.role);
     const institutionId =
@@ -182,6 +185,8 @@ async function handlePOST(request: NextRequest) {
           END,
           status = CASE WHEN ${held} AND status = ${NEW_LEAD_STATUS} THEN 'held' ELSE status END
           WHERE id = ${leadId}`;
+        const requested = check.status === "unmatched" ? null : check.institutionId ?? null;
+        if (requested) await recordRequestedInstitution(leadId, requested);
       }
     }
 
@@ -194,7 +199,9 @@ async function handlePOST(request: NextRequest) {
         email,
         subscribed: true,
         source: sources.join(","),
-        state: stateCode ?? known.map((row) => stateFromUseCase(row.use_case)).find(Boolean) ?? null,
+        // Only a state picked on this form changes the reader's state group; a form with no
+        // state leaves their group alone (an older row's state must not add a second one).
+        state: stateCode,
       });
       if (sync.status === "failed") console.error("[api/leads] MailerLite sync failed", { error: sync.error });
     }

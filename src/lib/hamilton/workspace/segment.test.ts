@@ -7,7 +7,7 @@ import { overdraftResearch } from "./test-fixtures";
 import type { SegmentMember } from "./types";
 
 // Invented institutions and amounts; no real figure.
-function member(name: string, amount: number, assets: number, cap: number | null = null): SegmentMember {
+function member(name: string, amount: number, assets: number, cap: number | null = null, limit: number | null = null): SegmentMember {
   return {
     institutionId: assets,
     institutionName: name,
@@ -19,6 +19,7 @@ function member(name: string, amount: number, assets: number, cap: number | null
     totalAssets: assets,
     charterType: "bank",
     dailyCap: cap,
+    dailyFeeLimit: limit === null ? null : { count: limit, line: `Maximum ${limit} overdraft fees per day` },
   };
 }
 
@@ -62,8 +63,8 @@ describe("segment answer", () => {
     member("Alpha Bank", 10, 2_600_000_000),
     member("Beta Bank", 0, 660_000_000),
     member("Gamma Bank", 36, 600_000_000, 216),
-    member("Delta Bank", 35, 80_000_000),
-    member("Epsilon Bank", 35, 50_000_000),
+    member("Delta Bank", 35, 80_000_000, null, 3),
+    member("Epsilon Bank", 35, 50_000_000, null, 3),
     member("Zeta Bank", 38, 38_000_000),
   ];
 
@@ -71,7 +72,7 @@ describe("segment answer", () => {
     const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });
     expect(seg.members.map((m) => m.institutionName)).toEqual(["Alpha Bank", "Beta Bank", "Gamma Bank", "Delta Bank", "Epsilon Bank", "Zeta Bank"]);
     expect(seg.band).toEqual({ p25: 16.25, median: 35, p75: 35.75, n: 6 });
-    expect(seg).toMatchObject({ zeroCount: 1, withDailyCap: 1, problem: null });
+    expect(seg).toMatchObject({ zeroCount: 1, withDailyCap: 1, withDailyFeeLimit: 2, problem: null });
     expect(seg.ownPosition).not.toBeNull();
   });
 
@@ -90,14 +91,15 @@ describe("segment answer", () => {
       segment: buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false }),
     };
     const answer = buildFeeAnswer(research, { focus: "competitors" });
-    expect(answer.headline).toMatch(/^Your \$32 overdraft fee sits at the 33rd percentile of 6 institutions with \$10 billion or more in assets; their median is \$35\./);
+    expect(answer.headline).toBe("Your $32 overdraft fee is at the 33rd percentile of 6 $10B+ institutions (median $35).");
     expect(answer.claims[0].text).toBe("6 of the 184 institutions with $10 billion or more in assets publish an overdraft fee in the index.");
     expect(answer.claims.map((c) => c.text)).toContain("1 charge $0: Beta Bank.");
+    expect(answer.claims.map((c) => c.text)).toContain("2 of them limit how many overdraft fees they charge in a day; the most common limit is 3.");
     expect(answer.claims.map((c) => c.text)).toContain("Your institution is outside this segment; your $32 is placed against it for comparison.");
     expect(answer.exhibit).toMatchObject({ kind: "competitor_range" });
     if (answer.exhibit?.kind === "competitor_range") {
       expect(answer.exhibit.items.map((i) => i.amount)).toEqual([0, 10, 35, 35, 36, 38]);
-      expect(answer.exhibit.title).toBe("Overdraft fees at the 6 largest institutions with $10 billion or more in assets");
+      expect(answer.exhibit.title).toBe("Overdraft fees at the 6 largest $10B+ institutions");
     }
     expect(JSON.stringify(answer)).not.toMatch(/recommend|should|raise your|lower your/i);
     const verdict = evaluateFourRoles(answer);

@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.6.0";
+export const WORKSPACE_ENGINE_VERSION = "1.7.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -263,6 +263,11 @@ export interface SegmentMember extends PeerValue {
   charterType: string | null;
   /** The published daily cap on this fee (overdraft or NSF), when the schedule states one. */
   dailyCap: number | null;
+  /**
+   * How many of these fees the schedule charges at most in a day ("Maximum 3 Overdraft fees
+   * per day"), with the line that states it; null when the fee's own document states none.
+   */
+  dailyFeeLimit: { count: number; line: string } | null;
 }
 
 /** The fee across a segment, with the bank's own place in it. */
@@ -277,6 +282,8 @@ export interface SegmentResearch {
   zeroCount: number;
   /** Members that publish a daily cap. */
   withDailyCap: number;
+  /** Members whose schedule limits how many of these fees it charges in a day. */
+  withDailyFeeLimit: number;
   /** Percentile of the bank's own fee among members; null without a fee or enough members. */
   ownPosition: number | null;
   /** Whether the asking bank itself fits the segment. */
@@ -328,7 +335,29 @@ export interface FeeResearch {
   changeEvents?: ChangeEvent[];
   /** How the comparison group structures overdraft and NSF, beyond the price. */
   structure?: FeeStructureSet | null;
+  /**
+   * The fee where it is stated as a rate ("1% of the transaction"); only for the fees that
+   * may publish as one. Kept apart from every dollar figure above and never pooled with them.
+   */
+  rates?: RateResearch | null;
   provenance: Provenance;
+}
+
+/** One of the bank's own fees stated as a rate. */
+export interface RateFeeLine {
+  feeName: string;
+  /** "3% of the advance ($10 minimum)". */
+  label: string;
+  ratePercent: number;
+  sourceUrl: string | null;
+}
+
+export interface RateResearch {
+  /** The bank's own rate fees in this category, highest rate first. */
+  own: RateFeeLine[];
+  /** Rates across institutions nationally, one per institution; null figures when too few state one. */
+  national: { n: number; median: number | null; p25: number | null; p75: number | null; min: number | null; max: number | null };
+  source: SourceRef;
 }
 
 export type EconomicIndicatorKey =
@@ -570,6 +599,8 @@ export interface AskResponse {
   segment?: SegmentResearch | null;
   /** The decision this exchange was logged to; send it back with the next question. */
   decisionId?: string;
+  /** The saved analysis this answer was filed as (history and "Add to report"); send it with the memo request. */
+  savedAnalysisId?: string;
 }
 
 export interface AskRequest {

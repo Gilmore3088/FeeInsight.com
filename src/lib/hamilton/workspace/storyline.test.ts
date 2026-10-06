@@ -56,7 +56,7 @@ describe("storyline", () => {
     expect(story.exhibits.length).toBeLessThanOrEqual(5);
     expect(story.exhibits.map((e) => e.number)).toEqual(story.exhibits.map((_, i) => i + 1));
     for (const e of story.exhibits) expect(e.actionTitle).toMatch(/\d/);
-    expect(story.exhibits[0].actionTitle).toBe("Your $32 overdraft fee sits at the 75th percentile of 16 peers; their median is $29.50.");
+    expect(story.exhibits[0].actionTitle).toBe("Peers' middle half charges $25.75 to $32; your $32 sits at the 75th percentile.");
     expect(story.governingThought).toMatch(/\$32/);
     expect(story.keyFigures.length).toBeLessThanOrEqual(4);
     expect(story.keyFigures[0]).toMatchObject({ value: "$32", label: "Your overdraft fee" });
@@ -66,7 +66,7 @@ describe("storyline", () => {
   it("sorts peers into the four pricing groups and places the bank", () => {
     const story = buildFeeAnswer(research()).storyline!;
     const map = story.exhibits.find((e) => e.exhibit.kind === "archetype_map")!;
-    expect(map.actionTitle).toBe("Of 16 peers, 0 charge $0, 0 charge $15 or less and 5 charge over $30.");
+    expect(map.actionTitle).toBe("Of 16 peers, 11 charge $15.01 to $30 and 5 charge over $30.");
     if (map.exhibit.kind === "archetype_map") {
       expect(map.exhibit.archetypes.map((a) => a.count)).toEqual([0, 0, 11, 5]);
       expect(map.exhibit.ownKey).toBe("premium");
@@ -91,17 +91,17 @@ describe("storyline", () => {
     expect(story.kind).toBe("board_decision");
     expect(story.defaultView).toBe("finance");
     expect(story.options?.map((o) => o.label)).toEqual(["Hold at $32", "Peer median, $29.50", "Remove the overdraft fee"]);
-    expect(story.options?.[2].consequences.map((c) => c.text)).toContain("0 of 16 peers publish a $0 overdraft fee today.");
+    expect(story.options?.[2].consequences.map((c) => c.text)).toContain("None of 16 peers publishes a $0 overdraft fee today.");
     expect(JSON.stringify(story)).not.toMatch(/recommend|should|raise your|lower your|best option/i);
   });
 
   it("puts filed money at stake on the finance side and says when the fee line is missing", () => {
     const story = buildFeeAnswer(research(), { story: { wantsDecision: true } }).storyline!;
     const money = story.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!;
-    expect(money.actionTitle).toBe("Your service charges came to $209 thousand over the four quarters to June 30, 2026.");
+    expect(money.actionTitle).toBe("Your fee income came to $209 thousand in the year to June 30, 2026.");
     if (money.exhibit.kind === "money_at_stake") {
       expect(money.exhibit.rows).toEqual([{ label: "Fee income (NCUA 5300), last four quarters", low: 209_400, high: 209_400, evidenceLevel: "institution" }]);
-      expect(money.exhibit.note).toBe("NCUA's public data carries no separate overdraft income line, so this is all fee income.");
+      expect(money.exhibit.note).toBe("NCUA reports no overdraft income line; this is all fee income.");
     }
     expect(story.lenses.finance.some((f) => /\$209 thousand/.test(f.text))).toBe(true);
   });
@@ -142,6 +142,7 @@ describe("storyline", () => {
       totalAssets: 1_000_000_000 - i * 10_000_000,
       charterType: "bank",
       dailyCap: null,
+      dailyFeeLimit: null,
     }));
     const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });
     const question = "talk to me about all 10B and up institutions for od fees";
@@ -149,8 +150,25 @@ describe("storyline", () => {
     const story = res.answer!.storyline!;
     expect(story.kind).toBe("segment");
     expect(story.exhibits[0].exhibit.kind).toBe("segment_table");
-    expect(story.exhibits[0].actionTitle).toBe("6 of 184 institutions with $10 billion or more in assets publish an overdraft fee, 1 at $0; the median is $35.");
+    expect(story.exhibits[0].actionTitle).toBe("6 of 184 $10B+ institutions publish an overdraft fee, 1 at $0; the median is $35.");
     expect(story.exhibits.some((e) => e.exhibit.kind === "archetype_map")).toBe(true);
+    // The table already lists every member at its price; no second exhibit repeats it.
+    expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
+    expect(story.lenses.market.map((f) => f.text)).toEqual([
+      "2 of 6 $10B+ institutions undercut your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
+      "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
+      "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
+      "In Tennessee, 1 cut and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
+    ]);
+  });
+
+  it("reads the exhibits for a market reader instead of repeating their titles", () => {
+    for (const intent of [{}, { structure: true }, { focus: "trend" as const }]) {
+      const story = buildFeeAnswer(research(), { story: intent }).storyline!;
+      const titles = new Set(story.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text]));
+      expect(story.lenses.market.length).toBeGreaterThan(0);
+      for (const fact of story.lenses.market) expect(titles.has(fact.text)).toBe(false);
+    }
   });
 
   it("passes the four-roles check across every storyline", () => {

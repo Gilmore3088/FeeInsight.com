@@ -1,6 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
+import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
+import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
 
 type SqlTag = typeof sql;
 
@@ -135,4 +137,148 @@ export async function recheckHeldRows(
   }
 
   return { checked: rows.length, promoted, stillHeld: stillHeldIds.length, promotedByCategory, dryRun };
+}
+
+/**
+ * Held percentage lines from before Knox read rates (`knox_review:percentage`): each pass
+ * re-reads a batch against its document's current text. A rate in a category that
+ * publishes rates (`percentFeeAllowed`) that traces to the text becomes a rate fee
+ * (`amount_kind` 'percent', amount NULL) with a clean name and goes to Darwin; the rest
+ * are marked so they are not re-read until the rate rules change.
+ */
+export const HELD_RATE_RECHECK_VERSION = 1;
+export const HELD_RATE_RECHECK_DEFAULT_LIMIT = 100;
+
+export function heldRateRecheckFlag(version: number = HELD_RATE_RECHECK_VERSION): string {
+  return `knox_rate_recheck:v${version}`;
+}
+
+export interface HeldRateRow {
+  fee_raw_id: number | string;
+  source_document_id: number | string;
+  fee_name: string;
+  conditions: string | null;
+  frequency: string | null;
+  outlier_flags: string[] | null;
+  normalized_text: string | null;
+}
+
+export interface HeldRateRecheckResult {
+  checked: number;
+  promoted: number;
+  stillHeld: number;
+  promotedByCategory: Record<string, number>;
+  /** Why held rows stayed held. */
+  heldReasons: Record<string, number>;
+  dryRun: boolean;
+}
+
+/** Today's rate rules on a held percentage row: the rate fee it becomes, or why it stays held. */
+export function rateFromHeldRow(row: HeldRateRow): RateFeeCandidate | RateHoldReason {
+  const excerpt = heldExcerpt(row.conditions);
+  if (!excerpt) return "no_rate";
+  const hint = (row.outlier_flags ?? []).find((flag) => flag.startsWith("canonical_hint:"))?.slice("canonical_hint:".length) ?? null;
+  return rateFeeFromHeld(
+    { shape: "percentage", feeName: row.fee_name, canonicalHint: hint, percent: null, frequency: row.frequency, excerpt },
+    row.normalized_text,
+  );
+}
+
+export async function recheckHeldRates(
+  db: SqlTag,
+  options: { limit?: number; dryRun?: boolean; institutionId?: number | null; stateCode?: string | null } = {},
+): Promise<HeldRateRecheckResult> {
+  const limit = Math.max(1, Math.min(Number(options.limit) || HELD_RATE_RECHECK_DEFAULT_LIMIT, 500));
+  const dryRun = Boolean(options.dryRun);
+  const recheckFlag = heldRateRecheckFlag();
+  const institutionId = options.institutionId ?? null;
+  const stateCode = options.stateCode?.trim().toUpperCase() || null;
+  const rows = await db<HeldRateRow[]>`
+    SELECT fr.fee_raw_id, fr.source_document_id, fr.fee_name, fr.conditions, fr.frequency,
+           ARRAY(SELECT jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb))) AS outlier_flags,
+           adt.normalized_text
+      FROM raw_fee_observations fr
+      JOIN institution_sources inst ON inst.id = fr.institution_id
+      JOIN LATERAL (
+        SELECT t.normalized_text
+          FROM agent_source_texts t
+         WHERE t.source_document_id = fr.source_document_id
+           AND t.status = 'completed'
+           AND t.text_hash IS NOT NULL
+           AND position(('text_hash=' || t.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+         ORDER BY t.id DESC
+         LIMIT 1
+      ) adt ON true
+     WHERE fr.source = 'knox'
+       AND fr.amount IS NULL
+       AND fr.amount_kind = 'flat'
+       AND fr.outlier_flags ? 'knox_review:percentage'
+       AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+       AND NOT fr.outlier_flags ? ${recheckFlag}
+       AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+  `;
+
+  const promotedByCategory: Record<string, number> = {};
+  const heldReasons: Record<string, number> = {};
+  const stillHeldIds: number[] = [];
+  let promoted = 0;
+  for (const row of rows) {
+    const rate = rateFromHeldRow(row);
+    if (typeof rate === "string") {
+      heldReasons[rate] = (heldReasons[rate] ?? 0) + 1;
+      stillHeldIds.push(Number(row.fee_raw_id));
+      continue;
+    }
+    if (!dryRun) {
+      const oldHints = (row.outlier_flags ?? []).filter((flag) => flag.startsWith("canonical_hint:"));
+      const flags = ["needs_darwin_verification", `canonical_hint:${rate.canonicalHint}`, HELD_RECHECK_PROMOTED_FLAG, KNOX_RATE_FEE_FLAG];
+      // The dedupe index (document, name, amount) treats every rate as amount -1: a second
+      // row of the same document under the same clean name stays held.
+      const updated = await db`
+        UPDATE raw_fee_observations fr
+           SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:percentage' - ${oldHints}::text[])
+                               || ${JSON.stringify(flags)}::jsonb,
+               fee_name = ${rate.feeName},
+               conditions = ${(row.conditions ?? "").replace(/^Knox held for review \(percentage\)/, `Knox rate rules v${HELD_RATE_RECHECK_VERSION} read a percentage fee held for review`).replace(/canonical_hint=[^;]*;/, `canonical_hint=${rate.canonicalHint};`)},
+               amount_kind = 'percent',
+               rate_percent = ${rate.ratePercent},
+               rate_min_amount = ${rate.rateMinAmount},
+               rate_max_amount = ${rate.rateMaxAmount},
+               rate_basis = ${rate.rateBasis}
+         WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
+           AND fr.amount IS NULL
+           AND fr.outlier_flags ? 'knox_review:percentage'
+           AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+           AND NOT EXISTS (
+             SELECT 1 FROM raw_fee_observations other
+              WHERE other.source = 'knox'
+                AND other.source_document_id = fr.source_document_id
+                AND lower(other.fee_name) = lower(${rate.feeName})
+                AND other.amount IS NULL
+                AND other.fee_raw_id <> fr.fee_raw_id
+           )
+        RETURNING fr.fee_raw_id
+      `;
+      if (updated.length === 0) {
+        heldReasons.duplicate_name = (heldReasons.duplicate_name ?? 0) + 1;
+        stillHeldIds.push(Number(row.fee_raw_id));
+        continue;
+      }
+    }
+    promoted += 1;
+    promotedByCategory[rate.canonicalHint] = (promotedByCategory[rate.canonicalHint] ?? 0) + 1;
+  }
+
+  if (!dryRun && stillHeldIds.length > 0) {
+    await db`
+      UPDATE raw_fee_observations
+         SET outlier_flags = COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([recheckFlag])}::jsonb
+       WHERE fee_raw_id = ANY(${stillHeldIds}::bigint[])
+    `;
+  }
+
+  return { checked: rows.length, promoted, stillHeld: stillHeldIds.length, promotedByCategory, heldReasons, dryRun };
 }

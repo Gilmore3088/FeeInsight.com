@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets
+that state's edition instead of the national email; everyone else (and readers in a state too
+thin for its own edition) gets one national email. Product and site updates ride in a one-line
+"What's new" in that email, never as their own sends. Built in `src/lib/agents/marketing/`.
+
+**Darwin's held-fee pass acts on rejects only; every release stays held.** James, 16:49 UTC,
+chose "Reject only" on the Darwin thread's card after the v1 spot check found 12 of 20 releases
+right. Held fees the bank's schedule doesn't state leave the held pile with a `not_on_schedule`
+note (`verify.release` v3). Releases stay a dry run until the stricter Claude review passes its
+own spot check (at least 19 of 20 right), and switching them on needs James's word.
+
 **Darwin's held fees get a way out: release or reject against the bank's schedule.** James, 13:20
 UTC ("i need you to close all those gaps with the agents"), taken as the go-ahead on the
 held-fees card's recommended option. Each fee Darwin holds (outside its range or far from peers)
@@ -120,6 +131,14 @@ email them"). He uses Outlook and is already paying for several small services w
 yet. Pages offer an email link, never a scheduler; PR 178 changed the private report page's
 "Book 15 minutes" button to "Email us about this report". Any new paid service waits until a
 report has sold.
+
+**Atlas schedules by where the work is, and daily passes count only findable banks.** James,
+13:20 UTC ("i need you to close all those gaps with the agents", on the agent audits). Each
+state lane is ranked by its banks with open work or a recent error, and the busiest due lane
+goes first. A state stays on daily full passes only while more than 50 of its banks still have
+no link and could be found by a search. Dead ends wait for the quarterly re-check. A state with
+paid-find targets or banks with no website still due a website search also stays daily, so
+those paid steps keep running inside the paid caps (coordinator, 13:39 UTC).
 
 ## 2026-10-05
 

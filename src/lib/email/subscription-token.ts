@@ -110,3 +110,27 @@ export function subscriptionPageUrl(action: SubscriptionAction, email: string, s
 export function oneClickUnsubscribeUrl(email: string, secret: string) {
   return `${siteBase()}${SUBSCRIPTION_API_PATH}?${linkQuery("unsubscribe", email, secret)}`;
 }
+
+/**
+ * The "known reader" cookie, set when someone confirms their address. It carries the
+ * address and an HMAC of it, so a free report form can skip asking for the email again.
+ * Server-only (httpOnly): the browser can't read it, and /api/leads/reader checks it.
+ */
+export const READER_COOKIE = "fi_reader";
+export const READER_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const READER_ACTION = "reader";
+
+export function signReaderCookie(email: string, secret: string): string {
+  const normalized = normalizeSubscriptionEmail(email);
+  return `${Buffer.from(normalized).toString("base64url")}.${sign(READER_ACTION, normalized, secret)}`;
+}
+
+/** The confirmed address in a reader cookie, or null when it is missing, malformed or forged. */
+export function readReaderCookie(value: string | null | undefined, secret: string): string | null {
+  if (!value || !secret) return null;
+  const [encoded, token] = value.split(".");
+  if (!encoded || !token) return null;
+  const email = normalizeSubscriptionEmail(Buffer.from(encoded, "base64url").toString("utf8"));
+  if (!email.includes("@")) return null;
+  return safeEqual(sign(READER_ACTION, email, secret), token) ? email : null;
+}

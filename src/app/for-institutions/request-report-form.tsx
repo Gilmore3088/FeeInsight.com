@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
@@ -10,8 +10,10 @@ import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/b
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
+import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
 
 const LEADS_ENDPOINT = "/api/leads";
+const READER_ENDPOINT = "/api/leads/reader";
 const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
@@ -27,6 +29,11 @@ const CONFIRMATION_MISSING =
 const FREE_SUCCESS_HEADLINE = "Your report is ready.";
 const FREE_EMAIL_SENT = "We also emailed you the link.";
 const FREE_EMAIL_MISSING = "We couldn't email the link, so keep this page or bookmark the report.";
+// Say plainly what the email field signs someone up for (James, 2026-10-06).
+const FREE_EMAIL_NOTE =
+  "We email you the link. Nothing else arrives unless you confirm your address in that email.";
+const KNOWN_READER_NOTE =
+  "You confirmed this address earlier, so there's nothing to type. A first free report also starts three short emails on reading it, alongside your monthly update. Unsubscribe anytime.";
 const GENERIC_ERROR = "We couldn't send that request. Please try again or email us directly.";
 
 const INPUT_CLASS =
@@ -120,6 +127,25 @@ function RequestReportFormInner({
   );
   const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? "national");
   const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
+  const [pickedInstitution, setPickedInstitution] = useState<PickedInstitution | null>(null);
+  const [reportState, setReportState] = useState("");
+  // A reader who already confirmed (signed cookie from their confirm link) isn't asked again.
+  const [knownReader, setKnownReader] = useState<string | null>(null);
+  const [useOtherEmail, setUseOtherEmail] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(READER_ENDPOINT, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { email?: string | null } | null) => {
+        if (!cancelled && typeof body?.email === "string") setKnownReader(body.email);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const readerEmail = knownReader && !useOtherEmail ? knownReader : null;
 
   const src = prefill?.src ?? defaultSrc;
   const lockedInstitutionId = institutionLocked ? prefill?.institutionId ?? null : null;
@@ -143,7 +169,7 @@ function RequestReportFormInner({
       competitors: String(formData.get("competitors") ?? "").trim() || null,
       use_case: REPORT_USE_CASE,
       source: REPORT_SOURCE,
-      institutionId: lockedInstitutionId,
+      institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
@@ -172,7 +198,8 @@ function RequestReportFormInner({
     const scope: BenchmarkScope =
       reportType === "district" ? { kind: "district", district } : { kind: "national" };
     const payload = {
-      email: String(formData.get("email") ?? "").trim(),
+      // No email for a known reader: the server reads it from their signed cookie.
+      email: readerEmail ? undefined : String(formData.get("email") ?? "").trim(),
       source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
       district: reportType === "district" ? district : undefined,
       src,
@@ -287,7 +314,23 @@ function RequestReportFormInner({
         </div>
       )}
 
-      {!institution && (
+      {!institution && readerEmail && (
+        <div className="rounded-md border border-[#E8DFD1] bg-[#FAF7F2] px-3 py-2 text-sm text-[#1A1815]">
+          <p>
+            Sending to <span className="font-medium">{readerEmail}</span>.{" "}
+            <button
+              type="button"
+              onClick={() => setUseOtherEmail(true)}
+              className="text-xs font-medium text-[#6B6255] underline underline-offset-2 hover:text-[#1A1815]"
+            >
+              Use a different email
+            </button>
+          </p>
+          <p className="mt-1 text-xs text-[#5A5347]">{KNOWN_READER_NOTE}</p>
+        </div>
+      )}
+
+      {!institution && !readerEmail && (
         <div>
           <label htmlFor="report-email-free" className={LABEL_CLASS}>
             Email
@@ -298,8 +341,12 @@ function RequestReportFormInner({
             type="email"
             required
             autoComplete="email"
+            aria-describedby="report-email-free-note"
             className={INPUT_CLASS}
           />
+          <p id="report-email-free-note" className="mt-1 text-xs text-[#5A5347]">
+            {FREE_EMAIL_NOTE}
+          </p>
         </div>
       )}
 
@@ -320,17 +367,16 @@ function RequestReportFormInner({
               </button>
             )}
           </div>
-          <input
+          <InstitutionCombobox
             id="report-institution"
             name="institution"
-            type="text"
-            required
             readOnly={institutionLocked}
-            aria-readonly={institutionLocked}
             defaultValue={prefill?.institutionName ?? ""}
-            autoComplete="organization"
-            placeholder="First National Bank"
             className={INPUT_CLASS}
+            onPick={(picked) => {
+              setPickedInstitution(picked);
+              if (picked?.stateCode && !reportState) setReportState(picked.stateCode);
+            }}
           />
         </div>
 
@@ -382,7 +428,13 @@ function RequestReportFormInner({
             <label htmlFor="report-state" className={LABEL_CLASS}>
               State <span className="font-normal text-[#6B6255]">(optional)</span>
             </label>
-            <select id="report-state" name="state" defaultValue="" className={INPUT_CLASS}>
+            <select
+              id="report-state"
+              name="state"
+              value={reportState}
+              onChange={(event) => setReportState(event.target.value)}
+              className={INPUT_CLASS}
+            >
               <option value="">Select</option>
               {STATE_CODES.map((code) => (
                 <option key={code} value={code}>

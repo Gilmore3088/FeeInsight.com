@@ -117,6 +117,30 @@ export function segmentLabel(s: Omit<AskSegment, "label">): string {
   return `${head}${size}${where}`;
 }
 
+function assetsShort(thousandsValue: number): string {
+  const dollars = thousandsValue * 1000;
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
+  if (dollars >= 1e12) return `$${fmt(dollars / 1e12)}T`;
+  if (dollars >= 1e9) return `$${fmt(dollars / 1e9)}B`;
+  if (dollars >= 1e6) return `$${fmt(dollars / 1e6)}M`;
+  return `$${Math.round(dollars).toLocaleString("en-US")}`;
+}
+
+/** The segment in a few words for titles and table lines: "$10B+ institutions", "the 20 largest banks in Texas". */
+export function shortSegmentLabel(s: AskSegment): string {
+  const who = s.charterType === "credit_union" ? "credit unions" : s.charterType === "bank" ? "banks" : "institutions";
+  const size =
+    s.minAssets !== null && s.maxAssets !== null
+      ? `${assetsShort(s.minAssets)} to ${assetsShort(s.maxAssets)} `
+      : s.minAssets !== null
+        ? `${assetsShort(s.minAssets)}+ `
+        : s.maxAssets !== null
+          ? `under-${assetsShort(s.maxAssets)} `
+          : "";
+  const where = s.stateCode ? ` in ${STATE_NAMES[s.stateCode] ?? s.stateCode}` : "";
+  return s.largest !== null ? `the ${s.largest} largest ${size}${who}${where}` : `${size}${who}${where}`;
+}
+
 /**
  * The segment a question names, or null when it names none. A charter or a state alone
  * is a segment only with a size or "largest": "banks in Texas" stays with the default peers'
@@ -191,6 +215,7 @@ export function buildSegmentResearch(input: {
     band,
     zeroCount: members.filter((m) => m.amount === 0).length,
     withDailyCap: members.filter((m) => m.dailyCap !== null).length,
+    withDailyFeeLimit: members.filter((m) => m.dailyFeeLimit !== null).length,
     ownPosition: input.current !== null && band ? pricePosition(input.current, amounts) : null,
     ownInSegment: input.ownInSegment,
     problem,
@@ -227,12 +252,12 @@ export function segmentHeadline(seg: SegmentResearch, feeCategory: string, curre
   if (seg.problem) return seg.problem;
   const n = seg.members.length;
   if (!seg.band) {
-    return `Only ${count(n)} of ${count(seg.institutionsInSegment)} ${seg.segment.label} publish ${article(name)} ${name} fee, too few for a median.`;
+    return `Only ${count(n)} of ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee, too few for a median.`;
   }
   if (current !== null && seg.ownPosition !== null) {
-    return `Your ${money(current)} ${name} fee sits at the ${ordinal(seg.ownPosition)} percentile of ${count(n)} ${seg.segment.label}; their median is ${money(seg.band.median)}.`;
+    return `Your ${money(current)} ${name} fee is at the ${ordinal(seg.ownPosition)} percentile of ${count(n)} ${shortSegmentLabel(seg.segment)} (median ${money(seg.band.median)}).`;
   }
-  return `Among ${seg.segment.label}, ${count(n)} publish ${article(name)} ${name} fee; the median is ${money(seg.band.median)}, middle half ${money(seg.band.p25)} to ${money(seg.band.p75)}.`;
+  return `${count(n)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee; median ${money(seg.band.median)}, middle half ${money(seg.band.p25)} to ${money(seg.band.p75)}.`;
 }
 
 /** The claims that describe the segment, each with its source. */
@@ -274,6 +299,17 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
   if (seg.withDailyCap > 0) {
     out.push({ text: `${count(seg.withDailyCap)} of them publish a daily cap on this fee.`, source, sampleSize: seg.withDailyCap });
   }
+  if (seg.withDailyFeeLimit > 0) {
+    const counts = seg.members.flatMap((m) => (m.dailyFeeLimit ? [m.dailyFeeLimit.count] : []));
+    const tally = new Map<number, number>();
+    for (const c of counts) tally.set(c, (tally.get(c) ?? 0) + 1);
+    const [common] = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    out.push({
+      text: `${count(seg.withDailyFeeLimit)} of them limit how many ${name} fees they charge in a day; the most common limit is ${common}.`,
+      source,
+      sampleSize: seg.withDailyFeeLimit,
+    });
+  }
   if (current !== null && !seg.ownInSegment) {
     out.push({ text: `Your institution is outside this segment; your ${money(current)} is placed against it for comparison.`, source });
   }
@@ -290,7 +326,7 @@ export function segmentExhibit(seg: SegmentResearch, feeCategory: string, curren
     .map((m) => ({ name: m.institutionName, amount: m.amount, url: m.documentUrls[0] ?? null }));
   return {
     kind: "competitor_range",
-    title: `${capitalize(name)} fees at the ${items.length} largest ${seg.segment.label.replace(/^the \d+ largest /, "")}`,
+    title: `${capitalize(name)} fees at the ${items.length} largest ${shortSegmentLabel({ ...seg.segment, largest: null })}`,
     unit: "dollars",
     own: current,
     ownLabel,

@@ -57,12 +57,8 @@ export function RecommendedPositionCard({
     ? `below median (P${proposedPosition.percentile}), ${formatDollar(Number(gap))} below peer median`
     : `above median (P${proposedPosition.percentile}), ${formatDollar(Number(gap))} above peer median`;
 
-  const recommendationText =
-    proposedPosition.riskProfile === "low"
-      ? `Hamilton recommends holding at ${formatDollar(proposedFee)} — ${positionDescription}. This positioning minimizes complaint risk while retaining fee revenue.`
-      : proposedPosition.riskProfile === "medium"
-      ? `Hamilton recommends ${formatDollar(proposedFee)} as a balanced position — ${positionDescription}. Moderate revenue with limited outlier exposure.`
-      : `Hamilton cautions against ${formatDollar(proposedFee)} — ${positionDescription}. Above-P75 positioning increases regulatory and reputational exposure.`;
+  // Decision support, not advice: state where the fee would sit and stop there.
+  const positionText = `At ${formatDollar(proposedFee)}, this fee would sit ${positionDescription}.`;
 
   return (
     <div
@@ -81,7 +77,7 @@ export function RecommendedPositionCard({
             color: "var(--hamilton-text-primary)",
           }}
         >
-          Hamilton&apos;s Recommendation
+          Where this fee would sit
         </h3>
         <span
           className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold flex-shrink-0"
@@ -101,7 +97,7 @@ export function RecommendedPositionCard({
           color: "var(--hamilton-text-primary)",
         }}
       >
-        {recommendationText}
+        {positionText}
       </p>
 
       {confidenceTier === "provisional" && (
