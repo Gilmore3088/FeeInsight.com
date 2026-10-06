@@ -6,6 +6,8 @@ import { fetchMonitorPageData, type MonitorPageData } from "@/lib/hamilton/monit
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { SignalFeed } from "@/components/hamilton/monitor/SignalFeed";
 import { WatchlistPanel } from "@/components/hamilton/monitor/WatchlistPanel";
+import { DecisionLedger } from "@/components/hamilton/monitor/DecisionLedger";
+import { decisionsOverview } from "@/lib/hamilton/decision-service";
 import { LinkButton, MemoHeader, MemoPage, MemoSection } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = { title: "All changes" };
@@ -47,6 +49,9 @@ export default async function MonitorPage({
   });
 
   const selectedId = selectedInstitution ? String(selectedInstitution.id) : null;
+  // Decisions belong to the selected institution; without one there is nothing to sum.
+  const overview = selectedId ? await decisionsOverview(user, selectedId).catch(() => null) : null;
+  const decisionBody = overview?.status === 200 && overview.body && "ledger" in overview.body ? overview.body : null;
   const refreshHref = hrefWithInstitutionContext("/pro/monitor", selectedId);
   // Server-rendered snapshot: say when, and offer a refresh (nothing polls).
   const updatedAt = new Date().toLocaleTimeString("en-US", {
@@ -67,6 +72,15 @@ export default async function MonitorPage({
       <p className="-mt-4 text-sm text-warm-600">
         {data.monitoringScope.label} {todaySummary(data.status)} Updated {updatedAt} ET.
       </p>
+
+      {decisionBody ? (
+        <MemoSection
+          title="Your decisions"
+          note="Each fee question you take to a decision, the price your team chose, and the changes Hamilton watches for it."
+        >
+          <DecisionLedger ledger={decisionBody.ledger} decisions={decisionBody.decisions} institutionId={selectedId} />
+        </MemoSection>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <MemoSection title="Newest first" note="Each change links to where you can look into it further.">
