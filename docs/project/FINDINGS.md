@@ -26,10 +26,12 @@ enough: after PR 186 merged (02:05 UTC) prod still had neither change, and Supab
 branch shows status `MIGRATIONS_FAILED`, last updated 2026-10-05 20:48 UTC (Supabase
 `list_branches`). The GitHub deploy is not applying merged migrations at all. Meanwhile PR 173's
 NCUA writer failed on prod at 02:07 UTC with `column "nsf_revenue" ... does not exist` (Postgres
-log). Applying the two files is with James (retry the deploy, or run them in the SQL editor and
-record them in history).
-**Lesson:** number a new migration above both the highest file on `main` and the highest version
-in prod's `supabase_migrations.schema_migrations`. After merging a migration, confirm on prod that
+log). **Real cause:** prod's history (74 versions) lists `20270108000000`, but `main` had no file for it
+(it lives on the PR 93 branch). The Supabase deploy stops when prod lists a version the repo lacks,
+so no deploy has succeeded since the integration was turned on. Adding that already-applied file to
+`main` (PR 188) lets the deploy run the two new ones.
+**Lesson:** every version in prod's `supabase_migrations.schema_migrations` needs its file on
+`main`, and a new migration is numbered above both. After merging a migration, confirm on prod that
 it ran before merging code that depends on it; ship the column before the code that writes it.
 
 ## 2026-10-06: New call-report fields need a re-pull; credit unions split overdraft and NSF
