@@ -4,8 +4,8 @@
  * 15 headline fee categories from published_fee_catalog. A report about one institution
  * and its competitors is the paid step and is never built here.
  *
- * Client-safe: the request form imports these helpers. The rows that need the data
- * store live in benchmark-report-rows.ts.
+ * Client-safe: the request form imports these helpers. The report's rows and findings
+ * live next to its page in app/(public)/reports/benchmark/[scope]/report-data.ts.
  */
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 

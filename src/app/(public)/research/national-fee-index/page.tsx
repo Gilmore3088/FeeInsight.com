@@ -1,7 +1,8 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getNationalIndexCached, getCpiContext } from "@/lib/data-store";
+import { getCpiContext } from "@/lib/data-store";
+import { getPublicNationalIndex } from "@/lib/public-stats";
 import {
   getDisplayName,
   FEE_FAMILIES,
@@ -37,7 +38,8 @@ export const metadata: Metadata = {
 export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
-  const allIndex = await getNationalIndexCached();
+  // Same snapshot as the fee index and research hub, so the medians match to the cent.
+  const allIndex = await getPublicNationalIndex();
   const cpi = await getCpiContext();
 
   // Pro: full index. Free: spotlight preview only (6 categories)
@@ -391,7 +393,7 @@ export default async function NationalFeeIndexPage() {
           The National Fee Index is computed from published fee schedules of
           FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
           into {TAXONOMY_COUNT} standard categories across 9 families. All
-          statistics are based on verified, published fee schedules. National
+          statistics are based on published fee schedules. National
           medians are computed across all reporting institutions for each fee
           category.
         </p>
