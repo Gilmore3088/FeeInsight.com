@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A paid user could be offered checkout a second time
+**What happened:** the full funnel audit (finding 9) traced a path where someone who had just paid
+opened a Pro page before Stripe's webhook marked them active. The Pro gate sent them to
+/subscribe, which offered checkout again with no word on why they were there (finding 12). No
+double charge is known; the path was found by reading the code.
+**Cause:** only /account/welcome asked Stripe directly whether a user had paid. Every other page
+trusted the webhook-written status, and /subscribe never explained the redirect.
+**Fix:** PR 89 moves that check to `src/lib/billing/activate-if-paid.ts`, and /subscribe runs it
+before showing plans. A paid user goes straight back to the page they opened, and someone sent
+from Pro sees why. Not merged yet.
+**Lesson:** any page that can sell must first check whether the person has already paid.
+
 ## 2026-10-05: A supply price was published as a Night Deposit fee
 **What happened:** Hamilton's briefing for Texas National Bank of Jacksonville led with "Night
 Deposit $3.00 against a $5.00 median". The $3.00 row in `published_fee_catalog` is "Zipper Bags",

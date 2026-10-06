@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { activateIfPaid } from "@/lib/billing/activate-if-paid";
 import { redirect } from "next/navigation";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -67,9 +68,12 @@ export default async function SubscribePage({
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
   const checkoutRequested = params.checkout === "1";
 
-  if (user && canAccessPremium(user)) {
+  // A paid user whose webhook hasn't landed yet is activated here instead of offered checkout again.
+  const paidButPending = user && !canAccessPremium(user) ? await activateIfPaid(user) : false;
+  if (user && (paidButPending || canAccessPremium(user))) {
     redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : "/account");
   }
+  const cameForPro = Boolean(returnTo && (returnTo === "/pro" || returnTo.startsWith("/pro/")));
 
   const isLoggedIn = !!user;
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
@@ -94,6 +98,16 @@ export default async function SubscribePage({
       <main id="main-content">
 
       <div className="mx-auto max-w-5xl px-6 py-14">
+        {cameForPro && !inviteMode ? (
+          <div role="status" className="mb-6 rounded-xl border border-[#E8DFD1] bg-white px-4 py-3 text-sm text-[#1A1815]">
+            <p className="font-semibold">Hamilton is part of {SITE_NAME} Pro.</p>
+            <p className="mt-1 text-[#5A5347]">
+              {isLoggedIn
+                ? "Your account doesn't have a Pro seat yet. Choose a plan below and you'll go straight back to the page you opened. If you've just paid, refresh in a minute."
+                : "Sign in or choose a plan below and you'll go straight back to the page you opened."}
+            </p>
+          </div>
+        ) : null}
         {inviteMode && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
