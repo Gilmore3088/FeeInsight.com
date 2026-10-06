@@ -14,6 +14,7 @@ import {
   apiError,
   apiKeyRequiredError,
   apiOptions,
+  assetTierParam,
   charterParam,
   districtParam,
   formatParam,
@@ -51,7 +52,9 @@ async function handleGET(request: NextRequest) {
   let charter: "bank" | "credit_union" | null;
   let districts: number[] | null;
   let format: "json" | "csv";
+  let assetTiers: string[] | null;
   try {
+    assetTiers = assetTierParam(searchParams);
     state = stateParam(searchParams);
     charter = charterParam(searchParams);
     districts = districtParam(searchParams);
@@ -70,12 +73,13 @@ async function handleGET(request: NextRequest) {
     return planRequiredError(rateLimit, "CSV export");
   }
 
-  const hasFilters = Boolean(state || charter || districts);
+  const hasFilters = Boolean(state || charter || districts || assetTiers);
   const entries = hasFilters
     ? await getPeerIndex({
         state_code: state ?? undefined,
         charter_type: charter ?? undefined,
         fed_districts: districts ?? undefined,
+        asset_tiers: assetTiers ?? undefined,
       })
     : await getNationalIndex();
 
@@ -133,6 +137,7 @@ async function handleGET(request: NextRequest) {
         state,
         charter,
         district: districts ? districts.join(",") : null,
+        asset_tier: assetTiers ? assetTiers.join(",") : null,
       },
       total: data.length,
       data,
