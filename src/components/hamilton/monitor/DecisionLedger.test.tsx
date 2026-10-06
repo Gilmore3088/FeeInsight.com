@@ -46,6 +46,10 @@ describe("DecisionLedger", () => {
     expect(html).toContain("Not chosen");
     expect(html).toContain("Comparing prices");
     expect(html).not.toMatch(/recommend/i);
+    // Both decisions are on a fee, so both can go into a deliverable.
+    expect(html).toContain('action="/pro/monitor/deliverable"');
+    expect(html.match(/name="ids"/g)).toHaveLength(2);
+    expect(html).toContain("Pricing committee packet");
   });
 
   it("sums the effect when it rests on institution evidence", () => {
