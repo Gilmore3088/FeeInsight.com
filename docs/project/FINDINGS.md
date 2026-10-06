@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Fed districts are assigned by headquarters state, not by county
+**What happened:** the St. Louis district report covered only Missouri and Arkansas: 415
+institutions monitored, 113 with published fees, and 11 of the 15 headline fees had the 20
+institutions a median needs (live read of `institution_sources` and `published_fee_catalog`,
+23:40 UTC Oct 5). The real Eighth District also covers parts of Illinois, Indiana, Kentucky,
+Mississippi and Tennessee.
+**Cause:** `fed_district` comes from `STATE_TO_DISTRICT` in `src/lib/fed-districts.ts`, one
+district per headquarters state. States split between districts go wholly to one district.
+**Fix:** not fixed. PR 166's methodology section says districts are assigned by headquarters
+state. A county-level assignment would need county FIPS on each institution.
+**Lesson:** when a report names a Fed district, say which states it covers, and expect thin
+coverage in districts whose split states went elsewhere.
+
 ## 2026-10-05: Credit union capital ratio shown as about 1,100%
 **What happened:** Pro institution pages, the API and Hamilton's briefings showed credit union
 "Tier 1 capital ratio" around 1,100% (a $1.1B credit union showed 1,090 for Q2 2026). The NCUA
