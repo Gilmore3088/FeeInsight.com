@@ -13,6 +13,132 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
+**What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
+our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
+have malformed `website_url` values (16 "www" with no dot, such as "wwwbank.com" or "www.bankcom";
+27 odd domain endings). Those counts are the audit's; they were not re-measured here.
+**Cause:** `discovery.ts` returned `blocked` as soon as the homepage answered 401/403, so the site
+map specialist, which needs no homepage, never ran. A 200 challenge page was searched as if it
+were the homepage. Discovery read `website_url` as stored: "wwwbank.com" is a valid host, so it
+was fetched and failed as unreachable (retried every 12 hours) instead of being fixed. There is
+no other stored website to fall back on: the FDIC registry step reads `WEBADDR` but only fills an
+empty `website_url`, and the NCUA step stores no website at all.
+**Fix:** discovery method version 4. A 401/403 or a challenge page now runs the known link and the
+site map (robots.txt `Sitemap:` lines, else `/sitemap.xml`, then `/sitemap_index.xml`, with
+robots.txt Disallow rules respected and fee-named PDFs opened); a find is code
+`found_blocked_homepage` with `detail.rescue = 'blocked_homepage'`, and every attempt carries
+`detail.homepage_blocked`. A 429 still stops. The website is repaired first
+(`website-repair.ts`, attempt `discover.website_repair`), saved unless a correction locks the
+bank, and an unreadable one is `needs_human` (`website_unrepairable`). Branch
+`magellan/mg7-mg8-blocked-homepage-url-repair`, not merged.
+**Lesson:** a specialist that needs no homepage must not sit behind the homepage fetch. If a
+registry website should back up a bad stored one, the registry steps must store it in its own
+column; today they do not.
+
+## 2026-10-06: Product pages became banks' fee links
+**What happened:** the Magellan audit (read-only queries on prod, Oct 6) found 853 of 4,451 fee
+links were account or product pages ("/personal/checking"), not fee schedules; those banks had a
+median of 4 live fees against 15 for fee-named links. In a random sample of 40 links, 9 were
+product pages. In the two days before, 57% of 960 new finds were product or rates pages.
+**Cause:** the fee-page check accepted any HTML page with two fee words, counted on the raw page
+including its menu and footer, where "Fee Schedule | Truth in Savings" appears on every page of a
+bank's site. A checking page quoting its monthly charge passed.
+**Fix:** this PR counts fee words on the page's own content only and requires, below the 3 fee
+line bar, an address that names the fee page or a strong label plus a listed fee; product pages
+are rejected (`product_page`). Banks that already hold a product-page link get one upgrade search;
+a find replaces the link and keeps the product page as a companion account page. Dry run before
+merge (read-only, 06:35 UTC): 784 unlocked banks qualify, 131 of them with live fees; links stay
+until a real schedule is found.
+**Lesson:** never judge a page by words that sit in the site's shared menu or footer.
+
+## 2026-10-06: Almost a third of sampled "fee schedule" texts are not fee schedules
+**What happened:** building answer keys for CA, FL, GA, IL, MI, MN and NY, 18 of 56 sampled stored
+texts (newest completed `agent_source_texts` per bank, 1,500 to 60,000 characters) turned out not to
+be fee schedules: product pages, rate pages, a disclosure, a funds-availability policy, a homepage.
+Three are plain wrong stores: FL 11295 is a 404 page, IL 1644 is empty (0 bytes), NY 7750 is the
+credit union's homepage while its URL is a registration-guide PDF. NY was worst: 6 of 8.
+**Cause:** not yet known per text; the sample counts are hand-read, not a full measure.
+**Fix:** none yet; the Knox gate scores only the 38 real schedules. Reported to the Magellan thread.
+**Lesson:** a stored text is not proof the bank's schedule was found; measure share of real
+schedules per state before trusting a state's coverage.
+
+## 2026-10-06: A fee the rules re-check took down could never come back under the same name
+**What happened:** the Hamilton audit saw real fees taken down as `rules_recheck_unreproduced`
+(4,122 on prod at 06:00 UTC, read-only query) with no way back. Only 443 of them are live again, all
+under a new name.
+**Cause:** the re-check only rolls back. It asks Knox to re-extract a text with missing fees, but
+Knox's raw-row dedupe index (`raw_fee_observations_knox_agentic_dedup_idx`: document, lower(name),
+price) refuses the same raw row, so a fee re-read under the same name inserts nothing. A document
+whose live fees were all taken down was never re-checked again either.
+**Fix:** this PR: re-check version 2 restores such a fee (same text, name, category and price, still
+traces to the text, no live copy). A real-code dry run over 60 sampled documents (145 taken-down
+fees) found 1 candidate, already live elsewhere, so today it restores close to nothing; it matters
+after the next rules fix.
+**Lesson:** any step that takes data down needs its way back in the same change, checked against
+the dedupe rules of the stage that would otherwise re-create it.
+
+## 2026-10-06: Companion pages picked up a HELOC PDF and pages named "Download"
+**What happened:** 25 minutes after the companion finder went live (06:39 UTC, read-only queries on
+prod), 25 fees from companion pages were live. One came from a HELOC disclosure: Frontier CU
+(institution 8455) published "early_closure" at $1,214.50 (published id 60403) from
+`heloc-important-terms-disclosures`, a link labelled "Download". Santander's three CFTC
+derivatives annexes were stored as consumer documents. Pages were named after their link text:
+PNC's "Product Details" and "Features and Fees", Frontier's "Download" and "See Rates".
+**Cause:** the finder's not-a-fee-document list had "loans" and "mortgage" but not "HELOC",
+"home equity", "line of credit" or "derivatives", and a fee-ish word in the path ("disclosures")
+made the PDF a fee document. Account names fell back to the URL only for "Learn more"-style labels.
+**Fix:** this PR. The finder skips HELOC, home equity, line of credit, introductory rate, lending,
+swap, derivatives and blog links, and names "Download"/"Features and Fees"/"Product Details" links
+from their URL. Every companion fetch re-applies today's rules to the pages already stored for
+its state: a page that is now ruled out is retired with reason `not_consumer_fee_page`, a
+link-text name is replaced. Each Hamilton publish step then rolls back live fees from retired
+pages (reason `companion_page_retired`) and rejects their verified rows, with a
+`hamilton.companion_fees_rolled_back` run event. Dry run on prod: 5 pages retired, 1 live fee
+(60403) taken down. The sentence-fragment and $0 "free/includes" fees from account pages
+(60485, 60393, 60386, 60377, 60409, 60387) are Knox/Darwin rules, routed to the 95% thread.
+**Lesson:** a finder rule must reach pages found before it. Any new exclusion goes in
+`second-document.ts` and the companion review applies it to every state on its next fetch.
+
+## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
+**What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
+fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
+failed two or more fetches in a row (one 11 times). Separately, 42 banks' fee links redirected to a
+homepage in the week to 2026-10-06 (for example a credit union's old fee PDF now landing on a renamed
+credit union's home page), and Magellan stored each homepage as the bank's fee document.
+**Cause:** a failed fetch only counted a failure and retried later (24 hours, then weekly). Discovery
+searches banks with no fee link, plus (PR 165) a failed link whose `last_crawl_at` is over 30 days
+old and holds no live fee. That PR 165 path never reaches a link the fetch queue keeps retrying,
+because every retry resets `last_crawl_at`: none of the 75 was older than 30 days. Rosetta sends a
+dead link back only for a document it re-reads (PR 155). A redirect was followed blindly, and the
+final address (the homepage) became the profile's fetch address.
+**Fix:** this PR closes the gap at the fetch itself, with the same hand-back Rosetta uses: a 404/410,
+or a deep link that redirects to a homepage, clears the fee link (unless a person locked it), records
+the URL as rejected and marks the bank due a search (`failure_reason = 'magellan_dead_link'`). A 403
+is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
+**Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
+loop on a dead address is a silent failure.
+## 2026-10-06: Slow bank sites were cut off at the same point on every discovery search
+**What happened:** the Magellan audit (read-only, 6 Oct) counted 513 active banks with a website and no
+fee link whose last free search ended `retry_after` because the `discover` step ran out of time partway
+through the bank. Every 12 hours they were searched again from the first specialist and stopped at
+about the same place, so the later specialists (hub pages, guessed paths, peer hint, site crawl) never
+ran for them.
+**Cause:** a search had no memory between steps. Each bank gets 45 s (`INSTITUTION_BUDGET_MS`), less when
+it starts late in the step (the step stops at 100 s), and `retry_after` banks sort last in the batch, so
+they usually got the squeezed budget. The next search repeated the specialists already done (homepage,
+robots.txt, site map), spent the same time there and stopped in the same place. Once the profile showed
+two failures in a row (`OUT_OF_TIME_RETRIES`) the next cut-off made the bank a miss, which waits a month,
+and then the loop began again.
+**Fix:** MG-6 (branch in this PR, not merged): a search cut short writes `detail.resume` on its last
+`pipeline_attempts` row (specialists finished, where the clock stopped, how many cut-off searches). The
+next search of that bank skips the finished specialists and starts at the next one. A specialist the
+clock stops inside twice on a full budget is skipped; after 12 cut-off searches the bank is a miss. The
+first cut-off bank in each step goes to the front and gets the whole 45 s; other banks keep their place
+and the step's budget is unchanged (no Vercel plan change). No migration.
+**Lesson:** work that can outlast one function call needs a saved place to continue from, or the same
+budget is spent on the same first steps every time.
+
 ## 2026-10-06: Report requests never stored their "ready to quote" line
 **What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,
 5 Oct) were stored without the "Report check: ..." line that /api/leads should append, so /admin/leads
@@ -717,3 +843,36 @@ dumped from production on 2026-10-04, run only on a database without `institutio
 files that rewrote pre-2026-08-13 legacy tables skip themselves on such a database. The full history now
 replays on an empty database. Production never re-runs applied versions, so nothing changes there.
 Details in `docs/runbooks/supabase-migration-baseline.md`.
+
+## 2026-10-06: Banks below the 3-fee rule stayed on the site after takedowns
+**What happened:** the Hamilton publish audit (read-only, 05:35 UTC) found 163 banks with fewer than 3
+distinct live fees: 93 showing one fee (110 fees), 70 showing two (157 fees). 120 got there through
+takedowns (source check, rules re-check, category guard); 82 had fees live before the rule existed.
+They showed on the site and counted in every median as full banks.
+**Cause:** the 3-fee rule (PR 66) gated only a bank's first publish. Nothing re-applied it when
+takedowns removed fees later.
+**Fix:** same PR: `published_fee_catalog` shows a bank's live fees only while it has at least 3 distinct
+canonical fee keys live (migration 20270110000000, view only, no data change). The rows stay live in
+`published_fee_records`, so the publish gate still counts them and the bank reappears on its own.
+Magellan's thin-bank finder now reads `published_fee_records`, since the catalog hides the banks it
+looks for.
+**Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
+read.
+
+## 2026-10-06: Free allowances and conditions published as $0 fees
+**What happened:** the companion-pages thread found about 6 wrong fees in the first 25 live
+companion fees. Several were $0 lines that state an allowance or a condition rather than a
+price ("2 free cashiers checks monthly", "Monthly Service Charge if any of the following
+qualifications are met", "you won't be charged overdraft item fees if...").
+**Cause:** Knox's $0 check (`notAZeroPrice`) knew only "N per year/month" allowances and the
+bank's own ATMs.
+**Fix:** same PR: `extract.rules` v13 also treats "N free", "first N", "if ...", "unless",
+"qualifications", "to waive", "won't be charged" and "not available on" as not a $0 price
+("do not charge a fee" still is). The version bump makes the rules re-check take these down
+everywhere. Read-only on prod: 24 live Knox $0 fees match; about 22 are wrong by hand (the
+notary "fees may differ if..." line is a likely right one lost). The Texas and seven-state
+answer-key gates in PR 213 still pass with no right fee lost. A rule on sentence-shaped names
+was measured and not added: 446 live names end in "of" ("An overdraft fee of"), and most carry
+the bank's real price.
+**Lesson:** judge a name-shape rule by the live prices it would remove, not by the bad names it
+catches.

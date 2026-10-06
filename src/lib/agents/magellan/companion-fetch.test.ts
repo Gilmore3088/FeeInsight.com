@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { COMPANION_FETCH_STRATEGY, runCompanionFetch } from "./companion-fetch";
+import { COMPANION_FETCH_STRATEGY, reviewStoredCompanions, runCompanionFetch } from "./companion-fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -76,5 +76,20 @@ describe("Magellan companion fetch", () => {
     const result = await runCompanionFetch({ db: asDb(createDb([freedom], { ready: false })), fetchImpl, vault: null, runId: 7 });
     expect(result.status).toBe("schema_pending");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("re-applies today's finder rules to pages already stored: retires loan documents, renames link-text names", async () => {
+    const heloc = { id: 67, institution_id: 8455, url: "https://frontier.example/documents/heloc-important-terms-disclosures/", account_name: "Download" };
+    const pdf = { id: 51, institution_id: 8, url: "https://pnc.example/pdf/personal/Checking/Simple_Checking_Fees.pdf", account_name: "Features and Fees" };
+    const db = createDb([heloc, pdf, freedom]);
+
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: "WA", institutionId: null });
+
+    expect(review.checked).toBe(3);
+    expect(review.retired.map((page) => page.companionId)).toEqual([67]);
+    expect(review.renamed).toEqual([{ companionId: 51, from: "Features and Fees", to: "Simple Checking Fees" }]);
+    const retired = db.mock.calls.find((call) => templateText(call[0]).includes("SET status = 'rejected'"));
+    expect(String(retired?.[1])).toMatch(/^not_consumer_fee_page/);
+    expect(retired).toContain(67);
   });
 });

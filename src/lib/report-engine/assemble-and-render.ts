@@ -15,6 +15,8 @@ import { generateSection, generateGlobalThesis } from '@/lib/hamilton/generate';
 import { validateNumerics } from '@/lib/hamilton/validate';
 import { assembleNationalQuarterly, buildThesisSummary } from '@/lib/report-assemblers/national-quarterly';
 import { assembleMonthlyPulse } from '@/lib/report-assemblers/monthly-pulse';
+import { assembleStateIndex } from '@/lib/report-assemblers/state-index';
+import { assembleRegulatoryContext } from '@/lib/report-assemblers/regulatory-context';
 import { assemblePeerCompetitivePayload } from '@/lib/report-assemblers/peer-competitive';
 import type { PeerCompetitiveFilters } from '@/lib/report-assemblers/peer-competitive';
 import { renderNationalQuarterlyReport } from '@/lib/report-templates/templates/national-quarterly';
@@ -24,62 +26,6 @@ import { renderPeerCompetitiveReport } from '@/lib/report-templates/templates/pe
 import { runEditorReview } from '@/lib/report-engine/editor';
 import type { SectionOutput, ThesisOutput, ValidatedSection } from '@/lib/hamilton/types';
 import type { ReportType } from '@/lib/report-engine/types';
-
-// ─── State Name Map ────────────────────────────────────────────────────────────
-
-const STATE_NAMES: Record<string, string> = {
-  AL: 'Alabama',
-  AK: 'Alaska',
-  AZ: 'Arizona',
-  AR: 'Arkansas',
-  CA: 'California',
-  CO: 'Colorado',
-  CT: 'Connecticut',
-  DC: 'District of Columbia',
-  DE: 'Delaware',
-  FL: 'Florida',
-  GA: 'Georgia',
-  HI: 'Hawaii',
-  ID: 'Idaho',
-  IL: 'Illinois',
-  IN: 'Indiana',
-  IA: 'Iowa',
-  KS: 'Kansas',
-  KY: 'Kentucky',
-  LA: 'Louisiana',
-  ME: 'Maine',
-  MD: 'Maryland',
-  MA: 'Massachusetts',
-  MI: 'Michigan',
-  MN: 'Minnesota',
-  MS: 'Mississippi',
-  MO: 'Missouri',
-  MT: 'Montana',
-  NE: 'Nebraska',
-  NV: 'Nevada',
-  NH: 'New Hampshire',
-  NJ: 'New Jersey',
-  NM: 'New Mexico',
-  NY: 'New York',
-  NC: 'North Carolina',
-  ND: 'North Dakota',
-  OH: 'Ohio',
-  OK: 'Oklahoma',
-  OR: 'Oregon',
-  PA: 'Pennsylvania',
-  RI: 'Rhode Island',
-  SC: 'South Carolina',
-  SD: 'South Dakota',
-  TN: 'Tennessee',
-  TX: 'Texas',
-  UT: 'Utah',
-  VT: 'Vermont',
-  VA: 'Virginia',
-  WA: 'Washington',
-  WV: 'West Virginia',
-  WI: 'Wisconsin',
-  WY: 'Wyoming',
-};
 
 // ─── Fallback Narrative ────────────────────────────────────────────────────────
 
@@ -132,7 +78,10 @@ export async function assembleAndRender(
   try {
     switch (reportType) {
       case 'national_index': {
-        const payload = await assembleNationalQuarterly();
+        const [payload, regulatory] = await Promise.all([
+          assembleNationalQuarterly(),
+          assembleRegulatoryContext(),
+        ]);
 
         // Phase 33: Generate global thesis before sections (per D-01, D-04)
         // Thesis uses condensed payload (~5KB) not full payload.
@@ -326,6 +275,7 @@ export async function assembleAndRender(
 
         return renderNationalQuarterlyReport({
           data: payload,
+          regulatory,
           narratives: {
             executive_summary,
             fee_differentiation,
@@ -343,12 +293,10 @@ export async function assembleAndRender(
           typeof params.state_code === 'string'
             ? params.state_code.toUpperCase()
             : 'US';
-        const stateName = STATE_NAMES[stateCode] ?? stateCode;
-
-        // State template is a stub — no fee data, no Hamilton calls
+        // Deterministic: the same figures as the public state page, no Hamilton calls.
+        const payload = await assembleStateIndex(stateCode);
         return renderStateFeeIndexReport({
-          stateCode,
-          stateName,
+          payload,
           generatedAt: new Date().toISOString().slice(0, 10),
         });
       }
