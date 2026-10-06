@@ -180,6 +180,9 @@ export async function rollBackUnreproducedFees(
              AND fr.source = 'knox'
              AND fr.source_document_id IS NOT NULL
              AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
+             -- Knox's free rules read dollar amounts only; a rate is checked by the source
+             -- check (checkRateAgainstSource), never rolled back for lacking a dollar read.
+             AND fp.amount_kind = 'flat'
              ${filters.join("\n             ")}
         ),
         docs AS (

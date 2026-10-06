@@ -1246,3 +1246,19 @@ same schedule (a navigation page among them), which retire nothing.
 copies with a line reader measures the renderer, not the bank; a line is gone only when its words are.
 Open for Knox and Magellan: about half of these newer copies have no Knox read yet (446 of 969 had
 any raw rows at 13:22 UTC), so price changes in them do not publish.
+
+## 2026-10-06: Percentage fees could not publish
+**What happened:** a foreign transaction fee is "1% of the transaction", but every fee tier had
+only a dollar `amount`, so Knox held each rate as `knox_review:percentage` (515 foreign
+transaction rows across 358 banks at 14:40 UTC). Only 42 banks had a live foreign transaction
+fee, and most of those 42 were dollar ATM or wire fees filed under it.
+**Fix:** rate columns on all three tiers (`amount_kind`, `rate_percent`, `rate_min_amount`,
+`rate_max_amount`, `rate_basis`), a rate twin of the shared trace check
+(`checkRateAgainstSource`), and `published_fee_rate_catalog` beside the dollar catalog. Offline
+dry run on the held foreign transaction and cash advance rows with their stored texts: 322
+foreign transaction rates verify at 239 banks (median 1%), 40 cash advance rates at 35 banks
+(median 3%); 214 of the 239 banks already have 2 other live fees, so their rate publishes.
+**Lesson:** many "percent" lines on a schedule are interest or dividend rates, not fees (Knox
+filed some under atm_non_network), so a rate publishes only in an allow-listed category, on a
+row that says fee or charge and does not say APY, APR, interest or dividend.
+
