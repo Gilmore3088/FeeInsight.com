@@ -114,3 +114,22 @@ describe("Magellan fee-page check", () => {
     expect(looksLikeProductPage("https://a.example/fees")).toBe(false);
   });
 });
+
+describe("business-only schedules", () => {
+  const page = (body: string) => vi.fn(async () => new Response(`<html><body><main>${body}</main></body></html>`, { status: 200, headers: { "content-type": "text/html" } }));
+  const lines = "<p>Overdraft fee $35.00</p><p>Stop payment $30.00</p><p>Wire $25.00</p><p>Cashier's check $10.00</p>";
+
+  it("rejects a link whose address names a business-only schedule without opening it", async () => {
+    const fetchImpl = page(lines);
+    const result = await validateFeeCandidate({ url: "https://bank.example/uploads/Business-Account-Fee-Schedule.pdf", score: 0.9, reasons: [] }, fetchImpl);
+    expect(result).toMatchObject({ ok: false, verdict: "business_schedule" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a page whose own heading is a business schedule, and keeps a combined one", async () => {
+    const business = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Business Account Fee Schedule</h1>${lines}`));
+    expect(business).toMatchObject({ ok: false, verdict: "business_schedule" });
+    const combined = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Schedule of Fees</h1><p>Personal and business accounts</p>${lines}`));
+    expect(combined.ok).toBe(true);
+  });
+});
