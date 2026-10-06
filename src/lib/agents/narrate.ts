@@ -185,6 +185,19 @@ export function narrateStepFinished(
       const accuracy = (detail.accuracy ?? {}) as Detail;
       return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
     }
+    case "marketing-score": {
+      const scored = n(detail, "scored");
+      return scored === 0 ? "Stored this month's market snapshot; no sent campaigns to score yet." : `Scored ${count(scored, "sent campaign")} and stored this month's market snapshot.`;
+    }
+    case "marketing-write": {
+      const drafts = Array.isArray(detail.drafts) ? detail.drafts.length : 0;
+      if (detail.already_drafted === true || detail.alreadyDrafted === true) return "This month's campaigns are already drafted and waiting for James.";
+      return `Drafted ${count(drafts, "marketing campaign")} for James to approve.`;
+    }
+    case "marketing-send": {
+      const sent = Array.isArray(detail.sent) ? detail.sent.length : 0;
+      return `Sent ${count(sent, "approved marketing campaign")}.`;
+    }
     case "lead-watch": {
       const owed = n(detail, "overdue") + n(detail, "email_failed");
       if (owed === 0) return "Checked the leads; none is waiting on a reply.";
@@ -289,6 +302,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "marketing-score": "hamilton",
+  "marketing-write": "hamilton",
+  "marketing-send": "hamilton",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
   discover: "magellan",

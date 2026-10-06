@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**A monthly marketing agent drafts the emails; James approves each month before anything sends.**
+James, 07:02 and 07:03 UTC ("approve each month"). Hamilton's marketing run on the 1st scores last
+month's campaigns, picks two formats not used in three months (readers tire of the same email),
+writes them from live data, and drafts each as an A/B subject test in MailerLite. One approval in
+/admin/customers/marketing sends the month. Results and lessons go to `pipeline_feedback`.
+
 **Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
 abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
 Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges

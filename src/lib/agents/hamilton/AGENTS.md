@@ -217,6 +217,11 @@ when they now trace (version 2 restored correct fees v1 took down from flattened
 tick wakes sleeping state lanes that still have unchecked live fees (source check or
 rules re-check), so a new rule reaches every state within hours.
 
+## Marketing
+
+Hamilton also runs the monthly marketing loop (score, write, draft, send on approval).
+See `src/lib/agents/marketing/AGENTS.md`.
+
 ## Boundaries
 
 - Public Hamilton must be consumer-safe and cannot expose admin-only operational details.
