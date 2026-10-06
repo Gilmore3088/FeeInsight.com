@@ -116,7 +116,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
               {card.label}
             </p>
             <p
-              className="mt-1 text-[18px] font-light tabular-nums text-warm-900"
+              className="mt-1 text-[18px] font-light [font-variant-numeric:tabular-nums] text-warm-900"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
               {card.value}
@@ -252,7 +252,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
                       <span className="text-warm-300">--</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td className="px-4 py-2.5 text-right [font-variant-numeric:tabular-nums]">
                     {r.fee_count > 0 ? (
                       <span className="font-medium text-warm-900">{r.fee_count}</span>
                     ) : (
@@ -277,7 +277,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
               Previous
             </Link>
           )}
-          <span className="text-[12px] text-warm-500 tabular-nums">
+          <span className="text-[12px] text-warm-500 [font-variant-numeric:tabular-nums]">
             Page {page} of {totalPages}
           </span>
           {page < totalPages && (

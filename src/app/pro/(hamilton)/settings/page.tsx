@@ -204,7 +204,7 @@ export default async function SettingsPage({
               <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
                 Account Tier
               </p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: "var(--hamilton-text-primary)" }}>
+              <p className="text-sm font-bold [font-variant-numeric:tabular-nums]" style={{ color: "var(--hamilton-text-primary)" }}>
                 {snapshot.tier}
               </p>
             </div>
@@ -212,7 +212,7 @@ export default async function SettingsPage({
               <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
                 Saved Analyses
               </p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: "var(--hamilton-text-primary)" }}>
+              <p className="text-sm font-bold [font-variant-numeric:tabular-nums]" style={{ color: "var(--hamilton-text-primary)" }}>
                 {snapshot.savedAnalyses}
               </p>
             </div>
@@ -220,7 +220,7 @@ export default async function SettingsPage({
               <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
                 Saved Scenarios
               </p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: "var(--hamilton-text-primary)" }}>
+              <p className="text-sm font-bold [font-variant-numeric:tabular-nums]" style={{ color: "var(--hamilton-text-primary)" }}>
                 {snapshot.savedScenarios}
               </p>
             </div>

@@ -11,7 +11,7 @@ describe("buildAuditTrail", () => {
       feeName: "Overdraft",
       layer,
       layerDates: ["2026-10-01T03:00:00Z", null, "2026-09-12T00:00:00Z"],
-      ownFeeRows: [{ feeName: "Overdraft", amount: 30, sourceUrl: "https://bank.example/fees.pdf", publishedAt: "2026-10-02T00:00:00Z", verifiedByEventId: 7 }],
+      ownFeeRows: [{ feeName: "Overdraft", amount: 30, sourceUrl: "https://bank.example/fees.pdf", publishedAt: "2026-10-02T00:00:00Z", verifiedByEventId: "7" }],
       local: { year: 2025, countyCount: 2, banks: [] },
       clientFigures: { paidItems: null, waiverRate: null },
       now: new Date("2026-10-06T00:00:00Z"),

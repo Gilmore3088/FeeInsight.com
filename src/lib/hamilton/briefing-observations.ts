@@ -5,6 +5,7 @@
  * the bank publishes it. Deterministic and neutral: it says what is unusual, never what to do.
  */
 import { STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { Briefing, FeeResearch, Observation } from "./workspace/types";
 
 export interface AttentionItem {
@@ -35,12 +36,30 @@ function plainText(text: string): string {
   return text.replace(/\s*\([A-Z]{2,6}\)/g, "");
 }
 
+/** A fee's name as it reads mid-sentence: "Non-Network ATM" becomes "non-network ATM". */
+export function proseFeeName(displayName: string): string {
+  return plainFeeName(displayName)
+    .split(" ")
+    .map((w) => (/^[A-Z0-9]{2,5}$/.test(w) ? w : w.toLowerCase()))
+    .join(" ");
+}
+
 function fromObservation(o: Observation): AttentionItem {
+  const display = o.feeCategory ? getDisplayName(o.feeCategory) : null;
+  const prose = display ? proseFeeName(display) : null;
+  const tidy = (text: string) => {
+    let out = text;
+    if (display && prose) {
+      out = out.split(display).join(prose).split(plainFeeName(display)).join(prose);
+      if (!/fee/i.test(prose)) out = out.replace(`Your ${prose} `, `Your ${prose} fee `).replace(`published ${prose}:`, `published ${prose} fee:`);
+    }
+    return plainText(out);
+  };
   return {
     id: o.id,
     feeCategory: o.feeCategory,
-    headline: plainText(o.headline),
-    facts: o.facts.map((f) => plainText(f.text)),
+    headline: tidy(o.headline),
+    facts: o.facts.map((f) => tidy(f.text)),
     note: null,
   };
 }

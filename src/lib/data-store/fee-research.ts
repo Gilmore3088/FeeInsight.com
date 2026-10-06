@@ -113,7 +113,8 @@ export interface FeeEvidenceRow {
   sourceUrl: string | null;
   publishedAt: string | null;
   /** The agent event that verified this fee against the document; null when not recorded. */
-  verifiedByEventId: number | null;
+  /** The agent event that verified this fee, when recorded. */
+  verifiedByEventId: string | null;
 }
 
 /** Every published row behind one institution's value for a fee: the audit trail for "your fee". */
@@ -139,7 +140,7 @@ export async function getInstitutionFeeEvidence(institutionId: number, category:
     amount: r.amount == null ? null : Number(r.amount),
     sourceUrl: r.source_url,
     publishedAt: isoDate(r.created_at) || null,
-    verifiedByEventId: r.verified_by_agent_event_id == null ? null : Number(r.verified_by_agent_event_id),
+    verifiedByEventId: r.verified_by_agent_event_id == null ? null : String(r.verified_by_agent_event_id),
   }));
 }
 

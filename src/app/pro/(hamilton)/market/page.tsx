@@ -108,8 +108,8 @@ export default async function ProMarketPage() {
             className="shrink-0 flex items-center gap-2 text-[11px] hover:text-terra transition-colors no-underline"
           >
             <span className="text-warm-600">{getDisplayName(entry!.fee_category)}</span>
-            <span className="font-semibold text-warm-900 tabular-nums">{formatAmount(entry!.median_amount)}</span>
-            <span className="text-warm-500 tabular-nums" title={`${entry!.maturity_tier} evidence`}>
+            <span className="font-semibold text-warm-900 [font-variant-numeric:tabular-nums]">{formatAmount(entry!.median_amount)}</span>
+            <span className="text-warm-500 [font-variant-numeric:tabular-nums]" title={`${entry!.maturity_tier} evidence`}>
               n={entry!.institution_count}
             </span>
           </Link>
@@ -267,7 +267,7 @@ export default async function ProMarketPage() {
               ].map((item) => (
                 <div key={item.label} className="flex justify-between text-[13px]">
                   <span className="text-warm-600">{item.label}</span>
-                  <span className="font-medium tabular-nums text-warm-900">{item.value}</span>
+                  <span className="font-medium [font-variant-numeric:tabular-nums] text-warm-900">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -291,7 +291,7 @@ export default async function ProMarketPage() {
                   </span>
                   <div className="flex items-baseline gap-1.5">
                     <span
-                      className="text-[18px] font-light tabular-nums text-warm-900"
+                      className="text-[18px] font-light [font-variant-numeric:tabular-nums] text-warm-900"
                       style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                     >
                       {formatAmount(entry!.median_amount)}
@@ -315,7 +315,7 @@ export default async function ProMarketPage() {
                 {beigeEditions.map((ed) => (
                   <div key={ed.release_code} className="flex items-center justify-between text-[12px]">
                     <span className="text-warm-700">{ed.release_code}</span>
-                    <span className="text-warm-500 tabular-nums">
+                    <span className="text-warm-500 [font-variant-numeric:tabular-nums]">
                       {new Date(ed.release_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
                     </span>
                   </div>

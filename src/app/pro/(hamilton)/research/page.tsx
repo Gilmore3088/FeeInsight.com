@@ -208,8 +208,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
                       {b.name}
                       {b.isSelf ? <span className="ml-2 text-xs text-terra-text">You</span> : null}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-warm-700">{(b.share * 100).toFixed(1)}%</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-warm-800">
+                    <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-700">{(b.share * 100).toFixed(1)}%</td>
+                    <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">
                       {b.feeAmount != null ? fmtMoney(b.feeAmount) : <span className="text-warm-600">Not read yet</span>}
                     </td>
                   </tr>
@@ -278,7 +278,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
                     {complaints.by_issue.slice(0, 3).map((i) => (
                       <li key={i.issue} className="flex justify-between gap-3 border-t border-warm-200 py-1">
                         <span className="min-w-0">{i.issue}</span>
-                        <span className="tabular-nums">{i.count}</span>
+                        <span className="[font-variant-numeric:tabular-nums]">{i.count}</span>
                       </li>
                     ))}
                   </ul>

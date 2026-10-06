@@ -10,6 +10,20 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { median, peerPosition, quantile } from "./fee-scenario";
 
+/** Asset ranges in plain words, for both tier vocabularies. */
+const TIER_RANGES: Record<string, string> = {
+  community_small: "under $300M",
+  community_mid: "$300M to $1B",
+  community_large: "$1B to $10B",
+  regional: "$10B to $50B",
+  large_regional: "$50B to $250B",
+  super_regional: "over $250B",
+  micro: "under $100M",
+  community: "$100M to $1B",
+  midsize: "$1B to $10B",
+  mega: "over $250B",
+};
+
 export const LAYER_KEYS = ["local", "state", "district", "peers", "national"] as const;
 export type LayerKey = (typeof LAYER_KEYS)[number];
 
@@ -119,12 +133,12 @@ export function buildLayers(
     );
   }
   if (institution.charterType && institution.assetTier) {
-    const tier = FDIC_TIER_LABELS[institution.assetTier] ?? institution.assetTier;
+    const tier = TIER_RANGES[institution.assetTier] ?? FDIC_TIER_LABELS[institution.assetTier] ?? institution.assetTier;
     layers.push(
       summarizeLayer(
         "peers",
         "Peer group",
-        `${capitalize(charterWord(institution.charterType))} in the ${tier} asset tier, nationwide`,
+        `${capitalize(charterWord(institution.charterType))} with ${tier} in assets, nationwide`,
         pick("peers"),
         ownAmount,
       ),

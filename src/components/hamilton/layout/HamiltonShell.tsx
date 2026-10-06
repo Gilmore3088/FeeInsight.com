@@ -46,11 +46,11 @@ export function HamiltonShell({
 }: HamiltonShellProps) {
   return (
     <div
-      className="hamilton-shell min-h-screen bg-warm-100"
+      className="hamilton-shell min-h-screen bg-warm-100 print:bg-white"
     >
       {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
       {isAdmin && (
-        <div className="bg-gray-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs">
+        <div className="bg-gray-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs print:hidden">
           <span className="text-gray-400">
             {viewAsCustomer
               ? "Viewing as a customer: Hamilton answers exactly as a paying customer sees it"
@@ -75,7 +75,9 @@ export function HamiltonShell({
 
       {/* The Fee Insight site header, the same one as the public site; for Pro users its links are
           Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro). */}
-      <ConsumerNav />
+      <div className="print:hidden">
+        <ConsumerNav />
+      </div>
 
       {institutionContext.makeDefaultHref ? (
         <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
@@ -86,7 +88,7 @@ export function HamiltonShell({
         </div>
       ) : null}
 
-      <main className="mx-auto min-w-0 max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:pt-10">{children}</main>
+      <main className="mx-auto min-w-0 max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
 
       {/* Ask Hamilton, docked on every screen */}
       <HamiltonAskDock selectedInstitutionId={selectedInstitutionId} />

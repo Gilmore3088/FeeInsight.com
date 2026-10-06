@@ -129,9 +129,9 @@ export default async function PlanPage({ searchParams }: PageProps) {
               <td className="px-4 py-2">
                 {layer.label} <span className="text-warm-600">({layer.n})</span>
               </td>
-              <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(layer.median)}</td>
-              <td className="px-4 py-2 text-right tabular-nums">{now.less}</td>
-              <td className="px-4 py-2 text-right tabular-nums">{after.less}</td>
+              <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums]">{fmtMoney(layer.median)}</td>
+              <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums]">{now.less}</td>
+              <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums]">{after.less}</td>
             </tr>
           ))}
         </tbody>
@@ -229,9 +229,18 @@ export default async function PlanPage({ searchParams }: PageProps) {
               <h2 className="text-xl text-warm-900" style={SERIF}>
                 What it takes
               </h2>
-              <p className="text-sm text-warm-800">
-                {plan.sections.map((s) => `${s.title}: ${s.items.map((i) => i.text.toLowerCase()).join("; ")}.`).join(" ")}
-              </p>
+              <div className="grid gap-x-8 gap-y-3 text-sm text-warm-800 sm:grid-cols-2">
+                {plan.sections.map((s) => (
+                  <div key={s.title} className="break-inside-avoid">
+                    <h3 className="font-semibold text-warm-900">{s.title}</h3>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                      {s.items.map((i) => (
+                        <li key={i.text}>{i.text}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             </section>
           )}
           <section className="flex flex-col gap-2 break-inside-avoid">

@@ -4,9 +4,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 
 /**
- * Ask Hamilton, docked at the bottom of every workspace screen. A question opens in Analyze with
- * the bank in context; it is filled in there, not sent, so nothing runs a paid model call until the
- * user sends it. The Analyze screen has its own input, so the dock stays off it.
+ * Ask Hamilton, docked at the bottom of every workspace screen. A question opens the Ask screen
+ * with the bank in context and is answered there straight away (James, 2026-10-06: never make the
+ * banker retype it). The Ask screen has its own bar, so the dock stays off it.
  */
 export function HamiltonAskDock({ selectedInstitutionId }: { selectedInstitutionId?: string | null }) {
   const pathname = usePathname();
@@ -44,6 +44,7 @@ export function HamiltonAskDock({ selectedInstitutionId }: { selectedInstitution
           placeholder={placeholder}
           className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-warm-ink-50 placeholder:text-warm-ink-300 focus:outline-none"
         />
+        <input type="hidden" name="send" value="1" />
         {instId ? <input type="hidden" name="instId" value={instId} /> : null}
         <button type="submit" className="rounded-lg bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark">
           Ask

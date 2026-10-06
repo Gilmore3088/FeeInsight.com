@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAttentionItems } from "./briefing-observations";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { buildAttentionItems, proseFeeName } from "./briefing-observations";
 import type { Briefing, FeeResearch, Observation } from "./workspace/types";
 
 const provenance = { engineVersion: "1.0.0", generatedAt: "2026-10-06T00:00:00Z", dataAsOf: {}, sources: [], assumptions: [], clientFacts: [] };
@@ -37,17 +38,25 @@ const research = (current: number | null, amounts: number[]): FeeResearch => ({
   provenance,
 });
 
+describe("proseFeeName", () => {
+  it("lowercases words but keeps acronyms", () => {
+    expect(proseFeeName("Non-Network ATM")).toBe("non-network ATM");
+    expect(proseFeeName("Stop Payment")).toBe("stop payment");
+    expect(proseFeeName("Overdraft (OD)")).toBe("overdraft");
+  });
+});
+
 describe("buildAttentionItems", () => {
   it("leads with overdraft even when the engine didn't flag it, and flags a small group", () => {
     const items = buildAttentionItems(
-      briefing([obs("market_position:nsf", "nsf", "market_position", "Your NSF (NSF) is above 18 of 20 peers.")]),
+      briefing([obs("market_position:nsf", "nsf", "market_position", `Your ${getDisplayName("nsf")} is above 18 of 20 peers.`)]),
       research(30, [25, 30, 35, 40, 20]),
     );
     expect(items.map((i) => i.feeCategory)).toEqual(["overdraft", "nsf"]);
     expect(items[0].headline).toBe("Your overdraft fee is $30; the median of 5 peers is $30.");
     expect(items[0].facts[1]).toBe("2 charge more, 1 the same and 2 less.");
     expect(items[0].note).toMatch(/small peer group/);
-    expect(items[1].headline).toBe("Your NSF is above 18 of 20 peers.");
+    expect(items[1].headline).toBe("Your NSF / returned item fee is above 18 of 20 peers.");
     const text = items.flatMap((i) => [i.headline, ...i.facts]).join(" ");
     expect(text).not.toMatch(/raise|lower|should|recommend/i);
   });

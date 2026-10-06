@@ -79,7 +79,7 @@ export function buildAuditTrail(input: {
     const range = publishedRange(dates);
     return {
       label: `${input.feeName} fees, ${layer.label}`,
-      detail: `${layer.n} institutions: ${layer.scope.toLowerCase()}. Bank Fee Index published fee records.`,
+      detail: `${layer.n} institutions: ${layer.scope.charAt(0).toLowerCase() + layer.scope.slice(1)}. Bank Fee Index published fee records.`,
       asOf: range ? (range.from === range.to ? range.to : `${range.from} to ${range.to}`) : null,
     };
   };

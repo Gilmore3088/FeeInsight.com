@@ -21,6 +21,8 @@ import {
   MemoHeader,
   MemoPage,
   MemoSection,
+  PeerSplitBars,
+  PriceStrip,
   Tabs,
   fmtMoney,
   fmtSignedMoney,
@@ -123,7 +125,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
 
   const row = "border-b border-warm-200";
   const head = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
-  const cell = "px-4 py-2.5 text-right tabular-nums";
+  const cell = "px-4 py-2.5 text-right [font-variant-numeric:tabular-nums]";
 
   return (
     <MemoPage>
@@ -150,7 +152,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         />
       ) : null}
 
-      <form method="get" action="/pro/simulate" className="grid gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-4">
+      <form id="your-figures" method="get" action="/pro/simulate" className="grid scroll-mt-24 gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-4">
         <input type="hidden" name="fee" value={ws.fee} />
         {instId ? <input type="hidden" name="instId" value={instId} /> : null}
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
@@ -175,7 +177,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         </div>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Items you charge a year (your figure)
-          <input name="paid" inputMode="numeric" defaultValue={params.paid ?? ""} className={inputClass} placeholder="For example 14,500" />
+          <input id="paid" name="paid" inputMode="numeric" defaultValue={params.paid ?? ""} className={inputClass} placeholder="For example 14,500" />
         </label>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Share you waive or refund, in percent (your figure)
@@ -187,7 +189,27 @@ export default async function ModelPage({ searchParams }: PageProps) {
         </p>
       </form>
 
-      <MemoSection title="Side by side" note={`Against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope.toLowerCase()} (${layer.n}).`}>
+      <MemoSection title="Side by side" note={`Against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope} (${layer.n}).`}>
+        <div className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-warm-50 p-5">
+          <PriceStrip
+            amounts={layer.amounts}
+            marks={columns.map((c) => ({ label: c.today ? `Today ${fmtMoney(c.price)}` : c.label, price: c.price, today: c.today }))}
+          />
+          <PeerSplitBars
+            rows={columns.map((c) => ({
+              label: c.today ? `Today ${fmtMoney(c.price)}` : c.label,
+              today: c.today,
+              less: c.result.peersLess,
+              same: c.result.peersSame,
+              more: c.result.peersMore,
+              note: c.today
+                ? "Your price today"
+                : c.result.annualDelta != null
+                  ? `${fmtSignedMoney(c.result.annualDelta)} a year`
+                  : `${fmtSignedMoney(c.result.per1000Delta)} per 1,000 items`,
+            }))}
+          />
+        </div>
         <div className="overflow-x-auto rounded-lg border border-warm-300 bg-warm-50">
           <table className="w-full min-w-[36rem] text-sm">
             <thead>
@@ -237,7 +259,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
                 <th scope="row" className="px-4 py-2.5 text-left font-normal">Fee income a year, from your figures</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>
-                    {c.today ? "—" : c.result.annualDelta != null ? fmtSignedMoney(c.result.annualDelta) : <span className="text-warm-600">Add your figures</span>}
+                    {c.today ? "—" : c.result.annualDelta != null ? fmtSignedMoney(c.result.annualDelta) : <a href="#your-figures" className="text-terra-text underline">Add your figures</a>}
                   </td>
                 ))}
               </tr>

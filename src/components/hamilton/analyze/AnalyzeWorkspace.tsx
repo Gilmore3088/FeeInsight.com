@@ -122,8 +122,10 @@ interface AnalyzeWorkspaceProps {
   /** Pre-populated analysis loaded from hamilton_saved_analyses via ?analysis= searchParam */
   initialAnalysis?: AnalyzeResponse | null;
   initialAnalysisId?: string | null;
-  /** A question handed over from another page ("Ask about this"); filled in, never auto-sent */
+  /** A question handed over from another page or the Ask bar */
   initialQuestion?: string | null;
+  /** True when the question came from the Ask bar, so it is sent on arrival rather than retyped */
+  autoSend?: boolean;
 }
 
 /**
@@ -139,6 +141,7 @@ export function AnalyzeWorkspace({
   initialAnalysis,
   initialAnalysisId = null,
   initialQuestion = null,
+  autoSend = false,
 }: AnalyzeWorkspaceProps) {
   // The focus lens still shapes the prompt from deep links; there are no lens tabs on screen.
   const focus = useRef<AnalysisFocus>(focusForIntent(initialIntent));
@@ -243,6 +246,19 @@ export function AnalyzeWorkspace({
     },
     [clearError, isLoading, sendMessage, setMessages],
   );
+
+  // A question typed in the Ask bar on another screen is answered here without retyping it.
+  const autoSent = useRef(false);
+  useEffect(() => {
+    if (autoSend && initialQuestion && !initialAnalysis && !autoSent.current) {
+      autoSent.current = true;
+      // Drop send=1 from the address so a reload doesn't ask (and pay) again.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("send");
+      window.history.replaceState(null, "", url.toString());
+      ask(initialQuestion);
+    }
+  }, [autoSend, initialQuestion, initialAnalysis, ask]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -487,11 +503,11 @@ export function AnalyzeWorkspace({
         </>
       ) : null}
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-4 print:hidden sm:px-6">
+      <div className="sticky bottom-4 z-30 print:hidden">
         <form
           onSubmit={handleSubmit}
           aria-label="Ask Hamilton"
-          className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-xl border border-warm-ink-700 bg-warm-ink-900 p-2 pl-4 shadow-2xl"
+          className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-xl border border-warm-ink-700 bg-warm-ink-900 p-2 pl-4 shadow-2xl"
         >
           <span aria-hidden className="pb-2 text-sm text-warm-ink-50" style={SERIF}>
             H

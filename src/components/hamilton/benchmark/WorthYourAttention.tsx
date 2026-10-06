@@ -30,35 +30,37 @@ export function WorthYourAttention({
       <p className="mt-1 text-sm text-warm-600">
         Overdraft first, then what stood out against your peers and your state this month. Whether it matters depends on your goals; open one to look closer.
       </p>
-      <ol className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <ol className="mt-5 flex flex-col">
         {observations.map((o, i) => (
-          <li key={o.id} className="flex flex-col gap-2 border-t-2 border-warm-900 pt-3">
-            <span className="text-xs font-semibold text-terra-text">{String(i + 1).padStart(2, "0")}</span>
-            <span className="text-lg leading-snug text-warm-900" style={SERIF}>
-              {o.headline}
-            </span>
-            <ul className="flex flex-col gap-1 text-sm text-warm-700">
-              {o.facts.map((f) => (
-                <li key={f}>{f}</li>
-              ))}
-            </ul>
-            {o.note ? <span className="text-xs text-terra-text">{o.note}</span> : null}
-            {o.feeCategory ? (
-              <span className="mt-auto flex gap-3 pt-1 text-sm">
-                <Link
-                  href={hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
-                  className="text-terra-text underline"
-                >
-                  Look closer
-                </Link>
-                <Link
-                  href={hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
-                  className="text-terra-text underline"
-                >
-                  Try a price
-                </Link>
+          <li key={o.id} className="grid gap-x-8 gap-y-2 border-t border-warm-300 py-5 md:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)]">
+            <span className="text-sm font-semibold text-terra-text">{String(i + 1).padStart(2, "0")}</span>
+            <div className="flex flex-col gap-3">
+              <span className="text-xl leading-snug text-warm-900" style={SERIF}>
+                {o.headline}
               </span>
-            ) : null}
+              {o.feeCategory ? (
+                <span className="flex gap-4 text-sm">
+                  <Link
+                    href={hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
+                    className="text-terra-text underline"
+                  >
+                    Look closer
+                  </Link>
+                  <Link
+                    href={hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
+                    className="text-terra-text underline"
+                  >
+                    Try a price
+                  </Link>
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-1.5 text-sm leading-relaxed text-warm-700">
+              {o.facts.map((f) => (
+                <p key={f}>{f}</p>
+              ))}
+              {o.note ? <p className="text-terra-text">{o.note}</p> : null}
+            </div>
           </li>
         ))}
       </ol>

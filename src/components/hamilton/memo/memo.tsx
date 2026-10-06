@@ -223,12 +223,110 @@ export function DistributionBars({
                 </span>
               ) : null}
             </span>
-            <span role="cell" className="text-right tabular-nums text-warm-700">
+            <span role="cell" className="text-right [font-variant-numeric:tabular-nums] text-warm-700">
               {b.count}
             </span>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Where each price lands among the peers: every peer's published amount as a dot on one line, with
+ * today's price and each tested price marked. Read left (cheaper) to right (dearer).
+ */
+export function PriceStrip({
+  amounts,
+  marks,
+}: {
+  amounts: readonly number[];
+  marks: { label: string; price: number; today?: boolean }[];
+}) {
+  const max = Math.max(1, ...amounts, ...marks.map((m) => m.price)) * 1.05;
+  const x = (v: number) => `${Math.min(100, (v / max) * 100)}%`;
+  const sorted = [...marks].sort((a, b) => a.price - b.price);
+  return (
+    <div className="flex flex-col gap-2" aria-label="Where each price lands among peers">
+      <div className="relative h-24">
+        <div className="absolute inset-x-0 top-1/2 h-px bg-warm-300" />
+        {amounts.map((a, i) => (
+          <span
+            key={i}
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warm-400/70"
+            style={{ left: x(a) }}
+            aria-hidden
+          />
+        ))}
+        {sorted.map((m, i) => {
+          const above = i % 2 === 0;
+          return (
+            <span key={m.label} className="absolute top-0 h-full -translate-x-1/2" style={{ left: x(m.price) }}>
+              <span className={"absolute left-1/2 top-1/4 h-1/2 w-0.5 -translate-x-1/2 " + (m.today ? "bg-terra" : "bg-warm-900")} />
+              <span
+                className={
+                  "absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " +
+                  (above ? "top-0 " : "bottom-0 ") +
+                  (m.today ? "bg-terra text-white" : "bg-warm-900 text-warm-50")
+                }
+              >
+                {m.label}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-xs text-warm-600">
+        <span>$0</span>
+        <span>
+          Each dot is one institution&apos;s published price ({amounts.length})
+        </span>
+        <span>{fmtMoney(Math.round(max))}</span>
+      </div>
+    </div>
+  );
+}
+
+/** For each price: how many peers charge less, the same and more, as one stacked bar. */
+export function PeerSplitBars({
+  rows,
+}: {
+  rows: { label: string; less: number; same: number; more: number; today?: boolean; note?: string }[];
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.map((r) => {
+        const n = Math.max(1, r.less + r.same + r.more);
+        return (
+          <div key={r.label} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr_11rem]">
+            <span className={"text-sm " + (r.today ? "font-semibold text-terra-text" : "text-warm-900")}>{r.label}</span>
+            <span className="flex h-6 overflow-hidden rounded-sm text-[11px] font-medium">
+              {r.less > 0 ? (
+                <span className="flex items-center justify-center bg-warm-300 text-warm-800" style={{ width: `${(r.less / n) * 100}%` }}>
+                  {r.less}
+                </span>
+              ) : null}
+              {r.same > 0 ? (
+                <span className="flex items-center justify-center bg-warm-600 text-white" style={{ width: `${(r.same / n) * 100}%` }}>
+                  {r.same}
+                </span>
+              ) : null}
+              {r.more > 0 ? (
+                <span className="flex items-center justify-center bg-terra text-white" style={{ width: `${(r.more / n) * 100}%` }}>
+                  {r.more}
+                </span>
+              ) : null}
+            </span>
+            <span className="text-sm text-warm-700 [font-variant-numeric:tabular-nums] sm:text-right">{r.note ?? ""}</span>
+          </div>
+        );
+      })}
+      <div className="flex flex-wrap gap-4 text-xs text-warm-600">
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-warm-300" /> charge less</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-warm-600" /> charge the same</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-terra" /> charge more</span>
+      </div>
     </div>
   );
 }
@@ -315,7 +413,7 @@ export function AuditPanel({
                   </span>
                   <span className="text-warm-600">
                     {r.publishedAt ? `Published ${longDateOrRange(r.publishedAt.slice(0, 10))}` : "Publish date not recorded"}
-                    {r.verifiedByEventId != null ? ` · Verification record ${r.verifiedByEventId}` : ""}
+                    {r.verifiedByEventId ? <span title={`Verification record ${r.verifiedByEventId}`}> · Verified against the schedule</span> : null}
                     {r.sourceUrl ? (
                       <>
                         {" · "}

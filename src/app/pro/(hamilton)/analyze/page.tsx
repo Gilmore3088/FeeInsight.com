@@ -24,7 +24,7 @@ export const metadata: Metadata = { title: "Ask Hamilton" };
 export default async function AnalyzePage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string }>;
+  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
@@ -56,6 +56,7 @@ export default async function AnalyzePage({
       selectedInstitution={selectedInstitution}
       initialIntent={params.intent ?? null}
       initialQuestion={params.q ? params.q.slice(0, 500) : null}
+      autoSend={params.send === "1"}
     />
   );
 }
