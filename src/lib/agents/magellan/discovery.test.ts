@@ -15,6 +15,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const text = templateText(strings);
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
+    if (text.includes("product-page upgrade search")) return Promise.resolve([]);
     if (text.includes("AS profile_canonical_source_url")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -453,5 +454,50 @@ describe("Magellan agentic discovery", () => {
 
     expect(result.results[0]).toMatchObject({ outcome: "dead", code: "blocked" });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  describe("product-page upgrade search", () => {
+    const productBank = bank(77, "https://upbank.example", {
+      fee_schedule_url: "https://upbank.example/personal/checking",
+      profile_canonical_source_url: "https://upbank.example/personal/checking",
+    });
+    const upgradeDb = () =>
+      createDbMock([], learningHandler((text) => (text.includes("product-page upgrade search") ? [productBank] : undefined)));
+
+    it("replaces a product-page link with the fee schedule and keeps the old page as a companion", async () => {
+      const db = upgradeDb();
+      const fetchImpl = site({
+        "https://upbank.example/personal/checking": () =>
+          response("<h1>Checking</h1><p>Monthly service charge $5.</p><footer>Fee Schedule | Truth in Savings</footer>"),
+        "https://upbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://upbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 120, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://upbank.example/disclosures/fee-schedule" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
+      expect(companion).toBeDefined();
+      expect(companion).toContain("https://upbank.example/personal/checking");
+      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+    });
+
+    it("leaves the bank's link and rescue state alone when no schedule is found", async () => {
+      const db = upgradeDb();
+      const fetchImpl = site({
+        "https://upbank.example/personal/checking": () => response("<h1>Checking</h1><p>Monthly service charge $5.</p>"),
+        "https://upbank.example/": () => response('<a href="/about">About</a>'),
+      });
+
+      await runMagellanDiscovery({ runId: 121, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
+      expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
+      expect(attempts(db).length).toBeGreaterThan(0);
+      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+    });
   });
 });

@@ -51,6 +51,16 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * blocks bots), "fee sheet" is a strong link phrase, and rejections expire.
  */
 export const DISCOVERY_METHOD_VERSION = 3;
+/**
+ * Banks whose fee link is an account or product page get one search for the real fee
+ * schedule per version (`detail.upgrade_search`), in spare discovery capacity. Bump it
+ * to search those banks again after a finder change.
+ */
+export const UPGRADE_SEARCH_VERSION = 1;
+/** Same address test as `looksLikeProductPage` (find-validate.ts), for SQL. */
+const PRODUCT_LINK_SQL =
+  "^https?://[^/]+/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)";
+const FEE_NAMED_LINK_SQL = "(fee|schedule|charge|disclos|truth|pricing|\\.pdf($|\\?))";
 /** One bank never takes longer than this. */
 const INSTITUTION_BUDGET_MS = 45_000;
 // The tick starts no step after 180 s of its 300 s limit, so a step must end within ~110 s:
@@ -75,6 +85,10 @@ interface DiscoveryCandidateRow {
   profile_read_strategy?: string | null;
   profile_locked_by_correction?: boolean | string | null;
   profile_consecutive_failures?: number | string | null;
+  /** The bank's current fee link (upgrade searches only). */
+  fee_schedule_url?: string | null;
+  /** True when the bank has a product-page link and this is a search for the real schedule. */
+  upgrade?: boolean;
 }
 
 export type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_after" | "failure";
@@ -599,6 +613,72 @@ async function selectCandidates(
   `;
 }
 
+/**
+ * Banks whose fee link is an account or product page, not yet searched for the real
+ * schedule at this upgrade version. Their link is kept until a fee schedule is found.
+ */
+async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
+  if (limit <= 0) return [];
+  const normalizedState = normalizeStateCode(stateCode);
+  const upgradeMarker = JSON.stringify({ upgrade_search: UPGRADE_SEARCH_VERSION });
+  const rows = await db<DiscoveryCandidateRow[]>`
+    -- product-page upgrade search
+    SELECT inst.id,
+           inst.institution_name,
+           inst.state_code,
+           inst.website_url,
+           inst.asset_size,
+           inst.rescue_status,
+           inst.fee_schedule_url,
+           profile.canonical_source_url AS profile_canonical_source_url,
+           profile.source_kind AS profile_source_kind,
+           profile.read_strategy AS profile_read_strategy,
+           profile.locked_by_correction AS profile_locked_by_correction,
+           profile.consecutive_failures AS profile_consecutive_failures
+      FROM institution_sources inst
+      LEFT JOIN institution_source_profiles profile
+        ON profile.institution_id = inst.id
+     WHERE COALESCE(inst.status, 'active') = 'active'
+       AND lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL}
+       AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}
+       AND inst.website_url IS NOT NULL
+       AND btrim(inst.website_url) <> ''
+       AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
+       AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+            AND pa.detail @> ${upgradeMarker}::jsonb
+       )
+     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     LIMIT ${limit}
+  `;
+  return rows.map((row) => ({ ...row, upgrade: true }));
+}
+
+/**
+ * An upgrade search found the real schedule: the product page the bank linked before stays
+ * as a companion account page, so the fees read from it keep their own document stream.
+ */
+async function keepProductPageAsCompanion(
+  db: SqlTag,
+  institutionId: number,
+  url: string,
+  runId: number,
+): Promise<void> {
+  await db`
+    INSERT INTO institution_additional_sources
+      (institution_id, url, document_type, document_role, found_by_strategy, strategy_version, agent_run_id, reason)
+    VALUES
+      (${institutionId}, ${url}, 'html', 'account_page', 'discover.upgrade_search', ${UPGRADE_SEARCH_VERSION}, ${runId},
+       'Former fee link (an account page), kept when the fee schedule was found')
+    ON CONFLICT (institution_id, url) DO NOTHING
+  `;
+}
+
 /** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
 export async function recordDiscoveryResult(
   db: SqlTag,
@@ -719,6 +799,7 @@ async function recordFinderAttempts(
 ): Promise<void> {
   const base = {
     method_version: DISCOVERY_METHOD_VERSION,
+    ...(row.upgrade ? { upgrade_search: UPGRADE_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
     website: row.website_url,
     moved_to: result.movedTo,
     platform: result.platform,
@@ -782,7 +863,11 @@ export async function runMagellanDiscovery(
   const dryRun = Boolean(options.dryRun);
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
-  const rows = await selectCandidates(db, limit, options.stateCode, learning);
+  const missing = await selectCandidates(db, limit, options.stateCode, learning);
+  // Spare capacity searches banks whose link is a product page (needs the attempt log).
+  const rows = learning
+    ? [...missing, ...(await selectUpgradeCandidates(db, limit - missing.length, options.stateCode))]
+    : missing;
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();
@@ -804,9 +889,20 @@ export async function runMagellanDiscovery(
     });
     results.push(result);
     if (dryRun) continue;
-    await recordDiscoveryResult(db, result);
+    const upgraded = Boolean(
+      row.upgrade &&
+        result.outcome === "discovered" &&
+        result.url &&
+        row.fee_schedule_url &&
+        urlIdentity(result.url) !== urlIdentity(row.fee_schedule_url),
+    );
+    // An upgrade search that finds nothing new leaves the bank's link and rescue state alone.
+    if (!row.upgrade || upgraded) await recordDiscoveryResult(db, result);
+    if (upgraded && row.fee_schedule_url) {
+      await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
+    }
     if (learning) await recordFinderAttempts(db, row, result, { runId: options.runId, stepId: options.stepId ?? null });
-    if (result.outcome === "discovered" && result.url && result.code !== "locked") {
+    if ((!row.upgrade || upgraded) && result.outcome === "discovered" && result.url && result.code !== "locked") {
       await knowledge.recordFind({ platform: result.platform, url: result.url, foundByPlatformPath: result.foundBy === "platformPaths" || result.foundBy === "peerHint" });
     }
   }

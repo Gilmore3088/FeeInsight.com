@@ -64,7 +64,15 @@ and `detail.method_version`).
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
   and their first pages read, so a rate sheet or press release is rejected. A PDF with
-  no readable text (a scan) is accepted only on a strong fee label.
+  no readable text (a scan) is accepted only on a strong fee label. Fee words are counted
+  on the page's own content (menus, header and footer stripped). Below the fee-page bar
+  (3 fee lines) HTML passes only when its address names the fee page, or its label is
+  strong and it lists a fee; an account or product page (`looksLikeProductPage`) is
+  rejected as `product_page` and belongs to the companion finder as an account page.
+- Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
+  link is a product page are searched once per version for the real schedule
+  (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
+  companion `account_page`; a miss leaves the link and rescue state untouched.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
   their path in per-platform learning, and their links are searched first.

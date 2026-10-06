@@ -736,6 +736,7 @@ const REJECTION_VERDICTS = new Set([
   "not_fee_page",
   "rate_page",
   "too_few_fee_words",
+  "product_page",
   "unreadable_pdf_weak_label",
   "not_a_pdf",
   "unsupported_type",

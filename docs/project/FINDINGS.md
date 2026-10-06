@@ -13,6 +13,22 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Product pages became banks' fee links
+**What happened:** the Magellan audit (read-only queries on prod, Oct 6) found 853 of 4,451 fee
+links were account or product pages ("/personal/checking"), not fee schedules; those banks had a
+median of 4 live fees against 15 for fee-named links. In a random sample of 40 links, 9 were
+product pages. In the two days before, 57% of 960 new finds were product or rates pages.
+**Cause:** the fee-page check accepted any HTML page with two fee words, counted on the raw page
+including its menu and footer, where "Fee Schedule | Truth in Savings" appears on every page of a
+bank's site. A checking page quoting its monthly charge passed.
+**Fix:** this PR counts fee words on the page's own content only and requires, below the 3 fee
+line bar, an address that names the fee page or a strong label plus a listed fee; product pages
+are rejected (`product_page`). Banks that already hold a product-page link get one upgrade search;
+a find replaces the link and keeps the product page as a companion account page. Dry run before
+merge (read-only, 06:35 UTC): 784 unlocked banks qualify, 131 of them with live fees; links stay
+until a real schedule is found.
+**Lesson:** never judge a page by words that sit in the site's shared menu or footer.
+
 ## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
 **What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
 fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
