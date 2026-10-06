@@ -85,7 +85,8 @@ and `detail.method_version`).
   consumer fee schedule?": not when the link is business-only, when none of the bank's
   stored texts prices an overdraft or NSF item (`hasOverdraftPrice`: the word, then $10+
   on the same line, not a threshold or limit), or when its text sends the reader to the
-  account agreement or another document (`refersElsewhere`). Such a bank keeps its link
+  account agreement or another document (`refersElsewhere`), or when its current copy's
+  address is dated three or more years back (`isStaleDatedLink`, e.g. a 2019 PDF). Such a bank keeps its link
   and live fees; the companion finder and the paid schedule search keep looking.
 - Business-only search (`BUSINESS_SEARCH_VERSION`): before the upgrade searches, banks
   whose link is a business-only schedule are searched once per version for the consumer

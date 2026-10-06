@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A fee document dated 2019 counted as a finished link
+**What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
+links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
+characters). Knox reads "Overdrafts Paid $30" from it, so the link passed every rule in
+`link-coverage.ts` and no finder looked for a current schedule. 263 institutions' current
+copies carry a year three or more back in their address; 4 of them are $10B+ banks.
+**Cause:** link coverage asked what the page says, never how old it is.
+**Fix:** this PR. `isStaleDatedLink` / `DOCUMENT_YEAR_SQL`: a current copy dated three or
+more years back by its address counts as an incomplete link for the companion finder and the
+paid schedule search; the old link and its live fees stay until something newer is found.
+**Lesson:** a link that passes the content checks can still be years out of date; check the
+date in its address before calling it done.
+
 ## 2026-10-06: Magellan called a link "found" when it was not the consumer fee schedule
 **What happened:** read-only prod queries, 14:15-14:30 UTC Oct 6. 187 active institutions'
 only fee link is a business-only schedule (882 live fees), e.g. First National Bank Alaska's
