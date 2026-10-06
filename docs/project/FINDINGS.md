@@ -13,8 +13,6 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
-<<<<<<< HEAD
-=======
 ## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
 **What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
 rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
@@ -98,7 +96,6 @@ finders first. Launches go from 2 to 3 per tick.
 **Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
 ("Magellan uses the hints") needs a caller and a test.
 
->>>>>>> origin/main
 ## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
 **What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
 at 14:41. The lead rows showed confirmed and not unsubscribed, but MailerLite subscriber
