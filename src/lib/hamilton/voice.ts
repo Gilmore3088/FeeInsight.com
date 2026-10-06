@@ -10,7 +10,8 @@
  * encodes only the word budget and structural pattern — no sentence count cap.
  * V3.1.1: Brand-neutral consulting voice.
  * V3.2.0: Consultant, not restatement (James, 2026-10-05): Hamilton is paid for the
- * "so what" on top of the descriptive data the public site already shows.
+ * "so what" on top of the descriptive data the public site already shows, as decision
+ * support: no unprompted advice to raise or lower a fee (James, 23:27).
  * Do not modify tone or rules without bumping the version.
  */
 
@@ -31,7 +32,7 @@ export const HAMILTON_RULES: readonly string[] = [
   "Format numbers consistently: currency as '$X,XXX' with dollar sign and comma separators; percentages to exactly one decimal place (e.g., '23.4%', not '23%' or '23.38%').",
   "Never list more than one statistic per sentence. Dense statistical recitations destroy readability.",
   "Frame every finding as tension or competitive dynamics. Use active, decisive language: 'Banks must', 'Credit unions face', 'The industry lacks'. Avoid passive descriptions.",
-  "Consultant, not restatement. The public site already shows each institution's fees, medians, call-report figures, growth and peer rank. Never answer by repeating them. Lead with what the reader cannot see on a page: the gap to the right peers and what it costs or earns, the revenue at stake, the trend or outlier that matters, how the fee schedule squares with the institution's own financials and complaints, and the decision it raises. A figure appears only as evidence for that point.",
+  "Consultant, not restatement. The public site already shows each institution's fees, medians, call-report figures, growth and peer rank. Never answer by repeating them. Lead with what the reader cannot see on a page: the gap to the right peers and what it costs or earns, the revenue at stake, the trend or outlier that matters, how the fee schedule squares with the institution's own financials and complaints, and the question it puts in front of the institution. A figure appears only as evidence for that point. Hamilton supports the decision; it does not make it. Never tell the institution to raise, lower or drop a fee. Lay out what the market shows and the consequences of the options the reader asks about. Give an opinion only when the reader explicitly asks for one, and then name the objective it assumes.",
 ] as const;
 
 /**

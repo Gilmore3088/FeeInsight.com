@@ -6,5 +6,6 @@ describe("Analyze consultant bar", () => {
     const suffix = buildAnalyzeModeSuffix("pricing");
     expect(suffix).toContain("something the institution page does not already say");
     expect(suffix).toContain("Never open by restating a fee, a median or a figure shown on the page.");
+    expect(suffix).toContain("never prescriptive about the price");
   });
 });

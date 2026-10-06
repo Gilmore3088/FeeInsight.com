@@ -72,5 +72,6 @@ describe("consultant bar", () => {
     expect(HAMILTON_VERSION).toBe("3.2.0");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Consultant, not restatement.");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Never answer by repeating them.");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Never tell the institution to raise, lower or drop a fee.");
   });
 });

@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**Hamilton is decision support, not a recommendation engine.** James, 23:27 UTC, correcting his
+23:08 direction: Hamilton surfaces what is worth investigating and what the market says, models
+the prices the bank asks about (roughly from published revenue, precisely from figures the bank
+enters) and plans implementation with real constraints such as 30 days' notice for an increase.
+It never says "raise your fee" or "approve recommendation"; it gives an opinion only when asked,
+naming the objective it assumed. Prompts carry this from voice v3.2.0; the plan is "Hamilton as a
+fee consultant" (https://claude.ai/code/artifact/ff42ee75-db64-4c54-aa04-5c17553255e8).
+
 **Hamilton is a paid consultant, not a chatbot that restates the site.** James, 22:57 UTC: "A
 consultant finds the actionable insights, the peer data, the qualitative and the quantitative, and
 packages it in an easy to understand and concise, valuable package." Hamilton's voice (v3.2.0),
