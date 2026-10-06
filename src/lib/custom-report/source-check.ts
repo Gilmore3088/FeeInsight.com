@@ -41,6 +41,15 @@ const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
 const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+/** A cap stated after a row's per-item price, and the name words that ask for it. */
+const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
+const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
+/** A line that only qualifies the fee named above it. */
+const QUALIFIER_LINE = /^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)\b.{0,80})$/i;
+/** Dot leaders (or an ellipsis run) at the end of a line. */
+const TRAILING_LEADER = /(?:\.\s?){3,}\s*$|…\s*$/;
+/** A price that opens a line, with its unit ("$20.00", "$5 each", "FREE"). */
+const LEADING_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|free\b|none\b|no charge|n\/c)(?:\s*(?:per|each|\/)\s*[a-z]*)?/i;
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
@@ -67,6 +76,15 @@ function moneyTokens(line: string): MoneyToken[] {
     tokens.push({ value: Number(`${whole}.${cents}`), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
   }
   return tokens;
+}
+
+/** Free words as $0 prices, for a line that also states other prices. */
+function zeroTokens(line: string): MoneyToken[] {
+  return [...line.matchAll(/\b(?:free|none|no charge|no fee|n\/c|waived)\b/gi)].map((match) => ({
+    value: 0,
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+  }));
 }
 
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
@@ -100,10 +118,13 @@ function stemCount(text: string, stems: string[]): number {
 }
 
 function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
-  const tokens = moneyTokens(line);
-  if (amount === 0) {
-    return ZERO_WORDS.test(line) && !tokens.some((t) => t.value > 0 && !isThreshold(line, t)) ? null : "amount_not_the_fee";
+  const money = moneyTokens(line);
+  if (amount === 0 && !money.some((t) => t.value > 0 && !isThreshold(line, t))) {
+    return ZERO_WORDS.test(line) ? null : "amount_not_the_fee";
   }
+  // A $0 fee on a line with other prices (a schedule flattened to one line: "Monthly Fee
+  // NONE Return Check Fee $30.00") is read like any price: its free word is its price.
+  const tokens = amount === 0 ? [...money, ...zeroTokens(line)].sort((a, b) => a.start - b.start) : money;
   // A row's prices are its figures that are not limits ("$4.00 | per check, minimum
   // $500"; "Negative from $50.01 and more | $35"). When one line carries several fees
   // ("Title Draft $50.00 Incoming Wire Fee (domestic) $18.00", or a whole schedule
@@ -124,10 +145,18 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
     /[a-z0-9]/i.test(line.slice(prices[prices.length - 1].end));
   const scores = !priceFirst && Math.max(0, ...before) > 0 ? before : after;
   const best = Math.max(0, ...scores);
-  const index = prices.findIndex((price, i) => scores[i] === best && Math.abs(price.value - amount) < 0.005);
+  let index = prices.findIndex((price, i) => scores[i] === best && Math.abs(price.value - amount) < 0.005);
+  // A cap on the row's own fee ("$35 per item, maximum of $175 per day") is that row's
+  // price for a fee named as the cap.
+  if (index < 0 && best > 0 && stems.some((stem) => CAP_STEMS.has(stem))) {
+    index = prices.findIndex(
+      (price, i) => Math.abs(price.value - amount) < 0.005 && CAP_BEFORE.test(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start)),
+    );
+  }
   if (best === 0 || index < 0) {
     return tokens.some((t) => Math.abs(t.value - amount) < 0.005) ? "amount_is_a_threshold" : "amount_not_the_fee";
   }
+  if (amount === 0 && !freeWordIsThePrice(line, prices, index, stems)) return "amount_not_the_fee";
   // A fee that depends on a balance band ("Negative $25 or less | $5") has no single
   // comparable value, so it never stands in for the bank's fee.
   const from = index === 0 ? 0 : prices[index - 1].end;
@@ -138,9 +167,41 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
+/**
+ * A free word on a line that also states prices is the fee's own price only when it reads
+ * as one: not an allowance or a note ("(2 FREE PER MONTH) | $1.00"), not one column of a
+ * table whose next column prices the same fee ("NSF | NONE | $14.00"), not a free word
+ * for a later name ("$3.95 FEE FOR PRINTED STATEMENT | NO CHARGE FOR PAPER STATEMENT").
+ */
+function freeWordIsThePrice(line: string, prices: MoneyToken[], index: number, stems: string[]): boolean {
+  const word = prices[index];
+  if (/\d\s*$/.test(line.slice(0, word.start)) || line.lastIndexOf("(", word.start) > line.lastIndexOf(")", word.start)) return false;
+  const next = prices[index + 1];
+  const after = line.slice(word.end, next?.start ?? line.length);
+  if (next && !/[a-z]{3,}/i.test(after)) return false;
+  if (namesFee(after, stems)) return false;
+  const previous = prices[index - 1];
+  return !previous || previous.value === 0 || !/^\s*(?:fee|charge)\b/i.test(line.slice(previous.end));
+}
+
+/** The row of a line's last name when its dot leader runs to a price on the next line. */
+function leaderRow(lines: string[], index: number): string | null {
+  const line = lines[index];
+  const lastPrice = moneyTokens(line).at(-1);
+  const tail = lastPrice ? line.slice(lastPrice.end) : line;
+  const opening = (lines[index + 1] ?? "").match(LEADING_PRICE);
+  return TRAILING_LEADER.test(tail) && /[a-z]{3,}/i.test(tail) && opening ? `${tail.trim()} | ${opening[0].trim()}` : null;
+}
+
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
 function feeRow(lines: string[], index: number): string {
   const line = lines[index];
+  // A dot-leader row whose price was pushed onto the next line ("Levies ......" /
+  // "$20.00"): the row is the name after the line's last price and the price that opens
+  // the next line, never the price in front of the name (that is the previous row's).
+  // A long flattened line keeps its own prices; `leaderRow` offers its last name's row too.
+  const leader = leaderRow(lines, index);
+  if (leader && line.length <= PRICE_FIRST_MAX_LENGTH) return leader;
   if (moneyTokens(line).length > 0 || ZERO_WORDS.test(line)) return line;
   // Only a price line may follow; another name ("Incoming" then "Outgoing" then "$25")
   // ends the row, so one fee never takes the next fee's price.
@@ -149,7 +210,9 @@ function feeRow(lines: string[], index: number): string {
     .find((next) => next.length <= PRICE_BELOW_MAX_LENGTH && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
-  return between.every((next) => /^\s*(\/|per\b)/i.test(next)) ? `${line} | ${price}` : line;
+  // Units ("/Item") and notes that only qualify the name ("If checks are not on order
+  // (10 maximum)", "(up to $1,000)") may sit between a name and its price.
+  return between.every((next) => /^\s*(\/|per\b)/i.test(next) || QUALIFIER_LINE.test(next)) ? `${line} | ${price}` : line;
 }
 
 function isThreshold(line: string, token: MoneyToken): boolean {
@@ -213,7 +276,13 @@ export function checkFeeAgainstSource(
       !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !` ${comparable(line)} `.includes(stem) || ` ${comparable(above)} `.includes(stem))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
-    const amountProblem = statesAmount(feeRow(lines, i), rounded, stems);
+    let row = feeRow(lines, i);
+    let amountProblem = statesAmount(row, rounded, stems);
+    const leader = leaderRow(lines, i);
+    if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
+      row = leader;
+      amountProblem = null;
+    }
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
@@ -223,7 +292,7 @@ export function checkFeeAgainstSource(
       best = "category_not_in_text";
       continue;
     }
-    return { ok: true, sourceLine: feeRow(lines, i).slice(0, 240) };
+    return { ok: true, sourceLine: row.slice(0, 240) };
   }
   return { ok: false, reason: best };
 }

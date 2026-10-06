@@ -75,18 +75,17 @@ describe("Knox pass 2a: extract.table", () => {
 
     expect(fees(text)).toEqual([
       ["Community Bank Debit Card (replacement or PIN)", 5, "card_replacement"],
+      // The shared accuracy check reads a price two lines under its name, past a note
+      // line ("If checks are not on order", "(up to $1,000)").
+      ["Temporary Checks", 2, "counter_check"],
       ["Overdraft Item Fee", 30, "overdraft"],
       ["Deposited checks (and other items) returned unpaid", 3, "deposited_item_return"],
       ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Within U.S. / U.S. territories", 3, "atm_non_network"],
       ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Outside U.S.", 5, "atm_international"],
+      ["Money order footnote 2", 5, "money_order"],
     ]);
-    // Read, but the shared accuracy check can't yet trace a price two lines under its name
-    // or past "(up to $1,000)", so the self-check holds them. The bank's own ATMs are not
-    // out-of-network, so nothing else is held.
-    expect(held(text)).toEqual([
-      ["untraced", "Temporary Checks", 2, "counter_check"],
-      ["untraced", "Money order footnote 2", 5, "money_order"],
-    ]);
+    // The bank's own ATMs are not out-of-network, so nothing is held.
+    expect(held(text)).toEqual([]);
   });
 
   it("self-checks each find against its line and drops one that doesn't trace", () => {
@@ -121,10 +120,10 @@ describe("Knox pass 2a: extract.table", () => {
     ];
     const table = runFreeSpecialists(text).runs.find((run) => run.strategy === "extract.table");
     expect(table?.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual(reads);
-    // The shared accuracy check reads each price as the start of the next row, so the
-    // self-check holds all four for review instead of sending them to Darwin.
-    expect(fees(text)).toEqual([]);
-    expect(held(text)).toEqual(reads.map(([name, amount, hint]) => ["untraced", name, amount, hint]));
+    // The shared accuracy check pairs each dot-leader name with the price that opens the
+    // next line, so all four trace.
+    expect(fees(text)).toEqual(reads);
+    expect(held(text)).toEqual([]);
   });
 
   it("reads structured rows through a small adapter over Rosetta's cell lines", () => {
@@ -175,12 +174,12 @@ describe("Knox pass 2b: fee-family experts", () => {
       ["extract.family.services", "Notary - Non Member", 5, "notary_fee"],
       ["extract.family.services", "Levy/Writ", 50, "garnishment_levy"],
     ]);
-    // Explicit NONE/FREE next to a fee name is read as $0, but on one flattened line the
-    // shared accuracy check can't tie the word to the name, so the self-check holds them.
+    // Explicit NONE/FREE next to a fee name is read as $0; the shared accuracy check ties
+    // the word to the words before it, as it does a price.
     expect(held(flattened)).toEqual([
-      ["untraced", "Continuous Overdraft Fee (Per Day)", 0, "continuous_od"],
-      ["untraced", "Wire Transfer - Domestic Incoming", 0, "wire_domestic_incoming"],
-      ["untraced", "Checking Account Monthly Fee", 0, "monthly_maintenance"],
+      ["zero", "Continuous Overdraft Fee (Per Day)", 0, "continuous_od"],
+      ["zero", "Wire Transfer - Domestic Incoming", 0, "wire_domestic_incoming"],
+      ["zero", "Checking Account Monthly Fee", 0, "monthly_maintenance"],
     ]);
     // The pass 1 line rules find nothing in it (v3 found nothing either).
     expect(fees(flattened, "extract.rules")).toEqual([]);
@@ -192,9 +191,9 @@ describe("Knox pass 2b: fee-family experts", () => {
       ["Overdraft fee 1st item", 25, "overdraft"],
       ["Paid overdraft item", 35, "overdraft"],
       ["Overdraft fee (2nd and subsequent items)", 35, "overdraft"],
+      ["Paid overdraft item daily maximum", 175, "od_daily_cap"],
     ]);
-    // The shared accuracy check reads "maximum of $175" as a threshold, so the cap is held.
-    expect(held(text)).toEqual([["untraced", "Paid overdraft item daily maximum", 175, "od_daily_cap"]]);
+    expect(held(text)).toEqual([]);
   });
 
   it("reads prices after dot leaders that dropped the dollar sign", () => {

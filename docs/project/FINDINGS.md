@@ -1054,11 +1054,25 @@ the rules re-check would keep 1,413 of 1,437 live fees against 1,416 today. The 
 are a $5 business counter-check price read as consumer (document 12657) and two safe deposit
 fees at document 10091 that are live under shifted names ("Drill box fee" at $25, a
 disclaimer at $200); Hamilton's source check applies the same rule and would pull them too.
-**Still open:** the shared check misses real fees in some layouts: a price on the line after a
-dot leader, FREE/NONE on a PDF flattened to one line, a note line ("(up to $1,000)", "If checks
-are not on order") between a name and its price, and long dot-leader lines split mid-row. These
-fees are held as `untraced` now rather than lost silently; fixing them belongs in
-`src/lib/custom-report/source-check.ts`, which every gate shares.
+**Then fixed in the shared check** (`src/lib/custom-report/source-check.ts`, same PR): it now reads
+- a dot-leader name with the price that opens the next line, not the price in front of it;
+- a price past a note line ("(up to $1,000)", "If checks are not on order");
+- FREE/NONE on a line that also states other prices, as that segment's price. It is not read
+  as the price when it is an allowance ("(2 FREE PER MONTH) | $1.00"), one column of a table
+  whose next column prices the fee ("NSF | NONE | $14.00"), or the free word of a later name;
+- a cap stated after the row's own price ("$35 per item, maximum of $175 per day") for a fee
+  named as the cap.
+
+Answer keys before and after: Texas 444 to 446 right, held out 43 to 43, seven states 660 to 665,
+wrong unchanged (15, 6, 48). Dry run, read-only:
+- The rules re-check keeps 1,415 of 1,437 sampled live fees; it kept 1,413 before this fix and
+  keeps 1,416 on main.
+- Of 704 live fees with names, 3 more trace and 0 stop tracing.
+- Of 70 fees the source check took down, 4 trace again, all FREE rows on flattened lines.
+- Of 24 fees Darwin rejected as `not_in_source`, 1 traces.
+
+Most takedowns and rejections stay down because the price really isn't on the row, which is
+correct.
 **Lesson:** an extractor should apply the publish gate's own check before it hands a fee on,
 so a disagreement shows up as a held row, not a silent rejection two agents later.
 
