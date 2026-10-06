@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { recordFeedback, feedbackSchemaReady, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
-import { buildFactBundle, allowedNumbers, pickSpotlightState, readNational, readSpotlightStates, unbackedNumbers, type FeeStat } from "./facts";
+import { buildFactBundle, allowedNumbers, pickSpotlightState, readNational, readSpotlightStates, unbackedNumbers, type CoverageStat, type FeeStat } from "./facts";
 import { copyProblems, copyText, renderEmail, withMailingAddress, writerPrompt, type EmailCopy } from "./email";
 import {
   CAMPAIGN_NAME_PREFIX,
@@ -122,8 +122,8 @@ export async function runMarketingScore({
     dedupeKey: `hamilton.marketing:campaign:${result.id}`,
   }));
 
-  // This month's national figures, so next month's email can say what moved.
-  const national = await readNational(db);
+  // This month's national figures, so next month's email can say how coverage grew.
+  const national = await readNational();
   rows.push({
     aboutStage: "publish",
     aboutStrategy: "marketing.snapshot",
@@ -185,7 +185,7 @@ async function readRecentSpotlightStates(db: SqlTag): Promise<string[]> {
   return rows.map((row) => String(row.state_code ?? "")).filter(Boolean);
 }
 
-async function readPreviousSnapshot(db: SqlTag, month: string): Promise<FeeStat[] | null> {
+async function readPreviousSnapshot(db: SqlTag, month: string): Promise<CoverageStat[] | null> {
   const [row] = await db`
     SELECT evidence FROM pipeline_feedback
      WHERE reported_by = 'hamilton' AND kind = 'market_snapshot'
@@ -194,7 +194,7 @@ async function readPreviousSnapshot(db: SqlTag, month: string): Promise<FeeStat[
      ORDER BY dedupe_key DESC LIMIT 1`;
   if (!row) return null;
   const e = (typeof row.evidence === "string" ? JSON.parse(row.evidence) : row.evidence) as { national?: FeeStat[] };
-  return Array.isArray(e.national) ? e.national : null;
+  return Array.isArray(e.national) ? e.national.map((f) => ({ key: f.key, institutions: f.institutions })) : null;
 }
 
 /** Plain-language lessons from learnable results: the best and worst, with what won. */
@@ -249,7 +249,8 @@ async function writeOne(
       continue;
     }
     copy.sections = Array.isArray(copy.sections) ? copy.sections : [];
-    if (!["national", "state", "charter", "none"].includes(copy.table)) copy.table = "none";
+    // Signup promises one table every month, so an email never goes out without one.
+    if (!["national", "state", "charter"].includes(copy.table)) copy.table = "national";
     const unbacked = unbackedNumbers(copyText(copy), allowed);
     problems = [...copyProblems(copy), ...(unbacked.length ? [`numbers not in FACTS: ${unbacked.join(", ")}`] : [])];
     if (problems.length === 0) return { copy, problems, costMicrousd: cost };
@@ -306,7 +307,7 @@ export async function runMarketingWrite({
   const stateCode = pickSpotlightState(states, recentStates);
   const bundle = await buildFactBundle(db, {
     month,
-    previousNational: await readPreviousSnapshot(db, month),
+    previousCoverage: await readPreviousSnapshot(db, month),
     stateCode: planned.includes("state_spotlight") ? stateCode : null,
   });
   const allowed = allowedNumbers(bundle);

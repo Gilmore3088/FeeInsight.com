@@ -123,7 +123,7 @@ export default async function NationalFeeIndexPage() {
         className="mt-5"
         eyebrow="National index updates"
         headline="Get the national fee index in your inbox"
-        body="New national medians, the fee changes that moved them, and one chart. No more than once a month."
+        body="New national medians and one table worth bringing to a pricing meeting. No more than once a month."
         buttonLabel="Subscribe"
         secondaryLink={SAMPLE_REPORT_LIVE ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
       />

@@ -29,6 +29,7 @@ function createDb(rows = banks): DbMock {
     if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     // Institutions with no website (website-find.ts): none in these tests.
     if (text.includes("inst.charter_type")) return Promise.resolve([]);
+    if (text.includes("incomplete-link schedule search")) return Promise.resolve([]);
     if (text.includes("inst.city")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
