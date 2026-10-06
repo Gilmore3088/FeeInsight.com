@@ -318,3 +318,21 @@ failed thesis to the shared run ledger.
 **Fix:** same PR: without a key outside production the thesis is not attempted or logged.
 Production still logs a missing key.
 **Lesson:** anything a preview writes to the shared ledger shows on the production Crew page.
+
+## 2026-10-06: Fee catalog chart counted rows and could not be traced
+**What happened:** James saw the NSF and overdraft charts run out to $60 and $65 with nothing
+there, and could not find who sat in the $50 to $55 bar. The page showed ten "recent changes",
+some repeated, and no way to list institutions by amount.
+**Cause:** the admin chart counted fee rows, not institutions, and drew a fixed 12 bars that could
+run past the highest value. The stat cards called the row count "Institutions". The change list
+held old-pipeline rows that compared one bank's tiers with each other. Of the 13 live overdraft and NSF rows at
+$45 or more, 9 were wrong: safe deposit box sizes, an international wire, a check printing line,
+a "$50 maximum per day" cap, a "$50 or less" threshold and a two-column misread (Hawaii Community FCU
+charges $25).
+**Fix:** same PR: the chart counts each institution once at its counted value, ends at the data,
+and each bar opens the Institutions tab filtered to its amounts. The table has an amount range,
+one-click common amounts, the fee's name and a link to the bank's schedule. The change list keeps
+one row per price move whose new price is still live. Category guard v7 rejects box sizes, wires,
+check printing, annual fees and thresholds under overdraft and NSF (12 live rows).
+**Still open:** a cap read instead of the per-item price (Bath State Bank) and two-column misreads
+need Knox fixes.

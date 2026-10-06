@@ -15,7 +15,7 @@ import {
   DISPLAY_NAMES,
 } from "@/lib/fee-taxonomy";
 import { InstitutionTable } from "./institution-table";
-import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { FeeHistogram } from "@/components/fee-histogram";
 import { BreakdownChart } from "@/components/breakdown-chart";
 
@@ -89,12 +89,14 @@ export default async function FeeCategoryDetailPage({
   searchParams,
 }: {
   params: Promise<{ category: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; min?: string; max?: string }>;
 }) {
   await requireAuth("view");
 
   const { category } = await params;
-  const { tab = "overview" } = await searchParams;
+  const { tab = "overview", min, max } = await searchParams;
+  const rangeMin = min !== undefined && Number.isFinite(Number(min)) ? Number(min) : null;
+  const rangeMax = max !== undefined && Number.isFinite(Number(max)) ? Number(max) : null;
 
   if (!(category in DISPLAY_NAMES) && !category.includes("_")) {
     notFound();
@@ -122,14 +124,22 @@ export default async function FeeCategoryDetailPage({
   const family = getFeeFamily(category);
   const familyColors = family ? getFamilyColor(family) : null;
 
-  const amounts = detail.fees
-    .map((f) => f.amount)
-    .filter((a): a is number => a !== null && a >= 0)
-    .sort((a, b) => a - b);
+  // One value per institution from its sourced rows: the same rule as the published index
+  // (highest tier for overdraft, otherwise the median), so the cards, the chart and the
+  // table agree with the public median.
+  const counted = valuePerInstitution(
+    detail.fees
+      .filter((f) => f.source_document_id !== null && f.source_document_id !== undefined)
+      .map((f) => ({ ...f, fee_category: category })),
+  );
+  const charterById = new Map(detail.fees.map((f) => [f.institution_id, f.charter_type]));
+  const countedValues: Record<number, number> = Object.fromEntries(counted);
+  const points = [...counted].map(([id, value]) => ({ value, isBank: charterById.get(id) === "bank" }));
+  const amounts = points.map((p) => p.value).sort((a, b) => a - b);
+  const institutionCount = new Set(detail.fees.map((f) => f.institution_id)).size;
 
   const stats = {
-    count: detail.fees.length,
-    withAmount: amounts.length,
+    count: amounts.length,
     min: amounts.length > 0 ? amounts[0] : null,
     max: amounts.length > 0 ? amounts[amounts.length - 1] : null,
     median:
@@ -144,8 +154,8 @@ export default async function FeeCategoryDetailPage({
             (amounts.reduce((s, v) => s + v, 0) / amounts.length) * 100
           ) / 100
         : null,
-    banks: detail.fees.filter((f) => f.charter_type === "bank").length,
-    cus: detail.fees.filter((f) => f.charter_type !== "bank").length,
+    banks: points.filter((p) => p.isBank).length,
+    cus: points.filter((p) => !p.isBank).length,
   };
 
   return (
@@ -173,7 +183,7 @@ export default async function FeeCategoryDetailPage({
 
       {/* Stat cards - always visible */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        <StatCard label="Institutions" value={String(stats.count)} />
+        <StatCard label="Institutions counted" value={String(stats.count)} />
         <StatCard
           label="Median"
           value={formatAmount(stats.median)}
@@ -207,7 +217,7 @@ export default async function FeeCategoryDetailPage({
             {t.label}
             {t.key === "institutions" && (
               <span className="ml-1 text-xs text-gray-400 tabular-nums">
-                ({detail.fees.length})
+                ({institutionCount})
               </span>
             )}
           </Link>
@@ -248,7 +258,11 @@ export default async function FeeCategoryDetailPage({
           </div>
 
           {/* Fee distribution histogram */}
-          <FeeHistogram fees={detail.fees} median={stats.median} />
+          <FeeHistogram
+            points={points}
+            median={stats.median}
+            drillDownBase={`/admin/fees/catalog/${category}?tab=institutions`}
+          />
 
           {/* Quick breakdown preview */}
           {detail.by_charter_type.length > 0 && (
@@ -389,7 +403,15 @@ export default async function FeeCategoryDetailPage({
       )}
 
       {tab === "institutions" && (
-        <InstitutionTable fees={detail.fees} median={stats.median} highestTier={HIGHEST_TIER_CATEGORIES.has(category)} />
+        <InstitutionTable
+          key={`${rangeMin ?? ""}-${rangeMax ?? ""}`}
+          fees={detail.fees}
+          median={stats.median}
+          highestTier={HIGHEST_TIER_CATEGORIES.has(category)}
+          countedValues={countedValues}
+          initialMin={rangeMin}
+          initialMax={rangeMax}
+        />
       )}
     </>
   );
