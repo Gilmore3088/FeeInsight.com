@@ -90,6 +90,29 @@ the same test Darwin's own batch query uses.
 **Lesson:** a "waiting" count must use the stage's own done-marker (its `pipeline_attempts` row), not
 "missing from the next table", or every rejection reads as backlog.
 
+## 2026-10-06: Banks that publish fees across several pages kept only one page's fees
+**What happened:** James spotted Triangle FCU (MS, institution 5829): 4 live fees (wires in $10 and
+out $20, cashier's check $5, check cashing $10), all from its "Additional Services" page, while
+its Freedom and Value Checking pages and a courtesy pay PDF ($25 per item) carry the rest.
+Read-only queries on prod at 03:25 UTC: 2,066 of 2,662 institutions with live fees have only
+ever had one URL fetched; only 604 of 2,637 have a live monthly maintenance fee; 143 have an
+account or product page as their only fee link, 87 of them with fewer than 5 fee categories
+(Fremont Bank, Primis, Arizona Financial FCU, Minnwest).
+**Cause:** discovery stops at the first page that passes the fee-page check (Triangle: the site
+crawl at 03:11 UTC accepted Additional Services and never opened the checking pages), and only
+banks with no fee link are searched again. The second-document finder (PR 75) kept at most one
+extra document and had found 4 ever; nothing fetched what it found. The rest of the pipeline
+assumed one current document per bank: Rosetta read only the newest document, a newer document
+could send the main link back to discovery, and Hamilton let a newer document outdate another
+document's line for the same fee.
+**Fix:** this PR. Companion finder (`discover.second_document` v2) keeps up to 8 account pages
+and fee documents per bank, including the site's own search for "fee schedule"; companion fetch
+stores each as its own document stream (`source_documents.companion_source_id`, migration
+20270109000000); Rosetta reads the newest document of each stream; Hamilton compares document
+age only within a stream. Each page keeps its account name (`institution_additional_sources.account_name`).
+**Lesson:** "one fee page per bank" is not true for small institutions. Check fee coverage per
+bank (categories, monthly fee present), not only whether a fee link exists.
+
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
 the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
@@ -687,3 +710,14 @@ institutions the normal check reaches anyway and 44 are new from the bump. Paced
 publish step, about 720 an hour, so the re-check finishes in about four hours.
 **Lesson:** a check keyed on its input must also key on its own rules version, or improving the rules
 changes nothing already decided.
+
+## 2026-10-06: Supabase Preview failed on every migration PR
+**What happened:** the Supabase Preview check failed on every PR that added a migration (173, 189, 196)
+with `relation "agent_run_results" does not exist`.
+**Cause:** a preview branch builds a fresh database from `supabase/migrations/`, but production's first
+tables were created before that history began. A local replay on an empty Postgres failed in 41 of 77 files.
+**Fix:** PR 196 (James approved editing applied files): the oldest file opens with the public schema
+dumped from production on 2026-10-04, run only on a database without `institution_sources`; the eight
+files that rewrote pre-2026-08-13 legacy tables skip themselves on such a database. The full history now
+replays on an empty database. Production never re-runs applied versions, so nothing changes there.
+Details in `docs/runbooks/supabase-migration-baseline.md`.

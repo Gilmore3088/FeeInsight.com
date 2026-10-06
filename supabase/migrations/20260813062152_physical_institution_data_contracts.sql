@@ -1,3 +1,12 @@
+-- Changes the legacy tables (crawl_targets and friends) production had before
+-- 2026-08-13. A database built from the preview baseline in 20260406_report_jobs.sql
+-- already has the current schema and no legacy tables, so it skips this file.
+DO $legacy_guard$
+BEGIN
+  IF to_regclass('public.crawl_targets') IS NULL AND to_regclass('public.institution_sources') IS NOT NULL THEN
+    RETURN;
+  END IF;
+  EXECUTE $migration$
 -- Convert remaining institution-keyed semantic contracts from compatibility
 -- views into physical tables and remove empty retired crawler-era tables.
 
@@ -271,3 +280,7 @@ COMMENT ON COLUMN public.institution_fee_alert_subscriptions.institution_id IS
   'Semantic institution/source identifier.';
 COMMENT ON COLUMN public.agent_institution_run_results.institution_id IS
   'Semantic institution/source identifier.';
+
+$migration$;
+END
+$legacy_guard$;
