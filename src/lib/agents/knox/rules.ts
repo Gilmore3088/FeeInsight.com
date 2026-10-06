@@ -416,6 +416,11 @@ export function maintenanceFromProse(segment: string, cells: string[] | null): E
   };
 }
 
+/** A table cell holding only a price and how often it is charged: "$20.00", "$5 per hour". */
+const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\.?\s*$/i;
+/** "$500 | Minimum to open": an opening requirement is not a fee. */
+const OPENING_REQUIREMENT = /\b(?:to open|opening|open(?:ing)? deposit|required|requirement|limit)\b/i;
+
 function priceFirstHint(after: string): string | null {
   // A price that ends its table cell ("... $1 | Overdraft Charge ....... $35") belongs
   // to the cell before it, never to the next cell's fee.
@@ -454,8 +459,14 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // Words after the price belong to the next fee, so they classify a line only when it
   // opens with its price ("$5.00 Monthly fee for paper statements").
   const priceFirst = firstAmount != null && !/[a-z]/i.test(prefix);
+  // "$20.00 | Domestic outgoing wire": a two-cell row whose first cell is only the price
+  // is named by its second cell.
+  const rowName = priceFirst && cells?.length === 2 && amounts.length === 1 && PRICE_ONLY_CELL.test(cells[0]) &&
+    !OPENING_REQUIREMENT.test(cells[1]) ? nameFrom(cells[1]) : null;
   let hint = firstAmount
-    ? classifyNearest(prefix) ?? (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null)
+    ? classifyNearest(prefix) ??
+      (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null) ??
+      (rowName && usableName(rowName) ? classifyFeeText(rowName) : null)
     : classifyFeeText(cells ? cells[0] : segment);
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.

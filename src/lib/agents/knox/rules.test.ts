@@ -18,6 +18,14 @@ describe("Knox extract.rules", () => {
     expect(fees("Check Cashing (non customers) $5.00 Limits may apply").map(([, amount]) => amount)).toEqual([5]);
   });
 
+  it("v12 names a price-first table row by its second cell, never by an opening requirement", () => {
+    expect(fees(["$20.00 | Domestic outgoing wire", "$5.00 | Statement copy", "$30.00 | Early account closure", "$500 | Minimum to open"].join("\n")).map(([name, amount, key]) => [name, amount, key])).toEqual([
+      ["Domestic outgoing wire", 20, "wire_domestic_outgoing"],
+      ["Statement copy", 5, "document_reproduction"],
+      ["Early account closure", 30, "early_closure"],
+    ]);
+  });
+
   it("v12 reads past a column label cell to the fee's name (Corda CU)", () => {
     expect(fees(["Fee Rush Card Fee | Amount $50*", "Fee Stop Payment Fee | Fee Amount $30 per item"].join("\n")).map(([, amount, key]) => [amount, key])).toEqual([
       [50, "rush_card"],

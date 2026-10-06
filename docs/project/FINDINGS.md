@@ -24,7 +24,8 @@ pulled later (1,027 name not on the page, 738 wrong number) against 12% for the 
 random sample of stored rows, 9 of 103 still wrong when the same lines are replayed through rules v11.
 **Cause:** Knox's "read each text once" and older-text retirement are keyed on one document, not on the
 page's address. Knox never runs `checkFeeAgainstSource` on his own rows.
-**Fix:** rules v12 (this PR) stops two misreads seen in the sample: a limit, threshold or refundable
+**Fix:** rules v12 (PR 207) reads price-first table rows ("$20.00 | Domestic outgoing wire", which the
+rules re-check could not reproduce) and stops two misreads seen in the sample: a limit, threshold or refundable
 deposit after a price ("Money Orders ($1,000 Limit)") and a column label cell ("Fee Rush Card Fee |
 Amount $50") hiding the fee name. One document per page and a Knox self-check are open, waiting for James.
 **Lesson:** a dedupe or retirement rule must be keyed on what is really the same thing (the page), not on
