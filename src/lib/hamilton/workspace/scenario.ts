@@ -12,7 +12,7 @@
  * The tested price is the reader's choice. Nothing here suggests one.
  */
 
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { proseFeeName } from "./names";
 import {
   WORKSPACE_ENGINE_VERSION,
   type ClarifyingQuestion,
@@ -51,7 +51,7 @@ export function pricePosition(price: number, peers: number[]): number | null {
 
 export function annualItemsQuestion(feeCategory: string): ClarifyingQuestion {
   return {
-    prompt: `About how many ${getDisplayName(feeCategory)} fees did you charge in the last 12 months, before waivers?`,
+    prompt: `About how many ${proseFeeName(feeCategory)} fees did you charge in the last 12 months, before waivers?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.annual_items`,
   };
@@ -59,7 +59,7 @@ export function annualItemsQuestion(feeCategory: string): ClarifyingQuestion {
 
 export function waiverRateQuestion(feeCategory: string): ClarifyingQuestion {
   return {
-    prompt: `About what share of ${getDisplayName(feeCategory)} fees did you waive or refund in the last 12 months?`,
+    prompt: `About what share of ${proseFeeName(feeCategory)} fees did you waive or refund in the last 12 months?`,
     inputKind: "percent",
     fieldKey: `fee.${feeCategory}.waiver_rate`,
   };

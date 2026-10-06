@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatDollarsInWords,
   formatAmount,
   formatAssets,
   formatCompactDollars,
@@ -44,5 +45,16 @@ describe("formatStoredPercent", () => {
   it("formats stored percentage values without multiplying by 100", () => {
     expect(formatStoredPercent(13.456, 1)).toBe("13.5%");
     expect(formatStoredPercent(0.048, 2)).toBe("0.05%");
+  });
+});
+
+describe("formatDollarsInWords", () => {
+  it("writes totals in words of scale", () => {
+    expect(formatDollarsInWords(209_400)).toBe("$209 thousand");
+    expect(formatDollarsInWords(2_640_000)).toBe("$2.6 million");
+    expect(formatDollarsInWords(5_160_000_000)).toBe("$5.2 billion");
+    expect(formatDollarsInWords(3_000_000)).toBe("$3 million");
+    expect(formatDollarsInWords(-15_500)).toBe("-$15.5 thousand");
+    expect(formatDollarsInWords(640)).toBe("$640");
   });
 });
