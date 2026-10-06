@@ -143,7 +143,7 @@ function renderEmail(automation, email) {
   });
   const bodyHtml = parts.map((p) => p[0]).join("\n");
   const bodyText = parts.map((p) => p[1]).join("\n\n");
-  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${esc(BRAND.mailingAddress)}<br>You're getting this because you signed up at feeinsight.com. <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
+  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${BRAND.mailingAddress ? `${esc(BRAND.mailingAddress)}<br>` : ""}You're getting this because you signed up at feeinsight.com. <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(email.subject)}</title></head>
 <body style="margin:0;padding:0;background:${C.sand};">
@@ -157,7 +157,7 @@ ${bodyHtml}
 <tr><td style="padding:20px 32px 28px;background:${C.cream};border-top:1px solid ${C.line};">${footerHtml}</td></tr>
 </table></td></tr></table></body></html>
 `;
-  const text = `${email.preheader}\n\n${bodyText}\n\n----\nFee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n${BRAND.mailingAddress}\nUnsubscribe: {$unsubscribe}\n`;
+  const text = `${email.preheader}\n\n${bodyText}\n\n----\nFee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}Unsubscribe: {$unsubscribe}\n`;
   return { html, text, short: condense(email, parts) };
 }
 
@@ -166,16 +166,18 @@ ${bodyHtml}
 const SHORT_LIMIT = 1000;
 function condense(email, parts) {
   const head = `${email.preheader}\n\n`;
-  const tail = `\n\nFull email with tables and charts: {$url}\n\n--\nFee Insight · feeinsight.com · reply with questions\n${BRAND.mailingAddress}\nUnsubscribe: {$unsubscribe}\n`;
-  const lines = [];
+  const tail = `\n\nFull email with tables and charts: {$url}\n\n--\nFee Insight · feeinsight.com · reply with questions\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}Unsubscribe: {$unsubscribe}\n`;
+  // A box stays whole, so its title never appears without its text; other blocks go line by line.
+  const chunks = [];
   email.blocks.forEach((b, i) => {
-    if (b.type === "h1") lines.push(plain(b.text));
-    else if (["stats", "box", "list", "cta"].includes(b.type)) lines.push(parts[i][1].trim());
+    if (b.type === "h1") chunks.push(plain(b.text));
+    else if (b.type === "box") chunks.push(parts[i][1].trim());
+    else if (["stats", "list", "cta"].includes(b.type)) chunks.push(...parts[i][1].trim().split("\n"));
   });
   let body = "";
-  for (const chunk of lines.flatMap((l) => l.split("\n"))) {
+  for (const chunk of chunks) {
     const next = body ? `${body}\n${chunk}` : chunk;
-    if (head.length + next.length + tail.length > SHORT_LIMIT) break;
+    if (head.length + next.length + tail.length > SHORT_LIMIT) continue;
     body = next;
   }
   return head + body + tail;
@@ -209,6 +211,6 @@ writeFileSync(
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fee Insight Email Program</title><style>body{margin:0;background:#F4EEE4;font:15px/1.5 Helvetica,Arial,sans-serif;color:#1A1815;padding:24px 16px}h1{font-family:Georgia,serif;font-weight:normal}h2{font-family:Georgia,serif;font-weight:normal;margin-top:40px;border-bottom:2px solid #1A1815}.meta{font-size:13px;margin:18px 0 6px}section{max-width:640px}iframe{width:100%;max-width:640px;height:900px;border:1px solid #E3DACB;background:#fff}</style></head><body><h1>Fee Insight email program</h1><p>${index.length} emails across ${PROGRAM.length} automations. Each file: <code>.html</code> for MailerLite custom HTML, <code>.txt</code> for the plain-text version.</p>${PROGRAM.map((a) => `<h2>${esc(a.name)}</h2><p>Trigger: ${esc(a.trigger)}</p>${rows(a)}`).join("")}</body></html>`,
 );
 
-if (BRAND.mailingAddress.includes("[")) console.warn("WARN: BRAND.mailingAddress is a placeholder; CAN-SPAM requires a real postal address before sending.");
+if (!BRAND.mailingAddress) console.warn("WARN: No mailing address (MARKETING_MAILING_ADDRESS unset); CAN-SPAM requires a real postal address before sending.");
 console.log(`Built ${index.length} emails into ${outDir}`);
 for (const x of index) console.log(`  ${x.path}  (day ${x.e.day}, ${x.chars} chars plain text)  ${x.e.subject}`);

@@ -5,6 +5,7 @@ import {
   deliversSampleReport,
   parseStateCode,
   placementForSource,
+  stateFromUseCase,
 } from "./lead-capture";
 
 describe("lead capture contract", () => {
@@ -38,5 +39,15 @@ describe("lead capture contract", () => {
     expect(buildCaptureAttribution("institution_alerts", 12, "OH")).toBe(
       "placement=institution_alerts; institution_id=12; state=OH",
     );
+  });
+});
+
+describe("stateFromUseCase", () => {
+  it("reads the state a reader most recently chose", () => {
+    expect(stateFromUseCase("placement=state_benchmark; state=TX")).toBe("TX");
+    expect(stateFromUseCase("placement=state_benchmark; state=TX; state=CA")).toBe("CA");
+    expect(stateFromUseCase("state=NY")).toBe("NY");
+    expect(stateFromUseCase("institution_id=12; estate=ZZ")).toBeNull();
+    expect(stateFromUseCase(null)).toBeNull();
   });
 });
