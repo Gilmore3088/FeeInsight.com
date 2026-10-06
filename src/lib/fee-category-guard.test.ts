@@ -151,6 +151,69 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps other banks' customers at our ATMs out of non-network ATM fees (live rows, Oct 6)", () => {
+    for (const name of [
+      "Non-Member ATM Transaction Fee",
+      "Non-OMNI Card used at OMNI ATM",
+      "Democracy FCU ATM Withdrawals with Non-Proprietary Card",
+      "ATM Surcharge Fee (foreign cards used at our ATM machine)",
+      "ATM Transactions at WCTFCU-Owned ATMs",
+      "ATM Usage Fee/In-network",
+      "ATM Transfer Between Accounts",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Non-Owned ATM Fee",
+      "NON-owned ATM machines",
+      "Non CUA-Owned ATMs/CO-OP ATMs Fees may be charged by the ATM owner.",
+      "Withdrawal at other owned ATM",
+      "Out of Our Network ATM Fee: per Transaction",
+      "Foreign ATM Withdrawal Fee (not within network)",
+      "ATM w/d (free at our ATM's, or 5 free elsewhere)",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps a gift card's reload, replacement and inactivity fees out of its purchase price", () => {
+    for (const name of [
+      "Visa Gift Card Reload Fee",
+      "Gift Card Monthly Inactivity Fee (after 12 mo. non-use)",
+      "Monthly Share Account Fee",
+      "Card delivery",
+    ]) {
+      expect(checkFeeCategory("gift_card_purchase", name).ok).toBe(false);
+    }
+    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card"]) {
+      expect(checkFeeCategory("gift_card_purchase", name)).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("card_replacement", "Replacement VISA® Gift Card Fee").ok).toBe(false);
+    expect(checkFeeCategory("card_replacement", "Debit Card Replacement")).toEqual({ ok: true });
+  });
+
+  it("keeps transaction charges and earnings-credit notes out of monthly maintenance", () => {
+    for (const name of [
+      "Card Services POS PIN-Based Transaction Service Charge | Charges",
+      "Earnings credit available to offset following service charge",
+      "Monthly Fee for Transactions Performed by Member Care or in a Member Center (more than 2 per month)",
+    ]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    for (const name of ["Monthly Service Fee (unlimited transactions)", "CBCa$hflow Monthly Fee (Transaction Fees May Apply)"]) {
+      expect(checkFeeCategory("monthly_maintenance", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps deposited-item and loan chargebacks out of card disputes", () => {
+    for (const name of ["Chargeback on Deposit Account", "Chargeback Item Fee", "Chargeback on Loan", "Return/Chargeback Item Fee"]) {
+      expect(checkFeeCategory("card_dispute", name).ok).toBe(false);
+    }
+    for (const name of ["Debit Card Dispute", "Debit Card Chargeback Fee", "Charged Back Debit Card Disputes", "Chargeback Fee"]) {
+      expect(checkFeeCategory("card_dispute", name)).toEqual({ ok: true });
+    }
+  });
+
   it("leaves amounts to Darwin's envelopes, the one definition of a plausible price", () => {
     // A $2,500 balance threshold read as a monthly fee: the name passes here, and the
     // envelope (not this guard) is what keeps it out.

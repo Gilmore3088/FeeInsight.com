@@ -534,6 +534,45 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   return prior ? { kind: "supersede", prior } : { kind: "additional_line" };
 }
 
+interface ListedFeeLine {
+  source_document_id: number | string | null;
+  fee_name: string | null;
+  amount: number | string | null;
+}
+
+/** Every line Knox read from these documents, for the same-name price check below. */
+async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+  const ids = documentIds.filter((id) => id != null).map(Number);
+  if (ids.length === 0) return [];
+  try {
+    return await inSavepoint(db, (scope) => scope<ListedFeeLine[]>`
+      SELECT source_document_id, fee_name, amount
+        FROM raw_fee_observations
+       WHERE source_document_id = ANY(${ids}::bigint[])
+    `);
+  } catch (error) {
+    console.error("selectListedFeeLines failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Pure: does either document list this fee name at both prices? A page that prints one
+ * fee name twice ("Returned Deposit Fee $10" and "Returned Deposit Fee $3" for two
+ * accounts) has two lines, not a price change, whichever document is newer.
+ */
+export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  const name = normalizedFeeName(row.fee_name);
+  const listed = (documentId: number | string | null | undefined, amount: number | string | null) =>
+    lines.some(
+      (line) =>
+        sameDocument(line.source_document_id, documentId) &&
+        normalizedFeeName(line.fee_name) === name &&
+        normalizedAmount(line.amount) === normalizedAmount(amount),
+    );
+  return listed(row.source_document_id, prior.amount) || listed(prior.source_document_id, row.amount);
+}
+
 /**
  * Close the prior live row for this fee after a new amount is published, so the
  * catalog holds one current price per fee, and record the change in
@@ -921,7 +960,13 @@ export async function runHamiltonPublish(
       : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
-    const decision = skipReason ? null : decidePriorFee(row, await selectLivePublishedFees(db, row));
+    let decision = skipReason ? null : decidePriorFee(row, await selectLivePublishedFees(db, row));
+    if (
+      decision?.kind === "supersede" &&
+      listsBothPrices(await selectListedFeeLines(db, [row.source_document_id, decision.prior.source_document_id]), row, decision.prior)
+    ) {
+      decision = { kind: "additional_line" };
+    }
     const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
