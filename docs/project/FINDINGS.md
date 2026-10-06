@@ -78,6 +78,28 @@ after the next rules fix.
 **Lesson:** any step that takes data down needs its way back in the same change, checked against
 the dedupe rules of the stage that would otherwise re-create it.
 
+## 2026-10-06: Companion pages picked up a HELOC PDF and pages named "Download"
+**What happened:** 25 minutes after the companion finder went live (06:39 UTC, read-only queries on
+prod), 25 fees from companion pages were live. One came from a HELOC disclosure: Frontier CU
+(institution 8455) published "early_closure" at $1,214.50 (published id 60403) from
+`heloc-important-terms-disclosures`, a link labelled "Download". Santander's three CFTC
+derivatives annexes were stored as consumer documents. Pages were named after their link text:
+PNC's "Product Details" and "Features and Fees", Frontier's "Download" and "See Rates".
+**Cause:** the finder's not-a-fee-document list had "loans" and "mortgage" but not "HELOC",
+"home equity", "line of credit" or "derivatives", and a fee-ish word in the path ("disclosures")
+made the PDF a fee document. Account names fell back to the URL only for "Learn more"-style labels.
+**Fix:** this PR. The finder skips HELOC, home equity, line of credit, introductory rate, lending,
+swap, derivatives and blog links, and names "Download"/"Features and Fees"/"Product Details" links
+from their URL. Every companion fetch re-applies today's rules to the pages already stored for
+its state: a page that is now ruled out is retired with reason `not_consumer_fee_page`, a
+link-text name is replaced. Each Hamilton publish step then rolls back live fees from retired
+pages (reason `companion_page_retired`) and rejects their verified rows, with a
+`hamilton.companion_fees_rolled_back` run event. Dry run on prod: 5 pages retired, 1 live fee
+(60403) taken down. The sentence-fragment and $0 "free/includes" fees from account pages
+(60485, 60393, 60386, 60377, 60409, 60387) are Knox/Darwin rules, routed to the 95% thread.
+**Lesson:** a finder rule must reach pages found before it. Any new exclusion goes in
+`second-document.ts` and the companion review applies it to every state on its next fetch.
+
 ## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
 **What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
 fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
@@ -836,3 +858,21 @@ Magellan's thin-bank finder now reads `published_fee_records`, since the catalog
 looks for.
 **Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
 read.
+
+## 2026-10-06: Free allowances and conditions published as $0 fees
+**What happened:** the companion-pages thread found about 6 wrong fees in the first 25 live
+companion fees. Several were $0 lines that state an allowance or a condition rather than a
+price ("2 free cashiers checks monthly", "Monthly Service Charge if any of the following
+qualifications are met", "you won't be charged overdraft item fees if...").
+**Cause:** Knox's $0 check (`notAZeroPrice`) knew only "N per year/month" allowances and the
+bank's own ATMs.
+**Fix:** same PR: `extract.rules` v13 also treats "N free", "first N", "if ...", "unless",
+"qualifications", "to waive", "won't be charged" and "not available on" as not a $0 price
+("do not charge a fee" still is). The version bump makes the rules re-check take these down
+everywhere. Read-only on prod: 24 live Knox $0 fees match; about 22 are wrong by hand (the
+notary "fees may differ if..." line is a likely right one lost). The Texas and seven-state
+answer-key gates in PR 213 still pass with no right fee lost. A rule on sentence-shaped names
+was measured and not added: 446 live names end in "of" ("An overdraft fee of"), and most carry
+the bank's real price.
+**Lesson:** judge a name-shape rule by the live prices it would remove, not by the bad names it
+catches.

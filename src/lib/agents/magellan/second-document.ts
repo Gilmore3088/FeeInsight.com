@@ -110,11 +110,15 @@ const AGREEMENT =
   /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
 const NOT_A_FEE_DOCUMENT =
-  /\b(privacy|careers?|jobs|mortgage|loans?|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility)\b/;
+  /\b(privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
 /** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
 const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
-const GENERIC_LABEL = /^(learn more|read more|more|details|view|click here|here|see details|explore|open|open now|get started|compare|go|>|»)$/i;
+/** Link text that names no account ("Learn more", "Download", "Features and Fees"). */
+const GENERIC_LABEL =
+  /^(learn more|read more|more|more info(rmation)?|details|view|view details|click here|here|see details|explore|open|open now|open an account|learn how|get started|compare|go|>|»|download|download (the )?pdf|pdf|view pdf|open pdf|view (the )?(document|disclosures?)|disclosures?|fees|features|features (and|&) fees|product details|account details|see rates|view rates|rates)$/i;
+/** Path segments that name no account either. */
+const GENERIC_SEGMENT = /^(index|default|home|main|page|fees?|pdf|download|documents?|files?|disclosures?|personal|accounts?)$/i;
 
 export type CompanionKind = "account_page" | "fee_document" | "agreement";
 
@@ -191,14 +195,34 @@ export function companionCandidates(links: PageLink[], site: URL, exclude: Set<s
   return candidates.sort((a, b) => b.score - a.score);
 }
 
-/** The account a page belongs to: its link label, or its last path segment for "Learn more" links. */
+/** True when a stored account name is link text that names no account ("Download"). */
+export function isGenericAccountName(name: string | null | undefined): boolean {
+  const cleaned = (name ?? "").replace(/\s+/g, " ").trim();
+  return cleaned.length === 0 || GENERIC_LABEL.test(cleaned);
+}
+
+/** True when a link points at a loan, HELOC or other page that is not a deposit fee page. */
+export function isNonDepositLink(label: string, url: string): boolean {
+  return NOT_A_FEE_DOCUMENT.test(linkText({ label, url }));
+}
+
+/**
+ * The account a page belongs to: its link label, or for "Learn more" / "Download"
+ * links the last path segment that reads like a name ("simple-checking-fees.pdf" ->
+ * "Simple Checking Fees"; "/checking/index.html" -> "Checking").
+ */
 export function accountNameFor(label: string, url: string): string {
   const cleaned = cleanText(label).replace(/\s+/g, " ").trim();
   if (cleaned && !GENERIC_LABEL.test(cleaned) && cleaned.length <= 80) return cleaned;
   try {
-    const segment = new URL(url).pathname.split("/").filter(Boolean).pop() ?? "";
-    const words = decodeURIComponent(segment).replace(/\.[a-z0-9]+$/i, "").split(/[-_\s]+/).filter(Boolean);
-    if (words.length > 0) return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    const segments = new URL(url).pathname.split("/").filter(Boolean).reverse();
+    for (const segment of segments) {
+      const words = decodeURIComponent(segment).replace(/\.[a-z0-9]+$/i, "").split(/[-_\s]+/).filter(Boolean);
+      const name = words.join(" ");
+      // Skip "index", "fees", bare numbers and ids: they name no account.
+      if (words.length === 0 || GENERIC_SEGMENT.test(name) || !words.some((word) => /^[a-z]{3,}$/i.test(word) && !GENERIC_SEGMENT.test(word))) continue;
+      return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    }
   } catch {
     // fall through
   }
