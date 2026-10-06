@@ -160,7 +160,7 @@ export function writerPrompt({
     live_institutions: bundle.liveInstitutions,
     live_fees: bundle.liveFees,
     national: bundle.national.map((f) => ({ fee: getDisplayName(f.key), ...f })),
-    previous_month_national: bundle.previousNational?.map((f) => ({ fee: getDisplayName(f.key), ...f })) ?? null,
+    coverage_last_month: bundle.previousCoverage?.map((f) => ({ fee: getDisplayName(f.key), institutions: f.institutions })) ?? null,
     banks_vs_credit_unions: bundle.byCharter
       .filter((r) => r.bank && r.creditUnion)
       .map((r) => ({ fee: getDisplayName(r.key), bank: r.bank, credit_union: r.creditUnion })),
@@ -172,14 +172,15 @@ export function writerPrompt({
     `Format this month: ${format}. ${brief}`,
     "Hard rules:",
     "- Use ONLY numbers that appear in FACTS (copy them exactly; a dollar difference between two FACTS numbers is fine). Never estimate, round differently or invent a number, percentage or date. Every number you write is checked, and any number not in FACTS rejects the email.",
+    "- coverage_last_month is how many institutions stood behind each fee last month. Use it only to say coverage grew. Never describe a median as rising, falling or moving since last month: the difference mostly reflects which institutions were added, not price changes.",
     "- Never tell anyone to raise their fees. This is decision support: show where the market sits and what to ask.",
     "- Never promise a turnaround time. The institution report is priced on request.",
     `- Don't name "${PRODUCT_NAME}"; the footer does that.`,
     "- Two subject lines that test different angles (for example a number-led subject against a question). Each under 60 characters.",
     "- Keep it short: an intro of 2 to 3 sentences, then 1 to 3 short sections.",
     lessons.length ? `What earlier emails taught us:\n${lessons.map((l) => `- ${l}`).join("\n")}` : "There are no results from earlier emails yet.",
-    "Pick the table: \"national\" for national fee tables, \"state\" if the email is about the FACTS state, \"charter\" for banks against credit unions, or \"none\".",
-    'Reply with JSON only: {"subjectA": "", "subjectB": "", "label": "short uppercase-style kicker, e.g. Fee Pulse · November 2026", "headline": "", "intro": "", "sections": [{"heading": "", "body": ""}], "table": "national|state|charter|none"}',
+    "Pick the table every email carries: \"national\" for national fee tables, \"state\" if the email is about the FACTS state, or \"charter\" for banks against credit unions.",
+    'Reply with JSON only: {"subjectA": "", "subjectB": "", "label": "short uppercase-style kicker, e.g. Fee Pulse · November 2026", "headline": "", "intro": "", "sections": [{"heading": "", "body": ""}], "table": "national|state|charter"}',
     `FACTS:\n${JSON.stringify(facts)}`,
   ].join("\n\n");
 }

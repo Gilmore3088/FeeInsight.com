@@ -11,6 +11,7 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
+import { buildStoryline, type StoryIntent } from "./storyline";
 
 export { proseFeeName };
 import type {
@@ -333,7 +334,7 @@ function evidenceLevel(research: FeeResearch): EvidenceLevel {
   return "market";
 }
 
-export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus } = {}): HamiltonAnswer {
+export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus; story?: StoryIntent } = {}): HamiltonAnswer {
   const name = proseFeeName(research.feeCategory);
   const seg = research.segment ?? null;
   const level = evidenceLevel(research);
@@ -347,7 +348,7 @@ export function buildFeeAnswer(research: FeeResearch, options: { focus?: Exhibit
     ...layerClaims(research).filter((c) => !segmentLed || c.text.startsWith("The national")),
     ...revenueClaims(research, name),
   ].filter((f): f is Fact => f !== null);
-  return {
+  const answer: HamiltonAnswer = {
     feeCategory: research.feeCategory,
     headline: segmentLed ? segmentHeadline(seg, research.feeCategory, research.current) : headline(research, name),
     claims,
@@ -357,4 +358,5 @@ export function buildFeeAnswer(research: FeeResearch, options: { focus?: Exhibit
     evidenceLevel: level,
     provenance: { ...research.provenance, evidenceLevel: level },
   };
+  return { ...answer, storyline: buildStoryline(research, answer, { focus: options.focus, ...options.story }) };
 }

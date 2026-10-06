@@ -4,6 +4,7 @@
  * so the leads page and the pay page say "not quoted" instead of failing.
  */
 import { sql } from "./connection";
+import type { CustomReportMarketData } from "./custom-report-market";
 
 export interface ReportPaymentLead {
   id: number;
@@ -84,6 +85,42 @@ export async function markQuoteSent(leadId: number): Promise<void> {
 /** A quoted report whose market went thin before payment: back to James as owed a reply. */
 export async function flagQuoteNotReady(leadId: number): Promise<void> {
   await sql`UPDATE leads SET status = 'needs_reply' WHERE id = ${leadId} AND paid_at IS NULL AND status = 'quoted'`;
+}
+
+/**
+ * Saves the report data the buyer is about to pay for (migration 20270110000005). Never
+ * throws: before the migration has run the save is skipped and logged, and checkout goes on.
+ */
+export async function saveReportSnapshot(leadId: number, data: CustomReportMarketData): Promise<void> {
+  try {
+    await sql`
+      UPDATE leads SET report_snapshot = ${sql.json(JSON.parse(JSON.stringify(data)))}, report_snapshot_at = NOW()
+      WHERE id = ${leadId} AND paid_at IS NULL`;
+  } catch (error) {
+    console.error("[report-payment] snapshot not saved", {
+      leadId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * The newest saved report data for an institution from a paid request, or null. Read through
+ * to_jsonb so it returns null (not an error) before migration 20270110000005 has run.
+ */
+export async function getPaidReportSnapshot(
+  institutionId: number,
+): Promise<{ data: CustomReportMarketData; savedAt: string } | null> {
+  const [row] = await sql<{ snapshot: CustomReportMarketData | null; saved_at: string | null }[]>`
+    SELECT to_jsonb(leads)->'report_snapshot' AS snapshot, to_jsonb(leads)->>'report_snapshot_at' AS saved_at
+    FROM leads
+    WHERE to_jsonb(leads)->>'quote_institution_id' = ${String(institutionId)}
+      AND to_jsonb(leads)->>'paid_at' IS NOT NULL
+      AND jsonb_typeof(to_jsonb(leads)->'report_snapshot') = 'object'
+    ORDER BY to_jsonb(leads)->>'paid_at' DESC
+    LIMIT 1`;
+  if (!row?.snapshot || !row.saved_at) return null;
+  return { data: row.snapshot, savedAt: row.saved_at };
 }
 
 export async function saveCheckoutSession(leadId: number, sessionId: string): Promise<void> {
