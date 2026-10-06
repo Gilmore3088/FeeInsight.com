@@ -599,9 +599,103 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   return result;
 }
 
+/** A fee whose price depends on the item's amount, introduced as such. */
+const ITEM_AMOUNT_HEADING = /^(.{0,80}?\b(?:overdraft|courtesy pay|nsf|non[-\s]?sufficient|insufficient funds|return(?:ed)? item)\b.{0,40}?)\s*:?\s*(?:fee\s+)?(?:is\s+)?based on (?:the )?(?:item|transaction|overdraft) amount\b/i;
+/** "$10.01 - $20.00:  $10.00 fee", "$30.01 or above:  $30.00 fee". */
+const ITEM_AMOUNT_TIER =
+  /^\s*(\$\s?[\d,]+(?:\.\d{2})?\s*(?:-|–|to)\s*\$\s?[\d,]+(?:\.\d{2})?|\$\s?[\d,]+(?:\.\d{2})?\s*(?:or (?:above|more|over)|and (?:above|up|over)|\+))\s*[:|]?\s*\$\s?(\d{1,3}(?:\.\d{2})?)\s*(?:fee|charge)?\b/i;
+
+/**
+ * An overdraft or NSF fee tiered by the item's amount ("Overdraft Item Fee: based on item
+ * amount", then "$10.01 - $20.00: $10.00 fee" rows). Each priced tier is its own fee,
+ * named with its item range; the index counts overdraft at its highest tier.
+ */
+export function itemAmountTierFees(text: string): ExtractedFeeCandidate[] {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const found: ExtractedFeeCandidate[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = lines[index].match(ITEM_AMOUNT_HEADING);
+    if (!heading) continue;
+    const name = nameFrom(heading[1]);
+    const hint = classifyFeeText(name);
+    if (!usableName(name) || (hint !== "overdraft" && hint !== "nsf")) continue;
+    let misses = 0;
+    for (let next = index + 1; next < lines.length && misses <= 4; next += 1) {
+      const tier = lines[next].match(ITEM_AMOUNT_TIER);
+      if (!tier) {
+        // Notes and the "Item amount | Fee Amount" header may sit between the heading and its rows.
+        if (found.some((fee) => fee.excerpt.startsWith(name))) break;
+        misses += 1;
+        continue;
+      }
+      const amount = Number(tier[2]);
+      const feeName = `${name} (items ${tier[1].replace(/\s+/g, " ").trim()})`;
+      if (amount > 0 && passesDarwinChecks(hint, feeName, amount)) {
+        found.push({
+          feeName,
+          amount,
+          frequency: "per_item",
+          canonicalHint: hint,
+          confidence: confidenceFor(lines[next]),
+          excerpt: `${name} / ${lines[next]}`.slice(0, 280),
+          waivable: false,
+        });
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * A two-column PDF flattened to "left | right" lines splits a long fee name across lines in
+ * its own column ("* Overdraft Fee, per item, per presentment (applies to" ... "withdrawal,
+ * or other electronic means) ..... $30.00"). Rebuild each column as its own text and join a
+ * name line with the lowercase lines that continue it up to its price. Only joined lines are
+ * returned: single lines are already read by the line rules.
+ */
+export function columnContinuations(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const split = lines.filter((line) => line.split(CELL_SEPARATOR).length === 2).length;
+  if (split < 5) return [];
+  const columns: string[][] = [[], []];
+  for (const line of lines) {
+    const cells = line.split(CELL_SEPARATOR);
+    if (cells.length === 2) {
+      columns[0].push(cells[0].trim());
+      columns[1].push(cells[1].trim());
+    } else {
+      columns[0].push(line);
+    }
+  }
+  const joined: string[] = [];
+  for (const column of columns) {
+    for (let index = 0; index < column.length; index += 1) {
+      if (amountsIn(column[index]).length > 0 || !/[a-z]{3,}/i.test(column[index])) continue;
+      let line = column[index];
+      for (let next = index + 1; next < column.length && next <= index + 3; next += 1) {
+        if (!/^[a-z(]/.test(column[next])) break;
+        line = `${line} ${column[next]}`;
+        if (amountsIn(column[next]).length > 0) {
+          joined.push(line);
+          break;
+        }
+      }
+    }
+  }
+  return joined;
+}
+
 export function extractCandidatesFromText(text: string): ExtractionRulesResult {
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
+  const continued = columnContinuations(text).flatMap((line) => extractFromSegment(line).candidates);
+  for (const candidate of [...itemAmountTierFees(text), ...continued]) {
+    if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
+    const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.candidates.push(candidate);
+  }
   let unclassified = 0;
   for (const segment of candidateSegments(text)) {
     const found = extractFromSegment(segment);

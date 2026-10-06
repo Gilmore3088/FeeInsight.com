@@ -399,3 +399,15 @@ earlier price or rate on the line is that fee's cap, and is read as a daily cap 
 day"; a lone "$10.00 maximum" stays the fee's own price. A value cell a rule names on its own is
 left to the line rules. Read-only check at 02:25 UTC Oct 6: 8 live fees came from a "$X maximum"
 figure; the version bump re-checks them and the 4 that follow an earlier price or rate will stop reproducing.
+
+## 2026-10-06: Tier tables and two-column PDFs hid Texas overdraft fees
+**What happened:** Texas Bank and Trust and Austin Bank had no live overdraft fee although both
+schedules state one.
+**Cause:** Texas Bank and Trust prices overdraft by item amount ("Overdraft Item Fee: based on item
+amount", then "$10.01 - $20.00: $10.00 fee" rows) and no rule read those rows. Austin Bank's
+two-column PDF splits "* Overdraft Fee, per item, per presentment (applies to ... means) ....
+$30.00" across three lines of its right column, so no single line held both the name and the price.
+**Fix:** same PR: Knox rules v11 reads item-amount tier rows under an overdraft or NSF heading as
+one fee per priced tier (the index counts overdraft at its highest tier), and rebuilds the columns
+of a "left | right" text to join a fee name with the lowercase lines that continue it up to its
+price. Both only add fees, and every one still passes Darwin's guard.
