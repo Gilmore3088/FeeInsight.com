@@ -6,7 +6,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
-import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
+import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import { getInstitutionFeeRows, getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
@@ -213,21 +213,22 @@ function sinceDate(days: number, now = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Price changes in the state over the window that the bank's own schedules bear out
+ * (the Monthly Pulse rule). A recorded change the schedules do not support is left out,
+ * so a misread PDF never shows as a competitor's move.
+ */
 async function loadStateChanges(stateCode: string | null, feeCategory?: string): Promise<FeeChangeInput[]> {
   if (!stateCode) return [];
-  const events = await getFeeChangeEvents({
-    state_code: stateCode,
-    since: sinceDate(COMPETITOR_MOVE_WINDOW_DAYS),
-    limit: 500,
-  });
-  return events
-    .filter((e) => !feeCategory || e.fee_category === feeCategory)
-    .map((e) => ({
-      institutionName: e.institution_name,
-      feeCategory: e.fee_category,
-      oldAmount: e.old_amount,
-      newAmount: e.new_amount,
-      changedAt: e.changed_at,
+  const { changes } = await loadConfirmedFeeChanges(`${sinceDate(COMPETITOR_MOVE_WINDOW_DAYS)}T00:00:00.000Z`, stateCode);
+  return changes
+    .filter((c) => !feeCategory || c.fee_category === feeCategory)
+    .map((c) => ({
+      institutionName: c.institution_name,
+      feeCategory: c.fee_category,
+      oldAmount: c.old_amount,
+      newAmount: c.new_amount,
+      changedAt: c.changed_at,
     }));
 }
 

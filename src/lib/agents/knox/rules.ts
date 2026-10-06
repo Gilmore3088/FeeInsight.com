@@ -200,6 +200,25 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(monthly (service|maintenance)|maintenance (fee|charge)|monthly (fee|charge)|account service (fee|charge)|service charge)\b/i,
   },
   { key: "minimum_balance", pattern: /\b(minimum balance|low balance|fall[- ]below)\b.{0,30}\b(fee|charge)\b/i },
+  // v14: names the answer keys show Knox held as unclassified. Last, so they only claim
+  // lines no rule above recognizes.
+  {
+    key: "early_closure",
+    pattern: /\b(account clos(?:ing|ure) fee|(?:fee )?to close (?:an |the |your )?account|closed account fee)\b/i,
+  },
+  { key: "dormant_account", pattern: /(?<!\bcard )\breactivation fee\b/i },
+  // A wire that says domestic but not which way is outgoing, unless it says "in".
+  {
+    key: "wire_domestic_incoming",
+    pattern: /\bwires?\b(?: transfers?)?\s+in\b.{0,25}\bdomestic\b|\bdomestic\b.{0,25}\bwires?\b(?: transfers?)?\s+in\b/i,
+  },
+  { key: "wire_domestic_outgoing", pattern: /\bwires?\b.{0,25}\bdomestic\b|\bdomestic\b.{0,25}\bwires?\b/i },
+  { key: "garnishment_levy", pattern: /\bchild support\b/i },
+  { key: "legal_process", pattern: /\blegal (?:order|document)s?\b/i },
+  { key: "continuous_od", pattern: /\bnegative balance fee\b/i },
+  { key: "account_verification", pattern: /\baudit confirmations?\b/i },
+  { key: "ira_administration", pattern: /\bIRA custodial\b/i },
+  { key: "document_reproduction", pattern: /\b(document cop(?:y|ies)|copy fee)\b/i },
 ];
 
 /**
@@ -416,6 +435,36 @@ export function maintenanceFromProse(segment: string, cells: string[] | null): E
   };
 }
 
+/**
+ * A checking account's own monthly price, named by the account: "Opportunity Checking |
+ * $10 per month", "Rewards Checking (CK06) | $6.00 per month", "Plu$ Checking | $10 per
+ * month if average monthly balance falls below $7,500". The label names only the account
+ * (no other fee, card, loan or opening deposit) and the price says it is charged monthly.
+ */
+const CHECKING_ACCOUNT_LABEL = /\b(checking|share draft)\b/i;
+const OTHER_THAN_MAINTENANCE = /\b(fee|charge|cards?|loans?|overdraft|nsf|returned|items?|opening|open|minimum|deposit|order|checks|box|statements?|transfers?|wire|atm|savings|business|commercial)\b/i;
+const PER_MONTH_AFTER = /^\s*(?:\/\s*mo\b|\/\s*month\b|per month\b|a month\b|monthly\b|mo\.?\s*$)/i;
+
+export function maintenanceFromAccountRow(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
+  const label = normalizeSegment(segment.slice(0, firstAmount.start).replace(/\|/g, " "));
+  if (!CHECKING_ACCOUNT_LABEL.test(label) || OTHER_THAN_MAINTENANCE.test(label) || /\$|\d{3,}/.test(label)) return null;
+  if (label.split(" ").length > 8) return null;
+  if (!PER_MONTH_AFTER.test(segment.slice(firstAmount.end))) return null;
+  const amount = firstAmount.value;
+  if (!(amount > 0)) return null;
+  const feeName = `${label.slice(0, 80)} Monthly service charge`;
+  if (!passesDarwinChecks("monthly_maintenance", feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: "monthly",
+    canonicalHint: "monthly_maintenance",
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: WAIVER_LANGUAGE.test(segment) || /\b(if|unless|avoid)\b/i.test(segment.slice(firstAmount.end)),
+  };
+}
+
 /** A table cell holding only a price and how often it is charged: "$20.00", "$5 per hour". */
 const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:\/?\s*(?:each|ea|item|month|mo|hour|hr|year|yr|copy|page|check|request)|per \w+)?\.?\s*$/i;
 /** "$500 | Minimum to open": an opening requirement is not a fee. */
@@ -509,7 +558,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // A line no rule names by the words before its price may still state the account's
   // monthly service charge in prose, with the fee named after the price.
   if (!hint) {
-    const maintenance = maintenanceFromProse(segment, cells);
+    const maintenance = maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount);
     if (maintenance) {
       result.candidates.push(maintenance);
       return result;
