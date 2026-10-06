@@ -13,6 +13,32 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Magellan called a link "found" when it was not the consumer fee schedule
+**What happened:** read-only prod queries, 14:15-14:30 UTC Oct 6. 187 active institutions'
+only fee link is a business-only schedule (882 live fees), e.g. First National Bank Alaska's
+`Business-Account-Fee-Schedule.pdf` with `rescue_status = 'rescued'`, so no search tried again.
+Of 144 banks over $10B with no live overdraft fee, 94 hold a page with no overdraft price
+(Wells Fargo's Clear Access summary, JPMorgan Chase's 2021 press release, product pages), 52
+have no link, 7 no website, and 14 hold a text that does price it (Knox's work). Banner Bank's
+fee page sends readers to its deposit account agreement, but the companion finder ordered
+banks by fewest fee categories, so Banner (14) was never searched: 1,451 eligible banks were
+untried at about 207 a day.
+**Cause:** "found" meant "passed the fee-page check", which a business schedule or a product
+page can pass; nothing asked whether the page prices the fees buyers look for.
+**Fix:** this PR. One shared rule, `magellan/link-coverage.ts` (business-only link, no overdraft
+price in any stored text, or a text that refers elsewhere). The fee-page check rejects
+business-only schedules; business-only links get one re-search that keeps the old link until
+a consumer schedule is found; the companion finder takes these banks, report requesters and
+$10B+ banks first; a paid schedule search (`schedule-search.ts`) takes $10B+ banks and
+requesters from any state, adding the answer as a companion so no live fee is lost. JPMorgan's
+8 stored copies of one page were byte-different fetches of the same text; PR 265 already marks
+7 of them as history. The $10B+ banks whose every fetch failed (11 with a link and no
+successful fetch) mostly answer 403 to the crawler, and several links were wrong anyway (a
+product page, a student-loan hub, Bell Bank's link on cincinnati-oh.gov, a page-not-found);
+with no stored text they count as "no overdraft price" and enter the paid schedule search.
+**Lesson:** judge a found page by what it must contain (an overdraft price for a consumer
+schedule), not only by whether it looks like a fee page.
+
 ## 2026-10-06: A page kept every copy Magellan ever stored, with no "current" mark
 **What happened:** 18,374 `source_documents` rows cover 8,233 pages (institution + URL),
 read-only prod query 13:45 UTC Oct 6. Of the older rows, 6,936 are failed fetches and 3,061 are
