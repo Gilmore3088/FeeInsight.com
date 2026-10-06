@@ -8,7 +8,10 @@
  *   - none of the bank's current texts prices an overdraft or NSF item (a product page, a
  *     press release, one account's summary: Wells Fargo, JPMorgan Chase, TD on Oct 6);
  *   - its text sends the reader to another document for the amounts ("Please refer to the
- *     Terms and Conditions of your Consumer Deposit Account Agreement", Banner Bank).
+ *     Terms and Conditions of your Consumer Deposit Account Agreement", Banner Bank);
+ *   - the document we hold is dated three or more years ago in its own address
+ *     (".../files/2019-05/2019-05-15.pdf", Enterprise Bank & Trust on Oct 6), so its prices
+ *     are likely out of date.
  * Such a bank keeps its link and its live fees; Magellan keeps searching for the consumer
  * schedule or deposit agreement beside it (companion search, paid schedule search).
  */
@@ -67,6 +70,20 @@ export const REFERS_ELSEWHERE_SQL =
 
 export function refersElsewhere(text: string): boolean {
   return REFERS_ELSEWHERE.test(text);
+}
+
+/** A document dated this many years back or more, by the year in its address, is stale. */
+export const STALE_DOCUMENT_YEARS = 3;
+/** The year in a document's address: a path segment or file name starting 19xx/20xx. */
+const DOCUMENT_YEAR = /\/((?:19|20)\d{2})[-/_.]/;
+/** The same pattern for Postgres substring(); the year is its one capture group. */
+export const DOCUMENT_YEAR_SQL = "/((?:19|20)[0-9]{2})[-/_.]";
+
+/** True when the document's address carries a year at least STALE_DOCUMENT_YEARS back. */
+export function isStaleDatedLink(url: string, now: Date = new Date()): boolean {
+  const match = DOCUMENT_YEAR.exec(url);
+  if (!match) return false;
+  return Number(match[1]) <= now.getUTCFullYear() - STALE_DOCUMENT_YEARS;
 }
 
 /** Assets (thousands, as call reports) at which a bank is one buyers check first: $10B. */

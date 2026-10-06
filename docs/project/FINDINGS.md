@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A fee document dated 2019 counted as a finished link
+**What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
+links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
+characters). Knox reads "Overdrafts Paid $30" from it, so the link passed every rule in
+`link-coverage.ts` and no finder looked for a current schedule. 263 institutions' current
+copies carry a year three or more back in their address; 4 of them are $10B+ banks.
+**Cause:** link coverage asked what the page says, never how old it is.
+**Fix:** this PR. `isStaleDatedLink` / `DOCUMENT_YEAR_SQL`: a current copy dated three or
+more years back by its address counts as an incomplete link for the companion finder and the
+paid schedule search; the old link and its live fees stay until something newer is found.
+**Lesson:** a link that passes the content checks can still be years out of date; check the
+date in its address before calling it done.
+
 ## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
 **What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
 rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
@@ -1473,3 +1486,22 @@ re-read once per rules version, first in line. Read-only check at 18:20 UTC: the
 of all 11 flagged banks are selected, and 1,977 texts in total (183 at $10B+ banks) are due.
 **Lesson:** when one agent adds a "current" marker, check every reader of the table honours it;
 a comment saying "Knox reads the current copy" was not the same as Knox doing it.
+
+
+## 2026-10-06: Knox's learning stopped at names many banks share
+**What happened:** the learning reader only learned a name verified at 2 or more banks, so a name
+one bank prints its own way never learned, however often it was corrected there. Names the
+guards rejected with no verified fee anywhere ("Zipper Bags", rejected at 25 banks) never learned
+at all. Knox's confidence was a fixed formula, so a table-read night deposit fee (6 of 58 still
+live in the last 14 days) scored the same as a rule-read overdraft fee. And a new layout read thin
+document by document with nothing tying the thin reads together.
+**Fix:** per-bank lessons in `lessons.ts` (369 at 307 banks); a weekly label queue at
+/admin/knox/labels for the names the store can't settle (`label-queue.ts`); shadow calibrated
+confidence in the audit text from 14-day survival by strategy and category (`calibration.ts`,
+59 of 221 groups would fall below Hamilton's 0.8 floor); and a layout signature on every extract
+attempt with thin reads counted per signature (`layout-signature.ts`). Answer keys with the
+fixture banks' own lessons (guard and Darwin verdicts only, not the keys themselves): 7 states
+674 to 678 right and 66 to 63 category errors on v22; Texas unchanged. Only new reads change; no live
+fee is taken down, and stored confidence is unchanged.
+**Lesson:** a learning store that only learns from agreement across banks misses most of what it
+is told; one bank's own verdicts are the strongest evidence for that bank.
