@@ -1348,7 +1348,7 @@ named by a fragment ("A 1% Currency Conversion Fee will be assessed on", "for cu
 **Fix:** `src/lib/agents/knox/percent.ts`. A held rate in an allow-listed category whose rate
 traces with `checkRateAgainstSource` goes to Darwin as a rate fee, named from the category's own
 words; "up to" rates, interest rates, two-rate lines and out-of-range rates stay held. Held rows
-are re-read in place by `recheckHeldRates`. Knox v20 also reads the card's currency fee and
+are re-read in place by `recheckHeldRates`. Knox v21 also reads the card's currency fee and
 coin counting under the other names banks give them. Answer keys: 20 rate reads, 18 keyed and 2
 real fees the keys leave out (0.2% currency conversion, 0.9% cross-border); flat gates and the
 live dry run (1,416 of 1,437 kept) unchanged. Dry run on the 1,001 held rows with their

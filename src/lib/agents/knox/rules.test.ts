@@ -559,7 +559,7 @@ describe("Knox extract.rules", () => {
     expect(runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Courtesy Pay", 30, "overdraft"]]);
   });
 
-  it("v20 knows the other names for the card's currency fee and for coin counting", () => {
+  it("v21 knows the other names for the card's currency fee and for coin counting", () => {
     for (const name of ["VISA Foreign Transactions in Foreign Currency", "International Point of Sale Fee", "International Currency Fee", "Cross-Border Assessment", "International purchase transaction fee", "Multi currency"]) {
       expect(classifyFeeText(name)).toBe("card_foreign_txn");
     }
@@ -571,7 +571,7 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("Foreign Currency Order")).not.toBe("card_foreign_txn");
   });
 
-  it("v20 holds a rate named by the words before it, even with a dollar minimum after", () => {
+  it("v21 holds a rate named by the words before it, even with a dollar minimum after", () => {
     const held = extractCandidatesFromText("Cash Advance | 3% of each advance ($5.00 minimum)").held;
     expect(held.map((row) => [row.shape, row.canonicalHint, row.feeName])).toEqual([["percentage", "cash_advance", "Cash Advance"]]);
   });

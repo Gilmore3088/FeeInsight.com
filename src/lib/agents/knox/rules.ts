@@ -129,7 +129,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "atm_international",
     pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
-  // v20: plural "Foreign Transactions" (a bare "(international transactions)" is often a
+  // v21: plural "Foreign Transactions" (a bare "(international transactions)" is often a
   // neighbouring column's note), and the other names banks give the card's
   // currency fee ("International Point of Sale Fee", "Cross-Border", "International Service
   // Assessment", "Multi currency"). Buying foreign cash ("Foreign Currency Order") stays out.
@@ -179,7 +179,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "bill_pay", pattern: /\bbill ?pay(ments?)?\b/i },
   { key: "mobile_deposit", pattern: /\bmobile deposit\b/i },
   { key: "zelle_fee", pattern: /\bzelle\b/i },
-  // v20: "Coin Counter Fee", "Coin Machine", "Loose Coin", "Count and roll coins", Coinstar.
+  // v21: "Coin Counter Fee", "Coin Machine", "Loose Coin", "Count and roll coins", Coinstar.
   { key: "coin_counting", pattern: /\b(coin (?:counting|processing|counter|machine|sorting|sorter)|loose coins?|count(?:ing)?(?: and roll)? coins?|coinstar)\b/i },
   { key: "cash_advance", pattern: /\bcash advance\b/i },
   { key: "night_deposit", pattern: /\b(night deposit|night depository|deposit bags?|zipper bags?)\b/i },

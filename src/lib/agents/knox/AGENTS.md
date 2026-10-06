@@ -143,7 +143,7 @@ own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conve
 texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
 (`knox_rate_recheck:v1`, 100 per extract step).
 
-v20 (rules 20) reads more of those rate lines: the card's currency fee under its other names
+v21 (rules 21) reads more of those rate lines: the card's currency fee under its other names
 ("Foreign Transactions", "International Point of Sale Fee", "Cross-Border Assessment",
 "International Service Assessment", "Multi currency"), coin counting under "Coin Counter",
 "Coin Machine", "Loose Coin" and "Count and roll coins", and a rate whose dollar minimum follows
