@@ -3,10 +3,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  getNationalIndexCached,
   getBeigeBookHeadline,
   getLatestBeigeBook,
 } from "@/lib/data-store";
+import { getPublicNationalIndex } from "@/lib/public-stats";
 import {
   getDisplayName,
   isFeaturedFee,
@@ -76,7 +76,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const [stats, districtIndex, nationalIndex, beigeHeadline, beigeSections] = await Promise.all([
     getDistrictStatsCached(districtId),
     getPeerIndexCached({ fed_districts: [districtId] }),
-    getNationalIndexCached(),
+    getPublicNationalIndex(),
     getBeigeBookHeadline(districtId),
     getLatestBeigeBook(districtId),
   ]);

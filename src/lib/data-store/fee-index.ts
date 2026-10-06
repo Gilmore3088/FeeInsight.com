@@ -95,7 +95,7 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
 
 /**
  * One institution's value per category under the statistics contract (the median of its
- * approved, sourced amounts), so "your fee" is measured the same way as the benchmark.
+ * approved, sourced amounts; overdraft's highest tier), so "your fee" is measured the same way as the benchmark.
  */
 export async function getInstitutionFeeValues(
   institutionId: number,
@@ -118,10 +118,10 @@ export async function getInstitutionFeeValues(
     params as never[],
   ) as { fee_category: string; amount: number | string | null }[];
 
-  const byCategory = new Map<string, { institution_id: number; amount: number | string | null }[]>();
+  const byCategory = new Map<string, { institution_id: number; amount: number | string | null; fee_category: string }[]>();
   for (const row of rows) {
     const list = byCategory.get(row.fee_category) ?? [];
-    list.push({ institution_id: institutionId, amount: row.amount });
+    list.push({ institution_id: institutionId, amount: row.amount, fee_category: row.fee_category });
     byCategory.set(row.fee_category, list);
   }
   const values = new Map<string, number>();
@@ -310,12 +310,13 @@ export async function getDistrictMedianByCategory(
   }
 
   const rows = await sql.unsafe(
-    `SELECT ef.amount, ct.fed_district, ef.institution_id
+    `SELECT ef.fee_category, ef.amount, ct.fed_district, ef.institution_id
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${conditions.join(" AND ")}`,
     params
   ) as {
+    fee_category: string;
     amount: number | null;
     fed_district: number;
     institution_id: number;
@@ -602,4 +603,83 @@ export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeInd
     [stateCode],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
+}
+
+export interface PeerFeeValue {
+  institution_id: number;
+  institution_name: string;
+  state_code: string | null;
+  amount: number;
+  /** The source documents behind this value, so every peer figure can be checked. */
+  source_document_ids: number[];
+  document_urls: string[];
+  /** When the newest row behind this value was published (ISO). */
+  published_at: string | null;
+}
+
+/**
+ * Each peer's own value per category under the statistics contract (the same value the
+ * medians are built from), so a scenario can count exactly how many peers charge more,
+ * the same or less. Rows are loaded once and split per filter set; results follow the
+ * order of `filterSets`. The target institution is left out of its own peer group.
+ */
+export async function getPeerFeeValues(
+  filterSets: PeerFilterSet[],
+  categories: string[],
+  excludeInstitutionId?: number,
+): Promise<Map<string, PeerFeeValue[]>[]> {
+  if (categories.length === 0 || filterSets.length === 0) return filterSets.map(() => new Map());
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
+            ef.source_document_id, ef.document_url, ef.created_at
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ANY($1::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [categories] as never[],
+  ) as (PeerRow & {
+    institution_name: string;
+    source_document_id: number | string | null;
+    document_url: string | null;
+    created_at: Date | string | null;
+  })[];
+  const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
+  const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
+  return filterSets.map((filters) => {
+    const byCategory = new Map<string, typeof peerRows>();
+    for (const row of peerRows) {
+      if (!matchesPeerFilters(row, filters)) continue;
+      const list = byCategory.get(row.fee_category) ?? [];
+      list.push(row);
+      byCategory.set(row.fee_category, list);
+    }
+    const result = new Map<string, PeerFeeValue[]>();
+    for (const [category, list] of byCategory) {
+      const values: PeerFeeValue[] = [];
+      for (const [id, amount] of valuePerInstitution(list)) {
+        const row = meta.get(id);
+        const own = list.filter((r) => Number(r.institution_id) === id);
+        const docIds = [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))];
+        const urls = [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))];
+        const published = own
+          .map((r) => ((r.created_at as unknown) instanceof Date ? (r.created_at as unknown as Date).toISOString() : r.created_at ? String(r.created_at) : null))
+          .filter((v): v is string => !!v)
+          .sort()
+          .pop() ?? null;
+        values.push({
+          institution_id: id,
+          institution_name: row?.institution_name ?? `Institution ${id}`,
+          state_code: row?.state_code ?? null,
+          amount,
+          source_document_ids: docIds,
+          document_urls: urls,
+          published_at: published,
+        });
+      }
+      result.set(category, values.sort((a, b) => a.amount - b.amount));
+    }
+    return result;
+  });
 }

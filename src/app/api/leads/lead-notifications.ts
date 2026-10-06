@@ -4,11 +4,16 @@ import {
   type LeadNotificationOutcome,
 } from "@/lib/email/report-request";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
+import { sendBenchmarkReportNotifications } from "@/lib/email/benchmark-report";
+import { isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import type { EmailDeliveryStatus } from "@/lib/email/resend";
 import { handleLeadDeliveryOutcome } from "@/lib/leads/lead-alerts";
 import { NEWSLETTER_SOURCE, placementForSource, type LeadCapturePlacement } from "@/lib/lead-capture";
 
 export const REPORT_SOURCE = "report";
+/** The free, instant reports picked on the request form; never owed a reply. */
+export const NATIONAL_REPORT_SOURCE = "report_national";
+export const DISTRICT_REPORT_SOURCE = "report_district";
 const CONTACT_SOURCE_PATTERN = /^contact(?:_([a-z0-9-]+))?$/;
 const ENTERPRISE_SOURCE = "enterprise";
 
@@ -29,6 +34,10 @@ export interface StoredLead {
   /** Capture placements only: state context and the institution name for email copy. */
   stateCode?: string | null;
   institutionName?: string | null;
+  /** Free benchmark requests only: which report to send. */
+  benchmarkScope?: BenchmarkScope | null;
+  /** Institution report requests only: the data check line for James. */
+  quoteCheck?: string | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -65,6 +74,27 @@ export function buildReportUseCase(
   return joined.length > 0 ? joined : null;
 }
 
+/**
+ * The free report a benchmark source asks for, or null when the source is not one or the
+ * district is missing or not 1-12 (the route then rejects the request).
+ */
+export function parseBenchmarkRequest(source: string, district: unknown): BenchmarkScope | null {
+  if (source === NATIONAL_REPORT_SOURCE) return { kind: "national" };
+  if (source !== DISTRICT_REPORT_SOURCE) return null;
+  const numeric = typeof district === "string" ? Number(district) : district;
+  return typeof numeric === "number" && isFedDistrict(numeric) ? { kind: "district", district: numeric } : null;
+}
+
+export function isBenchmarkSource(source: string): boolean {
+  return source === NATIONAL_REPORT_SOURCE || source === DISTRICT_REPORT_SOURCE;
+}
+
+export function buildBenchmarkUseCase(scope: BenchmarkScope, src: string | null): string {
+  const parts = ["benchmark-report", `scope=${scope.kind === "national" ? "national" : `district-${scope.district}`}`];
+  if (src) parts.push(`src=${src}`);
+  return parts.join("; ");
+}
+
 export function contactInquiryType(source: string): string | null {
   const match = CONTACT_SOURCE_PATTERN.exec(source);
   return match ? (match[1] ?? null) : null;
@@ -78,6 +108,7 @@ function captureOfferFor(source: string): LeadCapturePlacement | null {
 export function shouldNotify(source: string) {
   return (
     source === REPORT_SOURCE ||
+    isBenchmarkSource(source) ||
     captureOfferFor(source) !== null ||
     source === ENTERPRISE_SOURCE ||
     CONTACT_SOURCE_PATTERN.test(source)
@@ -133,6 +164,15 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
       await handleUndelivered(lead, outcome);
       return toStatus(outcome);
     }
+    if (lead.benchmarkScope) {
+      const outcome = await sendBenchmarkReportNotifications({
+        email: lead.email,
+        scope: lead.benchmarkScope,
+        src: lead.src,
+      });
+      await handleUndelivered(lead, outcome);
+      return toStatus(outcome);
+    }
     if (lead.source === REPORT_SOURCE) {
       const outcome = await sendReportRequestNotifications({
         name: lead.name,
@@ -141,6 +181,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         role: lead.role,
         institutionId: lead.institutionId,
         src: lead.src,
+        quoteCheck: lead.quoteCheck ?? null,
       });
       await handleUndelivered(lead, outcome);
       return toStatus(outcome);

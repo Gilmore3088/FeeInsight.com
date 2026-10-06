@@ -27,6 +27,19 @@ describe("NCUA 5300", () => {
     ]);
   });
 
+  it("reads overdraft and NSF fee income from FS220P, and leaves them null when absent", () => {
+    const zip = zipSync({
+      "FOICU.txt": strToU8('CU_NUMBER,CU_NAME,CITY,STATE,CU_TYPE,RSSD\n"1034","Marisol FCU","Phoenix","AZ","1","0"\n"2000","Old CU","Mesa","AZ","1","0"\n'),
+      "FS220.txt": strToU8("CU_NUMBER,ACCT_010\n1034,74247904\n2000,1000000\n"),
+      "FS220P.txt": strToU8("CU_NUMBER,ACCT_IS0048,ACCT_IS0049\n1034,412500,96300\n"),
+    });
+    const archive = readNcuaArchive(zip);
+    const row = parseNcuaFinancial("1034", archive.accounts.get("1034")!, { year: 2026, quarter: 2 })!;
+    expect(row).toMatchObject({ overdraft_fee_income_ytd: 413, nsf_fee_income_ytd: 96 });
+    const old = parseNcuaFinancial("2000", archive.accounts.get("2000")!, { year: 2026, quarter: 2 })!;
+    expect(old).toMatchObject({ overdraft_fee_income_ytd: null, nsf_fee_income_ytd: null });
+  });
+
   it("merges FOICU and every FS220 file from the quarterly zip", () => {
     const zip = zipSync({
       "FOICU.txt": strToU8('CU_NUMBER,CU_NAME,CITY,STATE,CU_TYPE,RSSD\n"1034","Marisol Federal Credit Union","Phoenix","AZ","1","0"\n'),

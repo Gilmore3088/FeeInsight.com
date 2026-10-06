@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { FLOW_AGENTS, type FlowMove, type FlowNow, type FlowSnapshot, type FlowWaiting, type MoveTone } from "@/lib/agents/flow-model";
+import { FLOW_AGENTS, isWentLive, latestPerInstitution, type FlowMove, type FlowNow, type FlowSnapshot, type FlowWaiting, type MoveTone } from "@/lib/agents/flow-model";
 import type { AdminAgent } from "@/lib/agents/types";
 
 const POLL_MS = 10_000;
@@ -289,7 +289,7 @@ export function LiveFlow({ initial }: { initial: Data }) {
               step={index + 1}
               now={nowOf(agent)}
               waiting={data.waiting?.[agent]}
-              moves={data.moves.filter((move) => move.agent === agent).slice(0, 4)}
+              moves={latestPerInstitution(data.moves, (move) => move.agent === agent, 4)}
               fresh={fresh}
             />
             <Connector
@@ -300,7 +300,10 @@ export function LiveFlow({ initial }: { initial: Data }) {
         ))}
         <OnTheSite
           waiting={data.waiting}
-          live={data.moves.filter((move) => move.agent === "hamilton" && move.text.startsWith("Published")).slice(0, 4)}
+          live={latestPerInstitution(data.moves, isWentLive, 4).map((move) => {
+            const live = data.liveFees?.[move.institutionId];
+            return live ? { ...move, text: `Now has ${number(live)} fee${live === 1 ? "" : "s"} live` } : move;
+          })}
           fresh={fresh}
         />
       </div>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId, useState, type KeyboardEvent } from "react";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
@@ -66,7 +66,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
           >
             The {PRODUCT_NAME}
           </h1>
-          <p className="mt-2.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#8A8072]">
+          <p className="mt-2.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B6255]">
             <span aria-hidden="true" className="h-px w-5 bg-[#C44B2E]/60" />
             Powered by <span className="text-[#5A5347]">{SITE_DOMAIN_DISPLAY}</span>
           </p>
@@ -156,24 +156,26 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
           >
             <p className="text-pretty text-[16px] leading-relaxed text-[#1A1815]">
               See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
-              take to your pricing committee. Free for your institution,{" "}
-              {REPORT_OFFER.turnaround}.
+              take to your pricing committee. Start with a free national or Fed district report;
+              the report for your institution is priced on request.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <TrackLink
-                event="request_report"
+                event="request_report_click"
                 eventProps={{ placement: "home_hero" }}
                 href={REPORT_REQUEST_HREF}
                 className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
               >
                 {REPORT_OFFER.ctaLabel}
               </TrackLink>
-              <Link
-                href="/reports/sample-competitive-fee-position"
-                className="text-sm font-semibold text-[#1A1815] underline-offset-4 hover:text-[#A93D25] hover:underline"
-              >
-                Read the full sample
-              </Link>
+              {SAMPLE_REPORT_LIVE && (
+                <Link
+                  href="/reports/sample-competitive-fee-position"
+                  className="text-sm font-semibold text-[#1A1815] underline-offset-4 hover:text-[#A93D25] hover:underline"
+                >
+                  Read the full sample
+                </Link>
+              )}
             </div>
           </div>
         </div>

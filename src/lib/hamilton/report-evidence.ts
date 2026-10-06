@@ -1,6 +1,5 @@
 import type { IndexEntry } from "@/lib/data-store/fee-index";
-import { computePercentile } from "@/lib/data-store/fees";
-import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
+import { institutionValue, MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 
 export interface SelectedInstitutionFeeDelta {
   fee_name: string;
@@ -138,7 +137,7 @@ export function buildSelectedInstitutionFeeDeltas(params: {
 
 /**
  * One value per category for the selected institution, as the statistics contract
- * counts it: the median of its amounts. Verified (approved) rows win over provisional
+ * counts it: the median of its amounts (overdraft's highest tier). Verified (approved) rows win over provisional
  * ones; variants are folded into the first fee name.
  */
 function collapseToCategoryValues<T extends SelectedInstitutionFeeInput>(fees: T[]): T[] {
@@ -157,13 +156,13 @@ function collapseToCategoryValues<T extends SelectedInstitutionFeeInput>(fees: T
   for (const group of byCategory.values()) {
     const approved = group.filter((fee) => fee.review_status === "approved");
     const used = approved.length > 0 ? approved : group;
-    const amounts = used.map((fee) => toNumber(fee.amount) as number).sort((a, b) => a - b);
+    const amounts = used.map((fee) => toNumber(fee.amount) as number);
     const first = used[0];
     const confidences = used.map((fee) => toNumber(fee.extraction_confidence)).filter((c): c is number => c !== null);
     collapsed.push({
       ...first,
       fee_name: used.length > 1 ? `${first.fee_name} (${used.length} variants)` : first.fee_name,
-      amount: Math.round(computePercentile(amounts, 50) * 100) / 100,
+      amount: Math.round(institutionValue(first.fee_category, amounts) * 100) / 100,
       extraction_confidence: confidences.length > 0 ? Math.max(...confidences) : first.extraction_confidence ?? null,
       source_url: used.find((fee) => fee.source_url)?.source_url ?? null,
     });

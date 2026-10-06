@@ -3,6 +3,37 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-06
+
+**Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
+incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
+scenario and implementation plan carries its provenance: sources with links to the banks' own
+schedule documents, data as-of dates, the peer group and its size, assumptions, evidence level,
+and each client-given figure with who gave it and when. Saved decisions keep the provenance from
+the moment they were made. The same message set out Hamilton's faces (fee verifier and
+publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
+describes all four. Built in PR 170.
+
+**The institution report has no fixed price yet; the granular data stays paid.** James, 23:31 UTC
+Oct 5 and 00:15 UTC Oct 6. It will be a $300 report once it is ready, but for now a request is
+quoted by hand. Free reports give value away (national and district medians only); per-bank fees
+and named competitors are never in a free report. PR 107 was reshaped to match: a request tells
+James whether that bank's report can be built and gives him a private link to send after the
+requester agrees. There is no checkout, and nothing is sent to the requester automatically.
+
+**Free district and national reports use the state-report consulting format.** James approved
+PR 166 at 23:44 UTC Oct 5, after calling the old St. Louis district report "the worst type of
+report I've ever seen". Each report shows key findings, headline-fee ranges, the district vs
+national, banks vs credit unions, and a locked "your institution" section that leads to the paid
+report.
+
+**No booking tool and no paid tools before the first sale; James emails clients directly.**
+James, 00:57 UTC Oct 6 ("I don't need to book 15 minutes to talk to somebody ... I can just
+email them"). He uses Outlook and is already paying for several small services with no revenue
+yet. Pages offer an email link, never a scheduler; PR 178 changed the private report page's
+"Book 15 minutes" button to "Email us about this report". Any new paid service waits until a
+report has sold.
+
 ## 2026-10-05
 
 **Package all 16 years of call reports on institution pages, deeper for Pro.** James, 22:25 and
@@ -11,6 +42,33 @@ rank and outliers. Phase 2 widens the FDIC and NCUA pulls (overdraft-related ser
 other deposit-fee lines) and re-pulls all 66 quarters as visible runs. Only figures the source
 reports: no overdraft/NSF split unless a filing reports one. Phases 3 (a Pro institution
 workspace) and 4 (free page tune-up) wait for his go-ahead.
+
+**The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
+gets in.** James, 23:28 UTC ("nobody else should have access to API"). Every `/api/v1` request
+needs a key Fee Insight issued by hand; there is no free self-serve tier. David's key is
+Enterprise (all categories, institution detail, call reports, complaints, CSV, no limit). The
+site's own signed-in download buttons keep working without a key. Built in PR 161.
+
+**Hamilton is decision support, not a recommendation engine.** James, 23:27 UTC, correcting his
+23:08 direction: Hamilton surfaces what is worth investigating and what the market says, models
+the prices the bank asks about (roughly from published revenue, precisely from figures the bank
+enters) and plans implementation with real constraints such as 30 days' notice for an increase.
+It never says "raise your fee" or "approve recommendation"; it gives an opinion only when asked,
+naming the objective it assumed. Prompts carry this from voice v3.2.0; the plan is "Hamilton as a
+fee consultant" (https://claude.ai/code/artifact/ff42ee75-db64-4c54-aa04-5c17553255e8).
+
+**Hamilton is a paid consultant, not a chatbot that restates the site.** James, 22:57 UTC: "A
+consultant finds the actionable insights, the peer data, the qualitative and the quantitative, and
+packages it in an easy to understand and concise, valuable package." Hamilton's voice (v3.2.0),
+the Pro prompt and Analyze now forbid answering by repeating what the public pages show and ask
+for the "so what": peer gap, revenue at stake, trend or outlier, and the decision it raises.
+
+**Free reports are instant; the institution report is paid and never promises a turnaround.**
+James, 21:41-22:20 UTC. The request form becomes a picker: a National report (email only) and a
+Fed district report (email plus district) are free and open at once; a report on one institution
+against named competitors is the paid step, shown grayed out as the hook. Never promise "48 hours"
+for anything free, because that puts unpaid work on James. This replaces the earlier "the report
+is free" (J1) for the institution report. Built in PR 150.
 
 **Free discovery is never held to the monthly cadence.** James, 22:32 UTC ("if it doesn't
 require money, why are we limited in it?"). Every state's hourly backlog run now searches banks
@@ -34,6 +92,12 @@ for changed schedules.
 ask him to set up a Plausible goal. Its script, CSP host, env var and docs are removed and
 `plausible-kill` keeps them out. `trackEvent` stays as the one hook for a future provider; page
 views come from Vercel Analytics and report requests are leads in /admin/leads.
+
+**A bank's tiered overdraft counts at its highest (standard) tier.** James, 19:45 UTC, on a
+decision card. Each tier stays its own live fee with its band in the name, and a real $0 fee
+counts. Medians, percentiles, peer positions and reports use the bank's highest overdraft
+amount; other categories keep the median. Shipped in PR 132 (`institutionValue` in
+`src/lib/data-store/fee-stats.ts`).
 
 **CLAUDE.md is kept current, and the project keeps a durable memory in `docs/project/`.**
 James, 18:51 UTC. CLAUDE.md had gone stale (it said the 25 reports were ready to send).

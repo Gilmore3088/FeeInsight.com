@@ -16,6 +16,7 @@ import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { WelcomeSteps } from "./welcome-steps";
 import type { Metadata } from "next";
 import { SITE_NAME } from "@/lib/constants";
+import { TrackView } from "@/components/track-view";
 
 export const metadata: Metadata = {
   title: "Welcome",
@@ -123,6 +124,7 @@ export default async function WelcomePage({
       </header>
 
       <main id="main-content" className="px-4 py-10">
+        {params.success === "true" && <TrackView event="checkout_complete" onceKey={`checkout_complete:${user.id}`} />}
         <WelcomeSteps
           userName={user.display_name}
           user={user}

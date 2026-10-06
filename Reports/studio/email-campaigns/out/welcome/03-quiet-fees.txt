@@ -5,28 +5,23 @@ FEE LITERACY · EMAIL 3 OF 5
 The quiet fees: small line items, wide spread
 =============================================
 
-Everyone benchmarks overdraft. Almost nobody benchmarks the fees a customer pays once a year, and those come up in a branch argument or a one-star review. The spread on these is often wider than on the headline fees.
-
-Debit card replacement: low 25% → high 25%: $7.63–$43.75
-Stop payment: low 25% → high 25%: $15–$30
-Deposited item returned: low 25% → high 25%: $10–$25
-Cashier's check: low 25% → high 25%: $3–$7.25
-Bar length = the high-quarter price. Bank Fee Index, October 3, 2026.
+Everyone benchmarks overdraft. Almost nobody benchmarks the fees a customer pays once a year, and those are the ones that come up in a branch argument or a one-star review.
 
 
-THREE THINGS THE DATA SHOWS
+FOUR TO CHECK
 
-1. Card replacement is the widest spread on the sheet. The median is $20, but the high quarter starts at $43.75. Credit unions (median $25) charge well above banks ($10). Check whether you're pricing a standard reissue like a rush order.
-2. Returned deposits penalize the wrong person. The customer who deposited a bad check didn't write it. Median $15; credit unions run higher ($20).
-3. Stop payment almost never drops below $15. Only 3.2% charge $5 or less. Banks sit at $30 vs $20 at credit unions. A lower online stop-payment price is an easy differentiator.
+1. Debit card replacement. Check whether you price a standard reissue like a rush order. See the market (https://feeinsight.com/fees/card_replacement?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=quiet-fees).
+2. Deposited item returned. The customer who deposited a bad check didn't write it, which makes this fee hard to defend. See the market (https://feeinsight.com/fees/deposited_item_return?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=quiet-fees).
+3. Stop payment. A lower online price is an easy way to stand out. See the market (https://feeinsight.com/fees/stop_payment?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=quiet-fees).
+4. Cashier's check. Often priced once years ago and never revisited. See the market (https://feeinsight.com/fees/cashiers_check?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=quiet-fees).
 
 
 [ TERM WORTH KNOWING: HEADLINE FEE ]
-Most schedules list several prices for the same fee (online vs branch, standard vs rush, per item vs per day). We benchmark the lowest published amount, the one a customer can actually get. If your lowest price is above the market's, no footnote will save the comparison.
+Most schedules list several prices for the same fee (online vs branch, standard vs rush). Compare like with like, and know which one a customer actually gets. If your everyday price is above the market's, no footnote will save the comparison.
 
 
 [ DO THIS IN 15 MINUTES ]
-[ ] Find your three quiet fees above the high-quarter line.
+[ ] Find your quiet fees above the market's middle half.
 [ ] For each one, write the one-sentence reason you'd give a customer at the counter.
 [ ] If you can't write it, that fee is a candidate for your next pricing review.
 
@@ -34,7 +29,7 @@ James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 
 ----
-Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
 [Fee Insight mailing address]

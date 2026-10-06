@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { summarizeFeesBy, type StatsInputRow } from "./fee-stats";
+import { summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
 
 export interface FeeCategorySummary {
@@ -37,6 +37,11 @@ export interface FeeInstance {
   extraction_confidence: number;
   canonical_fee_key: string | null;
   variant_type: string | null;
+  /** The fee's name as the bank's schedule words it. */
+  fee_name?: string | null;
+  /** The bank document the fee was read from; null for unsourced legacy rows. */
+  document_url?: string | null;
+  source_document_id?: number | null;
 }
 
 export interface DimensionBreakdown {
@@ -209,18 +214,24 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   by_fed_district: DimensionBreakdown[];
   by_state: DimensionBreakdown[];
   change_events: FeeChangeEvent[];
+  /**
+   * One value per institution (sourced rows only): the same population and per-institution
+   * rule as the national median, so the distribution chart and the median agree.
+   */
+  institution_values: number[];
 }> {
   const rawFees = await sql`
     SELECT ef.id, ct.institution_name, ef.institution_id,
            ef.amount, ef.frequency, ef.conditions,
            ct.charter_type, ct.state_code, ct.asset_size_tier,
            ct.asset_size, ef.review_status, ef.extraction_confidence,
-           ef.canonical_fee_key, ef.variant_type, ef.source_document_id
+           ef.canonical_fee_key, ef.variant_type, ef.source_document_id,
+           ef.fee_name, COALESCE(ef.document_url, ef.source_url) AS document_url
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
     ORDER BY ef.amount DESC NULLS LAST
-  ` as (FeeInstance & { source_document_id: number | string | null })[];
+  ` as (Omit<FeeInstance, "source_document_id"> & { source_document_id: number | string | null })[];
 
   // Normalize numeric fields (Postgres NUMERIC returns strings)
   const fees: FeeInstance[] = rawFees.map((f) => ({
@@ -230,10 +241,13 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     amount: f.amount !== null ? Number(f.amount) : null,
     asset_size: f.asset_size !== null && f.asset_size !== undefined ? Number(f.asset_size) : null,
     extraction_confidence: Number(f.extraction_confidence ?? 0),
+    source_document_id: f.source_document_id !== null ? Number(f.source_document_id) : null,
   }));
 
   // Breakdowns follow the statistics contract: sourced rows only, one value per institution.
-  const sourcedFees = fees.filter((_, index) => rawFees[index].source_document_id !== null);
+  const sourcedFees = fees
+    .filter((_, index) => rawFees[index].source_document_id !== null)
+    .map((fee) => ({ ...fee, fee_category: category }));
 
   function buildBreakdown<T extends StatsInputRow>(
     rows: T[],
@@ -268,7 +282,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       AND ct.fed_district IS NOT NULL
   ` as { fed_district: number; amount: number | null; institution_id: number }[];
 
-  const by_fed_district_real = buildBreakdown(districtRows, (row) => `District ${Number(row.fed_district)}`);
+  const by_fed_district_real = buildBreakdown(districtRows.map((row) => ({ ...row, fee_category: category })), (row) => `District ${Number(row.fed_district)}`);
   by_fed_district_real.sort((a, b) => {
     const numA = parseInt(a.dimension_value.replace("District ", ""));
     const numB = parseInt(b.dimension_value.replace("District ", ""));
@@ -277,14 +291,28 @@ export async function getFeeCategoryDetail(category: string): Promise<{
 
   const by_state = buildBreakdown(sourcedFees, (f) => f.state_code);
 
-  // Fee change events
+  // Fee change events: one row per institution and price move, and only moves whose new
+  // price is still live. Older pipeline rows compared tiers of one fee with each other
+  // and repeated the same institution several times.
   const change_events = await sql`
-    SELECT ct.institution_name, fce.previous_amount, fce.new_amount,
-           fce.change_type, fce.detected_at
-    FROM fee_change_records fce
-    JOIN institution_sources ct ON fce.institution_id = ct.id
-    WHERE fce.fee_category = ${category}
-    ORDER BY fce.detected_at DESC
+    SELECT institution_name, previous_amount, new_amount, change_type, detected_at
+    FROM (
+      SELECT DISTINCT ON (fce.institution_id, fce.previous_amount, fce.new_amount)
+             ct.institution_name, fce.previous_amount, fce.new_amount,
+             fce.change_type, fce.detected_at
+      FROM fee_change_records fce
+      JOIN institution_sources ct ON fce.institution_id = ct.id
+      WHERE fce.fee_category = ${category}
+        AND EXISTS (
+          SELECT 1 FROM published_fee_catalog live
+          WHERE live.institution_id = fce.institution_id
+            AND live.fee_category = fce.fee_category
+            AND live.review_status = 'approved'
+            AND live.amount = fce.new_amount
+        )
+      ORDER BY fce.institution_id, fce.previous_amount, fce.new_amount, fce.detected_at DESC
+    ) moves
+    ORDER BY detected_at DESC
     LIMIT 50
   ` as FeeChangeEvent[];
 
@@ -295,6 +323,9 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     by_fed_district: by_fed_district_real,
     by_state: by_state.slice(0, 15),
     change_events,
+    institution_values: [
+      ...valuePerInstitution(sourcedFees.map((fee) => ({ ...fee, fee_category: category }))).values(),
+    ].sort((a, b) => a - b),
   };
 }
 

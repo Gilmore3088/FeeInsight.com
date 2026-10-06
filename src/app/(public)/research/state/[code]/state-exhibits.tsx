@@ -221,7 +221,7 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
 
   return (
     <section id="position" className="scroll-mt-28 print:break-inside-avoid">
-      <SectionHeading eyebrow="Exhibit 2 · Position vs national" title={`${above} fees above national, ${below} below`}>
+      <SectionHeading eyebrow="Exhibit 2 · Position vs national" title={`${above} ${above === 1 ? "fee" : "fees"} above national, ${below} below`}>
         Each bar is the {stateName} median relative to the national median for the same fee. Right of center means{" "}
         {stateName} institutions typically charge more.
       </SectionHeading>

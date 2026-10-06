@@ -33,7 +33,7 @@ export function planPriceLine(plan: ProPlan): string {
 }
 /** "$5,000" */
 export const ANNUAL_PRICE_LABEL = WHOLE_DOLLARS.format(ANNUAL_PRICE_USD);
-/** "Free" — the report has no price. */
+/** "Priced on request" while the report has no list price. */
 export const REPORT_PRICE_LABEL = REPORT_PRICE_USD === 0 ? REPORT_OFFER.priceLabel : WHOLE_DOLLARS.format(REPORT_PRICE_USD);
 /** Computed from the two billed prices; e.g. "$1,000". */
 export const ANNUAL_SAVINGS_LABEL = WHOLE_DOLLARS.format(
@@ -50,7 +50,7 @@ export function proFeatureList(summary: PublicStatsSummary): string[] {
     `Full dataset: ${summary.categoriesLabel} fee categories, ${summary.institutionsLabel} institutions with verified fees`,
     "Hamilton workspace: Analyze, Benchmark, Scenario, Report and Monitor modes",
     "Unlimited peer sets by charter type, asset tier and Fed district",
-    "Continuous monitoring: know the day a competitor changes a fee",
+    "Fee-change alerts: an email when a competitor you follow changes a published fee",
     "What-if scenario modeling on your own schedule",
     "Board-ready reports, every figure cited to its source document",
     "CSV exports (API access on request)",
@@ -62,5 +62,5 @@ export const REPORT_BULLETS = [
   "15 headline fees vs your true peer cohort",
   "Named competitors on the same lines",
   "Outlier flags and a source citation for every figure",
-  "PDF, delivered in 48 hours",
+  "A board-ready PDF for your pricing committee",
 ];

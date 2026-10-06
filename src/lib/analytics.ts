@@ -1,8 +1,10 @@
 /**
- * Event tracking entry point for funnel events (button clicks, form submits).
- * No analytics provider is wired in yet, so this records nothing; call sites stay
- * so a provider can be connected here in one place. Safe on the server.
+ * Event tracking entry point for funnel events (button clicks, form submits). Each event
+ * goes to Vercel Analytics as a custom event (the <Analytics /> component in the root
+ * layout is always mounted). Safe on the server, and never throws.
  */
+import { track } from "@vercel/analytics";
+
 export type AnalyticsEvent =
   | "create_account"
   /** A submitted report request (fires only after the server accepts it). */
@@ -16,9 +18,15 @@ export type AnalyticsEvent =
   | "lead_capture_success"
   | "lead_capture_error"
   | "checkout_start"
+  /** The welcome page after Stripe returns with success=true. */
+  | "checkout_complete"
   | "upgrade_click"
   | "book_walkthrough"
   | "hosted_report_view"
+  /** A free national or district benchmark report was opened. */
+  | "benchmark_report_view"
+  /** A private institution report link (/market-report/[token]) opened. */
+  | "market_report_view"
   | "hosted_report_request"
   | "contact_sales"
   | "fee_alert_save"
@@ -27,7 +35,11 @@ export type AnalyticsEvent =
 
 export type AnalyticsProps = Record<string, string | number | boolean>;
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function trackEvent(event: AnalyticsEvent, props?: AnalyticsProps): void {
-  // Intentionally empty until an analytics provider is connected.
+  if (typeof window === "undefined") return;
+  try {
+    track(event, props);
+  } catch {
+    // Analytics must never break the page.
+  }
 }

@@ -1,6 +1,5 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 import {
   getInstitutionById,
   getFeesByInstitution,
@@ -8,16 +7,28 @@ import {
   getFinancialsByInstitution,
   getComplaintsByInstitution,
 } from "@/lib/data-store";
+import { searchInstitutions } from "@/lib/data-store/search";
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
+import { getCurrentUser } from "@/lib/auth";
+import { canAccessPremium } from "@/lib/access";
 import { API_ATTRIBUTION } from "@/lib/constants";
-
-function getAnonymousId(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  const ip = forwarded?.split(",")[0]?.trim() ?? "unknown";
-  return createHash("sha256").update(ip).digest("hex").slice(0, 16);
-}
+import {
+  API_V1_RATE_LIMIT_ROUTE,
+  ApiParamError,
+  apiError,
+  apiKeyRequiredError,
+  apiOptions,
+  charterParam,
+  getAnonymousId,
+  intParam,
+  isPaidApiKey,
+  planRequiredError,
+  rateLimitError,
+  stateParam,
+  withApiHeaders,
+} from "@/lib/api-v1";
 
 // Postgres BIGINT/NUMERIC columns arrive as strings; partners need real numbers.
 function toNumberOrNull(value: unknown): number | null {
@@ -26,21 +37,15 @@ function toNumberOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function withRateLimitHeaders(
-  response: NextResponse,
-  rateLimit: { limit: number; remaining: number; reset: Date },
-): NextResponse {
-  response.headers.set("X-RateLimit-Limit", String(rateLimit.limit));
-  response.headers.set("X-RateLimit-Remaining", String(rateLimit.remaining));
-  response.headers.set("X-RateLimit-Reset", rateLimit.reset.toISOString());
-  return response;
-}
-
 async function handleGET(request: NextRequest) {
   const auth = await validateApiKey(request);
   if (auth.error) {
-    return NextResponse.json({ error: auth.error }, { status: 401 });
+    return apiError(401, "invalid_api_key", auth.error);
   }
+  // The API is for partners we have issued a key to; the site's own signed-in
+  // download buttons still work without one.
+  const user = auth.valid ? null : await getCurrentUser();
+  if (!auth.valid && !user) return apiKeyRequiredError();
 
   const organizationId = auth.organizationId;
   const anonymousId = organizationId ? null : getAnonymousId(request);
@@ -49,47 +54,63 @@ async function handleGET(request: NextRequest) {
     organizationId,
     anonymousId,
     tier,
-    "api.v1.institutions",
+    API_V1_RATE_LIMIT_ROUTE,
   );
-
-  if (!rateLimit.allowed) {
-    const response = NextResponse.json(
-      {
-        error: "Rate limit exceeded",
-        limit: rateLimit.limit,
-        reset: rateLimit.reset.toISOString(),
-      },
-      { status: 429 },
-    );
-    return withRateLimitHeaders(response, rateLimit);
-  }
+  if (!rateLimit.allowed) return rateLimitError(rateLimit);
 
   const { searchParams } = request.nextUrl;
-  const id = searchParams.get("id");
-  const state = searchParams.get("state");
-  const charter = searchParams.get("charter");
-  const page = parseInt(searchParams.get("page") ?? "1", 10);
-  const pageSize = Math.min(parseInt(searchParams.get("limit") ?? "50", 10), 200);
+  let id: number | null;
+  let state: string | null;
+  let charter: "bank" | "credit_union" | null;
+  let page: number;
+  let pageSize: number;
+  let hasFees: boolean;
+  let query: string | null;
+  try {
+    id = searchParams.has("id")
+      ? intParam(searchParams, "id", { fallback: 0, min: 1, max: Number.MAX_SAFE_INTEGER })
+      : null;
+    state = stateParam(searchParams);
+    charter = charterParam(searchParams);
+    page = intParam(searchParams, "page", { fallback: 1, min: 1, max: 100_000 });
+    pageSize = intParam(searchParams, "limit", { fallback: 50, min: 1, max: 200 });
+    const hasFeesRaw = searchParams.get("has_fees");
+    if (hasFeesRaw !== null && hasFeesRaw !== "" && hasFeesRaw !== "true" && hasFeesRaw !== "false") {
+      throw new ApiParamError("has_fees must be true or false");
+    }
+    hasFees = hasFeesRaw === "true";
+    query = searchParams.get("q")?.trim() || null;
+    if (query !== null && (query.length < 2 || query.length > 100)) {
+      throw new ApiParamError("q must be 2 to 100 characters");
+    }
+  } catch (error) {
+    if (error instanceof ApiParamError) {
+      return apiError(400, "invalid_parameter", error.message, { rateLimit });
+    }
+    throw error;
+  }
 
-  // Single institution detail
-  if (id) {
-    const instId = parseInt(id, 10);
-    if (isNaN(instId)) {
-      const response = NextResponse.json({ error: "Invalid ID" }, { status: 400 });
-      return withRateLimitHeaders(response, rateLimit);
+  // Single institution detail (Pro and Enterprise only)
+  if (id !== null) {
+    const paid = isPaidApiKey(auth) || canAccessPremium(user);
+    if (!paid) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
+        institution_id: id,
+        status: 403,
+      }).catch(() => {});
+      return planRequiredError(rateLimit, "Institution detail");
     }
 
-    const inst = await getInstitutionById(instId);
+    const inst = await getInstitutionById(id);
     if (!inst) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
-        institution_id: instId,
+        institution_id: id,
         status: 404,
       }).catch(() => {});
-      const response = NextResponse.json({ error: "Institution not found" }, { status: 404 });
-      return withRateLimitHeaders(response, rateLimit);
+      return apiError(404, "not_found", "Institution not found", { rateLimit });
     }
 
-    const fees = (await getFeesByInstitution(instId))
+    const fees = (await getFeesByInstitution(id))
       .filter((f) => f.review_status !== "rejected")
       .map((f) => ({
         fee_name: f.fee_name,
@@ -105,38 +126,83 @@ async function handleGET(request: NextRequest) {
 
     // Federal data: FDIC/NCUA call report quarters and CFPB complaint totals.
     const [financials, complaints] = await Promise.all([
-      getFinancialsByInstitution(instId, 8),
-      getComplaintsByInstitution(instId),
+      getFinancialsByInstitution(id, 8),
+      getComplaintsByInstitution(id),
     ]);
 
     logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
-      institution_id: instId,
+      institution_id: id,
       status: 200,
     }).catch(() => {});
 
-    const response = NextResponse.json({
-      id: Number(inst.id),
-      name: inst.institution_name,
-      state: inst.state_code,
-      city: inst.city,
-      charter_type: inst.charter_type,
-      asset_size: toNumberOrNull(inst.asset_size),
-      asset_tier: inst.asset_size_tier,
-      fed_district: inst.fed_district,
-      fee_count: fees.length,
-      fees,
-      call_reports: financials.map((quarter) => {
-        const { institution_id, ...fields } = quarter;
-        void institution_id;
-        return fields;
+    return withApiHeaders(
+      NextResponse.json({
+        id: Number(inst.id),
+        name: inst.institution_name,
+        state: inst.state_code,
+        city: inst.city,
+        charter_type: inst.charter_type,
+        asset_size: toNumberOrNull(inst.asset_size),
+        asset_tier: inst.asset_size_tier,
+        fed_district: inst.fed_district,
+        fee_count: fees.length,
+        fees,
+        call_reports: financials.map((quarter) => {
+          const { institution_id, ...fields } = quarter;
+          void institution_id;
+          return fields;
+        }),
+        complaints: complaints.map((c) => ({
+          product: c.product,
+          complaint_count: Number(c.complaint_count),
+        })),
+        attribution: API_ATTRIBUTION,
       }),
-      complaints: complaints.map((c) => ({
-        product: c.product,
-        complaint_count: Number(c.complaint_count),
-      })),
-      attribution: API_ATTRIBUTION,
+      rateLimit,
+    );
+  }
+
+  // Name search: banks with published fees sort first; has_fees does not apply.
+  if (query !== null) {
+    const { rows, total } = await searchInstitutions({
+      query,
+      state_code: state ?? undefined,
+      charter_type: charter ?? undefined,
+      page,
+      pageSize,
     });
-    return withRateLimitHeaders(response, rateLimit);
+
+    logApiUsage(organizationId, anonymousId, "api.v1.institutions.search", {
+      state,
+      charter_type: charter,
+      page,
+      page_size: pageSize,
+      status: 200,
+    }).catch(() => {});
+
+    const pages = Math.ceil(total / pageSize);
+    return withApiHeaders(
+      NextResponse.json({
+        total,
+        page,
+        page_size: pageSize,
+        pages,
+        has_more: page < pages,
+        data: rows.map((r) => ({
+          id: r.id,
+          name: r.institution_name,
+          state: r.state_code,
+          city: r.city,
+          charter_type: r.charter_type,
+          asset_size: r.asset_size,
+          asset_tier: r.asset_size_tier,
+          fed_district: null,
+          fee_count: r.published_fee_count,
+        })),
+        attribution: API_ATTRIBUTION,
+      }),
+      rateLimit,
+    );
   }
 
   // List institutions
@@ -147,17 +213,9 @@ async function handleGET(request: NextRequest) {
     page: number;
     pageSize: number;
   } = { page, pageSize };
-
-  if (searchParams.get("has_fees") === "true") {
-    filters.has_fees = true;
-  }
-
-  if (charter === "bank" || charter === "credit_union") {
-    filters.charter_type = charter;
-  }
-  if (state && state.length === 2) {
-    filters.state_code = state.toUpperCase();
-  }
+  if (hasFees) filters.has_fees = true;
+  if (charter) filters.charter_type = charter;
+  if (state) filters.state_code = state;
 
   const { rows, total } = await getInstitutionsByFilter(filters);
 
@@ -170,25 +228,30 @@ async function handleGET(request: NextRequest) {
     status: 200,
   }).catch(() => {});
 
-  const response = NextResponse.json({
-    total,
-    page,
-    page_size: pageSize,
-    pages: Math.ceil(total / pageSize),
-    data: rows.map((r) => ({
-      id: Number(r.id),
-      name: r.institution_name,
-      state: r.state_code,
-      city: r.city,
-      charter_type: r.charter_type,
-      asset_size: toNumberOrNull(r.asset_size),
-      asset_tier: r.asset_size_tier,
-      fed_district: r.fed_district,
-      fee_count: Number(r.fee_count ?? 0),
-    })),
-    attribution: API_ATTRIBUTION,
-  });
-  return withRateLimitHeaders(response, rateLimit);
+  const pages = Math.ceil(total / pageSize);
+  return withApiHeaders(
+    NextResponse.json({
+      total,
+      page,
+      page_size: pageSize,
+      pages,
+      has_more: page < pages,
+      data: rows.map((r) => ({
+        id: Number(r.id),
+        name: r.institution_name,
+        state: r.state_code,
+        city: r.city,
+        charter_type: r.charter_type,
+        asset_size: toNumberOrNull(r.asset_size),
+        asset_tier: r.asset_size_tier,
+        fed_district: r.fed_district,
+        fee_count: Number(r.fee_count ?? 0),
+      })),
+      attribution: API_ATTRIBUTION,
+    }),
+    rateLimit,
+  );
 }
 
 export const GET = withApiRoutePolicy("api.v1.institutions", "GET", handleGET);
+export const OPTIONS = withApiRoutePolicy("api.v1.institutions", "OPTIONS", async () => apiOptions());

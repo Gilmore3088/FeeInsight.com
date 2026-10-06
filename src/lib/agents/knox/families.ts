@@ -59,7 +59,7 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 2,
+    version: 3,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
@@ -205,6 +205,8 @@ const TIER_LABEL = new RegExp(
 );
 const CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?)\b[^$]{0,30}$/i;
 const CAP_AFTER = /^\s*\)?\s*(?:per|a|each)\s+(?:business\s+)?day\b|^\s*\)?\s*daily\b/i;
+/** A cap named after its figure: "$25 per item ($50 maximum per day)". */
+const CAP_NAMED_AFTER = /^\s*(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b/i;
 const NEGATIVE_NAME = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i;
 
 /** "Overdraft fee 1st item" → "Overdraft fee": the fee a later tier row belongs to. */
@@ -264,8 +266,7 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     if (window.condition) {
       if (
         expert.family === "overdraft_nsf" &&
-        CAP_BEFORE.test(window.before) &&
-        CAP_AFTER.test(window.after) &&
+        ((CAP_BEFORE.test(window.before) && CAP_AFTER.test(window.after)) || CAP_NAMED_AFTER.test(window.after)) &&
         recent &&
         (recent.hint === "overdraft" || recent.hint === "nsf")
       ) {

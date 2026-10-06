@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/data-store/connection";
-import { INSTITUTION_STEPS, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaiting, type Sample } from "./flow-model";
+import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaiting, type Sample } from "./flow-model";
 
 export * from "./flow-model";
 
@@ -55,11 +55,13 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
 
   const ids = new Set<number>();
   for (const row of events) {
-    const samples = toObject(row.detail).sample_results;
-    if (!Array.isArray(samples)) continue;
-    for (const sample of samples as Sample[]) {
-      const id = Number(sample.institution_id);
-      if (Number.isFinite(id) && id > 0) ids.add(id);
+    const detail = toObject(row.detail);
+    for (const list of [detail.sample_results, detail.institution_results]) {
+      if (!Array.isArray(list)) continue;
+      for (const sample of list as Sample[]) {
+        const id = Number(sample.institution_id);
+        if (Number.isFinite(id) && id > 0) ids.add(id);
+      }
     }
   }
   const nameRows = ids.size > 0
@@ -67,9 +69,22 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     : [];
   const names = new Map(nameRows.map((row) => [Number(row.id), String(row.institution_name)]));
 
+  const moves = movesFromEvents(events, names).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 150);
+  // How many fees each just-published bank now has live, for the "On the site" column.
+  const liveIds = [...new Set(moves.filter(isWentLive).map((move) => move.institutionId))].slice(0, 20);
+  const liveRows = liveIds.length > 0
+    ? await sql`
+        SELECT institution_id, COUNT(*)::int AS fees
+          FROM published_fee_catalog
+         WHERE institution_id = ANY(${liveIds})
+         GROUP BY institution_id
+      `
+    : [];
+
   return {
-    moves: movesFromEvents(events, names).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 150),
+    moves,
     now: nowFromSteps(active),
+    liveFees: Object.fromEntries(liveRows.map((row) => [Number(row.institution_id), Number(row.fees)])),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -88,7 +103,24 @@ export const getFlowWaiting = unstable_cache(
              ON t.source_document_id = doc.id
             AND t.source_hash IS NOT DISTINCT FROM doc.content_hash
             AND t.status IN ('completed', 'empty', 'needs_ocr', 'skipped')
-          WHERE doc.status = 'success' AND doc.document_url IS NOT NULL AND t.id IS NULL) AS rosetta,
+          WHERE doc.status = 'success' AND doc.document_url IS NOT NULL AND t.id IS NULL
+            -- Only the bank's current document, as Rosetta reads it (rosetta/read.ts).
+            AND NOT EXISTS (
+              SELECT 1 FROM source_documents newer
+               WHERE newer.institution_id = doc.institution_id
+                 AND newer.id > doc.id
+                 AND (
+                   (newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM doc.id)
+                   OR (newer.status = 'failed' AND doc.document_r2_key IS NULL)
+                 ))
+            AND NOT (
+              doc.document_r2_key IS NULL
+              AND EXISTS (
+                SELECT 1 FROM pipeline_attempts dead
+                 WHERE dead.institution_id = doc.institution_id
+                   AND dead.stage = 'read'
+                   AND dead.source_document_id = doc.id
+                   AND dead.outcome IN ('http_404', 'http_410')))) AS rosetta,
         (SELECT COUNT(DISTINCT t.institution_id)::int
            FROM agent_source_texts t
           WHERE t.status = 'completed' AND t.char_count > 0

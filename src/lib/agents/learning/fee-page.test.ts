@@ -52,4 +52,14 @@ describe("scoreFeePage", () => {
       <tr><td>Stop payment fee</td><td>$30.00</td></tr></table></body></html>`;
     expect(scoreFeePage(htmlToScoringText(html))).toMatchObject({ verdict: "fee_page", feeLines: 3 });
   });
+
+  it("treats a news or investor article as not the fee schedule", () => {
+    const text = ["Overdraft fee $34", "NSF fee $34", "Stop payment fee $30"].join("\n");
+    const chase = "https://www.jpmorganchase.com/ir/news/2021/chase-helps-more-than-two-million-customers-avoid-overdraft-service-fees";
+    expect(scoreFeePage(text, chase)).toMatchObject({ verdict: "wrong_document" });
+    expect(scoreFeePage(text, "https://bank.example/news/fee-schedule.pdf").verdict).toBe("fee_page");
+    expect(scoreFeePage(text, "https://bank.example/articles/schedule-of-fees/").verdict).toBe("fee_page");
+    expect(scoreFeePage(text, "https://bank.example/media/fees.pdf").verdict).toBe("fee_page");
+    expect(scoreFeePage(text).verdict).toBe("fee_page");
+  });
 });

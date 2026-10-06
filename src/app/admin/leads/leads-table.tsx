@@ -3,7 +3,6 @@
 import { useActionState, useState } from "react";
 import type { LeadRow } from "@/lib/admin-queries";
 import {
-  LEAD_RESPONSE_HOURS,
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
   isLeadOverdue,
@@ -198,7 +197,7 @@ export function LeadsTable({ leads }: { leads: LeadRow[] }) {
                           {due && (
                             <p className={`text-xs ${overdue ? "font-semibold text-red-600" : "text-gray-500"}`}>
                               {overdue ? "Overdue: " : "Answer by "}
-                              {formatDue(due)} ({LEAD_RESPONSE_HOURS}h from the request)
+                              {formatDue(due)} (one business day from the request)
                             </p>
                           )}
                         </div>

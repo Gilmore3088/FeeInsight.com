@@ -44,7 +44,9 @@ only on what the free team could not read.
 - Pass 1 reads a price's name from the words nearest before it: in a flattened table row
   the nearest cell ("STOP PAYMENT ORDER | NOTARY FEE | $6.00" is a notary fee), widened
   only across bare direction or unit cells. Words after a price never classify it unless
-  the line opens with the price and says it is a fee. A free in-network ATM or an
+  the line opens with the price and says it is a fee, or the line states an account's
+  monthly service charge in prose ("otherwise $8 service charge per statement cycle",
+  "avoid the $10 monthly fee"; `maintenanceFromProse`, guarded like Darwin). A free in-network ATM or an
   allowance ("two per year: Free") is not a $0 price. All three specialists follow the
   same rules, and table and family rows whose name opens mid-sentence (agreement prose
   in columns) are skipped.

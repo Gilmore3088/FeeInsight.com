@@ -77,6 +77,80 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_unsupported" });
   });
 
+  it("keeps transfers, collections, thresholds and other banks' items out of overdraft and NSF", () => {
+    for (const name of [
+      "Savings Overdraft Protection",
+      "Overdraft (covered by loan advance)",
+      "Overdraft Collection Fee",
+      "Recurring Overdraft (every 7 days overdrawn)",
+      "Overdraft Charge (beginning second day of overdraft)",
+      "Account Closed in Overdraft",
+      "Overdraft Balance Threshold",
+      "Cushion before overdraft fee is charged",
+      "If your consumer account is overdrawn by",
+      "Fresh Start Checking is not eligible for Courtesy Pay | 5 x 10 Box",
+      "OVERDRAFT PRIVILEGE | Outgoing International",
+      "Check Printing & Account Supplies Fee varies based on style | Overdraft Protection Via: | 2 x 10",
+      "Overdraft Protection | Outgoing (Domestic)",
+      "Overdraft Protection Items - Negative or less",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Courtesy Pay Fee (per item)",
+      "Overdraft Advance Fee (ACH, Card, or Check)",
+      "Recurring Debit Overdraft",
+      "Overdraft Fee (Max 5 items per day)",
+      "Overdraft Item on Lifeline 18/65 Checking",
+      "Overdraft Protection – ODP (per item presentment)",
+      "Courtesy Pay (item paid against incoming funds)",
+    ]) {
+      expect(checkFeeCategory("overdraft", name)).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Self-to-Self Returned Item",
+      "3rd Party Returned Check Fee",
+      "Foreign Return Item",
+      "NSF Check (drawn on other inst.)",
+      "Returned Payment (MasterCard)",
+      "ATM Card Re-activation (due to NSF)",
+      "Returned ACH Origination Item (per item)",
+      "NSF Fee (Reg D)",
+      "fees if the same item is presented multiple times against insufficient funds. Items presented in the amount of",
+      "Size of Box | Annual Rent | Non-Sufficient Funds Item (NSF)",
+      "Check Printing Fee Varies by Style Ordered | NSF Fee",
+    ]) {
+      expect(checkFeeCategory("nsf", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Insufficient Funds/Uncollected Funds (per presentment of items returned unpaid due to insufficient funds)",
+      "Visa® Non-Sufficient Funds (NSF) Fee",
+      "Non-Sufficient Funds Item (NSF) - ACH/ATM/Bill Pay/Zelle Payment/ACH Origination",
+      "Returned checks due to NSF, UCF or Reg D",
+      "NSF Return item (per Item)",
+      "Bill Pay NSF Fees",
+      "Non Sufficient Funds - Transactions $10.00 or less",
+    ]) {
+      expect(checkFeeCategory("nsf", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps deposit bag and other supply prices out of night deposit", () => {
+    for (const name of ["Zipper Bags", "Night Deposit Lock Bag", "Deposit Bag - Locking", "Strapped currency"]) {
+      expect(checkFeeCategory("night_deposit", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Night Deposit Annual Fee",
+      "Night Depository Key Replacement",
+      "Night Depository Service",
+      "Night Deposit Bag – Lost Key",
+      "Night Deposit Service (per bag per month)",
+      "Night Depository - Bag Rental (one-time charge)",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name)).toEqual({ ok: true });
+    }
+  });
+
   it("leaves amounts to Darwin's envelopes, the one definition of a plausible price", () => {
     // A $2,500 balance threshold read as a monthly fee: the name passes here, and the
     // envelope (not this guard) is what keeps it out.

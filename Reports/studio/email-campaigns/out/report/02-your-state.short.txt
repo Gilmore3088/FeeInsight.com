@@ -1,0 +1,16 @@
+Free state fee reports, from each institution's own published schedule.
+
+How your state compares with the national numbers
+Find your state's report: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-state
+Free, no login.
+[ 10-MINUTE SELF-CHECK ]
+[ ] Which of your 15 headline fees sit above your state's median?
+[ ] Is your overdraft or NSF fee above the state's middle half?
+[ ] Do your fee schedule PDF and your website agree, line by line?
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}
