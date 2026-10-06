@@ -16,8 +16,8 @@ import {
 } from "@/lib/agents/paid-pass";
 
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
-import { validateFeeCandidate } from "./find-validate";
-import { urlIdentity } from "./finders";
+import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
+import { pageLinks, urlIdentity, type PageLink } from "./finders";
 
 type Fetcher = typeof fetch;
 
@@ -32,6 +32,18 @@ type Fetcher = typeof fetch;
  */
 
 export const PAID_FIND_STRATEGY = { strategy: "discover.paid_web_search", version: 1 } as const;
+/**
+ * Before the web search: one model call, no tools, that picks the fee schedule from the
+ * links already on the bank's homepage (a few cents of tokens, not a paid search). Its
+ * picks pass the same fee-page check; the web search runs only when they all fail.
+ * Set MAGELLAN_PAID_PICK=off to skip it.
+ */
+export const PAID_PICK_STRATEGY = { strategy: "discover.paid_pick", version: 1 } as const;
+const PICK_MAX_LINKS = 160;
+const PICK_MAX_PICKS = 3;
+const PICK_MAX_OUTPUT_TOKENS = 300;
+/** Link score given to a picked link: a pick is a label match, not a found document. */
+const PICK_ANSWER_SCORE = 0.8;
 const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 1024;
 /** Link score given to the model's answer: strong enough to accept a scanned PDF. */
@@ -46,6 +58,8 @@ interface PaidFindRow {
   state_code: string | null;
   website_url: string;
   profile_consecutive_failures?: number | string | null;
+  /** A paid web search already ran for this bank this month (only the pick is due). */
+  web_searched?: boolean | null;
 }
 
 interface PaidFindAnswer {
@@ -59,13 +73,23 @@ export interface RunMagellanPaidFindOptions extends PaidStepOptions {
   create?: PaidMessageCreator;
   /** Test seam for the fee-page check. */
   fetchImpl?: Fetcher;
+  /** Run the pick from homepage links before the web search (default on). */
+  pick?: boolean;
 }
 
 async function selectBanks(db: typeof sql, stateCode: string | null, limit: number): Promise<PaidFindRow[]> {
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
   return db<PaidFindRow[]>`
     SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url,
-           profile.consecutive_failures AS profile_consecutive_failures
+           profile.consecutive_failures AS profile_consecutive_failures,
+           EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = inst.id
+                AND pa.stage = 'discover'
+                AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
+                AND pa.created_at >= date_trunc('month', NOW())
+                AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+           ) AS web_searched
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
@@ -83,13 +107,24 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
             AND pa.stage = 'discover'
             AND pa.detail @> ${currentMethod}::jsonb
        )
-       AND NOT EXISTS (
-         SELECT 1 FROM pipeline_attempts pa
-          WHERE pa.institution_id = inst.id
-            AND pa.stage = 'discover'
-            AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-            AND pa.created_at >= date_trunc('month', NOW())
-            AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+       -- Due when this month's pick or this month's web search has not run yet.
+       AND (
+         NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${PAID_PICK_STRATEGY.strategy}
+              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+         )
+         OR NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
+              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+         )
        )
      ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${limit}
@@ -144,6 +179,47 @@ export function paidFindPrompt(row: Pick<PaidFindRow, "institution_name" | "city
   ].join("\n");
 }
 
+export function paidPickPrompt(row: Pick<PaidFindRow, "institution_name" | "state_code" | "website_url">, links: PageLink[]): string {
+  return [
+    "Below are the links on a bank's homepage. Pick the links most likely to open the bank's",
+    "consumer fee schedule: the document or page that lists account service fees with dollar",
+    "amounts (overdraft, NSF, stop payment, wire, monthly maintenance). Good labels include",
+    "\"Schedule of Fees\", \"Fee Schedule\", \"Truth in Savings\", \"Disclosures\", \"Forms & Documents\".",
+    "Do not pick rates pages, loan or card pages, news, or careers.",
+    "",
+    `Bank: ${row.institution_name} (${row.state_code ?? "unknown state"}), website ${row.website_url}`,
+    "",
+    "Links (number. label | url):",
+    ...links.map((link, index) => `${index + 1}. ${link.label || "(no label)"} | ${link.url}`),
+    "",
+    `Answer with JSON only: {"picks": [up to ${PICK_MAX_PICKS} link numbers, best first], "reason": "one short sentence"}`,
+    "Answer {\"picks\": []} when no link fits.",
+  ].join("\n");
+}
+
+interface PickAnswer {
+  picks?: unknown;
+  reason?: unknown;
+}
+
+/** Homepage links for the pick, or null when the homepage cannot be read. */
+async function homepageLinks(row: PaidFindRow, fetchImpl: Fetcher): Promise<PageLink[] | null> {
+  let site: URL;
+  try {
+    site = new URL(/^https?:\/\//i.test(row.website_url.trim()) ? row.website_url.trim() : `https://${row.website_url.trim()}`);
+  } catch {
+    return null;
+  }
+  try {
+    const response = await fetchWithTimeout(fetchImpl, site.toString());
+    if (!response.ok) return null;
+    const html = await response.text();
+    return pageLinks(html, new URL(response.url || site.toString())).slice(0, PICK_MAX_LINKS);
+  } catch {
+    return null;
+  }
+}
+
 function budgetStop(error: unknown): string | null {
   if (error instanceof ProviderBudgetBlockedError) return error.message || error.reasonCode;
   if (error instanceof EmergencyStopActiveError) return error.message;
@@ -187,6 +263,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
+  const usePick = options.pick ?? process.env.MAGELLAN_PAID_PICK?.trim().toLowerCase() !== "off";
   for (const row of rows) {
     const institutionId = Number(row.id);
     const startedAt = Date.now();
@@ -198,6 +275,41 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     let confidence: number | null = null;
     let answer: PaidFindAnswer | null = null;
     let verdict: string | null = null;
+
+    if (usePick) {
+      const picked = await runPick(row, { ...options, fetchImpl, model, db });
+      result.costMicrousd += picked.costMicrousd;
+      if (picked.budgetStopped) {
+        result.budgetStopped = true;
+        result.budgetReason = picked.budgetStopped;
+        break;
+      }
+      if (picked.url) {
+        result.processed += 1;
+        result.succeeded += 1;
+        await recordDiscoveryResult(db, paidDiscovery(row, {
+          outcome: "discovered",
+          url: picked.url,
+          documentType: picked.documentType,
+          confidence: picked.confidence,
+          reason: picked.reason,
+          method: "magellan_paid_pick",
+          durationMs: Date.now() - startedAt,
+        }));
+        result.results.push({ institution_id: institutionId, outcome: "ok", url: picked.url, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick" });
+        continue;
+      }
+      if (row.web_searched) {
+        // This month's web search already missed; the pick was the only new try.
+        result.processed += 1;
+        result.failed += 1;
+        result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick" });
+        continue;
+      }
+    } else if (row.web_searched) {
+      continue;
+    }
+
     try {
       const call = await paidModelCall({
         agent: "magellan",
@@ -295,4 +407,112 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason });
   }
   return result;
+}
+
+interface PickResult {
+  url: string | null;
+  documentType: string | null;
+  confidence: number | null;
+  reason: string;
+  outcome: AttemptOutcome;
+  costMicrousd: number;
+  /** Set when a budget cap or the automation stop ended the step (nothing was spent). */
+  budgetStopped: string | null;
+}
+
+/** One model call that picks from the homepage's links, then the fee-page check on each pick. */
+async function runPick(
+  row: PaidFindRow,
+  options: RunMagellanPaidFindOptions & { fetchImpl: Fetcher; model: string; db: typeof sql },
+): Promise<PickResult> {
+  const institutionId = Number(row.id);
+  const startedAt = Date.now();
+  const links = await homepageLinks(row, options.fetchImpl);
+  let costMicrousd = 0;
+  let outcome: AttemptOutcome = "no_candidates";
+  let reason = "Homepage could not be read, so there were no links to pick from";
+  let url: string | null = null;
+  let documentType: string | null = null;
+  let confidence: number | null = null;
+  let pickedUrls: string[] = [];
+  const verdicts: Array<{ url: string; verdict: string }> = [];
+  let modelReason: string | null = null;
+
+  if (links && links.length > 0) {
+    try {
+      const call = await paidModelCall({
+        agent: "magellan",
+        operation: "paid_pick",
+        runId: options.runId,
+        create: options.create,
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, links: links.length },
+        params: {
+          model: options.model,
+          max_tokens: PICK_MAX_OUTPUT_TOKENS,
+          messages: [{ role: "user", content: paidPickPrompt(row, links) }],
+        },
+      });
+      costMicrousd = call.costMicrousd;
+      const answer = paidResponseJson<PickAnswer>(call.message);
+      modelReason = typeof answer?.reason === "string" ? answer.reason.slice(0, 300) : null;
+      const picks = Array.isArray(answer?.picks) ? answer.picks : [];
+      pickedUrls = picks
+        .map((pick) => (typeof pick === "number" ? links[pick - 1]?.url : null))
+        .filter((pick): pick is string => Boolean(pick))
+        .slice(0, PICK_MAX_PICKS);
+      outcome = "no_candidates";
+      reason = pickedUrls.length === 0 ? "No homepage link looked like the fee schedule" : "Every picked link failed the fee-page check";
+      for (const candidate of pickedUrls) {
+        try {
+          const validation = await validateFeeCandidate({ url: candidate, score: PICK_ANSWER_SCORE, reasons: ["paid pick"] }, options.fetchImpl);
+          verdicts.push({ url: candidate, verdict: validation.verdict });
+          if (validation.ok) {
+            outcome = "ok";
+            url = candidate;
+            documentType = validation.documentType;
+            confidence = validation.confidence;
+            reason = `Picked from homepage links: ${validation.reason}`;
+            break;
+          }
+          outcome = "wrong_document";
+        } catch {
+          verdicts.push({ url: candidate, verdict: "fetch_failed" });
+        }
+      }
+    } catch (error) {
+      const stopped = budgetStop(error);
+      if (stopped) {
+        return { url: null, documentType: null, confidence: null, reason: stopped, outcome: "budget_blocked", costMicrousd: 0, budgetStopped: stopped };
+      }
+      outcome = classifyFetchFailure(null, error);
+      reason = `Model call failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  await recordAttempt(options.db, {
+    institutionId,
+    stage: "discover",
+    strategy: PAID_PICK_STRATEGY.strategy,
+    version: PAID_PICK_STRATEGY.version,
+    fingerprint: urlIdentity(row.website_url),
+    outcome,
+    yieldCount: url ? 1 : 0,
+    costMicrousd,
+    durationMs: Date.now() - startedAt,
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    detail: {
+      pass: 3,
+      method_version: DISCOVERY_METHOD_VERSION,
+      model: options.model,
+      url,
+      links: links?.length ?? 0,
+      picks: pickedUrls,
+      verdicts,
+      model_reason: modelReason,
+      document_type: documentType,
+      reason,
+    },
+  });
+  return { url, documentType, confidence, reason, outcome, costMicrousd, budgetStopped: null };
 }

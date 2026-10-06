@@ -59,7 +59,8 @@ and `detail.method_version`).
 | 2 | `discover.peer_hint` | Paths that worked for banks on the same platform in the same state. |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
 | 2 | `discover.second_document` | `second-document.ts` (version 2, the companion finder), after the main loop: live banks with fewer than 8 published fee categories, or an HTML fee link and no monthly fee, get a search of the homepage, the fee page, up to 3 hub pages and the site's own search for "fee schedule". Every deposit-account page that lists a fee (named after its account, e.g. "Freedom Checking") and every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs) is stored in `institution_additional_sources`, up to 8 per bank. Business and loan pages are skipped. Never replaces the fee link. Each bank at most monthly. |
-| 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below). |
+| 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
+| 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, once a month per bank. |
 
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
