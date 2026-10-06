@@ -373,13 +373,12 @@ export function AnalyzeWorkspace({
       )}
 
       {askedQuestion ? (
-        <MemoSection title="The figures">
-          <StructuredAsk
-            question={askedQuestion}
-            institutionId={instId}
-            modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
-          />
-        </MemoSection>
+        <StructuredAsk
+          question={askedQuestion}
+          institutionId={instId}
+          modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
+          researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
+        />
       ) : null}
 
       {isLoading && !shown ? (
@@ -396,7 +395,10 @@ export function AnalyzeWorkspace({
       {shown && view.lead ? (
         <>
           <article className="flex max-w-[68ch] flex-col gap-4">
-            <p className="text-2xl leading-snug text-warm-900 sm:text-[1.7rem]" style={SERIF}>
+            {askedQuestion ? (
+              <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
+            ) : null}
+            <p className={askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"} style={SERIF}>
               {renderInline(view.lead)}
             </p>
             {view.paragraphs.slice(0, 1).map((para, i) => (

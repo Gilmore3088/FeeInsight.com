@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/lib/hamilton/workspace/types";
-import { AnswerView, EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
+import { EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
+import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
@@ -139,11 +140,14 @@ export function StructuredAsk({
   question,
   institutionId,
   modelHrefFor,
+  researchHrefFor,
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
   institutionId: string | null;
   modelHrefFor: (feeCategory: string, tested: number) => string;
+  /** My fees for a fee, where the full market picture lives. */
+  researchHrefFor?: (feeCategory: string) => string;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -203,7 +207,19 @@ export function StructuredAsk({
   return (
     <div className="flex flex-col gap-5">
       {response.answer ? (
-        <AnswerView answer={{ ...response.answer, question: null }} />
+        <AnswerMemo
+          answer={{ ...response.answer, question: null }}
+          nextSteps={
+            researchHrefFor ? (
+              <>
+                <LinkButton href={researchHrefFor(response.answer.feeCategory)}>Every market layer</LinkButton>
+                <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
+                  Try a price
+                </LinkButton>
+              </>
+            ) : null
+          }
+        />
       ) : (
         <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
           {response.shortAnswer}

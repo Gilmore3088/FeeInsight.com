@@ -52,11 +52,26 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
   ));
 }
 
-function ExhibitFrame({ title, sources, note, children }: { title: string; sources: readonly SourceRef[]; note?: string; children: ReactNode }) {
+function ExhibitFrame({
+  title,
+  sources,
+  note,
+  number,
+  children,
+}: {
+  title: string;
+  sources: readonly SourceRef[];
+  note?: string;
+  number?: number;
+  children: ReactNode;
+}) {
   return (
     <figure className="rounded-lg border border-warm-300 bg-warm-50 p-5 break-inside-avoid">
-      <figcaption className="mb-4 text-base text-warm-900" style={SERIF}>
-        {title}
+      <figcaption className="mb-4">
+        {number != null ? <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span> : null}
+        <span className="text-base text-warm-900" style={SERIF}>
+          {title}
+        </span>
       </figcaption>
       {children}
       {note ? <p className="mt-3 text-xs leading-relaxed text-warm-700">{note}</p> : null}
@@ -291,9 +306,9 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
 }
 
 /** The engine's one exhibit, drawn the same on Research, Model, Reports and Ask. */
-export function ExhibitView({ exhibit }: { exhibit: ExhibitSpec }) {
+export function ExhibitView({ exhibit, number, title }: { exhibit: ExhibitSpec; number?: number; title?: string }) {
   return (
-    <ExhibitFrame title={exhibit.title} sources={exhibit.sources} note={exhibit.note}>
+    <ExhibitFrame title={title ?? exhibit.title} sources={exhibit.sources} note={exhibit.note} number={number}>
       {exhibit.kind === "fee_position" ? (
         <FeePosition x={exhibit} />
       ) : exhibit.kind === "competitor_range" ? (
