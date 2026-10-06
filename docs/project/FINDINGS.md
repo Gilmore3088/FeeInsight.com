@@ -68,6 +68,17 @@ now trace, on the next hourly passes.
 **Lesson:** test a rule that changes live data on a sample from several states and layouts, and
 run it as a dry run (counts and samples) before it writes.
 
+## 2026-10-05: The first source check took down correct fees
+**What happened:** by 20:15 UTC the live source check had taken down 1,956 fees outside Texas and
+California, 903 of them as "amount_is_a_threshold". Spot checks found many were correct (Stop
+Payment $32, Incoming Wire $18, NSF/Overdraft $32). Source: PR 132.
+**Cause:** on a source line carrying several fees, version 1 compared every fee to the line's first
+price and called the rest thresholds.
+**Fix:** PR 132 (merged 23:10 UTC): each price belongs to the words before it; version 2 re-checks
+every institution and restores fees that now trace, logged as `hamilton.source_check` events.
+**Lesson:** test a bulk takedown on lines with several fees before it runs nationwide, and keep
+takedowns reversible.
+
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since
 Aug 10. `report_jobs` holds 12 finished files (Apr 7 to Aug 10, from the old runtime) and
