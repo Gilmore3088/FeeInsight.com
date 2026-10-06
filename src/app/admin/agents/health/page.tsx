@@ -5,6 +5,7 @@ import {
   type AgentHealthTile,
 } from "@/lib/data-store/agent-console";
 import { Tiles } from "../overview/tiles";
+import { ScreenHeader } from "../../room-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function AgentsHealthPage() {
 
   return (
     <section className="flex flex-col gap-3">
+      <ScreenHeader title="Agent health" lede="Each agent's health tiles with their last seven days." />
       {loadError && (
         <div className="admin-card p-4 text-[12px] text-red-600 dark:text-red-400">
           Failed to load agent health: {loadError}

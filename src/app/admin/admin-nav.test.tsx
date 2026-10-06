@@ -68,3 +68,19 @@ describe("AdminNavInline", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe("room sub-layouts", () => {
+  it("add no navigation of their own, so a phone shows one menu", async () => {
+    const { default: AgentsLayout } = await import("./agents/layout");
+    const { default: HamiltonLayout } = await import("./hamilton/layout");
+    navigationState.pathname = "/admin/agents/health";
+    const { container } = render(
+      <>
+        <AgentsLayout><p>agents page</p></AgentsLayout>
+        <HamiltonLayout><p>hamilton page</p></HamiltonLayout>
+      </>,
+    );
+    expect(container.querySelectorAll("nav")).toHaveLength(0);
+    expect(screen.getByText("agents page")).toBeTruthy();
+  });
+});

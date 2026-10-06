@@ -32,14 +32,18 @@ export interface ContactRequestNotificationInput {
   inquiryType: string | null;
 }
 
-export const REPORT_REQUEST_CONFIRMATION_LINE =
-  "The institution report is paid. We reply within one business day with its scope and price; " +
-  "nothing is charged until you agree.";
-
 const CONTACT_CONFIRMATION_LINE = "We reply within one business day.";
 
 function detailLine(label: string, value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? null : `${label}: ${value}`;
+}
+
+/** The quote check's verdict as a tag at the top of James's email. */
+function quoteStatus(quoteCheck: string | null) {
+  if (!quoteCheck) return undefined;
+  if (/not ready to quote/i.test(quoteCheck)) return { label: "Not ready to quote", tone: "warn" as const };
+  if (/ready to quote/i.test(quoteCheck)) return { label: "Ready to quote", tone: "good" as const };
+  return { label: "Check by hand", tone: "warn" as const };
 }
 
 export async function sendReportRequestNotifications(
@@ -66,17 +70,29 @@ export async function sendReportRequestNotifications(
     requesterEmail: input.email,
     notification: {
       subject: `New report request: ${input.institution} — ${input.name}, ${input.email}${roleSuffix}`,
+      eyebrow: "New report request",
+      heading: input.institution,
+      status: quoteStatus(input.quoteCheck ?? null),
       lines: notificationLines,
       cta: { label: "Open /admin/leads", href: adminLeadsUrl() },
     },
     confirmation: {
       subject: `We received your request for ${input.institution}`,
+      eyebrow: "Your request",
+      heading: `We received your request for ${input.institution}`,
       lines: [
-        `We received your request for ${input.institution}. ${REPORT_REQUEST_CONFIRMATION_LINE}`,
-        "",
-        "Reply to this email with questions.",
-        ...emailOptInLines(input.email),
+        `Thank you for asking about a ${REPORT_OFFER.name} for ${input.institution}. The institution report is paid, so nothing is built or charged until you agree to its scope and price.`,
       ],
+      steps: {
+        title: "What happens next",
+        items: [
+          `We check the fee data we hold for ${input.institution} and its local competitors.`,
+          "We reply within one business day with the report's scope and price.",
+          "Nothing is charged until you agree.",
+        ],
+      },
+      closing: ["Reply to this email with questions.", ...emailOptInLines(input.email)],
+      signed: true,
     },
   });
 }
@@ -104,16 +120,20 @@ export async function sendContactRequestNotifications(
     requesterEmail: input.email,
     notification: {
       subject: `New contact request${inquiry}: ${who}, ${input.email}`,
+      eyebrow: input.inquiryType ? `New message · ${input.inquiryType}` : "New message",
+      heading: who,
       lines: notificationLines,
       cta: { label: "Open /admin/leads", href: adminLeadsUrl() },
     },
     confirmation: {
       subject: "We received your message",
+      eyebrow: "Your message",
       lines: [
         `We received your message. ${CONTACT_CONFIRMATION_LINE}`,
         "",
         "Reply to this email if you want to add anything.",
       ],
+      signed: true,
     },
   });
 }
