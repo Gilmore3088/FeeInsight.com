@@ -9,6 +9,8 @@ import { API_ROUTE_POLICIES, type ApiRoutePolicy } from "./policies";
 export const RATE_LIMITS: Record<string, { max: number; windowMinutes: number }> = {
   // Form posts that store a lead and send email: generous for a person, tight for a bot.
   "lead-write": { max: 8, windowMinutes: 10 },
+  // Free account signups (a server action; see action-rate-limit.ts): the same limit.
+  "account-register": { max: 8, windowMinutes: 10 },
 };
 
 export async function isRateLimited(policy: ApiRoutePolicy, subjectKey: string | null): Promise<boolean> {

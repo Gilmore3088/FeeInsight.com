@@ -1,21 +1,16 @@
 import { TrackLink } from "@/components/track-link";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
-import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
-const WHAT_YOU_GET = [
-  "Your published fees next to your competitors', line by line",
-  "Each fee marked above, inside or below the market range",
-  "Named peers, not anonymous averages",
-  "A source for every figure: the document, the page, the date",
-];
+const WHAT_YOU_GET = REPORT_INCLUDES;
 
 const NEXT_STEPS = [
   "Pick a report. National and Fed district reports are free and open right away.",
   "Want your own institution against named competitors? Pick the institution report.",
-  `${REPORT_OFFER.nextStep}. Nothing is charged until you agree.`,
+  `${REPORT_OFFER.nextStep}. You pay by card once you agree to the quote.`,
 ];
 
 /**
