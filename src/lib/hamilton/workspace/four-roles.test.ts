@@ -19,16 +19,16 @@ describe("four-roles eval: one overdraft answer", () => {
   });
 
   it("writer: leads with the number in one short sentence", () => {
-    expect(answer.headline).toBe("Your $32 overdraft fee sits at the 75th percentile of 16 peers, whose median is $29.50.");
+    expect(answer.headline).toBe("Your $32 overdraft fee is at the 75th percentile of 16 peers (median $29.50).");
   });
 
   it("consultant: every claim carries a number, a dated source and, for markets, the peer count", () => {
     expect(answer.claims.map((c) => c.text)).toEqual([
       "Your published overdraft fee is $32.",
-      "Across 16 peers (Credit unions, $300M to $1B in assets, Tennessee), the median is $29.50 and the middle half runs $25.75 to $32.",
+      "Across 16 peers, the median is $29.50 and the middle half runs $25.75 to $32.",
       "The Tennessee median is $30 across 64 institutions.",
       "The national median is $29 across 1,840 institutions.",
-      "Your fee income was $209 thousand over the four quarters to June 30, 2026, up 4.2% on the year before.",
+      "Your fee income was $209 thousand in the year to June 30, 2026, up 4.2%.",
     ]);
     expect(answer.claims[1].sampleSize).toBe(16);
     expect(answer.claims[0].source.url).toBe("https://example.org/own-schedule.pdf");
@@ -103,7 +103,7 @@ describe("four-roles eval catches each kind of failure", () => {
 describe("answer edge cases", () => {
   it("asks for the current fee when the schedule has none", () => {
     const answer = buildFeeAnswer(overdraftResearch({ current: null, ownRows: [] }));
-    expect(answer.headline).toBe("Your schedule shows no overdraft fee; across 16 peers the median is $29.50.");
+    expect(answer.headline).toBe("Your schedule shows no overdraft fee; the median across 16 peers is $29.50.");
     expect(answer.question).toMatchObject({ fieldKey: "fee.overdraft.current_amount" });
     expect(answer.exhibit?.title).toBe("The overdraft fee across 16 peers");
   });
