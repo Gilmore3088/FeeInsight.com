@@ -556,3 +556,21 @@ year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the sta
 **Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
 same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
 `data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.
+
+## 2026-10-06: Darwin rejected real fees Knox filed under a neighbouring category, and never re-checked them
+**What happened:** of the Knox fees that never reached verified, 5,322 were rejected because the name
+did not fit the category (Darwin thread, read-only, 04:30 UTC Oct 6). A read-only pass over the
+never-verified Knox names (05:10 UTC) found about 925 that are real fees whose own name says the
+neighbouring category: 356 overdraft transfers filed as overdraft, 248 international wires filed as
+domestic, 195 ATM/debit card replacements filed as ATM fees, 70 "Paid NSF" items (overdrafts) and 51
+returned deposited items filed as NSF, 5 NSF sweeps. Separately, 27 of 239 live minimum-balance fees
+were the balance to open an account, earn APY or avoid a fee, not a fee.
+**Cause:** Darwin only accepted or rejected the hinted category. And `CATEGORY_GUARD_VERSION` said a bump
+re-checks rows an older guard rejected, but Darwin never read it: a row decided under `verify.rules` v3
+was never selected again, so no guard fix could recover a wrongly rejected fee.
+**Fix:** same PR: `refileCategory` (fee-category-guard.ts) re-files a row to the category its own name
+names, only when that category's guard accepts it; Darwin checks the row under that category. Darwin
+records the guard version with each decision and re-selects a category rejection once when the guard
+version rises (now v9, which also adds a minimum-balance rule). Other decided rows stay closed, so
+`duplicate_in_batch` rows are never re-verified.
+**Lesson:** a "bump to re-check" version constant needs a test that the re-check really happens.

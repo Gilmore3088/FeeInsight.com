@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, verificationReasonCode, type RawFeeRow } from "./verify";
+import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, SECOND_SOURCE_FLAG } from "./peer-checks";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -102,11 +103,20 @@ describe("Darwin agentic verification", () => {
     expect(statements.every((text) => !/\b(INSERT|UPDATE|DELETE)\b/.test(text))).toBe(true);
   });
 
+  it("re-files a row whose own name says the neighbouring category", async () => {
+    const db = createDbMock([{ ...rawFee, fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" }]);
+
+    const result = await runDarwinVerify({ runId: 105, db: asVerifyDb(db), dryRun: true });
+
+    expect(result.results[0]).toMatchObject({ canonicalFeeKey: "od_protection_transfer" });
+    expect(result.results[0]).not.toMatchObject({ reasonCode: "category_mismatch" });
+  });
+
   it("rejects rows whose name contradicts the hinted category", async () => {
     const db = createDbMock([
       {
         ...rawFee,
-        fee_name: "Overdraft Transfer Fee (Sweep)",
+        fee_name: "Overdraft Fee - Daily Maximum",
         amount: "7.50",
       },
     ]);
@@ -276,6 +286,16 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
       expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+    });
+
+    it("re-checks category rejections once after the category guard changes", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
+      expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
     });
 
     it("selects rows whose flags are stored as a real JSON array", async () => {

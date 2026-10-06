@@ -17,7 +17,7 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
-| `category_mismatch` | for the 13 report categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`) | rejected |
+| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range (`envelopes.ts`) | needs_review |
@@ -25,6 +25,8 @@ Darwin owns verification and classification.
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, source) not already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 
+- Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
+  as `category_mismatch` under an older guard are selected once more. No other decided row is.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
