@@ -13,6 +13,8 @@ export interface DisplayFee {
   conditions: string | null;
   status: "verified" | "provisional";
   sourceUrl: string | null;
+  /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
+  rate?: { rate: string; detail: string | null } | null;
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -139,6 +141,18 @@ function MedianCell({ fee, medians }: { fee: DisplayFee; medians: Map<string, nu
     </Link>
   );
 }
+/** A rate in the amount column, with what it is a share of beneath it. */
+function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
+  return (
+    <>
+      {rate.rate}
+      {rate.detail && (
+        <span className="block max-w-[180px] whitespace-normal text-right font-sans text-xs text-[#6B6255]">{rate.detail}</span>
+      )}
+    </>
+  );
+}
+
 const FAMILY_ORDER = [...Object.keys(FEE_FAMILIES), OTHER_FAMILY];
 
 function familyFor(fee: DisplayFee): string {
@@ -146,7 +160,7 @@ function familyFor(fee: DisplayFee): string {
 }
 
 function dedupeKey(fee: DisplayFee): string {
-  return `${fee.feeName.trim().toLowerCase()}|${fee.amount ?? "null"}`;
+  return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
 }
 
 /** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order. */
@@ -335,7 +349,7 @@ function FeeRow({
         {showUnderReview && <UnderReviewChip />}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
-        {amount ?? "\u2014"}
+        {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
             <FeePosition amount={fee.amount} benchmark={benchmark} />
@@ -398,7 +412,7 @@ function FeeScheduleStack({
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
                       <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
-                        {formatFeeAmount(fee.amount) ?? "\u2014"}
+                        {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
                       </span>
                       {benchmark && fee.amount !== null && (
                         <FeePosition amount={fee.amount} benchmark={benchmark} />
