@@ -139,6 +139,15 @@ and `detail.method_version`).
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
+- Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
+  the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
+  and no fee link, once a month each. The model (web search) names the official homepage;
+  it is saved only when it is not a directory, social, government or another institution's
+  domain, and the homepage names the institution (every distinctive name word) plus its
+  city or its FDIC certificate / NCUA charter number. Saving resets the bank's search
+  (`rescue_status = 'pending'`) so the free finders search the new site next. Anything
+  else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
+  name ("CALIFORNIA") is not searched.
 
 ## Outcome ledger (`outcomes.ts`)
 
@@ -205,3 +214,17 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 - Identity matching (`registry/identity.ts`) accepts only unambiguous names. Shared names are stored as `needs_review` and never used until a person accepts them. Links with `verified_by` set are never overwritten.
 - Operator view: `/admin/magellan/registry`. Manual queue: `POST /api/admin/registry/run` with `{ source, partition_key?, dry_run? }`.
 - Add a source: write a client in `regulatory/`, a worker in `registry/`, an entry in `REGISTRY_SOURCES` (`registry/index.ts`), a scheduler partition list, and a `narrate.ts` sentence. `run-store.ts` dispatches every `registry-*` key automatically.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+| No fee link fails the same way 3+ times a day | `repeatFailures` (fetch: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`.

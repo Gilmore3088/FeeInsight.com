@@ -20,15 +20,16 @@ import {
 } from "./category-model";
 
 import {
-  amountEnvelopeFor,
   isExplicitZeroFee,
-  withinAmountEnvelope,
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
 } from "./envelopes";
+import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
   DARWIN_PEER_STRATEGY,
   DARWIN_SECOND_SOURCE_STRATEGY,
+  districtOfState,
+  holdsForPeerReview,
   loadSourceCopies,
   PeerLevelCache,
   peerCheck,
@@ -162,6 +163,12 @@ export interface RunDarwinVerifyResult {
   zeroFeesVerified: number;
   /** Pass 2: rows held for review as far outside their state peers. */
   peerOutliers: number;
+  /** Pass 2: rows compared with their Fed district or national peers (state had too few). */
+  peerFallbackChecks: number;
+  /** Pass 2: fallback comparisons far outside the district or national range (recorded, not held). */
+  peerFallbackOutliers: number;
+  /** Rows held because the amount is above a learned (not hand-set) category range. */
+  learnedEnvelopeHolds: number;
   /** Pass 2: rows whose amount another stored document of the same bank confirms. */
   secondSourceAgreements: number;
   /** Pass 2: rows another stored document of the same bank shows at a different amount. */
@@ -228,8 +235,14 @@ function normalizedAmount(value: number | string | null): number | null {
   return Math.round(parsed * 100) / 100;
 }
 
+const NO_LEARNED_ENVELOPES: ReadonlyMap<string, LearnedEnvelope> = new Map();
+
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
-export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string | null): DarwinReasonCode | null {
+export function verificationReasonCode(
+  row: RawFeeRow,
+  canonicalFeeKey: string | null,
+  learnedEnvelopes: ReadonlyMap<string, LearnedEnvelope> = NO_LEARNED_ENVELOPES,
+): DarwinReasonCode | null {
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
   if (!checkFeeCategory(canonicalFeeKey, row.fee_name).ok) return "category_mismatch";
@@ -239,7 +252,8 @@ export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string |
   if (amount === 0) {
     return isExplicitZeroFee(amount, parseFlags(row.outlier_flags), ZERO_FEE_RAW_FLAG) ? null : "invalid_amount";
   }
-  if (!withinAmountEnvelope(canonicalFeeKey, amount)) return "outside_envelope";
+  const envelope = darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes);
+  if (amount < envelope.min || amount > envelope.max) return "outside_envelope";
   return null;
 }
 
@@ -261,7 +275,7 @@ export function statedInOwnSource(
 }
 
 /** The newest completed text of each document, as Hamilton's source check reads it. */
-async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
+export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
   if (documentIds.length === 0) return new Map();
   const texts = await db<{ source_document_id: number | string; normalized_text: string }[]>`
     SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
@@ -362,7 +376,7 @@ async function selectRawFees(
   );
 }
 
-async function insertVerifiedFee(
+export async function insertVerifiedFee(
   db: SqlTag,
   options: {
     runId: number;
@@ -428,6 +442,7 @@ async function recordVerificationSignals(
   runId: number,
   results: DarwinVerificationResult[],
   rowByRawFeeId: Map<number, RawFeeRow>,
+  learnedEnvelopes: ReadonlyMap<string, LearnedEnvelope>,
 ): Promise<void> {
   const grouped = new Map<number, {
     institutionName: string;
@@ -440,7 +455,7 @@ async function recordVerificationSignals(
     feeRawIds: number[];
     canonicalFeeKeys: string[];
     reasons: Map<DarwinReasonCode, number>;
-    envelopes: Record<string, { min: number; max: number }>;
+    envelopes: Record<string, { min: number; max: number; source: string }>;
     peerOutliers: Array<Record<string, string | number | boolean | null>>;
   }>();
 
@@ -461,7 +476,7 @@ async function recordVerificationSignals(
       const code = result.reasonCode ?? "invalid_amount";
       group.reasons.set(code, (group.reasons.get(code) ?? 0) + 1);
       if (code === "outside_envelope" && result.canonicalFeeKey) {
-        group.envelopes[result.canonicalFeeKey] = amountEnvelopeFor(result.canonicalFeeKey);
+        group.envelopes[result.canonicalFeeKey] = darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes);
       }
       if (code === "peer_outlier" && result.peerCheck) {
         group.peerOutliers.push({
@@ -588,6 +603,8 @@ async function recordPassTwoAttempts(
         canonical_fee_key: result.canonicalFeeKey,
         amount: result.amount,
         peer_outlier: result.peerCheck.outlier,
+        peer_scope: result.peerCheck.scope,
+        peer_held: holdsForPeerReview(result.peerCheck),
         peer_low: result.peerCheck.low,
         peer_high: result.peerCheck.high,
         peer_p25: result.peerCheck.p25,
@@ -656,6 +673,7 @@ export async function runDarwinVerify(
 
   const verifiedInBatch = new Set<string>();
   const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
+  const learnedEnvelopes = rows.length > 0 ? await loadLearnedEnvelopes(db) : NO_LEARNED_ENVELOPES;
   const sourceTexts = await loadSourceTexts(
     db,
     Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
@@ -676,7 +694,7 @@ export async function runDarwinVerify(
 
   for (const row of rows) {
     const canonicalFeeKey = categoryOf(row);
-    let reasonCode = verificationReasonCode(row, canonicalFeeKey);
+    let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
     if (!reasonCode && !statedInOwnSource(row, sourceTexts)) reasonCode = "not_in_source";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
@@ -693,8 +711,16 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      const levels = await peers.forState(row.state_code ?? options.stateCode);
-      peer = peerCheck(levels, canonicalFeeKey, institutionTier(row.asset_size_tier, row.asset_size), base.amount);
+      const stateCode = row.state_code ?? options.stateCode;
+      const levels = await peers.forState(stateCode);
+      peer = peerCheck(
+        levels,
+        canonicalFeeKey,
+        institutionTier(row.asset_size_tier, row.asset_size),
+        base.amount,
+        await peers.widerLevels(),
+        districtOfState(stateCode),
+      );
       secondSource = secondSourceCheck(
         {
           feeRawId: base.feeRawId,
@@ -705,7 +731,7 @@ export async function runDarwinVerify(
         },
         sourceCopies,
       );
-      if (peer?.outlier) reasonCode = "peer_outlier";
+      if (holdsForPeerReview(peer)) reasonCode = "peer_outlier";
     }
 
     let result: DarwinVerificationResult;
@@ -772,6 +798,9 @@ export async function runDarwinVerify(
           reason_code: result.reasonCode,
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
+          amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
+            ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
+            : undefined,
         },
       });
       await recordPassTwoAttempts(db, options, result);
@@ -779,7 +808,7 @@ export async function runDarwinVerify(
   }
 
   if (!dryRun) {
-    await recordVerificationSignals(db, options.runId, results, rowByRawFeeId);
+    await recordVerificationSignals(db, options.runId, results, rowByRawFeeId, learnedEnvelopes);
   }
 
   // Each decision goes to the shared learning store as a judgement on Knox's read.
@@ -807,6 +836,13 @@ export async function runDarwinVerify(
     reasonCounts,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
+    peerFallbackChecks: results.filter((result) => result.peerCheck && result.peerCheck.scope !== "state").length,
+    peerFallbackOutliers: results.filter((result) => result.peerCheck?.outlier && result.peerCheck.scope !== "state").length,
+    learnedEnvelopeHolds: results.filter((result) =>
+      result.reasonCode === "outside_envelope" &&
+      result.canonicalFeeKey != null &&
+      darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes).source === "learned"
+    ).length,
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
     categoryModelDisputes: results.filter((result) => result.categoryModel?.disputed).length,

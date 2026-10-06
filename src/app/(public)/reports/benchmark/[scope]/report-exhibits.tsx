@@ -6,7 +6,7 @@ import { PRODUCT_NAME } from "@/lib/constants";
 import { PrintButton } from "../../../research/print-button";
 import { SectionHeading } from "../../../research/research-hero";
 import { ExhibitSource } from "../../../research/exhibits";
-import { formatDelta, type StateComparison } from "../../../research/state/[code]/state-findings";
+import { formatDelta, type StateComparison } from "@/lib/research-report/state-findings";
 import { MIN_BENCHMARK_INSTITUTIONS, MIN_CHARTER_INSTITUTIONS } from "./report-data";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };

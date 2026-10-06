@@ -19,14 +19,16 @@ institution report.
 | Automation | Trigger group | Emails (day) | Lead sources |
 |---|---|---|---|
 | Fee Insight: Welcome, Fee Literacy series | Fee Insight · Newsletter | cheat sheet (0), overdraft/NSF (2), quiet fees (5), benchmark method (9), review kit + report offer (14) | newsletter, capture_homepage, capture_national_index, website |
-| Fee Insight: Report requests (rewritten Oct 6, no figures) | Fee Insight · Report requests | read your free report (0), your state vs national (7), institution report, priced on request (14) | report_national, report_district, report, capture_report_sample (after they confirm) |
-| Fee Insight: Explorers | Fee Insight · Watchers | what you'll hear (0), state vs national (4), go further (10) | capture_institution, capture_state |
+| Fee Insight: Report requests (rewritten Oct 6, no figures) | Fee Insight · Report requests | your fee reports and what to read first (0), your state vs national (7), institution report, priced on request (14) | report_national, report_district, report, capture_report_sample (after they confirm) |
+| Fee Insight: Explorers | Fee Insight · Watchers | how to read your state's numbers (0), state vs national (4), go further (10) | capture_institution, capture_state |
 | Monthly Fee Pulse (regular campaign) | all three groups | `out/pulse/01-fee-pulse.html` | n/a |
 
 ## Before activating
-1. **Authenticate the sender domain** in MailerLite (Settings → Domains). MailerLite currently rejects the From address as unauthenticated.
-2. **Set a real postal address** in `BRAND.mailingAddress` (CAN-SPAM), rebuild, and re-upload.
-3. **Add exclusions** in the dashboard: the Welcome series excludes "Report requests", so nobody runs two sequences at once.
+1. Sender domain: authenticated (MailerLite reports `needs_domain_auth: false`, checked Oct 6).
+2. **Set a real postal address** (CAN-SPAM). The footers leave the line out until then (James, Oct 6:
+   waiting on the business registration). Rebuild with `MARKETING_MAILING_ADDRESS="..." node build.mjs`
+   and re-upload every email.
+3. Exclusion: done Oct 6. The Welcome trigger excludes "Report requests", so nobody runs two sequences at once.
 4. **Wire the app (Vercel env):** `MAILERLITE_SYNC_ENABLED=true`, `MAILERLITE_API_KEY` from the Fee Insight account,
    `MAILERLITE_GROUP_ID=200322864366224433` (Newsletter), `MAILERLITE_REPORT_GROUP_ID=200322865521755984`
    (Report requests), `MAILERLITE_WATCHER_GROUP_ID=200322866720277972` (Watchers). Only people who click the

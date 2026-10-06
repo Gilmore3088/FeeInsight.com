@@ -8,8 +8,9 @@ import { FEES, SNAPSHOT, CHEAT_SHEET_ORDER } from "./data.mjs";
 
 export const BRAND = {
   siteUrl: "https://feeinsight.com",
-  // CAN-SPAM requires a valid postal address in every commercial email.
-  mailingAddress: "[Fee Insight mailing address]",
+  // CAN-SPAM requires a valid postal address in every commercial email. Left out until the
+  // business registration gives one (James, Oct 6); set MARKETING_MAILING_ADDRESS and rebuild.
+  mailingAddress: (process.env.MARKETING_MAILING_ADDRESS || "").trim() || null,
 };
 
 const S = BRAND.siteUrl;
@@ -178,13 +179,13 @@ const report = {
     {
       key: "read-your-report",
       day: 0,
-      subject: "Your free fee report, and how to read it",
-      preheader: "What to read first, and where every number comes from.",
+      subject: "Your fee reports, and what to read first",
+      preheader: "Every free report is live. Here is where every number comes from.",
       blocks: [
         { type: "kicker", text: "Bank Fee Index · 1 of 3" },
-        { type: "h1", text: "Your free fee report, and how to read it" },
-        { type: "p", text: "Thanks for confirming. Your report is live and updates as new fee schedules are verified, so the link always shows the current numbers." },
-        { type: "cta", text: "Open the national report", href: `${S}/reports/benchmark/national`, sub: "District reports for all 12 Fed districts are on the reports page." },
+        { type: "h1", text: "Your fee reports, and what to read first" },
+        { type: "p", text: "Thanks for confirming. Whichever report you asked for, the free ones are live and update as new fee schedules are verified, so a link always shows the current numbers." },
+        { type: "cta", text: "See every free report", href: `${S}/reports`, sub: "National, all 12 Fed districts, and every state. Free, no login." },
         { type: "p", text: "If you have five minutes, read these in order:" },
         { type: "list", ordered: true, items: [
           "**Key findings.** The two penalty fees and the bank vs credit union gap, each with how many institutions stand behind it.",
@@ -192,10 +193,10 @@ const report = {
           "**Banks vs credit unions.** The same fees by charter, where each side has enough institutions to compare.",
           "**Methodology.** One value per institution, taken from its own published fee schedule.",
         ] },
-        { type: "box", tone: "term", title: "Why your own fees may sit outside the range", paras: [
-          "The middle half is where most institutions price. Sitting outside it isn't wrong, but it's the first thing a pricing committee, an examiner or a reporter will notice.",
+        { type: "box", tone: "term", title: "Asked for a report on your own institution?", paras: [
+          "That one is built by hand against the competitors in your market. We first check that your market has enough published fee schedules, then write to you directly with what it covers and the price.",
         ] },
-        { type: "p", text: `[See every free report](${S}/reports). In a week: how your state compares with the national numbers.` },
+        { type: "p", text: "In a week: how your state compares with the national numbers." },
         { type: "sign" },
       ],
     },
@@ -254,18 +255,24 @@ const explorer = {
     {
       key: "what-you-watch",
       day: 0,
-      subject: "How to read an institution's fee profile",
-      preheader: "What each part of a profile means, and how to get an email when a fee changes.",
+      subject: "How to read your state's fee numbers",
+      preheader: "What the state page shows, and the institution profiles behind it.",
       blocks: [
         { type: "kicker", text: "Watchers · 1 of 3" },
-        { type: "h1", text: "How to read an institution's fee profile" },
-        { type: "p", text: "Every bank and credit union we track has a free public profile built from its own published fee schedule. Here's what to look at." },
-        { type: "box", tone: "term", title: "Reading a profile", items: [
+        { type: "h1", text: "How to read your state's fee numbers" },
+        { type: "p", text: "You signed up to follow fees in your state. Every number on the state page comes from the published fee schedules of the banks and credit unions there. Here's what to look at." },
+        { type: "box", tone: "term", title: "Reading the state page", items: [
+          "**The median:** the middle price among institutions in the state that publish the fee.",
+          "**The middle half:** the 25th to 75th percentile, where most institutions price.",
+          "**Institutions behind it:** how many schedules each number rests on. A small count means read it as a hint, not a verdict.",
+        ] },
+        { type: "cta", text: "Find your state's page", href: `${S}/research`, sub: "Free, no login." },
+        { type: "box", tone: "term", title: "Then look at a single institution", items: [
           "**The fee table:** each fee next to the national median.",
           "**Source:** the published document and the date we read it.",
           "**Coverage:** how many of the 15 headline fees the schedule publishes. A missing fee isn't a $0 fee.",
         ] },
-        { type: "p", text: `Want an email when a fee changes? Create a free account and save the institution: [find it here](${S}/institutions). Saved institutions get a change alert when a fee you follow is published or changes.` },
+        { type: "p", text: `Want an email when a fee changes? Create a free account and save the institution: [find it here](${S}/institutions).` },
         { type: "sign" },
       ],
     },

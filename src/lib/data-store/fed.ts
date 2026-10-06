@@ -58,7 +58,9 @@ export async function getBeigeBookEditions(
 }
 
 export async function getBeigeBookHeadline(
-  district: number
+  district: number,
+  /** Longer first sentences are cut with "..." to this length. */
+  maxChars = 80,
 ): Promise<{ text: string; release_date: string } | null> {
   try {
     const [row] = await sql`
@@ -73,8 +75,8 @@ export async function getBeigeBookHeadline(
 
     const firstSentence = row.content_text.split(/(?<=[.!?])\s+/)[0] ?? "";
     const text =
-      firstSentence.length > 80
-        ? firstSentence.slice(0, 77) + "..."
+      firstSentence.length > maxChars
+        ? firstSentence.slice(0, maxChars - 3) + "..."
         : firstSentence;
 
     const releaseDate = row.release_date instanceof Date

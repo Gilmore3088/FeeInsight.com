@@ -18,6 +18,7 @@ import {
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
 import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
 import { pageLinks, urlIdentity, type PageLink } from "./finders";
+import { runWebsiteFind } from "./website-find";
 
 type Fetcher = typeof fetch;
 
@@ -262,6 +263,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   result.selected = rows.length;
   if (dryRun) {
     result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true }));
+    await addWebsiteFind(result, options, db);
     return result;
   }
 
@@ -410,7 +412,34 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     });
     result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason });
   }
+  if (!result.budgetStopped) await addWebsiteFind(result, options, db);
   return result;
+}
+
+/**
+ * Institutions with no website at all get a website search in the same paid step
+ * (website-find.ts), so they reach the free finders on their next search.
+ */
+async function addWebsiteFind(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+  const found = await runWebsiteFind({
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    stateCode: options.stateCode ?? null,
+    dryRun: Boolean(options.dryRun),
+    db,
+    create: options.create,
+    fetchImpl: options.fetchImpl,
+  });
+  result.selected += found.selected;
+  result.processed += found.processed;
+  result.succeeded += found.saved;
+  result.failed += found.needsHuman;
+  result.costMicrousd += found.costMicrousd;
+  if (found.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = found.budgetReason;
+  }
+  result.results.push(...found.results);
 }
 
 interface PickResult {

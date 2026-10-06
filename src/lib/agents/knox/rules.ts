@@ -126,7 +126,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
-    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwire\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwire\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b|\b(international|foreign|intl)\b.{0,10}\bwires?\b.{0,30}\b(out|outgoing)\b/i,
   },
   {
     key: "wire_intl_incoming",
@@ -147,6 +147,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(cashier'?s?\s+checks?|official checks?|certified checks?|bank checks?|teller'?s?\s+checks?|corporate checks?|treasurer'?s?\s+checks?)\b/i,
   },
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
+  // v16: "Checkbook Balancing" is account research, not check printing.
+  { key: "account_research", pattern: /\bcheck ?book balanc\w*|\bbalanc\w* (?:your |a )?check ?book\b/i },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
@@ -291,7 +293,11 @@ export function classifyPatternKey(value: string): string | null {
   const text = value
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
-    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international");
+    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international")
+    // v16: "Int'l Wire Fee Out" and "Outgoing Wire Out of Country" are international
+    // wires; one price for "domestic/int'l" stays domestic.
+    .replace(/\bint'l\b\.?|\b(?:out of|outside(?: of)?)\s+(?:the\s+)?country\b/gi, (match, offset, whole: string) =>
+      /\bdomestic\b/i.test(whole) ? match : "international");
   const key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
   // Credit card fees are lending fees, not deposit-account card fees.
   if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text)) return null;
@@ -302,6 +308,17 @@ export function classifyPatternKey(value: string): string | null {
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
   // not an overdraft fee.
   if (key === "overdraft" && /\bdeclin(?:e|ed|es)\b/i.test(text)) return null;
+  // v16: a name that opens with NSF is the NSF fee when only a condition mentions an
+  // overdraft ("NSF Fee (fee applies when overdraft is created)", "Insufficient Funds Fee
+  // (when overdraft coverage is not available)"). A combined "NSF/Overdraft Fee" keeps
+  // its overdraft category.
+  if (
+    key === "overdraft" &&
+    /^\W*(?:NSF|non[-\s]?sufficient|insufficient funds)\b/i.test(text) &&
+    !/\b(?:overdraft|courtesy|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
+  ) {
+    return "nsf";
+  }
   // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
   // (replacement or PIN)").
   if (key === "card_replacement" && /\bPIN\b/i.test(text) && !/\breplacement or PIN\b/i.test(text)) return null;
