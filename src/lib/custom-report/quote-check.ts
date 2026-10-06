@@ -7,7 +7,7 @@ import {
   type ReportRuleCheck,
 } from "@/lib/data-store/market-readiness";
 import { analyzeMarket, type ReadinessResult } from "./analysis";
-import { createReportToken, reportPath } from "./link";
+import { LINK_LIFETIME_DAYS, createReportToken, reportPath } from "./link";
 
 /**
  * What James sees when an institution report is requested: whether we can build that
@@ -61,7 +61,9 @@ export function describeQuoteCheck(check: QuoteCheck, siteUrl: string): string {
     const reason = r.ready ? "" : ` ${r.reason ?? "Local data is too thin."}`;
     return `Report check: not ready to quote (${counts}).${reason}${rule}`;
   }
-  const link = check.path ? ` Private report link to send after they agree: ${siteUrl.replace(/\/$/, "")}${check.path}` : "";
+  const link = check.path
+    ? ` Private report link to send after they agree (works for ${LINK_LIFETIME_DAYS} days): ${siteUrl.replace(/\/$/, "")}${check.path}`
+    : " No private link: CUSTOM_REPORT_LINK_SECRET is not set.";
   return `Report check: ready to quote (${counts}).${rule}${link}`;
 }
 

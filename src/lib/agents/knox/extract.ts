@@ -72,6 +72,8 @@ export interface KnoxExtractDocumentResult {
   /** Rows kept as evidence for review; Darwin does not verify them. */
   held: HeldFeeCandidate[];
   heldInserted: number;
+  /** Of heldInserted: free ($0) fees sent to Darwin like priced ones. */
+  freeInserted: number;
   attemptOutcome: AttemptOutcome | null;
 }
 
@@ -90,6 +92,8 @@ export interface RunKnoxExtractResult {
   processedDocuments: number;
   extractedFees: number;
   insertedFees: number;
+  /** Free ($0) fees sent to Darwin; not part of insertedFees. */
+  freeFees: number;
   skippedFees: number;
   /** $0, range, percentage and unrecognized priced lines held for review, not verified. */
   heldForReview: number;
@@ -328,6 +332,14 @@ export async function insertCandidate(
  * A row kept for review: the evidence is stored with its shape, but without the
  * `needs_darwin_verification` flag, so Darwin never verifies it as an exact amount.
  */
+/**
+ * A free fee with a category is a real price ($0) Darwin can verify; the other shapes
+ * (ranges, percentages, unclassified lines) wait for review.
+ */
+export function heldGoesToDarwin(held: HeldFeeCandidate): boolean {
+  return held.shape === "zero" && Boolean(held.canonicalHint);
+}
+
 export async function insertHeldCandidate(
   db: SqlTag,
   options: {
@@ -343,9 +355,7 @@ export async function insertHeldCandidate(
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
-  // A free fee with a category is a real price ($0) Darwin can verify; the other
-  // shapes (ranges, percentages, unclassified lines) wait for review.
-  const toDarwin = held.shape === "zero" && Boolean(held.canonicalHint);
+  const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
   if (toDarwin) flags.push("needs_darwin_verification");
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
@@ -567,13 +577,17 @@ export async function runKnoxExtract(
     const { candidates, held, runs } = runFreeSpecialists(row.normalized_text);
     let inserted = 0;
     let heldInserted = 0;
+    let freeInserted = 0;
     if (!dryRun) {
       retiredOlderRows += await retireRowsFromOlderText(db, row);
       for (const candidate of candidates) {
         if (await insertCandidate(db, { runId: options.runId, row, candidate })) inserted += 1;
       }
       for (const heldCandidate of held) {
-        if (await insertHeldCandidate(db, { runId: options.runId, row, held: heldCandidate })) heldInserted += 1;
+        if (await insertHeldCandidate(db, { runId: options.runId, row, held: heldCandidate })) {
+          heldInserted += 1;
+          if (heldGoesToDarwin(heldCandidate)) freeInserted += 1;
+        }
       }
     }
     const attemptOutcome = extractionOutcome(candidates.length, playbook.expectedFeeCount);
@@ -588,6 +602,7 @@ export async function runKnoxExtract(
       candidates,
       held,
       heldInserted: dryRun ? 0 : heldInserted,
+      freeInserted: dryRun ? 0 : freeInserted,
       attemptOutcome,
     });
     if (learning) {
@@ -648,6 +663,7 @@ export async function runKnoxExtract(
     processedDocuments: results.length,
     extractedFees: results.reduce((total, result) => total + result.extracted, 0),
     insertedFees: results.reduce((total, result) => total + result.inserted, 0),
+    freeFees: results.reduce((total, result) => total + result.freeInserted, 0),
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     retiredOlderRows,

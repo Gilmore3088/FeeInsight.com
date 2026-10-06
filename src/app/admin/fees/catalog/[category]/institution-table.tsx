@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Fragment, useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronRight, ChevronDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronRight, ChevronDown, ExternalLink, X } from "lucide-react";
 import type { FeeInstance } from "@/lib/data-store";
 import { formatAmount, formatAssets } from "@/lib/format";
 
@@ -18,6 +18,8 @@ interface InstitutionGroup {
   min_amount: number | null;
   max_amount: number | null;
   fee_count: number;
+  /** False when none of its rows trace to a bank document, so the index leaves it out. */
+  counted: boolean;
 }
 
 type SortKey =
@@ -50,18 +52,37 @@ function SortIcon({
   );
 }
 
+function parseAmount(value: string): number | null {
+  if (value.trim() === "") return null;
+  const n = Number(value.replace(/[$,]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
 export function InstitutionTable({
   fees,
   median,
+  highestTier = false,
+  countedValues = {},
+  initialMin = null,
+  initialMax = null,
 }: {
   fees: FeeInstance[];
   median: number | null;
+  /** The category counts a bank at its highest tier (overdraft), not its median. */
+  highestTier?: boolean;
+  /** Each institution's counted value from its sourced rows, keyed by institution id. */
+  countedValues?: Record<number, number>;
+  /** Amount range to open with, from a chart bar or the URL. */
+  initialMin?: number | null;
+  initialMax?: number | null;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("amount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [search, setSearch] = useState("");
   const [charterFilter, setCharterFilter] = useState<"all" | "bank" | "credit_union">("all");
-  const [showAll, setShowAll] = useState(false);
+  const [minText, setMinText] = useState(initialMin !== null ? String(initialMin) : "");
+  const [maxText, setMaxText] = useState(initialMax !== null ? String(initialMax) : "");
+  const [showAll, setShowAll] = useState(initialMin !== null || initialMax !== null);
   const [expandedInst, setExpandedInst] = useState<Set<number>>(new Set());
 
   // Group fees by institution
@@ -81,6 +102,7 @@ export function InstitutionTable({
           min_amount: null,
           max_amount: null,
           fee_count: 0,
+          counted: false,
         });
       }
       const group = map.get(fee.institution_id)!;
@@ -95,19 +117,43 @@ export function InstitutionTable({
         .filter((a): a is number => a !== null && a > 0)
         .sort((a, b) => a - b);
 
+      const counted = countedValues[group.institution_id];
+      if (counted !== undefined) {
+        group.counted = true;
+      }
       if (amounts.length > 0) {
         group.min_amount = amounts[0];
         group.max_amount = amounts[amounts.length - 1];
-        // Primary = median of this institution's fees
-        group.primary_amount =
-          amounts.length % 2 === 0
+        // Primary = the value the index counts for this institution: its highest tier
+        // for overdraft, otherwise the median of its fees.
+        group.primary_amount = highestTier
+          ? amounts[amounts.length - 1]
+          : amounts.length % 2 === 0
             ? (amounts[amounts.length / 2 - 1] + amounts[amounts.length / 2]) / 2
             : amounts[Math.floor(amounts.length / 2)];
       }
+      // The index's own value wins, so the table, the chart and the median agree.
+      if (counted !== undefined) group.primary_amount = counted;
     }
 
     return Array.from(map.values());
-  }, [fees]);
+  }, [fees, highestTier, countedValues]);
+
+  const minAmount = parseAmount(minText);
+  const maxAmount = parseAmount(maxText);
+
+  // The most common counted amounts, as one-click filters ("who charges $35?").
+  const commonAmounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const g of groups) {
+      if (!g.counted || g.primary_amount === null) continue;
+      counts.set(g.primary_amount, (counts.get(g.primary_amount) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .sort((a, b) => a[0] - b[0]);
+  }, [groups]);
 
   const filtered = useMemo(() => {
     let result = groups;
@@ -121,6 +167,15 @@ export function InstitutionTable({
 
     if (charterFilter !== "all") {
       result = result.filter((g) => g.charter_type === charterFilter);
+    }
+
+    if (minAmount !== null || maxAmount !== null) {
+      result = result.filter(
+        (g) =>
+          g.primary_amount !== null &&
+          (minAmount === null || g.primary_amount >= minAmount) &&
+          (maxAmount === null || g.primary_amount <= maxAmount),
+      );
     }
 
     result = [...result].sort((a, b) => {
@@ -149,7 +204,7 @@ export function InstitutionTable({
     });
 
     return result;
-  }, [groups, search, charterFilter, sortKey, sortDir]);
+  }, [groups, search, charterFilter, minAmount, maxAmount, sortKey, sortDir]);
 
   const displayed = showAll ? filtered : filtered.slice(0, PAGE_SIZE);
 
@@ -213,7 +268,68 @@ export function InstitutionTable({
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-1 text-xs text-gray-500">
+          <span>Amount</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label="Lowest amount"
+            placeholder="from $"
+            value={minText}
+            onChange={(e) => setMinText(e.target.value)}
+            className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums dark:bg-[oklch(0.18_0_0)] dark:border-white/[0.12] dark:text-gray-100"
+          />
+          <span>to</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label="Highest amount"
+            placeholder="to $"
+            value={maxText}
+            onChange={(e) => setMaxText(e.target.value)}
+            className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums dark:bg-[oklch(0.18_0_0)] dark:border-white/[0.12] dark:text-gray-100"
+          />
+          {(minText || maxText) && (
+            <button
+              type="button"
+              onClick={() => {
+                setMinText("");
+                setMaxText("");
+              }}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              aria-label="Clear amount range"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
+      {commonAmounts.length > 0 && (
+        <div className="px-4 py-2 border-b flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-gray-400 mr-1">Most common:</span>
+          {commonAmounts.map(([amount, count]) => {
+            const active = minAmount === amount && maxAmount === amount;
+            return (
+              <button
+                key={amount}
+                type="button"
+                onClick={() => {
+                  setMinText(active ? "" : String(amount));
+                  setMaxText(active ? "" : String(amount));
+                  setShowAll(true);
+                }}
+                className={`rounded-full px-2 py-0.5 tabular-nums transition-colors ${
+                  active
+                    ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300"
+                }`}
+              >
+                {formatAmount(amount)} <span className="text-gray-400">· {count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -284,22 +400,19 @@ export function InstitutionTable({
               const hasMultiple = group.fee_count > 1;
 
               return (
-                <>
+                <Fragment key={group.institution_id}>
                   <tr
-                    key={group.institution_id}
-                    className={`border-b hover:bg-gray-50 dark:hover:bg-white/[0.03] ${
-                      hasMultiple ? "cursor-pointer" : ""
-                    } ${isExpanded ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
-                    onClick={hasMultiple ? () => toggleExpand(group.institution_id) : undefined}
+                    className={`border-b cursor-pointer hover:bg-gray-50 dark:hover:bg-white/[0.03] ${
+                      isExpanded ? "bg-blue-50/30 dark:bg-blue-900/10" : ""
+                    }`}
+                    onClick={() => toggleExpand(group.institution_id)}
                   >
                     <td className="px-4 py-2 text-gray-400">
-                      {hasMultiple ? (
-                        isExpanded ? (
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        ) : (
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        )
-                      ) : null}
+                      {isExpanded ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      )}
                     </td>
                     <td className="px-4 py-2 sticky left-0 bg-white dark:bg-[oklch(0.205_0_0)] z-10">
                       <Link
@@ -309,6 +422,11 @@ export function InstitutionTable({
                       >
                         {group.institution_name}
                       </Link>
+                      {!group.counted && (
+                        <span className="ml-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                          no source, not counted
+                        </span>
+                      )}
                     </td>
                     <td
                       className={`px-4 py-2 text-right tabular-nums font-semibold ${
@@ -320,15 +438,14 @@ export function InstitutionTable({
                       }`}
                     >
                       {group.primary_amount !== null ? (
-                        hasMultiple && group.min_amount !== group.max_amount ? (
-                          <span>
-                            {formatAmount(group.min_amount)}{" "}
-                            <span className="text-gray-400 font-normal">-</span>{" "}
-                            {formatAmount(group.max_amount)}
-                          </span>
-                        ) : (
-                          formatAmount(group.primary_amount)
-                        )
+                        <span>
+                          {formatAmount(group.primary_amount)}
+                          {hasMultiple && group.min_amount !== group.max_amount && (
+                            <span className="block text-xs font-normal text-gray-400">
+                              {formatAmount(group.min_amount)} to {formatAmount(group.max_amount)}
+                            </span>
+                          )}
+                        </span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
@@ -367,8 +484,8 @@ export function InstitutionTable({
                         className="border-b bg-gray-50/50 dark:bg-white/[0.02]"
                       >
                         <td className="px-4 py-1.5"></td>
-                        <td className="px-4 py-1.5 pl-8 text-xs text-gray-500 sticky left-0 bg-gray-50/50 dark:bg-[oklch(0.17_0_0)] z-10">
-                          {fee.conditions || fee.frequency || "—"}
+                        <td className="px-4 py-1.5 pl-8 text-xs text-gray-600 dark:text-gray-300 sticky left-0 bg-gray-50/50 dark:bg-[oklch(0.17_0_0)] z-10">
+                          {fee.fee_name || fee.frequency || "—"}
                         </td>
                         <td className="px-4 py-1.5 text-right tabular-nums text-xs text-gray-700 dark:text-gray-300">
                           {formatAmount(fee.amount)}
@@ -376,25 +493,27 @@ export function InstitutionTable({
                         <td className="px-4 py-1.5 text-center text-xs text-gray-400">
                           {fee.frequency ?? "-"}
                         </td>
-                        <td className="px-4 py-1.5" colSpan={2}>
-                          <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              fee.review_status === "approved"
-                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                : fee.review_status === "staged"
-                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                                  : "bg-gray-100 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400"
-                            }`}
-                          >
-                            {fee.review_status}
-                          </span>
+                        <td className="px-4 py-1.5 text-xs" colSpan={2}>
+                          {fee.document_url ? (
+                            <a
+                              href={fee.document_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Bank&apos;s schedule <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : (
+                            <span className="text-amber-700 dark:text-amber-400">No source document</span>
+                          )}
                         </td>
                         <td className="px-4 py-1.5 text-right text-[10px] text-gray-400 tabular-nums">
                           {(fee.extraction_confidence * 100).toFixed(0)}%
                         </td>
                       </tr>
                     ))}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

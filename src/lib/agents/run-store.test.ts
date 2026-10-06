@@ -348,6 +348,7 @@ describe("agentic run store", () => {
       processedDocuments: 3,
       extractedFees: 8,
       insertedFees: 7,
+      freeFees: 0,
       skippedFees: 1,
       limit: 10,
       dryRun: false,
