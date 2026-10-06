@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Darwin passed fees the bank's own schedule does not state
+**What happened:** of the Darwin-verified fees published and later taken down (read-only query on prod,
+04:50 UTC), 2,740 failed Hamilton's source check (1,370 name not in the text, 1,064 amount not the fee,
+304 amount is a threshold), 2,685 of them published in the last 24 hours. Another 4,032 were rolled
+back when newer Knox rules no longer read them, and 454 failed the category guard. 37,709 Darwin-verified
+fees are live.
+**Cause:** Darwin checked a fee's name, category, range and peers but never read the document. The
+check that reads it (`checkFeeAgainstSource`) ran only after publication, as Hamilton's takedown sweep.
+**Fix:** this PR: Darwin runs the shared source check against the fee's own stored text before verifying
+it (reason code `not_in_source`, rejected). Hamilton's sweep stays as the safety net for live fees.
+**Lesson:** a check that can stop a wrong fee before it goes live belongs at the gate, not only in a
+sweep afterwards.
+
 ## 2026-10-06: The live board showed a Darwin backlog that did not exist
 **What happened:** /admin/live showed 2,838 banks waiting at Darwin (04:30 UTC, read-only query on prod).
 Every one of the 18,843 Knox rows behind that number already had a Darwin decision under the current
