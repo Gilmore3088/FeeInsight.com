@@ -966,10 +966,10 @@ across the note rather than adding names per bank.
 values (`raw_json.ACCT_IS0048`, `ACCT_IS0049`) were `"0"` for every row, including the three largest
 credit unions, which charge these fees (read-only query on prod, 08:20 UTC). Earlier quarters had not
 been re-pulled yet and carry no IS0048 value at all.
-**Cause:** not confirmed. The parser read the columns faithfully, so either the published file carries
-the new accounts as zeros, or a second FS220 file carries the same account as zero and overwrote the
-real figure (the merge let the last file win). This workspace cannot download the NCUA zip
-(`ncua.gov` is blocked by the network policy), so the file itself was not inspected.
+**Cause (confirmed 09:05 UTC from the re-pull's run log):** NCUA's public file is the source. Only
+`FS220P.txt` carries IS0048 and IS0049, and it holds zero for every credit union in every quarter from
+2025 Q1 to 2026 Q2. No file overwrote a real figure. The public 5300 data does not carry credit-union
+overdraft or NSF income, so Hamilton must not show it as a reported line until NCUA publishes nonzero values.
 **Fix:** a quarter where no credit union reports a nonzero value stores these two accounts as NULL,
 never zero; a zero or blank in a second file no longer overwrites a reported figure; every FS220 file
 is read; and the run log records which files carry IS0048 and IS0049 (`detail.account_files`) and
