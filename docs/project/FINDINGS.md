@@ -45,7 +45,7 @@ whose stated terms state a percent (`rate_as_amount`); a rate row has no dollar 
 never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and Knox v20 files
 it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
 the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
-foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows come down with the admin category guard repair run.
+foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows waited on someone starting the admin category guard repair run, so every publish step now runs the category guard itself (up to 100 rollbacks a step, PR after 280).
 **Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
 under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
 
