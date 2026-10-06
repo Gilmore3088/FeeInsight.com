@@ -117,7 +117,7 @@ async function readKnoxYield(db: SqlTag): Promise<ScoreboardNumbers["knoxYield"]
              SELECT COUNT(*) FROM raw_fee_observations fr
               WHERE fr.institution_id = s.institution_id
                 AND fr.source_document_id = s.source_document_id
-                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'superseded_by_reread')
+                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
            )), 0)::int AS fees
       FROM sample s
   `;

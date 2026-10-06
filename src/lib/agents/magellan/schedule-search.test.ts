@@ -38,6 +38,7 @@ describe("paid schedule search for the largest banks", () => {
   it("tells the model why the page we hold is not the schedule", () => {
     expect(scheduleSearchPrompt(wells)).toContain("does not list the overdraft or NSF fee amount");
     expect(scheduleSearchPrompt({ ...wells, business_only: true })).toContain("business account schedule");
+    expect(scheduleSearchPrompt({ ...wells, no_overdraft_price: false, stale_copy: true })).toContain("current edition");
   });
 
   it("keeps a schedule that passes the fee-page check as a companion, beside the bank's link", async () => {

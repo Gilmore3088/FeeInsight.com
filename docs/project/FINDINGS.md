@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A fee document dated 2019 counted as a finished link
+**What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
+links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
+characters). Knox reads "Overdrafts Paid $30" from it, so the link passed every rule in
+`link-coverage.ts` and no finder looked for a current schedule. 263 institutions' current
+copies carry a year three or more back in their address; 4 of them are $10B+ banks.
+**Cause:** link coverage asked what the page says, never how old it is.
+**Fix:** this PR. `isStaleDatedLink` / `DOCUMENT_YEAR_SQL`: a current copy dated three or
+more years back by its address counts as an incomplete link for the companion finder and the
+paid schedule search; the old link and its live fees stay until something newer is found.
+**Lesson:** a link that passes the content checks can still be years out of date; check the
+date in its address before calling it done.
+
 ## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
 **What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
 rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
@@ -46,6 +59,10 @@ never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and
 it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
 the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
 foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows waited on someone starting the admin category guard repair run, so every publish step now runs the category guard itself (up to 100 rollbacks a step, PR after 280).
+The first step (17:56 UTC, run 1787) rolled back 42: the 29 flat foreign fees plus 13 that
+failed older rules no repair run had applied since 06:18 (night deposit bag purchases, foreign
+returned items, an overdraft loan's annual fee). One of the 13 was wrong: "Foreign Owned ATM
+Fees" read as a bank's own ATM; guard v12 lets "foreign-owned ATM" through as non-network.
 **Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
 under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
 
@@ -1445,3 +1462,46 @@ specialists don't pair a heading with a row whose own cell is an account type.
 **Lesson:** score a rule change on the specific banks a report depends on, not only on the
 answer keys; the answer keys had none of these layouts.
 
+
+## 2026-10-06: Knox kept reading older copies of a page
+**What happened:** Magellan marks one current document per page (`superseded_by_id`, PR 265),
+and its contract says Knox reads the current copy, but Knox's text selection never checked
+it. At 17:55 UTC, 2,520 texts on older copies had a current copy with its own text (934 were
+read again in the last 24 hours), and 8,689 unverified Knox rows from older copies were still
+queued for Darwin, where a stale price competes with today's.
+**Fix:** `src/lib/agents/knox/extract.ts`. Knox skips an older copy once the current copy has
+a text, and each extract step retires up to 2,000 unverified older-copy rows
+(`superseded_by_newer_copy`) for categories Knox already read from the current copy. Read-only
+count on prod: 3,887 rows at 419 banks qualify today, 3,412 of them at the same price as the
+current copy's row. The other 4,802 wait (their current copy is not read yet, or does not show
+that category), so no fee is lost to a weaker newer read. Verified and live fees are untouched.
+**Also found:** a page re-fetched with unchanged text was never read again. Knox skipped it as
+"the same text under another document id was already extracted", and the older copy that held
+the rows was itself blocked by its identical siblings. Navy Federal's re-check had reported 21
+missing fees on its page at every rules version since v7, but no re-read followed. Separately,
+the re-extract triggers (a thin text, or the rules re-check) only reach documents with live
+fees. So 9 of the largest banks' stored schedules priced an overdraft fee that was never live.
+Now an older copy's rows never block the current copy, and $10B+ banks' current pages are
+re-read once per rules version, first in line. Read-only check at 18:20 UTC: the current pages
+of all 11 flagged banks are selected, and 1,977 texts in total (183 at $10B+ banks) are due.
+**Lesson:** when one agent adds a "current" marker, check every reader of the table honours it;
+a comment saying "Knox reads the current copy" was not the same as Knox doing it.
+
+
+## 2026-10-06: Knox's learning stopped at names many banks share
+**What happened:** the learning reader only learned a name verified at 2 or more banks, so a name
+one bank prints its own way never learned, however often it was corrected there. Names the
+guards rejected with no verified fee anywhere ("Zipper Bags", rejected at 25 banks) never learned
+at all. Knox's confidence was a fixed formula, so a table-read night deposit fee (6 of 58 still
+live in the last 14 days) scored the same as a rule-read overdraft fee. And a new layout read thin
+document by document with nothing tying the thin reads together.
+**Fix:** per-bank lessons in `lessons.ts` (369 at 307 banks); a weekly label queue at
+/admin/knox/labels for the names the store can't settle (`label-queue.ts`); shadow calibrated
+confidence in the audit text from 14-day survival by strategy and category (`calibration.ts`,
+59 of 221 groups would fall below Hamilton's 0.8 floor); and a layout signature on every extract
+attempt with thin reads counted per signature (`layout-signature.ts`). Answer keys with the
+fixture banks' own lessons (guard and Darwin verdicts only, not the keys themselves): 7 states
+674 to 678 right and 66 to 63 category errors on v22; Texas unchanged. Only new reads change; no live
+fee is taken down, and stored confidence is unchanged.
+**Lesson:** a learning store that only learns from agreement across banks misses most of what it
+is told; one bank's own verdicts are the strongest evidence for that bank.

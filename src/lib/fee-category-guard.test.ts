@@ -233,6 +233,7 @@ describe("checkFeeCategory", () => {
       "NON-owned ATM machines",
       "Non CUA-Owned ATMs/CO-OP ATMs Fees may be charged by the ATM owner.",
       "Withdrawal at other owned ATM",
+      "Foreign Owned ATM Fees",
       "Out of Our Network ATM Fee: per Transaction",
       "Foreign ATM Withdrawal Fee (not within network)",
       "ATM w/d (free at our ATM's, or 5 free elsewhere)",
