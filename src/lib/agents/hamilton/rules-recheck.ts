@@ -101,6 +101,10 @@ interface LiveKnoxRow {
 /**
  * The key today's rules read for a fee Knox's learning reader re-filed: a row stored
  * under the lesson's verified category is reproduced by a read under the rejected one.
+ * Only the category is excused: the read must have the row's own price, and Knox's reads
+ * already pass the shared source check (its self-check), so a wrong amount still goes.
+ * Rate rows never reach this (the live query keeps `amount_kind = 'flat'`). No strategy
+ * bump: lesson rows come from new reads, and new rules versions change the fingerprint.
  */
 function lessonReadKey(row: LiveKnoxRow, amount: number): string | null {
   const match = /^knox_lesson:([a-z_]+)->([a-z_]+)$/.exec(row.lesson_flag ?? "");
