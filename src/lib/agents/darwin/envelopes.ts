@@ -11,8 +11,8 @@
  * "free"/"no charge"/$0 language for it (the `knox_review:zero` flag); see
  * `isExplicitZeroFee`.
  *
- * The plan replaces these hand-set ranges with learned p1/p99 values
- * (`category_envelopes`) once enough verified rows exist per key.
+ * Darwin adds learned ceilings for the categories without an entry
+ * (`learned-envelopes.ts`); everything else here (Hamilton, Knox) keeps these ranges.
  */
 
 export interface AmountEnvelope {
