@@ -5,6 +5,7 @@ import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
@@ -15,6 +16,7 @@ import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -360,10 +362,18 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
         stateCode,
       });
+      // Outcome ledger: judge one slot of banks' links by the live fees they produced and
+      // write the judgements to the shared learning store.
+      const linkOutcomes = await recordLinkOutcomes(tx, {
+        runId: run.id,
+        stateCode,
+        dryRun: run.runKind === "dry_run",
+      });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
+          link_outcomes: linkOutcomes,
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -373,7 +383,10 @@ async function executeAgenticStep(
           failures: discovery.failures,
           attempted_urls: discovery.attemptedUrls,
           discovery_codes: discovery.codes,
+          resumed_searches: discovery.resumed,
           found_by: discovery.foundBy,
+          websites_repaired: discovery.websitesRepaired,
+          blocked_homepage_rescues: discovery.blockedHomepageRescues,
           method_version: discovery.methodVersion,
           learning_log: discovery.learning,
           second_documents_status: discovery.secondDocuments?.status ?? null,
@@ -419,6 +432,13 @@ async function executeAgenticStep(
           companion_pages_fetched: fetched.companions?.fetched ?? 0,
           companion_pages_unchanged: fetched.companions?.unchanged ?? 0,
           companion_pages_failed: fetched.companions?.failed ?? 0,
+          companion_pages_retired: fetched.companions?.review.retired.length ?? 0,
+          companion_pages_renamed: fetched.companions?.review.renamed.length ?? 0,
+          companion_pages_retired_samples: (fetched.companions?.review.retired ?? []).slice(0, 10).map((page) => ({
+            companion_source_id: page.companionId,
+            institution_id: page.institutionId,
+            url: page.url,
+          })),
           stored_documents: fetched.storedDocuments,
           vault: fetched.vault,
           failed_fetches: fetched.failed,
@@ -608,6 +628,7 @@ async function executeAgenticStep(
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
           category_model_disputes: verification.categoryModelDisputes,
+          feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
           learning_log: verification.learning,
@@ -712,6 +733,16 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
+      // derivatives notice) come down before anything new publishes.
+      const companionRetire = await rollBackRetiredCompanionFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
+      const companionRollbacks = companionRetire.rollbacks;
       const duplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -769,6 +800,7 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
@@ -782,6 +814,10 @@ async function executeAgenticStep(
       const offTaxonomyNote =
         offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
+          : "";
+      const companionNote =
+        companionRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${companionRollbacks.length.toLocaleString()} live fee(s) read from pages that are not consumer fee pages (loan or HELOC documents).`
           : "";
       const recheckNote =
         (recheckRollbacks > 0
@@ -800,7 +836,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${companionNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -823,6 +859,16 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          companion_retire_rollbacks: companionRollbacks.length,
+          companion_retire_rejected_verified: companionRetire.rejectedVerified,
+          companion_retire_samples: companionRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            companion_source_id: rollback.companionSourceId,
           })),
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,

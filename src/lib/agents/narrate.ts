@@ -69,7 +69,7 @@ export function narrateStepFinished(
         n(detail, "retry_after") > 0 && `${n(detail, "retry_after")} to retry later`,
         n(detail, "dead_institutions") > 0 && `${n(detail, "dead_institutions")} with no schedule found`,
         n(detail, "needs_human") > 0 && `${n(detail, "needs_human")} need a person`,
-        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "more fee page")} (account pages, fee documents) for banks with few fees`,
+        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "more fee page")} (account pages, fee documents, agreements) for banks with few fees`,
       ])}.`;
     }
     case "fetch": {

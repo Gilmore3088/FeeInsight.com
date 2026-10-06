@@ -28,6 +28,8 @@ import { HAMILTON_ATTRIBUTION, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME } from "@/li
 import type { StateReportData } from "@/lib/research-report/state-report-data";
 import type { DevelopmentsBlock, FeeChangesBlock, StateRegulatorRef } from "@/lib/report-assemblers/developments";
 import { feeChangesContent, stateDevelopmentsContent } from "./developments";
+import { regulatoryExtras } from "./regulatory-section";
+import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import {
   POSITION_AXIS_MAX_PCT,
   STATE_FINDING_MIN_INSTITUTIONS,
@@ -48,6 +50,8 @@ export interface StateFeeIndexReportInput {
     feeChanges: FeeChangesBlock | null;
     developments: DevelopmentsBlock | null;
     regulator: StateRegulatorRef | null;
+    /** CFPB complaints, fee-change rules and the district's Beige Book line. */
+    regulatory?: RegulatoryContext | null;
   };
 }
 
@@ -304,7 +308,10 @@ function developmentsSection(
 ): string {
   return reportSection(
     { label: "Regulatory developments", title: `Regulation and supervision affecting ${data.stateName} institutions` },
-    stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt),
+    [
+      stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt),
+      regulatoryExtras(context.regulatory, data.stateName),
+    ].join("\n"),
   );
 }
 

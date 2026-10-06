@@ -21,7 +21,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.2.0";
+export const WORKSPACE_ENGINE_VERSION = "1.3.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -88,6 +88,11 @@ export interface MarketLayer {
   amounts: number[];
   /** The same values counted into price bands, the bank's band included. */
   bands: PriceBand[];
+  /**
+   * The institutions behind the layer, lowest amount first: name, state, amount, publish date
+   * and the schedule each value was read from. The rows behind "Download every institution".
+   */
+  members: PeerValue[];
   asOf: string | null;
   source: SourceRef;
 }
@@ -177,6 +182,22 @@ export interface PeerValue {
   publishedAt: string | null;
 }
 
+/** One of the bank's own published rows for a fee. */
+export interface OwnFeeRow {
+  /** published_fee_catalog id. */
+  id: number;
+  feeName: string;
+  amount: number | null;
+  sourceDocumentId: number | null;
+  /** The schedule document the row was read from. */
+  documentUrl: string | null;
+  /** The page the schedule was found on. */
+  sourceUrl: string | null;
+  publishedAt: string | null;
+  /** The verification event (agent_run_events) that checked the row against its document; null when not recorded. */
+  verifiedByEventId: string | null;
+}
+
 export interface PriceBand {
   label: string;
   min: number;
@@ -220,6 +241,13 @@ export interface FeeResearch {
   recentChanges: Fact[];
   /** Reported income for this fee, when a filing carries a line for it. */
   revenueLine: RevenueLine | null;
+  /**
+   * The bank's own live rows for this fee, highest amount first: the audit trail behind
+   * `current` (each row's schedule document and the event that verified it).
+   */
+  ownRows: OwnFeeRow[];
+  /** Industry deposit service charge income, newest quarter first (eight quarters), as on the Briefing. */
+  nationalIncomeSeries: MarketIncome[];
   /** The bank's total deposit service charge income, as context for this fee. */
   institutionFinancials: InstitutionFinancials | null;
   /** Rules that govern changing this fee, then recent regulator releases that mention it. */

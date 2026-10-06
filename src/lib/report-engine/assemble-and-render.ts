@@ -15,12 +15,14 @@ import { generateSection, generateGlobalThesis } from '@/lib/hamilton/generate';
 import { validateNumerics } from '@/lib/hamilton/validate';
 import { assembleNationalQuarterly, buildThesisSummary } from '@/lib/report-assemblers/national-quarterly';
 import { assembleMonthlyPulse } from '@/lib/report-assemblers/monthly-pulse';
+import { assembleRegulatoryContext } from '@/lib/report-assemblers/regulatory-context';
 import { assemblePeerCompetitivePayload } from '@/lib/report-assemblers/peer-competitive';
 import type { PeerCompetitiveFilters } from '@/lib/report-assemblers/peer-competitive';
 import { renderNationalQuarterlyReport } from '@/lib/report-templates/templates/national-quarterly';
 import { renderStateFeeIndexReport } from '@/lib/report-templates/templates/state-fee-index';
 import { loadStateReportData } from '@/lib/research-report/load-state-report';
 import { STATE_NAMES } from '@/lib/us-states';
+import { STATE_TO_DISTRICT } from '@/lib/fed-districts';
 import { renderMonthlyPulseReport } from '@/lib/report-templates/templates/monthly-pulse';
 import { renderPeerCompetitiveReport } from '@/lib/report-templates/templates/peer-competitive';
 import { runEditorReview } from '@/lib/report-engine/editor';
@@ -79,7 +81,10 @@ export async function assembleAndRender(
   try {
     switch (reportType) {
       case 'national_index': {
-        const payload = await assembleNationalQuarterly();
+        const [payload, regulatory] = await Promise.all([
+          assembleNationalQuarterly(),
+          assembleRegulatoryContext(),
+        ]);
 
         // Phase 33: Generate global thesis before sections (per D-01, D-04)
         // Thesis uses condensed payload (~5KB) not full payload.
@@ -273,6 +278,7 @@ export async function assembleAndRender(
 
         return renderNationalQuarterlyReport({
           data: payload,
+          regulatory,
           narratives: {
             executive_summary,
             fee_differentiation,
@@ -295,8 +301,11 @@ export async function assembleAndRender(
         const data = await loadStateReportData(stateCode, {
           includeAllCategories: params.include_all_categories === true,
         });
-        const context = await loadStateReportContext(stateCode);
-        return renderStateFeeIndexReport({ data, generatedAt: new Date().toISOString().slice(0, 10), context });
+        const [context, regulatory] = await Promise.all([
+          loadStateReportContext(stateCode),
+          assembleRegulatoryContext({ stateCode, district: STATE_TO_DISTRICT[stateCode] ?? null }),
+        ]);
+        return renderStateFeeIndexReport({ data, generatedAt: new Date().toISOString().slice(0, 10), context: { ...context, regulatory } });
       }
 
       case 'monthly_pulse': {

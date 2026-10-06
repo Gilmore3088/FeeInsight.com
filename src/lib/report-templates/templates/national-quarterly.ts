@@ -51,6 +51,8 @@ import {
 } from "@/lib/report-assemblers/national-quarterly";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { developmentsContent, feeChangesContent } from "./developments";
+import { regulatoryExtras } from "./regulatory-section";
+import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
@@ -65,6 +67,8 @@ export interface NationalQuarterlyReportInput {
     industry_blind_spot: { narrative: string };
     future_strategy: { narrative: string };
   };
+  /** CFPB complaints and the fee-change rules for the developments chapter; omitted when not read. */
+  regulatory?: RegulatoryContext | null;
 }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
@@ -600,6 +604,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   const developmentsChapter = [
     chapterDivider("06", "Regulatory and Industry Developments"),
     developmentsContent(data.developments, data.report_date),
+    regulatoryExtras(input.regulatory, "the United States"),
   ].join("\n");
 
   // ── Methodology ───────────────────────────────────────────────────────────
