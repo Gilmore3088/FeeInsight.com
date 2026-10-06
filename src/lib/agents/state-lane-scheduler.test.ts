@@ -47,10 +47,10 @@ function templateText(strings: unknown): string {
 }
 
 function laneUpdate(): { text: string; values: unknown[] } | undefined {
-  // The one lane's update, not refreshLanePriorities' update of every lane's priority_score.
+  // The priority refresh also updates every lane; the lane's own schedule update is the one wanted.
   const call = sqlMock.mock.calls.find((entry) => {
     const text = templateText(entry[0]);
-    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("priority_score");
+    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score");
   });
   return call ? { text: templateText(call[0]), values: call.slice(1) } : undefined;
 }

@@ -600,7 +600,7 @@ export async function getFeeResearch(
     .filter((c) => c.oldAmount !== null && c.newAmount !== null)
     .slice(0, 10)
     .map((c) => ({
-      text: `${c.institutionName}: $${c.oldAmount} to $${c.newAmount}, seen ${c.changedAt.slice(0, 10)}.`,
+      text: `${c.institutionName}: $${c.oldAmount} to $${c.newAmount} on ${new Date(`${c.changedAt.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}.`,
       source: { ...CHANGES_SOURCE, asOf: c.changedAt.slice(0, 10) },
     }));
   return {
@@ -663,6 +663,9 @@ export async function getFeeResearch(
           ? ["Where a fee is stated as a rate, rates are compared only with other rates, one per institution, never with dollar amounts."]
           : []),
         "Each peer's amount links to the schedule document it was read from.",
+        "Pricing groups count each institution once, at its highest published tier.",
+        "A fee change is shown only when the institution's own schedule bears it out.",
+        "A blank cell in a table means the fee is not on that institution's published schedule in the index.",
         `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
         "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",
       ],
