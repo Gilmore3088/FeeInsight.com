@@ -18,7 +18,9 @@ import { assetSizeTier } from "./fdic";
  * leases, 131 fee income, 661A net income, 115 interest income, 117 non-interest
  * income, 671 non-interest expense, 550/551 YTD charge-offs/recoveries, 041B
  * delinquent loans, 997/998 net worth and net worth ratio, 083 members,
- * 703A + 386A + 386B real estate, 396 credit card, 385 + 370 vehicle loans.
+ * 703A + 386A + 386B real estate, 396 credit card, 385 + 370 vehicle loans, IS0048
+ * overdraft fee income and IS0049 non-sufficient funds fee income (FS220P; blank in
+ * quarters filed before NCUA added them).
  * Every mapped account's raw value is kept in raw_json so a mapping correction
  * never needs a re-fetch.
  */
@@ -56,6 +58,8 @@ export const NCUA_ACCOUNTS = {
   credit_card: "ACCT_396",
   new_vehicle: "ACCT_385",
   used_vehicle: "ACCT_370",
+  overdraft_fee_income_ytd: "ACCT_IS0048",
+  nsf_fee_income_ytd: "ACCT_IS0049",
 } as const;
 
 type Row = Record<string, string>;
@@ -198,6 +202,9 @@ export interface NcuaFinancialRow {
   /** Year-to-date values (thousands); quarterly figures are derived by the worker. */
   net_income_ytd: number | null;
   fee_income_ytd: number | null;
+  /** Overdraft and NSF fee income reported separately (YTD thousands); null before NCUA added the accounts. */
+  overdraft_fee_income_ytd: number | null;
+  nsf_fee_income_ytd: number | null;
   net_charge_offs_ytd: number | null;
   noninterest_expense_ytd: number | null;
   total_revenue_ytd: number | null;
@@ -245,6 +252,8 @@ export function parseNcuaFinancial(charterRaw: string, row: Row, q: Quarter): Nc
     total_equity: thousands(a("net_worth")),
     net_income_ytd: thousands(netIncome),
     fee_income_ytd: thousands(a("fee_income_ytd")),
+    overdraft_fee_income_ytd: thousands(a("overdraft_fee_income_ytd")),
+    nsf_fee_income_ytd: thousands(a("nsf_fee_income_ytd")),
     net_charge_offs_ytd: thousands(nco),
     noninterest_expense_ytd: thousands(expense),
     total_revenue_ytd: thousands(revenue),

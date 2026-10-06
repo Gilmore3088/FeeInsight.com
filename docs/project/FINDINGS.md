@@ -34,6 +34,30 @@ near a fee name into that category.
 **Fix:** none yet; reported to Improving Hamilton for whoever owns Knox and Darwin.
 **Lesson:** a headline fee should be checked against its row's fee name before it leads a page.
 
+## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
+**What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
+and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the
+`hamilton_decisions` table nor the `nsf_revenue` column (read-only query on prod). Prod's
+history already held `20270108000000_branch_deposits_market_indexes`, which is on the open
+`claude/hamilton-improvements-69gnln` branch (PR 93) but not on `main`.
+**Cause:** a migration was recorded on prod from a branch before it merged, so `main`'s new
+files numbered below it are "older than the last applied migration" and the deploy does not run them.
+**Fix:** renumbered both files to `20270108000001` and `20270108000002` (this PR). Neither has run
+anywhere, so nothing is applied twice.
+**Lesson:** number a new migration above both the highest file on `main` and the highest version
+in prod's `supabase_migrations.schema_migrations`; check prod, not just the folder.
+
+## 2026-10-06: New call-report fields need a re-pull; credit unions split overdraft and NSF
+**What happened:** Hamilton needs per-fee income for overdraft and NSF. Banks file one combined
+overdraft-and-NSF line (RIAD H032, banks over $1B only, not in the FDIC API). Credit unions file
+overdraft fee income (IS0048) and NSF fee income (IS0049) separately on the NCUA 5300 (FS220P).
+**Cause:** the NCUA step keeps only the accounts it maps in `raw_json`, so a new account can't be
+read from stored rows, and finished quarters were not due again for a year.
+**Fix:** the NCUA parser reads both accounts into `overdraft_revenue` and new `nsf_revenue`, and
+the registry scheduler re-pulls succeeded quarters recorded under an older parser version
+(`REGISTRY_PARSER_VERSIONS`), as ordinary visible runs, newest first.
+**Lesson:** when a parser learns a new field, bump its version so history fills in through runs.
+
 ## 2026-10-06: Supabase Preview fails on any PR that adds a migration
 **What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
 `main` preview branch shows the same status. The preview log stops at
@@ -368,3 +392,54 @@ one row per price move whose new price is still live. Category guard v7 rejects 
 check printing, annual fees and thresholds under overdraft and NSF (12 live rows).
 **Still open:** a cap read instead of the per-item price (Bath State Bank) and two-column misreads
 need Knox fixes.
+
+## 2026-10-06: Monthly service charges written as prose held as unclassified
+**What happened:** Knox held Evergreen Federal Bank's "$500 minimum daily balance, otherwise $8
+service charge per statement cycle" for review instead of reading an $8 monthly maintenance fee.
+A read-only count at 01:10 UTC Oct 6 found 9,915 lines held as unclassified at 2,401 institutions.
+Most are real fees with no report category (returned mail, shared branch, excess withdrawals,
+termination). 243 lines state a monthly service charge in prose, at 116 institutions, and only 16
+of those institutions had a live maintenance fee. 166 more are "inactivity" or "dormancy" charges.
+**Cause:** Knox names a price from the words before it. Prose puts the fee's name after the price
+("avoid the $10 monthly fee"), and the dormant-account rule matched "inactive" and "dormant" but
+not "inactivity" or "dormancy".
+**Fix:** same PR: Knox rules v9 reads a monthly service charge stated in prose when the line passes
+the maintenance guard (no savings, business, statement, withdrawal, card or box charge), and names
+inactivity and dormancy charges as dormant-account fees. The version bump makes Hamilton's rules
+re-check and Knox's re-extract gate read documents again; the new fees go through Darwin as usual.
+**Still open:** held lines with no report category stay held; a new category is a taxonomy decision.
+
+## 2026-10-06: A daily cap and a box price read as NSF fees
+**What happened:** the NSF tail at $50 included Bath State Bank ("$25 per return item ($50 maximum
+per day)" read as a $50 fee) and Hawaii Community FCU (the next column's "5" X 10" X 22" box ....
+$50.00" paired with "NSF Fee").
+**Cause:** Knox treated a figure named a maximum after an earlier price as a second fee, and the
+table reader paired a fee name with a value cell that named a fee of its own (a box size).
+**Fix:** same PR: Knox rules v10, table v3 and overdraft/NSF family v3. A "$X maximum" after an
+earlier price or rate on the line is that fee's cap, and is read as a daily cap when it says "per
+day"; a lone "$10.00 maximum" stays the fee's own price. A value cell a rule names on its own is
+left to the line rules. Read-only check at 02:25 UTC Oct 6: 8 live fees came from a "$X maximum"
+figure; the version bump re-checks them and the 4 that follow an earlier price or rate will stop reproducing.
+
+## 2026-10-06: Tier tables and two-column PDFs hid Texas overdraft fees
+**What happened:** Texas Bank and Trust and Austin Bank had no live overdraft fee although both
+schedules state one.
+**Cause:** Texas Bank and Trust prices overdraft by item amount ("Overdraft Item Fee: based on item
+amount", then "$10.01 - $20.00: $10.00 fee" rows) and no rule read those rows. Austin Bank's
+two-column PDF splits "* Overdraft Fee, per item, per presentment (applies to ... means) ....
+$30.00" across three lines of its right column, so no single line held both the name and the price.
+**Fix:** same PR: Knox rules v11 reads item-amount tier rows under an overdraft or NSF heading as
+one fee per priced tier (the index counts overdraft at its highest tier), and rebuilds the columns
+of a "left | right" text to join a fee name with the lowercase lines that continue it up to its
+price. Both only add fees, and every one still passes Darwin's guard.
+
+## 2026-10-06: The fee catalog listed the same fee twice at one institution
+**What happened:** opening an institution on a fee catalog page could show the same fee, with the
+same name and price, two or more times, which read as conflicting data.
+**Cause:** some schedules print a fee in more than one place (a fee table and an account section),
+and each listing is its own live row. Read-only check at 03:00 UTC Oct 6: same institution, same
+name (ignoring case) and same amount gave extra live rows of 95 counter check, 52 rush card, 49 NSF,
+48 stop payment, 31 overdraft and 27 bill pay. The index already counts one value per institution,
+so the published numbers were not affected.
+**Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
+name and price into one line marked "listed N times". Live rows are unchanged.

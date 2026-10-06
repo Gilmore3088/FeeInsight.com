@@ -10,6 +10,7 @@ vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 
 import {
   backfillStart,
+  isParserStale,
   pickDueCandidate,
   registryCandidates,
   scheduleDueRegistryRuns,
@@ -52,6 +53,16 @@ describe("registry scheduler", () => {
     expect(backfillStart(undefined)).toEqual({ year: 2010, quarter: 1 });
     expect(backfillStart("2005Q3")).toEqual({ year: 2005, quarter: 3 });
     expect(backfillStart("garbage")).toEqual({ year: 2010, quarter: 1 });
+  });
+
+  it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
+    expect(isParserStale("ncua-financials", "succeeded", null)).toBe(true);
+    expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);
+    expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(false);
+    // A claimed or failed partition follows its normal retry time instead of looping.
+    expect(isParserStale("ncua-financials", "scheduled", 1)).toBe(false);
+    expect(isParserStale("ncua-financials", "failed", 1)).toBe(false);
+    expect(isParserStale("fdic-financials", "succeeded", null)).toBe(false);
   });
 
   it("picks the first never-attempted or due partition", () => {

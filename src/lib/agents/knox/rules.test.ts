@@ -1,12 +1,106 @@
 import { describe, expect, it } from "vitest";
 
 import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, stripFootnoteMarks } from "./rules";
+import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
 }
 
 describe("Knox extract.rules", () => {
+  it("v11 joins a fee name split across lines in one column of a two-column PDF (Austin Bank)", () => {
+    const text = [
+      "Account Research | Government Reclamations (Paper/ACH)....$50.00",
+      "Per copy....$5.00 | Inactive Account .... $10.00",
+      "Account Transfers | Levy/Garnishment ....$100.00",
+      "Austin Bank ATM ....FREE | * Non-Sufficient Check Fee (NSF), per item,",
+      "One Plus Banking....FREE | per presentment ....$30.00",
+      "Online Banking....FREE | Notary Service....$5.00",
+      "Mobile Banking....FREE (in bank transfers) | * Overdraft Fee, per item, per presentment (applies to",
+      ".... $2.00 (bank to bank transfers) | overdrafts created by check, in-person withdrawal, ATM",
+      "Non-Austin Bank ATM ....$3.00 | withdrawal, or other electronic means) ....$30.00",
+      "Early Closing Fee for accounts closed within 30 days of | be assessed; however, your account will not be charged",
+      "opening ....$25.00 | returned that is $5.00 or less.",
+    ].join("\n");
+    const found = extractCandidatesFromText(text).candidates.map((c) => [c.canonicalHint, c.amount]);
+    expect(found).toContainEqual(["nsf", 30]);
+    expect(found).toContainEqual(["overdraft", 30]);
+    expect(found).toContainEqual(["early_closure", 25]);
+    expect(found).not.toContainEqual(["nsf", 5]);
+  });
+
+  it("v11 reads an overdraft fee tiered by item amount, one fee per priced tier (Texas Bank and Trust)", () => {
+    const text = [
+      "Overdraft Item Fee:  based on item amount",
+      "Limit of $120 per day",
+      "Applies to items such as checks, withdrawals, debit card/ATM transactions, and other electronic means",
+      "Item amount | Fee Amount",
+      "$0 - $10.00:  $0 fee",
+      "$10.01 - $20.00:  $10.00 fee",
+      "$20.01 - $30.00:  $20.00 fee",
+      "$30.01 or above:  $30.00 fee",
+      "TBT Debit Card Fees",
+      "Replacement card:  $5",
+    ].join("\n\n");
+    const overdraft = extractCandidatesFromText(text).candidates.filter((c) => c.canonicalHint === "overdraft");
+    expect(overdraft.map((c) => [c.feeName, c.amount])).toEqual([
+      ["Overdraft Item Fee (items $10.01 - $20.00)", 10],
+      ["Overdraft Item Fee (items $20.01 - $30.00)", 20],
+      ["Overdraft Item Fee (items $30.01 or above)", 30],
+    ]);
+  });
+
+  it("v10 never pairs a fee name with the next column's box price (Hawaii Community FCU)", () => {
+    const text = "NSF Fee* (Non-Sufficient Funds Fee) | 5” X 10” X 22” box...................................................... $50.00\n";
+    const found = runFreeSpecialists(text).candidates.map((c) => [c.amount, c.canonicalHint]);
+    expect(found).not.toContainEqual([50, "nsf"]);
+  });
+
+  it("v10 never reads a cap named after its figure as a second fee (Bath State Bank)", () => {
+    const text = "Non-Sufficient Fund Returned Item(s) Charge | $25 per return item ($50 maximum per day)\n\nBounce Paid Item(s) Charge | $25 per item paid ($100 maximum per day)";
+    const found = extractCandidatesFromText(text).candidates.map((c) => [c.amount, c.canonicalHint]);
+    expect(found).toContainEqual([25, "nsf"]);
+    expect(found.some(([amount]) => amount === 50 || amount === 100)).toBe(false);
+    // A lone "maximum" figure is the fee's own up-to price.
+    expect(extractFromSegment("Dormant Account Fee…………………….$10.00 maximum*").candidates.map((c) => c.amount)).toEqual([10]);
+  });
+
+  it("v9 reads an account's monthly service charge written as prose (Evergreen Federal Bank)", () => {
+    const evergreen = extractFromSegment(
+      "Evergreen Non-Interest Checking | n/a | n/a | n/a | $500 minimum daily balance, otherwise $8 service charge per statement cycle",
+    );
+    expect(evergreen.held).toEqual([]);
+    expect(evergreen.candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([
+      ["Evergreen Non-Interest Checking Monthly service charge", 8, "monthly_maintenance"],
+    ]);
+    for (const [line, amount] of [
+      ["Maintain a $2,000 minimum daily balance to avoid a $10 monthly fee", 10],
+      ["If you do not, a monthly $29 fee will be assessed.", 29],
+      ["*Maintain a $1,500 daily minimum balance, and we'll waive the $10.00 monthly service charge.", 10],
+      ["Daily minimum balance of $2,500 to avoid $5.95 monthly service charge", 5.95],
+      ["Cornerstone Checking is subject to a $25 monthly fee", 25],
+    ] as const) {
+      const result = extractFromSegment(line);
+      expect(result.candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[amount, "monthly_maintenance"]]);
+    }
+  });
+
+  it("v9 leaves statement, withdrawal, savings and card charges out of maintenance", () => {
+    for (const line of [
+      "Additional $3 monthly charge for all printed statements",
+      "6 withdrawals allowed per statement cycle, $5.00 service charge for each additional withdrawal thereafter.",
+      "Savings accounts below $100 pay a $3 monthly service charge",
+      "Debit card program: $2 monthly fee",
+    ]) {
+      expect(extractFromSegment(line).candidates.filter((c) => c.canonicalHint === "monthly_maintenance")).toEqual([]);
+    }
+  });
+
+  it("v9 names inactivity and dormancy charges as dormant-account fees", () => {
+    expect(classifyFeeText("Account Inactivity Fee")).toBe("dormant_account");
+    expect(classifyFeeText("Dormancy Charge (Savings Accounts with Balances Less than $25)")).toBe("dormant_account");
+  });
+
   it("v8 drops footnote numbers glued to a fee name (SoFi fee sheet)", () => {
     expect(fees("Outgoing domestic wire transfer3 $30 per wire transfer")).toEqual([["Outgoing domestic wire transfer", 30, "wire_domestic_outgoing"]]);
     expect(extractFromSegment("Return Item fee2 $0").held.map((held) => held.feeName)).toEqual(["Return Item fee"]);
