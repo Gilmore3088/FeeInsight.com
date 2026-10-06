@@ -67,6 +67,14 @@ cutoff, account activity printouts and a debit card's own monthly charge have no
 category (the keys file them as unmapped), so Knox still leaves them out. A rules
 change scores both gates; a fix that helps Texas and hurts another state fails.
 
+A new rules version also reaches lines older versions held. Knox does not extract a text twice,
+and the raw-row dedupe index (document, name, amount) stopped a categorized fee from replacing
+the held row, so a held line stayed held after the rules learned it. Now each extract step
+re-reads up to 300 held unclassified lines from the document's current text with today's rules
+(`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
+(`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
+version. A categorized insert that meets a held row takes it over the same way.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
