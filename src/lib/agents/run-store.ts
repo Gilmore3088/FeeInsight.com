@@ -532,6 +532,9 @@ async function executeAgenticStep(
           handed_to_magellan: read.handedToMagellan,
           deferred_scans: read.deferred,
           triaged_texts: read.triagedTexts,
+          reopened_fee_pages: read.reopenedFeePages,
+          reopened_bans_lifted: read.reopenedBansLifted,
+          reopened_links_restored: read.reopenedLinksRestored,
           formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
@@ -2298,7 +2301,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation";
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;

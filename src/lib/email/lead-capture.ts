@@ -71,7 +71,7 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
       ];
     case "national_index":
       return [
-        "New national medians, notable fee changes, and one chart — about once a month.",
+        "New national medians, notable fee changes, and one chart, no more than once a month.",
         `Current index: ${absolute("/research/national-fee-index")}`,
       ];
   }

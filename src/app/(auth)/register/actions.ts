@@ -1,5 +1,6 @@
 "use server";
 
+import { REGISTER_ACTION_POLICY, isServerActionRateLimited } from "@/lib/api-hardening/action-rate-limit";
 import { createUserWithSession } from "@/lib/auth";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
@@ -44,6 +45,10 @@ export async function register(formData: FormData, redirectTo?: string): Promise
   const trimmedEmail = email.trim().toLowerCase();
   if (!EMAIL_PATTERN.test(trimmedEmail)) {
     return { success: false, error: "Invalid email format" };
+  }
+
+  if (await isServerActionRateLimited(REGISTER_ACTION_POLICY)) {
+    return { success: false, error: "Too many sign-up attempts from this connection. Try again in 10 minutes." };
   }
 
   const destination = sanitizeInternalRedirect(redirectTo, "/account");

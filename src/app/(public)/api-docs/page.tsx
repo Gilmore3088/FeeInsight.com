@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { MONTHLY_PRICE_LABEL } from "@/app/subscribe/pricing";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
@@ -696,7 +697,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Status.</span>{" "}
-            Each category carries a status: Strong (20+ institutions with published fees), Provisional (5 to 19), or Too few to benchmark (under 5, no median shown).
+            Each category carries a status: Strong ({STRONG_INSTITUTION_COUNT}+ institutions with published fees), Provisional ({MIN_INSTITUTIONS_FOR_MEDIAN} to {STRONG_INSTITUTION_COUNT - 1}), or Too few to benchmark (under {MIN_INSTITUTIONS_FOR_MEDIAN}, no median shown).
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}

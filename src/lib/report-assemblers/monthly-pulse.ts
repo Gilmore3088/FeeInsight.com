@@ -165,6 +165,7 @@ const CHANGES_SQL = `
            LIMIT 1) AS new_document_text
     FROM ch
     JOIN institution_sources i ON i.id = ch.institution_id
+                              AND ($2::text IS NULL OR i.state_code = $2)
     LEFT JOIN LATERAL (
       SELECT fp.fee_name, fp.source_url, fr.source_document_id
         FROM published_fee_records fp
@@ -207,12 +208,16 @@ const COVERAGE_SQL = `
 
 // ─── Assembler ────────────────────────────────────────────────────────────────
 
-/** Recorded price changes since `windowStartIso`, and the ones each bank's schedules bear out. */
+/**
+ * Recorded price changes since `windowStartIso` (in one state when `stateCode` is given),
+ * and the ones each bank's schedules bear out.
+ */
 export async function loadConfirmedFeeChanges(
   windowStartIso: string,
+  stateCode: string | null = null,
 ): Promise<{ changes: PulseChange[]; recorded: number }> {
   const sql = getSql();
-  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStartIso])) as unknown as RecordedChangeRow[];
+  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStartIso, stateCode])) as unknown as RecordedChangeRow[];
   const changes = recorded.map(confirmFeeChange).filter((c): c is PulseChange => c !== null);
   return { changes, recorded: recorded.length };
 }
@@ -222,7 +227,7 @@ export async function assembleMonthlyPulse(now = new Date()): Promise<MonthlyPul
   const executedAt = now.toISOString();
   const windowStart = new Date(now.getTime() - PULSE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStart])) as unknown as RecordedChangeRow[];
+  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStart, null])) as unknown as RecordedChangeRow[];
   const coverageRows = (await sql.unsafe(COVERAGE_SQL, [windowStart])) as unknown as PulseCoverage[];
 
   const changes = recorded
