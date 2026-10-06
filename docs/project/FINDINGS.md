@@ -24,6 +24,16 @@ and bad inputs (`state=Texas`, `limit=0`) were ignored or caused errors.
 **Fix:** the API audit PR (shared `src/lib/api-v1.ts`, route tests).
 **Lesson:** when docs promise a limit, add a route test that proves it.
 
+## 2026-10-05: Footnote numbers glued to live fee names
+**What happened:** SoFi's fee sheet published "Outgoing domestic wire transfer3" and "Return Item
+fee2". At 23:25 UTC, 155 live fees at 66 institutions had a footnote number glued to the name
+(read-only regex count on `published_fee_catalog`; box sizes like "10x10" are excluded).
+**Cause:** Knox's line rules (pass 1) kept a PDF's superscript footnote, which the text layer
+flattens into a digit. The table and family specialists (pass 2) already stripped it; pass 1 did not.
+**Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
+merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
+**Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+
 ## 2026-10-05: Public pages showed different counts and medians on the same day
 **What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
 overdraft median while the fee index, directory and research hub said 2,144 and 60, research said
