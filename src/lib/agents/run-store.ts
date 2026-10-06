@@ -739,18 +739,17 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
-      // Every live fee must be stated in the bank's own stored schedule: state lanes
-      // source-check a batch of institutions per step, after publishing, so fees
-      // published in this step are checked too.
-      const sourceCheck = stateCode || institutionId
-        ? await takeDownUntraceableFees(tx, {
-            runId: run.id,
-            batchId: `agentic-run-${run.id}`,
-            dryRun: run.runKind === "dry_run",
-            institutionId,
-            stateCode,
-          })
-        : null;
+      // Every live fee must be stated in the bank's own stored schedule: every publish
+      // step source-checks a batch of institutions (its state's or institution's when it
+      // has one, any state's otherwise) after publishing, so fees published in this step
+      // are checked too.
+      const sourceCheck = await takeDownUntraceableFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
       const indexRefresh = published.dryRun
         ? null

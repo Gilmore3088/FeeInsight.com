@@ -430,3 +430,14 @@ name (ignoring case) and same amount gave extra live rows of 95 counter check, 5
 so the published numbers were not affected.
 **Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
 name and price into one line marked "listed N times". Live rows are unchanged.
+
+## 2026-10-06: Texas live fees were never source-checked
+**What happened:** a fresh random sample of 150 live Texas fees (03:20 UTC Oct 6) found 136 that
+match the bank's own schedule (90.7%), 8 wrong and 6 with no source document at all. Texas had 107
+live fees with no source document, all old imported rows.
+**Cause:** the source check that takes down untraceable fees ran only in publish steps that had a
+state or an institution. Most publish steps have neither, and the Texas lane ran one with a state
+three times since the check shipped, so 119 of 183 Texas institutions with live fees (499 of 2,662
+nationally, holding 7,888 live fees) had never been checked.
+**Fix:** same PR: every publish step source-checks a batch of 40 institutions, any state's when the
+step has none, institutions never checked first.
