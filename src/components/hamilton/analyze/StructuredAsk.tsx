@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/lib/hamilton/workspace/types";
 import { EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
+import { SegmentTable, type SegmentData } from "@/components/hamilton/memo/segment-table";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
@@ -204,6 +205,9 @@ export function StructuredAsk({
   if (!response) return null;
 
   const q = response.question ?? response.answer?.question ?? null;
+  // The market slice the question named ("$10B and up"), when the engine sends it.
+  const segment = (response as AskResponse & { segment?: SegmentData | null }).segment ?? null;
+  const exhibitOwn = response.answer?.exhibit && response.answer.exhibit.kind !== "trend" ? response.answer.exhibit : null;
   return (
     <div className="flex flex-col gap-5">
       {response.answer ? (
@@ -225,6 +229,7 @@ export function StructuredAsk({
           {response.shortAnswer}
         </p>
       )}
+      {segment ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "You"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
         <Callout>
           <span className="font-medium text-warm-900">If the objective is {response.opinion.assumedObjective.replace(/_/g, " ")}: </span>
