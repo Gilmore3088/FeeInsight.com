@@ -606,6 +606,7 @@ async function executeAgenticStep(
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
+          category_model_disputes: verification.categoryModelDisputes,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
           learning_log: verification.learning,
