@@ -2,190 +2,130 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType } from "react";
-import {
-  Activity,
-  BookOpenText,
-  Compass,
-  ContactRound,
-  Database,
-  Dna,
-  FileCheck2,
-  FileText,
-  Gauge,
-  Map,
-  Orbit,
-  ShieldCheck,
-  Target,
-} from "lucide-react";
+import type { ReactNode } from "react";
+import { ROOMS, findRoomPage, roomForPath, type RoomPage } from "@/lib/admin-rooms";
 
-interface NavItem {
-  href: string;
-  label: string;
-  role: string;
-  icon: ComponentType<{ className?: string }>;
-  exact?: boolean;
-  badgeKey?: string;
-  activePrefixes?: string[];
+function badgeFor(page: RoomPage, badges?: Record<string, number>): number {
+  return page.badgeKey ? badges?.[page.badgeKey] ?? 0 : 0;
 }
 
-const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
-  {
-    label: "Atlas Control",
-    items: [
-      { href: "/admin", label: "Crew", role: "Your agents", icon: Orbit, exact: true },
-      { href: "/admin/live", label: "Live", role: "Banks moving through", icon: Activity },
-      { href: "/admin/atlas/details", label: "Atlas", role: "Run controls", icon: Orbit },
-      {
-        href: "/admin/states",
-        label: "State Lanes",
-        role: "State queues",
-        icon: Map,
-      },
-      {
-        href: "/admin/quality",
-        label: "Trust Review",
-        role: "Source review",
-        icon: FileCheck2,
-        badgeKey: "trustPending",
-        activePrefixes: ["/admin/data-quality"],
-      },
-      {
-        href: "/admin/scoreboard",
-        label: "Scoreboard",
-        role: "Answer key + daily score",
-        icon: Target,
-        activePrefixes: ["/admin/answer-key"],
-      },
-      {
-        href: "/admin/api-trust",
-        label: "API Trust",
-        role: "Spend guard",
-        icon: Gauge,
-      },
-    ],
-  },
-  {
-    label: "Agent Lane",
-    items: [
-      {
-        href: "/admin/magellan",
-        label: "Magellan",
-        role: "1 Discover + fetch",
-        icon: Compass,
-        activePrefixes: ["/admin/coverage"],
-      },
-      { href: "/admin/rosetta", label: "Rosetta", role: "2 Read sources", icon: FileText },
-      {
-        href: "/admin/knox",
-        label: "Knox",
-        role: "3 Extract + exceptions",
-        icon: ShieldCheck,
-        badgeKey: "knoxPending",
-        activePrefixes: ["/admin/review", "/admin/verify", "/admin/agents/knox"],
-      },
-      { href: "/admin/darwin", label: "Darwin", role: "4 Verify fees", icon: Dna },
-    ],
-  },
-  {
-    label: "Output",
-    items: [
-      {
-        href: "/admin/data",
-        label: "Published Data",
-        role: "Hamilton output",
-        icon: Database,
-        activePrefixes: [
-          "/admin/institutions", "/admin/institution", "/admin/index", "/admin/market",
-          "/admin/peers", "/admin/fees", "/admin/districts", "/admin/query", "/admin/national",
-        ],
-      },
-      {
-        href: "/admin/hamilton",
-        label: "Hamilton",
-        role: "Research",
-        icon: BookOpenText,
-        activePrefixes: ["/admin/research", "/admin/scout", "/admin/methodology"],
-      },
-      { href: "/admin/leads", label: "Leads", role: "Sales", icon: ContactRound },
-    ],
-  },
-];
-
-function isItemActive(pathname: string, item: NavItem): boolean {
-  if (item.exact) return pathname === item.href;
-  if (pathname.startsWith(item.href)) return true;
-  return item.activePrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? false;
-}
-
-export function AdminNav({ badges }: { badges?: Record<string, number> }) {
-  const pathname = usePathname();
-
+function Badge({ count, active }: { count: number; active: boolean }) {
+  if (count <= 0) return null;
   return (
-    <nav aria-label="Admin navigation" className="admin-sidebar-nav flex flex-col gap-0.5 px-2.5 py-1">
-      {NAV_GROUPS.map((group, groupIndex) => (
-        <div key={group.label}>
-          {groupIndex > 0 && <div className="mx-2 my-2 h-px bg-black/[0.04] dark:bg-white/[0.04]" />}
-          <span className="mb-1 block px-2 text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
-            {group.label}
-          </span>
-          {group.items.map((item) => {
-            const active = isItemActive(pathname, item);
-            const badgeCount = item.badgeKey ? badges?.[item.badgeKey] ?? 0 : 0;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
-                aria-current={active ? "page" : undefined}
-                className={`relative flex min-h-10 items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
-                  active
-                    ? "bg-gray-900 text-white dark:bg-white/10 dark:text-gray-100"
-                    : "text-gray-600 hover:bg-black/[0.03] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.04] dark:hover:text-gray-200"
-                }`}
-              >
-                <Icon className="h-[14px] w-[14px] shrink-0" />
-                <span className="min-w-0 flex-1 leading-tight">
-                  <span className="block truncate text-[12px] font-semibold">{item.label}</span>
-                  <span className={`block truncate text-[9px] ${active ? "text-white/60" : "text-gray-400"}`}>
-                    {item.role}
-                  </span>
-                </span>
-                {badgeCount > 0 && (
-                  <span className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
-                    active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                  }`}>
-                    {badgeCount > 99 ? "99+" : badgeCount}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
+    <span
+      className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+        active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+      }`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+/** The six rooms, in the top bar. Scrolls sideways on a phone. */
+export function AdminRoomTabs({ badges }: { badges?: Record<string, number> }) {
+  const pathname = usePathname();
+  const current = roomForPath(pathname);
+  return (
+    <nav aria-label="Admin rooms" className="admin-nav-inline flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+      {ROOMS.map((room) => {
+        const active = room.key === current.key;
+        const count = room.pages.reduce((sum, page) => sum + badgeFor(page, badges), 0);
+        return (
+          <Link
+            key={room.key}
+            href={room.href}
+            prefetch={false}
+            aria-current={active ? "page" : undefined}
+            className={`inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[12px] font-semibold transition-colors ${
+              active
+                ? "bg-gray-900 text-white dark:bg-white/15 dark:text-gray-100"
+                : "text-gray-500 hover:bg-black/[0.04] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.05] dark:hover:text-gray-200"
+            }`}
+          >
+            {room.label}
+            <Badge count={count} active={active} />
+          </Link>
+        );
+      })}
     </nav>
   );
 }
 
-export function AdminNavInline() {
+/** The screens of the current room, down the side on wider screens. */
+export function AdminNav({ badges }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
+  const room = roomForPath(pathname);
+  const activePage = findRoomPage(pathname)?.page;
   return (
-    <nav aria-label="Admin sections" className="admin-nav-inline relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:hidden">
-      {NAV_GROUPS.flatMap((group) => group.items).map((item) => {
-        const active = isItemActive(pathname, item);
+    <nav aria-label={`${room.label} screens`} className="admin-sidebar-nav flex flex-col gap-0.5 px-2.5 py-1">
+      <span className="mb-1 block px-2 text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">{room.label}</span>
+      {room.pages.map((page) => {
+        const active = page === activePage;
         return (
           <Link
-            key={item.href}
-            href={item.href}
+            key={page.href}
+            href={page.href}
             prefetch={false}
             aria-current={active ? "page" : undefined}
-            aria-label={`${item.label}: ${item.role}`}
-            className={`inline-flex min-h-9 items-center whitespace-nowrap rounded-md px-2.5 py-2 text-[11px] font-semibold transition-colors ${
-              active ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+            className={`relative flex min-h-10 items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
+              active
+                ? "bg-gray-900 text-white dark:bg-white/10 dark:text-gray-100"
+                : "text-gray-600 hover:bg-black/[0.03] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.04] dark:hover:text-gray-200"
             }`}
           >
-            {item.label}
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[12px] font-semibold">{page.label}</span>
+              <span className={`block truncate text-[9px] ${active ? "text-white/60" : "text-gray-400"}`}>{page.role}</span>
+            </span>
+            <Badge count={badgeFor(page, badges)} active={active} />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** The side column. Left out for a one-screen room (Today) so its page gets the full width. */
+export function AdminSidebar({ badges, footer }: { badges?: Record<string, number>; footer?: ReactNode }) {
+  const pathname = usePathname();
+  if (roomForPath(pathname).pages.length < 2) return null;
+  return (
+    <aside className="hidden md:flex flex-col w-[180px] shrink-0 sticky top-[var(--admin-nav-h)] h-[calc(100vh-var(--admin-nav-h))] border-r border-black/[0.04] dark:border-white/[0.04] bg-white/60 dark:bg-[oklch(0.15_0_0)]/60 backdrop-blur-sm overflow-y-auto">
+      <div className="flex-1 py-2.5">
+        <AdminNav badges={badges} />
+      </div>
+      {footer}
+    </aside>
+  );
+}
+
+/** The same screens as a row under the top bar on a phone. Hidden when the room has one screen. */
+export function AdminNavInline({ badges }: { badges?: Record<string, number> }) {
+  const pathname = usePathname();
+  const room = roomForPath(pathname);
+  const activePage = findRoomPage(pathname)?.page;
+  if (room.pages.length < 2) return null;
+  return (
+    <nav
+      aria-label={`${room.label} screens`}
+      className="admin-nav-inline flex min-w-0 items-center gap-0.5 overflow-x-auto border-t border-black/[0.04] px-3 py-1 md:hidden dark:border-white/[0.05]"
+    >
+      {room.pages.map((page) => {
+        const active = page === activePage;
+        return (
+          <Link
+            key={page.href}
+            href={page.href}
+            prefetch={false}
+            aria-current={active ? "page" : undefined}
+            aria-label={`${page.label}: ${page.role}`}
+            className={`inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-md px-2.5 py-2 text-[11px] font-semibold transition-colors ${
+              active ? "bg-gray-900 text-white dark:bg-white/15" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/[0.05]"
+            }`}
+          >
+            {page.label}
+            <Badge count={badgeFor(page, badges)} active={active} />
           </Link>
         );
       })}
