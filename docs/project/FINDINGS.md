@@ -13,6 +13,16 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: James's request email carried the paid report link
+**What happened:** the funnel re-audit found the report check line in James's request email and in
+`leads.use_case` included the live private report URL. That email's Reply-To is the requester, so a
+normal reply would hand them the paid report for free.
+**Cause:** the line was written when James sent the link by hand after agreeing a price.
+**Fix:** `describeQuoteCheck` no longer includes the link; only a Stripe payment issues it
+(funnel fixes PR 239). Links already stored in older rows' `use_case` are not removed.
+**Lesson:** anything in an email with the requester as Reply-To can reach the requester; never put
+a paid deliverable in it.
+
 ## 2026-10-06: Server actions sat outside the API rate limits
 **What happened:** the funnel audit found free signup (`register`, a server action) had a honeypot
 but no rate limit, while every lead form had one. API limits only cover routes in

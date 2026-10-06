@@ -62,6 +62,8 @@ export interface ReportPaidEffect {
 export interface StripeEventEffects {
   welcome: Array<{ email: string; name: string | null }>;
   reportPaid: ReportPaidEffect[];
+  /** A second paid session for a request already paid: James refunds it in Stripe. */
+  reportDuplicate: Array<{ leadId: number; cents: number; checkoutSessionId: string }>;
 }
 
 /**
@@ -70,7 +72,7 @@ export interface StripeEventEffects {
  * reset by later failures) and clears whenever the subscription is active or ends.
  */
 export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<StripeEventEffects> {
-  const effects: StripeEventEffects = { welcome: [], reportPaid: [] };
+  const effects: StripeEventEffects = { welcome: [], reportPaid: [], reportDuplicate: [] };
   await applyEvent(tx, event, effects);
   return effects;
 }
@@ -90,6 +92,15 @@ async function applyReportPayment(tx: Tx, session: Stripe.Checkout.Session, effe
     WHERE id = ${leadId} AND paid_at IS NULL
     RETURNING id, name, email, quote_institution_id
   `;
+  if (paid.length === 0) {
+    const [earlier] = await tx<Array<{ stripe_checkout_session_id: string | null }>>`
+      SELECT stripe_checkout_session_id FROM leads WHERE id = ${leadId} AND paid_at IS NOT NULL
+    `;
+    if (earlier && earlier.stripe_checkout_session_id !== session.id) {
+      effects.reportDuplicate.push({ leadId, cents: session.amount_total ?? 0, checkoutSessionId: session.id });
+    }
+    return;
+  }
   for (const lead of paid) {
     const institutionId = lead.quote_institution_id === null ? null : Number(lead.quote_institution_id);
     effects.reportPaid.push({

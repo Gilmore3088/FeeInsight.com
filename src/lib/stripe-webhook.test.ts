@@ -166,8 +166,16 @@ describe("institution report payments", () => {
     expect(tx).not.toHaveBeenCalled();
   });
 
-  it("sends nothing again for an already-paid request", async () => {
+  it("sends nothing again for a session already recorded as the payment", async () => {
+    tx.mockResolvedValueOnce([]).mockResolvedValueOnce([{ stripe_checkout_session_id: "cs_test_1" }]);
     const effects = await applyStripeEvent(tx as never, paidSession());
     expect(effects.reportPaid).toEqual([]);
+    expect(effects.reportDuplicate).toEqual([]);
+  });
+
+  it("flags a second paid session for an already-paid request so James refunds it", async () => {
+    tx.mockResolvedValueOnce([]).mockResolvedValueOnce([{ stripe_checkout_session_id: "cs_first" }]);
+    const effects = await applyStripeEvent(tx as never, paidSession());
+    expect(effects.reportDuplicate).toEqual([{ leadId: 18, cents: 30000, checkoutSessionId: "cs_test_1" }]);
   });
 });

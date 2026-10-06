@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
-import { getInstitutionLabel, getReportPaymentLead, saveCheckoutSession } from "@/lib/data-store/report-payments";
+import { checkInstitutionReport } from "@/lib/custom-report/quote-check";
+import { flagQuoteNotReady, getInstitutionLabel, getReportPaymentLead, saveCheckoutSession } from "@/lib/data-store/report-payments";
 import { payPath, verifyPayToken } from "@/lib/leads/pay-link";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 import { getStripe } from "@/lib/stripe";
@@ -23,6 +24,13 @@ export async function startReportCheckoutAction(formData: FormData): Promise<voi
   if (lead.paidAt) redirect(payPath(token));
   const institution = await getInstitutionLabel(lead.quoteInstitutionId);
   if (!institution) redirect(payPath(token));
+  // The market can thin out between the quote and the payment; never take money for a
+  // report that would open as "being refreshed".
+  const check = await checkInstitutionReport({ institutionId: institution.id, institutionName: null });
+  if (check.status !== "ready") {
+    await flagQuoteNotReady(lead.id);
+    redirect(payPath(token));
+  }
 
   let url: string | null = null;
   try {

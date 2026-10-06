@@ -81,6 +81,11 @@ export async function markQuoteSent(leadId: number): Promise<void> {
   await sql`UPDATE leads SET quote_sent_at = NOW() WHERE id = ${leadId}`;
 }
 
+/** A quoted report whose market went thin before payment: back to James as owed a reply. */
+export async function flagQuoteNotReady(leadId: number): Promise<void> {
+  await sql`UPDATE leads SET status = 'needs_reply' WHERE id = ${leadId} AND paid_at IS NULL AND status = 'quoted'`;
+}
+
 export async function saveCheckoutSession(leadId: number, sessionId: string): Promise<void> {
   await sql`UPDATE leads SET stripe_checkout_session_id = ${sessionId} WHERE id = ${leadId} AND paid_at IS NULL`;
 }

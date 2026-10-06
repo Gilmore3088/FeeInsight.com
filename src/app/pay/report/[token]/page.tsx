@@ -9,7 +9,9 @@ import { notFound } from "next/navigation";
 import { ReportChrome } from "@/components/public/report-chrome";
 import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER } from "@/lib/constants";
 import { LINK_LIFETIME_DAYS } from "@/lib/custom-report/link";
-import { getInstitutionLabel, getReportPaymentLead } from "@/lib/data-store/report-payments";
+import { checkInstitutionReport } from "@/lib/custom-report/quote-check";
+import { flagQuoteNotReady, getInstitutionLabel, getReportPaymentLead } from "@/lib/data-store/report-payments";
+import { TrackView } from "@/components/track-view";
 import { verifyPayToken } from "@/lib/leads/pay-link";
 import { privateReportUrl } from "@/lib/leads/report-paid";
 import { REPORT_PAYMENT_KIND, formatUsd } from "@/lib/leads/report-payment";
@@ -64,10 +66,19 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
   const price = formatUsd(lead.quoteCents);
   const paid = Boolean(lead.paidAt) || (await stripeConfirmsPayment(query.paid, lead.id));
   const reportUrl = paid ? privateReportUrl(institution.id) : null;
+  // Checked on every unpaid view (and again at checkout): no payment for a thin market.
+  const buyable = paid || (await checkInstitutionReport({ institutionId: institution.id, institutionName: null })).status === "ready";
+  // Puts the request back in James's queue (owed a reply), so the page's "we have been told" is true.
+  if (!buyable) await flagQuoteNotReady(lead.id);
   const place = [institution.city, institution.stateCode].filter(Boolean).join(", ");
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
+      <TrackView
+        event={paid ? "report_pay_complete" : "report_pay_view"}
+        eventProps={{ lead_id: lead.id, buyable: buyable ? "yes" : "no" }}
+        onceKey={`report-pay:${lead.id}:${paid ? "paid" : "view"}`}
+      />
       <ReportChrome preparedFor={institution.name} />
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-10 sm:px-6">
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
@@ -96,6 +107,19 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
                 We will email your report link to {lead.email} within one business day. Stripe emails your receipt.
               </p>
             )}
+          </section>
+        ) : !buyable ? (
+          <section className={`mt-8 ${CARD}`} aria-labelledby="hold-heading">
+            <h2 id="hold-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+              This report can&apos;t be bought right now
+            </h2>
+            <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+              The local fee data for {institution.name} needs a refresh before we can stand behind the comparison, so this
+              quote is paused. Nothing has been charged. We have been told and will write to {lead.email}.
+            </p>
+            <p className="mt-3 text-[13px] text-[#6B6255]">
+              Questions? <Link href="/contact?source=report" className="underline">Use the contact form</Link>.
+            </p>
           </section>
         ) : (
           <>
