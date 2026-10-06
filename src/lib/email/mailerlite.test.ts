@@ -53,6 +53,50 @@ describe("MailerLite sync", () => {
     expect(JSON.parse(String(upsert?.[1]?.body)).groups).toEqual(["123", "77"]);
   });
 
+  it("resubscribes only on a fresh confirm, and reports a status MailerLite didn't store", async () => {
+    vi.stubEnv("MAILERLITE_SYNC_ENABLED", "true");
+    vi.stubEnv("MAILERLITE_API_KEY", "key");
+    vi.stubEnv("MAILERLITE_GROUP_ID", "123");
+    expect(buildMailerLitePayload({ email: "a@b.co", subscribed: true, reconfirmed: true }).resubscribe).toBe(true);
+    expect(buildMailerLitePayload({ email: "a@b.co", subscribed: true }).resubscribe).toBeUndefined();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { id: "sub_1", status: "unsubscribed" } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await syncLeadToMailerLite({ email: "a@b.co", subscribed: true });
+    expect(result.status).toBe("failed");
+  });
+
+  it("moves a reader to the state they picked last, leaving other state groups", async () => {
+    vi.stubEnv("MAILERLITE_SYNC_ENABLED", "true");
+    vi.stubEnv("MAILERLITE_API_KEY", "key");
+    vi.stubEnv("MAILERLITE_GROUP_ID", "123");
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/groups?")) {
+        return new Response(JSON.stringify({
+          data: [
+            { id: "9", name: "Fee Insight · State · AL", active_count: 1 },
+            { id: "10", name: "Fee Insight · State · FL", active_count: 1 },
+            { id: "11", name: "Fee Insight · State · TX", active_count: 0 },
+            { id: "12", name: "Fee Insight · State · GA", active_count: 0 },
+          ],
+          meta: { last_page: 1 },
+        }));
+      }
+      if (url.includes("/subscribers/sub_1/groups/")) return new Response(null, { status: 204 });
+      // A re-confirmed reader's old state group counts them as unsubscribed (active_count 0).
+      return new Response(JSON.stringify({ data: { id: "sub_1", status: "active", groups: [{ id: "123" }, { id: "9" }, { id: "10" }, { id: "12" }] } }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await syncLeadToMailerLite({ email: "a@b.co", subscribed: true, state: "FL" });
+    expect(result).toEqual({ status: "synced", subscriberId: "sub_1" });
+    const upsert = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/subscribers"));
+    expect(JSON.parse(String((upsert as unknown as [string, RequestInit])[1].body)).groups).toEqual(["123", "10"]);
+    const removed = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes("/subscribers/sub_1/groups/"));
+    expect(removed.sort()).toEqual([
+      "https://connect.mailerlite.com/api/subscribers/sub_1/groups/12",
+      "https://connect.mailerlite.com/api/subscribers/sub_1/groups/9",
+    ]);
+  });
+
   it("marks unsubscribes without re-adding the group", () => {
     vi.stubEnv("MAILERLITE_GROUP_ID", "123");
     expect(buildMailerLitePayload({ email: "a@b.co", subscribed: false })).toEqual({

@@ -2,7 +2,8 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
-import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
 type SqlTag = typeof sql;
 
@@ -14,7 +15,9 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 3: the shared reader learned six layouts (PR 195), so every institution is
 // checked again and fees the older reader took down are restored when they now trace.
 // Bump this whenever checkFeeAgainstSource changes what it can read.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 3 } as const;
+// Version 4: a daily cap traces to the cap figure on its fee's row ("Maximum of $120.00 per day"),
+// so the caps the older check took down as thresholds are checked again and restored.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 4 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -24,7 +27,7 @@ export function sourceCheckFingerprint(maxLiveFeeId: number | string): string {
   return `v${SOURCE_CHECK_STRATEGY.version}:${maxLiveFeeId}`;
 }
 
-export interface LiveFeeRow {
+export interface LiveFeeRow extends RateFields {
   fee_published_id: number | string;
   lineage_ref: number | string;
   fee_raw_id: number | string;
@@ -56,7 +59,9 @@ export type SourceVerdict =
  * | $5") is the bank's real price for that band, so it stays live.
  */
 export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceVerdict {
-  if (fee.amount == null) return { kind: "untraceable", reason: "no_amount" };
+  // A percentage fee traces by its rate ("1.1%"), never as a dollar amount.
+  const rate = ratePercentOf(fee);
+  if (fee.amount == null && rate == null) return { kind: "untraceable", reason: "no_amount" };
   const amount = Number(fee.amount);
   const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
   const ordered = [...texts]
@@ -64,7 +69,9 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
     .sort((a, b) => Number(Number(b.source_document_id) === ownId) - Number(Number(a.source_document_id) === ownId));
   let reason: SourceCheckFailure = "no_source_text";
   for (const text of ordered) {
-    const result = checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".");
+    const result = isPercentFee(fee)
+      ? checkRateAgainstSource(text.normalized_text, fee.fee_name, rate as number, ".")
+      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key);
     if (result.ok || result.reason === "tiered_fee") {
       const documentId = Number(text.source_document_id);
       return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId } : { kind: "relinked", sourceDocumentId: documentId };
@@ -160,7 +167,8 @@ export async function takeDownUntraceableFees(
     const ids = [...fingerprints.keys()];
     fees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.rolled_back_at IS NOT NULL AS taken_down
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent,
+             fp.rolled_back_at IS NOT NULL AS taken_down
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -268,6 +276,7 @@ export async function takeDownUntraceableFees(
                   AND live.institution_id = fp.institution_id
                   AND live.canonical_fee_key = fp.canonical_fee_key
                   AND live.amount IS NOT DISTINCT FROM fp.amount
+                  AND live.rate_percent IS NOT DISTINCT FROM fp.rate_percent
                   AND live.fee_name = fp.fee_name
              )
           RETURNING fp.lineage_ref
@@ -319,7 +328,6 @@ export async function takeDownUntraceableFees(
           costMicrousd: 0,
           runId: options.runId,
           detail: { live_fees_checked: counts.checked, relinked: counts.relinked, taken_down: counts.takenDown, restored: counts.restored },
-          foldIntoPlaybook: false,
         });
       }
       await scope`
