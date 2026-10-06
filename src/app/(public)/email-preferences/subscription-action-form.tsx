@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { SubscriptionAction } from "@/lib/email/subscription-token";
 import { StateSelect } from "@/components/public/state-select";
@@ -74,6 +75,14 @@ export function SubscriptionActionForm({
     return (
       <p className="mt-4 text-[15px] leading-relaxed text-[#1A1815]" role="status">
         {copy.done} <strong>{email}</strong>.
+        {action === "confirm" ? (
+          <span className="mt-4 block text-[14px] text-[#5A5347]">
+            While you wait for the first one:{" "}
+            <Link href="/reports/benchmark/national" className="text-[#C44B2E] underline">open the national report</Link>
+            {" "}or{" "}
+            <Link href="/research" className="text-[#C44B2E] underline">see your state&apos;s fees</Link>.
+          </span>
+        ) : null}
       </p>
     );
   }
