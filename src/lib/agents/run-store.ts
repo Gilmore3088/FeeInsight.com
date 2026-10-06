@@ -2298,7 +2298,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask";
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;

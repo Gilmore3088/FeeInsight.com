@@ -81,6 +81,7 @@ export async function saveMemoryFact(input: {
   value: unknown;
   givenBy: string | null;
   source: MemoryFact["source"];
+  uploadId?: string | null;
 }): Promise<MemoryFact> {
   return withTransaction(async (tx) => {
     await tx`
@@ -90,9 +91,9 @@ export async function saveMemoryFact(input: {
          AND field_key = ${input.fieldKey} AND superseded_at IS NULL
     `;
     const [row] = (await tx`
-      INSERT INTO hamilton_institution_memory (user_id, institution_id, field_key, value, given_by, source)
+      INSERT INTO hamilton_institution_memory (user_id, institution_id, field_key, value, given_by, source, upload_id)
       VALUES (${input.userId}, ${input.institutionId}, ${input.fieldKey}, ${JSON.stringify(input.value)}::jsonb,
-              ${input.givenBy}, ${input.source})
+              ${input.givenBy}, ${input.source}, ${input.uploadId ?? null})
       RETURNING id, institution_id, field_key, value, given_by, source, created_at
     `) as unknown as MemoryRow[];
     return toFact(row);
@@ -214,4 +215,70 @@ export function testedPrices(events: DecisionEvent[]): number[] {
     if (Number.isFinite(tested) && !out.includes(tested)) out.push(tested);
   }
   return out;
+}
+
+// ─── Uploads ─────────────────────────────────────────────────────────────────
+
+export type UploadStatus = "received" | "mapped" | "applied" | "rejected";
+
+export interface UploadRecord<P = unknown> {
+  id: string;
+  institutionId: number;
+  fileName: string;
+  status: UploadStatus;
+  /** What Hamilton read from the file (the preview), kept so the reader can apply it later. */
+  preview: P;
+  createdAt: string;
+}
+
+interface UploadRow {
+  id: string;
+  institution_id: number | string;
+  file_name: string;
+  status: UploadStatus;
+  column_map: unknown;
+  created_at: Date | string;
+}
+
+function toUpload<P>(row: UploadRow): UploadRecord<P> {
+  return {
+    id: row.id,
+    institutionId: Number(row.institution_id),
+    fileName: row.file_name,
+    status: row.status,
+    preview: row.column_map as P,
+    createdAt: iso(row.created_at),
+  };
+}
+
+/** Records an upload and what was read from it. The file itself is not stored. */
+export async function createUpload<P>(input: {
+  userId: number;
+  institutionId: number;
+  fileName: string;
+  contentType: string | null;
+  byteSize: number;
+  preview: P;
+  status: UploadStatus;
+}): Promise<UploadRecord<P>> {
+  const [row] = (await sql`
+    INSERT INTO hamilton_uploads (user_id, institution_id, file_name, content_type, byte_size, storage_key, column_map, status)
+    VALUES (${input.userId}, ${input.institutionId}, ${input.fileName}, ${input.contentType}, ${input.byteSize}, NULL,
+            ${JSON.stringify(input.preview)}::jsonb, ${input.status})
+    RETURNING id, institution_id, file_name, status, column_map, created_at
+  `) as unknown as UploadRow[];
+  return toUpload<P>(row);
+}
+
+export async function getUpload<P>(userId: number, uploadId: string): Promise<UploadRecord<P> | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(uploadId)) return null;
+  const [row] = (await sql`
+    SELECT id, institution_id, file_name, status, column_map, created_at
+      FROM hamilton_uploads WHERE id = ${uploadId} AND user_id = ${userId}
+  `) as unknown as UploadRow[];
+  return row ? toUpload<P>(row) : null;
+}
+
+export async function setUploadStatus(uploadId: string, status: UploadStatus): Promise<void> {
+  await sql`UPDATE hamilton_uploads SET status = ${status} WHERE id = ${uploadId}`;
 }
