@@ -27,11 +27,11 @@ export interface FourRolesResult {
 }
 
 /** Words that tell the reader what to do with a fee; Hamilton gives an opinion only on request. */
-const RECOMMENDATION =
+export const RECOMMENDATION =
   /\b(should|ought to|recommend(s|ed|ation)?|we suggest|you need to|consider (raising|lowering|cutting|dropping|eliminating)|(raise|lower|cut|drop|increase|reduce) (your|the|this) (fee|price))\b/i;
 
 /** Internal names a bank reader should never see: agent names, and any snake_case table or column name. */
-const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
+export const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
 
 /** "$209400", "$2,640,000" (a total over $1 million belongs in words), "2.38%". */
 const UNFORMATTED_UNITS = [

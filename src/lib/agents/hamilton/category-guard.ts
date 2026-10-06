@@ -20,6 +20,7 @@ interface LivePublishedRow {
   canonical_fee_key: string;
   fee_name: string;
   amount: number | string | null;
+  conditions: string | null;
 }
 
 export interface CategoryGuardFailure {
@@ -69,22 +70,29 @@ function normalizedAmount(value: number | string | null): number | null {
 
 async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promise<LivePublishedRow[]> {
   const keys = [...GUARDED_CATEGORIES];
+  // The raw row's conditions carry a rate the name leaves out ("2.00% of transaction").
   if (institutionId) {
     return db<LivePublishedRow[]>`
-      SELECT fee_published_id, lineage_ref, institution_id, canonical_fee_key, fee_name, amount
-        FROM published_fee_records
-       WHERE rolled_back_at IS NULL
-         AND canonical_fee_key = ANY(${keys}::text[])
-         AND institution_id = ${institutionId}
-       ORDER BY fee_published_id ASC
+      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
+             fp.amount, fr.conditions
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.rolled_back_at IS NULL
+         AND fp.canonical_fee_key = ANY(${keys}::text[])
+         AND fp.institution_id = ${institutionId}
+       ORDER BY fp.fee_published_id ASC
     `;
   }
   return db<LivePublishedRow[]>`
-    SELECT fee_published_id, lineage_ref, institution_id, canonical_fee_key, fee_name, amount
-      FROM published_fee_records
-     WHERE rolled_back_at IS NULL
-       AND canonical_fee_key = ANY(${keys}::text[])
-     ORDER BY fee_published_id ASC
+    SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
+           fp.amount, fr.conditions
+      FROM published_fee_records fp
+      LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+     WHERE fp.rolled_back_at IS NULL
+       AND fp.canonical_fee_key = ANY(${keys}::text[])
+     ORDER BY fp.fee_published_id ASC
   `;
 }
 
@@ -148,7 +156,7 @@ export async function runHamiltonCategoryGuard(
   const byCode: RunHamiltonCategoryGuardResult["byCode"] = {};
   const byCategory: RunHamiltonCategoryGuardResult["byCategory"] = {};
   for (const row of rows) {
-    const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+    const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name, row);
     if (verdict.ok) continue;
     byCode[verdict.code] = (byCode[verdict.code] ?? 0) + 1;
     const category = (byCategory[row.canonical_fee_key] ??= {});

@@ -521,6 +521,16 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("For personal accounts, overdrafts and fees up to a total of")).toBeNull();
   });
 
+  it("v20 files an ATM foreign transaction fee as a foreign-ATM fee, not a card's foreign transaction fee", () => {
+    expect(classifyPatternKey("ATM Foreign Transaction Fee")).toBe("atm_non_network");
+    expect(classifyPatternKey("ATM – Foreign Transaction Customer")).toBe("atm_non_network");
+    expect(classifyPatternKey("Debit ATM Foreign Transaction Fee")).toBe("atm_non_network");
+    expect(classifyPatternKey("ATM foreign transaction-non owned Chessie ATM")).toBe("atm_non_network");
+    expect(classifyPatternKey("Debit Card International Transaction Fee")).toBe("card_foreign_txn");
+    expect(classifyPatternKey("Debit/ATM Foreign Transaction (C/B fee) of")).toBe("card_foreign_txn");
+    expect(classifyPatternKey("Foreign Transaction Fee")).toBe("card_foreign_txn");
+  });
+
   it("v19 names a sentence-form fee by what it charges for (First Merchants, Navy Federal)", () => {
     expect(fees("We charge a fee of $37.00 each time we pay an overdraft.")).toEqual([
       ["Overdraft fee (each time we pay an overdraft)", 37, "overdraft"],

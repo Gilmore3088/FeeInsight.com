@@ -324,7 +324,13 @@ export function classifyPatternKey(value: string): string | null {
     // wires; one price for "domestic/int'l" stays domestic.
     .replace(/\bint'l\b\.?|\b(?:out of|outside(?: of)?)\s+(?:the\s+)?country\b/gi, (match, offset, whole: string) =>
       /\bdomestic\b/i.test(whole) ? match : "international");
-  const key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
+  let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
+  // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
+  // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/
+  // Foreign Transaction Fee" names the card and stays one.
+  if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
+    key = "atm_non_network";
+  }
   // Credit card fees are lending fees, not deposit-account card fees.
   if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text)) return null;
   // A book transfer inside the bank is not a wire.

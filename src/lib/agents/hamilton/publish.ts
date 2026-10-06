@@ -13,6 +13,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
@@ -44,7 +45,7 @@ const BLOCKING_FLAGS = new Set([
   "rejected",
 ]);
 
-interface VerifiedFeeRow {
+interface VerifiedFeeRow extends RateFields {
   fee_verified_id: number | string;
   fee_raw_id: number | string;
   institution_id: number | string;
@@ -68,7 +69,7 @@ interface VerifiedFeeRow {
   institution_name?: string | null;
 }
 
-interface PriorPublishedFeeRow {
+interface PriorPublishedFeeRow extends RateFields {
   fee_published_id: number | string;
   amount: number | string | null;
   fee_name: string;
@@ -199,8 +200,15 @@ function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string |
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   const amount = normalizedAmount(row.amount);
-  if (amount == null || amount < 0) return "Missing or invalid amount";
-  if (amount === 0) {
+  if (isPercentFee(row)) {
+    // A rate publishes only in a category that publishes rates, inside its range.
+    const rate = ratePercentOf(row);
+    if (!percentFeeAllowed(row.canonical_fee_key)) return "Rate in a category that does not publish rates";
+    if (rate == null || amount != null) return "Missing or invalid rate";
+    const range = PERCENT_FEE_RANGES[row.canonical_fee_key];
+    if (rate < range.min || rate > range.max) return "Rate outside the category's plausible range";
+  } else if (amount == null || amount < 0) return "Missing or invalid amount";
+  else if (amount === 0) {
     // $0 is a real price (a free fee) only when Darwin verified it as one.
     if (!isExplicitZeroFee(amount, flags, ZERO_FEE_VERIFIED_FLAG)) return "Missing or invalid amount";
   } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
@@ -315,6 +323,11 @@ async function selectVerifiedFees(
              fv.fee_name,
              fv.amount,
              fv.frequency,
+             fv.amount_kind,
+             fv.rate_percent,
+             fv.rate_min_amount,
+             fv.rate_max_amount,
+             fv.rate_basis,
              fr.agent_event_id AS raw_agent_event_id,
              fr.source_document_id,
              sd.crawled_at AS document_crawled_at,
@@ -371,6 +384,8 @@ async function institutionFeeDepth(
              NULL::text AS document_r2_key,
              NULL::text AS verified_by_agent_event_id,
              NULL::numeric AS amount,
+             NULL::text AS amount_kind,
+             NULL::numeric AS rate_percent,
              NULL::numeric AS extraction_confidence,
              '[]'::jsonb AS outlier_flags
         FROM published_fee_records fp
@@ -385,6 +400,8 @@ async function institutionFeeDepth(
              fv.document_r2_key,
              fv.verified_by_agent_event_id::text,
              fv.amount,
+             fv.amount_kind,
+             fv.rate_percent,
              fv.extraction_confidence,
              fv.outlier_flags
         FROM verified_fee_observations fv
@@ -415,7 +432,8 @@ async function insertPublishedFee(
   const feeVerifiedId = Number(options.row.fee_verified_id);
   const institutionId = Number(options.row.institution_id);
   const confidence = normalizedConfidence(options.row.extraction_confidence);
-  const amount = normalizedAmount(options.row.amount);
+  const percent = isPercentFee(options.row);
+  const amount = percent ? null : normalizedAmount(options.row.amount);
   // The publish gate is Darwin's verification, so its event id is the handshake id;
   // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
   const publishEventId = options.row.verified_by_agent_event_id;
@@ -435,7 +453,12 @@ async function insertPublishedFee(
       frequency,
       variant_type,
       coverage_tier,
-      batch_id
+      batch_id,
+      amount_kind,
+      rate_percent,
+      rate_min_amount,
+      rate_max_amount,
+      rate_basis
     )
     VALUES (
       ${feeVerifiedId},
@@ -452,7 +475,12 @@ async function insertPublishedFee(
       ${options.row.frequency},
       ${options.row.variant_type},
       ${coverageTier(confidence)},
-      ${options.batchId}
+      ${options.batchId},
+      ${percent ? "percent" : "flat"},
+      ${percent ? ratePercentOf(options.row) : null},
+      ${percent ? options.row.rate_min_amount ?? null : null},
+      ${percent ? options.row.rate_max_amount ?? null : null},
+      ${percent ? options.row.rate_basis ?? null : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_published_id
@@ -469,6 +497,8 @@ async function selectLivePublishedFees(
     return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fp.fee_published_id,
              fp.amount,
+             fp.amount_kind,
+             fp.rate_percent,
              fp.fee_name,
              fp.published_at,
              fr.source_document_id,
@@ -532,8 +562,9 @@ export type PriorFeeDecision =
  */
 export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
   if (live.length === 0) return { kind: "new" };
-  const amount = normalizedAmount(row.amount);
-  const identical = live.find((prior) => normalizedAmount(prior.amount) === amount);
+  // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
+  const value = feeValue(row);
+  const identical = live.find((prior) => feeValue(prior) === value);
   if (identical) return { kind: "identical", prior: identical };
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
@@ -551,7 +582,13 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
     const priorTime = documentTime(candidate.document_crawled_at);
     return priorTime != null && priorTime < rowTime && normalizedFeeName(candidate.fee_name) === name;
   });
-  return prior ? { kind: "supersede", prior } : { kind: "additional_line" };
+  // A rate never replaces a dollar amount, or the reverse; each stays its own line.
+  return prior && isPercentFee(prior) === isPercentFee(row) ? { kind: "supersede", prior } : { kind: "additional_line" };
+}
+
+/** A fee's comparable value: its rate for a percentage fee, else its amount. */
+function feeValue(row: RateFields & { amount: number | string | null }): string {
+  return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
 interface ListedFeeLine {
@@ -582,6 +619,8 @@ async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | stri
  * accounts) has two lines, not a price change, whichever document is newer.
  */
 export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  // Knox's listed lines carry no rate here, so two rates are never read as two lines.
+  if (isPercentFee(row) || isPercentFee(prior)) return false;
   const name = normalizedFeeName(row.fee_name);
   const listed = (documentId: number | string | null | undefined, amount: number | string | null) =>
     lines.some(
@@ -620,6 +659,8 @@ async function supersedePriorFee(
     RETURNING fee_published_id
   `;
   if (closed.length === 0) return { superseded: false, changeRecorded: false };
+  // fee_change_records holds dollar amounts only; a rate change is not written there.
+  if (isPercentFee(options.row)) return { superseded: true, changeRecorded: false };
 
   // Same vocabulary as FeeChangeEvent in data-store/fee-changes.ts.
   const changeType = newAmount != null && previousAmount != null && newAmount < previousAmount ? "decrease" : "increase";
@@ -971,7 +1012,7 @@ export async function runHamiltonPublish(
     let result: HamiltonPublishResult;
     // A row whose name contradicts its category (verified before Darwin had the guard)
     // is retired instead of published.
-    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name, { amount: row.amount });
     if (!category.ok && !dryRun) {
       await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
     }
