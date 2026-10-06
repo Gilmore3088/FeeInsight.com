@@ -32,7 +32,7 @@ import {
  * the adapter; the extractor only sees `KnoxTableRow`.
  */
 
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 2 } as const;
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 3 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -139,6 +139,9 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     // its own; the line rules read it.
     const valueLead = row.cells[valueIndex].split("$")[0];
     if ((valueLead.match(/[a-z]{2,}/gi) ?? []).length >= 2 && !/^\W*(?:per|each|a|an|for|up to|plus)\b/i.test(valueLead)) continue;
+    // So is one that a rule names on its own, like a box size from the next column
+    // ("NSF Fee | 5" X 10" X 22" box ..... $50.00").
+    if (/[a-z]/i.test(valueLead) && classifyFeeText(valueLead)) continue;
     const nameCell = row.cells[nameIndex];
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);
