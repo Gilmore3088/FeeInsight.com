@@ -13,6 +13,7 @@
  *   Ch5: Data Coverage ->
  *   Economic Backdrop ->
  *   Ch6: What to Watch ->
+ *   Ch9: Rankings, Income Trend and Outliers (when available) ->
  *   Methodology -> Appendix
  *
  * Every heading and card states a figure from the payload. There is no fixed thesis,
@@ -54,6 +55,8 @@ import { developmentsContent, feeChangesContent } from "./developments";
 import { regulatoryExtras } from "./regulatory-section";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
+import type { NationalTrends } from "@/lib/report-assemblers/national-trends";
+import { renderNationalTrendsSection } from "./national-trends-section";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
 
@@ -69,6 +72,8 @@ export interface NationalQuarterlyReportInput {
   };
   /** CFPB complaints and the fee-change rules for the developments chapter; omitted when not read. */
   regulatory?: RegulatoryContext | null;
+  /** Fed districts, state ranking, size tiers, 16 quarters of fee income and outliers; omitted when unavailable. */
+  trends?: NationalTrends | null;
 }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
@@ -178,6 +183,10 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   });
 
   // ── Table of Contents ──────────────────────────────────────────────────────
+  // The trends chapter runs about four pages (district, state, size, income and outlier tables).
+  const trendsPages = input.trends ? 4 : 0;
+  const regulatoryPage = 9 + trendsPages;
+  const methodologyPage = regulatoryPage + (input.regulatory ? 1 : 0);
   const toc = tableOfContents([
     {
       title: "The Quarter in Figures",
@@ -229,6 +238,13 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       title: "What to Watch",
       description: "Questions the next quarters of data can settle",
     },
+    ...(input.trends
+      ? [{
+          number: "09",
+          title: "Rankings, Income Trend and Outliers",
+          description: "District income, every state ranked, 16 quarters of fee income and the highest published fees",
+        }]
+      : []),
     {
       title: "Methodology",
       description: "Data sources, computation methods, and maturity definitions",
@@ -658,6 +674,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     layoutAnalytical(ch4),
     economicContext ? layoutAnalytical(economicContext) : "",
     layoutStatement(ch5),
+    input.trends ? layoutAnalytical(renderNationalTrendsSection(input.trends, { number: "09", title: "Rankings, Income Trend and Outliers", districtFees: false, tiers: false })) : "",
     methodology,
     appendix,
   ]
