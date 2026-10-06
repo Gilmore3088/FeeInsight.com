@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { User } from "@/lib/auth";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
-import { HamiltonTopNav } from "./HamiltonTopNav";
+import { ConsumerNav } from "@/components/consumer-nav";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonAskDock } from "./HamiltonAskDock";
 
 interface HamiltonShellProps {
-  user: User;
   isAdmin: boolean;
   /** Admin is previewing the customer experience */
   viewAsCustomer?: boolean;
@@ -28,25 +26,22 @@ interface HamiltonShellProps {
     selectedFromUrl?: boolean;
   };
   selectedInstitutionId?: string | null;
-  activeHref: string;
   children: React.ReactNode;
 }
 
 /**
  * HamiltonShell - Client component.
  * Outer shell wrapper applying .hamilton-shell CSS isolation boundary.
- * Composes: admin bar (admins only), the one header, the page, and the docked Ask bar.
+ * Composes: admin bar (admins only), the Fee Insight site header, the page, and the docked Ask bar.
  * No sidebar and no second bar: James wants the simplicity of the living-memo samples.
  * Per D-13, ARCH-01: .hamilton-shell class scopes all editorial design tokens.
  * Per D-10: admin mode bar shown only to admin/analyst users.
  */
 export function HamiltonShell({
-  user,
   isAdmin,
   viewAsCustomer = false,
   institutionContext,
   selectedInstitutionId,
-  activeHref,
   children,
 }: HamiltonShellProps) {
   return (
@@ -78,15 +73,18 @@ export function HamiltonShell({
         </div>
       )}
 
-      {/* The one header: wordmark, six screens, the bank, an account menu */}
-      <HamiltonTopNav
-        isAdmin={isAdmin && !viewAsCustomer}
-        activeHref={activeHref}
-        user={user}
-        selectedInstitutionId={selectedInstitutionId}
-        institutionName={institutionContext.name}
-        makeDefaultHref={institutionContext.makeDefaultHref ?? null}
-      />
+      {/* The Fee Insight site header, the same one as the public site; for Pro users its links are
+          Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro). */}
+      <ConsumerNav />
+
+      {institutionContext.makeDefaultHref ? (
+        <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
+          You&apos;re looking at {institutionContext.name ?? "another bank"}; your saved bank is unchanged.{" "}
+          <Link href={institutionContext.makeDefaultHref} className="font-medium text-terra-text underline">
+            Make this my bank
+          </Link>
+        </div>
+      ) : null}
 
       <main className="mx-auto min-w-0 max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:pt-10">{children}</main>
 

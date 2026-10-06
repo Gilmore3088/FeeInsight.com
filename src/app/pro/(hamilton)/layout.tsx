@@ -6,7 +6,6 @@ import { isViewAsCustomerCookie, VIEW_AS_CUSTOMER_COOKIE } from "@/lib/hamilton/
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
 import { HamiltonShell } from "@/components/hamilton/layout/HamiltonShell";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
@@ -127,19 +126,12 @@ async function HamiltonLayoutInner({
         selectedSource: user.institution_name ? ("profile" as const) : ("none" as const),
         selectedFromUrl: false,
       };
-  const activeHref =
-    HAMILTON_NAV.find(
-      (n) => pathname === n.href || pathname.startsWith(n.href + "/")
-    )?.href ?? "/pro/monitor";
-
   return (
     <HamiltonShell
-      user={user}
       isAdmin={isAdmin}
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}
-      activeHref={activeHref}
     >
       {children}
     </HamiltonShell>

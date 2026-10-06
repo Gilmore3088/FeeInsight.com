@@ -38,7 +38,7 @@ const PLAN_LABEL: Record<string, string> = {
 
 /**
  * Settings page — Strategy Settings editorial design.
- * Institution profile form feeds HamiltonContextBar across all screens.
+ * Institution profile form feeds the bank Hamilton works on across all screens.
  * Per D-01, D-09: warm parchment aesthetic, serif headers, editorial layout.
  */
 export default async function SettingsPage({

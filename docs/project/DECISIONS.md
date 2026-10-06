@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**One Fee Insight header across the public site and Pro; Hamilton has four tabs.** James,
+00:22-00:33 UTC, on a decision card. Pro no longer swaps in its own header: the site header stays,
+and for Pro users its links are Hamilton's tabs, This month, My fees, Try a price and Reports ("a
+banker doesn't wake up wanting to model or watch"). The bank and its data, all changes, the
+reference pages, Admin and sign out sit in the account menu. No sidebar. Built in PR 89.
+
 **Every Hamilton output shows its audit trail; nothing is a black box.** James, 00:08 UTC. For
 regulatory work a figure has to be defensible. Each Briefing, Research, Model and Plan screen has a
 "How this was built" panel listing every source with its date, the method, every assumption
