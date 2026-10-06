@@ -163,6 +163,7 @@ export async function sendContactRequestNotifications(
         "",
         "Reply to this email if you want to add anything.",
       ],
+      closing: emailOptInLines(input.email).filter((line) => line !== ""),
       signed: true,
     },
   });
