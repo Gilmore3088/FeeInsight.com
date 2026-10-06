@@ -88,6 +88,11 @@ describe("checkFeeCategory", () => {
       "Overdraft Balance Threshold",
       "Cushion before overdraft fee is charged",
       "If your consumer account is overdrawn by",
+      "Fresh Start Checking is not eligible for Courtesy Pay | 5 x 10 Box",
+      "OVERDRAFT PRIVILEGE | Outgoing International",
+      "Check Printing & Account Supplies Fee varies based on style | Overdraft Protection Via: | 2 x 10",
+      "Overdraft Protection | Outgoing (Domestic)",
+      "Overdraft Protection Items - Negative or less",
     ]) {
       expect(checkFeeCategory("overdraft", name).ok).toBe(false);
     }
@@ -98,6 +103,7 @@ describe("checkFeeCategory", () => {
       "Overdraft Fee (Max 5 items per day)",
       "Overdraft Item on Lifeline 18/65 Checking",
       "Overdraft Protection – ODP (per item presentment)",
+      "Courtesy Pay (item paid against incoming funds)",
     ]) {
       expect(checkFeeCategory("overdraft", name)).toEqual({ ok: true });
     }
@@ -110,6 +116,9 @@ describe("checkFeeCategory", () => {
       "ATM Card Re-activation (due to NSF)",
       "Returned ACH Origination Item (per item)",
       "NSF Fee (Reg D)",
+      "fees if the same item is presented multiple times against insufficient funds. Items presented in the amount of",
+      "Size of Box | Annual Rent | Non-Sufficient Funds Item (NSF)",
+      "Check Printing Fee Varies by Style Ordered | NSF Fee",
     ]) {
       expect(checkFeeCategory("nsf", name).ok).toBe(false);
     }
@@ -119,6 +128,8 @@ describe("checkFeeCategory", () => {
       "Non-Sufficient Funds Item (NSF) - ACH/ATM/Bill Pay/Zelle Payment/ACH Origination",
       "Returned checks due to NSF, UCF or Reg D",
       "NSF Return item (per Item)",
+      "Bill Pay NSF Fees",
+      "Non Sufficient Funds - Transactions $10.00 or less",
     ]) {
       expect(checkFeeCategory("nsf", name)).toEqual({ ok: true });
     }
