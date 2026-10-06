@@ -53,8 +53,13 @@ export function narrateStepFinished(
     }
     case "discover-paid":
     case "read-paid":
-    case "extract-paid": {
-      const job = stepKey === "discover-paid" ? "find fee schedules" : stepKey === "read-paid" ? "read documents" : "extract fees";
+    case "extract-paid":
+    case "verify-paid": {
+      const job = stepKey === "discover-paid"
+        ? "find fee schedules"
+        : stepKey === "read-paid"
+          ? "read documents"
+          : stepKey === "extract-paid" ? "extract fees" : "review disputed fees";
       const processed = n(detail, "processed");
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
@@ -69,7 +74,7 @@ export function narrateStepFinished(
         n(detail, "retry_after") > 0 && `${n(detail, "retry_after")} to retry later`,
         n(detail, "dead_institutions") > 0 && `${n(detail, "dead_institutions")} with no schedule found`,
         n(detail, "needs_human") > 0 && `${n(detail, "needs_human")} need a person`,
-        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "more fee page")} (account pages, fee documents) for banks with few fees`,
+        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "more fee page")} (account pages, fee documents, agreements) for banks with few fees`,
       ])}.`;
     }
     case "fetch": {
@@ -314,6 +319,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "extract-paid": "knox",
   review: "knox",
   classify: "darwin",
+  "verify-paid": "darwin",
   verify: "darwin",
   "public-cluster": "darwin",
   publish: "hamilton",

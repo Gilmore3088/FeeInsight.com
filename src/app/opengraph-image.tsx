@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Fee Insight — The Bank Fee Index";
+export const alt = "The Bank Fee Index: published fees for U.S. banks and credit unions";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 

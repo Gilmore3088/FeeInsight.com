@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { ROOMS, findRoomPage, roomForPath, type RoomPage } from "@/lib/admin-rooms";
 
 function badgeFor(page: RoomPage, badges?: Record<string, number>): number {
@@ -26,8 +26,14 @@ function Badge({ count, active }: { count: number; active: boolean }) {
 export function AdminRoomTabs({ badges }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
   const current = roomForPath(pathname);
+  const navRef = useRef<HTMLElement>(null);
+  // On a narrow screen the later rooms sit off to the right; bring the current one into view.
+  useEffect(() => {
+    const active = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [current.key]);
   return (
-    <nav aria-label="Admin rooms" className="admin-nav-inline flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+    <nav ref={navRef} aria-label="Admin rooms" className="admin-nav-inline flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
       {ROOMS.map((room) => {
         const active = room.key === current.key;
         const count = room.pages.reduce((sum, page) => sum + badgeFor(page, badges), 0);
@@ -100,7 +106,10 @@ export function AdminSidebar({ badges, footer }: { badges?: Record<string, numbe
   );
 }
 
-/** The same screens as a row under the top bar on a phone. Hidden when the room has one screen. */
+/**
+ * The same screens as a row of chips at the top of the page on a phone. It scrolls away with
+ * the page, so the only bar that stays on screen is the top bar. Hidden when the room has one screen.
+ */
 export function AdminNavInline({ badges }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
   const room = roomForPath(pathname);
@@ -109,7 +118,7 @@ export function AdminNavInline({ badges }: { badges?: Record<string, number> }) 
   return (
     <nav
       aria-label={`${room.label} screens`}
-      className="admin-nav-inline flex min-w-0 items-center gap-0.5 overflow-x-auto border-t border-black/[0.04] px-3 py-1 md:hidden dark:border-white/[0.05]"
+      className="admin-nav-inline -mx-5 mb-4 flex min-w-0 items-center gap-1 overflow-x-auto px-5 md:hidden"
     >
       {room.pages.map((page) => {
         const active = page === activePage;
@@ -120,8 +129,10 @@ export function AdminNavInline({ badges }: { badges?: Record<string, number> }) 
             prefetch={false}
             aria-current={active ? "page" : undefined}
             aria-label={`${page.label}: ${page.role}`}
-            className={`inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-md px-2.5 py-2 text-[11px] font-semibold transition-colors ${
-              active ? "bg-gray-900 text-white dark:bg-white/15" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/[0.05]"
+            className={`inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-full border px-3 text-[12px] font-semibold transition-colors ${
+              active
+                ? "border-gray-900 bg-gray-900 text-white dark:border-white/15 dark:bg-white/15"
+                : "border-black/[0.08] bg-white text-gray-600 hover:text-gray-900 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300"
             }`}
           >
             {page.label}

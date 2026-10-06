@@ -120,6 +120,11 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     input: { verify_limit: DARWIN_VERIFY_MAX_LIMIT },
   },
   {
+    key: "verify-paid",
+    agent: "darwin",
+    title: "Paid last pass: Claude reviews only the fees Darwin's free checks disagree on",
+  },
+  {
     key: "publish",
     agent: "hamilton",
     title: "Publish verified state fee intelligence",

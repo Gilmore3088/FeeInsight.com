@@ -6,14 +6,16 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
-import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
-import { getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
+import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
+import { getInstitutionFeeRows, getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
+import { getStateEconomicContext } from "@/lib/data-store/economic-context";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ASSET_TIER_RANGES, buildInstitutionPeerFilterCandidates, describePeerFilters, type HamiltonPeerFilters } from "../peer-index";
+import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
   competitorMoveObservations,
@@ -28,6 +30,7 @@ import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type Service
 import {
   WORKSPACE_ENGINE_VERSION,
   type Briefing,
+  type EconomicBackdrop,
   type Fact,
   type FeeResearch,
   type InstitutionFinancials,
@@ -35,6 +38,7 @@ import {
   type MarketIncome,
   type MarketLayer,
   type MarketLayerScope,
+  type OwnFeeRow,
   type PeerValue,
   type SourceRef,
 } from "./types";
@@ -61,6 +65,7 @@ interface WorkspaceBase {
   institutionId: number;
   institutionName: string;
   stateCode: string | null;
+  fedDistrict: number | null;
   charterType: string;
   assetTier: string | null;
   /** National, Fed district, state, and charter and size, each loaded whole. */
@@ -152,6 +157,7 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
     institutionId,
     institutionName: institution.institution_name,
     stateCode: institution.state_code,
+    fedDistrict: institution.fed_district ?? null,
     charterType: institution.charter_type,
     assetTier: institution.asset_size_tier,
     layers: [
@@ -164,11 +170,30 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
   };
 }
 
+export function toPeerValue(v: PeerFeeValue): PeerValue {
+  return {
+    institutionId: v.institution_id,
+    institutionName: v.institution_name,
+    amount: v.amount,
+    stateCode: v.state_code,
+    sourceDocumentIds: v.source_document_ids,
+    documentUrls: v.document_urls,
+    publishedAt: v.published_at,
+  };
+}
+
 function feeLayers(base: WorkspaceBase, feeCategory: string): MarketLayer[] {
   const current = base.ownValues.get(feeCategory) ?? null;
   return base.layers.map((layer) => {
     const values = layer.values.get(feeCategory) ?? [];
-    return marketLayer(layer.scope, layer.label, values.map((v) => v.amount), current, values.map((v) => v.published_at));
+    return marketLayer(
+      layer.scope,
+      layer.label,
+      values.map((v) => v.amount),
+      current,
+      values.map((v) => v.published_at),
+      values.map(toPeerValue),
+    );
   });
 }
 
@@ -188,21 +213,22 @@ function sinceDate(days: number, now = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Price changes in the state over the window that the bank's own schedules bear out
+ * (the Monthly Pulse rule). A recorded change the schedules do not support is left out,
+ * so a misread PDF never shows as a competitor's move.
+ */
 async function loadStateChanges(stateCode: string | null, feeCategory?: string): Promise<FeeChangeInput[]> {
   if (!stateCode) return [];
-  const events = await getFeeChangeEvents({
-    state_code: stateCode,
-    since: sinceDate(COMPETITOR_MOVE_WINDOW_DAYS),
-    limit: 500,
-  });
-  return events
-    .filter((e) => !feeCategory || e.fee_category === feeCategory)
-    .map((e) => ({
-      institutionName: e.institution_name,
-      feeCategory: e.fee_category,
-      oldAmount: e.old_amount,
-      newAmount: e.new_amount,
-      changedAt: e.changed_at,
+  const { changes } = await loadConfirmedFeeChanges(`${sinceDate(COMPETITOR_MOVE_WINDOW_DAYS)}T00:00:00.000Z`, stateCode);
+  return changes
+    .filter((c) => !feeCategory || c.fee_category === feeCategory)
+    .map((c) => ({
+      institutionName: c.institution_name,
+      feeCategory: c.fee_category,
+      oldAmount: c.old_amount,
+      newAmount: c.new_amount,
+      changedAt: c.changed_at,
     }));
 }
 
@@ -250,7 +276,7 @@ async function loadRegArticles(days: number, now = new Date()): Promise<RegArtic
 }
 
 /** Industry deposit service charge income, newest quarter first, in dollars (eight quarters). */
-async function loadNationalIncomeSeries(): Promise<MarketIncome[]> {
+export async function loadNationalIncomeSeries(): Promise<MarketIncome[]> {
   // Twelve quarters so each of the newest eight has its year-earlier quarter for the change.
   const trend = await getRevenueTrend(12);
   const thousands = 1000;
@@ -303,19 +329,7 @@ export function localMarketView(
   const byId = new Map(national.map((v) => [v.institution_id, v]));
   const competitors: PeerValue[] = others
     .filter((m) => byId.has(m.institution_id))
-    .map((m) => {
-      const v = byId.get(m.institution_id) as PeerFeeValue;
-      return {
-        institutionId: v.institution_id,
-        institutionName: v.institution_name,
-        amount: v.amount,
-        marketDeposits: m.market_deposits,
-        stateCode: v.state_code,
-        sourceDocumentIds: v.source_document_ids,
-        documentUrls: v.document_urls,
-        publishedAt: v.published_at,
-      };
-    });
+    .map((m) => ({ ...toPeerValue(byId.get(m.institution_id) as PeerFeeValue), marketDeposits: m.market_deposits }));
   const source: SourceRef = { label: SOD_SOURCE_LABEL, asOf: String(market.sod_year) };
   const info: LocalMarketInfo = {
     basis: market.basis,
@@ -330,6 +344,7 @@ export function localMarketView(
     competitors.map((c) => c.amount),
     base.ownValues.get(feeCategory) ?? null,
     competitors.map((c) => c.publishedAt),
+    competitors,
   );
   return { layer, competitors, info };
 }
@@ -409,6 +424,18 @@ function quantile(sorted: number[], q: number): number {
   return Math.round((sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)) * 100) / 100;
 }
 
+/** The state economy, rates, prices and Beige Book; null on a failed read or no state. */
+export async function loadEconomy(stateCode: string | null, district: number | null): Promise<EconomicBackdrop | null> {
+  if (!stateCode) return null;
+  try {
+    const ctx = await getStateEconomicContext(stateCode, district);
+    return economicBackdrop(ctx, STATE_NAMES[stateCode] ?? stateCode, district, district ? DISTRICT_NAMES[district] ?? null : null);
+  } catch (error) {
+    console.error("[hamilton-research] economy read failed", { stateCode, error });
+    return null;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
@@ -416,26 +443,22 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
-  const [changes, financialRows, articles, market] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
     getLocalMarketMembers(institutionId).catch(() => null),
+    getInstitutionFeeRows(institutionId, feeCategory),
+    loadNationalIncomeSeries(),
+    loadEconomy(base.stateCode, base.fedDistrict),
   ]);
+  const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const revenueLine = feeRevenueLine(financialRows, feeCategory, base.charterType);
   const local = localMarketView(base, market, feeCategory);
   const layers = [...feeLayers(base, feeCategory), ...(local.layer ? [local.layer] : [])];
   const chosen = base.peers.get(feeCategory);
-  const peers: PeerValue[] = (chosen?.values ?? []).map((p) => ({
-    institutionId: p.institution_id,
-    institutionName: p.institution_name,
-    amount: p.amount,
-    stateCode: p.state_code,
-    sourceDocumentIds: p.source_document_ids,
-    documentUrls: p.document_urls,
-    publishedAt: p.published_at,
-  }));
+  const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValue);
   const sorted = peers.map((p) => p.amount).sort((a, b) => a - b);
   const current = base.ownValues.get(feeCategory) ?? null;
   const recentChanges: Fact[] = changes
@@ -464,8 +487,11 @@ export async function getFeeResearch(
     // Null until a filing carries a line for this fee: NCUA overdraft (IS0048) and NSF
     // (IS0049) income, or the bank overdraft-and-NSF line (RIAD H032, banks over $1B).
     revenueLine,
+    ownRows,
+    nationalIncomeSeries,
     institutionFinancials: financials,
     regulation: [...feeRules(feeCategory, base.charterType), ...feeRegulatoryNews(articles, feeCategory)],
+    economy,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
@@ -481,7 +507,10 @@ export async function getFeeResearch(
         ...(financials ? [financials.sourceRef] : []),
         ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(revenueLine ? [revenueLine.source] : []),
+        ...(nationalIncomeSeries[0] ? [nationalIncomeSeries[0].sourceRef] : []),
         ...(local.info ? [local.info.source] : []),
+        ...(economy?.indicators.map((i) => i.source) ?? []),
+        ...(economy?.beigeBook ? [economy.beigeBook.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [

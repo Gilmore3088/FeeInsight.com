@@ -51,17 +51,37 @@ describe("Darwin learned category model", () => {
     expect(categoryOpinion(model, "$5.00", "stop_payment")).toBeNull();
   });
 
-  it("trains from the live catalog once and caches the model", async () => {
-    resetCategoryModelCache();
-    const db = vi.fn(() => Promise.resolve(EXAMPLES.map((example) => ({
+  function fakeDb(answerKey: Array<{ name: string; category_key: string; count: number }> | null) {
+    const catalog = EXAMPLES.map((example) => ({
       name: example.name.toLowerCase(),
       category_key: example.categoryKey,
       count: String(example.count),
-    }))));
+    }));
+    return vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: answerKey !== null }]);
+      if (text.includes("pipeline_feedback")) return Promise.resolve(answerKey ?? []);
+      return Promise.resolve(catalog);
+    });
+  }
+
+  it("trains from the live catalog once and caches the model", async () => {
+    resetCategoryModelCache();
+    const db = fakeDb(null);
     const loaded = await loadCategoryModel(db as never, 1_000);
     expect(loaded?.categories).toHaveLength(4);
+    const calls = db.mock.calls.length;
     await loadCategoryModel(db as never, 2_000);
-    expect(db).toHaveBeenCalledTimes(1);
+    expect(db).toHaveBeenCalledTimes(calls);
+    resetCategoryModelCache();
+  });
+
+  it("also learns from answer-key fees in the shared learning store", async () => {
+    resetCategoryModelCache();
+    const db = fakeDb([{ name: "coin counting machine use $5.00", category_key: "coin_counting", count: 5 }]);
+    const loaded = await loadCategoryModel(db as never, 1_000);
+    expect(loaded?.categories).toContain("coin_counting");
+    expect(loaded?.categories).toHaveLength(5);
     resetCategoryModelCache();
   });
 });
