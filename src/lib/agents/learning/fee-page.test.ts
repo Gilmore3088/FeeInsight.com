@@ -53,6 +53,11 @@ describe("scoreFeePage", () => {
     expect(scoreFeePage(htmlToScoringText(html))).toMatchObject({ verdict: "fee_page", feeLines: 3 });
   });
 
+  it("counts cent amounts and dollar amounts without a leading zero", () => {
+    const text = ["Coin counting fee 75¢ per roll", "Check printing charge $.50 per check", "Paper statement fee 50 cents"].join("\n");
+    expect(scoreFeePage(text)).toMatchObject({ verdict: "fee_page", feeLines: 3, dollarAmounts: 3 });
+  });
+
   it("treats a news or investor article as not the fee schedule", () => {
     const text = ["Overdraft fee $34", "NSF fee $34", "Stop payment fee $30"].join("\n");
     const chase = "https://www.jpmorganchase.com/ir/news/2021/chase-helps-more-than-two-million-customers-avoid-overdraft-service-fees";

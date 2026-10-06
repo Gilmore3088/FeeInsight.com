@@ -58,10 +58,13 @@ Rosetta owns source text normalization.
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
-  - A download that fails with HTTP 404/410, or with HTTP 401/403 when an earlier read of
-    the same document was also blocked, sends the bank back to Magellan the same way
-    (`failure_reason` `rosetta_dead_link`), but only while `fee_schedule_url` still
-    points at that URL. A single 403 keeps the link: it can be a passing bot challenge.
+  - A download that fails with HTTP 404/410, with HTTP 401/403 when an earlier read of
+    the same document was also blocked, or for the third time in 7 days with a block,
+    rate limit, server error, timeout or network error (`STUCK_LINK_*` in `read.ts`),
+    sends the bank back to Magellan the same way (`failure_reason` `rosetta_dead_link`),
+    but only while `fee_schedule_url` still points at that URL. A single 403 keeps the
+    link: it can be a passing bot challenge. A document that is not in the vault and has
+    hit that failure limit is not downloaded again until the 7 days pass.
   - Pass 3 takes texts still `needs_ocr` whose bytes the current reader already tried and
     that have no settled `read.paid_transcribe` attempt, sends the PDF as a base64
     `document` block via `paidModelCall` (agent `rosetta`, `PAID_PASS_MODELS.read()`, at
