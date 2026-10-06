@@ -54,7 +54,8 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
   return out;
 }
 
-const NUMBER_TOKEN = /(\$[\d,]+(?:\.\d+)?|\d+(?:\.\d+)?%|\d[\d,]* of \d[\d,]*)/g;
+// "$10B+" and "$209 thousand" stay whole, so a size or amount is never half bold.
+const NUMBER_TOKEN = /(\$[\d,]+(?:\.\d+)?(?:[KMBT]\+?|\+| (?:thousand|million|billion|trillion)\b)?|\d+(?:\.\d+)?%|\d[\d,]* of \d[\d,]*)/g;
 
 /** A sentence with its figures set in bold, so a skim reads the numbers. */
 export function withFiguresBold(text: string): ReactNode[] {

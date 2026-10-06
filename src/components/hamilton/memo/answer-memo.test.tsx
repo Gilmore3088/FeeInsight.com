@@ -42,3 +42,11 @@ describe("AnswerMemo", () => {
     ).toBe("+10.0%");
   });
 });
+
+describe("withFiguresBold units", () => {
+  it("keeps a size or amount with its unit in one bold run", () => {
+    const html = renderToStaticMarkup(<p>{withFiguresBold("2 of 6 $10B+ institutions; income $209 thousand.")}</p>);
+    expect(html).toContain("$10B+</strong>");
+    expect(html).toContain("$209 thousand</strong>");
+  });
+});
