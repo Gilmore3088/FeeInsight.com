@@ -11,7 +11,9 @@ import {
   isEmailOnlySource,
   parseStateCode,
   placementForSource,
+  stateFromUseCase,
 } from "@/lib/lead-capture";
+import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import {
   REPORT_SOURCE,
   buildBenchmarkUseCase,
@@ -104,8 +106,14 @@ async function handlePOST(request: NextRequest) {
     // A signup folds into the newest signup row for this email. Request rows are never
     // touched by a signup: appending capture sources to them changed their history and
     // could reopen an answered request.
-    const known = await sql<{ id: number | string; source: string | null }[]>`
-      SELECT id, source FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
+    const known = await sql<{
+      id: number | string;
+      source: string | null;
+      use_case?: string | null;
+      email_confirmed_at?: string | Date | null;
+      email_unsubscribed_at?: string | Date | null;
+    }[]>`
+      SELECT id, source, use_case, email_confirmed_at, email_unsubscribed_at FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
     const existing = isRequestLead(source) ? undefined : known.find((row) => !isRequestLead(row.source));
     let leadId: number | null = null;
 
@@ -166,6 +174,20 @@ async function handlePOST(request: NextRequest) {
           END
           WHERE id = ${leadId}`;
       }
+    }
+
+    // A reader who already confirmed doesn't wait for another click: the new source and
+    // state go to MailerLite now (the confirm sync does this for everyone else).
+    const confirmed = existing && existing.email_confirmed_at && !existing.email_unsubscribed_at;
+    if (confirmed && !isRequestLead(source)) {
+      const sources = [...new Set([...known.map((row) => row.source ?? ""), source].join(",").split(",").map((s) => s.trim()).filter(Boolean))];
+      const sync = await syncLeadToMailerLite({
+        email,
+        subscribed: true,
+        source: sources.join(","),
+        state: stateCode ?? known.map((row) => stateFromUseCase(row.use_case)).find(Boolean) ?? null,
+      });
+      if (sync.status === "failed") console.error("[api/leads] MailerLite sync failed", { error: sync.error });
     }
 
     // Storage is done; email is best-effort and its status rides along for the client.

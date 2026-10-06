@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { trackEvent } from "@/lib/analytics";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { CONTACT_EMAIL } from "@/lib/constants";
 import { HoneypotField, honeypotValue } from "./honeypot-field";
 import { StateSelect } from "./state-select";
 
@@ -13,6 +14,7 @@ export function EmailSignup() {
   const [email, setEmail] = useState("");
   const [state, setState] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [emailSent, setEmailSent] = useState(true);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,6 +35,9 @@ export function EmailSignup() {
         }),
       });
       if (resp.ok) {
+        const payload = (await resp.json().catch(() => ({}))) as { notifications?: { confirmation?: string } };
+        // Without the confirm email the address can never be confirmed, so say so.
+        setEmailSent(payload.notifications?.confirmation === "sent");
         trackEvent("newsletter_signup", { placement: "footer" });
         setStatus("success");
         setEmail("");
@@ -47,8 +52,10 @@ export function EmailSignup() {
 
   if (status === "success") {
     return (
-      <p className="text-[12px] text-emerald-700" role="status">
-        Almost done: check your inbox and click the confirm link to start getting the monthly update.
+      <p className={`text-[12px] ${emailSent ? "text-emerald-700" : "text-[#5A5347]"}`} role="status">
+        {emailSent
+          ? "Almost done: check your inbox and click the confirm link to start getting the monthly update."
+          : `Saved, but the confirm email didn't go out. Write to ${CONTACT_EMAIL} and we'll add you.`}
       </p>
     );
   }
