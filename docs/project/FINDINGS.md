@@ -978,3 +978,42 @@ medians already split NCUA into quarters, but the single-quarter reads in `call-
 **Fix:** same PR: those reads join each credit union's prior quarter in the same year and use the
 difference (Q1 stands alone; a missing prior quarter leaves the row out). Read-only; no data change.
 **Lesson:** a unit rule fixed in one query must live in a shared helper, or the next query repeats the bug.
+
+## 2026-10-06: Knox named stacked fees after the line under the name
+**What happened:** Rosetta's read of Community Bank (Longview, TX, `cbanktexas.com/limit-and-fees`)
+and Wells Fargo's account fee summaries found fees Knox missed or misnamed: overdraft and NSF were
+published as "(for each overdraft item, ...)", and the debit card replacement, temporary checks,
+returned deposited items, non-Wells Fargo ATM $3 and $5, and money order $5 were missed.
+**Cause:** Knox's stacked-line pairing (`table-rows.ts`, `families.ts`) took the line right above
+a price as its name, so a qualifier line between name and price ("(for each ...)", "(up to
+$1,000)", "If checks are not on order") either became the name or broke the pair. Wells Fargo's
+section heading ran to 9 words, past the 6-word heading limit, so "Cash withdrawals - Within U.S."
+had no category to borrow.
+**Fix:** same PR (Knox v15): a qualifier line keeps the name above it, table headings may run to 10
+words, "At <Bank> ATMs" is not read as out-of-network, and two name patterns. Answer-key gates:
+Texas 455 to 460 right, seven states 677 to 681, wrong reads 77 to 76, no right fee lost. Dry run
+on 117 sampled live documents: 1,956 reads kept, 7 new (all checked right by hand), 1 replaced (a
+statement copy read as $15 "Consumer", which is the business price, now $5; that document has no
+fee in `published_fee_catalog`).
+**Still open:** hold statements, special statement cutoff, account activity printouts and a debit
+card's monthly charge have no category in `fee-taxonomy.ts`; the answer keys file them as
+unmapped. They stay out until the taxonomy has a place for them.
+**Lesson:** pages built as name / note / price stacks are common on bank summary pages; pair
+across the note rather than adding names per bank.
+
+## 2026-10-06: Every credit union's overdraft and NSF income was stored as $0 for 2026 Q2
+**What happened:** after the 08:07 UTC NCUA re-pull, all 4,299 credit-union rows for 2026-06-30 in
+`institution_financial_records` had `overdraft_revenue = 0` and `nsf_revenue = 0`. The stored raw
+values (`raw_json.ACCT_IS0048`, `ACCT_IS0049`) were `"0"` for every row, including the three largest
+credit unions, which charge these fees (read-only query on prod, 08:20 UTC). Earlier quarters had not
+been re-pulled yet and carry no IS0048 value at all.
+**Cause:** not confirmed. The parser read the columns faithfully, so either the published file carries
+the new accounts as zeros, or a second FS220 file carries the same account as zero and overwrote the
+real figure (the merge let the last file win). This workspace cannot download the NCUA zip
+(`ncua.gov` is blocked by the network policy), so the file itself was not inspected.
+**Fix:** a quarter where no credit union reports a nonzero value stores these two accounts as NULL,
+never zero; a zero or blank in a second file no longer overwrites a reported figure; every FS220 file
+is read; and the run log records which files carry IS0048 and IS0049 (`detail.account_files`) and
+which accounts were blanked. Parser version 3 makes the scheduler re-pull every quarter.
+**Lesson:** a new call-report account that is zero for every filer is a missing value, not a fact;
+check the share of nonzero values before any chart or estimate uses it.

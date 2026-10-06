@@ -148,8 +148,8 @@ export default async function MethodologyPage() {
           body={[
             "The Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects disclosed rates, which are the standard of comparison for regulatory purposes and consumer research.",
             "Our coverage is strongest for retail deposit account fees (maintenance, overdraft, NSF, wire, ATM) and weakest for business account fees, loan fees, and investment-account fees. Fee schedules for these product types are less consistently published in machine-readable formats.",
-            "Geographic coverage is reasonably uniform at the state level but skewed toward states with higher institution density (Texas, California, Illinois, Ohio, New York). Fed District 4 (Cleveland), District 7 (Chicago), and District 11 (Dallas) have the strongest coverage. District 10 (Kansas City) and District 12 (San Francisco, excluding California) have the largest gaps relative to institution population.",
-            "Source freshness varies by institution and schedule. The national index represents a rolling snapshot of fee schedules collected over the trailing 120 days. State-level indexes use a 90-day window. Fees older than these thresholds are excluded from the live index to prevent stale data from distorting benchmarks.",
+            "Geographic coverage is uneven: some states and Federal Reserve districts have far more institutions with published fees than others. Each state and district page shows its own institution count, and a benchmark is marked provisional or withheld when too few institutions report it.",
+            "Source freshness varies by institution and schedule. Every fee carries the date its schedule was collected, so a figure can be judged by its age. A fee stays in the index until a newer copy of its schedule replaces it.",
           ]}
         />
 
