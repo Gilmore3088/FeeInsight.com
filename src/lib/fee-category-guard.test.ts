@@ -135,6 +135,15 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v10 accepts a returned deposit draft and a service fee named by the balance that avoids it (Air Academy FCU)", () => {
+    expect(checkFeeCategory("deposited_item_return", "Deposit Drafts Returned Unpaid Fee (when payor and payee are the same)").ok).toBe(true);
+    expect(
+      checkFeeCategory("monthly_maintenance", "Basic Checking Fee | Minimum daily balance of $500.00 required to avoid a $5.00 service fee").ok,
+    ).toBe(true);
+    // A service fee with no balance that avoids it is still not the monthly fee.
+    expect(checkFeeCategory("monthly_maintenance", "Business ACH Payments Origination Service Fee").ok).toBe(false);
+  });
+
   it("keeps deposit bag and other supply prices out of night deposit", () => {
     for (const name of ["Zipper Bags", "Night Deposit Lock Bag", "Deposit Bag - Locking", "Strapped currency"]) {
       expect(checkFeeCategory("night_deposit", name).ok).toBe(false);
