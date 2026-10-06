@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Report requests never stored their "ready to quote" line
+**What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,
+5 Oct) were stored without the "Report check: ..." line that /api/leads should append, so /admin/leads
+could not say whether a requested report can be built. Both emails went out (the API answered
+`notification: sent, confirmation: sent`).
+**Cause:** `leads.id` is bigint and the Postgres driver returns bigint as a string. The route kept the
+id only when `typeof id === "number"`, so it was always null: the quote line update and the
+failed-email marking (`handleLeadDeliveryOutcome`) never had a row id.
+**Fix:** the route parses the id from a string or a number; test added. PR on branch claude/project-thread-uc3vox.
+**Lesson:** bigint columns arrive as strings; never gate on `typeof id === "number"` for a bigint id.
+
 ## 2026-10-06: Knox reads the same web page several times, and checks nothing he writes
 **What happened:** the Knox audit (read-only prod queries, 05:00-05:30 UTC) found 632 fee pages stored
 as 2 to 10 separate `source_documents`. Knox extracts every copy: 14,895 extra raw rows, of which Darwin

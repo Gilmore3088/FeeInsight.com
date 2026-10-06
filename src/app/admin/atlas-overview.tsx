@@ -81,11 +81,14 @@ export function AtlasOverview({
   problems,
   funnel,
   attention,
+  showAttention = true,
 }: {
   health: PipelineHealth;
   problems: string[];
   funnel: PipelineFunnel;
   attention: AttentionItem[];
+  /** Off where the page already shows the Needs-you list. */
+  showAttention?: boolean;
 }) {
   const status = pipelineStatus(health, problems);
   const copy = STATUS_COPY[status];
@@ -144,7 +147,7 @@ export function AtlasOverview({
         <OverviewStat label="Last publish" value={ago(minutesSincePublish)} />
       </div>
 
-      <div>
+      {showAttention ? <div>
         <div className="flex items-baseline justify-between">
           <p className="admin-section-title">Needs you</p>
           {attention.length > topAttention.length && (
@@ -174,7 +177,7 @@ export function AtlasOverview({
             ))}
           </ul>
         )}
-      </div>
+      </div> : null}
     </section>
   );
 }

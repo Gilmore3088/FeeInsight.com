@@ -11,6 +11,10 @@ const requiredRoutes = [
   "/admin/hamilton/page",
   "/admin/data/page",
   "/admin/leads/page",
+  "/admin/agents/page",
+  "/admin/customers/page",
+  "/admin/publishing/page",
+  "/admin/controls/page",
 ];
 
 const missingRoutes = requiredRoutes.filter((route) => !(route in manifest));

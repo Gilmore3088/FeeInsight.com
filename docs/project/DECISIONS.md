@@ -14,6 +14,15 @@ reads them read-only with the daily scoreboard step and stores them in
 broken rule and every number that moved more than 25% since yesterday. A change to an agent's
 selector or behaviour updates its table and the health check in the same PR.
 
+**The admin becomes one console with six rooms, opening on a Needs-you list.** James, 05:57 UTC,
+answering the console brainstorm (https://claude.ai/artifact/9xib8VUnETMBh1u4txabzW). /admin opens
+on Today: everything waiting on a person, with the button that clears it. Every other screen
+lives in one of six rooms: Agents, Data, Customers, Publishing (reports, briefs and monthly
+updates; James asked where published content lives) and Controls (spend, stop switches, launch
+checklist). The morning brief emails the same list at 7am Central to hello@bankfeeindex.com, with
+jlgilmore2@gmail.com copied. Every room works on a phone. James said to "run without me": the
+console pieces are built and merged when CI is green without waiting for his review.
+
 **Darwin is rebuilt as a full verification layer, with Claude as the last resort.** James, 05:29
 UTC ("i want to build the entire Darwin layer. But the API call should be last result"). Free
 methods run first: reading the schedule as rows, a learned category model, learned price ranges,
