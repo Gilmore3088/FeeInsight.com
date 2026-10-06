@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
+**What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
+and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the
+`hamilton_decisions` table nor the `nsf_revenue` column (read-only query on prod). Prod's
+history already held `20270108000000_branch_deposits_market_indexes`, which is on the open
+`claude/hamilton-improvements-69gnln` branch (PR 93) but not on `main`.
+**Cause:** a migration was recorded on prod from a branch before it merged, so `main`'s new
+files numbered below it are "older than the last applied migration" and the deploy does not run them.
+**Fix:** renumbered both files to `20270108000001` and `20270108000002` (this PR). Neither has run
+anywhere, so nothing is applied twice.
+**Lesson:** number a new migration above both the highest file on `main` and the highest version
+in prod's `supabase_migrations.schema_migrations`; check prod, not just the folder.
+
 ## 2026-10-06: New call-report fields need a re-pull; credit unions split overdraft and NSF
 **What happened:** Hamilton needs per-fee income for overdraft and NSF. Banks file one combined
 overdraft-and-NSF line (RIAD H032, banks over $1B only, not in the FDIC API). Credit unions file
