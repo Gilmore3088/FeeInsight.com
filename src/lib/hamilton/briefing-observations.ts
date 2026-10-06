@@ -1,20 +1,20 @@
 /**
- * The Briefing's "three things worth your attention": the fees where the bank sits furthest from
- * its benchmark, written as observations. Deterministic and neutral: it says where the bank sits
- * and how far from the middle, never whether to change anything.
+ * This month's "things worth your attention", built from the Hamilton engine's Briefing (PR 170):
+ * fees far from their peer group, competitors in the bank's state that changed a fee it charges,
+ * and a large move in its service charge income. Overdraft, Hamilton's flagship, always leads when
+ * the bank publishes it. Deterministic and neutral: it says what is unusual, never what to do.
  */
 import { STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
-import type { InstitutionPositioning } from "./institution-position";
-import { STANDARD_METHOD, type AuditTrail } from "./audit-trail";
+import type { Briefing, FeeResearch, Observation } from "./workspace/types";
 
-export interface BriefingObservation {
-  feeCategory: string;
-  feeName: string;
+export interface AttentionItem {
+  id: string;
+  /** Null for items about the whole schedule, such as service charge income. */
+  feeCategory: string | null;
   headline: string;
-  detail: string;
-  yourAmount: number;
-  benchmarkMedian: number;
-  benchmarkCount: number;
+  facts: string[];
+  /** A caution about the evidence, such as a small peer group. */
+  note: string | null;
 }
 
 /** Display names carry abbreviations like "Overdraft (OD)"; prose reads better without them. */
@@ -29,73 +29,51 @@ export function money(amount: number): string {
 /** Overdraft is Hamilton's flagship: when the bank publishes it, it always leads the Briefing. */
 export const FLAGSHIP_FEE = "overdraft";
 
-type PositionEntry = InstitutionPositioning["entries"][number];
+const SMALL_GROUP_NOTE = "A small peer group, so read with care.";
 
-function observe(e: PositionEntry, benchmarkLabel: string): BriefingObservation {
-  const name = plainFeeName(e.displayName);
-  const thin = e.benchmarkCount < STRONG_INSTITUTION_COUNT ? ", a small group, so read with care." : ".";
-  const pct = e.gapPct == null ? null : Math.round(Math.abs(e.gapPct));
-  const where =
-    e.gapAmount === 0 || pct === 0
-      ? `At the median of your peer group (${benchmarkLabel})`
-      : `${pct}% ${e.gapAmount > 0 ? "above" : "below"} the median of your peer group (${benchmarkLabel})`;
+function plainText(text: string): string {
+  return text.replace(/\s*\([A-Z]{2,6}\)/g, "");
+}
+
+function fromObservation(o: Observation): AttentionItem {
   return {
-    feeCategory: e.feeCategory,
-    feeName: name,
-    headline: `${name}: ${money(e.yourAmount)} against a median of ${money(e.benchmarkMedian)}`,
-    detail: `${where}, ${e.benchmarkCount} institutions${thin}`,
-    yourAmount: e.yourAmount,
-    benchmarkMedian: e.benchmarkMedian,
-    benchmarkCount: e.benchmarkCount,
+    id: o.id,
+    feeCategory: o.feeCategory,
+    headline: plainText(o.headline),
+    facts: o.facts.map((f) => plainText(f.text)),
+    note: null,
   };
 }
 
-export function buildBriefingObservations(
-  positioning: InstitutionPositioning | null,
-  limit = 3,
-): BriefingObservation[] {
-  if (!positioning) return [];
-  const flagship = positioning.entries.find((e) => e.feeCategory === FLAGSHIP_FEE && e.benchmarkMedian > 0) ?? null;
-  const rest = positioning.entries
-    .filter((e) => e !== flagship && e.gapPct != null && e.gapAmount !== 0 && e.benchmarkMedian > 0)
-    // Comparisons against a full peer group come first, so the lead items are the most defensible.
-    .sort(
-      (a, b) =>
-        Number(b.benchmarkCount >= STRONG_INSTITUTION_COUNT) - Number(a.benchmarkCount >= STRONG_INSTITUTION_COUNT) ||
-        Math.abs(b.gapPct!) - Math.abs(a.gapPct!),
-    );
-  return [...(flagship ? [flagship] : []), ...rest]
-    .slice(0, limit)
-    .map((e) => observe(e, positioning.benchmarkLabel));
+/** Overdraft's place among its peers when the engine didn't flag it as unusual. */
+function overdraftItem(research: FeeResearch): AttentionItem | null {
+  if (research.current == null || !research.band) return null;
+  const current = research.current;
+  const amounts = research.peers.map((p) => p.amount);
+  const more = amounts.filter((a) => a > current + 0.005).length;
+  const less = amounts.filter((a) => a < current - 0.005).length;
+  const same = amounts.length - more - less;
+  const { median, p25, p75, n } = research.band;
+  return {
+    id: `position:${research.feeCategory}`,
+    feeCategory: research.feeCategory,
+    headline: `Your overdraft fee is ${money(current)}; the median of ${n} peers is ${money(median)}.`,
+    facts: [
+      `${research.peerLabel}: middle half ${money(p25)} to ${money(p75)}.`,
+      `${more} charge more, ${same} the same and ${less} less.`,
+    ],
+    note: n < STRONG_INSTITUTION_COUNT ? SMALL_GROUP_NOTE : null,
+  };
 }
 
-/** The Briefing's trail: what the observations compare against and how they were chosen. */
-export function briefingAuditTrail(positioning: InstitutionPositioning, now = new Date()): AuditTrail {
-  return {
-    evidence: "Market data only",
-    sources: [
-      {
-        label: "Your published fees",
-        detail: `${positioning.ownFeeCount} fees from ${positioning.institutionName}'s own fee schedule, in Bank Fee Index.`,
-        asOf: null,
-      },
-      {
-        label: "Peer group",
-        detail:
-          positioning.benchmarkSource === "saved-peer-set"
-            ? `${positioning.benchmarkLabel}: your saved peer set.`
-            : positioning.benchmarkSource === "national"
-              ? `${positioning.benchmarkLabel}: every institution nationally, because too few comparable institutions publish these fees.`
-              : `${positioning.benchmarkLabel}: comparable institutions by charter, asset size, state and Fed district, widened only when too few publish a fee.`,
-        asOf: null,
-      },
-    ],
-    method: [
-      ...STANDARD_METHOD,
-      `Overdraft leads when you publish it. The others are the fees furthest from the peer median in percent terms. Comparisons against at least ${STRONG_INSTITUTION_COUNT} institutions come first; smaller groups are flagged.`,
-    ],
-    assumptions: ["None. Observations describe where your fees sit; they don't say whether to change them. Open Research for each fee's dated sources."],
-    ownFeeRows: [],
-    preparedAt: now.toISOString(),
-  };
+export function buildAttentionItems(
+  briefing: Briefing | null,
+  overdraft: FeeResearch | null,
+  limit = 4,
+): AttentionItem[] {
+  if (!briefing) return [];
+  const flagged = briefing.observations.find((o) => o.feeCategory === FLAGSHIP_FEE && o.kind === "market_position");
+  const lead = flagged ? fromObservation(flagged) : overdraft ? overdraftItem(overdraft) : null;
+  const rest = briefing.observations.filter((o) => o !== flagged).map(fromObservation);
+  return [...(lead ? [lead] : []), ...rest].slice(0, limit);
 }

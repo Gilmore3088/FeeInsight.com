@@ -6,6 +6,7 @@
  */
 import type { FeeEvidenceRow, LocalMarket } from "@/lib/data-store/fee-research";
 import type { LayerSummary } from "./research-layers";
+import { WORKSPACE_ENGINE_VERSION, type Provenance } from "./workspace/types";
 
 export interface AuditSource {
   label: string;
@@ -21,7 +22,20 @@ export interface AuditTrail {
   assumptions: string[];
   /** The bank's own published rows behind "your fee", each traceable to its schedule. */
   ownFeeRows: FeeEvidenceRow[];
+  /** Figures the bank gave Hamilton, with who gave each one and when. */
+  clientFacts: AuditClientFact[];
+  /** The peer group the comparison rests on and how many institutions are in it. */
+  peerGroup: { label: string; n: number } | null;
+  /** The Hamilton engine version that built this output, so a saved copy names its maker. */
+  engineVersion: string;
   preparedAt: string;
+}
+
+export interface AuditClientFact {
+  label: string;
+  value: string;
+  givenBy: string | null;
+  givenAt: string;
 }
 
 export const STANDARD_METHOD = [
@@ -51,10 +65,15 @@ export function buildAuditTrail(input: {
   local?: LocalMarket | null;
   callReport?: { quarter: string; source: string } | null;
   complaints?: boolean;
+  /** Fee changes seen on published schedules in the bank's state (the engine's change feed). */
+  stateChanges?: { state: string; days: number; asOf: string | null } | null;
   clientFigures?: { paidItems: number | null; waiverRate: number | null } | null;
+  /** Who entered the client figures (the signed-in user's name). */
+  enteredBy?: string | null;
   extraAssumptions?: string[];
   now?: Date;
 }): AuditTrail {
+  const preparedAt = (input.now ?? new Date()).toISOString();
   const sources: AuditSource[] = [];
   const layerSource = (layer: LayerSummary, dates: readonly (string | null)[]): AuditSource => {
     const range = publishedRange(dates);
@@ -101,25 +120,101 @@ export function buildAuditTrail(input: {
     });
   }
 
+  if (input.stateChanges) {
+    sources.push({
+      label: "Fee changes in your state",
+      detail: `Changes seen on published schedules in ${input.stateChanges.state}, last ${input.stateChanges.days} days. Bank Fee Index change records.`,
+      asOf: dateOnly(input.stateChanges.asOf),
+    });
+  }
+
   const assumptions = [...(input.extraAssumptions ?? [])];
   const figures = input.clientFigures;
-  const hasFigures = Boolean(figures && (figures.paidItems != null || figures.waiverRate != null));
+  const clientFacts: AuditClientFact[] = [];
+  const givenBy = input.enteredBy ?? null;
   if (figures) {
     if (figures.paidItems != null) {
-      assumptions.push(`Items charged a year: ${figures.paidItems.toLocaleString("en-US")}, entered by you on this page.`);
+      clientFacts.push({ label: "Items charged a year", value: figures.paidItems.toLocaleString("en-US"), givenBy, givenAt: preparedAt });
     }
     if (figures.waiverRate != null) {
-      assumptions.push(`Share waived or refunded: ${Math.round(figures.waiverRate * 1000) / 10}%, entered by you on this page.`);
+      clientFacts.push({ label: "Share waived or refunded", value: `${Math.round(figures.waiverRate * 1000) / 10}%`, givenBy, givenAt: preparedAt });
     }
-    if (!hasFigures) assumptions.push("No volume assumed: without your figures, income is shown per 1,000 items only.");
+    if (clientFacts.length === 0) assumptions.push("No volume assumed: without your figures, income is shown per 1,000 items only.");
   }
 
   return {
-    evidence: hasFigures ? "Market data and your figures" : "Market data only",
+    evidence: clientFacts.length > 0 ? "Market data and your figures" : "Market data only",
     sources,
     method: STANDARD_METHOD,
     assumptions,
     ownFeeRows: input.ownFeeRows,
-    preparedAt: (input.now ?? new Date()).toISOString(),
+    clientFacts,
+    peerGroup: input.layer ? { label: input.layer.label, n: input.layer.n } : null,
+    engineVersion: WORKSPACE_ENGINE_VERSION,
+    preparedAt,
+  };
+}
+
+function factValue(value: unknown): string {
+  if (typeof value === "number") return value > 0 && value < 1 ? `${Math.round(value * 1000) / 10}%` : value.toLocaleString("en-US");
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+/** Plain words for the memory field keys the engine stores client figures under ("fee.overdraft.annual_items"). */
+const FACT_LABELS: Record<string, string> = {
+  annual_items: "Items charged a year",
+  waiver_rate: "Share waived or refunded",
+  affected_accounts: "Accounts affected",
+};
+
+function factLabel(fieldKey: string): string {
+  const parts = fieldKey.split(".");
+  const field = parts[parts.length - 1];
+  const label = FACT_LABELS[field] ?? field.replace(/_/g, " ");
+  return parts.length === 3 && parts[0] === "fee" ? `${label} (${parts[1].replace(/_/g, " ")})` : label;
+}
+
+/**
+ * The engine's provenance (PR 170) as the panel's trail: every source with its link and date, the
+ * peer group and its size, the engine version and build time, each assumption, and each figure the
+ * bank gave with who gave it and when. Adds nothing the engine didn't record.
+ */
+export function provenanceToTrail(
+  provenance: Provenance,
+  opts: { method?: string[]; ownFeeRows?: FeeEvidenceRow[]; extraAssumptions?: string[] } = {},
+): AuditTrail {
+  const clientFacts: AuditClientFact[] = provenance.clientFacts.map((f) => ({
+    label: factLabel(f.fieldKey),
+    value: factValue(f.value),
+    givenBy: f.givenBy,
+    givenAt: f.givenAt,
+  }));
+  const asOfFor = (table: string | undefined, asOf: string | null | undefined): string | null => {
+    if (asOf) return dateOnly(asOf);
+    if (table === "published_fee_catalog") return dateOnly(provenance.dataAsOf.fees);
+    if (table === "institution_financial_records") return dateOnly(provenance.dataAsOf.financials);
+    if (table === "fee_change_records") return dateOnly(provenance.dataAsOf.changes);
+    return null;
+  };
+  const evidence =
+    clientFacts.length > 0 || (provenance.evidenceLevel && provenance.evidenceLevel !== "market")
+      ? "Market data and your figures"
+      : "Market data only";
+  return {
+    evidence,
+    sources: provenance.sources.map((s) => ({
+      label: s.label,
+      detail: s.table ? `Bank Fee Index table ${s.table}.` : "",
+      asOf: asOfFor(s.table, s.asOf),
+      href: s.url ?? null,
+    })),
+    method: opts.method ?? STANDARD_METHOD,
+    assumptions: [...provenance.assumptions, ...(opts.extraAssumptions ?? [])],
+    ownFeeRows: opts.ownFeeRows ?? [],
+    clientFacts,
+    peerGroup: provenance.peerGroup ?? null,
+    engineVersion: provenance.engineVersion,
+    preparedAt: provenance.generatedAt,
   };
 }

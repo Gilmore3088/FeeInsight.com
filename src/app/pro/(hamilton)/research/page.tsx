@@ -12,6 +12,7 @@ import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
 import { getArticles } from "@/lib/data-store/news";
+import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch } from "@/lib/hamilton/workspace/research";
 import {
   AuditPanel,
   Callout,
@@ -92,11 +93,13 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   const layerKey = parseLayer(params.layer ?? (ws.layers.some((l) => l.key === "local") ? "local" : "state"));
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
-  const [trend, complaints, articles] = await Promise.all([
+  const [trend, complaints, articles, research] = await Promise.all([
     inst ? getInstitutionRevenueTrend(inst.id, 8).catch(() => []) : [],
     inst ? getInstitutionComplaintProfile(inst.id).catch(() => null) : null,
     getArticles({ topic: OVERDRAFT_FAMILY.has(ws.fee) ? "overdraft" : "fees_pricing", limit: 5 }).catch(() => []),
+    inst ? getFeeResearch(inst.id, ws.fee).catch(() => null) : null,
   ]);
+  const stateChanges = research?.recentChanges ?? [];
 
   const rules = buildImplementationPlan({
     feeCategory: ws.fee,
@@ -123,6 +126,9 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       ? { quarter: latest.quarter, source: inst?.charterType === "credit_union" ? "NCUA 5300 call report, year to date." : "FDIC call report, quarterly." }
       : null,
     complaints: Boolean(complaints && complaints.total_complaints > 0),
+    stateChanges: inst?.stateCode && research
+      ? { state: inst.stateCode, days: COMPETITOR_MOVE_WINDOW_DAYS, asOf: research.provenance.dataAsOf.changes ?? null }
+      : null,
   });
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
   const localBanks = ws.local?.banks ?? [];
@@ -211,6 +217,27 @@ export default async function ResearchPage({ searchParams }: PageProps) {
               </tbody>
             </table>
           </div>
+        </MemoSection>
+      ) : null}
+
+      {inst?.stateCode && research ? (
+        <MemoSection
+          title={`Who changed this fee in ${inst.stateCode}`}
+          note={`Changes seen on published schedules in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, newest first.`}
+        >
+          {stateChanges.length > 0 ? (
+            <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50 text-sm text-warm-800">
+              {stateChanges.map((c) => (
+                <li key={c.text} className="px-4 py-2">
+                  {c.text}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-warm-700">
+              No institution in {inst.stateCode} changed its published {ws.feeName.toLowerCase()} fee in that time.
+            </p>
+          )}
         </MemoSection>
       ) : null}
 

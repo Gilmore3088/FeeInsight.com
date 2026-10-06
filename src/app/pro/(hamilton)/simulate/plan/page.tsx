@@ -100,6 +100,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
     ownFeeRows: ws.ownFeeRows,
     local: ws.local,
     clientFigures: { paidItems, waiverRate },
+    enteredBy: user.display_name || user.username,
     extraAssumptions: [
       `${fmtMoney(from)} is the starting price${ws.ownAmount === from ? ", your published fee" : ", as entered"}; ${fmtMoney(to)} is the price management is weighing.`,
       `Notice dates assume notice goes out on ${longDate(noticeDate)}.`,

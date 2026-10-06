@@ -273,6 +273,12 @@ export function AuditPanel({
         </span>
       </summary>
       <div className="flex flex-col gap-5 border-t border-warm-200 px-5 py-4">
+        {trail.peerGroup ? (
+          <p>
+            <span className="font-medium text-warm-900">Peer group:</span> {trail.peerGroup.label},{" "}
+            {trail.peerGroup.n.toLocaleString("en-US")} {trail.peerGroup.n === 1 ? "institution" : "institutions"}.
+          </p>
+        ) : null}
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Sources</h3>
           <ul className="mt-2 flex flex-col gap-2">
@@ -324,6 +330,24 @@ export function AuditPanel({
             </ul>
           </div>
         ) : null}
+        {trail.clientFacts.length > 0 ? (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Figures you gave Hamilton</h3>
+            <ul className="mt-2 flex flex-col gap-1">
+              {trail.clientFacts.map((f) => (
+                <li key={f.label} className="flex flex-wrap justify-between gap-x-3">
+                  <span className="min-w-0">
+                    {f.label}: {f.value}
+                  </span>
+                  <span className="text-warm-600">
+                    Entered by {f.givenBy ?? "someone not recorded"},{" "}
+                    {new Date(f.givenAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Method</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -343,7 +367,8 @@ export function AuditPanel({
           </div>
         ) : null}
         <p className="text-xs text-warm-600">
-          Prepared {new Date(trail.preparedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC.
+          Prepared {new Date(trail.preparedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC
+          by Hamilton engine {trail.engineVersion}.
           Hamilton doesn&apos;t recommend a price; it shows the evidence.
         </p>
       </div>

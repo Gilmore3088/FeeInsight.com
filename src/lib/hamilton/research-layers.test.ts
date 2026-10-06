@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildLayers, describePosition, parseLayer } from "./research-layers";
-import { buildBriefingObservations, plainFeeName } from "./briefing-observations";
+import { plainFeeName } from "./briefing-observations";
 import type { PeerAmount } from "@/lib/data-store/fee-research";
-import type { InstitutionPositioning } from "./institution-position";
 
 const peer = (id: number, amount: number, over: Partial<PeerAmount> = {}): PeerAmount => ({
   institutionId: id,
@@ -56,47 +55,7 @@ describe("buildLayers", () => {
   });
 });
 
-describe("buildBriefingObservations", () => {
-  const entry = (feeCategory: string, yourAmount: number, benchmarkMedian: number) => ({
-    feeCategory,
-    displayName: `${feeCategory} (X)`,
-    yourAmount,
-    benchmarkMedian,
-    benchmarkP25: null,
-    benchmarkP75: null,
-    benchmarkCount: 40,
-    maturityTier: "strong" as const,
-    gapAmount: yourAmount - benchmarkMedian,
-    gapPct: ((yourAmount - benchmarkMedian) / benchmarkMedian) * 100,
-  });
-  const positioning = {
-    benchmarkLabel: "Texas community banks",
-    entries: [entry("a", 30, 30), entry("b", 15, 10), entry("c", 5, 10), entry("d", 11, 10), entry("e", 40, 30)],
-  } as unknown as InstitutionPositioning;
-
-  it("picks the furthest from the middle and never advises", () => {
-    const obs = buildBriefingObservations(positioning);
-    expect(obs.map((o) => o.feeCategory)).toEqual(["b", "c", "e"]);
-    expect(obs[1].detail).toBe("50% below the median of your peer group (Texas community banks), 40 institutions.");
-    const text = obs.map((o) => o.headline + o.detail).join(" ");
-    expect(text).not.toMatch(/raise|lower|should|recommend/i);
-  });
-
-  it("leads with comparisons against a full peer group and flags small ones", () => {
-    const thin = { ...entry("z", 50, 10), benchmarkCount: 7 };
-    const obs = buildBriefingObservations({ ...positioning, entries: [thin, ...positioning.entries] } as InstitutionPositioning);
-    expect(obs.map((o) => o.feeCategory)).toEqual(["b", "c", "e"]);
-    const onlyThin = buildBriefingObservations({ ...positioning, entries: [thin] } as InstitutionPositioning);
-    expect(onlyThin[0].detail).toMatch(/small group, so read with care/);
-  });
-
-  it("always leads with overdraft when the bank publishes it", () => {
-    const od = entry("overdraft", 30, 30);
-    const obs = buildBriefingObservations({ ...positioning, entries: [...positioning.entries, od] } as InstitutionPositioning);
-    expect(obs.map((o) => o.feeCategory)).toEqual(["overdraft", "b", "c"]);
-    expect(obs[0].detail).toMatch(/^At the median of your peer group/);
-  });
-
+describe("plainFeeName", () => {
   it("strips the abbreviation from display names", () => {
     expect(plainFeeName("Overdraft (OD)")).toBe("Overdraft");
   });

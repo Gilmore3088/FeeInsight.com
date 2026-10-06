@@ -112,6 +112,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     ownFeeRows: ws.ownFeeRows,
     local: layer.key === "local" ? ws.local : null,
     clientFigures: { paidItems, waiverRate },
+    enteredBy: user.display_name || user.username,
     extraAssumptions: [
       current != null ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.` : "No published price for you, so each change is measured from $0.",
       "Volume held steady at every price: Hamilton doesn't estimate how customers respond from public data.",

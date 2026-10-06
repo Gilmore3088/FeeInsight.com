@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import type { BriefingObservation } from "@/lib/hamilton/briefing-observations";
+import type { AttentionItem } from "@/lib/hamilton/briefing-observations";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 import { AuditPanel } from "@/components/hamilton/memo/memo";
 
@@ -8,15 +8,16 @@ const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 const COUNT_WORDS = ["", "one thing", "two things", "three things"];
 
 /**
- * The top of the Briefing: the fees where the bank sits furthest from its benchmark, as
- * observations with a way into Research and Model. It never says what to do about them.
+ * The top of This month: overdraft first, then what the engine found unusual (a fee far from its
+ * peers, competitors' changes, a move in service charge income), each with a way into My fees and
+ * Try a price. It never says what to do about them.
  */
 export function WorthYourAttention({
   observations,
   institutionId,
   trail,
 }: {
-  observations: BriefingObservation[];
+  observations: AttentionItem[];
   institutionId: string | null;
   trail: AuditTrail;
 }) {
@@ -27,30 +28,37 @@ export function WorthYourAttention({
         I found {count} worth your attention
       </h2>
       <p className="mt-1 text-sm text-warm-600">
-        Where your published fees sit furthest from the middle of your peers. Whether that matters depends on your goals; open one to look closer.
+        Overdraft first, then what stood out against your peers and your state this month. Whether it matters depends on your goals; open one to look closer.
       </p>
-      <ol className="mt-5 grid gap-4 md:grid-cols-3">
+      <ol className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {observations.map((o, i) => (
-          <li key={o.feeCategory} className="flex flex-col gap-2 border-t-2 border-warm-900 pt-3">
+          <li key={o.id} className="flex flex-col gap-2 border-t-2 border-warm-900 pt-3">
             <span className="text-xs font-semibold text-terra-text">{String(i + 1).padStart(2, "0")}</span>
             <span className="text-lg leading-snug text-warm-900" style={SERIF}>
               {o.headline}
             </span>
-            <span className="text-sm text-warm-700">{o.detail}</span>
-            <span className="mt-auto flex gap-3 pt-1 text-sm">
-              <Link
-                href={hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
-                className="text-terra-text underline"
-              >
-                Look closer
-              </Link>
-              <Link
-                href={hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
-                className="text-terra-text underline"
-              >
-                Try a price
-              </Link>
-            </span>
+            <ul className="flex flex-col gap-1 text-sm text-warm-700">
+              {o.facts.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+            {o.note ? <span className="text-xs text-terra-text">{o.note}</span> : null}
+            {o.feeCategory ? (
+              <span className="mt-auto flex gap-3 pt-1 text-sm">
+                <Link
+                  href={hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
+                  className="text-terra-text underline"
+                >
+                  Look closer
+                </Link>
+                <Link
+                  href={hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
+                  className="text-terra-text underline"
+                >
+                  Try a price
+                </Link>
+              </span>
+            ) : null}
           </li>
         ))}
       </ol>

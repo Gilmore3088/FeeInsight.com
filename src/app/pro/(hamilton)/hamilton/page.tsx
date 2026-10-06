@@ -6,35 +6,49 @@ import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilt
 import { getCurrentUser, type User } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { fetchInstitutionPositioning, type InstitutionPositioning } from "@/lib/hamilton/institution-position";
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
-import { briefingAuditTrail, buildBriefingObservations } from "@/lib/hamilton/briefing-observations";
-import { Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
+import { buildAttentionItems, FLAGSHIP_FEE } from "@/lib/hamilton/briefing-observations";
+import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
+import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch, getWorkspaceBriefing } from "@/lib/hamilton/workspace/research";
+import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
+import type { Briefing, FeeResearch } from "@/lib/hamilton/workspace/types";
+import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "This month" };
 
-/** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
-const getCachedInstitutionPositioning = unstable_cache(
-  fetchInstitutionPositioning,
-  ["hamilton-home-briefing-institution"],
+/** The engine's Briefing and overdraft research, cached per institution for an hour (keyed on the id). */
+const getCachedBriefing = unstable_cache(
+  async (institutionId: number) => {
+    const [briefing, overdraft] = await Promise.all([
+      getWorkspaceBriefing(institutionId),
+      getFeeResearch(institutionId, FLAGSHIP_FEE),
+    ]);
+    return { briefing, overdraft };
+  },
+  ["hamilton-this-month-briefing-v1"],
   { revalidate: 3600 },
 );
 
-async function loadInstitutionPositioning(
+async function loadBriefing(
   selectedInstitutionId: string | null,
-): Promise<{ positioning: InstitutionPositioning | null; unavailable: boolean }> {
+): Promise<{ briefing: Briefing | null; overdraft: FeeResearch | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
-  if (!institutionId) return { positioning: null, unavailable: false };
+  if (!institutionId) return { briefing: null, overdraft: null, unavailable: false };
   try {
-    return { positioning: await getCachedInstitutionPositioning(institutionId), unavailable: false };
+    return { ...(await getCachedBriefing(institutionId)), unavailable: false };
   } catch {
-    return { positioning: null, unavailable: true };
+    return { briefing: null, overdraft: null, unavailable: true };
   }
 }
+
+const BRIEFING_METHOD = [
+  ...STANDARD_METHOD,
+  `Overdraft leads when you publish it. After it come your fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group, institutions in your state that changed a fee you charge in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in your service charge income, most unusual first.`,
+];
 
 function ChangesSkeleton() {
   return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
@@ -87,8 +101,8 @@ async function resolveSelectedInstitutionId(
 }
 
 /**
- * Briefing: one memo. The fees worth a look this month (overdraft first), what changed, and how
- * it was built. Deterministic: no model call on this page.
+ * This month: one memo built by the Hamilton engine. What is worth a look (overdraft first), what
+ * changed, and how it was built. Deterministic: no model call on this page.
  */
 export default async function HamiltonHomePage({
   searchParams,
@@ -98,35 +112,50 @@ export default async function HamiltonHomePage({
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
   const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
-  const { positioning, unavailable } = await loadInstitutionPositioning(selectedInstitutionId);
-  const observations = buildBriefingObservations(positioning);
+  const { briefing, overdraft, unavailable } = await loadBriefing(selectedInstitutionId);
+  const items = buildAttentionItems(briefing, overdraft);
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const trail = briefing
+    ? provenanceToTrail(briefing.provenance, {
+        method: BRIEFING_METHOD,
+        extraAssumptions:
+          overdraft && items[0]?.id === `position:${FLAGSHIP_FEE}`
+            ? [`Overdraft is compared with ${overdraft.peerLabel}, ${overdraft.band?.n ?? 0} institutions.`]
+            : [],
+      })
+    : null;
 
   return (
     <MemoPage>
       <MemoHeader
         kicker={`This month · ${month}`}
-        title={positioning ? positioning.institutionName : "Your briefing"}
+        title={briefing ? briefing.institutionName : "Your briefing"}
         dek={
-          positioning
-            ? `Your published fees against ${positioning.benchmarkLabel}. Observations, not instructions: open any one to look closer or try a price.`
+          briefing
+            ? `Hamilton read your ${briefing.feesReviewed} published fees against ${briefing.peerLabel}. Observations, not instructions: open any one to look closer or try a price.`
             : "Choose your bank and Hamilton reads its published fees against its market every month."
         }
       />
 
-      {positioning && observations.length > 0 ? (
-        <WorthYourAttention
-          observations={observations}
-          institutionId={selectedInstitutionId}
-          trail={briefingAuditTrail(positioning)}
-        />
+      {briefing && trail && items.length > 0 ? (
+        <WorthYourAttention observations={items} institutionId={selectedInstitutionId} trail={trail} />
       ) : unavailable ? (
         <p role="status" className="text-sm text-terra-text">
           Your briefing couldn&apos;t load just now. <Link href="/pro/hamilton" className="underline">Try again</Link>
         </p>
-      ) : positioning ? (
+      ) : briefing && trail && briefing.feesReviewed > 0 ? (
+        <div className="flex flex-col gap-4">
+          <Callout>
+            Nothing stood out this month. None of your {briefing.feesReviewed} published fees is in the top or bottom{" "}
+            {POSITION_EXTREME_PCT}% of its peer group, no institution in your state changed a fee you charge in the last{" "}
+            {COMPETITOR_MOVE_WINDOW_DAYS} days, and your service charge income moved less than {REVENUE_SHIFT_PCT}% from a
+            year earlier.
+          </Callout>
+          <AuditPanel trail={trail} />
+        </div>
+      ) : briefing ? (
         <Callout>
-          We don&apos;t have enough of {positioning.institutionName}&apos;s published fees to compare yet. Research still shows
+          We don&apos;t have enough of {briefing.institutionName}&apos;s published fees to compare yet. My fees still shows
           the market for any fee.
         </Callout>
       ) : (
