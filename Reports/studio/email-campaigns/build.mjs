@@ -81,12 +81,12 @@ const R = {
     const cell = (t, a = "right", strong = false) =>
       `<td align="${a}" style="padding:9px 6px;font-family:${a === "left" ? SANS : MONO};font-size:13px;color:${strong ? C.ink : C.ink2};border-bottom:1px solid ${C.line};${strong ? "font-weight:bold;" : ""}">${t}</td>`;
     const rows = b.rows
-      .map(([, f]) => `<tr>${cell(esc(f.label), "left")}${cell(money(f.all.p25))}${cell(money(f.all.med), "right", true)}${cell(money(f.all.p75))}${cell(money(f.bank.med))}${cell(money(f.cu.med))}${cell(String(f.all.n))}</tr>`)
+      .map(([, f]) => `<tr>${cell(esc(f.label), "left")}${cell(money(f.all.p25))}${cell(money(f.all.med), "right", true)}${cell(money(f.all.p75))}${cell(f.all.n.toLocaleString("en-US"))}</tr>`)
       .join("");
-    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 8px;border-collapse:collapse;"><tr>${head("Fee")}${head("Low&nbsp;25%", "right")}${head("Median", "right")}${head("High&nbsp;25%", "right")}${head("Banks", "right")}${head("CUs", "right")}${head("n", "right")}</tr>${rows}</table><p style="margin:0 0 20px;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>`;
+    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 8px;border-collapse:collapse;"><tr>${head("Fee")}${head("Low&nbsp;25%", "right")}${head("Median", "right")}${head("High&nbsp;25%", "right")}${head("n", "right")}</tr>${rows}</table><p style="margin:0 0 20px;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>`;
     const text = [
-      "Fee | low 25% | median | high 25% | banks | CUs | n",
-      ...b.rows.map(([, f]) => `${f.label} | ${money(f.all.p25)} | ${money(f.all.med)} | ${money(f.all.p75)} | ${money(f.bank.med)} | ${money(f.cu.med)} | ${f.all.n}`),
+      "Fee | low 25% | median | high 25% | n",
+      ...b.rows.map(([, f]) => `${f.label} | ${money(f.all.p25)} | ${money(f.all.med)} | ${money(f.all.p75)} | ${f.all.n.toLocaleString("en-US")}`),
       plain(b.note),
     ].join("\n");
     return [html, text];

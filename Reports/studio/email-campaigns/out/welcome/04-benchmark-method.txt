@@ -1,23 +1,18 @@
-Peer group, percentile, outlier rule. The same steps behind our paid reports, free.
+Peer group, percentile, outlier rule. The steps behind our reports, free.
 
 FEE LITERACY · EMAIL 4 OF 5
 
 Benchmark any fee schedule in 30 minutes
 ========================================
 
-This is the method behind our Competitive Fee Position reports, written out so you can run it yourself. No spreadsheet magic. Four steps.
+This is the method behind our reports, written out so you can run it yourself. No spreadsheet magic. Four steps.
 
 
 [ THE METHOD ]
-1. Pick a real peer group. Same charter type (bank or credit union) and a similar asset size. Comparing a $300M credit union with a national bank tells you nothing.
-2. Use the headline amount. For each fee, take the lowest published price on the schedule. That's what a customer can get, and what a competitor will quote.
-3. Place yourself by percentile. Sort the peers' prices. Where do you land? Below the 25th percentile is low, above the 75th is high.
+1. Pick a real peer group. Same charter type (bank or credit union) and the institutions your customers actually compare you to. A $300M credit union and a national bank tell you nothing about each other.
+2. Compare like with like. Same fee, same channel, same conditions. A branch price against an online price isn't a comparison.
+3. Place yourself by percentile. Sort the peers' prices. Below the 25th percentile is low; above the 75th is high.
 4. Flag outliers with one rule. A fee is an outlier if it's more than 2× the peer median, or more than 1.5× the interquartile range above the 75th percentile. Outliers get a written reason or a review.
-
-
-WORKED EXAMPLE: NSF
-
-Peer group: all credit unions in the index (n=84). Low 25% is $15, median $25, high 25% $30. The interquartile range is $15, so the statistical outlier line is $52.50, and 2× the median is $50. A credit union charging $35 isn't an outlier but sits in the expensive quarter. One charging $55 needs a reason.
 
 
 [ MISTAKES WE SEE CONSTANTLY ]
@@ -26,7 +21,7 @@ Peer group: all credit unions in the index (n=84). Low 25% is $15, median $25, h
 - Using an old schedule. Fee pages change more often than the PDF in the shared drive.
 - Counting a fee as "$0" when it's really "waived with direct deposit". Record the condition.
 
-Shortcut: every institution profile on Fee Insight already shows its fees next to peer medians. Find an institution (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method) · Read the full methodology (https://feeinsight.com/methodology?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method).
+Shortcut: the free national (https://feeinsight.com/reports/benchmark/national?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method) and Fed district (https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method) reports do steps 3 and 4 for the market. Read the full methodology (https://feeinsight.com/methodology?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=benchmark-method).
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index

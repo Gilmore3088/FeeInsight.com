@@ -11,9 +11,10 @@ template with any other brand.
 - `out/index.html`: preview of every email. `out/<automation>/*.html|.txt` are the MailerLite bodies.
 
 ## Program (in the MailerLite account, created inactive)
-The report sequence carries no figures: every number lives on the live report pages. The Welcome,
-Explorers and Pulse emails still quote the Oct 3 snapshot in `data.mjs` and the old "$300" offer;
-refresh them before they are switched on.
+The three automations (Welcome, Report requests, Explorers) carry no figures: every number lives
+on the live pages. Only the monthly Pulse campaign quotes numbers, from `data.mjs`, which mirrors
+`fee_index_cache` (the table the National report reads). No email states a price for the
+institution report.
 
 | Automation | Trigger group | Emails (day) | Lead sources |
 |---|---|---|---|
@@ -33,8 +34,12 @@ refresh them before they are switched on.
 5. Send a test of each automation to yourself, then enable.
 
 ## Refreshing the numbers (monthly, before the Pulse)
-Re-run the benchmark query (one headline amount per institution = lowest non-negative
-published amount; percentiles by charter type with a ROLLUP for "all") against
-`published_fee_catalog` joined to `institution_sources`. Paste the rows into `data.mjs`,
-then rebuild. The query is the `inst_fees` step from `../pull-data.sql`, grouped by
-`ROLLUP(charter_type), canonical_fee_key`.
+Read the national figures the public National report shows, so the email and the site agree:
+
+```sql
+SELECT fee_category, institution_count, p25_amount, median_amount, p75_amount, computed_at
+FROM fee_index_cache ORDER BY fee_category;
+```
+
+Paste the rows into `data.mjs` (and its `asOf` date), then rebuild with
+`node Reports/studio/email-campaigns/build.mjs`.
