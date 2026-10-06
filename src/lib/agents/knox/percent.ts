@@ -47,9 +47,9 @@ const CASH_ADVANCE = /\bcash advances?\b/i;
 
 /** The category's own words, the core of a name built from the line. */
 const CATEGORY_CORE: Record<string, RegExp> = {
-  card_foreign_txn: /\b(?:foreign (?:transaction|currency(?: conversion)?)|international (?:transaction|service)|currency conversion|cross[- ]border)\b/i,
+  card_foreign_txn: /\b(?:foreign (?:transactions?|currency(?: conversion)?)|international (?:transactions?|purchases?|point of sale|pos|currency|service(?: assessment)?)|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   cash_advance: /\b(?:cash advance|balance transfer)(?:\s*(?:and|&|or|\/)\s*(?:cash advance|balance transfer))?\b/i,
-  coin_counting: /\bcoin (?:counting|processing)\b/i,
+  coin_counting: /\b(?:coin (?:counting|processing|counter|machine|sorting|sorter)|loose coins?|count(?:ing)?(?: and roll)? coins?|coinstar)\b/i,
   late_payment: /\blate (?:payment|charge|fee)\b/i,
 };
 /** Capitalized words that open a sentence or label a column, never part of a fee's name. */
@@ -112,8 +112,12 @@ function amountOf(match: RegExpExecArray | null): number | null {
  */
 export function rateFeeName(feeName: string, excerpt: string, key: string): string | null {
   const tidy = cleanFeeName(tidyFeeName(feeName));
-  if (tidy && readsAsName(tidy) && CATEGORY_CORE[key]?.test(tidy)) return tidy;
-  return nameFromLine(tidy && CATEGORY_CORE[key]?.test(tidy) ? tidy : excerpt, key) ?? nameFromLine(excerpt, key);
+  const name = tidy && readsAsName(tidy) && CATEGORY_CORE[key]?.test(tidy)
+    ? tidy
+    : nameFromLine(tidy && CATEGORY_CORE[key]?.test(tidy) ? tidy : excerpt, key) ?? nameFromLine(excerpt, key);
+  // "Multi currency" alone doesn't say what it charges for.
+  const currency = name && /^((?:multi(?:ple)?|single)[- ]currency)$/i.exec(name);
+  return currency ? `Foreign transaction fee (${currency[1].toLowerCase()})` : name;
 }
 
 export function rateFeeFromHeld(

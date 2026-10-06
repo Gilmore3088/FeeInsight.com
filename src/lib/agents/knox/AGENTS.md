@@ -136,7 +136,14 @@ It stays held when the line is an interest or dividend rate, says "up to", state
 rates, falls outside the category's range, or has no clean name. Names come from the category's
 own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conversion Fee"). New
 texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
-(`knox_rate_recheck:v1`, 100 per extract step). No rules version bump: flat reads are unchanged.
+(`knox_rate_recheck:v1`, 100 per extract step).
+
+v20 (rules 20) reads more of those rate lines: the card's currency fee under its other names
+("Foreign Transactions", "International Point of Sale Fee", "Cross-Border Assessment",
+"International Service Assessment", "Multi currency"), coin counting under "Coin Counter",
+"Coin Machine", "Loose Coin" and "Count and roll coins", and a rate whose dollar minimum follows
+it ("Cash Advance | 3% of each advance ($5.00 minimum)"). Flat gates and the live dry run are
+unchanged; on the answer keys Knox reads 20 rates, 18 keyed and 2 real fees the keys leave out.
 
 ## Extraction Passes
 

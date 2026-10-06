@@ -19,6 +19,10 @@ describe("rateFeeFromHeld", () => {
     expect(rate).toMatchObject({ feeName: "Currency Conversion Fee", ratePercent: 1 });
   });
 
+  it("says what a bare 'Multi currency' rate charges for", () => {
+    expect(rateFeeName("Multi currency", "Multi currency 1% of transaction amount", "card_foreign_txn")).toBe("Foreign transaction fee (multi currency)");
+  });
+
   it("holds 'up to' rates, interest rates and lines with two rates", () => {
     const upTo = "International Service Fee | up to 3% of the transaction";
     expect(rateFeeFromHeld(held("International Service Fee", upTo), upTo)).toBe("up_to_rate");

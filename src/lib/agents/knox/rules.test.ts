@@ -548,4 +548,21 @@ describe("Knox extract.rules", () => {
     const text = "Courtesy Pay\n$30.00 | everyday debit card transactions and ATM withdrawals are not covered unless you opt in";
     expect(runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Courtesy Pay", 30, "overdraft"]]);
   });
+
+  it("v20 knows the other names for the card's currency fee and for coin counting", () => {
+    for (const name of ["VISA Foreign Transactions in Foreign Currency", "International Point of Sale Fee", "International Currency Fee", "Cross-Border Assessment", "International purchase transaction fee", "Multi currency"]) {
+      expect(classifyFeeText(name)).toBe("card_foreign_txn");
+    }
+    for (const name of ["Coin Counter Fee per use", "COIN MACHINE PROCESSING FEE (Non-Members)", "Loose Coin (non-member)", "Count and roll coins - Noncustomer"]) {
+      expect(classifyFeeText(name)).toBe("coin_counting");
+    }
+    // A neighbouring column's "(international transactions)" note is not the fee.
+    expect(classifyFeeText("(international transactions) amount (per inactive account)")).not.toBe("card_foreign_txn");
+    expect(classifyFeeText("Foreign Currency Order")).not.toBe("card_foreign_txn");
+  });
+
+  it("v20 holds a rate named by the words before it, even with a dollar minimum after", () => {
+    const held = extractCandidatesFromText("Cash Advance | 3% of each advance ($5.00 minimum)").held;
+    expect(held.map((row) => [row.shape, row.canonicalHint, row.feeName])).toEqual([["percentage", "cash_advance", "Cash Advance"]]);
+  });
 });

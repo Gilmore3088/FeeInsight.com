@@ -129,7 +129,14 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "atm_international",
     pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
-  { key: "card_foreign_txn", pattern: /\b(foreign transaction|international transaction|currency conversion)\b/i },
+  // v20: plural "Foreign Transactions" (a bare "(international transactions)" is often a
+  // neighbouring column's note), and the other names banks give the card's
+  // currency fee ("International Point of Sale Fee", "Cross-Border", "International Service
+  // Assessment", "Multi currency"). Buying foreign cash ("Foreign Currency Order") stays out.
+  {
+    key: "card_foreign_txn",
+    pattern: /\b(foreign transactions?|international (?:transaction\b|purchases?|point of sale|pos|currency fee|service (?:assessment|fee))|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
+  },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
@@ -172,7 +179,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "bill_pay", pattern: /\bbill ?pay(ments?)?\b/i },
   { key: "mobile_deposit", pattern: /\bmobile deposit\b/i },
   { key: "zelle_fee", pattern: /\bzelle\b/i },
-  { key: "coin_counting", pattern: /\bcoin (counting|processing)\b/i },
+  // v20: "Coin Counter Fee", "Coin Machine", "Loose Coin", "Count and roll coins", Coinstar.
+  { key: "coin_counting", pattern: /\b(coin (?:counting|processing|counter|machine|sorting|sorter)|loose coins?|count(?:ing)?(?: and roll)? coins?|coinstar)\b/i },
   { key: "cash_advance", pattern: /\bcash advance\b/i },
   { key: "night_deposit", pattern: /\b(night deposit|night depository|deposit bags?|zipper bags?)\b/i },
   { key: "courier_delivery", pattern: /\b(courier|fed ?ex|overnight (mail|delivery))\b/i },
@@ -692,15 +700,20 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
 
   // A percentage fee ("3% of the transaction"), with or without a dollar minimum after it.
   const percent = segment.match(PERCENT_PATTERN);
-  if (hint && percent && (!firstAmount || (percent.index ?? 0) < firstAmount.start) && usableName(name)) {
+  // The name is the words before the rate ("Cash Advance | 3% of each advance ($5.00 minimum)").
+  // A dollar minimum after the rate leaves only the rate's own cell before it, so the words
+  // before the rate classify it too.
+  const rateName = percent ? nameFrom(segment.slice(0, percent.index ?? 0)) : "";
+  const rateHint = hint ?? (percent && firstAmount && (percent.index ?? 0) < firstAmount.start ? classifyNearest(segment.slice(0, percent.index ?? 0)) : null);
+  if (rateHint && percent && (!firstAmount || (percent.index ?? 0) < firstAmount.start) && (usableName(rateName) || usableName(name))) {
     result.held.push({
       shape: "percentage",
-      feeName: nameFrom(segment.slice(0, percent.index ?? 0)) || name,
+      feeName: rateName || name,
       amount: null,
       amountMax: null,
       percent: Number(percent[1]),
       frequency,
-      canonicalHint: hint,
+      canonicalHint: rateHint,
       excerpt: segment,
     });
     return result;

@@ -34,7 +34,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 19 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 20 } as const;
 
 export interface SpecialistRun {
   strategy: string;
