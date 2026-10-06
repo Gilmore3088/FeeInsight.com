@@ -488,3 +488,21 @@ than $100.00 ..... $10.00 Returned Deposited Item ..... $32.00"), `checkFeeAgain
 "Returned Deposited Item" is $10 and that $32 is "amount_not_the_fee".
 **Cause:** in dotted-leader layouts the price follows the name, but the check took the amount just
 before the name. Not fixed yet; it affects any schedule stored without line breaks.
+
+## 2026-10-06: Hamilton's workspace showed one peer group and none of the national data
+**What happened:** James saw "very little national data like NCUA reports, filings". The workspace
+engine's `getFeeResearch` returned only the narrowest peer group for a fee, with
+`revenueLine: null`, no national, Fed district or state view, none of the bank's own call report
+income and no rules. The Briefing had no industry income and no regulator items.
+**Fix:** each fee now carries four market layers (national, Fed district, state, charter and size)
+with percentiles where at least 5 institutions publish it; the bank's own service charge income by
+quarter (NCUA year-to-date split into quarters); the filed overdraft and NSF income line when one
+exists; the notice and disclosure rules that apply; and fee-related regulator releases. The
+Briefing adds national service charge income and a rule_change item for each fee-related release.
+**Still empty, honestly:** no institution has overdraft or NSF income stored yet (credit union
+lines land with the NCUA re-pull; bank RIAD H032 isn't loaded). The regulator feed
+(`reg_articles`, FDIC/Fed/OCC/CFPB press releases since 2025-01-28) has no release in the last
+year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the standing rules show.
+**Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
+same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
+`data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.
