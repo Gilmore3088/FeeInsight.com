@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { confirmFeeChange, type RecordedChangeRow } from "./monthly-pulse";
+import { confirmFeeChange, sameEdition, type RecordedChangeRow } from "./monthly-pulse";
 
 // Lines copied from stored schedule texts (agent_source_texts), Oct 2026.
 const NH_OLD = "Account Inquiry/Research/Reconciliation | $25\nTemporary Checks | $2 for 4";
@@ -48,6 +48,22 @@ describe("confirmFeeChange", () => {
 
   it("drops a change the earlier schedule never stated", () => {
     expect(confirmFeeChange(row({ old_document_text: "Account Inquiry/Research/Reconciliation | $50" }))).toBeNull();
+  });
+
+  it("drops two readings of the same schedule edition", () => {
+    // Net Federal Credit Union, Oct 2026: one Feb 1, 2026 schedule read twice; the second
+    // reading paired "Stop Payments" with the next column's $30.00.
+    const first = "Fee Schedule | Effective February 1, 2026\nVoided/Redeposited Checks | $30.00\nStop Payments | $35.00 | Plastic Cards";
+    const second = "Fee Schedule Effective February 1, 2026 Duplicate Item Fee $35.00Stop Payments $30.00 Voided/Redeposited Checks";
+    expect(
+      confirmFeeChange(row({ fee_key: "stop_payment", fee_name: "Stop Payments", old_fee_name: "Stop Payments", old_amount: 35, new_amount: 30, old_document_text: first, new_document_text: second })),
+    ).toBeNull();
+    expect(sameEdition(first, second)).toBe(true);
+    expect(sameEdition(NH_OLD, NH_NEW)).toBe(false);
+  });
+
+  it("drops a change when the earlier schedule already stated the new price", () => {
+    expect(confirmFeeChange(row({ old_document_text: `${NH_OLD}\nAccount Inquiry/Research/Reconciliation | $50` }))).toBeNull();
   });
 
   it("drops rows without both schedules' text", () => {
