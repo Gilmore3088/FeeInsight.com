@@ -347,3 +347,19 @@ one row per price move whose new price is still live. Category guard v7 rejects 
 check printing, annual fees and thresholds under overdraft and NSF (12 live rows).
 **Still open:** a cap read instead of the per-item price (Bath State Bank) and two-column misreads
 need Knox fixes.
+
+## 2026-10-06: Monthly service charges written as prose held as unclassified
+**What happened:** Knox held Evergreen Federal Bank's "$500 minimum daily balance, otherwise $8
+service charge per statement cycle" for review instead of reading an $8 monthly maintenance fee.
+A read-only count at 01:10 UTC Oct 6 found 9,915 lines held as unclassified at 2,401 institutions.
+Most are real fees with no report category (returned mail, shared branch, excess withdrawals,
+termination). 243 lines state a monthly service charge in prose, at 116 institutions, and only 16
+of those institutions had a live maintenance fee. 166 more are "inactivity" or "dormancy" charges.
+**Cause:** Knox names a price from the words before it. Prose puts the fee's name after the price
+("avoid the $10 monthly fee"), and the dormant-account rule matched "inactive" and "dormant" but
+not "inactivity" or "dormancy".
+**Fix:** same PR: Knox rules v9 reads a monthly service charge stated in prose when the line passes
+the maintenance guard (no savings, business, statement, withdrawal, card or box charge), and names
+inactivity and dormancy charges as dormant-account fees. The version bump makes Hamilton's rules
+re-check and Knox's re-extract gate read documents again; the new fees go through Darwin as usual.
+**Still open:** held lines with no report category stay held; a new category is a taxonomy decision.
