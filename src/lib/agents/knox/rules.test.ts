@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -96,7 +96,7 @@ describe("Knox extract.rules", () => {
     );
     expect(evergreen.held).toEqual([]);
     expect(evergreen.candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([
-      ["Evergreen Non-Interest Checking Monthly service charge", 8, "monthly_maintenance"],
+      ["Evergreen Non-Interest Checking Service charge", 8, "monthly_maintenance"],
     ]);
     for (const [line, amount] of [
       ["Maintain a $2,000 minimum daily balance to avoid a $10 monthly fee", 10],
@@ -470,5 +470,82 @@ describe("Knox extract.rules", () => {
     ]);
     expect(extractFromSegment("Money Market Savings | $5 per month").candidates).toEqual([]);
     expect(extractFromSegment("Basic Checking | $3.00").candidates).toEqual([]);
+  });
+
+  it("v18 reads a low-balance fee from its row or its sentence, never the balance", () => {
+    const fee = (segment: string) => extractFromSegment(segment).candidates.map((c) => [c.feeName, c.amount, c.canonicalHint]);
+    expect(fee("Plu$ Checking | $10 per month if average monthly balance falls below $7,500")).toEqual([
+      ["Plu$ Checking Monthly service charge", 10, "monthly_maintenance"],
+    ]);
+    // The maintenance guard keeps money market accounts out; the row's condition names it.
+    expect(fee("Money Market Checking | $10.00 monthly for average balances below $1,000")).toEqual([
+      ["Money Market Checking (average balances below $1,000)", 10, "minimum_balance"],
+    ]);
+    expect(
+      fee("A club fee of $8.00 will be imposed every statement cycle if the balance in the account falls below $3,000.00 any day of the cycle."),
+    ).toEqual([["Club fee (balance in the account falls below $3,000.00)", 8, "minimum_balance"]]);
+    expect(fee("$10/month service fee if balance falls below $7,500")).toEqual([["Service fee (balance falls below $7,500)", 10, "minimum_balance"]]);
+    expect(fee("Average Daily Balance below $2,500 | $10.00/month")).toEqual([["Average Daily Balance below", 10, "minimum_balance"]]);
+    // The free team tidies the leaders off the name (`tidyFeeName`).
+    expect(fee("MININUM BALANCE FEE………………………………………… $5").map(([, amount, hint]) => [amount, hint])).toEqual([[5, "minimum_balance"]]);
+    // The condition must share the fee's sentence, and a bare "a fee of" names no fee.
+    expect(fee("There is an initial setup fee of $25.00. The monthly minimum balance fee applies if the daily balance drops below $2,500.")).not.toContainEqual(
+      expect.arrayContaining(["minimum_balance"]),
+    );
+    expect(fee("If your balance falls below $1,500.00, a fee of $6.00 will be charged.")).toEqual([]);
+  });
+
+  it("v18 files wires by what they say: non-domestic, undirected international, domestic or international", () => {
+    expect(classifyPatternKey("Non-Domestic Wire Outgoing")).toBe("wire_intl_outgoing");
+    expect(classifyPatternKey("Non-Domestic Wire")).toBe("wire_intl_outgoing");
+    expect(classifyPatternKey("Wire Transfer - International Fee")).toBe("wire_intl_outgoing");
+    expect(classifyPatternKey("Incoming International Wire")).toBe("wire_intl_incoming");
+    expect(classifyPatternKey("International Wire In (each)")).not.toBe("wire_intl_outgoing");
+    // Banner Bank: one incoming price for both is the domestic incoming wire.
+    expect(classifyPatternKey("Wire Transfer - Incoming Wire (Domestic or International)")).toBe("wire_domestic_incoming");
+  });
+
+  it("v18 never reads a par requirement as a fee (Air Academy)", () => {
+    const par = "*$5 par in Primary Savings is required and deposit enough for Annual Fee and Key Deposit to be pulled at time of opening.";
+    expect(extractFromSegment(par).candidates).toEqual([]);
+  });
+
+  it("v19 reads plural overdraft names and files a paid insufficient-funds item as overdraft", () => {
+    expect(classifyPatternKey("Overdrafts Paid")).toBe("overdraft");
+    expect(classifyPatternKey("Overdrafts fee (per item)")).toBe("overdraft");
+    expect(classifyPatternKey("Overdrafts (OD)")).toBe("overdraft");
+    expect(classifyPatternKey("Insufficient Funds Fee – Item Paid")).toBe("overdraft");
+    expect(classifyPatternKey("Insufficient Funds Fee - Item Returned")).toBe("nsf");
+    // A transfer to cover overdrafts or a coverage limit is not the overdraft fee.
+    expect(classifyFeeText("Automatic Transfer Fee when used to prevent overdrafts")).not.toBe("overdraft");
+    expect(classifyFeeText("For personal accounts, overdrafts and fees up to a total of")).toBeNull();
+  });
+
+  it("v19 names a sentence-form fee by what it charges for (First Merchants, Navy Federal)", () => {
+    expect(fees("We charge a fee of $37.00 each time we pay an overdraft.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft)", 37, "overdraft"],
+    ]);
+    expect(fees("†Standard Practices and Fees: We will charge a fee of $20 each time we pay an overdraft; you can only be assessed one overdraft fee per day per account.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft; one per day)", 20, "overdraft"],
+    ]);
+  });
+
+  it("v19 names a dot-leader row's second price by the title before it, not the first price's terms", () => {
+    const line = "Overdraft Fee.......... $30.00 - fee assessed for each item paid1 Continuous Overdraft Fee.......... $5.00 per day";
+    expect(fees(line)).toEqual([
+      ["Overdraft Fee", 30, "overdraft"],
+      ["Continuous Overdraft Fee", 5, "continuous_od"],
+    ]);
+  });
+
+  it("v19 reads an overdraft fee card tiered by the item's value (ESL)", () => {
+    const text =
+      "Fee TypeCourtesy Pay Overdraft Fee\n\nDescriptionOverdraft Service for checks. Each overdraft is charged a fee based on the value of the item. The monthly maximum overdraft is $250.\n\nFee$0.01-$5.00: $0\n\nGreater than $5.00: $5.00";
+    expect(fees(text)).toContainEqual(["Courtesy Pay Overdraft Fee (items Greater than $5.00)", 5, "overdraft"]);
+  });
+
+  it("v19 never names a price by a prose note in the next cell (Ent)", () => {
+    const text = "Courtesy Pay\n$30.00 | everyday debit card transactions and ATM withdrawals are not covered unless you opt in";
+    expect(runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Courtesy Pay", 30, "overdraft"]]);
   });
 });
