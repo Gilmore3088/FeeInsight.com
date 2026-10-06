@@ -3,9 +3,11 @@
 interface Props {
   interpretation: string;
   isStreaming: boolean;
+  /** What the figures rest on, from describeSimulationBasis; no line when unknown. */
+  basis: string | null;
 }
 
-export function HamiltonInterpretation({ interpretation, isStreaming }: Props) {
+export function HamiltonInterpretation({ interpretation, isStreaming, basis }: Props) {
   // Empty and not streaming: placeholder
   if (!isStreaming && !interpretation) {
     return (
@@ -67,7 +69,7 @@ export function HamiltonInterpretation({ interpretation, isStreaming }: Props) {
       </p>
 
       {/* Confidence grounding footer */}
-      {!isStreaming && interpretation && (
+      {!isStreaming && interpretation && basis && (
         <div
           className="flex items-center gap-2 pt-4 border-t"
           style={{ borderColor: "rgba(231, 229, 228, 0.6)" }}
@@ -91,7 +93,7 @@ export function HamiltonInterpretation({ interpretation, isStreaming }: Props) {
             className="font-label uppercase tracking-widest"
             style={{ fontSize: "0.6875rem", letterSpacing: "0.07em", color: "rgb(120 113 108)" }}
           >
-            High confidence grounding: Fee benchmarks, competitive migration tracking, and CFPB complaint trends.
+            {basis}
           </span>
         </div>
       )}
