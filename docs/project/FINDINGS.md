@@ -991,3 +991,21 @@ a visible `read.reopen` attempt per text, and one more read through the script f
 fee changes; a page that still is not a fee page is rejected again the normal way.
 **Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
 under the new one; a ban written by a judgment the code no longer makes outlives its reason.
+
+## 2026-10-06: Rosetta never heard whether its texts' fees held up
+**What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
+stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
+they lost at least 3 fees and a quarter of their judged fees. Survival by reader:
+read.html_dom 90.7%, read.pdf_layout 89.5%, legacy html 88.9%, legacy pdf 81.4%, free OCR
+93.2%, paid transcription 97.9%.
+**Cause:** no path from Hamilton's takedowns back to the reader that wrote the text, so a reader
+whose fees kept being pulled was used again on the same document.
+**Fix:** same PR (`rosetta/text-survival.ts`, James approved the learning plan "build whole
+thing"): daily per-text judgements in `pipeline_feedback`, one read a rung up the reader ladder
+for a lost text (or a bank whose primary reader keeps losing), paid transcription for PDFs both
+free readers lost. Dry run before merge: 200 current documents re-read (79 PDFs with OCR, 19
+pages with the JavaScript fallbacks, 102 legacy texts with the current reader), 1,935 live fees
+on them, 1 PDF for the paid pass now. A new text replaces the old only when it lists at least as
+many fees, so no live fee is taken down by the re-read itself.
+**Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
+
