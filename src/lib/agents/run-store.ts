@@ -537,12 +537,13 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped).`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped).`,
         detail: {
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
+          inserted_free_fees: extraction.freeFees,
           skipped_fee_candidates: extraction.skippedFees,
           held_for_review: extraction.heldForReview,
           replaced_older_rows: extraction.retiredOlderRows,
@@ -553,7 +554,12 @@ async function executeAgenticStep(
           dry_run: extraction.dryRun,
           institution_results: institutionResults(
             "extract",
-            extraction.results.map((result) => ({ institution_id: result.institutionId, inserted: result.inserted })),
+            extraction.results.map((result) => ({
+              institution_id: result.institutionId,
+              inserted: result.inserted,
+              free_inserted: result.freeInserted,
+              held_inserted: result.heldInserted,
+            })),
           ),
           sample_results: extraction.results.slice(0, 10).map((result) => ({
             document_text_id: result.documentTextId,
@@ -562,6 +568,8 @@ async function executeAgenticStep(
             source_url: result.sourceUrl,
             extracted: result.extracted,
             inserted: result.inserted,
+            free_inserted: result.freeInserted,
+            held_inserted: result.heldInserted,
             skipped: result.skipped,
             sample_candidates: result.candidates.slice(0, 5).map((candidate) => ({
               fee_name: candidate.feeName,

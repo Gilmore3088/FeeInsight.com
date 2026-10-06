@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeSamples, latestPerInstitution, movesFromEvents, nowFromSteps, tallyByInstitution, type FlowMove } from "./flow-model";
+import { describeSamples, describeTally, latestPerInstitution, movesFromEvents, nowFromSteps, tallyByInstitution, type FlowMove } from "./flow-model";
 
 describe("describeSamples", () => {
   it("says what happened in plain words", () => {
@@ -69,8 +69,21 @@ describe("institution totals", () => {
 
   it("adds up Knox's inserted fees across a bank's documents", () => {
     expect(tallyByInstitution("extract", [{ institution_id: 7, inserted: 4 }, { institution_id: 7, inserted: 2 }])).toEqual([
-      { institution_id: 7, total: 6, ok: 6, already_live: 0, reason: null },
+      { institution_id: 7, total: 6, ok: 6, already_live: 0, reason: null, free: 0, held: 0 },
     ]);
+  });
+
+  it("counts free fees Knox sends to Darwin, so Knox and Darwin agree", () => {
+    // Evergreen Federal Bank, Oct 6: two $0 fees went to Darwin and four lines were held.
+    const [tally] = tallyByInstitution("extract", [{ institution_id: 1501, inserted: 0, free_inserted: 2, held_inserted: 6 }]);
+    expect(describeTally("extract", tally)).toEqual({
+      text: "Pulled 2 fees (all free) out of the document; 4 lines held for review",
+      tone: "ok",
+    });
+    const [heldOnly] = tallyByInstitution("extract", [{ institution_id: 9, inserted: 0, free_inserted: 0, held_inserted: 3 }]);
+    expect(describeTally("extract", heldOnly).text).toBe("No clear fees; 3 lines held for review");
+    const [mixed] = tallyByInstitution("extract", [{ institution_id: 9, inserted: 4, free_inserted: 1, held_inserted: 1 }]);
+    expect(describeTally("extract", mixed).text).toBe("Pulled 5 fees (1 free) out of the document");
   });
 });
 

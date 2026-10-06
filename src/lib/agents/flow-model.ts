@@ -87,6 +87,10 @@ export interface InstitutionTally {
   ok: number;
   /** Publish only: fees already live with the same value. */
   already_live: number;
+  /** Extract only: of `ok`, free ($0) fees, which Darwin checks like priced ones. */
+  free?: number;
+  /** Extract only: lines kept for a person to review (ranges, unclassified); not sent to Darwin. */
+  held?: number;
   /** The first reason a fee was held back, if any. */
   reason: string | null;
 }
@@ -105,9 +109,13 @@ export function tallyByInstitution(stepKey: string, samples: Sample[]): Institut
     const tally = tallies.get(id) ?? emptyTally(id);
     tallies.set(id, tally);
     if (stepKey === "extract") {
-      const inserted = Number(sample.inserted ?? 0);
-      tally.total += inserted;
-      tally.ok += inserted;
+      // Free fees go to Darwin too, so they count as pulled; Knox reports them apart.
+      const free = Number(sample.free_inserted ?? 0);
+      const toDarwin = Number(sample.inserted ?? 0) + free;
+      tally.total += toDarwin;
+      tally.ok += toDarwin;
+      tally.free = (tally.free ?? 0) + free;
+      tally.held = (tally.held ?? 0) + Math.max(0, Number(sample.held_inserted ?? 0) - free);
       continue;
     }
     tally.total += 1;
@@ -127,9 +135,15 @@ export function tallyByInstitution(stepKey: string, samples: Sample[]): Institut
 export function describeTally(stepKey: string, tally: InstitutionTally): { text: string; tone: MoveTone } {
   const held = tally.total - tally.ok - tally.already_live;
   if (stepKey === "extract") {
-    return tally.ok > 0
-      ? { text: `Pulled ${fees(tally.ok)} out of the document`, tone: "ok" }
-      : { text: "Found no fees in the document", tone: "warn" };
+    const free = tally.free ?? 0;
+    const review = tally.held ?? 0;
+    const forReview = `${review} line${review === 1 ? "" : "s"} held for review`;
+    if (tally.ok > 0) {
+      const freeNote = free > 0 ? ` (${free === tally.ok ? (free === 1 ? "free" : "all free") : `${free} free`})` : "";
+      return { text: `Pulled ${fees(tally.ok)}${freeNote} out of the document${review > 0 ? `; ${forReview}` : ""}`, tone: "ok" };
+    }
+    if (review > 0) return { text: `No clear fees; ${forReview}`, tone: "warn" };
+    return { text: "Found no fees in the document", tone: "warn" };
   }
   if (stepKey === "publish") {
     if (tally.ok === 0) {
