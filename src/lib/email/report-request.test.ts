@@ -112,9 +112,9 @@ describe("sendReportRequestNotifications", () => {
     expect(reply.to).toBe("dana@examplecu.org");
     expect(reply.reply_to).toBe("hello@bankfeeindex.com");
     expect(reply.subject).toBe("We received your request for Example Credit Union");
-    expect(reply.text).toContain(
-      "The institution report is paid. We reply within one business day with its scope and price; nothing is charged until you agree.",
-    );
+    expect(reply.text).toContain("The institution report is paid");
+    expect(reply.text).toContain("2. We reply within one business day with the report's scope and price.");
+    expect(reply.text).toContain("3. Nothing is charged until you agree.");
     expect(reply.html).toContain("Example Credit Union");
   });
 
