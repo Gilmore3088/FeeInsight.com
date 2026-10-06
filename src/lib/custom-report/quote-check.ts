@@ -1,4 +1,11 @@
-import { findInstitutionIdByExactName, getCustomReportMarketData } from "@/lib/data-store/custom-report-market";
+import { findInstitutionIdByName, getCustomReportMarketData } from "@/lib/data-store/custom-report-market";
+import {
+  HEADLINE_FEE_KEYS,
+  MIN_RICH_COMPETITORS,
+  RICH_MIN_CATEGORIES,
+  getReportRuleCheck,
+  type ReportRuleCheck,
+} from "@/lib/data-store/market-readiness";
 import { analyzeMarket, type ReadinessResult } from "./analysis";
 import { createReportToken, reportPath } from "./link";
 
@@ -6,10 +13,12 @@ import { createReportToken, reportPath } from "./link";
  * What James sees when an institution report is requested: whether we can build that
  * institution's report from live data today. Nothing here reaches the requester; the
  * report is paid, so James quotes first and sends the private link only after they agree.
+ * "Ready" needs both the local-market check (analysis.ts) and James's report rule
+ * (market-readiness.ts), the same rule the public reports grid and /admin/leads count use.
  */
 export type QuoteCheck =
-  | { status: "ready"; readiness: ReadinessResult; path: string | null }
-  | { status: "thin"; readiness: ReadinessResult }
+  | { status: "ready"; readiness: ReadinessResult; rule?: ReportRuleCheck | null; path: string | null }
+  | { status: "thin"; readiness: ReadinessResult; rule?: ReportRuleCheck | null }
   | { status: "unmatched"; reason: string };
 
 /** Never throws: a failed check reads as unmatched with the reason, and the request is still stored. */
@@ -20,7 +29,7 @@ export async function checkInstitutionReport(request: {
   let institutionId = request.institutionId;
   try {
     if (institutionId === null && request.institutionName) {
-      institutionId = await findInstitutionIdByExactName(request.institutionName);
+      institutionId = await findInstitutionIdByName(request.institutionName);
     }
     if (institutionId === null) {
       return { status: "unmatched", reason: "The request did not name an institution we could match." };
@@ -28,10 +37,11 @@ export async function checkInstitutionReport(request: {
     const data = await getCustomReportMarketData(institutionId);
     if (!data) return { status: "unmatched", reason: "The institution was not found." };
     const { readiness } = analyzeMarket(data);
-    if (!readiness.ready) return { status: "thin", readiness };
+    const rule = await getReportRuleCheck(institutionId);
+    if (!readiness.ready || !rule?.passes) return { status: "thin", readiness, rule };
     // The link needs CUSTOM_REPORT_LINK_SECRET; without it James still learns the report is buildable.
     const token = createReportToken(institutionId);
-    return { status: "ready", readiness, path: token ? reportPath(token) : null };
+    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null };
   } catch (error) {
     console.error("[custom-report] quote check failed", {
       institutionId,
@@ -46,9 +56,21 @@ export function describeQuoteCheck(check: QuoteCheck, siteUrl: string): string {
   if (check.status === "unmatched") return `Report check: ${check.reason}`;
   const r = check.readiness;
   const counts = `${r.comparableLines} comparable fee lines, ${r.competitorsWithData} of ${r.competitorsInMarket} local competitors with data`;
+  const rule = check.rule ? ` ${describeReportRule(check.rule)}` : "";
   if (check.status === "thin") {
-    return `Report check: not ready to quote (${counts}). ${r.reason ?? "Local data is too thin."}`.trim();
+    const reason = r.ready ? "" : ` ${r.reason ?? "Local data is too thin."}`;
+    return `Report check: not ready to quote (${counts}).${reason}${rule}`;
   }
   const link = check.path ? ` Private report link to send after they agree: ${siteUrl.replace(/\/$/, "")}${check.path}` : "";
-  return `Report check: ready to quote (${counts}).${link}`;
+  return `Report check: ready to quote (${counts}).${rule}${link}`;
+}
+
+/** e.g. "Report rule: passes (11 of 15 headline fees; 22 other credit unions in TX with 9+)." */
+export function describeReportRule(rule: ReportRuleCheck): string {
+  const peers = rule.charter_type === "credit_union" ? "credit unions" : "banks";
+  const where = rule.state_code ? ` in ${rule.state_code}` : "";
+  const counts = `${rule.ownCategories} of ${HEADLINE_FEE_KEYS.length} headline fees; ${rule.richCompetitors} other ${peers}${where} with ${RICH_MIN_CATEGORIES}+`;
+  return rule.passes
+    ? `Report rule: passes (${counts}).`
+    : `Report rule: not met (${counts}; needs ${RICH_MIN_CATEGORIES}+ and ${MIN_RICH_COMPETITORS}+).`;
 }

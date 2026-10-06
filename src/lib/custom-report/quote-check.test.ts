@@ -32,3 +32,24 @@ describe("describeQuoteCheck", () => {
     expect(describeQuoteCheck({ status: "unmatched", reason: "No match." }, "https://x")).toBe("Report check: No match.");
   });
 });
+
+describe("report rule in the quote check", () => {
+  const rule = { state_code: "TX", charter_type: "credit_union", ownCategories: 11, richCompetitors: 22, passes: true };
+
+  it("states the rule counts alongside a ready check", () => {
+    const line = describeQuoteCheck({ status: "ready", readiness, rule, path: null }, "https://feeinsight.com");
+    expect(line).toBe(
+      "Report check: ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Report rule: passes (11 of 15 headline fees; 22 other credit unions in TX with 9+).",
+    );
+  });
+
+  it("is not ready when the local market passes but the rule does not", () => {
+    const line = describeQuoteCheck(
+      { status: "thin", readiness, rule: { ...rule, charter_type: "bank", richCompetitors: 4, passes: false } },
+      "https://feeinsight.com",
+    );
+    expect(line).toBe(
+      "Report check: not ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Report rule: not met (11 of 15 headline fees; 4 other banks in TX with 9+; needs 9+ and 15+).",
+    );
+  });
+});
