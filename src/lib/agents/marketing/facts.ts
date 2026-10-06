@@ -1,14 +1,16 @@
 import type { sql } from "@/lib/data-store/connection";
+import { getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { STATS_ROW_FILTER, summarizeFeesBy } from "@/lib/data-store/fee-stats";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { STATE_NAMES } from "@/lib/us-states";
 
 type SqlTag = typeof sql;
 
 /**
- * The only numbers a marketing email may use. Everything comes from live tables:
- * national figures from `fee_index_cache` (what the public national report shows), and
- * charter and state splits from `published_fee_catalog`, one value per institution (its
- * highest published amount for the fee, so a tiered fee counts once at its top tier).
+ * The only numbers a marketing email may use. National figures come from
+ * `getNationalIndexCached` (what the public National report shows); charter and state
+ * splits come from `published_fee_catalog` under the same statistics contract
+ * (`fee-stats.ts`), so every median in an email matches the site.
  */
 
 export interface FeeStat {
@@ -19,13 +21,23 @@ export interface FeeStat {
   institutions: number;
 }
 
+export interface CoverageStat {
+  key: string;
+  institutions: number;
+}
+
 export interface FactBundle {
   month: string;
   asOf: string;
   liveInstitutions: number;
   liveFees: number;
   national: FeeStat[];
-  previousNational: FeeStat[] | null;
+  /**
+   * Institutions behind each national fee last month. Coverage only: a median that differs
+   * from last month mostly reflects which institutions were added, not a price move, so last
+   * month's medians are never given to the writer.
+   */
+  previousCoverage: CoverageStat[] | null;
   byCharter: Array<{ key: string; bank: FeeStat | null; creditUnion: FeeStat | null }>;
   state: { code: string; name: string; fees: FeeStat[] } | null;
 }
@@ -34,53 +46,59 @@ export interface FactBundle {
 export const MIN_INSTITUTIONS_FOR_SPLIT = 20;
 
 const num = (value: unknown) => Number(value ?? 0);
+const HEADLINE_KEYS: ReadonlySet<string> = new Set(HEADLINE_FEE_KEYS);
 
-export async function readNational(db: SqlTag): Promise<FeeStat[]> {
-  const rows = await db`
-    SELECT fee_category, median_amount, p25_amount, p75_amount, institution_count
-      FROM fee_index_cache
-     WHERE fee_category = ANY(${[...HEADLINE_FEE_KEYS]})
-       AND median_amount IS NOT NULL
-     ORDER BY institution_count DESC`;
-  return rows.map((row) => ({
-    key: String(row.fee_category),
-    median: num(row.median_amount),
-    p25: num(row.p25_amount),
-    p75: num(row.p75_amount),
-    institutions: num(row.institution_count),
-  }));
+/** National headline fees exactly as the public National report shows them (cache, freshness and method checks included). */
+export async function readNational(): Promise<FeeStat[]> {
+  const index = await getNationalIndexCached();
+  return index
+    .filter((entry) => HEADLINE_KEYS.has(entry.fee_category) && entry.median_amount !== null)
+    .map((entry) => ({
+      key: entry.fee_category,
+      median: num(entry.median_amount),
+      p25: num(entry.p25_amount),
+      p75: num(entry.p75_amount),
+      institutions: num(entry.institution_count),
+    }));
 }
 
+const round2 = (value: number | null) => Math.round(num(value) * 100) / 100;
+
+/**
+ * Charter or state splits under the site's statistics contract (fee-stats.ts): sourced rows
+ * only, one value per institution (the median of its amounts, the highest tier for overdraft).
+ */
 async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: string, minInstitutions = MIN_INSTITUTIONS_FOR_SPLIT) {
-  const rows = await db`
-    WITH per AS (
-      SELECT ef.fee_category, ef.institution_id, ct.charter_type, ct.state_code, MAX(ef.amount) AS amount
-        FROM published_fee_catalog ef
-        JOIN institution_sources ct ON ct.id = ef.institution_id
-       WHERE ef.fee_category = ANY(${[...HEADLINE_FEE_KEYS]})
-         AND ef.amount IS NOT NULL
-         AND (${stateCode ?? null}::text IS NULL OR ct.state_code = ${stateCode ?? null})
-       GROUP BY 1, 2, 3, 4
-    )
-    SELECT fee_category,
-           CASE WHEN ${column} = 'charter' THEN charter_type ELSE state_code END AS bucket,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS median,
-           percentile_cont(0.25) WITHIN GROUP (ORDER BY amount) AS p25,
-           percentile_cont(0.75) WITHIN GROUP (ORDER BY amount) AS p75,
-           COUNT(*) AS institutions
-      FROM per
-     GROUP BY 1, 2
-    HAVING COUNT(*) >= ${minInstitutions}`;
-  return rows.map((row) => ({
-    bucket: String(row.bucket ?? ""),
-    stat: {
-      key: String(row.fee_category),
-      median: Math.round(num(row.median) * 100) / 100,
-      p25: Math.round(num(row.p25) * 100) / 100,
-      p75: Math.round(num(row.p75) * 100) / 100,
-      institutions: num(row.institutions),
-    } satisfies FeeStat,
-  }));
+  const rows = await db.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ct.state_code
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ct.id = ef.institution_id
+      WHERE ef.fee_category = ANY($1::text[])
+        AND ef.amount IS NOT NULL
+        AND ${STATS_ROW_FILTER}
+        AND ($2::text IS NULL OR ct.state_code = $2::text)`,
+    [[...HEADLINE_FEE_KEYS], stateCode ?? null] as never[],
+  ) as Array<{ fee_category: string; amount: number | string | null; institution_id: number; charter_type: string | null; state_code: string | null }>;
+  const groups = summarizeFeesBy(rows, (row) => {
+    const bucket = column === "charter" ? row.charter_type : row.state_code;
+    return bucket ? `${row.fee_category}|${bucket}` : null;
+  });
+  const result: Array<{ bucket: string; stat: FeeStat }> = [];
+  for (const [key, stats] of groups) {
+    if (stats.institution_count < minInstitutions || stats.median_amount === null) continue;
+    const [feeCategory, bucket] = key.split("|");
+    result.push({
+      bucket,
+      stat: {
+        key: feeCategory,
+        median: round2(stats.median_amount),
+        p25: round2(stats.p25_amount),
+        p75: round2(stats.p75_amount),
+        institutions: stats.institution_count,
+      },
+    });
+  }
+  return result;
 }
 
 /** One state's headline fees, one value per institution, each backed by `minInstitutions` or more. */
@@ -115,10 +133,10 @@ export function pickSpotlightState(states: string[], recentlyUsed: string[]): st
 
 export async function buildFactBundle(
   db: SqlTag,
-  { month, previousNational, stateCode }: { month: string; previousNational: FeeStat[] | null; stateCode: string | null },
+  { month, previousCoverage, stateCode }: { month: string; previousCoverage: CoverageStat[] | null; stateCode: string | null },
 ): Promise<FactBundle> {
   const [national, charterRows, stateRows, [totals]] = await Promise.all([
-    readNational(db),
+    readNational(),
     readSplit(db, "charter"),
     stateCode ? readSplit(db, "state", stateCode) : Promise.resolve([]),
     db`SELECT COUNT(DISTINCT institution_id) AS institutions, COUNT(*) AS fees FROM published_fee_catalog`,
@@ -134,7 +152,7 @@ export async function buildFactBundle(
     liveInstitutions: num(totals?.institutions),
     liveFees: num(totals?.fees),
     national,
-    previousNational,
+    previousCoverage,
     byCharter,
     state: stateCode && stateRows.length
       ? { code: stateCode, name: STATE_NAMES[stateCode] ?? stateCode, fees: stateRows.map((row) => row.stat) }
@@ -156,14 +174,14 @@ export function allowedNumbers(bundle: FactBundle): Set<string> {
     [stat.median, stat.p25, stat.p75, stat.institutions].forEach(add);
   };
   bundle.national.forEach(addStat);
-  bundle.previousNational?.forEach(addStat);
+  bundle.previousCoverage?.forEach((row) => add(row.institutions));
   bundle.byCharter.forEach((row) => { addStat(row.bank); addStat(row.creditUnion); });
   bundle.state?.fees.forEach(addStat);
   [bundle.liveInstitutions, bundle.liveFees].forEach(add);
-  // Differences between this month and last, and between banks and credit unions.
+  // Institutions added since last month, and gaps between banks and credit unions.
   for (const fee of bundle.national) {
-    const before = bundle.previousNational?.find((row) => row.key === fee.key);
-    if (before) add(Math.abs(fee.median - before.median));
+    const before = bundle.previousCoverage?.find((row) => row.key === fee.key);
+    if (before) add(Math.abs(fee.institutions - before.institutions));
   }
   for (const row of bundle.byCharter) {
     if (row.bank && row.creditUnion) add(Math.abs(row.bank.median - row.creditUnion.median));

@@ -158,11 +158,15 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
  * re-extract, verify and publish the documents the state already has. Discovery's own
  * backoff (12 hours after a miss that may clear, a month or a quarter after a dead end)
  * keeps a bank from being searched more often than that. The paid find and
- * public-discovery steps stay on the state's full-pass cadence. A re-read downloads a
+ * public-discovery steps stay on the state's full-pass cadence. Knox's paid pass runs
+ * hourly too (James, 2026-10-06: close the 297 dense schedules the free team can't
+ * read): it picks only dense texts the current free version read poorly and that no paid
+ * attempt has read, at most PAID_PASS_ITEMS_PER_RUN a run, so it spends nothing once they
+ * are read, and the Knox and global budget caps still stop it. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));

@@ -36,7 +36,8 @@ export interface ExtractedFeeCandidate {
   strategy?: string;
 }
 
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified";
+/** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced";
 
 export interface HeldFeeCandidate {
   shape: HeldShape;

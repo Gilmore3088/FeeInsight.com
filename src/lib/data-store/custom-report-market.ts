@@ -35,6 +35,8 @@ export interface MarketFeeLine {
   fee_name: string;
   source_url: string | null;
   updated_at: string | null;
+  /** The day the stored copy of the schedule that states this fee was saved (YYYY-MM-DD). */
+  schedule_read_on: string | null;
   /** The line of the bank's own document that states this fee. */
   source_line: string;
   /**
@@ -57,6 +59,7 @@ export interface CustomReportMarketData {
 interface StoredText {
   text: string;
   url: string | null;
+  readOn: string | null;
 }
 
 function num(value: unknown): number | null {
@@ -297,17 +300,17 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   const textsByInstitution = new Map<number, StoredText[]>();
   if (documentIds.length > 0 || unlinkedInstitutions.length > 0) {
     const textRows = await sql<
-      { source_document_id: string; institution_id: number; source_url: string | null; normalized_text: string | null }[]
+      { source_document_id: string; institution_id: number; source_url: string | null; normalized_text: string | null; read_on: string | null }[]
     >`
       SELECT DISTINCT ON (source_document_id) source_document_id::text AS source_document_id, institution_id,
-             source_url, normalized_text
+             source_url, normalized_text, updated_at::date::text AS read_on
       FROM agent_source_texts
       WHERE status = 'completed'
         AND (source_document_id::text = ANY(${documentIds}) OR institution_id = ANY(${unlinkedInstitutions}))
       ORDER BY source_document_id, updated_at DESC NULLS LAST, id DESC`;
     for (const row of textRows) {
       if (!row.normalized_text) continue;
-      const stored = { text: row.normalized_text, url: row.source_url };
+      const stored = { text: row.normalized_text, url: row.source_url, readOn: row.read_on };
       texts.set(row.source_document_id, stored);
       const id = Number(row.institution_id);
       textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), stored]);
@@ -369,6 +372,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         fee_name: row.fee_name,
         source_url: row.source_url ?? source?.url ?? null,
         updated_at: row.updated_at ? row.updated_at.slice(0, 10) : null,
+        schedule_read_on: source?.readOn ?? null,
         source_line: check.sourceLine,
       };
       filled.set(slot, entry);

@@ -78,6 +78,17 @@ export function addBusinessHours(start: Date, hours: number): Date {
   return due;
 }
 
+/** An emailed quote with no payment comes back to James after this many business days. */
+export const QUOTE_FOLLOW_UP_BUSINESS_DAYS = 5;
+
+/** When an unpaid, emailed quote is due a follow-up; null when paid, not quoted or never emailed. */
+export function quoteFollowUpAt(lead: { status: string; quote_sent_at: string | null; paid_at: string | null }): Date | null {
+  if (lead.status !== "quoted" || lead.paid_at || !lead.quote_sent_at) return null;
+  const sent = new Date(lead.quote_sent_at);
+  if (Number.isNaN(sent.getTime())) return null;
+  return addBusinessHours(sent, QUOTE_FOLLOW_UP_BUSINESS_DAYS * 24);
+}
+
 export function isLeadOverdue(lead: { source: string | null; status: string; created_at: string | Date }, now = new Date()): boolean {
   const due = leadDueAt(lead);
   return due !== null && due.getTime() <= now.getTime();

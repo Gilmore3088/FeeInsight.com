@@ -8,6 +8,7 @@ import { trackEvent } from "@/lib/analytics";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 
 const LEADS_ENDPOINT = "/api/leads";
@@ -138,6 +139,8 @@ function RequestReportFormInner({
       email: String(formData.get("email") ?? "").trim(),
       company: String(formData.get("institution") ?? "").trim(),
       role: String(formData.get("role") ?? "").trim() || null,
+      state: String(formData.get("state") ?? "").trim() || null,
+      competitors: String(formData.get("competitors") ?? "").trim() || null,
       use_case: REPORT_USE_CASE,
       source: REPORT_SOURCE,
       institutionId: lockedInstitutionId,
@@ -372,6 +375,35 @@ function RequestReportFormInner({
             placeholder="VP Retail Banking"
             className={INPUT_CLASS}
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+          <div>
+            <label htmlFor="report-state" className={LABEL_CLASS}>
+              State <span className="font-normal text-[#6B6255]">(optional)</span>
+            </label>
+            <select id="report-state" name="state" defaultValue="" className={INPUT_CLASS}>
+              <option value="">Select</option>
+              {STATE_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {STATE_NAMES[code]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="report-competitors" className={LABEL_CLASS}>
+              Competitors to include <span className="font-normal text-[#6B6255]">(optional)</span>
+            </label>
+            <input
+              id="report-competitors"
+              name="competitors"
+              type="text"
+              maxLength={300}
+              placeholder="e.g. Frost Bank, Amplify Credit Union"
+              className={INPUT_CLASS}
+            />
+          </div>
         </div>
         </>
       )}
