@@ -18,6 +18,10 @@ export type RateBasis = "transaction" | "settlement" | "advance" | "balance_tran
 export const PERCENT_FEE_RANGES: Readonly<Record<string, { min: number; max: number }>> = {
   card_foreign_txn: { min: 0.1, max: 5 },
   cash_advance: { min: 0.5, max: 10 },
+  // "10% of the coins counted" (often waived for members).
+  coin_counting: { min: 0.5, max: 20 },
+  // "5% of the payment amount" on a late loan payment.
+  late_payment: { min: 0.5, max: 15 },
 };
 
 export interface RateFields {

@@ -46,6 +46,8 @@ describe("percentage fees", () => {
   it("publishes rates only in categories that charge them", () => {
     expect(percentFeeAllowed("card_foreign_txn")).toBe(true);
     expect(percentFeeAllowed("cash_advance")).toBe(true);
+    expect(percentFeeAllowed("coin_counting")).toBe(true);
+    expect(percentFeeAllowed("late_payment")).toBe(true);
     expect(percentFeeAllowed("atm_non_network")).toBe(false);
   });
 

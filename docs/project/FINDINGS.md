@@ -1258,6 +1258,8 @@ fee, and most of those 42 were dollar ATM or wire fees filed under it.
 dry run on the held foreign transaction and cash advance rows with their stored texts: 322
 foreign transaction rates verify at 239 banks (median 1%), 40 cash advance rates at 35 banks
 (median 3%); 214 of the 239 banks already have 2 other live fees, so their rate publishes.
+Coin counting and late payment rates were added the same day: 40 coin counting rates at 35 banks
+and 119 late payment rates at 87 banks verify (both median 5%).
 **Lesson:** many "percent" lines on a schedule are interest or dividend rates, not fees (Knox
 filed some under atm_non_network), so a rate publishes only in an allow-listed category, on a
 row that says fee or charge and does not say APY, APR, interest or dividend.
