@@ -7,7 +7,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
-import { getInstitutionFeeRows, getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
+import { getInstitutionFeeRows, getInstitutionFeeValues, getPeerFeeValues, getSegmentFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
@@ -25,6 +25,7 @@ import {
   type FeeChangeInput,
 } from "./observations";
 import { priceBands } from "./bands";
+import { buildSegmentResearch } from "./segment";
 import { MIN_PEERS_FOR_POSITION } from "./scenario";
 import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type ServiceChargeRow } from "./revenue";
 import {
@@ -38,8 +39,10 @@ import {
   type MarketIncome,
   type MarketLayer,
   type MarketLayerScope,
+  type AskSegment,
   type OwnFeeRow,
   type PeerValue,
+  type SegmentResearch,
   type SourceRef,
 } from "./types";
 
@@ -68,6 +71,8 @@ interface WorkspaceBase {
   fedDistrict: number | null;
   charterType: string;
   assetTier: string | null;
+  /** Total assets in thousands of dollars. */
+  totalAssets?: number | null;
   /** National, Fed district, state, and charter and size, each loaded whole. */
   layers: LayerSet[];
   /** The narrowest default peer group, named on the Briefing. */
@@ -160,6 +165,7 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
     fedDistrict: institution.fed_district ?? null,
     charterType: institution.charter_type,
     assetTier: institution.asset_size_tier,
+    totalAssets: institution.asset_size === null || institution.asset_size === undefined ? null : Number(institution.asset_size),
     layers: [
       { scope: "national", label: "National", values: national },
       ...extra.map((l, i) => ({ scope: l.scope, label: l.label, values: valuesBySet[candidates.length + i] ?? new Map() })),
@@ -436,14 +442,38 @@ export async function loadEconomy(stateCode: string | null, district: number | n
   }
 }
 
+/** The daily cap category that goes with a per-item fee, when there is one. */
+const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "nsf_daily_cap" };
+
+async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: AskSegment): Promise<SegmentResearch> {
+  const current = base.ownValues.get(feeCategory) ?? null;
+  try {
+    const { institutionsInSegment, ownInSegment, values, caps } = await getSegmentFeeValues(
+      segment,
+      feeCategory,
+      DAILY_CAP[feeCategory] ?? null,
+      base.institutionId,
+    );
+    const members = values.map((v) => ({ ...toPeerValue(v), totalAssets: v.total_assets, charterType: v.charter_type, dailyCap: caps.get(v.institution_id) ?? null }));
+    return buildSegmentResearch({ segment, feeCategory, institutionsInSegment, members, current, ownInSegment });
+  } catch (error) {
+    console.error("[hamilton-research] segment read failed", { segment: segment.label, error });
+    return {
+      ...buildSegmentResearch({ segment, feeCategory, institutionsInSegment: 0, members: [], current, ownInSegment: false }),
+      problem: `Hamilton could not read ${segment.label} just now.`,
+    };
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
   now = new Date(),
+  options: { segment?: AskSegment | null } = {},
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
@@ -451,6 +481,7 @@ export async function getFeeResearch(
     getInstitutionFeeRows(institutionId, feeCategory),
     loadNationalIncomeSeries(),
     loadEconomy(base.stateCode, base.fedDistrict),
+    options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
@@ -492,6 +523,7 @@ export async function getFeeResearch(
     institutionFinancials: financials,
     regulation: [...feeRules(feeCategory, base.charterType), ...feeRegulatoryNews(articles, feeCategory)],
     economy,
+    segment,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
@@ -511,6 +543,7 @@ export async function getFeeResearch(
         ...(local.info ? [local.info.source] : []),
         ...(economy?.indicators.map((i) => i.source) ?? []),
         ...(economy?.beigeBook ? [economy.beigeBook.source] : []),
+        ...(segment ? [segment.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [

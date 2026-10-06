@@ -21,7 +21,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.4.0";
+export const WORKSPACE_ENGINE_VERSION = "1.5.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -220,6 +220,52 @@ export interface RevenueLine {
 }
 
 /** Everything Research shows for one fee. */
+/**
+ * A slice of the market the reader names in a question: "$10B and up", "credit unions
+ * under $1 billion in Texas", "the 25 largest banks". Assets are in thousands of dollars,
+ * as institution_sources.asset_size stores them.
+ */
+export interface AskSegment {
+  /** Plain words for the slice, e.g. "institutions with $10 billion or more in assets". */
+  label: string;
+  minAssets: number | null;
+  maxAssets: number | null;
+  charterType: "bank" | "credit_union" | null;
+  stateCode: string | null;
+  /** The N largest by assets after the other filters; null for no size cut. */
+  largest: number | null;
+}
+
+/** One institution in a segment that publishes the fee. */
+export interface SegmentMember extends PeerValue {
+  /** Total assets in thousands of dollars; null when the registry has none. */
+  totalAssets: number | null;
+  charterType: string | null;
+  /** The published daily cap on this fee (overdraft or NSF), when the schedule states one. */
+  dailyCap: number | null;
+}
+
+/** The fee across a segment, with the bank's own place in it. */
+export interface SegmentResearch {
+  segment: AskSegment;
+  /** Institutions in the registry that fit the segment (active), whether or not they publish the fee. */
+  institutionsInSegment: number;
+  /** Members that publish the fee, largest by assets first. The asking bank is left out. */
+  members: SegmentMember[];
+  band: { p25: number; median: number; p75: number; n: number } | null;
+  /** Members whose published fee is $0. */
+  zeroCount: number;
+  /** Members that publish a daily cap. */
+  withDailyCap: number;
+  /** Percentile of the bank's own fee among members; null without a fee or enough members. */
+  ownPosition: number | null;
+  /** Whether the asking bank itself fits the segment. */
+  ownInSegment: boolean;
+  /** Set when the segment could not be built, in one plain sentence. */
+  problem: string | null;
+  source: SourceRef;
+}
+
 export interface FeeResearch {
   institutionId: number;
   institutionName: string;
@@ -256,6 +302,8 @@ export interface FeeResearch {
   regulation: Fact[];
   /** The state and national economy around the fee; null when no state or no series is on file. */
   economy?: EconomicBackdrop | null;
+  /** The segment the question named, when it named one. */
+  segment?: SegmentResearch | null;
   provenance: Provenance;
 }
 
