@@ -6,6 +6,7 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
+import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
@@ -20,6 +21,9 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
  * is kept only when no earlier one already has the same category and amount, so a
  * fee read twice is stored once. Each specialist reports its own yield and how many of
  * its fees were new, for the attempt log.
+ *
+ * Names are tidied first (`tidyFeeName`): table separators, dot leaders, bullets and the
+ * unit fragments of neighbouring cells are not part of the name a reader sees.
  *
  * Self-check: before a find is kept, Knox checks it against the line it came from with
  * the shared accuracy check (`checkFeeAgainstSource`, the rule Darwin and Hamilton apply
@@ -104,8 +108,9 @@ export function runFreeSpecialists(text: string): FreeExtractionResult {
     const found = specialist.run();
     let added = 0;
     let selfCheckFailed = 0;
-    for (const candidate of found.candidates) {
+    for (const read of found.candidates) {
       if (candidates.length >= MAX_FEES_PER_DOCUMENT) break;
+      const candidate = { ...read, feeName: tidyFeeName(read.feeName) };
       if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
         selfCheckFailed += 1;
         untraced.push({
@@ -134,8 +139,9 @@ export function runFreeSpecialists(text: string): FreeExtractionResult {
       candidates.push({ ...candidate, strategy: specialist.strategy });
       added += 1;
     }
-    for (const foundRow of found.held) {
+    for (const heldRow of found.held) {
       if (held.length >= MAX_HELD_PER_DOCUMENT) break;
+      const foundRow = { ...heldRow, feeName: tidyFeeName(heldRow.feeName) };
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
       const untracedZero = foundRow.shape === "zero" && !tracesToSource(text, foundRow.feeName, 0);
       if (untracedZero) selfCheckFailed += 1;
