@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Supabase Preview fails on any PR that adds a migration
+**What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
+`main` preview branch shows the same status. The preview log stops at
+`20260408_enable_rls_all_tables.sql`: relation "agent_run_results" does not exist.
+**Cause:** a preview branch replays every file in `supabase/migrations/` on an empty database. The
+third file alters tables that later files (or hand-run SQL) created, so history cannot replay from
+scratch. Prod is unaffected: it only runs files newer than its recorded history.
+**Fix:** none yet. Treat this check as not a signal for migration PRs until the old files can be
+replayed (or the preview is turned off); judge a migration by reading it against prod's schema.
+**Lesson:** a migration history must replay on an empty database for preview branches to work.
+
 ## 2026-10-05: The public API gave away what its docs called Pro-only
 **What happened:** the API docs and spec said the free tier gets 6 spotlight categories and that
 category detail and institution detail (per-bank fees, call reports, complaints) need a Pro or
