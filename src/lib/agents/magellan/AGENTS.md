@@ -17,6 +17,10 @@ Magellan owns institution source discovery and source fetching.
   is `unchanged`; content matching an older copy (A, B, A) reuses that document
   (`reused_documents`) instead of inserting a new row. Older duplicates carry
   `duplicate_of_id`, and a unique partial index enforces the rule.
+- One current document per page (institution, `document_url`). The copy a fetch stores or
+  confirms is current; the page's other successful copies get `superseded_by_id` pointing at
+  it (`current-copy.ts`). Current = `status = 'success' AND duplicate_of_id IS NULL AND
+  superseded_by_id IS NULL`. Failed fetches never supersede a good copy; nothing is deleted.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 - A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and

@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A page kept every copy Magellan ever stored, with no "current" mark
+**What happened:** 18,374 `source_documents` rows cover 8,233 pages (institution + URL),
+read-only prod query 13:45 UTC Oct 6. Of the older rows, 6,936 are failed fetches and 3,061 are
+older successful copies at 1,712 banks, and 12,835 live catalog fees cite one of them.
+**Cause:** fetch inserts a new row when a page's content changes and nothing marked which copy
+is current, so each reader worked out "newest" its own way.
+**Fix:** this PR: `source_documents.superseded_by_id` (migration `20270110000004`) marks older
+successful copies of a page; Magellan's fetch keeps it current (`magellan/current-copy.ts`).
+Rows are only marked, never deleted, so every fee keeps its source link. Knox re-reads the
+current copy and supersedes the old fees.
+**Lesson:** when an agent stores history, it also stores which row is current, in one field
+every reader shares.
+
 ## 2026-10-06: Institutions with no website were never searched
 **What happened:** 585 active institutions have no `website_url` (510 credit unions, 75 banks; 45
 in TX, 27 in CA, prod read-only query 13:30 UTC). Every finder and the paid pass start from the
