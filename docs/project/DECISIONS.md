@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Every agent gets the same fixed daily health check, compared with yesterday.** James, about
+05:40 UTC ("a clear process to break this into manageable chunks that stay consistent so any new
+or change is easy to spot"; chose "Build it" on the Atlas audit thread). Each agent's AGENTS.md has
+a "Daily health check" table of rules, each tested by one number; `src/lib/agents/agent-health.ts`
+reads them read-only with the daily scoreboard step and stores them in
+`pipeline_scoreboard_snapshots.detail.agent_health`. The scoreboard step's summary names every
+broken rule and every number that moved more than 25% since yesterday. A change to an agent's
+selector or behaviour updates its table and the health check in the same PR.
+
 **Each state gets its own monthly edition for readers who pick it.** James, 07:42 UTC ("50 different
 emails based on the states"). Readers choose a state at signup or on the confirm page and join that
 state's MailerLite group; the marketing run drafts one edition per state with readers, from data

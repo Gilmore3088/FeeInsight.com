@@ -84,6 +84,12 @@ pass the self-check, which is what can be published: Texas 444 of 459 (main at v
 of 459 on that basis), held out 43 of 49; seven states 660 of 708 (main: 659 of 707). The held
 `untraced` rows show where the shared check can't yet read a layout (a price on the line
 after a dot leader, FREE/NONE on a flattened line, a note line between name and price).
+v17 also tidies every fee name (`tidyFeeName` in `layout.ts`): table separators, dot
+leaders, bullets, list markers ("b.") and a neighbouring cell's unit ("Per Item", "/Item",
+"N/C") are not part of the name. Category, price and excerpt are unchanged. Hamilton's
+supersede match and the rules re-check restore compare tidied names, so a line live under
+an older untidy name is still the same line. In the 117-document live sample, untidy names
+fell from 136 to 3; gates and the dry run are unchanged.
 
 ## Extraction Passes
 
@@ -140,3 +146,17 @@ only on what the free team could not read.
 - Do not write `verified_fee_observations` or `published_fee_records`.
 - Do not mark data as verified or public-ready.
 - Do not use provisional rows for verified benchmark scoring.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+| Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_EXTRACT_STRATEGY`, 24 h) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `textsExtracted`, `evidenceMismatch`.

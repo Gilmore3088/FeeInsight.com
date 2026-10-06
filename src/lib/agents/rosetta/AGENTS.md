@@ -83,6 +83,30 @@ Rosetta owns source text normalization.
     most `PAID_PASS_ITEMS_PER_RUN`), and stores the transcription as a normal completed
     text (fee-page check included). A budget cap or the automation stop ends the step
     with `budgetStopped`; nothing is recorded for documents not sent.
+    Pass 3 also takes text PDFs whose fees did not hold up after free OCR had the same
+    bytes (below); their transcription replaces the stored text only when it lists at
+    least as many fees with an amount, otherwise the attempt is `low_yield` and the
+    earlier text stays.
+  - Fees that hold up (`text-survival.ts`, learning plan steps 1 to 4). At most once per
+    `TEXT_SURVIVAL_REFRESH_HOURS` (20) the read step judges each document's current
+    completed text by the published fees Knox pulled from it since that text first
+    appeared: live, or taken down for a reason the text can cause (`TEXT_LOSS_REASONS`:
+    not reproduced, name not in the text, amount not the fee's, no amount). Category and
+    range takedowns are not counted. Each text is one `pipeline_feedback` row about its
+    reader (`check_name` `rosetta.text_survival`, `text_held_up` weight = live fees, or
+    `text_lost_fees` weight = lost fees when at least 3 were lost and they are 25% of the
+    judged fees). `readReaderScores` sums them per reader.
+  - A lost text gets one read a rung up the ladder (`nextReaderRung`): a legacy text
+    (no reader recorded) with the current primary reader; a `read.pdf_layout` text with
+    free OCR as well; a `read.html_dom` text with the JavaScript fallbacks as well. A bank
+    whose primary-reader texts lost fees at least as often as they held starts its
+    documents on the alternate too. The alternate's text is used only when it is a fee
+    page listing at least as many fees with an amount (`rungTextNotWorse`). A re-read of
+    a lost text keeps the stored text unless the new one is no thinner, and never sends
+    the bank back to Magellan. Each rung runs once per document: the alternate's attempt
+    on the same bytes ends it. A web page has no paid rung; a legacy text the current
+    reader could not improve stays as it is. Step detail: `texts_held_up`,
+    `texts_lost_fees`, `reader_escalations`, `reader_escalations_used`.
   - Scans and JavaScript pages an older reader version gave up on (`needs_ocr`, `empty`)
     are read once more when `ROSETTA_READ_VERSION` is bumped. Auxiliary strategies
     (`AUXILIARY_READ_STRATEGIES`) never settle a read or block re-selection.
@@ -120,3 +144,17 @@ stored). Rosetta writes them only once the migration is applied.
 - Do not write raw, verified, or published fee rows.
 - Do not call provider extraction while automation is stopped.
 - Do not let text normalization erase source-document lineage needed by Knox, Darwin, or Hamilton.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+| No document fails the same way 3+ times a day | `repeatFailures` (read: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`.

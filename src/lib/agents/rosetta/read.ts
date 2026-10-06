@@ -32,6 +32,15 @@ import {
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
+import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import {
+  ALTERNATE_READERS,
+  PRIMARY_READERS,
+  TEXT_SURVIVAL_CHECK,
+  nextReaderRung,
+  syncTextSurvival,
+  type ReaderRecord,
+} from "@/lib/agents/rosetta/text-survival";
 import { DOCX_STRATEGY, DocxReadError, extractDocxText } from "@/lib/agents/rosetta/docx";
 import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
 import {
@@ -93,6 +102,13 @@ interface ReadCandidateRow {
   is_reread?: boolean | null;
   /** Set for a companion page (account page, other fee document); see companion-streams.ts. */
   companion_source_id?: number | string | null;
+  /** Text-survival columns (text-survival.ts): the reader of this document's current text, */
+  last_reader?: string | null;
+  /** whether that text lost fees, and if so the text itself, */
+  last_text_lost?: boolean | null;
+  last_lost_text?: string | null;
+  /** and the bank's record per reader. */
+  reader_record?: Record<string, ReaderRecord> | null;
 }
 
 /**
@@ -161,6 +177,11 @@ export interface ReadResult {
   handoff: "magellan_paid_find" | null;
   /** Read again because an older reader version's text yielded no Knox fees. */
   reread: boolean;
+  /**
+   * Set when the text-survival record sent this read one rung up the reader ladder:
+   * the alternate tried, and whether its text replaced the primary reader's.
+   */
+  escalation?: { to: string; used: boolean } | null;
   durationMs: number;
 }
 
@@ -212,6 +233,13 @@ export interface RunRosettaReadResult {
   reopenedFeePages: number;
   reopenedBansLifted: number;
   reopenedLinksRestored: number;
+  /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
+  textSurvivalRefreshed: boolean;
+  textsHeldUp: number;
+  textsLostFees: number;
+  /** Reads sent up the reader ladder by the survival record, and how many used its text. */
+  readerEscalations: number;
+  readerEscalationsUsed: number;
   /** Institutions whose learned format was filled in from an earlier text. */
   formatsBackfilled: number;
   /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
@@ -528,6 +556,14 @@ function acceptableFeeText(text: string): boolean {
   return text.length > 0 && scoreFeePage(text).verdict !== "wrong_document";
 }
 
+/**
+ * A rung-up reader's text replaces the primary reader's only when it is a fee page that
+ * lists at least as many fees with an amount: a re-read never trades a text for a thinner one.
+ */
+export function rungTextNotWorse(alternate: string, primary: string): boolean {
+  return acceptableFeeText(alternate) && scoreFeePage(alternate).feeLines >= scoreFeePage(primary).feeLines;
+}
+
 /** pass 2, JavaScript pages: embedded data, then linked PDF/print versions, then static variants. */
 async function tryJsFallback(
   html: string,
@@ -623,6 +659,7 @@ async function readCandidate(
     followUps: [],
     handoff: null,
     reread: row.is_reread === true,
+    escalation: null,
   };
   const finish = (
     fields: Partial<ReadResult> & Pick<ReadResult, "status" | "error" | "attemptOutcome">,
@@ -674,6 +711,15 @@ async function readCandidate(
   base.strategy = decision.strategy;
   base.routerReason = decision.reason;
   base.reader = decision.strategy;
+  // Learning plan steps 2 and 3: when this document's text, or this bank's texts from the
+  // primary reader, lost fees, the free reader one rung up reads it too (text-survival.ts).
+  const escalateTo = nextReaderRung(format, {
+    lastReader: row.last_reader ?? null,
+    lastTextLost: row.last_text_lost === true,
+    // The bank's record describes its main fee link, not its companion pages.
+    bankRecord: row.companion_source_id == null ? row.reader_record ?? null : null,
+  });
+  if (escalateTo) base.routerReason = `${decision.reason}; fees from this reader did not hold up → also ${escalateTo}`;
 
   /**
    * A readable text: completed, unless the fee-page check says it is not a fee schedule.
@@ -718,6 +764,19 @@ async function readCandidate(
     const normalizedText = normalizeWhitespace(extracted.text);
     if (normalizedText.length > 0 && !isLikelyScannedPdf(normalizedText, extracted.totalPages)) {
       const pageTexts = (extracted.pages ?? [extracted.text]).map(normalizeWhitespace);
+      if (escalateTo === OCR_STRATEGY && ctx.ocr) {
+        if (ctx.ocrBudget.left <= 0 && extracted.totalPages <= OCR_MAX_PAGES) {
+          return finish({ status: "deferred", error: "OCR allowance for this run used up", attemptOutcome: null, format: "pdf_text" });
+        }
+        const ocr = await tryOcr(bytes, extracted.totalPages, ctx);
+        base.followUps.push(ocr.attempt);
+        const used = ocr.read != null && rungTextNotWorse(ocr.read.text, normalizedText);
+        base.escalation = { to: OCR_STRATEGY, used };
+        if (used && ocr.read) {
+          base.reader = ocr.read.reader;
+          return finishRead(ocr.read.text, "pdf_text", ocr.read.rows);
+        }
+      }
       return finishRead(normalizedText, "pdf_text", tableRowsFromText(pageTexts, "pdf_layout"));
     }
 
@@ -803,6 +862,17 @@ async function readCandidate(
           normalizedText,
         );
       }
+    } else if (escalateTo === JS_FALLBACK_STRATEGY && normalizedText.length > 0) {
+      const fallback = await tryJsFallback(raw, finalUrl, ctx);
+      base.followUps.push(fallback.attempt);
+      const used = fallback.read != null && rungTextNotWorse(fallback.read.text, normalizedText);
+      base.escalation = { to: JS_FALLBACK_STRATEGY, used };
+      if (used && fallback.read) {
+        base.reader = fallback.read.reader;
+        base.sourceUrl = fallback.read.sourceUrl ?? base.sourceUrl;
+        base.tableRows = fallback.read.rows.length;
+        return finishRead(fallback.read.text, "html_js", fallback.read.rows);
+      }
     }
   } else {
     normalizedText = normalizeWhitespace(raw);
@@ -830,6 +900,7 @@ async function selectCandidates(
   stateCode?: string,
   vaultSchema = false,
   companionStreams = false,
+  textSurvival = false,
 ): Promise<ReadCandidateRow[]> {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
@@ -845,6 +916,7 @@ async function selectCandidates(
   // Without the vault migration no document has a stored copy.
   const notInVault = vaultSchema ? "cr.document_r2_key IS NULL" : "TRUE";
   let playbookColumns = "";
+  let survivalColumns = "";
   // Without the attempt log there is no reader version to compare, so never re-read.
   let rereadable = "FALSE";
   if (learning) {
@@ -886,8 +958,90 @@ async function selectCandidates(
                      AND reopen.institution_id = ${institution}
                      AND reopen.input_fingerprint = ${fingerprint}
                 )`;
+    // A completed text whose fees did not hold up (text-survival.ts) gets one read a rung up
+    // the ladder: a legacy text with the current primary reader, a primary reader's text
+    // with the free alternate, each once per document.
+    let lostTextRereadable = "FALSE";
+    if (textSurvival) {
+      params.push(TEXT_SURVIVAL_CHECK);
+      const survivalParam = `$${params.length}`;
+      params.push([PRIMARY_READERS.pdf, PRIMARY_READERS.html]);
+      const primaryParam = `$${params.length}`;
+      params.push(PRIMARY_READERS.pdf);
+      const pdfPrimaryParam = `$${params.length}`;
+      params.push(ALTERNATE_READERS.pdf);
+      const pdfAlternateParam = `$${params.length}`;
+      params.push(ALTERNATE_READERS.html);
+      const htmlAlternateParam = `$${params.length}`;
+      lostTextRereadable = `(
+                adt.status = 'completed'
+                AND EXISTS (
+                  SELECT 1 FROM pipeline_feedback lost
+                   WHERE lost.check_name = ${survivalParam}
+                     AND lost.signal = 'wrong'
+                     AND lost.source_document_id = adt.source_document_id
+                     AND lost.evidence->>'text_hash' = adt.text_hash
+                )
+                AND (
+                  (adt.reader IS NULL AND ${notSettledByCurrentReader})
+                  OR (
+                    adt.reader = ANY(${primaryParam}::text[])
+                    AND NOT EXISTS (
+                      SELECT 1 FROM pipeline_attempts rung
+                       WHERE rung.stage = 'read'
+                         AND rung.institution_id = adt.institution_id
+                         AND rung.input_fingerprint = adt.source_hash
+                         AND rung.strategy = CASE WHEN adt.reader = ${pdfPrimaryParam} THEN ${pdfAlternateParam} ELSE ${htmlAlternateParam} END
+                    )
+                  )
+                )
+              )`;
+      survivalColumns = `,
+             (
+               SELECT COALESCE(adt.reader, 'legacy.' || COALESCE(adt.document_type, 'unknown'))
+                 FROM agent_source_texts adt
+                WHERE adt.source_document_id = cr.id AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                LIMIT 1
+             ) AS last_reader,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts adt
+                 JOIN pipeline_feedback lost
+                   ON lost.source_document_id = adt.source_document_id
+                  AND lost.evidence->>'text_hash' = adt.text_hash
+                WHERE adt.source_document_id = cr.id
+                  AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                  AND adt.status = 'completed'
+                  AND lost.check_name = ${survivalParam}
+                  AND lost.signal = 'wrong'
+             ) AS last_text_lost,
+             (
+               SELECT adt.normalized_text FROM agent_source_texts adt
+                 JOIN pipeline_feedback lost
+                   ON lost.source_document_id = adt.source_document_id
+                  AND lost.evidence->>'text_hash' = adt.text_hash
+                WHERE adt.source_document_id = cr.id
+                  AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                  AND adt.status = 'completed'
+                  AND lost.check_name = ${survivalParam}
+                  AND lost.signal = 'wrong'
+                LIMIT 1
+             ) AS last_lost_text,
+             (
+               SELECT jsonb_object_agg(about_strategy, jsonb_build_object('held', held, 'lost', lost))
+                 FROM (
+                   SELECT about_strategy,
+                          COUNT(*) FILTER (WHERE signal = 'right') AS held,
+                          COUNT(*) FILTER (WHERE signal = 'wrong') AS lost
+                     FROM pipeline_feedback
+                    WHERE check_name = ${survivalParam}
+                      AND institution_id = cr.institution_id
+                    GROUP BY about_strategy
+                 ) record
+             ) AS reader_record`;
+    }
     rereadable = `(
-              (
+              ${lostTextRereadable}
+              OR (
                 adt.status = 'wrong_document'
                 AND ${reopenedAt("adt.institution_id", "adt.source_hash")} IS NOT NULL
                 AND NOT EXISTS (
@@ -992,7 +1146,7 @@ async function selectCandidates(
              cr.institution_id,
              ct.institution_name,
              cr.document_url,
-             cr.content_hash${playbookColumns}${vaultColumns}${companionColumns}
+             cr.content_hash${playbookColumns}${survivalColumns}${vaultColumns}${companionColumns}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -1527,7 +1681,21 @@ export async function runRosettaRead(
         stateCode: options.stateCode,
       })
     : { reopened: 0, unbanned: 0, relinked: 0 };
-  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode, vaultSchema, companionStreams);
+  // Learning plan step 1: score each text by whether its fees stayed live (once a day).
+  const textSurvivalReady = learning && textColumns && (await feedbackSchemaReady(db));
+  const survival = textSurvivalReady
+    ? await syncTextSurvival(db, { runId: options.runId, dryRun })
+    : { ready: false, refreshed: false, texts: 0, held: 0, lost: 0, written: 0 };
+  const rows = await selectCandidates(
+    db,
+    limit,
+    learning,
+    options.institutionId,
+    options.stateCode,
+    vaultSchema,
+    companionStreams,
+    textSurvivalReady,
+  );
 
   // Free OCR is local work, so a dry run skips it. The worker starts on the first scan.
   const ownsOcr = !options.scannedPdfReader;
@@ -1552,10 +1720,18 @@ export async function runRosettaRead(
       results.push(result);
       if (dryRun || result.status === "known_failure" || result.status === "deferred") continue;
       // A re-read replaces the earlier text only with a better answer; otherwise the old
-      // text stays and only the attempt is logged.
-      const keepEarlierText = result.reread && result.status !== "completed" && result.status !== "wrong_document";
+      // text stays and only the attempt is logged. A text whose fees did not hold up still
+      // has live fees: a re-read keeps it unless the new text lists at least as many fees,
+      // and never sends the bank back to Magellan.
+      const keepLostText =
+        row.last_lost_text != null &&
+        !(result.status === "completed" && normalizedText != null && rungTextNotWorse(normalizedText, row.last_lost_text));
+      const keepEarlierText =
+        keepLostText || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
       if (!keepEarlierText) await recordReadResult(db, options.runId, result, normalizedText, textColumns);
-      if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
+      if (keepLostText) {
+        // Only the attempt below is logged.
+      } else if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
         if (
           await sendBackToMagellan(db, {
             institutionId: result.institutionId,
@@ -1607,6 +1783,7 @@ export async function runRosettaRead(
             table_rows: result.tableRows,
             reader: result.reader,
             reread: result.reread,
+            escalation: result.escalation ?? null,
             page_check: result.pageCheck,
             error: result.error,
           },
@@ -1711,6 +1888,11 @@ export async function runRosettaRead(
     reopenedFeePages: reopen.reopened,
     reopenedBansLifted: reopen.unbanned,
     reopenedLinksRestored: reopen.relinked,
+    textSurvivalRefreshed: survival.refreshed,
+    textsHeldUp: survival.held,
+    textsLostFees: survival.lost,
+    readerEscalations: results.filter((result) => result.escalation != null).length,
+    readerEscalationsUsed: results.filter((result) => result.escalation?.used).length,
     formatsBackfilled: formats.updated,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,

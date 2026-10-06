@@ -299,6 +299,23 @@ and a state with such links counts as having a backlog.
 **Lesson:** a freshness check that reads `last_crawl_at` needs a schedule that actually refreshes it;
 check crawl-age spread per state, not only the national median.
 
+## 2026-10-06: Report PDFs printed an empty State Index and wasted pages
+**What happened:** James showed two report PDFs from /admin/hamilton/reports. The State Index PDF
+said its template was "under development": `state-fee-index.ts` was a stub and the `state_index`
+case in `assemble-and-render.ts` passed it no data. Every report also wasted pages: the cream page
+background printed as a box on each page, the cover's `min-height: 90vh` left the next section's
+heading alone at the bottom of the cover, and forced breaks (`.chapter-divider { break-before: page }`,
+`pageBreak()` calls) left pages mostly blank (a fixture render of the National Quarterly went from
+13 pages to 10).
+**Cause:** the state report was never built for print, and the print rules forced page breaks
+instead of keeping headings with their content.
+**Fix:** branch `claude/state-pdf-report`. The State Index renders from the public state report's
+own readers and helpers (moved to `src/lib/research-report/`), with no model calls. Print rules in
+`report-templates/base/styles.ts`: white page, a one-page cover with `break-after: page`, headings
+`break-after: avoid`, no forced chapter breaks, short tables kept whole and long ones split between rows.
+**Lesson:** check a report's print layout by printing a fixture render in Chromium and looking at
+every page; a template that compiles can still print blank or half-empty pages.
+
 ## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
 **What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
 and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the
@@ -910,6 +927,22 @@ looks for.
 **Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
 read.
 
+## 2026-10-06: Re-reading one fee schedule recorded false price changes
+**What happened:** building the National report's fee-change chapter (read-only check, 07:05 UTC), three
+of the five price changes recorded since July 8 came from two readings of the same schedule edition:
+Net Federal Credit Union stop payment $35 to $30 (both readings "Effective February 1, 2026") and
+Commonwealth Federal Credit Union returned deposited item $10 to $32 (both readings carry the same
+"RFD 3-24-2026" form stamp; the older reading put "$10.00" from the line above in front of the fee).
+The Monthly Pulse rule confirmed both.
+**Cause:** the confirm rule checks each reading line by line. A PDF read twice can come out in a
+different column order, pairing a fee with its neighbour's price, and both readings then "state" a price.
+**Fix:** same PR as the report chapters (PR 220): `confirmFeeChange` drops a change when both texts
+state exactly the same dollar amounts (one edition read twice) or when the earlier schedule already
+stated the new price. Of the five recorded changes, the two at New Hampshire Federal Credit Union
+(October 2024 schedule to August 2026 schedule) remain.
+**Lesson:** a change between two readings needs proof the document itself changed, not only that each
+reading parses.
+
 ## 2026-10-06: Free allowances and conditions published as $0 fees
 **What happened:** the companion-pages thread found about 6 wrong fees in the first 25 live
 companion fees. Several were $0 lines that state an allowance or a condition rather than a
@@ -1028,4 +1061,32 @@ fees are held as `untraced` now rather than lost silently; fixing them belongs i
 `src/lib/custom-report/source-check.ts`, which every gate shares.
 **Lesson:** an extractor should apply the publish gate's own check before it hands a fee on,
 so a disagreement shows up as a held row, not a silent rejection two agents later.
+
+## 2026-10-06: Published fee names carried table separators and fragments
+**What happened:** Knox named a fee with the whole text of its cell run, so live names read
+"Copy of Paid Check | Per Item", "/Item Cashier's Check", "b. Non-Sufficient Funds (NSF)" or
+ended in dot leaders. In a read-only sample of 117 live documents, 136 candidate names were untidy.
+**Fix:** `tidyFeeName` (`src/lib/agents/knox/layout.ts`) cleans every free read's name, down to 3
+untidy in the same sample with the gates unchanged. Hamilton's `decidePriorFee` and the rules
+re-check restore compare tidied names, so a price change on a line live under its old untidy
+name supersedes it instead of publishing beside it.
+**Lesson:** when a normalizer changes what an agent writes, every place that matches new rows
+to old ones must apply it too, or the change makes duplicates.
+
+## 2026-10-06: Rosetta never heard whether its texts' fees held up
+**What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
+stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
+they lost at least 3 fees and a quarter of their judged fees. Survival by reader:
+read.html_dom 90.7%, read.pdf_layout 89.5%, legacy html 88.9%, legacy pdf 81.4%, free OCR
+93.2%, paid transcription 97.9%.
+**Cause:** no path from Hamilton's takedowns back to the reader that wrote the text, so a reader
+whose fees kept being pulled was used again on the same document.
+**Fix:** same PR (`rosetta/text-survival.ts`, James approved the learning plan "build whole
+thing"): daily per-text judgements in `pipeline_feedback`, one read a rung up the reader ladder
+for a lost text (or a bank whose primary reader keeps losing), paid transcription for PDFs both
+free readers lost. Dry run before merge: 200 current documents re-read (79 PDFs with OCR, 19
+pages with the JavaScript fallbacks, 102 legacy texts with the current reader), 1,935 live fees
+on them, 1 PDF for the paid pass now. A new text replaces the old only when it lists at least as
+many fees, so no live fee is taken down by the re-read itself.
+**Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
 
