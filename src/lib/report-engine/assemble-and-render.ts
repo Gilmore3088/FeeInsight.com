@@ -16,6 +16,7 @@ import { validateNumerics } from '@/lib/hamilton/validate';
 import { assembleNationalQuarterly, buildThesisSummary } from '@/lib/report-assemblers/national-quarterly';
 import { assembleMonthlyPulse } from '@/lib/report-assemblers/monthly-pulse';
 import { assembleStateIndex } from '@/lib/report-assemblers/state-index';
+import { assembleRegulatoryContext } from '@/lib/report-assemblers/regulatory-context';
 import { assemblePeerCompetitivePayload } from '@/lib/report-assemblers/peer-competitive';
 import type { PeerCompetitiveFilters } from '@/lib/report-assemblers/peer-competitive';
 import { renderNationalQuarterlyReport } from '@/lib/report-templates/templates/national-quarterly';
@@ -77,7 +78,10 @@ export async function assembleAndRender(
   try {
     switch (reportType) {
       case 'national_index': {
-        const payload = await assembleNationalQuarterly();
+        const [payload, regulatory] = await Promise.all([
+          assembleNationalQuarterly(),
+          assembleRegulatoryContext(),
+        ]);
 
         // Phase 33: Generate global thesis before sections (per D-01, D-04)
         // Thesis uses condensed payload (~5KB) not full payload.
@@ -271,6 +275,7 @@ export async function assembleAndRender(
 
         return renderNationalQuarterlyReport({
           data: payload,
+          regulatory,
           narratives: {
             executive_summary,
             fee_differentiation,

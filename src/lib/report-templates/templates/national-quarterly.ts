@@ -40,6 +40,8 @@ import {
 
 import type { DerivedAnalytics, NationalQuarterlyPayload } from "@/lib/report-assemblers/national-quarterly";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
+import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
+import { renderRegulatorySection } from "./regulatory-section";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,8 @@ export interface NationalQuarterlyReportInput {
     industry_blind_spot: { narrative: string };
     future_strategy: { narrative: string };
   };
+  /** Regulator releases, enforcement, CFPB complaints and fee rules; omitted when unavailable. */
+  regulatory?: RegulatoryContext | null;
 }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
@@ -143,16 +147,24 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       description: "Questions the next quarters of data can settle",
       page: 8,
     },
+    ...(input.regulatory
+      ? [{
+          number: "06",
+          title: "Regulation and Complaints",
+          description: "Regulator releases, enforcement actions, CFPB complaints and fee rules",
+          page: 9,
+        }]
+      : []),
     {
       title: "Methodology",
       description: "Data sources, computation methods, and maturity definitions",
-      page: 9,
+      page: input.regulatory ? 10 : 9,
       sectionLabel: "Data",
     },
     {
       title: "Full Category Index",
       description: "Complete national benchmark data for all tracked fee categories",
-      page: 10,
+      page: input.regulatory ? 11 : 10,
     },
   ]);
 
@@ -488,11 +500,13 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     cover,
     toc,
     layoutStatement(execSummary),
+    economicContext ? layoutAnalytical(economicContext) : "",
     layoutAnalytical(ch1),
     layoutAnalytical(ch2),
     layoutAnalytical(ch3),
     layoutAnalytical(ch4),
     layoutStatement(ch5),
+    input.regulatory ? layoutAnalytical(renderRegulatorySection(input.regulatory, { number: "06", place: "the United States" })) : "",
     methodology,
     appendix,
   ]

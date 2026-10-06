@@ -34,6 +34,7 @@ function payload(overrides: Partial<StateIndexPayload> = {}): StateIndexPayload 
     findings: [
       { key: "overdraft", figure: "$32.00", headline: "The typical Tennessee overdraft fee", detail: "Median across 60.", exhibit: "benchmarks" },
     ],
+    regulatory: { windowDays: 180, feeReleases: [], enforcement: [], complaints: null, rules: [], beigeBook: null },
     ...overrides,
   };
 }
@@ -48,6 +49,7 @@ describe("renderStateFeeIndexReport", () => {
     expect(html).toContain("The typical Tennessee overdraft fee");
     expect(html).toContain("Where Tennessee Sits Against National");
     expect(html).toContain("Banks and Credit Unions");
+    expect(html).toContain("Regulation and Complaints");
   });
 
   it("should_leave_out_sections_without_data", () => {
