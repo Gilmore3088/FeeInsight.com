@@ -74,6 +74,14 @@ rather than check printing, and a name that opens with NSF is NSF when only a co
 mentions an overdraft ("NSF Fee (fee applies when overdraft is created)"); a combined
 "NSF/Overdraft" fee stays overdraft. At v16: Texas 461 of 478; seven states 683 right, 55 wrong.
 
+A new rules version also reaches lines older versions held. Knox does not extract a text twice,
+and the raw-row dedupe index (document, name, amount) stopped a categorized fee from replacing
+the held row, so a held line stayed held after the rules learned it. Now each extract step
+re-reads up to 300 held unclassified lines from the document's current text with today's rules
+(`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
+(`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
+version. A categorized insert that meets a held row takes it over the same way.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
@@ -129,3 +137,17 @@ only on what the free team could not read.
 - Do not write `verified_fee_observations` or `published_fee_records`.
 - Do not mark data as verified or public-ready.
 - Do not use provisional rows for verified benchmark scoring.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+| Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_EXTRACT_STRATEGY`, 24 h) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `textsExtracted`, `evidenceMismatch`.

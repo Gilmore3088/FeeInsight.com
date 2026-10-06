@@ -13,6 +13,31 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A page kept every copy Magellan ever stored, with no "current" mark
+**What happened:** 18,374 `source_documents` rows cover 8,233 pages (institution + URL),
+read-only prod query 13:45 UTC Oct 6. Of the older rows, 6,936 are failed fetches and 3,061 are
+older successful copies at 1,712 banks, and 12,835 live catalog fees cite one of them.
+**Cause:** fetch inserts a new row when a page's content changes and nothing marked which copy
+is current, so each reader worked out "newest" its own way.
+**Fix:** this PR: `source_documents.superseded_by_id` (migration `20270110000004`) marks older
+successful copies of a page; Magellan's fetch keeps it current (`magellan/current-copy.ts`).
+Rows are only marked, never deleted, so every fee keeps its source link. Knox re-reads the
+current copy and supersedes the old fees.
+**Lesson:** when an agent stores history, it also stores which row is current, in one field
+every reader shares.
+
+## 2026-10-06: Institutions with no website were never searched
+**What happened:** 585 active institutions have no `website_url` (510 credit unions, 75 banks; 45
+in TX, 27 in CA, prod read-only query 13:30 UTC). Every finder and the paid pass start from the
+website, so these were skipped forever.
+**Cause:** the FDIC registry step fills `website_url` only when FDIC lists one, and the NCUA step
+stores none. Some state-chartered credit unions also carry a cut-off name ("CALIFORNIA", "HAVEN").
+**Fix:** Magellan's paid step now searches for the official homepage and saves it only after the
+homepage names the institution plus its city or charter number (`magellan/website-find.ts`).
+Rejected candidates stay on the attempt for a person. Cut-off names still need a registry fix.
+**Lesson:** every finder assumes a website; count the rows a precondition excludes before
+assuming a finder covers a state.
+
 ## 2026-10-06: Right price, wrong category is most of what keeps states under 95%
 **What happened:** after source check v3 finished every bank (10:25 UTC), Texas measured 96.7%
 (145 of 150 live fees, hand-checked) but the seven answer-key states stayed at 93.8% (393 of 419,
@@ -298,6 +323,23 @@ at all; their old crawl date still counts toward the freshness median.
 and a state with such links counts as having a backlog.
 **Lesson:** a freshness check that reads `last_crawl_at` needs a schedule that actually refreshes it;
 check crawl-age spread per state, not only the national median.
+
+## 2026-10-06: Report PDFs printed an empty State Index and wasted pages
+**What happened:** James showed two report PDFs from /admin/hamilton/reports. The State Index PDF
+said its template was "under development": `state-fee-index.ts` was a stub and the `state_index`
+case in `assemble-and-render.ts` passed it no data. Every report also wasted pages: the cream page
+background printed as a box on each page, the cover's `min-height: 90vh` left the next section's
+heading alone at the bottom of the cover, and forced breaks (`.chapter-divider { break-before: page }`,
+`pageBreak()` calls) left pages mostly blank (a fixture render of the National Quarterly went from
+13 pages to 10).
+**Cause:** the state report was never built for print, and the print rules forced page breaks
+instead of keeping headings with their content.
+**Fix:** branch `claude/state-pdf-report`. The State Index renders from the public state report's
+own readers and helpers (moved to `src/lib/research-report/`), with no model calls. Print rules in
+`report-templates/base/styles.ts`: white page, a one-page cover with `break-after: page`, headings
+`break-after: avoid`, no forced chapter breaks, short tables kept whole and long ones split between rows.
+**Lesson:** check a report's print layout by printing a fixture render in Chromium and looking at
+every page; a template that compiles can still print blank or half-empty pages.
 
 ## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
 **What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
@@ -910,6 +952,22 @@ looks for.
 **Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
 read.
 
+## 2026-10-06: Re-reading one fee schedule recorded false price changes
+**What happened:** building the National report's fee-change chapter (read-only check, 07:05 UTC), three
+of the five price changes recorded since July 8 came from two readings of the same schedule edition:
+Net Federal Credit Union stop payment $35 to $30 (both readings "Effective February 1, 2026") and
+Commonwealth Federal Credit Union returned deposited item $10 to $32 (both readings carry the same
+"RFD 3-24-2026" form stamp; the older reading put "$10.00" from the line above in front of the fee).
+The Monthly Pulse rule confirmed both.
+**Cause:** the confirm rule checks each reading line by line. A PDF read twice can come out in a
+different column order, pairing a fee with its neighbour's price, and both readings then "state" a price.
+**Fix:** same PR as the report chapters (PR 220): `confirmFeeChange` drops a change when both texts
+state exactly the same dollar amounts (one edition read twice) or when the earlier schedule already
+stated the new price. Of the five recorded changes, the two at New Hampshire Federal Credit Union
+(October 2024 schedule to August 2026 schedule) remain.
+**Lesson:** a change between two readings needs proof the document itself changed, not only that each
+reading parses.
+
 ## 2026-10-06: Free allowances and conditions published as $0 fees
 **What happened:** the companion-pages thread found about 6 wrong fees in the first 25 live
 companion fees. Several were $0 lines that state an allowance or a condition rather than a
@@ -1008,3 +1066,39 @@ a visible `read.reopen` attempt per text, and one more read through the script f
 fee changes; a page that still is not a fee page is rejected again the normal way.
 **Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
 under the new one; a ban written by a judgment the code no longer makes outlives its reason.
+
+<<<<<<< HEAD
+## 2026-10-06: Knox's held lines never got the newer rules
+**What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
+Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an
+overdraft fee and "Inactivity fee $5.00 per month" (raw 109417) a dormant-account fee, but both
+stayed held.
+**Cause:** Knox never extracts the same text twice, and the dedupe index on
+(document, fee name, amount) made a later categorized insert of the same line `DO NOTHING`. A
+line held by an older rules version stayed held for good.
+**Fix:** the extract step re-reads held unclassified lines from the document's current text with
+today's rules (`knox/held-recheck.ts`, 300 per step, marked by rules version so each line is read
+once per version), and a categorized insert that meets a held row takes it over. Read-only dry run
+on all 11,783 current-text held lines: 1,529 get a category and go to Darwin (top: dormant 230,
+early closure 168, monthly maintenance 143, NSF 113, copies 106); nothing live is taken down.
+**Lesson:** a dedupe key that ignores a row's state lets the first, weakest answer win forever;
+when a reader improves, re-read what it set aside, not just what it never saw.
+=======
+## 2026-10-06: Rosetta never heard whether its texts' fees held up
+**What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
+stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
+they lost at least 3 fees and a quarter of their judged fees. Survival by reader:
+read.html_dom 90.7%, read.pdf_layout 89.5%, legacy html 88.9%, legacy pdf 81.4%, free OCR
+93.2%, paid transcription 97.9%.
+**Cause:** no path from Hamilton's takedowns back to the reader that wrote the text, so a reader
+whose fees kept being pulled was used again on the same document.
+**Fix:** same PR (`rosetta/text-survival.ts`, James approved the learning plan "build whole
+thing"): daily per-text judgements in `pipeline_feedback`, one read a rung up the reader ladder
+for a lost text (or a bank whose primary reader keeps losing), paid transcription for PDFs both
+free readers lost. Dry run before merge: 200 current documents re-read (79 PDFs with OCR, 19
+pages with the JavaScript fallbacks, 102 legacy texts with the current reader), 1,935 live fees
+on them, 1 PDF for the paid pass now. A new text replaces the old only when it lists at least as
+many fees, so no live fee is taken down by the re-read itself.
+**Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
+
+>>>>>>> origin/main
