@@ -13,7 +13,8 @@ import { RoomHeader, Unreadable } from "../room-hub";
 const LANES: { title: string; note: string; statuses: LeadStatus[] }[] = [
   { title: "Waiting on us", note: "Owed a reply", statuses: ["new", "needs_reply", "overdue", "email_failed", "in_progress"] },
   { title: "Held", note: "Their market isn't ready", statuses: ["held"] },
-  { title: "Report sent", note: "Answered", statuses: ["sent", "followed_up"] },
+  { title: "Quoted", note: "Waiting on their payment", statuses: ["quoted"] },
+  { title: "Paid or sent", note: "Answered", statuses: ["paid", "sent", "followed_up"] },
   { title: "Closed", note: "Done", statuses: ["closed"] },
 ];
 
@@ -59,7 +60,8 @@ export default async function CustomersRoomPage() {
   const now = new Date();
   const requests = leads.filter((lead) => isRequestLead(lead.source));
   const subscriptions = leads.length - requests.length;
-  const orders = requests.filter((lead) => (lead.source ?? "").split(",").some((part) => part.trim() === "report_order"));
+  // Institution reports paid by card through /pay/report (the Stripe webhook sets paid_at).
+  const orders = requests.filter((lead) => lead.paid_at !== null);
   const readyMarkets = markets ? markets.filter((market) => market.ready).length : null;
 
   return (
@@ -72,7 +74,7 @@ export default async function CustomersRoomPage() {
 
       <section aria-label="Customer numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Requests" value={String(requests.length)} note="reports, contact and enterprise" />
-        <Stat label="Paid report orders" value={String(orders.length)} note="from the report checkout" />
+        <Stat label="Paid report orders" value={String(orders.length)} note="institution reports paid by card" />
         <Stat label="Subscribers" value={String(subscriptions)} note="newsletter and sign-ups" />
         <Stat
           label="Markets ready for a report"

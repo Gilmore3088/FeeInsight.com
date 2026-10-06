@@ -56,6 +56,16 @@ Hamilton supports the decision; it does not make it.
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
+- The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
+  CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
+  what was read; unmatched lines are listed, never guessed, and the file is not stored.
+  Nothing is used until `POST /api/hamilton/uploads/apply`, which saves the figures to
+  memory with the upload named as their source.
+- `POST /api/hamilton/decisions/[id]` records the amount management chose (Hamilton never
+  chooses), with its implementation plan and watch conditions (a competitor change, a
+  5% peer-median move, a regulator release). A watch that trips is logged once as
+  `watch_tripped`. The ledger (`GET /api/hamilton/decisions`) is a sum over decisions;
+  dollars count only from options chosen on institution evidence.
 - Decisions, their event log, client-given facts and uploads are kept in
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it

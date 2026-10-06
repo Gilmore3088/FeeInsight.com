@@ -56,7 +56,7 @@ export function EmailSignup() {
         Monthly fee index update
       </label>
       <p className="text-[12px] leading-relaxed text-[#6B6255]">
-        New benchmarks, notable fee changes, one chart. About once a month.
+        New benchmarks, notable fee changes, one chart. No more than once a month.
       </p>
       <div className="flex gap-2">
         <input

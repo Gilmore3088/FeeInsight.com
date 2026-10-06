@@ -7,12 +7,14 @@
  */
 
 import { sql, withTransaction } from "./connection";
+import { parseWatches } from "@/lib/hamilton/workspace/decisions";
 import type {
   DecisionEvent,
   DecisionEventKind,
   DecisionRecord,
   DecisionStatus,
   MemoryFact,
+  WatchCondition,
 } from "@/lib/hamilton/workspace/types";
 
 type Db = typeof sql;
@@ -81,6 +83,7 @@ export async function saveMemoryFact(input: {
   value: unknown;
   givenBy: string | null;
   source: MemoryFact["source"];
+  uploadId?: string | null;
 }): Promise<MemoryFact> {
   return withTransaction(async (tx) => {
     await tx`
@@ -90,9 +93,9 @@ export async function saveMemoryFact(input: {
          AND field_key = ${input.fieldKey} AND superseded_at IS NULL
     `;
     const [row] = (await tx`
-      INSERT INTO hamilton_institution_memory (user_id, institution_id, field_key, value, given_by, source)
+      INSERT INTO hamilton_institution_memory (user_id, institution_id, field_key, value, given_by, source, upload_id)
       VALUES (${input.userId}, ${input.institutionId}, ${input.fieldKey}, ${JSON.stringify(input.value)}::jsonb,
-              ${input.givenBy}, ${input.source})
+              ${input.givenBy}, ${input.source}, ${input.uploadId ?? null})
       RETURNING id, institution_id, field_key, value, given_by, source, created_at
     `) as unknown as MemoryRow[];
     return toFact(row);
@@ -121,7 +124,7 @@ function toDecision(row: DecisionRow): DecisionRecord {
     status: row.status,
     chosenAmount: row.chosen_amount === null ? null : Number(row.chosen_amount),
     chosenBy: row.chosen_by,
-    watchConditions: Array.isArray(row.watch_conditions) ? row.watch_conditions.map(String) : [],
+    watchConditions: parseWatches(row.watch_conditions),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -214,4 +217,125 @@ export function testedPrices(events: DecisionEvent[]): number[] {
     if (Number.isFinite(tested) && !out.includes(tested)) out.push(tested);
   }
   return out;
+}
+
+/** Every decision for one institution, newest first. */
+export async function listDecisions(userId: number, institutionId: number, db: Db = sql): Promise<DecisionRecord[]> {
+  const rows = (await db`
+    SELECT id, institution_id, fee_category, title, status, chosen_amount, chosen_by, watch_conditions, created_at, updated_at
+      FROM hamilton_decisions
+     WHERE user_id = ${userId} AND institution_id = ${institutionId}
+     ORDER BY updated_at DESC
+     LIMIT 200
+  `) as unknown as DecisionRow[];
+  return rows.map(toDecision);
+}
+
+/** Events for several decisions at once, oldest first within each. */
+export async function getEventsFor(decisionIds: string[], db: Db = sql): Promise<Map<string, DecisionEvent[]>> {
+  const out = new Map<string, DecisionEvent[]>();
+  if (decisionIds.length === 0) return out;
+  const rows = (await db`
+    SELECT id, decision_id, kind, detail, actor, at
+      FROM hamilton_decision_events
+     WHERE decision_id = ANY(${decisionIds}::uuid[])
+     ORDER BY at, id
+  `) as unknown as EventRow[];
+  for (const r of rows) {
+    const list = out.get(r.decision_id) ?? [];
+    list.push({ id: r.id, decisionId: r.decision_id, kind: r.kind, detail: r.detail ?? {}, actor: r.actor, at: iso(r.at) });
+    out.set(r.decision_id, list);
+  }
+  return out;
+}
+
+/** Records the chosen option, its plan and its watches, and moves the decision to decided. */
+export async function recordChoice(input: {
+  decisionId: string;
+  amount: number;
+  chosenBy: string;
+  watches: WatchCondition[];
+  events: { kind: DecisionEventKind; detail: Record<string, unknown> }[];
+  actor: string;
+}): Promise<void> {
+  await withTransaction(async (tx) => {
+    await tx`
+      UPDATE hamilton_decisions
+         SET status = 'decided', chosen_amount = ${input.amount}, chosen_by = ${input.chosenBy},
+             watch_conditions = ${JSON.stringify(input.watches)}::jsonb, updated_at = NOW()
+       WHERE id = ${input.decisionId}
+    `;
+    for (const e of input.events) {
+      await tx`
+        INSERT INTO hamilton_decision_events (decision_id, kind, detail, actor)
+        VALUES (${input.decisionId}, ${e.kind}, ${JSON.stringify(e.detail)}::jsonb, ${input.actor})
+      `;
+    }
+  });
+}
+
+// ─── Uploads ─────────────────────────────────────────────────────────────────
+
+export type UploadStatus = "received" | "mapped" | "applied" | "rejected";
+
+export interface UploadRecord<P = unknown> {
+  id: string;
+  institutionId: number;
+  fileName: string;
+  status: UploadStatus;
+  /** What Hamilton read from the file (the preview), kept so the reader can apply it later. */
+  preview: P;
+  createdAt: string;
+}
+
+interface UploadRow {
+  id: string;
+  institution_id: number | string;
+  file_name: string;
+  status: UploadStatus;
+  column_map: unknown;
+  created_at: Date | string;
+}
+
+function toUpload<P>(row: UploadRow): UploadRecord<P> {
+  return {
+    id: row.id,
+    institutionId: Number(row.institution_id),
+    fileName: row.file_name,
+    status: row.status,
+    preview: row.column_map as P,
+    createdAt: iso(row.created_at),
+  };
+}
+
+/** Records an upload and what was read from it. The file itself is not stored. */
+export async function createUpload<P>(input: {
+  userId: number;
+  institutionId: number;
+  fileName: string;
+  contentType: string | null;
+  byteSize: number;
+  preview: P;
+  status: UploadStatus;
+}): Promise<UploadRecord<P>> {
+  const [row] = (await sql`
+    INSERT INTO hamilton_uploads (user_id, institution_id, file_name, content_type, byte_size, storage_key, column_map, status)
+    VALUES (${input.userId}, ${input.institutionId}, ${input.fileName}, ${input.contentType}, ${input.byteSize}, NULL,
+            ${JSON.stringify(input.preview)}::jsonb, ${input.status})
+    RETURNING id, institution_id, file_name, status, column_map, created_at
+  `) as unknown as UploadRow[];
+  return toUpload<P>(row);
+}
+
+export async function getUpload<P>(userId: number, uploadId: string): Promise<UploadRecord<P> | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(uploadId)) return null;
+  const [row] = (await sql`
+    SELECT id, institution_id, file_name, status, column_map, created_at
+      FROM hamilton_uploads WHERE id = ${uploadId} AND user_id = ${userId}
+  `) as unknown as UploadRow[];
+  return row ? toUpload<P>(row) : null;
+}
+
+export async function setUploadStatus(uploadId: string, status: UploadStatus): Promise<void> {
+  await sql`UPDATE hamilton_uploads SET status = ${status} WHERE id = ${uploadId}`;
 }

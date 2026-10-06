@@ -13,6 +13,28 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: James's request email carried the paid report link
+**What happened:** the funnel re-audit found the report check line in James's request email and in
+`leads.use_case` included the live private report URL. That email's Reply-To is the requester, so a
+normal reply would hand them the paid report for free.
+**Cause:** the line was written when James sent the link by hand after agreeing a price.
+**Fix:** `describeQuoteCheck` no longer includes the link; only a Stripe payment issues it
+(funnel fixes PR 239). Links already stored in older rows' `use_case` are not removed.
+**Lesson:** anything in an email with the requester as Reply-To can reach the requester; never put
+a paid deliverable in it.
+
+## 2026-10-06: Server actions sat outside the API rate limits
+**What happened:** the funnel audit found free signup (`register`, a server action) had a honeypot
+but no rate limit, while every lead form had one. API limits only cover routes in
+`API_ROUTE_POLICIES`, and a policy test requires each of those to be an `/api` route file, so a
+server action could not be added there.
+**Cause:** the limiter counted audit rows per API route bucket; nothing wrote audit rows for actions.
+**Fix:** `src/lib/api-hardening/action-rate-limit.ts` gives an action its own policy, writes one audit
+row per attempt and counts them (signup: 8 per 10 minutes per connection, like the lead forms).
+Funnel fixes PR (this branch).
+**Lesson:** a public server action that creates rows or sends email needs
+`isServerActionRateLimited` with its own policy, the same as an API route.
+
 ## 2026-10-06: Rosetta re-downloaded links that kept timing out or blocking it
 **What happened:** the Rosetta audit (read-only queries on prod, early 2026-10-06 UTC) counted 3,086 failed downloads in 24 hours. PR 155 stopped the 404 repeats (none after 01:00 UTC), but 26 tries on 14 documents that failed with 403s, timeouts and network errors kept coming back. The fee-page check also counted only "$" amounts, so a page that writes fees as "75¢" or "$.50" scored fewer amounts than it has.
 **Cause:** a timeout, network error or server error was "transient" with no limit, so the same document was downloaded every run. A 403 was handed back only when it repeated, and only while the bank's link still pointed at it. The amount pattern was `\$\s?[0-9]`.
