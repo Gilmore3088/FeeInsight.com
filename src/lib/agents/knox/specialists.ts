@@ -22,7 +22,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 12 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 15 } as const;
 
 export interface SpecialistRun {
   strategy: string;

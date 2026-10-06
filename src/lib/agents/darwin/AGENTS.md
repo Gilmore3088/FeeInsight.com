@@ -49,6 +49,29 @@ Darwin owns verification and classification.
     bank (an older copy or a sister document). Same amount: outcome `ok` and the
     verified row gets the `second_source_agrees` flag. Different amount only:
     `evidence_mismatch`, recorded as evidence, never blocking.
+- Layer 2, learned category check (`category-model.ts`, free, shadow mode):
+  `verify.category_model` v1 is a naive Bayes model over fee-name word stems and word
+  pairs, trained on the live published catalog (cached an hour per instance), so it
+  improves as wrong fees are taken down. It records, for every row with a category,
+  the probability of Knox's category and its own best guess. Below 0.05 the outcome is
+  `evidence_mismatch` (disputed); it never changes the decision yet. Step detail:
+  `category_model_disputes`. On the 43 Texas answer keys it disputed 20 of 61 wrong
+  approvals and 16 of 268 right ones, and its guess matched the key for 14 of the 20.
+  Disputes are meant for the Claude adjudicator (layer 3), Darwin's only paid call,
+  billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
+  answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
+- Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
+  `classify`, shadow mode): `verify.adjudicate` v1 sends Claude only the fees the free
+  layers disagree on: approved fees the category model disputes, and category-guard
+  rejects where the model is at least 0.9 sure of another category the guard accepts.
+  25 fees per call, at most 10 calls per run, `PIPELINE_PAID_VERIFY_MODEL` (default
+  Haiku 4.5), billed to Darwin's key under `agent:darwin`, which is fail-closed until its
+  caps are set. Each verdict (is it a fee, which category) is recorded per fee with its
+  side (`knox`, `model`, `other`, `not_a_fee`); it never changes a decision yet. On live
+  data at 2026-10-06 07:20 UTC, 23 approvals and 477 rejects qualified.
+- Learning store: every verify decision except duplicates and category rejects (the
+  publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
+  Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
 - The ranges in `envelopes.ts` are hand-set and deliberately wide. Learned p1/p99 ranges
   (`category_envelopes`) remain planned work.
 

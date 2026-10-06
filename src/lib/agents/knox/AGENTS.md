@@ -33,6 +33,40 @@ Knox owns conservative raw fee extraction.
   recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
+## Rule-change gate
+
+`answer-key-gate.test.ts` scores the free team plus Darwin's rule checks (the set the rules
+re-check keeps live) against 43 hand-checked Texas schedules (`__fixtures__/texas-answer-keys.json.gz`,
+26 used while writing rules, 17 held out). CI fails a change that loses a right fee or adds a
+wrong read. When a change really improves Knox, raise the floors in the same PR; lower one only
+with the reason in the PR. Baseline at v12: 436 right of 454 reads (96.0%), 436 of 772 key fees
+found (56.5%); held out: 41 of 47 (87.2%), 41 of 99 found. At v14: 455 of 473 (96.2%), 455 found;
+held out 43 of 49, 43 found.
+
+Texas is the test bed; `state-answer-key-gate.test.ts` holds the same gate on 38 schedules from
+CA, FL, GA, IL, MI, MN and NY (`__fixtures__/state-answer-keys.json.gz`, never used to write
+rules), with a floor per state. Baseline at v12: 665 right of 724 reads (91.9%), 665 of 1,215 key
+fees found (54.7%); 56 of the 59 wrong reads are the right price under another category. At v14:
+677 of 736 (92.0%), 677 found (55.7%).
+
+v14 added names the keys showed held as unclassified (account closing, reactivation, domestic
+wires without a direction, child support, legal orders, negative balance, audit confirmations,
+IRA custodial, document copies) and a checking account's own monthly price ("Opportunity Checking
+| $10 per month"). Returned mail and foreign item collection stay unclassified: the Texas keys and
+the taxonomy file them differently, and Knox waits for one answer.
+
+v15 (rules 15, table 5, families +1) came from Rosetta's look at two live stacked pages. A line
+that only qualifies the name above it ("(for each overdraft item paid)", "(up to $1,000)", "If
+checks are not on order") no longer becomes the fee's name or breaks the name/price pair
+(`qualifiesName` in `layout.ts`). Table headings may run to 10 words, so "ATM fees per transaction
+– At non-Wells Fargo ATMs" names the "Cash withdrawals - Within U.S." row under it; "At <Bank>
+ATMs" without non/other is the bank's own machines and is not out-of-network. Also read: "Debit
+Card (replacement or PIN)" and "Deposited checks (and other items) returned unpaid". At v15:
+Texas 460 of 478, held out 43 of 49; seven states 681 of 739. Hold statements, special statement
+cutoff, account activity printouts and a debit card's own monthly charge have no taxonomy
+category (the keys file them as unmapped), so Knox still leaves them out. A rules
+change scores both gates; a fix that helps Texas and hurts another state fails.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
@@ -48,7 +82,9 @@ only on what the free team could not read.
   the line opens with the price and says it is a fee, or the line states an account's
   monthly service charge in prose ("otherwise $8 service charge per statement cycle",
   "avoid the $10 monthly fee"; `maintenanceFromProse`, guarded like Darwin). A free in-network ATM or an
-  allowance ("two per year: Free") is not a $0 price. All three specialists follow the
+  allowance ("two per year: Free", "2 free cashiers checks monthly") or a condition
+  ("Monthly Service Charge if any of the following qualifications are met", "to waive") is not
+  a $0 price (v13). All three specialists follow the
   same rules, and table and family rows whose name opens mid-sentence (agreement prose
   in columns) are skipped.
 - Pass 2, free and heavier (`specialists.ts` runs the team and merges its finds):

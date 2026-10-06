@@ -19,6 +19,7 @@ interface ContactFormProps {
 export function ContactForm({ searchParamsPromise }: ContactFormProps) {
   const searchParams = use(searchParamsPromise);
   const defaultSource = typeof searchParams.source === "string" ? searchParams.source : "";
+  const defaultCompany = typeof searchParams.company === "string" ? searchParams.company.slice(0, 160) : "";
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [confirmationSent, setConfirmationSent] = useState(false);
@@ -116,6 +117,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
             id="company"
             name="company"
             type="text"
+            defaultValue={defaultCompany}
             placeholder="First National Bank"
             className={inputClasses}
           />

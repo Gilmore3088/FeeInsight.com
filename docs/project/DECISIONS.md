@@ -14,6 +14,32 @@ reads them read-only with the daily scoreboard step and stores them in
 broken rule and every number that moved more than 25% since yesterday. A change to an agent's
 selector or behaviour updates its table and the health check in the same PR.
 
+**The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
+stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
+pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; the price comes from
+the request row, never the link. The Stripe webhook marks the request Paid, alerts James, and emails
+the requester their private report link. A quote is saved only when the report check says "ready to
+quote", so no one pays for a report built on thin data. The report stays "priced on request".
+
+**Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
+shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan
+(https://claude.ai/code/artifact/12c7e165-b7af-4aee-a356-cc0c4f5c15a8): tighten the main-link
+check and re-search (agreed), a $250 paid-find trial (yes), classifier weights kept in a table that
+a Magellan run step retrains ("Yes. Consistently reinforced"), no further plan upgrades, and the
+thread runs it. The classifier (`magellan_page_classifier`) only records its opinion until James
+reviews it; letting it decide is his call.
+
+**Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
+abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
+Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges
+still need green CI, and anything that can take down live fees still gets a dry run first.
+
+**One shared learning store for every agent: `pipeline_feedback`.** Agreed by the Knox, Magellan
+and Darwin threads at 05:50 UTC, following James's "knowledge flow through to other agents, to and
+from" (05:41 UTC). One row is one judgement about one agent's output (a takedown, a Darwin
+category reject, an answer-key fee, a link's live-fee count), upserted on `dedupe_key`. No agent
+keeps its own copy. Fields and keys: `src/lib/agents/learning/AGENTS.md`.
+
 **The admin becomes one console with six rooms, opening on a Needs-you list.** James, 05:57 UTC,
 answering the console brainstorm (https://claude.ai/artifact/9xib8VUnETMBh1u4txabzW). /admin opens
 on Today: everything waiting on a person, with the button that clears it. Every other screen
@@ -38,6 +64,12 @@ artifact (https://claude.ai/artifact/Ta2Nv3YRVCZ55orVTsNMjL).
 KNOX, DARWIN, HAMILTON) and falls back to the shared `ANTHROPIC_API_KEY`, so nothing stops while
 the keys are being added. Every model call names the agent it bills to. The Atlas details page
 shows which key each agent is using.
+
+**The site shows a bank only while it has at least 3 distinct live fees.** James, 05:50 UTC, after
+the Hamilton publish audit found 163 banks left with 1 or 2 live fees by takedowns (120 of them)
+or from before the rule (82). `published_fee_catalog` hides such a bank's fees and shows them
+again on their own once it has 3; nothing is deleted. This replaces "already-live thin
+institutions stay live" from 2026-10-04.
 
 **Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
 incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,

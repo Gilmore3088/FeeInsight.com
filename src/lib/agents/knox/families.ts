@@ -16,6 +16,7 @@ import {
   cleanFeeName,
   composableTail,
   looksLikeHeading,
+  qualifiesName,
   passesDarwinChecks,
   QUALIFIER,
   splitCapsHeading,
@@ -59,19 +60,19 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 3,
+    version: 4,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
       { key: "overdraft", pattern: /\b(overdraft privilege|courtesy pay|paid items?|bounce)\b/i },
     ],
   },
-  { family: "wires", strategy: "extract.family.wires", version: 2, keys: familyKeys("Wire Transfers"), patterns: [] },
-  { family: "atm_card", strategy: "extract.family.atm_card", version: 2, keys: familyKeys("ATM & Card"), patterns: [] },
+  { family: "wires", strategy: "extract.family.wires", version: 3, keys: familyKeys("Wire Transfers"), patterns: [] },
+  { family: "atm_card", strategy: "extract.family.atm_card", version: 3, keys: familyKeys("ATM & Card"), patterns: [] },
   {
     family: "account",
     strategy: "extract.family.account",
-    version: 2,
+    version: 3,
     keys: familyKeys("Account Maintenance"),
     patterns: [
       {
@@ -80,11 +81,11 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
       },
     ],
   },
-  { family: "checks", strategy: "extract.family.checks", version: 2, keys: familyKeys("Check Services"), patterns: [] },
+  { family: "checks", strategy: "extract.family.checks", version: 3, keys: familyKeys("Check Services"), patterns: [] },
   {
     family: "services",
     strategy: "extract.family.services",
-    version: 2,
+    version: 3,
     keys: familyKeys(...Object.keys(FEE_FAMILIES).filter((family) => !EXPERT_FAMILIES.includes(family))),
     patterns: [],
   },
@@ -150,7 +151,8 @@ export function priceWindows(text: string): PriceWindow[] {
     if (windows.length >= MAX_WINDOWS) return;
     const values = valuesIn(line);
     if (values.length === 0) {
-      pending = line.length <= 160 ? line : null;
+      // "(for each overdraft item paid)" under "Overdraft Item Fee": the name stays the one above.
+      if (!(pending != null && qualifiesName(line))) pending = line.length <= 160 ? line : null;
       // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.
       if (looksLikeHeading(line) && !line.includes(CELL_SEPARATOR)) heading = line;
       return;

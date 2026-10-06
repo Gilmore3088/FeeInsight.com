@@ -7,10 +7,17 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { institutionTier } from "@/lib/agents/state-expert/memory";
+import {
+  DARWIN_CATEGORY_MODEL_STRATEGY,
+  categoryOpinion,
+  loadCategoryModel,
+  type CategoryOpinion,
+} from "./category-model";
 
 import {
   amountEnvelopeFor,
@@ -126,6 +133,8 @@ export interface DarwinVerificationResult {
   peerCheck?: PeerCheckResult | null;
   /** Pass 2 second-source check; null when no other stored document has this fee. */
   secondSource?: SecondSourceResult | null;
+  /** Layer 2 learned category check, in shadow: recorded, never decides. Null without a model. */
+  categoryModel?: CategoryOpinion | null;
 }
 
 export interface RunDarwinVerifyOptions {
@@ -157,6 +166,10 @@ export interface RunDarwinVerifyResult {
   secondSourceAgreements: number;
   /** Pass 2: rows another stored document of the same bank shows at a different amount. */
   secondSourceDisagreements: number;
+  /** Layer 2 (shadow): rows whose category the learned model disputes. */
+  categoryModelDisputes: number;
+  /** Judgements written to `pipeline_feedback`; null when skipped (dry run, no store yet, or a write error). */
+  feedbackWritten: number | null;
   results: DarwinVerificationResult[];
 }
 
@@ -588,6 +601,28 @@ async function recordPassTwoAttempts(
       },
     });
   }
+  if (result.categoryModel) {
+    const opinion = result.categoryModel;
+    await recordAttempt(db, {
+      ...common,
+      strategy: DARWIN_CATEGORY_MODEL_STRATEGY.strategy,
+      version: DARWIN_CATEGORY_MODEL_STRATEGY.version,
+      // Shadow: a dispute is evidence for the adjudicator, not a rejection.
+      outcome: opinion.disputed ? "evidence_mismatch" : "ok",
+      yieldCount: opinion.disputed ? 0 : 1,
+      detail: {
+        fee_raw_id: result.feeRawId,
+        fee_name: result.feeName,
+        canonical_fee_key: result.canonicalFeeKey,
+        amount: result.amount,
+        disputed: opinion.disputed,
+        probability: Number(opinion.probability.toFixed(4)),
+        suggested_key: opinion.suggested,
+        suggested_probability: Number(opinion.suggestedProbability.toFixed(4)),
+        decision: result.decision,
+      },
+    });
+  }
   if (result.secondSource) {
     await recordAttempt(db, {
       ...common,
@@ -620,6 +655,7 @@ export async function runDarwinVerify(
   const results: DarwinVerificationResult[] = [];
 
   const verifiedInBatch = new Set<string>();
+  const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
   const sourceTexts = await loadSourceTexts(
     db,
     Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
@@ -710,6 +746,9 @@ export async function runDarwinVerify(
         secondSource,
       };
     }
+    result.categoryModel = categoryModel && canonicalFeeKey
+      ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey)
+      : null;
     results.push(result);
 
     if (learning) {
@@ -743,6 +782,14 @@ export async function runDarwinVerify(
     await recordVerificationSignals(db, options.runId, results, rowByRawFeeId);
   }
 
+  // Each decision goes to the shared learning store as a judgement on Knox's read.
+  const feedbackWritten = !dryRun && learning
+    ? await recordDarwinFeedback(
+        db,
+        darwinFeedbackRows(results, rowByRawFeeId, { runId: options.runId, verifyVersion: DARWIN_VERIFY_STRATEGY.version }),
+      )
+    : null;
+
   const reasonCounts: Partial<Record<DarwinReasonCode, number>> = {};
   for (const result of results) {
     if (result.reasonCode) reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] ?? 0) + 1;
@@ -762,6 +809,8 @@ export async function runDarwinVerify(
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
+    categoryModelDisputes: results.filter((result) => result.categoryModel?.disputed).length,
+    feedbackWritten,
     results,
   };
 }

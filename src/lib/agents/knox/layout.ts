@@ -77,10 +77,19 @@ export function titleTail(name: string): string | null {
   return words.slice(start).join(" ");
 }
 
+/**
+ * A line between a fee name and its price that only qualifies the name: "(for each
+ * overdraft item paid)", "(up to $1,000)", "If checks are not on order (10 maximum)".
+ * The name above it still names the price below it.
+ */
+export function qualifiesName(line: string): boolean {
+  return line.length <= 120 && !LEADING_VALUE.test(line) && (/^\(.*\)$/.test(line) || /^(?:if|when|for each|per)\b/i.test(line));
+}
+
 /** A short title line: a section heading such as "Wire Transfers". */
-export function looksLikeHeading(line: string): boolean {
+export function looksLikeHeading(line: string, maxWords = 6): boolean {
   const words = line.split(/\s+/).filter(Boolean);
-  return words.length >= 1 && words.length <= 6 && /[a-z]/i.test(line) && !/[.!?]$/.test(line) && !PROSE.test(line) && !line.includes("$");
+  return words.length >= 1 && words.length <= maxWords && /[a-z]/i.test(line) && !/[.!?]$/.test(line) && !PROSE.test(line) && !line.includes("$");
 }
 
 /**
@@ -94,12 +103,15 @@ const COMPOSABLE_WORDS = new Set(
   (
     "domestic international foreign intl incoming outgoing in out per each item items presentment occurrence " +
     "transfer transfers wire request paid returned unpaid consumer business personal member members non " +
-    "nonmember customer first additional subsequent thereafter day month fee fees amount charge charges cost price"
+    "nonmember customer first additional subsequent thereafter day month fee fees amount charge charges cost price " +
+    // "Cash withdrawals - Within U.S. / U.S. territories" under "ATM fees – At non-Wells Fargo ATMs".
+    "cash withdrawal withdrawals within outside territories"
   ).split(" "),
 );
 
 export function composableTail(name: string): boolean {
-  const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter(Boolean);
+  // Single letters are the pieces of an abbreviation ("U.S."), not words.
+  const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
   return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 

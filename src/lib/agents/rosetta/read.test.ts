@@ -1,8 +1,17 @@
 import { createHash } from "crypto";
+import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
-import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_MAX_LIMIT, ROSETTA_READ_VERSION, runRosettaRead } from "./read";
+import {
+  REREAD_MAX_KNOX_FEES,
+  ROSETTA_READ_MAX_LIMIT,
+  ROSETTA_READ_VERSION,
+  STUCK_LINK_MAX_FAILURES,
+  STUCK_LINK_OUTCOMES,
+  STUCK_LINK_WINDOW_DAYS,
+  runRosettaRead,
+} from "./read";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -484,7 +493,22 @@ describe("Rosetta agentic read", () => {
       expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "http_5xx"]));
     });
 
-    it("records Word documents as unsupported instead of reading them as text", async () => {
+    it("reads a Word document's text and table rows for free", async () => {
+      const docxBytes = (body: string) =>
+        zipSync({ "word/document.xml": strToU8(`<w:document xmlns:w="w"><w:body>${body}</w:body></w:document>`) });
+      const db = learningDb([htmlCandidate]);
+      const fee = (name: string, amount: string) =>
+        `<w:tr><w:tc><w:p><w:r><w:t>${name}</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>${amount}</w:t></w:r></w:p></w:tc></w:tr>`;
+      const docx = docxBytes(`<w:tbl>${fee("Overdraft fee", "$35.00")}${fee("NSF fee", "$35.00")}${fee("Stop payment fee", "$30.00")}</w:tbl>`);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+
+      const result = await runRosettaRead({ runId: 306, db: asReadDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ status: "completed", documentType: "docx", reader: "read.docx_text", tableRows: 3 });
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "read.docx_text", "ok"]));
+    });
+
+    it("records a file that is not a readable .docx as unsupported instead of reading it as text", async () => {
       const db = learningDb([htmlCandidate]);
       const docx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new TextEncoder().encode("word/document.xml")]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response(docx, "application/octet-stream"));
@@ -504,6 +528,7 @@ describe("Rosetta agentic read", () => {
       rows: Array<Record<string, unknown>>,
       triageRows: Array<Record<string, unknown>> = [],
       blockedBefore = false,
+      reopenRows: Array<Record<string, unknown>> = [],
     ): DbMock {
       const db = vi.fn((strings: TemplateStringsArray) => {
         const text = templateText(strings);
@@ -512,11 +537,13 @@ describe("Rosetta agentic read", () => {
         if (text.includes("vault_schema_ready")) return Promise.resolve([{ vault_schema_ready: true }]);
         if (text.includes("INSERT INTO agent_source_texts")) return Promise.resolve([{ id: 801 }]);
         if (text.includes("UPDATE institution_sources inst")) return Promise.resolve([{ id: 42 }]);
+        if (text.includes("UPDATE institution_source_profiles")) return Promise.resolve([{ institution_id: 42 }]);
         return Promise.resolve([]);
       }) as DbMock;
       db.unsafe = vi.fn((query: string) => {
         if (query.includes("FROM source_documents")) return Promise.resolve(rows);
         if (query.includes("has_knox_fees")) return Promise.resolve(triageRows);
+        if (query.includes("FROM agent_source_texts adt")) return Promise.resolve(reopenRows);
         return Promise.resolve([]);
       });
       return db;
@@ -570,7 +597,7 @@ describe("Rosetta agentic read", () => {
 
       await runRosettaRead({ runId: 607, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
 
-      const query = String(db.unsafe.mock.calls[0][0]);
+      const query = String(db.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents"))?.[0]);
       // A newer download replaces this one; a newer failed download does too when we hold no copy.
       expect(query).toContain("FROM source_documents newer");
       expect(query).toContain("(newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM cr.id)");
@@ -592,6 +619,25 @@ describe("Rosetta agentic read", () => {
       expect(twice).toMatchObject({ failed: 1, sentBackToMagellan: 1 });
     });
 
+    it("sends a link back after repeated timeouts, and stops downloading it for a week", async () => {
+      const timedOut = () => vi.fn().mockRejectedValue(Object.assign(new Error("aborted"), { name: "AbortError" }));
+
+      const early = vaultDb([htmlCandidate]);
+      const first = await runRosettaRead({ runId: 609, db: asReadDb(early), fetchImpl: timedOut(), vault: fakeVault(new Uint8Array()) });
+      expect(first).toMatchObject({ failed: 1, sentBackToMagellan: 0 });
+      const check = early.mock.calls.find((call) => templateText(call[0]).includes("AS blocked"));
+      expect(check).toEqual(expect.arrayContaining([STUCK_LINK_MAX_FAILURES, STUCK_LINK_OUTCOMES, STUCK_LINK_WINDOW_DAYS]));
+
+      const stuck = vaultDb([htmlCandidate], [], true);
+      const last = await runRosettaRead({ runId: 610, db: asReadDb(stuck), fetchImpl: timedOut(), vault: fakeVault(new Uint8Array()) });
+      expect(last).toMatchObject({ failed: 1, sentBackToMagellan: 1 });
+
+      const selection = early.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents"));
+      const query = String(selection?.[0]);
+      expect(query).toContain("FROM pipeline_attempts stuck");
+      expect(selection?.[1]).toEqual(expect.arrayContaining([STUCK_LINK_OUTCOMES, STUCK_LINK_MAX_FAILURES, STUCK_LINK_WINDOW_DAYS]));
+    });
+
     it("re-checks earlier texts without downloading, sparing ones Knox found fees in", async () => {
       const db = vaultDb([], [
         { text_id: 1, source_document_id: 11, institution_id: 42, source_url: "https://a.example", text_hash: "h1", normalized_text: "Welcome home", has_knox_fees: false },
@@ -605,6 +651,37 @@ describe("Rosetta agentic read", () => {
       const statusUpdates = db.mock.calls.filter((call) => templateText(call[0]).includes("SET status = 'wrong_document'"));
       expect(statusUpdates).toHaveLength(1);
       expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
+    });
+
+    it("reopens a script-loaded fee page rejected as menus: lifts the ban, restores a missing link, logs the reopen", async () => {
+      const url = "https://testbank.example/personal/fee-schedule";
+      const db = vaultDb([], [], false, [
+        { text_id: 9, source_document_id: 19, institution_id: 42, source_url: url, source_hash: "menus-hash", normalized_text: "Home | Personal | Business | Fee Schedule | Contact us" },
+        { text_id: 10, source_document_id: 20, institution_id: 43, source_url: "https://other.example/fees", source_hash: "priced-hash", normalized_text: "Overdraft $35\nNSF $35\nWire $25" },
+      ]);
+
+      const result = await runRosettaRead({ runId: 610, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+
+      expect(result).toMatchObject({ reopenedFeePages: 1, reopenedBansLifted: 1, reopenedLinksRestored: 1 });
+      const unban = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE institution_source_profiles"));
+      expect(unban).toEqual(expect.arrayContaining([url, 42, JSON.stringify([{ url }])]));
+      const relink = db.mock.calls.find((call) => templateText(call[0]).includes("rescue_status = 'rescued'"));
+      expect(templateText(relink?.[0])).toContain("NULLIF(btrim(inst.fee_schedule_url), '') IS NULL");
+      expect(templateText(relink?.[0])).toContain("locked_by_correction IS TRUE");
+      const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts") && call.includes("read.reopen"));
+      expect(attempts.map((call) => call.find((value: unknown) => value === "ok" || value === "rejected"))).toEqual(["ok", "rejected"]);
+    });
+
+    it("lets a reopened rejection be read once more and voids the old permanent rejection", async () => {
+      const db = vaultDb([]);
+
+      await runRosettaRead({ runId: 611, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+
+      const query = String(db.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents"))?.[0]);
+      expect(query).toContain("adt.status = 'wrong_document'");
+      expect(query).toContain("SELECT MAX(reopen.created_at) FROM pipeline_attempts reopen");
+      expect(query).toContain("after_reopen.created_at >");
+      expect(query).toContain("AND pa.created_at > COALESCE(");
     });
   });
 
