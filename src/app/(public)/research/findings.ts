@@ -2,25 +2,9 @@ import type { FeeCategorySummary } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
+import { lowerName, type Finding } from "@/lib/research-report/finding";
 
-export interface Finding {
-  key: string;
-  /** The number that leads the finding, already formatted. */
-  figure: string;
-  headline: string;
-  detail: string;
-  /** Section anchor holding the exhibit behind the finding. */
-  exhibit: string;
-}
-
-export function lowerName(category: string): string {
-  // Mid-sentence form: drop the "(OD)" tag, lowercase words, keep acronyms like NSF and ATM.
-  return getDisplayName(category)
-    .replace(/\s*\(OD\)/, "")
-    .split(" ")
-    .map((w) => (/^[A-Z]{2,}/.test(w.replace(/[^A-Za-z]/g, "")) ? w : w.toLowerCase()))
-    .join(" ");
-}
+export { lowerName, type Finding };
 
 /**
  * Executive-summary findings computed from the benchmark summaries. Each finding is

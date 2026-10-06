@@ -46,10 +46,28 @@ function feeCells(fees: Record<TrendFee, FeeMedian>): Record<string, string> {
   return Object.fromEntries(TREND_FEES.map((fee) => [fee, medianCell(fees[fee])]));
 }
 
-function districtPart(t: NationalTrends): string {
+function districtPart(t: NationalTrends, withFees: boolean): string {
+  const quarter = t.districts.find((d) => d.income)?.income?.quarter;
+  if (!withFees) {
+    if (!quarter) return `<p style="${EMPTY_STYLE}">No district service-charge filings are on file.</p>`;
+    return compactTable({
+      caption: `Service-charge income by Federal Reserve district, ${quarter}`,
+      columns: [
+        { key: "district", label: "District", align: "left" },
+        { key: "filers", label: "Filers", align: "right", format: "integer" },
+        { key: "income", label: "Fee income", align: "right" },
+        { key: "yoy", label: "vs year ago", align: "right" },
+      ],
+      rows: t.districts.map((d) => ({
+        district: `${d.district} ${d.name}`,
+        filers: d.income?.institutions ?? null,
+        income: d.income ? thousandsShort(d.income.thousands) : "\u2014",
+        yoy: d.income ? signedPct(d.income.yoyPct) : "\u2014",
+      })),
+    });
+  }
   const priced = t.districts.filter((d) => d.institutions > 0);
   if (priced.length === 0) return `<p style="${EMPTY_STYLE}">No district has published fees on file yet.</p>`;
-  const quarter = t.districts.find((d) => d.income)?.income?.quarter;
   return compactTable({
     caption: `Median published fee by Federal Reserve district${quarter ? `, with ${quarter} service-charge income` : ""}`,
     columns: [
@@ -195,17 +213,28 @@ function outlierPart(t: NationalTrends): string {
     .join("\n");
 }
 
-export function renderNationalTrendsSection(trends: NationalTrends, options: { number: string }): string {
+export interface NationalTrendsSectionOptions {
+  number: string;
+  title?: string;
+  /** Fee medians by district (off when another chapter already shows them). Default on. */
+  districtFees?: boolean;
+  /** Fee medians by asset size (off when another chapter already shows them). Default on. */
+  tiers?: boolean;
+}
+
+export function renderNationalTrendsSection(trends: NationalTrends, options: NationalTrendsSectionOptions): string {
+  const districtFees = options.districtFees !== false;
+  const tiers = options.tiers !== false;
   return [
     pageBreak(),
-    chapterDivider(options.number, "Districts, States and Size"),
+    chapterDivider(options.number, options.title ?? "Districts, States and Size"),
     `<h4 style="${SUBHEAD_STYLE}">Federal Reserve districts</h4>`,
-    districtPart(trends),
-    districtSpread(trends),
+    districtPart(trends, districtFees),
+    districtFees ? districtSpread(trends) : "",
     `<h4 style="${SUBHEAD_STYLE}">State ranking</h4>`,
     statePart(trends),
-    `<h4 style="${SUBHEAD_STYLE}">Asset size</h4>`,
-    tierPart(trends),
+    tiers ? `<h4 style="${SUBHEAD_STYLE}">Asset size</h4>` : "",
+    tiers ? tierPart(trends) : "",
     `<h4 style="${SUBHEAD_STYLE}">Fee income, ${trends.income.length} quarters</h4>`,
     incomePart(trends),
     `<h4 style="${SUBHEAD_STYLE}">Highest published fees</h4>`,

@@ -299,6 +299,23 @@ and a state with such links counts as having a backlog.
 **Lesson:** a freshness check that reads `last_crawl_at` needs a schedule that actually refreshes it;
 check crawl-age spread per state, not only the national median.
 
+## 2026-10-06: Report PDFs printed an empty State Index and wasted pages
+**What happened:** James showed two report PDFs from /admin/hamilton/reports. The State Index PDF
+said its template was "under development": `state-fee-index.ts` was a stub and the `state_index`
+case in `assemble-and-render.ts` passed it no data. Every report also wasted pages: the cream page
+background printed as a box on each page, the cover's `min-height: 90vh` left the next section's
+heading alone at the bottom of the cover, and forced breaks (`.chapter-divider { break-before: page }`,
+`pageBreak()` calls) left pages mostly blank (a fixture render of the National Quarterly went from
+13 pages to 10).
+**Cause:** the state report was never built for print, and the print rules forced page breaks
+instead of keeping headings with their content.
+**Fix:** branch `claude/state-pdf-report`. The State Index renders from the public state report's
+own readers and helpers (moved to `src/lib/research-report/`), with no model calls. Print rules in
+`report-templates/base/styles.ts`: white page, a one-page cover with `break-after: page`, headings
+`break-after: avoid`, no forced chapter breaks, short tables kept whole and long ones split between rows.
+**Lesson:** check a report's print layout by printing a fixture render in Chromium and looking at
+every page; a template that compiles can still print blank or half-empty pages.
+
 ## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
 **What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
 and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the
@@ -909,6 +926,22 @@ Magellan's thin-bank finder now reads `published_fee_records`, since the catalog
 looks for.
 **Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
 read.
+
+## 2026-10-06: Re-reading one fee schedule recorded false price changes
+**What happened:** building the National report's fee-change chapter (read-only check, 07:05 UTC), three
+of the five price changes recorded since July 8 came from two readings of the same schedule edition:
+Net Federal Credit Union stop payment $35 to $30 (both readings "Effective February 1, 2026") and
+Commonwealth Federal Credit Union returned deposited item $10 to $32 (both readings carry the same
+"RFD 3-24-2026" form stamp; the older reading put "$10.00" from the line above in front of the fee).
+The Monthly Pulse rule confirmed both.
+**Cause:** the confirm rule checks each reading line by line. A PDF read twice can come out in a
+different column order, pairing a fee with its neighbour's price, and both readings then "state" a price.
+**Fix:** same PR as the report chapters (PR 220): `confirmFeeChange` drops a change when both texts
+state exactly the same dollar amounts (one edition read twice) or when the earlier schedule already
+stated the new price. Of the five recorded changes, the two at New Hampshire Federal Credit Union
+(October 2024 schedule to August 2026 schedule) remain.
+**Lesson:** a change between two readings needs proof the document itself changed, not only that each
+reading parses.
 
 ## 2026-10-06: Free allowances and conditions published as $0 fees
 **What happened:** the companion-pages thread found about 6 wrong fees in the first 25 live
