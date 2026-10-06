@@ -152,7 +152,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
   const intent = parseAsk(question, fallbackFee);
-  const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory) : null;
+  const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment }) : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
   const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
@@ -221,7 +221,13 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     summary: `Answered with ${response.kind.replace(/_/g, " ")}.`,
     userId: user.id,
     institutionId,
-    detail: { response_kind: response.kind, fee_category: intent.feeCategory, decision_id: decision?.id ?? null },
+    detail: {
+      response_kind: response.kind,
+      fee_category: intent.feeCategory,
+      segment: intent.segment?.label ?? null,
+      segment_members: research?.segment?.members.length ?? null,
+      decision_id: decision?.id ?? null,
+    },
   });
   return { status: 200, body: { ...response, ...(decision ? { decisionId: decision.id } : {}) } };
 }
