@@ -93,6 +93,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
     exclude: /(check|statement|key|book|expedit|rush|overnight|gift)/i,
   },
+  // The fee charged when a balance falls below the minimum, not the minimum itself. "Minimum
+  // balance to open", "to earn APY" and "to avoid the fee" lines state a balance, so their
+  // amount is not a fee; "...required to avoid a minimum balance fee of" ends on the fee.
+  minimum_balance: {
+    include: /(minimum|min\.?\b|low balance|below|falls|drops|less than|under)/i,
+    exclude:
+      /^(?!.*\b(fee|charge) of\s*$).*(to open|to obtain|to earn|\bapy\b|annual percentage yield|requirements?\b(?! fee)|balance required|required to|you must deposit|to avoid)/i,
+  },
   // Buying a gift or prepaid card. Its reload, replacement and inactivity fees are other fees.
   gift_card_purchase: {
     include: /(gift|prepaid|reloadable|travel card)/i,
@@ -119,7 +127,45 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 8;
+export const CATEGORY_GUARD_VERSION = 9;
+
+/**
+ * A fee Knox filed under a neighbouring category whose own name says which one it is: an
+ * "Overdraft Transfer from Savings" filed as overdraft, an "International Wire - Outgoing"
+ * filed as a domestic wire, an "ATM/Debit Card Replacement" filed as an ATM fee, a "Paid NSF
+ * Item" filed as NSF. Darwin re-files such a row instead of rejecting a real fee, but only
+ * when the new category's own guard accepts the name, so the guard is never loosened.
+ */
+const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unless?: RegExp }> = [
+  {
+    from: "overdraft",
+    to: "od_protection_transfer",
+    when: /(transfer|xfe?r\b|sweep|from (your |a |linked |eligible )?(savings|shares?|account|loan|line))/i,
+  },
+  { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
+  { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid)/i },
+  { from: "nsf", to: "deposited_item_return", when: /deposit/i },
+  { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl)/i, unless: /domestic/i },
+  { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
+];
+
+/** The category a fee belongs in: its own, or the one its name re-files it to. */
+export function refileCategory(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+): string | null {
+  if (!canonicalFeeKey) return null;
+  if (checkFeeCategory(canonicalFeeKey, feeName).ok) return canonicalFeeKey;
+  const name = feeName ?? "";
+  const rule = REFILE_RULES.find(
+    (candidate) =>
+      candidate.from === canonicalFeeKey &&
+      candidate.when.test(name) &&
+      !candidate.unless?.test(name) &&
+      checkFeeCategory(candidate.to, name).ok,
+  );
+  return rule ? rule.to : canonicalFeeKey;
+}
 
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
