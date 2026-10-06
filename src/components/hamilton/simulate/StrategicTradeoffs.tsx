@@ -9,25 +9,12 @@ interface Props {
 interface ImpactRow {
   label: string;
   value: string;
-  barPct: number;
-  isPositive: boolean;
+  note: string;
 }
 
+// The simulation returns these as labelled text only, so no bar is drawn for them.
 function deriveImpactRows(tradeoffs: TradeoffDeltas): ImpactRow[] {
-  return [
-    {
-      label: "Revenue Projection",
-      value: tradeoffs.revenueImpact.value,
-      barPct: 42,
-      isPositive: false,
-    },
-    {
-      label: "Risk Mitigation",
-      value: tradeoffs.riskMitigation.value,
-      barPct: 88,
-      isPositive: true,
-    },
-  ];
+  return [tradeoffs.revenueImpact, tradeoffs.riskMitigation].map((t) => ({ label: t.label, value: t.value, note: t.note }));
 }
 
 export function StrategicTradeoffs({ tradeoffs }: Props) {
@@ -88,22 +75,15 @@ export function StrategicTradeoffs({ tradeoffs }: Props) {
               {row.value}
             </span>
           </div>
-          <div
-            className="w-full h-1 mt-3 rounded"
-            style={{ background: "rgb(245 245 244)" }}
-          >
-            <div
-              className="h-1 rounded"
-              style={{
-                width: `${row.barPct}%`,
-                background: "var(--hamilton-primary)",
-              }}
-            />
-          </div>
+          {row.note ? (
+            <p className="mt-2 text-xs leading-snug" style={{ color: "rgb(87 83 78)" }}>
+              {row.note}
+            </p>
+          ) : null}
         </div>
       ))}
 
-      {/* Recommendation Engine box */}
+      {/* Operational note */}
       <div
         className="p-5 border rounded"
         style={{
@@ -115,7 +95,7 @@ export function StrategicTradeoffs({ tradeoffs }: Props) {
           className="font-label text-[9px] uppercase tracking-widest mb-2 block"
           style={{ color: "var(--hamilton-on-primary-fixed-variant, #703714)" }}
         >
-          Recommendation Engine
+          {tradeoffs.operationalImpact.label}
         </label>
         <p
           className="font-headline text-sm italic leading-snug"
