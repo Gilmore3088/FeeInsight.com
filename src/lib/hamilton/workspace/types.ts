@@ -21,7 +21,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.2.0";
+export const WORKSPACE_ENGINE_VERSION = "1.4.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -51,6 +51,8 @@ export interface Provenance {
 export interface Fact {
   text: string;
   source: SourceRef;
+  /** Institutions behind a peer or market figure in the text, so the reader can judge it. */
+  sampleSize?: number;
 }
 
 export type ObservationKind = "market_position" | "competitor_move" | "rule_change" | "revenue_shift";
@@ -88,6 +90,11 @@ export interface MarketLayer {
   amounts: number[];
   /** The same values counted into price bands, the bank's band included. */
   bands: PriceBand[];
+  /**
+   * The institutions behind the layer, lowest amount first: name, state, amount, publish date
+   * and the schedule each value was read from. The rows behind "Download every institution".
+   */
+  members: PeerValue[];
   asOf: string | null;
   source: SourceRef;
 }
@@ -177,6 +184,22 @@ export interface PeerValue {
   publishedAt: string | null;
 }
 
+/** One of the bank's own published rows for a fee. */
+export interface OwnFeeRow {
+  /** published_fee_catalog id. */
+  id: number;
+  feeName: string;
+  amount: number | null;
+  sourceDocumentId: number | null;
+  /** The schedule document the row was read from. */
+  documentUrl: string | null;
+  /** The page the schedule was found on. */
+  sourceUrl: string | null;
+  publishedAt: string | null;
+  /** The verification event (agent_run_events) that checked the row against its document; null when not recorded. */
+  verifiedByEventId: string | null;
+}
+
 export interface PriceBand {
   label: string;
   min: number;
@@ -220,10 +243,122 @@ export interface FeeResearch {
   recentChanges: Fact[];
   /** Reported income for this fee, when a filing carries a line for it. */
   revenueLine: RevenueLine | null;
+  /**
+   * The bank's own live rows for this fee, highest amount first: the audit trail behind
+   * `current` (each row's schedule document and the event that verified it).
+   */
+  ownRows: OwnFeeRow[];
+  /** Industry deposit service charge income, newest quarter first (eight quarters), as on the Briefing. */
+  nationalIncomeSeries: MarketIncome[];
   /** The bank's total deposit service charge income, as context for this fee. */
   institutionFinancials: InstitutionFinancials | null;
   /** Rules that govern changing this fee, then recent regulator releases that mention it. */
   regulation: Fact[];
+  /** The state and national economy around the fee; null when no state or no series is on file. */
+  economy?: EconomicBackdrop | null;
+  provenance: Provenance;
+}
+
+export type EconomicIndicatorKey =
+  | "state_unemployment"
+  | "national_unemployment"
+  | "state_payrolls"
+  | "fed_funds"
+  | "cpi_all_items"
+  | "cpi_bank_services";
+
+/** One economic series as Hamilton quotes it. */
+export interface EconomicIndicator {
+  key: EconomicIndicatorKey;
+  /** e.g. "Tennessee unemployment rate", "Prices for checking and other bank services". */
+  label: string;
+  /** "rate": a level in percent (unemployment, fed funds). "change_12m": percent change over 12 months (prices, payrolls). */
+  measure: "rate" | "change_12m";
+  /** Percent, to one decimal. */
+  value: number;
+  /** The rate 12 months earlier; null for a 12-month change or when that month is missing. */
+  yearAgo: number | null;
+  /** ISO date of the latest observation. */
+  asOf: string;
+  source: SourceRef;
+}
+
+/** The economy behind a fee: what moves the cost of banking and how many accounts run short. */
+export interface EconomicBackdrop {
+  /** State name, e.g. "Tennessee". */
+  place: string;
+  district: number | null;
+  /** e.g. "Atlanta". */
+  districtName: string | null;
+  indicators: EconomicIndicator[];
+  /** The district's latest Beige Book, banking section first. */
+  beigeBook: { releaseDate: string; text: string; source: SourceRef } | null;
+}
+
+/** A marker on a fee exhibit: one market's median. */
+export interface ExhibitMarker {
+  label: string;
+  scope: MarketLayerScope | "peer";
+  value: number;
+  n: number;
+}
+
+/**
+ * The one chart an answer carries. Data only: the Pro page decides how it is drawn.
+ * - fee_position: the bank's fee against its peers' middle half, with market medians.
+ * - trend: one or more series over time (income by quarter, a price index).
+ * - competitor_range: named competitors' amounts, lowest first, with the bank's own.
+ */
+export type Exhibit =
+  | {
+      kind: "fee_position";
+      title: string;
+      unit: "dollars";
+      own: number | null;
+      ownLabel: string;
+      band: { label: string; p25: number; median: number; p75: number; n: number };
+      markers: ExhibitMarker[];
+      sources: SourceRef[];
+      note?: string;
+    }
+  | {
+      kind: "trend";
+      title: string;
+      unit: "dollars" | "percent";
+      series: { label: string; points: { date: string; value: number }[] }[];
+      sources: SourceRef[];
+      note?: string;
+    }
+  | {
+      kind: "competitor_range";
+      title: string;
+      unit: "dollars";
+      own: number | null;
+      ownLabel: string;
+      items: { name: string; amount: number; url: string | null }[];
+      sources: SourceRef[];
+      note?: string;
+    };
+
+export type HamiltonRole = "economist" | "consultant" | "data_engineer" | "writer";
+
+/**
+ * One Hamilton answer about a fee, built to the four roles James set (2026-10-06):
+ * - Economist: `drivers` explain what moves the number; `question` asks for the one figure
+ *   that is missing.
+ * - Consultant: every `claims` line carries a number, a named and dated source and, for a
+ *   market figure, the peer count; `evidenceLevel` labels what the answer rests on.
+ * - Data engineer: `exhibit` is the one chart that shows it.
+ * - Writer: `headline` leads with the number; every sentence is short and plain.
+ */
+export interface HamiltonAnswer {
+  feeCategory: string;
+  headline: string;
+  claims: Fact[];
+  drivers: Fact[];
+  exhibit: Exhibit | null;
+  question: ClarifyingQuestion | null;
+  evidenceLevel: EvidenceLevel;
   provenance: Provenance;
 }
 
@@ -354,6 +489,8 @@ export interface AskResponse {
   opinion?: HamiltonOpinion;
   scenario?: Scenario;
   facts?: Fact[];
+  /** The structured answer: headline, sourced claims, drivers, exhibit and question. */
+  answer?: HamiltonAnswer;
 }
 
 export interface AskRequest {

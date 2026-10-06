@@ -115,10 +115,19 @@ Dedupe keys in use:
 - `hamilton.takedown:pub:<id>:extract` and `:verify`: a live fee Hamilton took down,
   charged both to the Knox strategy that read it and to the Darwin attempt that approved it.
 - `hamilton.restore:pub:<id>`: that takedown is live again.
-- `darwin.verify:raw:<fee_raw_id>`: Darwin's judgement of a Knox read. Only
-  `category_mismatch` rejects are written today; holds (peer, range) are not proof.
+- `darwin.verify:raw:<fee_raw_id>`: a Darwin `category_mismatch` reject, written by the sync below.
+- `darwin.verify:decision:raw:<fee_raw_id>`: every other Darwin decision on a Knox read,
+  written by the verify step itself (`darwin/feedback.ts`): an approval is `right` /
+  `darwin_verified` at weight 0.5 (1 when a second document agrees); a reject is `wrong`
+  with its kind (`not_on_schedule`, `wrong_amount`, `off_taxonomy`, `not_a_fee`,
+  `missing_lineage`); a hold (peer, range) is `wrong` / `outside_range` at weight 0.5.
+  Duplicates are not written.
 - `answer_key:fee:<id>`: a confirmed answer-key fee (`right`, reported by a human).
-- `magellan.link_yield:doc:<source_document_id>`: a link's live-fee outcome (Magellan).
+- `magellan.link_yield:doc:<source_document_id>`: a link's live-fee outcome (Magellan),
+  keyed on the link's first document; written by every discover step for one 24th of the
+  banks (`magellan/outcomes.ts`; rules in `magellan/AGENTS.md`). Magellan's fee-page
+  classifier trains on these rows (`magellan/page-classifier.ts`, weights in
+  `magellan_page_classifier`); any agent can load it with `loadPageClassifier`.
 
 `syncPipelineFeedback` (`feedback-sync.ts`) runs in every Hamilton publish step after
 the source check. It fills the store from takedowns, restores, Darwin category rejects

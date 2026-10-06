@@ -46,6 +46,11 @@ Hamilton supports the decision; it does not make it.
   objective.
 - The Ask bar returns `{kind, shortAnswer, pageChange, savedFact?}` with kinds research,
   scenario, saved_fact, deliverable_draft, opinion and clarifying_question.
+- Every fee answer plays four roles (James, 2026-10-06): Inquisitive Economist, Rigorous
+  Consultant, Artistic Data Engineer, Technical yet Clear Writer. `buildFeeAnswer`
+  (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
+  question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
+  checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
 - Decisions, their event log, client-given facts and uploads are kept in
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
@@ -130,6 +135,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   the main fee link with its own earlier copies, each companion page (one account's page,
   a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
   outdates Value Checking's line, or the main schedule's; it publishes beside them.
+- Each publish step rolls back live fees read from companion pages Magellan retired as not
+  a consumer fee page (`companion-retire.ts`, reason `companion_page_retired`, up to 500 a
+  step) and rejects their verified rows, so they never publish again. Pages retired for a
+  dead link keep the fees they gave.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.

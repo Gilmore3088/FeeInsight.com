@@ -18,6 +18,14 @@ month's campaigns, picks two formats not used in three months (readers tire of t
 writes them from live data, and drafts each as an A/B subject test in MailerLite. One approval in
 /admin/customers/marketing sends the month. Results and lessons go to `pipeline_feedback`.
 
+**Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
+shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan
+(https://claude.ai/code/artifact/12c7e165-b7af-4aee-a356-cc0c4f5c15a8): tighten the main-link
+check and re-search (agreed), a $250 paid-find trial (yes), classifier weights kept in a table that
+a Magellan run step retrains ("Yes. Consistently reinforced"), no further plan upgrades, and the
+thread runs it. The classifier (`magellan_page_classifier`) only records its opinion until James
+reviews it; letting it decide is his call.
+
 **Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
 abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
 Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges

@@ -839,3 +839,27 @@ describe("dollar passthrough (DB stores whole dollars)", () => {
     expect(result.quarters[4].total_service_charges).toBe(10000000);
   });
 });
+
+// ── NCUA year-to-date income ──────────────────────────────────────────────────
+
+describe("single-quarter reads use each credit union's quarter, not its year to date", () => {
+  beforeEach(() => {
+    const mock = getMock();
+    resetMock(mock);
+    mock.mockResolvedValue([{ latest_date: "2026-06-30" }]);
+    mock.unsafe = vi.fn().mockResolvedValue([]);
+  });
+
+  it.each([
+    ["getDistrictFeeRevenue", () => getDistrictFeeRevenue(6)],
+    ["getRevenueByTier", () => getRevenueByTier()],
+    ["getTopRevenueInstitutions", () => getTopRevenueInstitutions(5)],
+    ["getInstitutionRevenueTrend", () => getInstitutionRevenueTrend(1)],
+    ["getInstitutionPeerRanking", () => getInstitutionPeerRanking(1)],
+  ])("%s joins the prior NCUA quarter and subtracts it", async (_name, read) => {
+    await read();
+    const text = String(getMock().unsafe.mock.calls[0]?.[0] ?? "");
+    expect(text).toContain("LEFT JOIN institution_financial_records prev");
+    expect(text).toContain("inf.service_charge_income - prev.service_charge_income");
+  });
+});

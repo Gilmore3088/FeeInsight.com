@@ -23,7 +23,7 @@ export type FeedbackReporter = "atlas" | "magellan" | "rosetta" | "knox" | "darw
  * Known kinds. Writers may add new ones; keep them snake_case and list them here.
  *   Fee level: wrong_category, wrong_amount, not_a_fee, threshold, not_on_schedule,
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
- *     restored_after_takedown
+ *     restored_after_takedown, darwin_verified, missing_lineage
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link
  */
 export type FeedbackKind =
@@ -38,6 +38,8 @@ export type FeedbackKind =
   | "duplicate"
   | "answer_key"
   | "restored_after_takedown"
+  | "darwin_verified"
+  | "missing_lineage"
   | "produced_live_fees"
   | "thin_link"
   | "wrong_document"

@@ -1,4 +1,5 @@
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { classifyPage, type PageClassifier } from "@/lib/agents/magellan/page-classifier";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { classifyFetchFailure } from "@/lib/agents/learning/outcomes";
 
@@ -117,11 +118,14 @@ export const FINDERS = {
   rejectedPageLinks: { strategy: "discover.rejected_page_links", version: 1, pass: 1 },
   knownLink: { strategy: "discover.known_link", version: 1, pass: 1 },
   homepageLinks: { strategy: "discover.homepage_links", version: 1, pass: 1 },
-  sitemap: { strategy: "discover.sitemap", version: 1, pass: 1 },
+  // 2: robots.txt Disallow rules respected, /sitemap_index.xml fallback, fee-named PDFs.
+  sitemap: { strategy: "discover.sitemap", version: 2, pass: 1 },
   hubPages: { strategy: "discover.hub_pages", version: 1, pass: 1 },
-  platformPaths: { strategy: "discover.platform_paths", version: 1, pass: 1 },
+  // 2: learned paths scored by the live fees their links produced (outcome ledger).
+  platformPaths: { strategy: "discover.platform_paths", version: 2, pass: 1 },
   commonPaths: { strategy: "discover.common_paths", version: 1, pass: 1 },
-  peerHint: { strategy: "discover.peer_hint", version: 1, pass: 2 },
+  // 2: paths with live fees on the same platform nationwide, not same-state guesses.
+  peerHint: { strategy: "discover.peer_hint", version: 2, pass: 2 },
   siteCrawl: { strategy: "discover.site_crawl", version: 1, pass: 2 },
 } as const;
 
@@ -166,6 +170,8 @@ export interface TrailEntry {
   label: string;
   score: number;
   verdict: string;
+  /** Shadow page classifier: its probability that the page is a fee schedule (decides nothing). */
+  page_p?: number;
 }
 
 export interface FoundDocument {
@@ -224,6 +230,8 @@ export interface SearchContext {
   robots?: string | null;
   /** HTML of same-site pages already opened, so the crawl does not fetch them twice. */
   pages: Map<string, string>;
+  /** The learned fee-page classifier, in shadow: scores each opened candidate, decides nothing. */
+  pageClassifier?: PageClassifier | null;
 }
 
 export function cleanText(value: string): string {
@@ -394,6 +402,9 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     try {
       const validation = await validateFeeCandidate(candidate, ctx.fetchImpl);
       entry.verdict = validation.verdict;
+      if (ctx.pageClassifier && validation.scoringText) {
+        entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
+      }
       if (validation.html && sameSite(new URL(candidate.url), ctx.site)) ctx.pages.set(identity, validation.html);
       if (validation.ok) {
         result.found = foundFrom(candidate, validation);
@@ -538,10 +549,58 @@ async function readRobots(ctx: SearchContext, result: FinderResult): Promise<str
   return ctx.robots;
 }
 
-/** robots.txt's site maps, else /sitemap.xml; an index opens its page/document children. */
+/** The robots.txt Disallow rules for our crawler on this site (none when it has no robots.txt). */
+async function robotsRules(ctx: SearchContext, result: FinderResult): Promise<string[]> {
+  const robots = await readRobots(ctx, result);
+  return robots ? robotsDisallows(robots) : [];
+}
+
+/** True when robots.txt lets our crawler open this URL. Off-site documents (a CDN) are not ruled by the bank's robots.txt. */
+function robotsLetUs(ctx: SearchContext, disallows: string[], url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!sameSite(parsed, ctx.site)) return true;
+    return robotsAllows(`${parsed.pathname}${parsed.search}`, disallows);
+  } catch {
+    return false;
+  }
+}
+
+/** A document URL whose name says it is a fee schedule or account disclosure. */
+const FEE_DOCUMENT_NAME = /fee|schedule|disclosure|truth[\s_-]*in[\s_-]*savings/;
+
+/**
+ * Site map entries worth opening: links that score as fee links, plus PDFs whose name
+ * looks like a fee schedule or disclosure ("tis-disclosure.pdf", "consumer-schedule.pdf").
+ * A site map gives no link text, so such a PDF often scores below the bar on its name
+ * alone; the fee-page check reads it before it is accepted, and a scan with a weak name
+ * is never accepted unread.
+ */
+export function sitemapCandidates(links: PageLink[]): LinkCandidate[] {
+  return links
+    .map((link) => scoreLink(link.url, link.label, "sitemap", "sitemap"))
+    .flatMap((candidate): LinkCandidate[] => {
+      if (candidate.score >= MIN_LINK_SCORE) return [candidate];
+      if (!looksLikePdfUrl(candidate.url) || candidate.reasons.some((reason) => reason.startsWith("negative:"))) return [];
+      if (!FEE_DOCUMENT_NAME.test(`${candidate.label} ${candidate.url}`.toLowerCase())) return [];
+      return [{ ...candidate, score: MIN_LINK_SCORE, reasons: [...candidate.reasons, "fee_document_name"] }];
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * robots.txt's site maps, else /sitemap.xml, then /sitemap_index.xml; an index opens its
+ * page/document children. Every same-site request follows robots.txt Disallow rules for
+ * our crawler. Needs no homepage, so it also runs when the homepage blocks bots.
+ */
 export async function findInSitemap(ctx: SearchContext): Promise<FinderResult> {
   const result = emptyResult(true);
+  const disallows = await robotsRules(ctx, result);
   const getText = async (url: string): Promise<string | null> => {
+    if (!robotsLetUs(ctx, disallows, url)) {
+      result.trail.push({ url, source: "sitemap_file", foundOn: null, label: "", score: 0, verdict: "robots_disallow" });
+      return null;
+    }
     result.fetches += 1;
     try {
       const response = await fetchWithTimeout(ctx.fetchImpl, url);
@@ -553,12 +612,15 @@ export async function findInSitemap(ctx: SearchContext): Promise<FinderResult> {
     }
   };
 
-  const robots = await readRobots(ctx, result);
-  const declared = robots ? robotsSitemaps(robots) : [];
-  const roots = declared.length > 0 ? declared.slice(0, 2) : [new URL("/sitemap.xml", ctx.site.origin).toString()];
+  const declared = ctx.robots ? robotsSitemaps(ctx.robots) : [];
+  const roots = declared.length > 0
+    ? declared.slice(0, 2)
+    : ["/sitemap.xml", "/sitemap_index.xml"].map((path) => new URL(path, ctx.site.origin).toString());
   const urls: string[] = [];
   for (const root of roots) {
     if (outOfTime(ctx)) break;
+    // The guessed roots are alternatives: stop at the first that answers.
+    if (declared.length === 0 && urls.length > 0) break;
     const xml = await getText(root);
     if (!xml) continue;
     if (!isSitemapIndex(xml)) {
@@ -586,7 +648,12 @@ export async function findInSitemap(ctx: SearchContext): Promise<FinderResult> {
       }
       return { url, label };
     });
-  await tryCandidates(ctx, result, feeCandidates(links, "sitemap", "sitemap"), MAX_CANDIDATES_PER_FINDER);
+  const candidates = sitemapCandidates(links).filter((candidate) => {
+    if (robotsLetUs(ctx, disallows, candidate.url)) return true;
+    result.trail.push({ url: candidate.url, source: "sitemap", foundOn: "sitemap", label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "robots_disallow" });
+    return false;
+  });
+  await tryCandidates(ctx, result, candidates, MAX_CANDIDATES_PER_FINDER);
   return result;
 }
 
@@ -644,13 +711,13 @@ export async function findCommonPaths(ctx: SearchContext): Promise<FinderResult>
 
 // --- Pass 2 ------------------------------------------------------------------------
 
-/** Paths that worked for banks on the same platform in the same state. */
+/** Paths that produced live fees for banks on the same platform, nationwide. */
 export async function findPeerHint(ctx: SearchContext): Promise<FinderResult> {
   if (!ctx.platform) return emptyResult(false);
   const paths = await ctx.knowledge.peerPaths(ctx.platform, ctx.stateCode, ctx.institutionId);
   const candidates = pathCandidates(ctx, paths, "peer_hint").filter((candidate) => !ctx.tried.has(urlIdentity(candidate.url)));
   if (candidates.length === 0) return emptyResult(false);
-  const result = { ...emptyResult(true), note: `platform ${ctx.platform} in ${ctx.stateCode ?? "any state"}` };
+  const result = { ...emptyResult(true), note: `platform ${ctx.platform}, nationwide` };
   await tryCandidates(ctx, result, candidates, MAX_PEER_PATHS);
   return result;
 }
@@ -662,8 +729,7 @@ export async function findPeerHint(ctx: SearchContext): Promise<FinderResult> {
  */
 export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult> {
   const result = emptyResult(true);
-  const robots = await readRobots(ctx, result);
-  const disallows = robots ? robotsDisallows(robots) : [];
+  const disallows = await robotsRules(ctx, result);
   const allowed = (url: string) => {
     const parsed = new URL(url);
     return robotsAllows(`${parsed.pathname}${parsed.search}`, disallows);
@@ -736,6 +802,7 @@ const REJECTION_VERDICTS = new Set([
   "not_fee_page",
   "rate_page",
   "too_few_fee_words",
+  "product_page",
   "unreadable_pdf_weak_label",
   "not_a_pdf",
   "unsupported_type",

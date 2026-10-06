@@ -76,3 +76,23 @@ export function formatFeeAmount(amount: number | string | null | undefined): str
   const formatted = FEE_AMOUNT_FORMAT.format(value);
   return formatted.endsWith(".00") ? formatted.slice(0, -3) : formatted;
 }
+
+/**
+ * A dollar total in words of scale for prose: "$209 thousand", "$2.6 million", "$4.1 billion".
+ * Under $1,000 it is the whole-dollar amount.
+ */
+export function formatDollarsInWords(amount: number): string {
+  if (!Number.isFinite(amount)) return "N/A";
+  const sign = amount < 0 ? "-" : "";
+  const abs = Math.abs(amount);
+  const scaled = (n: number, word: string) => {
+    const digits = n >= 100 ? 0 : 1;
+    const text = n.toFixed(digits).replace(/\.0$/, "");
+    return `${sign}$${text} ${word}`;
+  };
+  if (abs >= 1e12) return scaled(abs / 1e12, "trillion");
+  if (abs >= 1e9) return scaled(abs / 1e9, "billion");
+  if (abs >= 1e6) return scaled(abs / 1e6, "million");
+  if (abs >= 1e3) return scaled(abs / 1e3, "thousand");
+  return `${sign}$${Math.round(abs)}`;
+}

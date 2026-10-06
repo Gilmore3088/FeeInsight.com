@@ -883,6 +883,26 @@ async function selectCandidates(
                 AND dead.outcome IN ('http_404', 'http_410')
            )
          )`);
+    // Nor is one whose download kept failing (blocked, timed out, server errors): after
+    // the limit it waits out the window, so a link that never answers is not retried every run.
+    params.push(STUCK_LINK_OUTCOMES);
+    const stuckOutcomesParam = `$${params.length}`;
+    params.push(STUCK_LINK_MAX_FAILURES);
+    const stuckMaxParam = `$${params.length}`;
+    params.push(STUCK_LINK_WINDOW_DAYS);
+    const stuckDaysParam = `$${params.length}`;
+    filters.push(`AND NOT (
+           ${notInVault}
+           AND (
+             SELECT COUNT(*)
+               FROM pipeline_attempts stuck
+              WHERE stuck.institution_id = cr.institution_id
+                AND stuck.stage = 'read'
+                AND stuck.source_document_id = cr.id
+                AND stuck.outcome = ANY(${stuckOutcomesParam}::text[])
+                AND stuck.created_at > NOW() - make_interval(days => ${stuckDaysParam}::int)
+           ) >= ${stuckMaxParam}::int
+         )`);
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -1094,23 +1114,40 @@ export async function recordReadResult(
 }
 
 /**
- * A document link that is gone (HTTP 404/410), or that blocked us (HTTP 401/403) on an
- * earlier read as well, cannot be read again from this URL. Rosetta sends the bank back
- * to Magellan so the next discovery pass finds its current fee page (and, if the free
- * finders fail, Magellan's paid finder). A single 403 can be a passing bot challenge,
- * so a block counts only when it repeats.
+ * Download failures that are not "gone" but can repeat forever: a block, rate limit,
+ * server error, timeout or dropped connection. One can pass; several in a row mean the
+ * link no longer works for us.
+ */
+export const STUCK_LINK_OUTCOMES: AttemptOutcome[] = ["http_403", "http_429", "http_5xx", "http_other", "timeout", "network_error"];
+/** Failed downloads of one document, inside the window, before Rosetta stops trying it. */
+export const STUCK_LINK_MAX_FAILURES = 3;
+/** After this many days without a try, a stuck link gets one more. */
+export const STUCK_LINK_WINDOW_DAYS = 7;
+
+/**
+ * A document link that is gone (HTTP 404/410), that blocked us (HTTP 401/403) on an
+ * earlier read as well, or whose download has now failed `STUCK_LINK_MAX_FAILURES` times
+ * in `STUCK_LINK_WINDOW_DAYS`, cannot be read again from this URL. Rosetta sends the bank
+ * back to Magellan so the next discovery pass finds its current fee page (and, if the
+ * free finders fail, Magellan's paid finder). A single 403 can be a passing bot
+ * challenge, so a block counts only when it repeats.
  */
 export async function isUnreachableLink(db: SqlTag, result: ReadResult): Promise<boolean> {
   if (result.status !== "failed") return false;
   if (result.attemptOutcome === "http_404" || result.attemptOutcome === "http_410") return true;
-  if (result.attemptOutcome !== "http_403") return false;
+  if (!result.attemptOutcome || !STUCK_LINK_OUTCOMES.includes(result.attemptOutcome)) return false;
+  // This attempt is logged after this check, so earlier rows are the earlier tries.
   const earlier = await db<{ blocked: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM pipeline_attempts pa
-       WHERE pa.source_document_id = ${result.sourceDocumentId}
-         AND pa.stage = 'read'
-         AND pa.outcome = 'http_403'
+    SELECT (
+      (${result.attemptOutcome} = 'http_403' AND COUNT(*) FILTER (WHERE pa.outcome = 'http_403') > 0)
+      OR COUNT(*) + 1 >= ${STUCK_LINK_MAX_FAILURES}
     ) AS blocked
+      FROM pipeline_attempts pa
+     WHERE pa.institution_id = ${result.institutionId}
+       AND pa.stage = 'read'
+       AND pa.source_document_id = ${result.sourceDocumentId}
+       AND pa.outcome = ANY(${STUCK_LINK_OUTCOMES}::text[])
+       AND pa.created_at > NOW() - make_interval(days => ${STUCK_LINK_WINDOW_DAYS})
   `;
   return earlier[0]?.blocked === true;
 }

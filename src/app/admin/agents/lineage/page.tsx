@@ -7,6 +7,7 @@ import {
 } from "@/lib/data-store/agent-console";
 import { RecentPicker } from "./recent-picker";
 import { TreeView } from "./tree-view";
+import { ScreenHeader } from "../../room-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,7 @@ export default async function AgentsLineagePage({
 
   return (
     <section className="flex flex-col gap-3">
+      <ScreenHeader title="Lineage" lede="Trace a live fee back to the document it came from." />
       <div className="admin-card p-4 text-[12px] text-gray-600 dark:text-gray-300 max-w-3xl">
         <p>
           Trace a published fee back through its pipeline:{" "}

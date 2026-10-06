@@ -2,7 +2,15 @@ import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
-import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_MAX_LIMIT, ROSETTA_READ_VERSION, runRosettaRead } from "./read";
+import {
+  REREAD_MAX_KNOX_FEES,
+  ROSETTA_READ_MAX_LIMIT,
+  ROSETTA_READ_VERSION,
+  STUCK_LINK_MAX_FAILURES,
+  STUCK_LINK_OUTCOMES,
+  STUCK_LINK_WINDOW_DAYS,
+  runRosettaRead,
+} from "./read";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -590,6 +598,24 @@ describe("Rosetta agentic read", () => {
       const repeat = vaultDb([htmlCandidate], [], true);
       const twice = await runRosettaRead({ runId: 606, db: asReadDb(repeat), fetchImpl: blocked(), vault: fakeVault(new Uint8Array()) });
       expect(twice).toMatchObject({ failed: 1, sentBackToMagellan: 1 });
+    });
+
+    it("sends a link back after repeated timeouts, and stops downloading it for a week", async () => {
+      const timedOut = () => vi.fn().mockRejectedValue(Object.assign(new Error("aborted"), { name: "AbortError" }));
+
+      const early = vaultDb([htmlCandidate]);
+      const first = await runRosettaRead({ runId: 609, db: asReadDb(early), fetchImpl: timedOut(), vault: fakeVault(new Uint8Array()) });
+      expect(first).toMatchObject({ failed: 1, sentBackToMagellan: 0 });
+      const check = early.mock.calls.find((call) => templateText(call[0]).includes("AS blocked"));
+      expect(check).toEqual(expect.arrayContaining([STUCK_LINK_MAX_FAILURES, STUCK_LINK_OUTCOMES, STUCK_LINK_WINDOW_DAYS]));
+
+      const stuck = vaultDb([htmlCandidate], [], true);
+      const last = await runRosettaRead({ runId: 610, db: asReadDb(stuck), fetchImpl: timedOut(), vault: fakeVault(new Uint8Array()) });
+      expect(last).toMatchObject({ failed: 1, sentBackToMagellan: 1 });
+
+      const query = String(early.unsafe.mock.calls[0][0]);
+      expect(query).toContain("FROM pipeline_attempts stuck");
+      expect(early.unsafe.mock.calls[0][1]).toEqual(expect.arrayContaining([STUCK_LINK_OUTCOMES, STUCK_LINK_MAX_FAILURES, STUCK_LINK_WINDOW_DAYS]));
     });
 
     it("re-checks earlier texts without downloading, sparing ones Knox found fees in", async () => {

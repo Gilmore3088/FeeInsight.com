@@ -119,6 +119,21 @@ export function looksJavaScriptBuilt(html: string): boolean {
 }
 
 /**
+ * A bot wall served with HTTP 200: a Cloudflare / Incapsula / Akamai challenge or an
+ * "Access denied" page instead of the bank's homepage. It has (almost) no links, so the
+ * homepage-based specialists have nothing to work with. Discovery treats it like a 403:
+ * it does not try to get past the wall, it looks for the site map instead.
+ */
+export function looksLikeBotChallenge(html: string): boolean {
+  if (countAnchors(html) >= 5) return false;
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+  if (/^(just a moment|attention required|access denied|request rejected|pardon our interruption|security check|are you a (human|robot))/.test(title)) {
+    return true;
+  }
+  return /cf-browser-verification|challenge-platform|cf_chl_opt|_incapsula_resource|incapsula incident|distil_r_captcha|px-captcha|perimeterx|request unsuccessful\. incapsula/i.test(html);
+}
+
+/**
  * A path worth sharing with other banks on the same platform: no dated upload folder or
  * long id that only exists on one site.
  */

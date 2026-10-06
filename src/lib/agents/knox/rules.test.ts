@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -216,7 +216,7 @@ describe("Knox extract.rules", () => {
         "E-statement fee $0.00",
         "Check printing $15 - $40 per order",
         "Foreign transaction fee 3% of the transaction amount",
-        "Account reactivation fee $15.00",
+        "Hand post fee $15.00",
       ].join("\n"),
     );
 
@@ -226,7 +226,7 @@ describe("Knox extract.rules", () => {
       ["zero", "E-statement fee", 0, null, null, "estatement_fee"],
       ["range", "Check printing", 15, 40, null, "check_printing"],
       ["percentage", "Foreign transaction fee", null, null, 3, "card_foreign_txn"],
-      ["unclassified", "Account reactivation fee", 15, null, null, null],
+      ["unclassified", "Hand post fee", 15, null, null, null],
     ]);
   });
 
@@ -369,6 +369,20 @@ describe("Knox extract.rules", () => {
     expect(extractFromSegment("Non-network ATM withdrawal | Free").held).toMatchObject([{ shape: "zero", canonicalHint: "atm_non_network" }]);
   });
 
+  it("v13 reads no $0 price from a free allowance or a condition", () => {
+    for (const name of [
+      "2 free cashiers checks monthly",
+      "Monthly Service Charge if any of the following qualifications are met",
+      "Temporary checks (first 3 pgs for new acct Free)",
+      "minimum daily balance to waive monthly maintenance fees",
+    ]) {
+      expect(notAZeroPrice("other", name)).toBe(true);
+    }
+    for (const name of ["Free bill pay", "eStatement (including images if requested)", "Returned Check Fee We do not charge a fee when we return an item"]) {
+      expect(notAZeroPrice("other", name)).toBe(false);
+    }
+  });
+
   it("v5 reads a price written without a leading zero", () => {
     expect(extractFromSegment("Photocopy – $.25 each").candidates).toMatchObject([{ canonicalHint: "document_reproduction", amount: 0.25 }]);
   });
@@ -394,5 +408,49 @@ describe("Knox extract.rules", () => {
     expect(
       extractFromSegment("Cash Advance | $2 or 1% of the amount of each cash advance, whichever is greater (maximum fee $30)").candidates,
     ).toMatchObject([{ canonicalHint: "cash_advance", amount: 2 }]);
+  });
+
+  // v14: names the Texas and seven-state answer keys showed held as unclassified.
+  it.each([
+    ["Account Closing Fee", "early_closure"],
+    ["Fee To Close Account", "early_closure"],
+    ["Regular Share Savings Closed Account Fee", "early_closure"],
+    ["Reactivation Fee", "dormant_account"],
+    ["Wire Transfer (Domestic)", "wire_domestic_outgoing"],
+    ["Wire Transfer Fee – Domestic", "wire_domestic_outgoing"],
+    ["Domestic Wire In (each)", "wire_domestic_incoming"],
+    ["Wire Transfer In (domestic/int'l)", "wire_domestic_incoming"],
+    ["Child Support Processing fee", "garnishment_levy"],
+    ["Legal Order Processing Fee (per request)", "legal_process"],
+    ["Consumer Negative Balance Fee, per statement cycle", "continuous_od"],
+    ["Audit Confirmation", "account_verification"],
+    ["IRA custodial fee", "ira_administration"],
+    ["Document Copy Fee", "document_reproduction"],
+  ])("v14 classifies %s as %s", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it("v14 leaves names the answer keys file differently from the taxonomy unclassified", () => {
+    // Texas keys file returned mail under statements, the taxonomy under account research;
+    // a foreign item collection is unmapped in most keys. Knox waits for one answer.
+    expect(classifyFeeText("Returned Mail Fee")).toBeNull();
+    expect(classifyFeeText("Foreign Item Collection")).toBeNull();
+    // A card reactivation is not a dormant account fee.
+    expect(classifyFeeText("Card Reactivation Fee")).toBeNull();
+  });
+
+  it("v14 reads a checking account's own monthly price", () => {
+    expect(extractFromSegment("Opportunity Checking | $10 per month").candidates).toMatchObject([
+      { canonicalHint: "monthly_maintenance", amount: 10, frequency: "monthly" },
+    ]);
+    expect(
+      extractFromSegment("Relationship Checking | $10 per month if direct deposit is not maintained").candidates,
+    ).toMatchObject([{ canonicalHint: "monthly_maintenance", amount: 10, waivable: true }]);
+    // Not an account's own price: a fee named in the label, savings, or no monthly wording.
+    expect(extractFromSegment("Checking Overdraft Transfer | $5 per month").candidates).not.toMatchObject([
+      { canonicalHint: "monthly_maintenance" },
+    ]);
+    expect(extractFromSegment("Money Market Savings | $5 per month").candidates).toEqual([]);
+    expect(extractFromSegment("Basic Checking | $3.00").candidates).toEqual([]);
   });
 });
