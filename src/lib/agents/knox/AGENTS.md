@@ -42,6 +42,12 @@ wrong read. When a change really improves Knox, raise the floors in the same PR;
 with the reason in the PR. Baseline at v12: 436 right of 454 reads (96.0%), 436 of 772 key fees
 found (56.5%); held out: 41 of 47 (87.2%), 41 of 99 found.
 
+Texas is the test bed; `state-answer-key-gate.test.ts` holds the same gate on 38 schedules from
+CA, FL, GA, IL, MI, MN and NY (`__fixtures__/state-answer-keys.json.gz`, never used to write
+rules), with a floor per state. Baseline at v12: 665 right of 724 reads (91.9%), 665 of 1,215 key
+fees found (54.7%); 56 of the 59 wrong reads are the right price under another category. A rules
+change scores both gates; a fix that helps Texas and hurts another state fails.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

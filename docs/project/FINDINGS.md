@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Almost a third of sampled "fee schedule" texts are not fee schedules
+**What happened:** building answer keys for CA, FL, GA, IL, MI, MN and NY, 18 of 56 sampled stored
+texts (newest completed `agent_source_texts` per bank, 1,500 to 60,000 characters) turned out not to
+be fee schedules: product pages, rate pages, a disclosure, a funds-availability policy, a homepage.
+Three are plain wrong stores: FL 11295 is a 404 page, IL 1644 is empty (0 bytes), NY 7750 is the
+credit union's homepage while its URL is a registration-guide PDF. NY was worst: 6 of 8.
+**Cause:** not yet known per text; the sample counts are hand-read, not a full measure.
+**Fix:** none yet; the Knox gate scores only the 38 real schedules. Reported to the Magellan thread.
+**Lesson:** a stored text is not proof the bank's schedule was found; measure share of real
+schedules per state before trusting a state's coverage.
+
 ## 2026-10-06: A fee the rules re-check took down could never come back under the same name
 **What happened:** the Hamilton audit saw real fees taken down as `rules_recheck_unreproduced`
 (4,122 on prod at 06:00 UTC, read-only query) with no way back. Only 443 of them are live again, all
