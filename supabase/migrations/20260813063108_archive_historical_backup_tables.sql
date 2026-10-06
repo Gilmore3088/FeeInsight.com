@@ -1,3 +1,12 @@
+-- Changes the legacy tables (crawl_targets and friends) production had before
+-- 2026-08-13. A database built from the preview baseline in 20260406_report_jobs.sql
+-- already has the current schema and no legacy tables, so it skips this file.
+DO $legacy_guard$
+BEGIN
+  IF to_regclass('public.crawl_targets') IS NULL AND to_regclass('public.institution_sources') IS NOT NULL THEN
+    RETURN;
+  END IF;
+  EXECUTE $migration$
 -- Move historical backup tables out of the active public schema.
 --
 -- These tables are retained for audit/history, but are not active agentic
@@ -86,3 +95,7 @@ COMMENT ON TABLE archive.historical_fee_review_dedup_backup_20260418 IS
   'Historical fee-review dedup backup retained outside public runtime schema.';
 COMMENT ON TABLE archive.historical_pipeline_runs_20260603 IS
   'Historical legacy pipeline-run backup retained outside public runtime schema.';
+
+$migration$;
+END
+$legacy_guard$;
