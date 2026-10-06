@@ -81,15 +81,24 @@ before publishing). A find that doesn't trace is held for review as `untraced`
 `not_in_source`; a later specialist that reads the same fee under a traceable name keeps it.
 Each specialist run records `self_check_failed`. Since v17 the gates count only reads that
 pass the self-check, which is what can be published: Texas 444 of 459 (main at v16 scored 444
-of 459 on that basis), held out 43 of 49; seven states 660 of 708 (main: 659 of 707). The held
-`untraced` rows show where the shared check can't yet read a layout (a price on the line
-after a dot leader, FREE/NONE on a flattened line, a note line between name and price).
+of 459 on that basis), held out 43 of 49; seven states 660 of 708 (main: 659 of 707). The same PR
+widens the shared check for layouts it missed (a price on the line after a dot leader,
+FREE/NONE on a flattened line, a note line between name and price, a daily cap), which lifts
+the gates to Texas 446 of 461 and seven states 665 of 713 with no new wrong reads.
 v17 also tidies every fee name (`tidyFeeName` in `layout.ts`): table separators, dot
 leaders, bullets, list markers ("b.") and a neighbouring cell's unit ("Per Item", "/Item",
 "N/C") are not part of the name. Category, price and excerpt are unchanged. Hamilton's
 supersede match and the rules re-check restore compare tidied names, so a line live under
 an older untidy name is still the same line. In the 117-document live sample, untidy names
 fell from 136 to 3; gates and the dry run are unchanged.
+
+A new rules version also reaches lines older versions held. Knox does not extract a text twice,
+and the raw-row dedupe index (document, name, amount) stopped a categorized fee from replacing
+the held row, so a held line stayed held after the rules learned it. Now each extract step
+re-reads up to 300 held unclassified lines from the document's current text with today's rules
+(`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
+(`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
+version. A categorized insert that meets a held row takes it over the same way.
 
 ## Extraction Passes
 

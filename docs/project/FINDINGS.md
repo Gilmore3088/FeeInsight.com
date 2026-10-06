@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Institutions with no website were never searched
+**What happened:** 585 active institutions have no `website_url` (510 credit unions, 75 banks; 45
+in TX, 27 in CA, prod read-only query 13:30 UTC). Every finder and the paid pass start from the
+website, so these were skipped forever.
+**Cause:** the FDIC registry step fills `website_url` only when FDIC lists one, and the NCUA step
+stores none. Some state-chartered credit unions also carry a cut-off name ("CALIFORNIA", "HAVEN").
+**Fix:** Magellan's paid step now searches for the official homepage and saves it only after the
+homepage names the institution plus its city or charter number (`magellan/website-find.ts`).
+Rejected candidates stay on the attempt for a person. Cut-off names still need a registry fix.
+**Lesson:** every finder assumes a website; count the rows a precondition excludes before
+assuming a finder covers a state.
+
 ## 2026-10-06: Right price, wrong category is most of what keeps states under 95%
 **What happened:** after source check v3 finished every bank (10:25 UTC), Texas measured 96.7%
 (145 of 150 live fees, hand-checked) but the seven answer-key states stayed at 93.8% (393 of 419,
@@ -1087,6 +1099,21 @@ name supersedes it instead of publishing beside it.
 **Lesson:** when a normalizer changes what an agent writes, every place that matches new rows
 to old ones must apply it too, or the change makes duplicates.
 
+## 2026-10-06: Knox's held lines never got the newer rules
+**What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
+Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an
+overdraft fee and "Inactivity fee $5.00 per month" (raw 109417) a dormant-account fee, but both
+stayed held.
+**Cause:** Knox never extracts the same text twice, and the dedupe index on
+(document, fee name, amount) made a later categorized insert of the same line `DO NOTHING`. A
+line held by an older rules version stayed held for good.
+**Fix:** the extract step re-reads held unclassified lines from the document's current text with
+today's rules (`knox/held-recheck.ts`, 300 per step, marked by rules version so each line is read
+once per version), and a categorized insert that meets a held row takes it over. Read-only dry run
+on all 11,783 current-text held lines: 1,529 get a category and go to Darwin (top: dormant 230,
+early closure 168, monthly maintenance 143, NSF 113, copies 106); nothing live is taken down.
+**Lesson:** a dedupe key that ignores a row's state lets the first, weakest answer win forever;
+when a reader improves, re-read what it set aside, not just what it never saw.
 ## 2026-10-06: Rosetta never heard whether its texts' fees held up
 **What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
 stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
