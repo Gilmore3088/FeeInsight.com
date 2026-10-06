@@ -13,6 +13,7 @@ export type ApiAuthRequirement =
   | "admin"
   | "admin_or_analyst"
   | "premium"
+  | "api_key"
   | "api_key_or_public_read"
   | "cron_or_admin"
   | "secret"
@@ -570,6 +571,20 @@ export const API_ROUTE_POLICIES = [
     telemetryEvent: "api.v1.institutions",
     failBehavior: "fail_closed",
     auditPriority: "high",
+  },
+  {
+    routeId: "api.v1.mcp",
+    routeTemplate: "/api/v1/mcp",
+    file: "src/app/api/v1/mcp/route.ts",
+    surface: "v1",
+    allowedMethods: ["POST"],
+    authRequirement: "api_key",
+    rateLimitBucket: "v1-monthly",
+    costPolicy: "none",
+    telemetryEvent: "api.v1.mcp",
+    failBehavior: "fail_closed",
+    auditPriority: "high",
+    notes: "MCP connector for AI assistants; each tool call runs the matching v1 route with the caller's key. No model call.",
   },
   {
     routeId: "api.v1.openapi",
