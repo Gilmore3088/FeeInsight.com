@@ -430,6 +430,24 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText(name)).toBe(key);
   });
 
+  it.each([
+    ["Int’l Wire Fee Out +", "wire_intl_outgoing"],
+    ["Outgoing Int'l Wire Transfer", "wire_intl_outgoing"],
+    ["Outgoing Wire Out of Country", "wire_intl_outgoing"],
+    ["International Wire Out (each)", "wire_intl_outgoing"],
+    ["Incoming Int'l Wire Transfer (sent in foreign currency)", "wire_intl_incoming"],
+    ["Wire Transfer In (domestic/int'l)", "wire_domestic_incoming"],
+    ["Checkbook Balancing", "account_research"],
+    ["Assistance in Balancing Checkbook", "account_research"],
+    ["Check Book Order", "check_printing"],
+    ["NSF Fee ( Fee applies when overdraft is", "nsf"],
+    ["Insufficient Funds Fee (when overdraft coverage is not available)", "nsf"],
+    ["Non-Sufficient Funds (NSF)/Overdraft Fee", "overdraft"],
+    ["NSF (Courtesy Pay)", "overdraft"],
+  ])("v16 classifies %s as %s", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
   it("v14 leaves names the answer keys file differently from the taxonomy unclassified", () => {
     // Texas keys file returned mail under statements, the taxonomy under account research;
     // a foreign item collection is unmapped in most keys. Knox waits for one answer.
