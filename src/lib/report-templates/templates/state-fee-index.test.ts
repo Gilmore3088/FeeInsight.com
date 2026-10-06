@@ -1,65 +1,61 @@
 import { describe, expect, it } from "vitest";
 import { renderStateFeeIndexReport } from "./state-fee-index";
-import type { StateIndexPayload } from "@/lib/report-assemblers/state-index";
+import { FIXTURE_EMPTY_STATE_REPORT, FIXTURE_STATE_REPORT } from "./__fixtures__/state-report.fixture";
 
-function comparison(fee_category: string, median: number, national: number, institutions: number) {
-  return {
-    fee_category,
-    median_amount: median,
-    p25_amount: median - 5,
-    p75_amount: median + 5,
-    institution_count: institutions,
-    bank_count: Math.ceil(institutions / 2),
-    cu_count: Math.floor(institutions / 2),
-    national_median: national,
-    national_p25: national - 5,
-    national_p75: national + 5,
-    delta_pct: ((median - national) / national) * 100,
-  };
-}
-
-function payload(overrides: Partial<StateIndexPayload> = {}): StateIndexPayload {
-  return {
-    stateCode: "TN",
-    stateName: "Tennessee",
-    district: 6,
-    districtName: "Atlanta",
-    stats: { institution_count: 300, bank_count: 180, cu_count: 120, with_fees: 90, total_fees: 900, fee_categories: 30 },
-    verifiedInstitutions: 90,
-    verifiedBankInstitutions: 55,
-    verifiedCuInstitutions: 35,
-    verifiedFees: 900,
-    comparisons: [comparison("overdraft", 32, 30, 60), comparison("nsf", 28, 30, 50)],
-    charterPairs: [{ fee_category: "overdraft", bank_median_amount: 34, cu_median_amount: 28 }],
-    findings: [
-      { key: "overdraft", figure: "$32.00", headline: "The typical Tennessee overdraft fee", detail: "Median across 60.", exhibit: "benchmarks" },
-    ],
-    regulatory: { windowDays: 180, feeReleases: [], enforcement: [], complaints: null, rules: [], beigeBook: null },
-    ...overrides,
-  };
-}
+const html = renderStateFeeIndexReport({ data: FIXTURE_STATE_REPORT, generatedAt: "2026-10-06" });
+const empty = renderStateFeeIndexReport({ data: FIXTURE_EMPTY_STATE_REPORT, generatedAt: "2026-10-06" });
 
 describe("renderStateFeeIndexReport", () => {
-  it("should_state_the_state_figures_instead_of_a_placeholder", () => {
-    const html = renderStateFeeIndexReport({ payload: payload(), generatedAt: "2026-10-06" });
-    expect(html).not.toContain("under development");
-    expect(html).toContain("Tennessee Fee Index");
-    expect(html).toContain("Federal Reserve District 6 (Atlanta)");
-    expect(html).toContain("Median overdraft fee");
-    expect(html).toContain("The typical Tennessee overdraft fee");
-    expect(html).toContain("Where Tennessee Sits Against National");
-    expect(html).toContain("Banks and Credit Unions");
-    expect(html).toContain("Regulation and Complaints");
+  it("is a complete document with no placeholder text", () => {
+    for (const doc of [html, empty]) {
+      expect(doc.startsWith("<!DOCTYPE html>")).toBe(true);
+      expect(doc).not.toMatch(/under development|future release|lorem/i);
+      expect(doc.slice(doc.indexOf("<body>"))).not.toContain("—"); // no em-dashes in report copy
+    }
   });
 
-  it("should_leave_out_sections_without_data", () => {
-    const html = renderStateFeeIndexReport({
-      payload: payload({ comparisons: [], charterPairs: [], findings: [] }),
+  it("renders the state's data rows against national", () => {
+    expect(html).toContain("Fixture State Bank and Credit Union Fees");
+    // Everyday fee table: state median, middle half and national median for overdraft.
+    expect(html).toContain("Overdraft");
+    expect(html).toContain("$32.00");
+    expect(html).toContain("$25.60 to $36.80");
+    expect(html).toContain("$30.00");
+    // Position against national: overdraft +7%, monthly maintenance -20%.
+    expect(html).toContain("+7%");
+    expect(html).toContain("−20%");
+    // Small sample is marked.
+    expect(html).toContain("small sample");
+  });
+
+  it("includes key findings, the charter comparison and coverage", () => {
+    expect(html).toContain("The typical Fixture State overdraft fee");
+    expect(html).toContain("Credit unions");
+    expect(html).toMatch(/credit unions are cheaper on \d+ of \d+ fees/);
+    expect(html).toContain("Banks with verified fees");
+    expect(html).toContain("of 250 monitored");
+  });
+
+  it("states the source, as-of date and institution counts", () => {
+    expect(html).toContain("live verified fees from the Bank Fee Index (published_fee_catalog), as of FIXTURE DATE");
+    expect(html).toContain("150 institutions of 400 monitored in Fixture State have verified fees");
+  });
+
+  it("says plainly when a section has no data instead of showing numbers", () => {
+    expect(empty).toContain("Not enough Fixture State institutions have verified fees yet for a headline finding");
+    expect(empty).toContain("Not enough Fixture State institutions have verified everyday fees yet");
+    expect(empty).toContain("nothing to compare");
+    expect(empty).toContain("Too few Fixture State banks and credit unions publish the same fees");
+    expect(empty).toContain("refresh date not available");
+    expect(empty).not.toContain("report-table\"");
+    expect(empty).not.toContain("$");
+  });
+
+  it("escapes state names", () => {
+    const doc = renderStateFeeIndexReport({
+      data: { ...FIXTURE_EMPTY_STATE_REPORT, stateName: "<script>x</script>" },
       generatedAt: "2026-10-06",
     });
-    expect(html).not.toContain("Where Tennessee Sits Against National");
-    expect(html).not.toContain("Banks and Credit Unions");
-    expect(html).not.toContain("Median overdraft fee");
-    expect(html).toContain("Institutions monitored");
+    expect(doc).not.toContain("<script>x</script>");
   });
 });

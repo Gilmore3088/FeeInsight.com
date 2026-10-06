@@ -116,6 +116,15 @@ describe("national trends", () => {
     expect(html).not.toMatch(/recommend|should|raise|lower your/i);
   });
 
+  it("leaves out district fee medians and size tiers when another chapter shows them", () => {
+    const html = renderNationalTrendsSection(trends, { number: "09", title: "Rankings, Income Trend and Outliers", districtFees: false, tiers: false });
+    expect(html).toContain("Rankings, Income Trend and Outliers");
+    expect(html).toContain("Service-charge income by Federal Reserve district");
+    expect(html).not.toContain("Median published fee by Federal Reserve district");
+    expect(html).not.toContain("Median published fee by asset size");
+    expect(html).toContain("State ranking");
+  });
+
   it("formats thousands as billions and millions", () => {
     expect(thousandsShort(11_936_642)).toBe("$11.9B");
     expect(thousandsShort(842_000)).toBe("$842M");
