@@ -66,7 +66,7 @@ describe("platform path learning scored by link yield", () => {
         statements.push(text);
         if (text.includes("to_regclass")) return [{ ready }];
         if (text.includes("FROM platform_registry")) return [{ fee_paths: [] }];
-        if (text.includes("FROM institution_sources")) return ready ? rows : rows.map(({ yield_kind: _kind, live_fees: _live, ...rest }) => rest);
+        if (text.includes("FROM institution_sources")) return ready ? rows : rows.map((row) => ({ id: row.id, url: row.url, rejected: row.rejected }));
         return [];
       });
       const learner = createPlatformLearner(db as never);

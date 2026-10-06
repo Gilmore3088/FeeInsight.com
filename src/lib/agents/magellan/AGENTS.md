@@ -79,6 +79,14 @@ and `detail.method_version`).
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.
+- Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
+  link looks out of date are searched once per version for a newer schedule
+  (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
+  schedule's own "Effective ..." date (first 4,000 characters of its latest stored text),
+  or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
+  Only the hour's slot of banks (id mod 24, as the outcome ledger) is checked each step.
+  A different page that passes the fee-page check replaces the link (the old one is not
+  kept); the same page or a miss changes nothing.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
   their path in per-platform learning, and their links are searched first.

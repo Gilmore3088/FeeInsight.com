@@ -25,6 +25,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("stale-link freshness search")) return Promise.resolve([]);
     if (text.includes("AS profile_canonical_source_url")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -696,6 +697,54 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+    });
+  });
+
+  describe("stale-link freshness search", () => {
+    const staleBank = {
+      ...bank(78, "https://oldbank.example", {
+        fee_schedule_url: "https://oldbank.example/docs/2021-fee-schedule.pdf",
+        profile_canonical_source_url: "https://oldbank.example/docs/2021-fee-schedule.pdf",
+      }),
+      url_year: 2021,
+      effective_year: null,
+    };
+    const staleDb = () =>
+      createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [staleBank] : undefined)));
+
+    it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
+      const db = staleDb();
+      const fetchImpl = site({
+        "https://oldbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://oldbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://oldbank.example/disclosures/fee-schedule" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
+      expect(attempts(db)[0].detail).toMatchObject({
+        stale_link: "https://oldbank.example/docs/2021-fee-schedule.pdf",
+        stale_reason: "address names 2021",
+      });
+    });
+
+    it("keeps the link when the search finds the same schedule or nothing", async () => {
+      const db = staleDb();
+      const fetchImpl = site({
+        "https://oldbank.example/": () => response('<a href="/docs/2021-fee-schedule.pdf">Fee Schedule</a>'),
+        "https://oldbank.example/docs/2021-fee-schedule.pdf": () => response(FEE_TABLE),
+      });
+
+      await runMagellanDiscovery({ runId: 123, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
+      expect(attempts(db).length).toBeGreaterThan(0);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
     });
   });
 
