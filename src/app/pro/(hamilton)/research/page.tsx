@@ -25,7 +25,6 @@ import {
   MemoPage,
   MemoSection,
   QuarterLines,
-  SERIF,
   Tabs,
   fmtFiledThousands,
   fmtMoney,
