@@ -54,7 +54,7 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
   const plotted = lines.filter((l): l is PlottedLine => l.comparable && !!l.own && !!l.peers);
   const total = counts.above + counts.inside + counts.below;
   const tiles = [
-    { label: "Above the local middle half", value: counts.above, tone: "text-[#A93D25]" },
+    { label: "Above the local range", value: counts.above, tone: "text-[#A93D25]" },
     { label: "Inside it", value: counts.inside, tone: "text-[#3D6B3A]" },
     { label: "Below it, or free", value: counts.below, tone: "text-[#2F5585]" },
   ];
@@ -66,9 +66,10 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
       <p className="mt-1 text-[13px] text-[#6B6255]">Your {total} comparable fee lines against local competitors.</p>
       <dl className="mt-4 grid grid-cols-3 gap-3">
         {tiles.map((tile) => (
-          <div key={tile.label} className="rounded-lg border border-[#EFE8DD] bg-white px-3 py-3">
-            <dt className="text-[12px] leading-snug text-[#6B6255]">{tile.label}</dt>
-            <dd className={`mt-1 text-2xl tabular-nums ${tile.tone}`} style={SERIF}>
+          // Number on top so the three figures share one baseline however their labels wrap.
+          <div key={tile.label} className="flex flex-col-reverse justify-end rounded-lg border border-[#EFE8DD] bg-white px-3 py-3">
+            <dt className="mt-1 text-[12px] leading-snug text-[#6B6255]">{tile.label}</dt>
+            <dd className={`text-3xl leading-none tabular-nums ${tile.tone}`} style={SERIF}>
               {tile.value}
             </dd>
           </div>
