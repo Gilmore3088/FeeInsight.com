@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
+**What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
+rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
+(42,886 live fees) were due. 2,883 of them were due only because source check v4 (daily caps,
+PR 271) went live at about 15:00: a strategy bump makes every bank due again. Before that,
+v3 checks ran 157-247 banks an hour (11:00-14:59) while Knox re-reads and new publishes kept
+raising banks' newest fee id, which also makes a bank due, so the backlog grew from 262 to 315
+banks. Publish steps run about 12 times an hour at 40 banks each (4-15 s a step).
+**Cause:** a fixed 40 banks per publish step could not absorb a full re-check plus the day's
+new fees.
+**Fix:** `SOURCE_CHECK_INSTITUTION_LIMIT` 40 -> 120 (PR 280). About 1,400 banks an hour, so a
+full re-check clears in about 2 hours; the texts a step reads stay small (about 20 KB a bank).
+**Lesson:** a version bump on a check that covers every bank needs the check's pace sized to
+the whole catalog, or a catch-up pass, in the same PR; count the due backlog after each bump.
+
 ## 2026-10-06: Flat foreign transaction fees were mostly ATM, wire and rate rows
 **What happened:** read-only prod query, 14:50 UTC Oct 6. Of 45 live `card_foreign_txn` rows
 with a dollar amount, 13 were "ATM Foreign Transaction Fee" (a fee for using another bank's

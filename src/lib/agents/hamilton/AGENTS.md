@@ -248,7 +248,7 @@ Documents whose live fees were all taken down are re-checked too. Step detail:
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
-publish step runs `source-check.ts` on up to 40 institutions not checked since their
+publish step runs `source-check.ts` on up to 120 institutions not checked since their
 newest live fee: its own state's (or institution's) first, then any state's to fill
 the batch, institutions never checked first. A new strategy version (bumped whenever
 the shared reader changes) re-checks every institution and restores fees an older
