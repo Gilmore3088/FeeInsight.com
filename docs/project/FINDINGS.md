@@ -1161,3 +1161,31 @@ on them, 1 PDF for the paid pass now. A new text replaces the old only when it l
 many fees, so no live fee is taken down by the re-read itself.
 **Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
 
+
+## 2026-10-06: Large banks' overdraft fees were missed, misfiled or misnamed
+**What happened:** a check of large banks' overdraft fees found Knox missing or mangling them:
+"Overdrafts Paid" and "Overdrafts (OD)" (Enterprise, United Bank VA, Trustmark) were not read;
+"Insufficient Funds Fee – Item Paid" (Santander) was filed as NSF; "We charge a fee of $37.00
+each time we pay an overdraft" (First Merchants) was named "We charge a fee of"; Navy Federal's
+$20 went live as "†Standard Practices and Fees: We will charge a fee of" and the rules re-check
+took it down; a dot-leader row gave the next fee the first price's terms as its name (Glacier,
+Mechanics); ESL's fee cards tiered "based on the value of the item" were not read; and Ent's
+"Courtesy Pay" / "$30.00 | everyday debit card transactions ..." failed the shared check because
+a price line under a name had to be 40 characters or less.
+**Cause:** the overdraft rule matched only the singular; nothing read a paid item as an
+overdraft; a sentence-form fee took its name from the words before the price; the second price
+on a line took every word since the first price; the shared check treated a long price line as
+another row, and rejected every tier, even one named by its own band.
+**Fix:** Knox v19 (rules 19). The plural names the fee only when it opens the name or a fee word
+follows ("transfer to cover overdrafts" and "overdrafts up to $500" stay out); a paid
+insufficient-funds item is overdraft; a sentence-form fee is named by what it charges for
+("Overdraft fee (each time we pay an overdraft)"), with "one per day" kept in the name since the
+daily-cap categories hold dollars; a lowercase run before a title is the earlier price's terms;
+fee cards tiered by item value are read per tier. The shared check reads a price line whose
+first cell is the price and the rest a lowercase note, and accepts a tier whose name carries its
+own band (balance bands without one stay `tiered_fee`). Gates unchanged (Texas 452 of 467, seven
+states 673 of 720); live dry run 1,416 of 1,437 kept, same as v18; old vs new check on the
+704-fee live sample and the 94 takedowns: no change. Held lines: 8 more overdraft reads, all
+correct. The overdraft guard (accuracy thread) still rejects "Item Paid", so Santander waits on it.
+**Lesson:** a rule written from one bank's wording misses the same fee in a plural or a
+sentence; test new rules on the held lines before trusting them.

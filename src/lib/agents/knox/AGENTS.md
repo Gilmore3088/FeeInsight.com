@@ -115,6 +115,18 @@ figure followed by "par" or "required" ("$5 par in Primary Savings is required")
 requirement, not a fee. Gates: Texas 452 of 467 (v17: 446 of 461), held out 43 of 49, seven
 states 673 of 720 (v17: 665 of 713).
 
+v19 (rules 19) fixes large banks' overdraft rows. "Overdrafts Paid" and "Overdrafts (OD)" are
+overdraft (the plural names the fee only when it opens the name or a fee word follows it); an
+insufficient-funds item the bank pays ("Item Paid") is overdraft. A fee written as a sentence ("We
+charge a fee of $37.00 each time we pay an overdraft") is named by what it charges for
+("Overdraft fee (each time we pay an overdraft)"); "one ... per day" stays in the name, because
+the daily-cap categories hold dollars. On a dot-leader line with two prices, lowercase words
+after the first price are its terms and the title before the second price is the second fee's
+name. Fee cards tiered by the item's value ("Fee Type" / "charged a fee based on the value of
+the item" / "Greater than $5.00: $5.00") are read per tier, and a price whose next cell is
+prose ("$30.00 | ... unless you opt in") is never named by that prose. The shared check now
+reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

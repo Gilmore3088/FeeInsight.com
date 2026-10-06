@@ -509,4 +509,43 @@ describe("Knox extract.rules", () => {
     const par = "*$5 par in Primary Savings is required and deposit enough for Annual Fee and Key Deposit to be pulled at time of opening.";
     expect(extractFromSegment(par).candidates).toEqual([]);
   });
+
+  it("v19 reads plural overdraft names and files a paid insufficient-funds item as overdraft", () => {
+    expect(classifyPatternKey("Overdrafts Paid")).toBe("overdraft");
+    expect(classifyPatternKey("Overdrafts fee (per item)")).toBe("overdraft");
+    expect(classifyPatternKey("Overdrafts (OD)")).toBe("overdraft");
+    expect(classifyPatternKey("Insufficient Funds Fee – Item Paid")).toBe("overdraft");
+    expect(classifyPatternKey("Insufficient Funds Fee - Item Returned")).toBe("nsf");
+    // A transfer to cover overdrafts or a coverage limit is not the overdraft fee.
+    expect(classifyFeeText("Automatic Transfer Fee when used to prevent overdrafts")).not.toBe("overdraft");
+    expect(classifyFeeText("For personal accounts, overdrafts and fees up to a total of")).toBeNull();
+  });
+
+  it("v19 names a sentence-form fee by what it charges for (First Merchants, Navy Federal)", () => {
+    expect(fees("We charge a fee of $37.00 each time we pay an overdraft.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft)", 37, "overdraft"],
+    ]);
+    expect(fees("†Standard Practices and Fees: We will charge a fee of $20 each time we pay an overdraft; you can only be assessed one overdraft fee per day per account.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft; one per day)", 20, "overdraft"],
+    ]);
+  });
+
+  it("v19 names a dot-leader row's second price by the title before it, not the first price's terms", () => {
+    const line = "Overdraft Fee.......... $30.00 - fee assessed for each item paid1 Continuous Overdraft Fee.......... $5.00 per day";
+    expect(fees(line)).toEqual([
+      ["Overdraft Fee", 30, "overdraft"],
+      ["Continuous Overdraft Fee", 5, "continuous_od"],
+    ]);
+  });
+
+  it("v19 reads an overdraft fee card tiered by the item's value (ESL)", () => {
+    const text =
+      "Fee TypeCourtesy Pay Overdraft Fee\n\nDescriptionOverdraft Service for checks. Each overdraft is charged a fee based on the value of the item. The monthly maximum overdraft is $250.\n\nFee$0.01-$5.00: $0\n\nGreater than $5.00: $5.00";
+    expect(fees(text)).toContainEqual(["Courtesy Pay Overdraft Fee (items Greater than $5.00)", 5, "overdraft"]);
+  });
+
+  it("v19 never names a price by a prose note in the next cell (Ent)", () => {
+    const text = "Courtesy Pay\n$30.00 | everyday debit card transactions and ATM withdrawals are not covered unless you opt in";
+    expect(runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Courtesy Pay", 30, "overdraft"]]);
+  });
 });
