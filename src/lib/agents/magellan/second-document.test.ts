@@ -21,7 +21,7 @@ function createDb(ready = true): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("institution_additional_sources') IS NOT NULL")) return Promise.resolve([{ ready }]);
-    if (text.includes("FROM published_fee_catalog")) return Promise.resolve([thinBank]);
+    if (text.includes("FROM published_fee_records")) return Promise.resolve([thinBank]);
     if (text.includes("SELECT document_url AS url")) return Promise.resolve([{ url: "https://thin.example/personal/fees" }]);
     return Promise.resolve([]);
   });
@@ -54,7 +54,7 @@ describe("Magellan second-document finder", () => {
     expect(attempt?.[4]).toBe(SECOND_DOCUMENT_FINDER.strategy);
     // The main fee link is never touched.
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
-    const select = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_catalog"));
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_records"));
     expect(select).toContain(THIN_BANK_CATEGORY_LIMIT);
   });
 
