@@ -372,6 +372,7 @@ async function executeAgenticStep(
           failures: discovery.failures,
           attempted_urls: discovery.attemptedUrls,
           discovery_codes: discovery.codes,
+          resumed_searches: discovery.resumed,
           found_by: discovery.foundBy,
           method_version: discovery.methodVersion,
           learning_log: discovery.learning,

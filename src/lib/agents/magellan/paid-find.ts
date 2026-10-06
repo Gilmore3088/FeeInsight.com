@@ -243,6 +243,8 @@ function paidDiscovery(row: PaidFindRow, fields: Partial<CandidateDiscoveryResul
     homepageHash: null,
     finders: [],
     durationMs: 0,
+    resumedFrom: null,
+    resume: null,
     ...fields,
   };
 }

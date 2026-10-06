@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DISCOVERY_METHOD_VERSION, rejectedSourcesFrom, runMagellanDiscovery } from "./discovery";
+import {
+  DISCOVERY_METHOD_VERSION,
+  nextDiscoveryResume,
+  parseDiscoveryResume,
+  rejectedSourcesFrom,
+  RESUME_FIRST_PER_STEP,
+  RESUME_MAX_TICKS,
+  runMagellanDiscovery,
+  type DiscoveryResume,
+} from "./discovery";
 
 type DbMock = ReturnType<typeof vi.fn>;
 type Handler = (text: string, values: unknown[]) => unknown[] | undefined;
@@ -498,6 +507,198 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+    });
+  });
+
+  describe("searches cut short by time resume where they stopped", () => {
+    const HUB_HOME = '<a href="/disclosures">Disclosures</a> <a href="/rates-and-fees">Rates and Fees</a>' +
+      ' <a href="/documents">Documents</a> <a href="/forms">Forms</a>';
+
+    /** A slow site: every request takes `clock.costMs` on a fake clock. */
+    function slowSite(pages: Record<string, () => Response>, clock: { now: number; costMs: number }) {
+      return vi.fn(async (input: RequestInfo | URL) => {
+        clock.now += clock.costMs;
+        const url = String(input);
+        return pages[url]?.() ?? response("not found", "text/html", 404);
+      });
+    }
+
+    function hubSite(host: string): Record<string, () => Response> {
+      return {
+        [`https://${host}/`]: () => response(HUB_HOME),
+        [`https://${host}/disclosures`]: () => response("<p>Our disclosures.</p>"),
+        [`https://${host}/rates-and-fees`]: () => response("<p>Rates.</p>"),
+        [`https://${host}/documents`]: () => response("<p>Documents.</p>"),
+        [`https://${host}/forms`]: () => response("<p>Forms.</p>"),
+      };
+    }
+
+    function lastDetail(db: DbMock): Record<string, unknown> {
+      const logged = attempts(db);
+      return logged[logged.length - 1].detail;
+    }
+
+    it("remembers finished specialists and counts a cut only on a full budget", () => {
+      const first = nextDiscoveryResume(null, {
+        completed: ["knownLink", "homepageLinks", "sitemap"],
+        cutIn: "hubPages",
+        fullBudget: true,
+        sawCandidates: false,
+      });
+      expect(first).toEqual({
+        methodVersion: DISCOVERY_METHOD_VERSION,
+        done: ["knownLink", "homepageLinks", "sitemap"],
+        cutIn: "hubPages",
+        cutCount: 1,
+        ticks: 1,
+        skipped: [],
+        sawCandidates: false,
+      });
+      // Squeezed in at the end of a step: the cut does not count toward skipping.
+      const squeezed = nextDiscoveryResume(first, { completed: [], cutIn: "hubPages", fullBudget: false, sawCandidates: true });
+      expect(squeezed).toMatchObject({ cutIn: "hubPages", cutCount: 1, ticks: 2, sawCandidates: true });
+      // A second cut on a full budget skips the specialist; the next search starts after it.
+      const skipped = nextDiscoveryResume(squeezed, { completed: [], cutIn: "hubPages", fullBudget: true, sawCandidates: false });
+      expect(skipped).toMatchObject({
+        done: ["knownLink", "homepageLinks", "sitemap", "hubPages"],
+        cutIn: null,
+        cutCount: 0,
+        ticks: 3,
+        skipped: ["hubPages"],
+        sawCandidates: true,
+      });
+      // The clock ran out between two specialists: nothing to count against either.
+      expect(nextDiscoveryResume(skipped, { completed: ["platformPaths"], cutIn: null, fullBudget: true, sawCandidates: false }))
+        .toMatchObject({ cutIn: null, cutCount: 0, ticks: 4, done: expect.arrayContaining(["platformPaths"]) });
+    });
+
+    it("reads a stored resume state and ignores one from another method version", () => {
+      const stored = { methodVersion: DISCOVERY_METHOD_VERSION, done: ["sitemap", "bogus", "sitemap"], cutIn: "siteCrawl", cutCount: 1, ticks: 2 };
+      expect(parseDiscoveryResume(JSON.stringify(stored))).toEqual({
+        methodVersion: DISCOVERY_METHOD_VERSION,
+        done: ["sitemap"],
+        cutIn: "siteCrawl",
+        cutCount: 1,
+        ticks: 2,
+        skipped: [],
+        sawCandidates: false,
+      });
+      expect(parseDiscoveryResume({ ...stored, methodVersion: DISCOVERY_METHOD_VERSION - 1 })).toBeNull();
+      expect(parseDiscoveryResume(null)).toBeNull();
+      expect(parseDiscoveryResume("not json")).toBeNull();
+    });
+
+    it("splits a slow bank's search across steps instead of restarting it", async () => {
+      const clock = { now: 1_000_000, costMs: 10_000 };
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+      try {
+        const pages = { ...hubSite("slow.example"), "https://slow.example/schedule-of-fees": () => response(FEE_TABLE) };
+
+        // Search 1: homepage, robots.txt and site map take 30 s; the clock stops inside the hub pages.
+        const db1 = createDbMock([bank(80, "https://slow.example")], learningHandler());
+        const fetch1 = slowSite(pages, clock);
+        const first = await runMagellanDiscovery({ runId: 150, db: asDiscoveryDb(db1), fetchImpl: fetch1, politeDelayMs: 0, secondDocuments: false });
+        expect(first.results[0]).toMatchObject({ outcome: "retry_after", code: "out_of_time", resumedFrom: null });
+        const resume1 = first.results[0].resume as DiscoveryResume;
+        expect(resume1).toMatchObject({ done: ["rejectedPageLinks", "knownLink", "homepageLinks", "sitemap"], cutIn: "hubPages", cutCount: 1, ticks: 1 });
+        // Visible on the search's last attempt, which is also where the next search reads it.
+        expect(lastDetail(db1)).toMatchObject({ code: "out_of_time", resume: resume1, resumed_from: null });
+        expect(first.results[0].reason).toContain("next hubPages");
+
+        // Search 2: resumes at the hub pages (no second robots.txt or site map read) and,
+        // with the time search 1 spent on them saved, finishes all four before the clock stops.
+        const db2 = createDbMock(
+          [bank(80, "https://slow.example", { rescue_status: "retry_after", discovery_cut_off: true, discovery_resume: resume1 })],
+          learningHandler(),
+        );
+        const fetch2 = slowSite(pages, clock);
+        const second = await runMagellanDiscovery({ runId: 151, db: asDiscoveryDb(db2), fetchImpl: fetch2, politeDelayMs: 0, secondDocuments: false });
+        expect(fetched(fetch2)).not.toContain("https://slow.example/robots.txt");
+        expect(fetched(fetch2)).not.toContain("https://slow.example/sitemap.xml");
+        expect(fetched(fetch2)).toContain("https://slow.example/disclosures");
+        expect(second.resumed).toBe(1);
+        expect(attempts(db2).map((attempt) => attempt.strategy)).toEqual(["discover.hub_pages"]);
+        const resume2 = second.results[0].resume as DiscoveryResume;
+        expect(fetched(fetch2)).toContain("https://slow.example/forms");
+        expect(resume2).toMatchObject({ cutIn: null, cutCount: 0, ticks: 2, skipped: [] });
+        expect(resume2.done).toEqual(["rejectedPageLinks", "knownLink", "homepageLinks", "sitemap", "hubPages"]);
+        expect(lastDetail(db2)).toMatchObject({
+          resume: resume2,
+          resumed_from: { cut_off_searches: 1, skipped_done: ["rejectedPageLinks", "knownLink", "homepageLinks", "sitemap"] },
+        });
+
+        // Search 3: continues after the hub pages and finds the schedule by a guessed path.
+        clock.costMs = 0;
+        const db3 = createDbMock(
+          [bank(80, "https://slow.example", { rescue_status: "retry_after", discovery_cut_off: true, discovery_resume: resume2 })],
+          learningHandler(),
+        );
+        const fetch3 = slowSite(pages, clock);
+        const third = await runMagellanDiscovery({ runId: 152, db: asDiscoveryDb(db3), fetchImpl: fetch3, politeDelayMs: 0, secondDocuments: false });
+        expect(third.results[0]).toMatchObject({
+          outcome: "discovered",
+          code: "found_common_path",
+          url: "https://slow.example/schedule-of-fees",
+          resume: null,
+        });
+        expect(fetched(fetch3)).not.toContain("https://slow.example/disclosures");
+        expect(lastDetail(db3)).toMatchObject({ resume: null, resumed_from: { cut_off_searches: 2 } });
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it("ignores a resume state unless the bank's last search was cut short", async () => {
+      const db = createDbMock(
+        [bank(81, "https://fresh.example", {
+          rescue_status: "dead",
+          discovery_cut_off: false,
+          discovery_resume: { methodVersion: DISCOVERY_METHOD_VERSION, done: ["sitemap"], cutIn: null, cutCount: 0, ticks: 1 },
+        })],
+        learningHandler(),
+      );
+      const fetchImpl = site({ "https://fresh.example/": () => response("<p>Home</p>") });
+      const result = await runMagellanDiscovery({ runId: 153, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0, secondDocuments: false });
+      expect(result.results[0].resumedFrom).toBeNull();
+      expect(fetched(fetchImpl)).toContain("https://fresh.example/sitemap.xml");
+    });
+
+    it("calls a bank a miss after too many cut-off searches", async () => {
+      const clock = { now: 2_000_000, costMs: 10_000 };
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+      try {
+        const resume: DiscoveryResume = {
+          methodVersion: DISCOVERY_METHOD_VERSION,
+          done: ["knownLink", "homepageLinks", "sitemap"],
+          cutIn: null,
+          cutCount: 0,
+          ticks: RESUME_MAX_TICKS,
+          skipped: [],
+          sawCandidates: false,
+        };
+        const db = createDbMock(
+          [bank(82, "https://slow2.example", { rescue_status: "retry_after", discovery_cut_off: true, discovery_resume: resume })],
+          learningHandler(),
+        );
+        clock.costMs = 20_000;
+        const fetchImpl = slowSite(hubSite("slow2.example"), clock);
+        const result = await runMagellanDiscovery({ runId: 154, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0, secondDocuments: false });
+        expect(result.results[0]).toMatchObject({ outcome: "dead", code: "out_of_time" });
+        expect(result.results[0].resume).toMatchObject({ ticks: RESUME_MAX_TICKS + 1 });
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it("puts one cut-off bank at the front of the step and reads its resume state from the attempt log", async () => {
+      const db = createDbMock([], learningHandler());
+      await runMagellanDiscovery({ runId: 155, db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+      const call = selectorCall(db);
+      const sqlText = templateText(call[0]);
+      expect(sqlText).toContain("LIKE 'out_of_time:%') AS discovery_cut_off");
+      expect(sqlText).toContain("pa.detail ? 'resume'");
+      expect(sqlText).toContain("ranked.cut_rank <=");
+      expect(call).toContain(RESUME_FIRST_PER_STEP);
     });
   });
 });

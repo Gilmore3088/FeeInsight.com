@@ -70,8 +70,110 @@ const STEP_HARD_BUDGET_MS = 100_000;
 /** Pause between crawl requests to one site. */
 const DEFAULT_POLITE_DELAY_MS = 250;
 const MAX_TRAIL = 60;
-/** Searches cut short by time before a bank is treated as a miss rather than retried in 12 hours. */
+/**
+ * Without the attempt log (no resume state), searches cut short by time before a bank is
+ * treated as a miss rather than retried in 12 hours.
+ */
 const OUT_OF_TIME_RETRIES = 2;
+/**
+ * A search cut short by time resumes at the next specialist (`DiscoveryResume`). The clock
+ * stopping in the same specialist this many times on a full per-bank budget skips it.
+ */
+export const RESUME_MAX_CUTS_PER_FINDER = 2;
+/** Cut-off searches a bank may chain before it is a miss (re-checked on the monthly schedule). */
+export const RESUME_MAX_TICKS = 12;
+/** Cut-off banks put at the front of a step, each with the full per-bank budget. */
+export const RESUME_FIRST_PER_STEP = 1;
+
+/** Every specialist key, in the order a search runs them. */
+const SEARCH_ORDER: FinderKey[] = ["rejectedPageLinks", ...FINDER_ORDER.map((finder) => finder.key)];
+
+/**
+ * Where a search cut short by time stopped, so the next search continues there instead of
+ * starting over. Stored on the last `pipeline_attempts` row of the search
+ * (`detail.resume`; null once a search ends) and read back when the bank is selected.
+ */
+export interface DiscoveryResume {
+  /** The `DISCOVERY_METHOD_VERSION` it was written under; another version starts over. */
+  methodVersion: number;
+  /** Specialists that finished without a find (or were skipped) on earlier searches. */
+  done: FinderKey[];
+  /** The specialist the clock stopped inside, if it stopped inside one. */
+  cutIn: FinderKey | null;
+  /** Times in a row the clock stopped inside `cutIn` on a full per-bank budget. */
+  cutCount: number;
+  /** Cut-off searches so far in this chain. */
+  ticks: number;
+  /** Specialists skipped after being cut off `RESUME_MAX_CUTS_PER_FINDER` times. */
+  skipped: FinderKey[];
+  /** An earlier search in the chain saw fee-like candidates (for the final miss code). */
+  sawCandidates: boolean;
+}
+
+function isFinderKey(value: unknown): value is FinderKey {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(FINDERS, value);
+}
+
+/** The resume state from `detail.resume`, or null when absent, malformed or from another method version. */
+export function parseDiscoveryResume(value: unknown): DiscoveryResume | null {
+  let raw = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  if (Number(record.methodVersion) !== DISCOVERY_METHOD_VERSION) return null;
+  const keys = (list: unknown) => (Array.isArray(list) ? [...new Set(list.filter(isFinderKey))] : []);
+  return {
+    methodVersion: DISCOVERY_METHOD_VERSION,
+    done: keys(record.done),
+    cutIn: isFinderKey(record.cutIn) ? record.cutIn : null,
+    cutCount: Math.max(0, Math.floor(Number(record.cutCount) || 0)),
+    ticks: Math.max(0, Math.floor(Number(record.ticks) || 0)),
+    skipped: keys(record.skipped),
+    sawCandidates: record.sawCandidates === true,
+  };
+}
+
+/**
+ * Pure: the resume state after a search cut short by time.
+ * - `completed`: specialists that finished (or had nothing to do) on this search.
+ * - `cutIn`: the specialist the clock stopped inside, or null when it stopped between two.
+ * - `fullBudget`: the bank had the whole per-bank budget; only then does a cut count
+ *   toward skipping that specialist (a bank squeezed in at the end of a step is not).
+ */
+export function nextDiscoveryResume(
+  previous: DiscoveryResume | null,
+  search: { completed: FinderKey[]; cutIn: FinderKey | null; fullBudget: boolean; sawCandidates: boolean },
+): DiscoveryResume {
+  const done = new Set<FinderKey>([...(previous?.done ?? []), ...search.completed]);
+  const skipped = new Set<FinderKey>(previous?.skipped ?? []);
+  let cutIn = search.cutIn;
+  let cutCount = 0;
+  if (cutIn) {
+    const before = previous?.cutIn === cutIn ? previous.cutCount : 0;
+    cutCount = before + (search.fullBudget ? 1 : 0);
+    if (cutCount >= RESUME_MAX_CUTS_PER_FINDER) {
+      done.add(cutIn);
+      skipped.add(cutIn);
+      cutIn = null;
+      cutCount = 0;
+    }
+  }
+  return {
+    methodVersion: DISCOVERY_METHOD_VERSION,
+    done: SEARCH_ORDER.filter((key) => done.has(key)),
+    cutIn,
+    cutCount,
+    ticks: (previous?.ticks ?? 0) + 1,
+    skipped: SEARCH_ORDER.filter((key) => skipped.has(key)),
+    sawCandidates: Boolean(previous?.sawCandidates) || search.sawCandidates,
+  };
+}
 
 interface DiscoveryCandidateRow {
   id: number | string;
@@ -89,6 +191,10 @@ interface DiscoveryCandidateRow {
   fee_schedule_url?: string | null;
   /** True when the bank has a product-page link and this is a search for the real schedule. */
   upgrade?: boolean;
+  /** `detail.resume` of the bank's last search, when it was cut short by time. */
+  discovery_resume?: unknown;
+  /** True when the bank's last search was cut short by time (`retry_after`, `out_of_time`). */
+  discovery_cut_off?: boolean | string | null;
 }
 
 export type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_after" | "failure";
@@ -140,6 +246,10 @@ export interface CandidateDiscoveryResult {
   homepageHash: string | null;
   finders: FinderRunSummary[];
   durationMs: number;
+  /** The search continued from an earlier cut-off search (the state it started from). */
+  resumedFrom: DiscoveryResume | null;
+  /** Where the next search continues; null unless this search was cut short by time with resume on. */
+  resume: DiscoveryResume | null;
 }
 
 export interface RunMagellanDiscoveryOptions {
@@ -168,6 +278,8 @@ export interface RunMagellanDiscoveryResult {
   attemptedUrls: number;
   /** Counts by discovery code: where each bank stopped. */
   codes: Partial<Record<DiscoveryCode, number>>;
+  /** Banks whose search continued from an earlier cut-off search instead of starting over. */
+  resumed: number;
   /** Finds per specialist. */
   foundBy: Partial<Record<FinderKey, number>>;
   learning: boolean;
@@ -292,6 +404,12 @@ async function discoverForInstitution(
     knowledge: PlatformLearner;
     deadline: number;
     politeDelayMs: number;
+    /** Where an earlier cut-off search stopped; its finished specialists are not run again. */
+    resume?: DiscoveryResume | null;
+    /** Write a resume state when the search is cut short (needs the attempt log). */
+    resumable?: boolean;
+    /** The bank has the whole per-bank budget (not squeezed by the step's end). */
+    fullBudget?: boolean;
   },
 ): Promise<CandidateDiscoveryResult> {
   const startedAt = Date.now();
@@ -303,6 +421,9 @@ async function discoverForInstitution(
   let movedTo: string | null = null;
   let platform: string | null = null;
   let homepageHash: string | null = null;
+  const resumedFrom = options.resume ?? null;
+  const alreadyDone = new Set<FinderKey>(resumedFrom?.done ?? []);
+  let resume: DiscoveryResume | null = null;
   const finish = (
     fields: Pick<CandidateDiscoveryResult, "outcome" | "code" | "reason"> &
       Partial<Pick<CandidateDiscoveryResult, "url" | "documentType" | "confidence" | "foundBy">>,
@@ -321,6 +442,8 @@ async function discoverForInstitution(
     homepageHash,
     finders,
     durationMs: Date.now() - startedAt,
+    resumedFrom,
+    resume,
     ...fields,
   });
 
@@ -361,7 +484,10 @@ async function discoverForInstitution(
 
   // Pages already ruled out often link to the real schedule: follow them first, before
   // (and regardless of) the homepage, which may block bots.
-  if (ctx.rejectedPages && ctx.rejectedPages.length > 0) {
+  // Specialists that finished this search (no find), and the one the clock stopped inside.
+  const completed: FinderKey[] = [];
+  let cutIn: FinderKey | null = null;
+  if (ctx.rejectedPages && ctx.rejectedPages.length > 0 && !alreadyDone.has("rejectedPageLinks")) {
     const finderStarted = Date.now();
     const result = await findFromRejectedPages(ctx).catch((error): FinderResult => ({
       found: null, trail: [], fetches: 0, ran: true, outOfTime: false,
@@ -380,6 +506,11 @@ async function discoverForInstitution(
       });
     }
     if (result.found) return foundResult(finish, "rejectedPageLinks", result.found);
+    if (result.outOfTime) cutIn = "rejectedPageLinks";
+    else completed.push("rejectedPageLinks");
+  } else if (!alreadyDone.has("rejectedPageLinks")) {
+    // No ruled-out pages to follow: nothing left for this specialist.
+    completed.push("rejectedPageLinks");
   }
 
   // The homepage is read once and shared by every specialist; its request is logged on
@@ -439,9 +570,13 @@ async function discoverForInstitution(
   ctx.platform = platform;
   ctx.pages.set(urlIdentity(site.toString()), html);
 
-  let lastReason = "No candidate validated";
-  let ranOutOfTime = false;
+  let lastReason = resumedFrom
+    ? `Resumed after ${resumedFrom.done.length} finished specialists; no candidate validated`
+    : "No candidate validated";
+  let ranOutOfTime = cutIn !== null;
   for (const { key, run } of FINDER_ORDER) {
+    if (ranOutOfTime) break;
+    if (alreadyDone.has(key)) continue;
     if (Date.now() > options.deadline) {
       ranOutOfTime = true;
       break;
@@ -457,7 +592,10 @@ async function discoverForInstitution(
       result = { ...result, trail: [homepageTrail, ...result.trail], fetches: result.fetches + 1 };
     }
     attemptedUrls += result.fetches - (key === "homepageLinks" ? 1 : 0);
-    if (!result.ran) continue;
+    if (!result.ran) {
+      completed.push(key);
+      continue;
+    }
     finders.push({
       key,
       ...FINDERS[key],
@@ -471,23 +609,44 @@ async function discoverForInstitution(
     if (lastVerdict) lastReason = `${FINDERS[key].strategy}: ${lastVerdict.url} ${lastVerdict.verdict}`;
     if (result.found) return foundResult(finish, key, result.found);
     if (result.outOfTime) {
+      cutIn = key;
       ranOutOfTime = true;
       break;
     }
+    completed.push(key);
   }
 
+  const sawCandidatesNow = finders.some((finder) =>
+    finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page", "rejected_page"].includes(entry.source)),
+  );
   if (ranOutOfTime) {
-    // Cut short: search again in 12 hours, unless the site keeps running out of time.
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    if (options.resumable) {
+      // Cut short: the next search (12 hours on) continues at the next specialist, so a
+      // slow site is searched across several steps instead of restarting each time.
+      const next = nextDiscoveryResume(resumedFrom, {
+        completed,
+        cutIn,
+        fullBudget: options.fullBudget ?? true,
+        sawCandidates: sawCandidatesNow,
+      });
+      resume = next;
+      const remaining = SEARCH_ORDER.filter((key) => !next.done.includes(key));
+      return finish({
+        outcome: next.ticks > RESUME_MAX_TICKS ? "dead" : "retry_after",
+        code: "out_of_time",
+        reason: `Search stopped after ${seconds}s (cut-off search ${next.ticks}, ${next.done.length} specialists done, next ${remaining[0] ?? "none"}); ${lastReason}`,
+      });
+    }
+    // No attempt log to resume from: search again in 12 hours, unless the site keeps running out of time.
     const failures = Number(row.profile_consecutive_failures ?? 0);
     return finish({
       outcome: failures >= OUT_OF_TIME_RETRIES ? "dead" : "retry_after",
       code: "out_of_time",
-      reason: `Search stopped after ${Math.round((Date.now() - startedAt) / 1000)}s; ${lastReason}`,
+      reason: `Search stopped after ${seconds}s; ${lastReason}`,
     });
   }
-  const sawCandidates = finders.some((finder) =>
-    finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page", "rejected_page"].includes(entry.source)),
-  );
+  const sawCandidates = sawCandidatesNow || Boolean(resumedFrom?.sawCandidates);
   if (!sawCandidates && looksJavaScriptBuilt(html) && countAnchors(html) < 5) {
     return finish({ outcome: "dead", code: "js_homepage", reason: "Homepage is built by JavaScript; no links to follow without a browser" });
   }
@@ -521,6 +680,11 @@ function foundResult(
  * - a miss (`dead`, `needs_human`) after a month, then after a quarter once it has
  *   missed twice in a row (`consecutive_failures` on the bank's profile);
  * - any miss at once when its last search used an older discovery method version.
+ *
+ * A bank whose last search was cut short by time (`retry_after`, `out_of_time`) carries
+ * that search's resume state (`discovery_resume`, from the attempt log). The first
+ * `RESUME_FIRST_PER_STEP` such banks go to the front of the step so they get the full
+ * per-bank budget; the rest keep their usual place.
  */
 async function selectCandidates(
   db: SqlTag,
@@ -531,6 +695,7 @@ async function selectCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
   return db<DiscoveryCandidateRow[]>`
+    WITH due AS (
     SELECT inst.id,
            inst.institution_name,
            inst.state_code,
@@ -541,7 +706,20 @@ async function selectCandidates(
            profile.source_kind AS profile_source_kind,
            profile.read_strategy AS profile_read_strategy,
            profile.locked_by_correction AS profile_locked_by_correction,
-           profile.consecutive_failures AS profile_consecutive_failures
+           profile.consecutive_failures AS profile_consecutive_failures,
+           (inst.rescue_status = 'retry_after'
+             AND COALESCE(inst.failure_reason_note, '') LIKE 'out_of_time:%') AS discovery_cut_off,
+           row_number() OVER (ORDER BY
+       CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- A bank whose page was ruled out has a page whose links point the way: search it first.
+       CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
+             AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
+       CASE WHEN inst.last_rescue_attempt_at IS NULL THEN 0 ELSE 1 END,
+       CASE WHEN inst.rescue_status = 'retry_after' THEN 1 ELSE 0 END,
+       inst.last_rescue_attempt_at NULLS FIRST,
+       inst.asset_size DESC NULLS LAST,
+       inst.id ASC
+           ) AS due_rank
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
@@ -599,16 +777,27 @@ async function selectCandidates(
            )
          )
        )
+    ),
+    ranked AS (
+      SELECT due.*,
+             row_number() OVER (PARTITION BY due.discovery_cut_off ORDER BY due.due_rank) AS cut_rank
+        FROM due
+    )
+    SELECT ranked.*,
+           CASE WHEN ${learning}::boolean AND ranked.discovery_cut_off THEN (
+             SELECT pa.detail -> 'resume'
+               FROM pipeline_attempts pa
+              WHERE pa.institution_id = ranked.id
+                AND pa.stage = 'discover'
+                AND pa.detail ? 'resume'
+              ORDER BY pa.created_at DESC, pa.id DESC
+              LIMIT 1
+           ) END AS discovery_resume
+      FROM ranked
      ORDER BY
-       CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
-       -- A bank whose page was ruled out has a page whose links point the way: search it first.
-       CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
-             AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
-       CASE WHEN inst.last_rescue_attempt_at IS NULL THEN 0 ELSE 1 END,
-       CASE WHEN inst.rescue_status = 'retry_after' THEN 1 ELSE 0 END,
-       inst.last_rescue_attempt_at NULLS FIRST,
-       inst.asset_size DESC NULLS LAST,
-       inst.id ASC
+       -- Cut-off banks at the front get the whole per-bank budget to continue their search.
+       CASE WHEN ranked.discovery_cut_off AND ranked.cut_rank <= ${RESUME_FIRST_PER_STEP} THEN 0 ELSE 1 END,
+       ranked.due_rank
      LIMIT ${limit}
   `;
 }
@@ -790,7 +979,29 @@ export async function recordDiscoveryResult(
   `;
 }
 
-/** One `pipeline_attempts` row per specialist that ran (stage `discover`). */
+function cutOff(row: DiscoveryCandidateRow): boolean {
+  return row.discovery_cut_off === true || String(row.discovery_cut_off ?? "").toLowerCase() === "true";
+}
+
+/** The resume fields written on a search's last attempt (`detail.resume` is what the next search reads). */
+function resumeDetail(result: CandidateDiscoveryResult): Record<string, unknown> {
+  return {
+    resume: result.resume,
+    resumed_from: result.resumedFrom
+      ? {
+          cut_off_searches: result.resumedFrom.ticks,
+          skipped_done: result.resumedFrom.done,
+          gave_up_on: result.resumedFrom.skipped,
+        }
+      : null,
+  };
+}
+
+/**
+ * One `pipeline_attempts` row per specialist that ran (stage `discover`). The last row
+ * carries the search's end code and `detail.resume`: where a search cut short by time
+ * continues (null once a search ends), plus `detail.resumed_from` when it continued one.
+ */
 async function recordFinderAttempts(
   db: SqlTag,
   row: DiscoveryCandidateRow,
@@ -805,20 +1016,21 @@ async function recordFinderAttempts(
     platform: result.platform,
   };
   if (result.finders.length === 0) {
-    // Locked correction or no website: one attempt for the search as a whole.
+    // Locked correction, no website, or a resumed search the clock stopped before its
+    // next specialist: one attempt for the search as a whole.
     await recordAttempt(db, {
       institutionId: result.institutionId,
       stage: "discover",
       strategy: result.code === "locked" ? FINDERS.knownLink.strategy : FINDERS.homepageLinks.strategy,
       version: result.code === "locked" ? FINDERS.knownLink.version : FINDERS.homepageLinks.version,
       fingerprint: result.homepageHash,
-      outcome: result.code === "locked" ? "ok" : "invalid_url",
+      outcome: result.code === "locked" ? "ok" : result.code === "out_of_time" ? "timeout" : "invalid_url",
       yieldCount: result.url ? 1 : 0,
       costMicrousd: 0,
       durationMs: result.durationMs,
       runId: options.runId,
       stepId: options.stepId,
-      detail: { ...base, pass: 1, code: result.code, url: result.url, reason: result.reason },
+      detail: { ...base, pass: 1, code: result.code, url: result.url, reason: result.reason, ...resumeDetail(result) },
     });
     return;
   }
@@ -849,6 +1061,7 @@ async function recordFinderAttempts(
         note: finder.note ?? null,
         pages_fetched: finder.fetches,
         trail: finder.trail,
+        ...(index === last ? resumeDetail(result) : {}),
       },
     });
   }
@@ -880,12 +1093,17 @@ export async function runMagellanDiscovery(
     // Banks not reached this step stay due and are picked up by the next one.
     if (Date.now() - startedAt > STEP_START_BUDGET_MS) break;
     const institutionId = Number(row.id);
+    const bankStarted = Date.now();
     const result = await discoverForInstitution(row, {
       fetchImpl,
       rejectedUrls: rejected.get(institutionId),
       knowledge,
-      deadline: Math.min(Date.now() + INSTITUTION_BUDGET_MS, stepDeadline),
+      deadline: Math.min(bankStarted + INSTITUTION_BUDGET_MS, stepDeadline),
       politeDelayMs,
+      resume: cutOff(row) ? parseDiscoveryResume(row.discovery_resume) : null,
+      // The resume state lives on the attempt log, so it needs the learning schema.
+      resumable: learning,
+      fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= stepDeadline,
     });
     results.push(result);
     if (dryRun) continue;
@@ -937,6 +1155,7 @@ export async function runMagellanDiscovery(
     failures: results.filter((result) => result.outcome === "failure").length,
     attemptedUrls: results.reduce((total, result) => total + result.attemptedUrls, 0),
     codes,
+    resumed: results.filter((result) => result.resumedFrom !== null).length,
     foundBy,
     learning,
     methodVersion: DISCOVERY_METHOD_VERSION,

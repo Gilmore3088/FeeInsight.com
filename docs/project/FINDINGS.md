@@ -47,6 +47,26 @@ the URL as rejected and marks the bank due a search (`failure_reason = 'magellan
 is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
 **Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
 loop on a dead address is a silent failure.
+## 2026-10-06: Slow bank sites were cut off at the same point on every discovery search
+**What happened:** the Magellan audit (read-only, 6 Oct) counted 513 active banks with a website and no
+fee link whose last free search ended `retry_after` because the `discover` step ran out of time partway
+through the bank. Every 12 hours they were searched again from the first specialist and stopped at
+about the same place, so the later specialists (hub pages, guessed paths, peer hint, site crawl) never
+ran for them.
+**Cause:** a search had no memory between steps. Each bank gets 45 s (`INSTITUTION_BUDGET_MS`), less when
+it starts late in the step (the step stops at 100 s), and `retry_after` banks sort last in the batch, so
+they usually got the squeezed budget. The next search repeated the specialists already done (homepage,
+robots.txt, site map), spent the same time there and stopped in the same place. Once the profile showed
+two failures in a row (`OUT_OF_TIME_RETRIES`) the next cut-off made the bank a miss, which waits a month,
+and then the loop began again.
+**Fix:** MG-6 (branch in this PR, not merged): a search cut short writes `detail.resume` on its last
+`pipeline_attempts` row (specialists finished, where the clock stopped, how many cut-off searches). The
+next search of that bank skips the finished specialists and starts at the next one. A specialist the
+clock stops inside twice on a full budget is skipped; after 12 cut-off searches the bank is a miss. The
+first cut-off bank in each step goes to the front and gets the whole 45 s; other banks keep their place
+and the step's budget is unchanged (no Vercel plan change). No migration.
+**Lesson:** work that can outlast one function call needs a saved place to continue from, or the same
+budget is spent on the same first steps every time.
 
 ## 2026-10-06: Report requests never stored their "ready to quote" line
 **What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,

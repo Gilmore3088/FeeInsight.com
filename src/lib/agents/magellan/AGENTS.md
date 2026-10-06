@@ -88,9 +88,20 @@ and `detail.method_version`).
 - Nothing is dead forever: pending/`retry_after` banks are re-checked after 12 hours;
   misses (`dead`) after 30 days, then 90 days after two misses in a row; and every
   miss at once (after 12 hours) when `DISCOVERY_METHOD_VERSION` is newer than its last
-  search. Bump that version whenever a specialist changes. A search cut short by the
-  per-bank (45 s) or per-step budget is `retry_after` (`out_of_time`), then a miss after
-  repeated cut-offs.
+  search. Bump that version whenever a specialist changes.
+- A search cut short by the per-bank (45 s) or per-step budget is `retry_after`
+  (`out_of_time`) and resumes where it stopped. Its last `pipeline_attempts` row carries
+  `detail.resume` (`DiscoveryResume`: specialists done, the one the clock stopped inside,
+  cut-off searches so far); a search that ends writes `resume: null`. The next search of
+  that bank (selected when `rescue_status = 'retry_after'` and the failure note starts
+  `out_of_time:`) reads the newest row with a `resume` key, skips the finished
+  specialists, and logs `detail.resumed_from`. A specialist the clock stops inside twice
+  on a full per-bank budget is skipped (`RESUME_MAX_CUTS_PER_FINDER`); after 12 cut-off
+  searches (`RESUME_MAX_TICKS`) the bank is a miss. The first such bank in each step
+  (`RESUME_FIRST_PER_STEP`) goes to the front so it gets the whole 45 s; the rest keep
+  their place. A resume from another `DISCOVERY_METHOD_VERSION` is ignored. The step's
+  `resumed_searches` counts resumed banks. Without the learning schema there is no
+  resume, and two cut-offs make a miss as before.
 - Pass 3 (`runMagellanPaidFind`): up to `PAID_PASS_ITEMS_PER_RUN` banks in the state
   that are `dead` after a search with the current method version and had no paid try
   this month. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
