@@ -23,7 +23,7 @@ import { ResearchSectionNav } from "../../research-hero";
 import { BENCHMARK_KEYS } from "../../benchmark-board";
 import { CharterExhibit, KeyFindings } from "../../exhibits";
 import { EconomyExhibit } from "./economy-exhibit";
-import { buildCharterPairs, buildComparisons, computeStateFindings } from "./state-findings";
+import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
 import {
   CoverageExhibit,
   FullTable,

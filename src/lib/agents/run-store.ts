@@ -10,6 +10,17 @@ import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollbac
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import {
+  currentMonth,
+  mailingAddress,
+  runMarketingScore,
+  runMarketingSend,
+  runMarketingWrite,
+  summarizeScore,
+  summarizeSend,
+  summarizeWrite,
+} from "@/lib/agents/marketing/monthly";
+import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing/state-edition";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -532,6 +543,14 @@ async function executeAgenticStep(
           handed_to_magellan: read.handedToMagellan,
           deferred_scans: read.deferred,
           triaged_texts: read.triagedTexts,
+          reopened_fee_pages: read.reopenedFeePages,
+          reopened_bans_lifted: read.reopenedBansLifted,
+          reopened_links_restored: read.reopenedLinksRestored,
+          text_survival_refreshed: read.textSurvivalRefreshed,
+          texts_held_up: read.textsHeldUp,
+          texts_lost_fees: read.textsLostFees,
+          reader_escalations: read.readerEscalations,
+          reader_escalations_used: read.readerEscalationsUsed,
           formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
@@ -1130,6 +1149,41 @@ async function executeAgenticStep(
           ...result.numbers,
         },
       };
+    }
+    case "marketing-score": {
+      const result = await runMarketingScore({
+        db: tx,
+        runId: run.id,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeScore(result), detail: { ...result } };
+    }
+    case "marketing-write": {
+      const result = await runMarketingWrite({
+        db: tx,
+        runId: run.id,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeWrite(result), detail: { ...result } };
+    }
+    case "marketing-states": {
+      const result = await runStateEditions({
+        db: tx,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        mailingAddress: mailingAddress(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeStateEditions(result), detail: { ...result } };
+    }
+    case "marketing-send": {
+      const month = stringRunParam(params, ["month"]);
+      if (!month) throw new Error("marketing-send needs a month (YYYY-MM).");
+      const result = await runMarketingSend({ month });
+      // A refused or partly failed send fails the step, so it shows red in the run ledger.
+      if (result.refused || result.failures.length) throw new Error(summarizeSend(result));
+      return { status: "completed", summary: summarizeSend(result), detail: { ...result } };
     }
     case "report-render":
       return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));

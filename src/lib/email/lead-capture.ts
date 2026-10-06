@@ -51,6 +51,14 @@ export function describeCaptureOffer(input: LeadCaptureNotificationInput): strin
   }
 }
 
+/** Readers with a state also get that state's monthly edition (the marketing agent's state_edition). */
+function stateEditionLine(stateCode: string | null): string {
+  const name = stateCode ? STATE_NAMES[stateCode] ?? stateCode : null;
+  return name
+    ? `Once you confirm, you'll also get the ${name} edition each month: ${name}'s fee medians against the national ones, once enough ${name} institutions publish them.`
+    : "";
+}
+
 function deliveryLines(input: LeadCaptureNotificationInput): string[] {
   if (deliversSampleReport(input.placement)) {
     return [
@@ -68,11 +76,13 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
       return [
         "Here is the benchmark: state medians against national, updated as new fee schedules are verified.",
         input.stateCode ? `${absolute(`/research/state/${input.stateCode}`)}` : "",
+        stateEditionLine(input.stateCode),
       ];
     case "national_index":
       return [
         "New national medians, notable fee changes, and one chart, no more than once a month.",
         `Current index: ${absolute("/research/national-fee-index")}`,
+        stateEditionLine(input.stateCode),
       ];
   }
 }

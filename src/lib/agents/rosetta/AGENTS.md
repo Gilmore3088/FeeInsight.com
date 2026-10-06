@@ -61,6 +61,15 @@ Rosetta owns source text normalization.
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
+  - Pages like that rejected as `wrong_document` before the fallback existed (an html
+    text whose link names the fee page, at most one amount, never tried by
+    `read.js_fallback`) are reopened once at the start of each read step, at most
+    `ROSETTA_REOPEN_LIMIT` (100) per step (`reopenScriptLoadedFeePages`): the URL leaves
+    `rejected_source_urls`, a bank with no `fee_schedule_url` (and no correction lock)
+    gets it back, and a `read.reopen` attempt (outcome `ok`, fingerprint = the text's
+    `source_hash`) makes that text readable once more and voids its earlier permanent
+    rejection. A page with more amounts is logged `rejected` and stays closed. No fee
+    is touched.
   - A download that fails with HTTP 404/410, with HTTP 401/403 when an earlier read of
     the same document was also blocked, or for the third time in 7 days with a block,
     rate limit, server error, timeout or network error (`STUCK_LINK_*` in `read.ts`),
@@ -74,6 +83,30 @@ Rosetta owns source text normalization.
     most `PAID_PASS_ITEMS_PER_RUN`), and stores the transcription as a normal completed
     text (fee-page check included). A budget cap or the automation stop ends the step
     with `budgetStopped`; nothing is recorded for documents not sent.
+    Pass 3 also takes text PDFs whose fees did not hold up after free OCR had the same
+    bytes (below); their transcription replaces the stored text only when it lists at
+    least as many fees with an amount, otherwise the attempt is `low_yield` and the
+    earlier text stays.
+  - Fees that hold up (`text-survival.ts`, learning plan steps 1 to 4). At most once per
+    `TEXT_SURVIVAL_REFRESH_HOURS` (20) the read step judges each document's current
+    completed text by the published fees Knox pulled from it since that text first
+    appeared: live, or taken down for a reason the text can cause (`TEXT_LOSS_REASONS`:
+    not reproduced, name not in the text, amount not the fee's, no amount). Category and
+    range takedowns are not counted. Each text is one `pipeline_feedback` row about its
+    reader (`check_name` `rosetta.text_survival`, `text_held_up` weight = live fees, or
+    `text_lost_fees` weight = lost fees when at least 3 were lost and they are 25% of the
+    judged fees). `readReaderScores` sums them per reader.
+  - A lost text gets one read a rung up the ladder (`nextReaderRung`): a legacy text
+    (no reader recorded) with the current primary reader; a `read.pdf_layout` text with
+    free OCR as well; a `read.html_dom` text with the JavaScript fallbacks as well. A bank
+    whose primary-reader texts lost fees at least as often as they held starts its
+    documents on the alternate too. The alternate's text is used only when it is a fee
+    page listing at least as many fees with an amount (`rungTextNotWorse`). A re-read of
+    a lost text keeps the stored text unless the new one is no thinner, and never sends
+    the bank back to Magellan. Each rung runs once per document: the alternate's attempt
+    on the same bytes ends it. A web page has no paid rung; a legacy text the current
+    reader could not improve stays as it is. Step detail: `texts_held_up`,
+    `texts_lost_fees`, `reader_escalations`, `reader_escalations_used`.
   - Scans and JavaScript pages an older reader version gave up on (`needs_ocr`, `empty`)
     are read once more when `ROSETTA_READ_VERSION` is bumped. Auxiliary strategies
     (`AUXILIARY_READ_STRATEGIES`) never settle a read or block re-selection.

@@ -6,13 +6,9 @@ Free, no login. The numbers update as new fee schedules are verified.
 - Median is the typical price. Half of institutions charge more and half charge less.
 - The middle half (25th to 75th percentile) is the normal range. A fee above it is in the most expensive quarter of the market.
 - Banks vs credit unions often differ more than you'd expect, so the report shows them side by side.
-[ DO THIS IN 15 MINUTES ]
-[ ] Open your own fee schedule (or your bank's, if you're a customer).
-[ ] Write your amount next to each fee in the national report.
 
 Full email with tables and charts: {$url}
 
 --
 Fee Insight · feeinsight.com · reply with questions
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}
