@@ -9,19 +9,17 @@ import { PRODUCT_NAME } from "@/lib/constants";
 import { PrintButton } from "../../print-button";
 import { SectionHeading } from "../../research-hero";
 import { ExhibitSource } from "../../exhibits";
-import { STATE_FINDING_MIN_INSTITUTIONS, formatDelta, type StateComparison } from "./state-findings";
+import {
+  POSITION_AXIS_MAX_PCT,
+  STATE_FINDING_MIN_INSTITUTIONS,
+  formatDelta,
+  positionAxis,
+  type StateComparison,
+} from "@/lib/research-report/state-findings";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
 /** Widest half-width of the % axis in the position chart; larger gaps are pinned to the edge. */
-const POSITION_AXIS_MAX_PCT = 50;
-
-/** Axis half-width that fits the largest gap, in steps of 10%, between 10% and the maximum. */
-function positionAxis(deltas: number[]): number {
-  const widest = Math.max(0, ...deltas.map((d) => Math.abs(d)));
-  return Math.min(POSITION_AXIS_MAX_PCT, Math.max(10, Math.ceil(widest / 10) * 10));
-}
-
 export const STATE_SECTIONS = [
   { id: "findings", label: "Key findings" },
   { id: "benchmarks", label: "Everyday fees" },

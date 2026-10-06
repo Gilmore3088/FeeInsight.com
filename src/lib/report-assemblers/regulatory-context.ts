@@ -44,6 +44,11 @@ export interface ComplaintSummary {
   priorTotal: number | null;
   feeRelated: number;
   institutionCount: number;
+  /**
+   * Complaints in both years at the institutions named in both, so the change is not a
+   * change in which institutions the pull covers. Null without a prior year.
+   */
+  sameInstitutions: { institutions: number; total: number; priorTotal: number } | null;
   topProducts: { product: string; count: number }[];
   topInstitutions: ComplaintInstitution[];
 }
@@ -83,7 +88,11 @@ async function loadReleases(): Promise<{ fee: RegulatoryRelease[]; enforcement: 
   };
 }
 
-/** CFPB complaints for the latest full year on record, nationally or for one state. */
+/**
+ * CFPB complaints for the latest full calendar year on record, nationally or for one
+ * state. The current year is left out: it is partial, and the complaint pull covers a
+ * different set of institutions each year.
+ */
 async function loadComplaints(stateCode: string | null): Promise<ComplaintSummary | null> {
   const state = stateCode ?? null;
   const years = (await sql`
@@ -91,6 +100,7 @@ async function loadComplaints(stateCode: string | null): Promise<ComplaintSummar
       FROM institution_complaint_records c
       JOIN institution_sources s ON s.id = c.institution_id
      WHERE c.report_period ~ '^[0-9]{4}$'
+       AND c.report_period < to_char(NOW(), 'YYYY')
        AND (${state}::text IS NULL OR s.state_code = ${state})
      ORDER BY c.report_period DESC
      LIMIT 2
@@ -112,6 +122,28 @@ async function loadComplaints(stateCode: string | null): Promise<ComplaintSummar
   `) as unknown as { report_period: string; total: number; institutions: number }[];
   const latest = totals.find((t) => t.report_period === latestYear);
   const prior = priorYear ? totals.find((t) => t.report_period === priorYear) : undefined;
+
+  const [matched] = priorYear
+    ? ((await sql`
+    WITH both_years AS (
+      SELECT c.institution_id
+        FROM institution_complaint_records c
+        JOIN institution_sources s ON s.id = c.institution_id
+       WHERE c.issue = '_total' AND c.product <> '_all'
+         AND c.report_period = ANY(${[latestYear, priorYear]})
+         AND (${state}::text IS NULL OR s.state_code = ${state})
+       GROUP BY c.institution_id
+      HAVING COUNT(DISTINCT c.report_period) = 2
+    )
+    SELECT COUNT(DISTINCT c.institution_id)::int AS institutions,
+           COALESCE(SUM(c.complaint_count) FILTER (WHERE c.report_period = ${latestYear}), 0)::int AS total,
+           COALESCE(SUM(c.complaint_count) FILTER (WHERE c.report_period = ${priorYear}), 0)::int AS prior_total
+      FROM institution_complaint_records c
+      JOIN both_years b ON b.institution_id = c.institution_id
+     WHERE c.issue = '_total' AND c.product <> '_all'
+       AND c.report_period = ANY(${[latestYear, priorYear]})
+  `) as unknown as { institutions: number; total: number; prior_total: number }[])
+    : [];
 
   const [fee] = (await sql`
     SELECT COALESCE(SUM(c.complaint_count), 0)::int AS fee_related
@@ -151,6 +183,9 @@ async function loadComplaints(stateCode: string | null): Promise<ComplaintSummar
     priorTotal: prior ? Number(prior.total) : null,
     feeRelated: Number(fee?.fee_related ?? 0),
     institutionCount: Number(latest?.institutions ?? 0),
+    sameInstitutions: matched && Number(matched.institutions) > 0
+      ? { institutions: Number(matched.institutions), total: Number(matched.total), priorTotal: Number(matched.prior_total) }
+      : null,
     topProducts: products.map((p) => ({ product: p.product, count: Number(p.count) })),
     topInstitutions: institutions.map((i) => ({ name: i.name, complaints: Number(i.complaints) })),
   };
@@ -174,7 +209,7 @@ export async function assembleRegulatoryContext(options: {
       console.error("[regulatory-context] complaint read failed", { stateCode, error });
       return null;
     }),
-    options.district ? getBeigeBookHeadline(options.district) : Promise.resolve(null),
+    options.district ? getBeigeBookHeadline(options.district, 400) : Promise.resolve(null),
   ]);
   return {
     windowDays: RELEASE_WINDOW_DAYS,

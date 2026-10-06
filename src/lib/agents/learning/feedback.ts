@@ -25,6 +25,7 @@ export type FeedbackReporter = "atlas" | "magellan" | "rosetta" | "knox" | "darw
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link
+ *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
  */
 export type FeedbackKind =
   | "wrong_category"
@@ -44,6 +45,8 @@ export type FeedbackKind =
   | "thin_link"
   | "wrong_document"
   | "dead_link"
+  | "text_held_up"
+  | "text_lost_fees"
   | (string & {});
 
 export interface FeedbackRow {
