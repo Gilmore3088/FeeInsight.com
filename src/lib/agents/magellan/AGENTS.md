@@ -160,6 +160,20 @@ is the Magellan specialist whose attempt found the address (null for links the o
 crawler left). Only changed judgements are written; the step's `link_outcomes` detail
 reports the counts. Finders, the fee-page classifier and Darwin read these rows.
 
+## Fee-page classifier, in shadow (`page-classifier.ts`)
+
+A learned check on whether an opened page is the bank's fee schedule, trained on the ledger
+above: links with 3+ live fees are fee pages, thin and rejected links are not, dead links are
+left out. The text is what Rosetta stored (`agent_source_texts`, first 8,000 characters). It is
+a naive Bayes over word stems, address words and the rule check's own counts; no model call.
+
+- The discover step retrains it when the newest stored copy is 6+ hours old (up to 300 links of
+  each label) and writes one row to `magellan_page_classifier`: weights, label counts and its
+  score on every fifth document held out, beside the rule check on the same pages. It needs 30 of
+  each label to train. The step's `page_classifier` detail reports what happened.
+- SHADOW: each candidate a finder opens gets `page_p` on its trail entry (the probability it is
+  a fee page). It changes no decision. Switching `mode` to deciding waits for James's review.
+
 ## Boundaries
 
 - Do not call extraction providers from Magellan.

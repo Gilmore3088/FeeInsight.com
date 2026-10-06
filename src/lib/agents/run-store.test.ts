@@ -102,6 +102,10 @@ vi.mock("@/lib/agents/magellan/outcomes", () => ({
   recordLinkOutcomes: vi.fn(async () => ({ ready: false, slot: 0, links: 0, judged: { good: 0, thin: 0, rejected: 0, dead: 0 }, undecided: 0, unchanged: 0, written: 0 })),
 }));
 
+vi.mock("@/lib/agents/magellan/page-classifier", () => ({
+  refreshPageClassifier: vi.fn(async () => ({ status: "not_ready", positives: 0, negatives: 0, features: 0, holdout: null, trainedAt: null })),
+}));
+
 vi.mock("@/lib/agents/magellan/fetch", () => ({
   runMagellanFetch: runMagellanFetchMock,
 }));

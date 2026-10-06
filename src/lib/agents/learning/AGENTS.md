@@ -125,7 +125,9 @@ Dedupe keys in use:
 - `answer_key:fee:<id>`: a confirmed answer-key fee (`right`, reported by a human).
 - `magellan.link_yield:doc:<source_document_id>`: a link's live-fee outcome (Magellan),
   keyed on the link's first document; written by every discover step for one 24th of the
-  banks (`magellan/outcomes.ts`; rules in `magellan/AGENTS.md`).
+  banks (`magellan/outcomes.ts`; rules in `magellan/AGENTS.md`). Magellan's fee-page
+  classifier trains on these rows (`magellan/page-classifier.ts`, weights in
+  `magellan_page_classifier`); any agent can load it with `loadPageClassifier`.
 
 `syncPipelineFeedback` (`feedback-sync.ts`) runs in every Hamilton publish step after
 the source check. It fills the store from takedowns, restores, Darwin category rejects
