@@ -848,7 +848,7 @@ function ProviderReadinessBanner({
       </div>
       <p className="mt-2 font-mono text-[11px] tracking-wide" aria-label="Key each agent bills to">
         {anthropicKeySources()
-          .map(({ agent, source }) => `${agent}: ${source === "own" ? "own key" : source === "shared" ? "shared key" : "no key"}`)
+          .map(({ agent, source }) => `${agent}: ${source === "federated" ? "federated" : source === "own" ? "own key" : source === "shared" ? "shared key" : "no key"}`)
           .join(" · ")}
       </p>
       {readiness.lastCreditFailureAt && (

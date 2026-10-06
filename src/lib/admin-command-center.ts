@@ -9,7 +9,7 @@ import { getJobFreshness, getSourceSubmissionCounts } from "./admin-queries";
 import { getKnoxReviewCounts } from "./data-store/knox-reviews";
 import type { AdminAgent, AgentRunStatus } from "./agents/types";
 import { toISO } from "./pg-helpers";
-import { hasAnthropicApiKey } from "./ai-provider";
+import { hasAnthropicApiKey, PROVIDER_AGENTS } from "./ai-provider";
 import { formatAdminDateTime } from "./admin-time";
 
 export interface CoverageMetric {
@@ -159,7 +159,8 @@ export function buildProviderReadiness(
   automation: AutomationControlState,
   creditFailure: { createdAt: string } | null,
 ): ProviderReadiness {
-  const apiKeyConfigured = hasAnthropicApiKey();
+  // A federated agent has no key at all, so any agent able to sign in counts.
+  const apiKeyConfigured = PROVIDER_AGENTS.some((agent) => hasAnthropicApiKey(agent));
 
   if (!apiKeyConfigured) {
     return {

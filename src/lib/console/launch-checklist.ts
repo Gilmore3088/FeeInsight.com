@@ -65,7 +65,11 @@ export function buildLaunchChecklist({ env, spend, readyMarkets, libraryReports 
     });
   }
 
-  const shared = PAID_AGENTS.filter((agent) => !set(env[`ANTHROPIC_API_KEY_${agent.toUpperCase()}`]));
+  // An agent signing in by federation (its own rule and workspace) counts as having its own key.
+  const ownCredential = (agent: string) =>
+    set(env[`ANTHROPIC_API_KEY_${agent.toUpperCase()}`]) ||
+    (set(env[`ANTHROPIC_FEDERATION_RULE_ID_${agent.toUpperCase()}`]) && set(env.ANTHROPIC_ORGANIZATION_ID));
+  const shared = PAID_AGENTS.filter((agent) => !ownCredential(agent));
   const anyKey = set(env.ANTHROPIC_API_KEY) || shared.length < PAID_AGENTS.length;
   checks.push({
     key: "agent-keys",
