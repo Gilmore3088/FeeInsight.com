@@ -285,7 +285,11 @@ function UnderReviewChip() {
   );
 }
 
-function SourceLink({ href }: { href: string | null }) {
+/**
+ * A fee's own source document, or, when the fee has none of its own, the institution's
+ * general schedule, labelled as such so it never reads as the fee's exact source.
+ */
+function SourceLink({ href, fallback = false }: { href: string | null; fallback?: boolean }) {
   if (!href) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   return (
     <a
@@ -294,7 +298,7 @@ function SourceLink({ href }: { href: string | null }) {
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-xs font-semibold text-[#A93D25] hover:text-[#A93D25]"
     >
-      Source
+      {fallback ? "Institution\u2019s schedule" : "Source"}
       <ExternalLink className="h-3 w-3" />
     </a>
   );
@@ -346,7 +350,7 @@ function FeeRow({
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top">
-        <SourceLink href={sourceUrl} />
+        <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />
       </td>
     </tr>
   );
@@ -409,7 +413,7 @@ function FeeScheduleStack({
                   <p className="mt-1 text-xs leading-relaxed text-[#6B6255]">
                     {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
                     {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
-                    {sourceUrl && <SourceLink href={sourceUrl} />}
+                    {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}
                   </p>
                 </li>
               );

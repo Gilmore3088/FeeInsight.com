@@ -1,0 +1,584 @@
+/**
+ * Hamilton's answer as a consulting memo: the question type picks a storyline, and the
+ * storyline picks three to five exhibits, each titled with the point it makes. Pure and
+ * deterministic: every figure comes from FeeResearch with its source.
+ *
+ * One storyline serves both readers (James, 2026-10-06): the finance lens carries money,
+ * rules and notice for a CFO or board; the market lens carries position and competitor
+ * moves for product and marketing. Options sit side by side with their consequences and
+ * are never ranked or picked; nothing here says to raise, lower or drop a fee.
+ */
+
+import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { proseFeeName } from "./names";
+import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { segmentExhibit } from "./segment";
+import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
+import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, SegmentMember, SourceRef } from "./types";
+
+/** How the question reads, as far as the storyline needs it. */
+export interface StoryIntent {
+  /** Prices the question names. */
+  tested?: number[];
+  /** The reader asked for a view or named an objective. */
+  wantsDecision?: boolean;
+  focus?: "position" | "competitors" | "trend";
+  /** The question is about caps, transfers or how the fee is charged rather than its price. */
+  structure?: boolean;
+}
+
+export const MIN_STORY_EXHIBITS = 3;
+export const MAX_STORY_EXHIBITS = 5;
+/** Rows a structure matrix shows after the bank's own. */
+const MAX_MATRIX_ROWS = 12;
+/** Names an archetype lists. */
+const MAX_ARCHETYPE_NAMES = 5;
+/** A peer within this many dollars of the bank's price is "close" for the watch list. */
+const CLOSE_PRICE = 2;
+const CHANGE_WINDOW_DAYS = 180;
+
+const STRUCTURE_QUESTION = /\b(caps?|capped|per day|a day|daily|transfers?|continuous|sustained|structure|de minimis|grace|how many items)\b/i;
+
+/** Whether a question is about how a fee is charged rather than its price. */
+export function asksAboutStructure(question: string): boolean {
+  return STRUCTURE_QUESTION.test(question);
+}
+
+const ARCHETYPES: { key: ArchetypeKey; label: string; rule: string; test: (v: number) => boolean }[] = [
+  { key: "zero_od", label: "No fee", rule: "$0 published", test: (v) => v === 0 },
+  { key: "low_capped", label: "Low", rule: "$0.01 to $15", test: (v) => v > 0 && v <= 15 },
+  { key: "mid", label: "Mid", rule: "$15.01 to $30", test: (v) => v > 15 && v <= 30 },
+  { key: "premium", label: "Premium", rule: "Over $30", test: (v) => v > 30 },
+];
+
+// ─── Small formatters ────────────────────────────────────────────────────────
+
+function money(n: number): string {
+  return formatFeeAmount(n) ?? `$${n}`;
+}
+
+function count(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+}
+
+function longDate(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+function article(word: string): string {
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+
+function capitalize(text: string): string {
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
+}
+
+function feeSource(research: FeeResearch): SourceRef {
+  return { label: "Bank Fee Index, published fee schedules", table: "published_fee_catalog", asOf: research.provenance.dataAsOf.fees ?? null };
+}
+
+// ─── The comparison group ────────────────────────────────────────────────────
+
+interface Group {
+  /** As it reads in a sentence: "peers", "institutions with $10 billion or more in assets". */
+  label: string;
+  members: { name: string; amount: number }[];
+}
+
+function segmentLed(research: FeeResearch): boolean {
+  return !!research.segment && research.segment.problem === null;
+}
+
+function comparisonGroup(research: FeeResearch): Group {
+  const seg = research.segment;
+  if (seg && seg.problem === null) {
+    return { label: seg.segment.label, members: seg.members.map((m: SegmentMember) => ({ name: m.institutionName, amount: m.amount })) };
+  }
+  return { label: "peers", members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount })) };
+}
+
+// ─── Exhibits, each with the point it makes ──────────────────────────────────
+
+type Piece = Omit<StoryExhibit, "id" | "number"> & { key: string };
+
+function positionPiece(research: FeeResearch, name: string): Piece | null {
+  const band = research.band;
+  if (!band || band.n < MIN_PEERS_FOR_POSITION) return null;
+  const position = research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
+  const actionTitle =
+    research.current !== null && position !== null
+      ? `Your ${money(research.current)} ${name} fee sits at the ${ordinal(position)} percentile of ${count(band.n)} peers; their median is ${money(band.median)}.`
+      : `Across ${count(band.n)} peers the median ${name} fee is ${money(band.median)}, and the middle half runs ${money(band.p25)} to ${money(band.p75)}.`;
+  const national = research.layers.find((l) => l.scope === "national");
+  const exhibit: Exhibit = {
+    kind: "fee_position",
+    title: `${capitalize(name)} fee: you against ${count(band.n)} peers (${research.peerLabel})`,
+    unit: "dollars",
+    own: research.current,
+    ownLabel: research.institutionName,
+    band: { label: research.peerLabel, p25: band.p25, median: band.median, p75: band.p75, n: band.n },
+    markers: [
+      { label: "Peer median", scope: "peer", value: band.median, n: band.n },
+      ...research.layers
+        .filter((l) => l.median !== null)
+        .map((l) => ({ label: l.scope === "national" ? "National median" : `${l.label} median`, scope: l.scope, value: l.median as number, n: l.n })),
+    ],
+    sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
+    note: "Shaded: the middle half of peers. Each marker is a market's median and its institution count.",
+  };
+  return {
+    key: "position",
+    actionTitle,
+    exhibit,
+    takeaway:
+      national && national.median !== null
+        ? { text: `The national median is ${money(national.median)} across ${count(national.n)} institutions.`, source: { ...national.source, asOf: national.asOf ?? null }, sampleSize: national.n }
+        : undefined,
+  };
+}
+
+function segmentPiece(research: FeeResearch, name: string): Piece | null {
+  const seg = research.segment;
+  if (!seg || seg.problem !== null || seg.members.length === 0) return null;
+  const n = seg.members.length;
+  const median = seg.band ? `; the median is ${money(seg.band.median)}` : "";
+  const zero = seg.zeroCount > 0 ? `, ${count(seg.zeroCount)} at $0` : "";
+  const exhibit: Exhibit = {
+    kind: "segment_table",
+    title: `${capitalize(name)} fees, ${seg.segment.label}, largest first`,
+    members: seg.members,
+    own: research.current,
+    ownLabel: research.institutionName,
+    sources: [seg.source],
+    note: `Each row links to the schedule it was read from. ${count(seg.institutionsInSegment - n)} more ${seg.segment.label} publish no ${name} fee in the index yet.`,
+  };
+  return {
+    key: "segment",
+    actionTitle: `${count(n)} of ${count(seg.institutionsInSegment)} ${seg.segment.label} publish ${article(name)} ${name} fee${zero}${median}.`,
+    exhibit,
+    takeaway:
+      seg.withDailyCap > 0
+        ? { text: `${count(seg.withDailyCap)} of the ${count(n)} also publish a daily cap on items charged.`, source: seg.source, sampleSize: n }
+        : undefined,
+  };
+}
+
+function largestPiece(research: FeeResearch, name: string): Piece | null {
+  const seg = research.segment;
+  if (!seg || seg.problem !== null) return null;
+  const exhibit = segmentExhibit(seg, research.feeCategory, research.current, research.institutionName);
+  if (!exhibit || exhibit.kind !== "competitor_range" || exhibit.items.length < 2) return null;
+  const amounts = exhibit.items.map((i) => i.amount);
+  const lo = Math.min(...amounts);
+  const hi = Math.max(...amounts);
+  return {
+    key: "largest",
+    actionTitle: `The ${count(exhibit.items.length)} largest ${seg.segment.label} that publish one charge ${money(lo)} to ${money(hi)} for ${article(name)} ${name}.`,
+    exhibit,
+  };
+}
+
+function localPiece(research: FeeResearch, name: string): Piece | null {
+  const list = research.localCompetitors ?? [];
+  if (list.length === 0) return null;
+  const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
+  const lo = items[0].amount;
+  const hi = items[items.length - 1].amount;
+  const below = research.current !== null ? items.filter((i) => i.amount < research.current!).length : null;
+  const actionTitle =
+    below !== null
+      ? `${count(below)} of ${count(items.length)} competitors in your market charge less than your ${money(research.current!)}; their range is ${money(lo)} to ${money(hi)}.`
+      : `${count(items.length)} competitors in your market charge ${money(lo)} to ${money(hi)} for ${article(name)} ${name}.`;
+  return {
+    key: "local",
+    actionTitle,
+    exhibit: {
+      kind: "competitor_range",
+      title: `${capitalize(name)} fees in your market, by local deposits`,
+      unit: "dollars",
+      own: research.current,
+      ownLabel: research.institutionName,
+      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null })),
+      sources: [research.localMarket?.source ?? feeSource(research)],
+      note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
+    },
+  };
+}
+
+export function archetypeOf(amount: number): ArchetypeKey {
+  return (ARCHETYPES.find((a) => a.test(amount)) ?? ARCHETYPES[ARCHETYPES.length - 1]).key;
+}
+
+function archetypePiece(research: FeeResearch, name: string): Piece | null {
+  if (research.feeCategory !== "overdraft" && research.feeCategory !== "nsf") return null;
+  const group = comparisonGroup(research);
+  const n = group.members.length;
+  if (n < MIN_PEERS_FOR_POSITION) return null;
+  const archetypes = ARCHETYPES.map((a) => {
+    const members = group.members.filter((m) => a.test(m.amount));
+    const names = segmentLed(research) ? members : [...members].sort((x, y) => x.name.localeCompare(y.name));
+    return { key: a.key, label: a.label, rule: a.rule, count: members.length, names: names.slice(0, MAX_ARCHETYPE_NAMES).map((m) => m.name) };
+  });
+  const by = Object.fromEntries(archetypes.map((a) => [a.key, a.count])) as Record<ArchetypeKey, number>;
+  const ownKey = research.current !== null ? archetypeOf(research.current) : null;
+  const source = segmentLed(research) ? research.segment!.source : feeSource(research);
+  const groupWord = segmentLed(research) ? "of them" : "peers";
+  const ownGroup = ownKey ? archetypes.find((a) => a.key === ownKey)! : null;
+  return {
+    key: "archetype",
+    actionTitle: `Of ${count(n)} ${group.label}, ${count(by.zero_od)} charge $0, ${count(by.low_capped)} charge $15 or less and ${count(by.premium)} charge over $30.`,
+    exhibit: {
+      kind: "archetype_map",
+      title: `How ${group.label} price ${article(name)} ${name}: four pricing groups`,
+      archetypes,
+      ownKey,
+      sources: [source],
+      note: "Each institution counts once, at its highest published tier.",
+    },
+    takeaway:
+      ownGroup && research.current !== null
+        ? {
+            text: `Your ${money(research.current)} puts you in the ${ownGroup.label.toLowerCase()} group (${ownGroup.rule}) with ${count(ownGroup.count)} ${groupWord}.`,
+            source,
+            sampleSize: n,
+          }
+        : undefined,
+  };
+}
+
+function structurePiece(research: FeeResearch): Piece | null {
+  const set = research.structure;
+  if (!set) return null;
+  const group = set.rows.filter((r) => !r.own);
+  if (group.length < MIN_PEERS_FOR_POSITION) return null;
+  const has = (category: string) => group.filter((r) => r.values[category] !== undefined).length;
+  const nsf = has("nsf");
+  const transfer = has("od_protection_transfer");
+  const cap = has("od_daily_cap");
+  const label = set.groupLabel.startsWith("peers") ? "peers" : set.groupLabel;
+  const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_MATRIX_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
+  return {
+    key: "structure",
+    actionTitle: `Of ${count(group.length)} ${label}, ${count(nsf)} also publish an NSF fee, ${count(transfer)} a transfer fee and ${count(cap)} a daily cap.`,
+    exhibit: {
+      kind: "structure_matrix",
+      title: `Overdraft and NSF structure, you and ${set.groupLabel}`,
+      columns: set.columns.map((c) => c.label),
+      rows: shown.map((r) => ({
+        name: r.name,
+        cells: set.columns.map((c) => (r.values[c.category] === undefined ? null : money(r.values[c.category]))),
+        own: r.own || undefined,
+      })),
+      sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
+      note: `A blank cell means the fee is not on that institution's published schedule in the index.${group.length > MAX_MATRIX_ROWS ? ` Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : ""}`,
+    },
+  };
+}
+
+function stateName(research: FeeResearch): string | null {
+  return research.layers.find((l) => l.scope === "state")?.label ?? null;
+}
+
+function recentEvents(research: FeeResearch) {
+  return [...(research.changeEvents ?? [])].filter((e) => e.from !== null && e.to !== null).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function changePiece(research: FeeResearch, name: string): Piece | null {
+  const events = recentEvents(research);
+  const state = stateName(research);
+  if (events.length === 0 || !state) return null;
+  const cuts = events.filter((e) => (e.to as number) < (e.from as number)).length;
+  const source: SourceRef = { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: events[0].date };
+  return {
+    key: "changes",
+    actionTitle: `${count(events.length)} ${events.length === 1 ? "institution" : "institutions"} in ${state} changed ${article(name)} ${name} fee in the last ${CHANGE_WINDOW_DAYS} days; ${count(cuts)} cut it.`,
+    exhibit: {
+      kind: "change_timeline",
+      title: `${capitalize(name)} fee changes in ${state}, newest first`,
+      events: events.map((e) => ({ date: e.date, institutionName: e.institutionName, from: e.from, to: e.to, url: null })),
+      sources: [source],
+      note: "Only changes the institution's own schedule bears out.",
+    },
+  };
+}
+
+function moneyPiece(research: FeeResearch, name: string): Piece | null {
+  const line = research.revenueLine;
+  const fin = research.institutionFinancials;
+  const rows: { label: string; low: number; high: number; evidenceLevel: "institution" }[] = [];
+  const sources: SourceRef[] = [];
+  if (line) {
+    rows.push({ label: line.combinedWith ? `${line.label}, with ${line.combinedWith}` : line.label, low: line.annualIncome, high: line.annualIncome, evidenceLevel: "institution" });
+    sources.push({ ...line.source, asOf: line.quarterEnd });
+  }
+  if (fin?.latestTtm != null) {
+    rows.push({ label: `${fin.label}, last four quarters`, low: fin.latestTtm, high: fin.latestTtm, evidenceLevel: "institution" });
+    sources.push({ ...fin.sourceRef, asOf: fin.quarterEnd });
+  }
+  if (rows.length === 0) return null;
+  const missing =
+    line === null
+      ? fin?.source === "ncua"
+        ? `NCUA's public data carries no separate ${name} income line, so this is all fee income.`
+        : `Your filing carries no separate ${name} income line, so this is all deposit service charges.`
+      : undefined;
+  const actionTitle = line
+    ? fin?.latestTtm
+      ? `Your filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin.latestTtm) * 100)}% of all service charges.`
+      : `Your filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income.`
+    : `Your service charges came to ${formatDollarsInWords(fin!.latestTtm!)} over the four quarters to ${longDate(fin!.quarterEnd)}.`;
+  return {
+    key: "money",
+    actionTitle,
+    exhibit: { kind: "money_at_stake", title: `What the ${name} fee is worth to you, from your filings`, rows, sources, note: missing },
+  };
+}
+
+function trendPiece(research: FeeResearch): Piece | null {
+  const fin = research.institutionFinancials;
+  if (!fin || fin.quarters.length < 2) return null;
+  const series = [{ label: research.institutionName, points: [...fin.quarters].reverse().map((q) => ({ date: q.quarterEnd, value: q.amount })) }];
+  if (fin.peerMedian && fin.peerMedian.quarters.length >= 2) {
+    series.push({ label: `Median, ${fin.peerMedian.label}`, points: [...fin.peerMedian.quarters].reverse().map((q) => ({ date: q.quarterEnd, value: q.amount })) });
+  }
+  const what = fin.source === "ncua" ? "fee income" : "service charge income";
+  const actionTitle =
+    fin.yoyPct != null
+      ? `Your ${what} is ${fin.yoyPct >= 0 ? "up" : "down"} ${Math.abs(fin.yoyPct).toFixed(1)}% on the year to ${longDate(fin.quarterEnd)}.`
+      : `Your ${what} over the last ${count(fin.quarters.length)} quarters, against similar filers.`;
+  return {
+    key: "trend",
+    actionTitle,
+    exhibit: { kind: "trend", title: `Your ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])] },
+  };
+}
+
+// ─── Storyline ───────────────────────────────────────────────────────────────
+
+export function storylineKind(research: FeeResearch, intent: StoryIntent): StorylineKind {
+  if (segmentLed(research)) return "segment";
+  if ((intent.tested ?? []).length > 0) return "price_test";
+  if (intent.wantsDecision) return "board_decision";
+  if (intent.structure) return "structure";
+  if (intent.focus === "trend") return "trend";
+  return "position";
+}
+
+const ORDER: Record<StorylineKind, string[]> = {
+  position: ["position", "local", "archetype", "structure", "money", "changes"],
+  segment: ["segment", "largest", "archetype", "structure", "position", "money"],
+  price_test: ["position", "money", "archetype", "local", "changes"],
+  board_decision: ["position", "money", "archetype", "changes", "local", "structure"],
+  structure: ["structure", "archetype", "position", "local", "changes"],
+  trend: ["trend", "money", "changes", "position", "local"],
+};
+
+function pieces(research: FeeResearch, name: string): Record<string, () => Piece | null> {
+  return {
+    position: () => positionPiece(research, name),
+    segment: () => segmentPiece(research, name),
+    largest: () => largestPiece(research, name),
+    local: () => localPiece(research, name),
+    archetype: () => archetypePiece(research, name),
+    structure: () => structurePiece(research),
+    changes: () => changePiece(research, name),
+    money: () => moneyPiece(research, name),
+    trend: () => trendPiece(research),
+  };
+}
+
+function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
+  const out: KeyFigure[] = [];
+  const own = research.ownRows[0];
+  if (research.current !== null) {
+    out.push({
+      value: money(research.current),
+      label: `Your ${name} fee`,
+      source: { label: "Your published fee schedule", table: "published_fee_catalog", url: own?.documentUrl ?? own?.sourceUrl ?? undefined, asOf: own?.publishedAt?.slice(0, 10) ?? null },
+    });
+  }
+  const seg = research.segment;
+  if (seg && seg.problem === null && seg.band) {
+    out.push({ value: money(seg.band.median), label: `Median, ${seg.segment.label}`, source: seg.source, n: seg.band.n });
+  } else if (research.band && research.band.n >= MIN_PEERS_FOR_POSITION) {
+    out.push({ value: money(research.band.median), label: "Peer median", source: feeSource(research), n: research.band.n });
+  }
+  const position =
+    seg && seg.problem === null ? seg.ownPosition : research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
+  if (position !== null && research.current !== null) {
+    out.push({ value: ordinal(position), label: seg && seg.problem === null ? "Your percentile in the segment" : "Your percentile among peers", source: seg && seg.problem === null ? seg.source : feeSource(research), n: seg && seg.problem === null ? seg.band?.n ?? seg.members.length : research.band?.n });
+  }
+  const line = research.revenueLine;
+  const fin = research.institutionFinancials;
+  if (line) {
+    out.push({ value: formatDollarsInWords(line.annualIncome), label: `${capitalize(name)} income a year, filed`, source: { ...line.source, asOf: line.quarterEnd } });
+  } else if (fin?.latestTtm != null) {
+    out.push({ value: formatDollarsInWords(fin.latestTtm), label: "Service charges, last four quarters", source: { ...fin.sourceRef, asOf: fin.quarterEnd } });
+  }
+  return out.slice(0, 4);
+}
+
+function complication(research: FeeResearch, name: string): Fact[] {
+  const out: Fact[] = [];
+  const events = recentEvents(research);
+  const state = stateName(research);
+  if (events.length > 0 && state) {
+    const cuts = events.filter((e) => (e.to as number) < (e.from as number)).length;
+    out.push({
+      text: `${count(events.length)} ${events.length === 1 ? "institution" : "institutions"} in ${state} changed ${article(name)} ${name} fee in the last ${CHANGE_WINDOW_DAYS} days, ${count(cuts)} of them downward.`,
+      source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: events[0].date },
+    });
+  }
+  const fin = research.institutionFinancials;
+  if (fin?.yoyPct != null && Math.abs(fin.yoyPct) >= 5) {
+    out.push({
+      text: `Your ${fin.source === "ncua" ? "fee income" : "service charge income"} is ${fin.yoyPct >= 0 ? "up" : "down"} ${Math.abs(fin.yoyPct).toFixed(1)}% on the year to ${longDate(fin.quarterEnd)}.`,
+      source: { ...fin.sourceRef, asOf: fin.quarterEnd },
+    });
+  }
+  if (out.length < 2) {
+    const news = research.regulation.find((r) => r.source.table === "reg_articles");
+    if (news) out.push(news);
+  }
+  return out.slice(0, 2);
+}
+
+function financeLens(research: FeeResearch, answer: HamiltonAnswer): Fact[] {
+  const money = answer.claims.filter((c) => c.source.table === "institution_financial_records" || /call report|5300|filing/i.test(c.source.label));
+  const rules = research.regulation.filter((r) => r.source.table !== "reg_articles").slice(0, 2);
+  return [...money, ...rules].slice(0, 4);
+}
+
+function marketLens(research: FeeResearch, story: Piece[], name: string): Fact[] {
+  const out: Fact[] = [];
+  for (const piece of story) {
+    if (["local", "archetype", "segment", "largest", "structure"].includes(piece.key)) {
+      const source = piece.exhibit.sources[0] ?? feeSource(research);
+      out.push({ text: piece.actionTitle, source, sampleSize: sampleOf(piece.exhibit) });
+      if (piece.takeaway) out.push(piece.takeaway);
+    }
+  }
+  const events = recentEvents(research).slice(0, 2);
+  for (const e of events) {
+    out.push({
+      text: `${e.institutionName} moved its ${name} fee from ${money(e.from as number)} to ${money(e.to as number)}, seen ${longDate(e.date)}.`,
+      source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: e.date },
+      sampleSize: 1,
+    });
+  }
+  return out.slice(0, 5);
+}
+
+function sampleOf(exhibit: Exhibit): number | undefined {
+  switch (exhibit.kind) {
+    case "competitor_range":
+      return exhibit.items.length;
+    case "segment_table":
+      return exhibit.members.length;
+    case "archetype_map":
+      return exhibit.archetypes.reduce((s, a) => s + a.count, 0);
+    case "structure_matrix":
+      return exhibit.rows.filter((r) => !r.own).length;
+    default:
+      return undefined;
+  }
+}
+
+/** Where a price would sit, and what the filed income line implies at the same item count. */
+function priceConsequences(research: FeeResearch, name: string, price: number): Fact[] {
+  const out: Fact[] = [];
+  const amounts = research.peers.map((p) => p.amount);
+  const position = pricePosition(price, amounts);
+  if (position !== null && research.band) {
+    out.push({ text: `At ${money(price)} you would sit at the ${ordinal(position)} percentile of ${count(research.band.n)} peers.`, source: feeSource(research), sampleSize: research.band.n });
+  }
+  if (price === 0 && amounts.length > 0) {
+    const zero = amounts.filter((a) => a === 0).length;
+    out.push({ text: `${count(zero)} of ${count(amounts.length)} peers publish a $0 ${name} fee today.`, source: feeSource(research), sampleSize: amounts.length });
+  }
+  const line = research.revenueLine;
+  if (line && research.current) {
+    const estimate = (line.annualIncome * price) / research.current;
+    out.push({
+      text: `At today's item count, ${name} income would be about ${formatDollarsInWords(estimate)} a year, against ${formatDollarsInWords(line.annualIncome)} filed.`,
+      source: { ...line.source, asOf: line.quarterEnd },
+    });
+  }
+  return out;
+}
+
+function options(research: FeeResearch, kind: StorylineKind, intent: StoryIntent, name: string): StoryOption[] | undefined {
+  if (kind !== "price_test" && kind !== "board_decision") return undefined;
+  if (research.current === null) return undefined;
+  const prices: { label: string; price: number }[] = [{ label: `Hold at ${money(research.current)}`, price: research.current }];
+  const tested = intent.tested ?? [];
+  if (tested.length > 0) {
+    for (const t of tested) if (t !== research.current) prices.push({ label: t === 0 ? `Remove the ${name} fee` : `Test ${money(t)}`, price: t });
+  } else if (research.band && research.band.n >= MIN_PEERS_FOR_POSITION) {
+    if (research.band.median !== research.current) prices.push({ label: `Peer median, ${money(research.band.median)}`, price: research.band.median });
+    if (research.current !== 0) prices.push({ label: `Remove the ${name} fee`, price: 0 });
+  }
+  const out = prices.map((p) => ({ label: p.label, consequences: priceConsequences(research, name, p.price) })).filter((o) => o.consequences.length > 0);
+  return out.length > 1 ? out : undefined;
+}
+
+function watch(research: FeeResearch, name: string): Fact[] {
+  const out: Fact[] = [];
+  if (research.current !== null && research.band && research.band.n >= MIN_PEERS_FOR_POSITION) {
+    const close = research.peers.filter((p) => p.amount !== research.current && Math.abs(p.amount - research.current!) <= CLOSE_PRICE).length;
+    if (close > 0) {
+      out.push({
+        text: `${count(close)} peers price within ${money(CLOSE_PRICE)} of your ${money(research.current)}; a move by any of them shifts your percentile.`,
+        source: feeSource(research),
+        sampleSize: research.band.n,
+      });
+    }
+  }
+  if (!research.revenueLine) {
+    out.push({
+      text: `Your yearly count of ${name} items would turn the money at stake into a range for each price.`,
+      source: { label: "Figures you give Hamilton", asOf: research.provenance.generatedAt.slice(0, 10) },
+    });
+  }
+  const news = research.regulation.filter((r) => r.source.table === "reg_articles").slice(0, 1);
+  return [...out, ...news].slice(0, 3);
+}
+
+export function buildStoryline(research: FeeResearch, answer: HamiltonAnswer, intent: StoryIntent = {}): Storyline | null {
+  const name = proseFeeName(research.feeCategory);
+  const kind = storylineKind(research, intent);
+  const builders = pieces(research, name);
+  const chosen: Piece[] = [];
+  for (const key of ORDER[kind]) {
+    if (chosen.length >= MAX_STORY_EXHIBITS) break;
+    const piece = builders[key]?.();
+    if (piece) chosen.push(piece);
+  }
+  if (chosen.length === 0) return null;
+  const exhibits: StoryExhibit[] = chosen.map((p, i) => ({
+    id: `${kind}-${p.key}`,
+    number: i + 1,
+    actionTitle: p.actionTitle,
+    exhibit: p.exhibit,
+    ...(p.takeaway ? { takeaway: p.takeaway } : {}),
+  }));
+  return {
+    kind,
+    governingThought: answer.headline,
+    situation: answer.claims.slice(0, 2),
+    complication: complication(research, name),
+    keyFigures: keyFigures(research, name),
+    exhibits,
+    lenses: { finance: financeLens(research, answer), market: marketLens(research, chosen, name) },
+    defaultView: kind === "price_test" || kind === "board_decision" ? "finance" : "market",
+    options: options(research, kind, intent, name),
+    watch: watch(research, name),
+  };
+}

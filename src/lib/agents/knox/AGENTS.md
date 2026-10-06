@@ -74,6 +74,24 @@ rather than check printing, and a name that opens with NSF is NSF when only a co
 mentions an overdraft ("NSF Fee (fee applies when overdraft is created)"); a combined
 "NSF/Overdraft" fee stays overdraft. At v16: Texas 461 of 478; seven states 683 right, 55 wrong.
 
+v17 (rules 17) adds Knox's self-check: every free find, and every $0 row, is checked against
+its text with the shared accuracy check (`checkFeeAgainstSource`, the rule Darwin applies
+before publishing). A find that doesn't trace is held for review as `untraced`
+(`knox_review:untraced`) instead of going to Darwin, where it would be rejected as
+`not_in_source`; a later specialist that reads the same fee under a traceable name keeps it.
+Each specialist run records `self_check_failed`. Since v17 the gates count only reads that
+pass the self-check, which is what can be published: Texas 444 of 459 (main at v16 scored 444
+of 459 on that basis), held out 43 of 49; seven states 660 of 708 (main: 659 of 707). The same PR
+widens the shared check for layouts it missed (a price on the line after a dot leader,
+FREE/NONE on a flattened line, a note line between name and price, a daily cap), which lifts
+the gates to Texas 446 of 461 and seven states 665 of 713 with no new wrong reads.
+v17 also tidies every fee name (`tidyFeeName` in `layout.ts`): table separators, dot
+leaders, bullets, list markers ("b.") and a neighbouring cell's unit ("Per Item", "/Item",
+"N/C") are not part of the name. Category, price and excerpt are unchanged. Hamilton's
+supersede match and the rules re-check restore compare tidied names, so a line live under
+an older untidy name is still the same line. In the 117-document live sample, untidy names
+fell from 136 to 3; gates and the dry run are unchanged.
+
 A new rules version also reaches lines older versions held. Knox does not extract a text twice,
 and the raw-row dedupe index (document, name, amount) stopped a categorized fee from replacing
 the held row, so a held line stayed held after the rules learned it. Now each extract step

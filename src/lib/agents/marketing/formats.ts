@@ -8,8 +8,8 @@
 export const MARKETING_FORMATS = [
   {
     key: "market_move",
-    label: "What moved",
-    brief: "The national fee numbers this month, led by the biggest real change since last month. If nothing moved, say the market held steady and lead with the most-covered fee.",
+    label: "This month's numbers",
+    brief: "The national fee numbers this month, led by the most-covered fee, and how many more institutions stand behind them than last month. Medians are compared with the middle half, never with last month.",
   },
   {
     key: "state_spotlight",

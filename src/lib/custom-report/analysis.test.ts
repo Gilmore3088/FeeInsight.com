@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, MIN_COMPARABLE_LINES, quantile } from "./analysis";
+import { analyzeMarket, buildReportCsv, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
 function market(opts: { competitors: number; ownKeys?: string[]; ownAmount?: number }): CustomReportMarketData {
   const lines: MarketFeeLine[] = [];
   for (const key of opts.ownKeys ?? KEYS) {
-    lines.push({ institution_id: 1, line: key, amount: opts.ownAmount ?? 20, fee_name: `Own ${key}`, source_url: "https://a", updated_at: "2026-10-01", source_line: `${key} | $20` });
+    lines.push({ institution_id: 1, line: key, amount: opts.ownAmount ?? 20, fee_name: `Own ${key}`, source_url: "https://a", updated_at: "2026-10-01", schedule_read_on: "2026-09-30", source_line: `${key} | $20` });
   }
   const competitors = [];
   for (let i = 0; i < opts.competitors; i += 1) {
     const id = 100 + i;
     competitors.push({ institution_id: id, institution_name: `Rival ${i}`, city: "X", state_code: "CA", charter_type: "bank", market_deposits: 1000 - i });
-    for (const key of KEYS) lines.push({ institution_id: id, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, source_line: key });
+    for (const key of KEYS) lines.push({ institution_id: id, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: key });
   }
   return {
     subject: { institution_id: 1, institution_name: "Subject Bank", city: "X", state_code: "CA", charter_type: "bank", market_deposits: null, asset_size: null },
@@ -88,5 +88,64 @@ describe("tiered fees", () => {
     ];
     const line = analyzeMarket(data).lines.find((l) => l.key === "overdraft")!;
     expect(line.own?.tiers?.map((t) => t.amount)).toEqual([35, 5]);
+  });
+});
+
+describe("rank and sources", () => {
+  it("counts competitors charging less and keeps every competitor figure with its source", () => {
+    // Rivals charge 10..29; the subject charges 20, so 10 rivals charge less.
+    const result = analyzeMarket(market({ competitors: 20 }));
+    const overdraft = result.lines.find((l) => l.key === "overdraft")!;
+    expect(overdraft.chargingLess).toBe(10);
+    expect(overdraft.peerFigures).toHaveLength(20);
+    expect(overdraft.peerFigures[0].amount).toBe(10);
+    expect(overdraft.own?.schedule_read_on).toBe("2026-09-30");
+    expect(result.named[0].sources.overdraft.source_line).toBe("overdraft");
+  });
+
+  it("is null on lines that are not comparable", () => {
+    const result = analyzeMarket(market({ competitors: 20, ownKeys: KEYS.slice(0, 5) }));
+    expect(result.lines.find((l) => l.key === "card_replacement")?.chargingLess ?? null).toBeNull();
+  });
+});
+
+describe("pickNamedCompetitors", () => {
+  const own = new Set(KEYS);
+  const fees = Object.fromEntries(KEYS.map((k) => [k, 10]));
+  function rival(id: number, deposits: number | null, lineCount = KEYS.length): NamedCompetitor {
+    const subset = Object.fromEntries(Object.entries(fees).slice(0, lineCount));
+    return { institution_id: id, institution_name: `R${id}`, city: null, state_code: "CA", charter_type: deposits === null ? "credit_union" : "bank", market_deposits: deposits, fees: subset, sources: {} };
+  }
+
+  it("keeps slots for credit unions with no deposit figure, best coverage first", () => {
+    const banks = Array.from({ length: 12 }, (_, i) => rival(i + 1, 1000 - i));
+    const cus = [rival(101, null, 3), rival(102, null, 6), rival(103, null, 5), rival(104, null, 4)];
+    const named = pickNamedCompetitors([...banks, ...cus], own);
+    expect(named).toHaveLength(NAMED_COMPETITORS);
+    expect(named.slice(0, NAMED_COMPETITORS - NAMED_WITHOUT_DEPOSITS).map((c) => c.institution_id)).toEqual([1, 2, 3, 4, 5]);
+    expect(named.slice(-NAMED_WITHOUT_DEPOSITS).map((c) => c.institution_id)).toEqual([102, 103, 104]);
+  });
+
+  it("gives unused bank slots to credit unions and drops thin overlaps", () => {
+    const named = pickNamedCompetitors([rival(1, 500), rival(2, null, 2), ...[3, 4, 5, 6].map((id) => rival(id, null))], own);
+    expect(named.map((c) => c.institution_id)).toEqual([1, 3, 4, 5, 6]);
+  });
+});
+
+describe("buildReportCsv", () => {
+  it("lists the institution's lines, then every competitor figure on comparable lines", () => {
+    const data = market({ competitors: 20 });
+    const csv = buildReportCsv(data, analyzeMarket(data));
+    const rows = csv.trim().split("\r\n");
+    expect(rows[0]).toContain("competitors_charging_less");
+    expect(rows.filter((r) => r.startsWith("yours,"))).toHaveLength(analyzeMarket(data).lines.length);
+    expect(rows.filter((r) => r.startsWith("competitor,"))).toHaveLength(20 * KEYS.length);
+  });
+
+  it("quotes commas and neutralizes spreadsheet formulas", () => {
+    const data = market({ competitors: 20 });
+    data.subject.institution_name = "=HYPERLINK(1), Bank";
+    const csv = buildReportCsv(data, analyzeMarket(data));
+    expect(csv).toContain(`"'=HYPERLINK(1), Bank"`);
   });
 });

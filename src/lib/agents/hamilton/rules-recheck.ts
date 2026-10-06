@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
-import { passesDarwinChecks } from "@/lib/agents/knox/layout";
+import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -294,7 +294,8 @@ export async function rollBackUnreproducedFees(
       const key = feeKey(row.canonical_fee_key, fee.amount);
       if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
       const text = textFor(row);
-      if (!readsFrom(text).get(key)?.has((row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
+      // Knox reads names tidied; a row stored under an older untidy name is the same read.
+      if (!readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
       const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
       if (!traced.ok && traced.reason !== "tiered_fee") continue;
       keptKeys.add(key);

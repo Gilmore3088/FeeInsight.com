@@ -896,3 +896,33 @@ export async function getDailyFeeLimits(
   }
   return limits;
 }
+
+/**
+ * Several fees for a list of institutions, one value each under the statistics contract:
+ * institution id -> fee category -> amount. An institution or fee with no counted row is absent.
+ */
+export async function getFeeValuesForInstitutions(
+  institutionIds: number[],
+  categories: string[],
+): Promise<Map<number, Map<string, number>>> {
+  const out = new Map<number, Map<string, number>>();
+  if (institutionIds.length === 0 || categories.length === 0) return out;
+  const rows = (await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = ANY($1::int[])
+        AND ef.fee_category = ANY($2::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [institutionIds, categories] as never[],
+  )) as { institution_id: number | string; fee_category: string; amount: number | string | null }[];
+  for (const category of categories) {
+    const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
+    for (const [id, value] of valuePerInstitution(list)) {
+      const own = out.get(id) ?? new Map<string, number>();
+      own.set(category, value);
+      out.set(id, own);
+    }
+  }
+  return out;
+}
