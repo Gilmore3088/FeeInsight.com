@@ -405,6 +405,7 @@ export async function insertVerifiedFee(
     row: RawFeeRow;
     canonicalFeeKey: string;
     secondSourceAgrees?: boolean;
+    extraFlags?: string[];
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
@@ -415,6 +416,7 @@ export async function insertVerifiedFee(
   const flags = ["agentic_darwin_verified"];
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
+  if (options.extraFlags) flags.push(...options.extraFlags);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
