@@ -976,3 +976,18 @@ is read; and the run log records which files carry IS0048 and IS0049 (`detail.ac
 which accounts were blanked. Parser version 3 makes the scheduler re-pull every quarter.
 **Lesson:** a new call-report account that is zero for every filer is a missing value, not a fact;
 check the share of nonzero values before any chart or estimate uses it.
+
+## 2026-10-06: Rosetta banned 312 banks' script-loaded fee pages before it could read them
+**What happened:** a read-only dry run found 493 html texts at 312 banks marked `wrong_document`
+whose own link names the fee page (`/fees`, `fee-schedule`) and whose static text shows at most one
+amount. 220 of those banks have no live fee; all 312 links sat on the 90-day ban list, and 127 banks
+were left with no fee link at all.
+**Cause:** these pages load their fees by script. They were rejected on their menus-only static
+text before the free script fallback (`read.js_fallback`, PR 206) existed, and the ban kept every
+later read away. Only 12 of them were ever tried by the fallback.
+**Fix:** same PR: the read step reopens up to 100 of them per step (`reopenScriptLoadedFeePages` in
+`rosetta/read.ts`, chosen by James, "All 312"): ban lifted, link restored only for banks with none,
+a visible `read.reopen` attempt per text, and one more read through the script fallback. No live
+fee changes; a page that still is not a fee page is rejected again the normal way.
+**Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
+under the new one; a ban written by a judgment the code no longer makes outlives its reason.

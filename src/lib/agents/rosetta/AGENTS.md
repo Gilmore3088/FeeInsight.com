@@ -61,6 +61,15 @@ Rosetta owns source text normalization.
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
+  - Pages like that rejected as `wrong_document` before the fallback existed (an html
+    text whose link names the fee page, at most one amount, never tried by
+    `read.js_fallback`) are reopened once at the start of each read step, at most
+    `ROSETTA_REOPEN_LIMIT` (100) per step (`reopenScriptLoadedFeePages`): the URL leaves
+    `rejected_source_urls`, a bank with no `fee_schedule_url` (and no correction lock)
+    gets it back, and a `read.reopen` attempt (outcome `ok`, fingerprint = the text's
+    `source_hash`) makes that text readable once more and voids its earlier permanent
+    rejection. A page with more amounts is logged `rejected` and stays closed. No fee
+    is touched.
   - A download that fails with HTTP 404/410, with HTTP 401/403 when an earlier read of
     the same document was also blocked, or for the third time in 7 days with a block,
     rate limit, server error, timeout or network error (`STUCK_LINK_*` in `read.ts`),
