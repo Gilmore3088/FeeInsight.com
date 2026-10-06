@@ -1423,6 +1423,53 @@ reads change, so no live fee is taken down.
 **Lesson:** an agent that writes corrections to a shared store must also read them, or the same
 mistake comes back with the next rule change.
 
+## 2026-10-06: Large banks' schedules priced an overdraft fee Knox never read
+**What happened:** the largest-banks thread found 11 banks whose stored schedules price an
+overdraft fee that isn't live. Run on the overdraft lines of 10 of them, today's rules read 4
+correctly (Santander, First Merchants, Enterprise, Navy Federal). ESL's fee depends on the item's
+size and its tier table was not in the lines checked. The misses:
+- a fee stated in a sentence to "customers" (OceanFirst);
+- one-line PDF dot-leader schedules, split mid-leader so the name lost its price (Glacier,
+  United);
+- a long description row with its price in the last cell (Dollar Bank);
+- a long conditional name (Mechanics);
+- a two-column table (Trustmark).
+
+The re-read queue was also broken: see "Knox kept reading older copies of a page".
+**Fix:** Knox v22 (`src/lib/agents/knox/rules.ts`, `families.ts`) and the shared check's long
+rows (`src/lib/custom-report/source-check.ts`). Run on the same lines, v22 reads 9 of the 10.
+Answer keys rise slightly (Texas 454 of 468 from 452 of 467; seven states 674 of 720 from 673 of
+719), and the live dry run keeps the same 1,414 of 1,437 fees.
+**Still open:** Trustmark's two-column table ("Overdrafts (OD)" above "• Personal | $36.00"). The
+specialists don't pair a heading with a row whose own cell is an account type.
+**Lesson:** score a rule change on the specific banks a report depends on, not only on the
+answer keys; the answer keys had none of these layouts.
+
+
+## 2026-10-06: Knox kept reading older copies of a page
+**What happened:** Magellan marks one current document per page (`superseded_by_id`, PR 265),
+and its contract says Knox reads the current copy, but Knox's text selection never checked
+it. At 17:55 UTC, 2,520 texts on older copies had a current copy with its own text (934 were
+read again in the last 24 hours), and 8,689 unverified Knox rows from older copies were still
+queued for Darwin, where a stale price competes with today's.
+**Fix:** `src/lib/agents/knox/extract.ts`. Knox skips an older copy once the current copy has
+a text, and each extract step retires up to 2,000 unverified older-copy rows
+(`superseded_by_newer_copy`) for categories Knox already read from the current copy. Read-only
+count on prod: 3,887 rows at 419 banks qualify today, 3,412 of them at the same price as the
+current copy's row. The other 4,802 wait (their current copy is not read yet, or does not show
+that category), so no fee is lost to a weaker newer read. Verified and live fees are untouched.
+**Also found:** a page re-fetched with unchanged text was never read again. Knox skipped it as
+"the same text under another document id was already extracted", and the older copy that held
+the rows was itself blocked by its identical siblings. Navy Federal's re-check had reported 21
+missing fees on its page at every rules version since v7, but no re-read followed. Separately,
+the re-extract triggers (a thin text, or the rules re-check) only reach documents with live
+fees. So 9 of the largest banks' stored schedules priced an overdraft fee that was never live.
+Now an older copy's rows never block the current copy, and $10B+ banks' current pages are
+re-read once per rules version, first in line. Read-only check at 18:20 UTC: the current pages
+of all 11 flagged banks are selected, and 1,977 texts in total (183 at $10B+ banks) are due.
+**Lesson:** when one agent adds a "current" marker, check every reader of the table honours it;
+a comment saying "Knox reads the current copy" was not the same as Knox doing it.
+
 
 ## 2026-10-06: Knox's learning stopped at names many banks share
 **What happened:** the learning reader only learned a name verified at 2 or more banks, so a name
@@ -1437,7 +1484,7 @@ confidence in the audit text from 14-day survival by strategy and category (`cal
 59 of 221 groups would fall below Hamilton's 0.8 floor); and a layout signature on every extract
 attempt with thin reads counted per signature (`layout-signature.ts`). Answer keys with the
 fixture banks' own lessons (guard and Darwin verdicts only, not the keys themselves): 7 states
-673 to 677 right and 67 to 64 category errors; Texas unchanged. Only new reads change; no live
+674 to 678 right and 66 to 63 category errors on v22; Texas unchanged. Only new reads change; no live
 fee is taken down, and stored confidence is unchanged.
 **Lesson:** a learning store that only learns from agreement across banks misses most of what it
 is told; one bank's own verdicts are the strongest evidence for that bank.

@@ -13,6 +13,7 @@ import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
+import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
@@ -36,6 +37,13 @@ const LOW_YIELD_RATIO = 0.5;
  * (document, fee name, amount) keeps fees found the first time from being inserted twice.
  */
 export const KNOX_REEXTRACT_MAX_FEES = 5;
+/**
+ * Banks at or above this size (thousands of dollars, as `institution_sources.asset_size`
+ * stores it: $10B) have the current copy of each page re-read once per rules version,
+ * whatever it held before. The rules re-check only reaches documents with live fees, so a
+ * large bank's missing overdraft fee would otherwise wait for a new copy of its page.
+ */
+export const KNOX_REREAD_ASSET_FLOOR = 10_000_000;
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
 
@@ -103,6 +111,8 @@ export interface RunKnoxExtractResult {
   heldForReview: number;
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
+  /** Unverified rows from an older copy of a page whose current copy Knox has read. */
+  retiredOlderCopyRows: number;
   /** Texts the router refused because this extractor version already failed on them. */
   skippedKnownInputs: number;
   limit: number;
@@ -144,6 +154,7 @@ async function selectTextArtifacts(
   db: SqlTag,
   limit: number,
   learning: boolean,
+  currentCopy: boolean,
   institutionId?: number,
   stateCode?: string,
 ): Promise<TextArtifactRow[]> {
@@ -157,6 +168,20 @@ async function selectTextArtifacts(
   if (normalizedState) {
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  if (currentCopy) {
+    // One document per page: an older copy of a page Magellan fetched again is history
+    // once the current copy has a text, so Knox reads the current copy instead.
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM source_documents old_copy
+             JOIN agent_source_texts current_text
+               ON current_text.source_document_id = old_copy.superseded_by_id
+              AND current_text.status = 'completed'
+              AND current_text.char_count > 0
+            WHERE old_copy.id = adt.source_document_id
+              AND old_copy.superseded_by_id IS NOT NULL
+         )`);
   }
   let playbookColumns = "";
   let playbookJoin = "";
@@ -186,6 +211,17 @@ async function selectTextArtifacts(
                 AND recheck.source_document_id = adt.source_document_id
                 AND recheck.input_fingerprint = ${signatureParam}
                 AND COALESCE((recheck.detail->>'${MISSING_FEES_DETAIL}')::int, 0) > 0
+           )`;
+    // A large bank's current page is read again once per rules version.
+    const assetParam = `$${params.push(KNOX_REREAD_ASSET_FLOOR)}`;
+    thinTextReextract += `
+           OR (
+             COALESCE(inst.asset_size, 0) >= ${assetParam}${currentCopy ? `
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )` : ""}
            )`;
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
@@ -246,9 +282,19 @@ async function selectTextArtifacts(
             WHERE adt.text_hash IS NOT NULL
               AND prior.institution_id = adt.institution_id
               AND prior.text_hash = adt.text_hash
-              AND prior.id <> adt.id
+              AND prior.id <> adt.id${currentCopy ? `
+              -- An older copy's rows never block the page's current copy, or a page whose
+              -- text did not change would never be read again.
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM source_documents mine
+                  JOIN source_documents theirs ON theirs.id = prior.source_document_id
+                 WHERE mine.id = adt.source_document_id
+                   AND mine.superseded_by_id IS NULL
+                   AND theirs.superseded_by_id IS NOT NULL
+              )` : ""}
          )
-       ORDER BY adt.updated_at DESC, adt.id DESC
+       ORDER BY ${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ` : ""}adt.updated_at DESC, adt.id DESC
        LIMIT $1
     `,
     params,
@@ -272,6 +318,56 @@ export async function retireRowsFromOlderText(db: SqlTag, row: KnoxTextRow): Pro
        AND NOT EXISTS (
          SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
        )
+    RETURNING fr.fee_raw_id
+  `;
+  return retired.length;
+}
+
+/** Older-copy rows retired per extract step. */
+export const OLDER_COPY_RETIRE_LIMIT = 2000;
+
+/**
+ * One document per page: when Magellan stores a newer copy of a page, the unverified rows
+ * Knox read from an older copy stop going to Darwin, but only once Knox has read the same
+ * category from the current copy. The current copy's row then stands for the fee, at the
+ * price the bank shows today. A category the current copy does not show is left for
+ * Darwin, so a fee the newer read misses is not lost. Rows Darwin already verified are
+ * left alone; live fees a newer copy dropped are Hamilton's (`hamilton/newer-copy-retire.ts`).
+ */
+export async function retireRowsFromOlderCopies(
+  db: SqlTag,
+  options: { limit?: number } = {},
+): Promise<number> {
+  if (!(await currentCopySchemaReady(db))) return 0;
+  const limit = Math.max(0, Math.min(options.limit ?? OLDER_COPY_RETIRE_LIMIT, OLDER_COPY_RETIRE_LIMIT));
+  if (limit === 0) return 0;
+  const eligible = db`
+    SELECT fr.fee_raw_id
+      FROM raw_fee_observations fr
+      JOIN source_documents old_copy ON old_copy.id = fr.source_document_id
+     WHERE fr.source = 'knox'
+       AND old_copy.superseded_by_id IS NOT NULL
+       AND fr.outlier_flags ? 'needs_darwin_verification'
+       AND NOT EXISTS (
+         SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
+       )
+       AND EXISTS (
+         SELECT 1
+           FROM raw_fee_observations cur
+          WHERE cur.source = 'knox'
+            AND cur.source_document_id = old_copy.superseded_by_id
+            AND NOT (COALESCE(cur.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
+            AND substring(cur.conditions FROM 'canonical_hint=([a-z_]+)')
+                = substring(fr.conditions FROM 'canonical_hint=([a-z_]+)')
+       )
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+  `;
+  const retired = await db`
+    UPDATE raw_fee_observations fr
+       SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'needs_darwin_verification')
+                           || '["superseded_by_newer_copy"]'::jsonb
+     WHERE fr.fee_raw_id IN (${eligible})
     RETURNING fr.fee_raw_id
   `;
   return retired.length;
@@ -638,7 +734,9 @@ export async function runKnoxExtract(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
-  const rows = await selectTextArtifacts(db, limit, learning, options.institutionId, options.stateCode);
+  // Dry runs stay off the database beyond the text read, like the lessons below.
+  const currentCopy = !dryRun && (await currentCopySchemaReady(db));
+  const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
@@ -774,6 +872,7 @@ export async function runKnoxExtract(
   if (!dryRun) {
     await recordExtractionSignals(db, options.runId, results, rowByDocumentTextId);
   }
+  const retiredOlderCopyRows = currentCopy ? await retireRowsFromOlderCopies(db) : 0;
 
   return {
     selectedDocuments: rows.length,
@@ -784,6 +883,7 @@ export async function runKnoxExtract(
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     retiredOlderRows,
+    retiredOlderCopyRows,
     skippedKnownInputs,
     limit,
     dryRun,

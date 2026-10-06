@@ -150,4 +150,13 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds", 120, ".", "overdraft").ok).toBe(false);
     expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds", 120, ".", "od_daily_cap").ok).toBe(true);
   });
+
+  it("reads a long description row's price cell under the row's title", () => {
+    const row =
+      "Overdraft Fee Assessed when the available balance in your account is insufficient to cover an item (check, fee, returned check, " +
+      "ATM/POS authorization, Online Banking, other electronic debit, etc.) of $5.00 or greater that is presented for payment. An Overdraft " +
+      "Fee is assessed when such items are paid. Overdraft Fee limited to four (4) charges per day. | $36.00";
+    expect(checkFeeAgainstSource(row, "Overdraft Fee", 36, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(row, "Overdraft Fee", 5, ".").ok).toBe(false);
+  });
 });

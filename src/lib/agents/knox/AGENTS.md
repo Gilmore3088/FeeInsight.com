@@ -26,6 +26,19 @@ Knox owns conservative raw fee extraction.
   re-read changes a document's text, Knox extracts the new text and retires the
   unverified rows it took from the older text (`needs_darwin_verification` removed,
   `superseded_by_reread` added). Rows Darwin already verified are left alone.
+- One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
+  `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
+  a text. Each extract step also retires up to 2,000 unverified rows from older copies
+  (`needs_darwin_verification` removed, `superseded_by_newer_copy` added), but only for a
+  category Knox has already read from the current copy, so a fee the newer read misses
+  still goes to Darwin. Verified rows are left alone; live fees a newer copy dropped are
+  Hamilton's (`hamilton/newer-copy-retire.ts`).
+- An older copy's rows never stop the current copy from being read: a page re-fetched with
+  the same text used to be skipped as "already extracted under another document", so it was
+  never read again by a newer rules version.
+- Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
+  once per rules version, ahead of other texts. The rules re-check only reaches documents
+  with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
   name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
@@ -149,6 +162,21 @@ v21 (rules 21) reads more of those rate lines: the card's currency fee under its
 "Coin Machine", "Loose Coin" and "Count and roll coins", and a rate whose dollar minimum follows
 it ("Cash Advance | 3% of each advance ($5.00 minimum)"). Flat gates and the live dry run are
 unchanged; on the answer keys Knox reads 20 rates, 18 keyed and 2 real fees the keys leave out.
+
+v22 (rules 22, family experts +1) reads the overdraft layouts that left several of the largest
+banks with a stored overdraft fee that was never live:
+- a fee charged to customers in a sentence ("Customers are charged a fee of $30 each time an
+  overdraft transaction is paid"), even after a question that names it;
+- one-line PDF dot-leader schedules: a period inside a leader no longer ends a sentence, and
+  a leader row ends after its price ("Overdrafts fee (per item)……………$36");
+- a long description row whose only other cell is its price ("Overdraft Fee Assessed when ...
+  per day. | $36.00"), named by the row's title. The shared check reads the same row the same
+  way;
+- a row's price cell repeating the price in the same cell is not a second fee;
+- "Overdrafts Returned" is NSF, and "Maximum daily Overdraft ... fees" is the daily cap.
+
+Answer keys: Texas 454 of 468 (main 452 of 467), held out 45 of 50 (43 of 49), seven states
+674 of 720 (673 of 719). Live dry run: 1,414 of 1,437 kept, the same fees as main.
 
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
