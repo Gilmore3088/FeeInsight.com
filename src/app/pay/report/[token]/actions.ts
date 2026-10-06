@@ -3,7 +3,13 @@
 import { redirect } from "next/navigation";
 import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
 import { checkInstitutionReport } from "@/lib/custom-report/quote-check";
-import { flagQuoteNotReady, getInstitutionLabel, getReportPaymentLead, saveCheckoutSession } from "@/lib/data-store/report-payments";
+import {
+  flagQuoteNotReady,
+  getInstitutionLabel,
+  getReportPaymentLead,
+  saveCheckoutSession,
+  saveReportSnapshot,
+} from "@/lib/data-store/report-payments";
 import { payPath, verifyPayToken } from "@/lib/leads/pay-link";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 import { getStripe } from "@/lib/stripe";
@@ -31,6 +37,8 @@ export async function startReportCheckoutAction(formData: FormData): Promise<voi
     await flagQuoteNotReady(lead.id);
     redirect(payPath(token));
   }
+  // What they are paying for: if the live market thins out later, the report shows this copy.
+  if (check.data) await saveReportSnapshot(lead.id, check.data);
 
   let url: string | null = null;
   try {

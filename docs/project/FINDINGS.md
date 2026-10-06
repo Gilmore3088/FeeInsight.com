@@ -1153,6 +1153,7 @@ on all 11,783 current-text held lines: 1,529 get a category and go to Darwin (to
 early closure 168, monthly maintenance 143, NSF 113, copies 106); nothing live is taken down.
 **Lesson:** a dedupe key that ignores a row's state lets the first, weakest answer win forever;
 when a reader improves, re-read what it set aside, not just what it never saw.
+
 ## 2026-10-06: Rosetta never heard whether its texts' fees held up
 **What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
 stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
@@ -1170,3 +1171,11 @@ on them, 1 PDF for the paid pass now. A new text replaces the old only when it l
 many fees, so no live fee is taken down by the re-read itself.
 **Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
 
+## 2026-10-06: a paid report could open blank
+**What happened:** the private institution report is recomputed from live data on every view.
+The readiness check runs at quote and at checkout, but a market that thinned out after payment
+showed the buyer "This market is being refreshed" with no numbers (value funnel audit).
+**Fix:** migration 20270110000005 saves the report's market data on the request when checkout
+starts; `loadMarketReport` (`src/lib/custom-report/report-data.ts`) serves that saved copy, dated,
+when the live market no longer passes.
+**Lesson:** what a customer paid for has to be stored, not recomputed.
