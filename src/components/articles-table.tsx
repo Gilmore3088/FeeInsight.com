@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { SortableTable, type Column } from "@/components/sortable-table";
 import { timeAgo } from "@/lib/format";
 import type { Article } from "@/lib/data-store/articles";
+import { ArticleActions } from "@/app/admin/hamilton/research/articles/article-actions";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400",
@@ -22,10 +23,8 @@ type ArticleRow = Article & Record<string, unknown>;
 
 export function ArticlesTable({
   articles,
-  renderActions,
 }: {
   articles: Article[];
-  renderActions: (article: Article) => React.ReactNode;
 }) {
   const columns: Column<ArticleRow>[] = [
     {
@@ -86,7 +85,7 @@ export function ArticlesTable({
       label: "Actions",
       align: "right",
       sortable: false,
-      format: (_, row) => renderActions(row as unknown as Article),
+      format: (_, row) => <ArticleActions article={row as unknown as Article} />,
     },
   ];
 
