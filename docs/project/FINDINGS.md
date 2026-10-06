@@ -13,6 +13,13 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Paid-find cost differs between the attempt log and the spend ledger
+**What happened:** read-only, 13:50 UTC: `pipeline_attempts` records $8.35 for today's 152
+paid-find attempts, while `ai_api_usage_events` (what the budget caps read) shows $4.41 for
+Magellan today. The caps follow the ledger, so they still hold.
+**Cause:** not yet known.
+**Fix:** none yet; next step is to compare one night's attempts with their usage rows.
+
 ## 2026-10-06: Atlas took states in waiting order, not where the work was
 **What happened:** after PR 204, a state's median gap between runs was still 135 minutes (live,
 13:20 UTC, last 6 h). Every lane's `priority_score` was 0, so Atlas picked whichever lane had
