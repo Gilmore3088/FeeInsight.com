@@ -15,6 +15,7 @@ import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
+import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES } from "@/lib/data-store/market-readiness";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -513,7 +514,19 @@ export const STATE_LANE_STARVATION_HOURS = 3;
  * Hamilton has not source-checked, and banks with a source-check takedown in the last 7
  * days. Due lanes run highest score first (see scheduleDueStateLaneRuns). Deterministic
  * SQL, refreshed with the hourly nationwide sync. Returns the lanes updated.
+ *
+ * Report demand goes first (coordinator, 2026-10-06, from the funnel audit): a state with
+ * an unpaid institution report request from the last REPORT_REQUEST_DAYS whose institution
+ * fails James's report rule gets REPORT_REQUEST_PRIORITY, and a state whose bank market is
+ * within NEAR_READY_GAP rich banks of ready gets NEAR_READY_BANK_PRIORITY plus 10 per rich
+ * bank, so the closest market runs first. This only moves when a state runs; what the
+ * state's steps then work on is unchanged.
  */
+export const REPORT_REQUEST_DAYS = 30;
+export const REPORT_REQUEST_PRIORITY = 2000;
+export const NEAR_READY_GAP = 6;
+export const NEAR_READY_BANK_PRIORITY = 2000;
+
 export async function refreshLanePriorities(): Promise<number> {
   try {
     const updated = await sql`
@@ -565,15 +578,60 @@ export async function refreshLanePriorities(): Promise<number> {
            AND fp.rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`}
          GROUP BY 1
       ),
+      coverage AS (
+        -- Headline categories live per institution: the count market-readiness.ts uses.
+        SELECT institution_id, COUNT(DISTINCT canonical_fee_key)::int AS categories
+          FROM public.published_fee_catalog
+         WHERE canonical_fee_key = ANY(${[...HEADLINE_FEE_KEYS]})
+         GROUP BY institution_id
+      ),
+      market AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, inst.charter_type,
+               count(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES})::int AS rich
+          FROM public.institution_sources inst
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+         WHERE inst.state_code IS NOT NULL AND inst.charter_type IS NOT NULL
+         GROUP BY 1, 2
+      ),
+      near_ready AS (
+        SELECT state_code, max(rich) AS rich
+          FROM market
+         WHERE charter_type = 'bank'
+           AND rich < ${MARKET_READY_MIN_RICH}
+           AND rich >= ${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}
+         GROUP BY 1
+      ),
+      requested AS (
+        -- Report requests carry the institution in use_case ("institution_id=117"); the
+        -- request counts while unpaid and the institution or its market fails the rule.
+        SELECT DISTINCT upper(btrim(inst.state_code)) AS state_code
+          FROM public.leads lead
+          JOIN public.institution_sources inst
+            ON inst.id = (substring(lead.use_case FROM 'institution_id=([0-9]+)'))::bigint
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+          LEFT JOIN market ON market.state_code = upper(btrim(inst.state_code))
+                          AND market.charter_type = inst.charter_type
+         WHERE 'report' = ANY(string_to_array(lead.source, ','))
+           AND lead.created_at > NOW() - ${REPORT_REQUEST_DAYS} * INTERVAL '1 day'
+           AND lead.paid_at IS NULL
+           AND position('src=e2e-test' IN COALESCE(lead.use_case, '')) = 0
+           AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}
+                OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH})
+      ),
       score AS (
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
-                 + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0) AS priority
+                 + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
+                 + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY} ELSE 0 END
+                 + CASE WHEN near_ready.state_code IS NOT NULL
+                        THEN ${NEAR_READY_BANK_PRIORITY} + 10 * near_ready.rich ELSE 0 END AS priority
           FROM public.agent_state_lanes lane
           LEFT JOIN due_search ON due_search.state_code = lane.state_code
           LEFT JOIN stale ON stale.state_code = lane.state_code
           LEFT JOIN unchecked ON unchecked.state_code = lane.state_code
           LEFT JOIN takedowns ON takedowns.state_code = lane.state_code
+          LEFT JOIN requested ON requested.state_code = lane.state_code
+          LEFT JOIN near_ready ON near_ready.state_code = lane.state_code
       )
       UPDATE public.agent_state_lanes lane
          SET priority_score = score.priority,

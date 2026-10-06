@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: No bank market can pass the report rule soon, and percentage fees never count
+**What happened:** read-only, 14:10 UTC: 6 of 109 state markets pass James's report rule (16
+rich institutions of one type in a state), all credit unions. The closest bank market is MA
+(12 of 16); OK and IL banks have 9. AK has 5 banks in total and WA 31 with 1 rich, so the
+real requesters there (First National Bank Alaska, Banner Bank) cannot pass the state rule.
+`card_foreign_txn` is a headline fee live at 42 institutions, while 347 more have a foreign
+transaction fee held as `knox_review:percentage`.
+**Cause:** the rule counts only same-state, same-type peers. Percentage fees have no path
+to the catalog. Requester gaps were wrong or partial links (a business-only PDF; a general
+services page without account fees) and Knox misses (wires, prose maintenance fee).
+**Fix:** Atlas now runs states with a failing report request and near-ready bank markets
+first. The link and extraction gaps went to Magellan and Knox. The rule itself (peer fallback
+for small states) and percentage fees are open.
+**Lesson:** check whether a market can reach a threshold at all before scheduling toward it.
+
 ## 2026-10-06: The spend ledger left out web search charges, so caps undercounted Magellan
 **What happened:** read-only, 13:50 UTC: `pipeline_attempts` recorded $8.35 for today's 152
 paid web searches; `ai_api_usage_events`, which the budget caps and per-run limits sum, recorded

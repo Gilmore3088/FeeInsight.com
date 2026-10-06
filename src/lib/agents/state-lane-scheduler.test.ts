@@ -25,6 +25,9 @@ import {
   STATE_LANE_STEPS,
   laneIdempotencyKey,
   refreshLanePriorities,
+  NEAR_READY_BANK_PRIORITY,
+  NEAR_READY_GAP,
+  REPORT_REQUEST_PRIORITY,
   STATE_LANE_STARVATION_HOURS,
   nextDayStart,
   nextMonthStart,
@@ -363,6 +366,17 @@ describe("state lane scheduler", () => {
     await expect(refreshLanePriorities()).resolves.toBe(7);
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("SET priority_score"));
     for (const part of ["due_search", "stale", "unchecked", "takedowns"]) expect(query).toContain(part);
+  });
+
+  it("puts states with an open report request or a near-ready bank market first", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 3 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    const text = templateText(call?.[0]);
+    for (const part of ["requested AS", "near_ready AS", "published_fee_catalog", "institution_id=([0-9]+)", "lead.paid_at IS NULL", "src=e2e-test"]) {
+      expect(text).toContain(part);
+    }
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
   it("runs the busiest due lanes first but never starves an overdue one", async () => {

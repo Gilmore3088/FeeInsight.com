@@ -47,6 +47,12 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   days. Due lanes run highest score first; a lane overdue by `STATE_LANE_STARVATION_HOURS`
   (3) goes ahead of all, so quiet states still get turns. The tick launches
   `STATE_LANE_LIMIT_PER_TICK` (3) lanes every 5 minutes.
+- Report demand goes first (2026-10-06, funnel audit): a state gets
+  `REPORT_REQUEST_PRIORITY` (2000) while an unpaid report request from the last 30 days names
+  an institution there (`institution_id=` in `leads.use_case`) that fails James's report rule,
+  and `NEAR_READY_BANK_PRIORITY` (2000) plus 10 per rich bank while its bank market is within
+  `NEAR_READY_GAP` (6) rich banks of ready (`market-readiness.ts`). This only changes when a
+  state runs, not what its steps pick.
 - Idempotency keys (they only dedupe active runs): `atlas:state-lane:<ST>:<YYYY-MM>`,
   `atlas:state-lane-recheck:<ST>:<YYYY>-Q<n>`, `atlas:state-lane-backlog:<ST>:<YYYY-MM-DDTHH>`.
 - State experts (`state-expert/`): one design, 55 memories (`state_memory`). The roster
