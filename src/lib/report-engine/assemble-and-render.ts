@@ -163,7 +163,7 @@ export async function assembleAndRender(
         ] = await Promise.allSettled([
           generateSection({
             type: 'executive_summary',
-            title: '5 Truths About Banking Fees — Executive Summary',
+            title: 'The Quarter in Figures — Executive Summary',
             data: {
               ...payload.derived,
               total_institutions: payload.total_institutions,
@@ -181,11 +181,11 @@ export async function assembleAndRender(
             },
             // Executive summary is exempt from the 150-200 word budget (SECTION-03).
             // It uses a 75-word cap because it's a condensed overview, not a body section.
-            context: `${thesisContext}Write 2-3 punchy sentences summarizing the 5 key insights. No preamble. Max 75 words.\n\nCROSS-SOURCE INSTRUCTION: Your DATA block contains fred_snapshot (FRED economic indicators) and beige_book_themes (Federal Reserve district reports). You MUST reference at least one FRED indicator and at least one Beige Book theme in your analysis. State the economic context before the fee observation — macro conditions frame the pricing story.`,
+            context: `${thesisContext}Write 2-3 sentences on what this quarter's national fee data shows. No preamble. Max 75 words. Where fred_snapshot or beige_book_themes are present, you may use one as context for the fee data. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
             type: 'trend_analysis',
-            title: 'The Illusion of Fee Differentiation',
+            title: 'Where Prices Cluster and Where They Spread',
             data: {
               avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct,
               commoditized_count: payload.derived.commoditized_count,
@@ -193,11 +193,11 @@ export async function assembleAndRender(
               tightest_spreads: payload.derived.tightest_spreads,
               widest_spreads: payload.derived.widest_spreads,
             },
-            context: `${thesisContext}Analyze fee clustering. Prices are not identical, but differences are too small to influence customer choice — fees are effectively commoditized. 2-3 sentences. Use "functionally undifferentiated" not "commoditized." What does this mean strategically?`,
+            context: `${thesisContext}Describe which fees cluster tightly around their median and which vary widely, using the spreads given. 2-3 sentences. Name the decision a pricing committee faces where spreads are wide or narrow, without choosing for it. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
             type: 'peer_comparison',
-            title: 'Banks vs Credit Unions: Two Models',
+            title: 'Banks and Credit Unions',
             data: {
               bank_higher_count: payload.derived.bank_higher_count,
               cu_higher_count: payload.derived.cu_higher_count,
@@ -205,11 +205,11 @@ export async function assembleAndRender(
               biggest_bank_premiums: payload.derived.biggest_bank_premiums,
               biggest_cu_premiums: payload.derived.biggest_cu_premiums,
             },
-            context: `${thesisContext}Compare bank vs CU fee strategies. Banks monetize convenience, CUs monetize penalties. 2-3 sentences.`,
+            context: `${thesisContext}Compare bank and credit union medians using the premiums given. 2-3 sentences. Characterize a pattern only if the listed categories show it. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
             type: 'trend_analysis',
-            title: 'Where the Money Actually Comes From',
+            title: 'Fee Income in Call Reports',
             data: {
               revenue: payload.revenue ?? null,
               revenue_per_institution: payload.derived.revenue_per_institution,
@@ -223,43 +223,43 @@ export async function assembleAndRender(
                   }
                 : null,
             },
-            context: `${thesisContext}Frame revenue as concentrated in a few categories. ${payload.revenue ? 'The data confirms fee revenue is dominated by NSF/overdraft with maintenance fees as secondary driver.' : 'Industry data indicates NSF/OD fees dominate revenue, with maintenance fees as secondary driver. Use directional language since exact figures are pending.'} 2-3 sentences.\n\nCROSS-SOURCE INSTRUCTION: Your DATA block contains fred_snapshot (FRED indicators). When revenue data and macro context both exist, connect them: rising rates and falling fee revenue tell a specific story about institutional margin pressure.`,
+            context: `${thesisContext}Describe the national service-charge income figures given (dollar amounts are in thousands of dollars), the year-over-year change and the bank and credit union shares. 2-3 sentences. Call reports do not split fee income by fee category, so do not attribute income to any category. Where fred_snapshot is present, you may compare the change with CPI. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
             type: 'findings',
-            title: 'The Industry Blind Spot',
+            title: 'Data Coverage',
             data: {
               categories_with_data_count: payload.derived.categories_with_data_count,
               total_categories: payload.categories.length,
               strong_maturity_count: payload.derived.strong_maturity_count,
               provisional_maturity_count: payload.derived.provisional_maturity_count,
             },
-            context: `${thesisContext}Discuss the lack of standardized fee revenue benchmarking. Fee Insight is building the first national fee revenue benchmark. Position this as closing the industry blind spot. 2-3 sentences.`,
+            context: `${thesisContext}Describe how complete the fee data is, using the category and maturity counts given. 2-3 sentences. State plainly where the data is thin. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
-            type: 'recommendation',
-            title: 'The Future of Fee Strategy',
+            type: 'findings',
+            title: 'What to Watch',
             data: {
               avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct,
               bank_higher_count: payload.derived.bank_higher_count,
               total_institutions: payload.total_institutions,
             },
-            context: `${thesisContext}Write 5 concrete predictions about fee strategy evolution. Use "will" not "may" — no hedging. Cover behavioral pricing, bundling, dynamic fees, segmentation, and data-driven optimization. 2-3 sentences with certainty.`,
+            context: `${thesisContext}Name which open questions the next quarters of this data can settle, based only on the figures given. 2-3 sentences. No predictions stated as certain. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
         ]);
 
         const executive_summary =
           execResult.status === 'fulfilled'
             ? execResult.value
-            : fallbackNarrative('Fee pricing is effectively commoditized across the industry, with differences too small to influence customer choice.');
+            : fallbackNarrative('National fee medians, spreads and charter comparisons for this quarter are shown below.');
         const fee_differentiation =
           diffResult.status === 'fulfilled'
             ? diffResult.value
-            : fallbackNarrative('IQR spreads reveal tight clustering — fees are functionally undifferentiated, and pricing alone does not create competitive advantage.');
+            : fallbackNarrative('The chart shows the fees whose prices cluster most tightly around the national median.');
         const banks_vs_credit_unions =
           charterResult.status === 'fulfilled'
             ? charterResult.value
-            : fallbackNarrative('Banks and credit unions pursue fundamentally different fee strategies.');
+            : fallbackNarrative('The chart compares bank and credit union medians where both publish the fee.');
         const revenue_reality =
           revenueResult.status === 'fulfilled'
             ? revenueResult.value
@@ -267,11 +267,11 @@ export async function assembleAndRender(
         const industry_blind_spot =
           blindSpotResult.status === 'fulfilled'
             ? blindSpotResult.value
-            : fallbackNarrative('No standardized fee revenue benchmarking exists across the industry today.');
+            : fallbackNarrative('Coverage counts by category are shown below.');
         const future_strategy =
           futureResult.status === 'fulfilled'
             ? futureResult.value
-            : fallbackNarrative('Future fee revenue growth depends on behavioral pricing and intelligent segmentation.');
+            : fallbackNarrative('Spread and coverage figures for this quarter are shown below.');
 
         // D-07: Validate numerics on key sections
         const derivedData = payload.derived as unknown as Record<string, unknown>;
@@ -285,22 +285,22 @@ export async function assembleAndRender(
         const passedValidation = { passed: true, inventedNumbers: [] as string[], checkedCount: 0, sourceValues: [] as number[] };
         const editorSections: ValidatedSection[] = [];
         if (execResult.status === 'fulfilled') {
-          editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: '5 Truths About Banking Fees — Executive Summary', data: { ...(payload.derived as unknown as Record<string, unknown>), total_institutions: payload.total_institutions } } });
+          editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: 'The Quarter in Figures — Executive Summary', data: { ...(payload.derived as unknown as Record<string, unknown>), total_institutions: payload.total_institutions } } });
         }
         if (diffResult.status === 'fulfilled') {
-          editorSections.push({ ...fee_differentiation, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'The Illusion of Fee Differentiation', data: { avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct, commoditized_count: payload.derived.commoditized_count } } });
+          editorSections.push({ ...fee_differentiation, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Where Prices Cluster and Where They Spread', data: { avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct, commoditized_count: payload.derived.commoditized_count } } });
         }
         if (charterResult.status === 'fulfilled') {
-          editorSections.push({ ...banks_vs_credit_unions, validation: passedValidation, input: { type: 'peer_comparison' as const, title: 'Banks vs Credit Unions: Two Models', data: { bank_higher_count: payload.derived.bank_higher_count, cu_higher_count: payload.derived.cu_higher_count } } });
+          editorSections.push({ ...banks_vs_credit_unions, validation: passedValidation, input: { type: 'peer_comparison' as const, title: 'Banks and Credit Unions', data: { bank_higher_count: payload.derived.bank_higher_count, cu_higher_count: payload.derived.cu_higher_count } } });
         }
         if (revenueResult.status === 'fulfilled') {
-          editorSections.push({ ...revenue_reality, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Where the Money Actually Comes From', data: { revenue: payload.revenue ?? null, revenue_per_institution: payload.derived.revenue_per_institution } } });
+          editorSections.push({ ...revenue_reality, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Fee Income in Call Reports', data: { revenue: payload.revenue ?? null, revenue_per_institution: payload.derived.revenue_per_institution } } });
         }
         if (blindSpotResult.status === 'fulfilled') {
-          editorSections.push({ ...industry_blind_spot, validation: passedValidation, input: { type: 'findings' as const, title: 'The Industry Blind Spot', data: { categories_with_data_count: payload.derived.categories_with_data_count, total_categories: payload.categories.length } } });
+          editorSections.push({ ...industry_blind_spot, validation: passedValidation, input: { type: 'findings' as const, title: 'Data Coverage', data: { categories_with_data_count: payload.derived.categories_with_data_count, total_categories: payload.categories.length } } });
         }
         if (futureResult.status === 'fulfilled') {
-          editorSections.push({ ...future_strategy, validation: passedValidation, input: { type: 'recommendation' as const, title: 'The Future of Fee Strategy', data: { avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct, bank_higher_count: payload.derived.bank_higher_count, total_institutions: payload.total_institutions } } });
+          editorSections.push({ ...future_strategy, validation: passedValidation, input: { type: 'findings' as const, title: 'What to Watch', data: { avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct, bank_higher_count: payload.derived.bank_higher_count, total_institutions: payload.total_institutions } } });
         }
 
         if (editorSections.length > 0) {
@@ -358,24 +358,36 @@ export async function assembleAndRender(
 
         const pulseData = {
           period_label: payload.period_label,
-          total_movers: payload.total_movers,
-          total_categories_tracked: payload.total_categories_tracked,
-          movers_up: payload.movers_up.slice(0, 5),
-          movers_down: payload.movers_down.slice(0, 5),
+          window: `${payload.window_start} to ${payload.report_date}`,
+          confirmed_fee_changes: payload.changes.length,
+          increases: payload.changes.filter((c) => c.direction === 'up').length,
+          decreases: payload.changes.filter((c) => c.direction === 'down').length,
+          changes: payload.changes.slice(0, 10).map((c) => ({
+            institution: c.institution_name,
+            state: c.state_code,
+            fee: c.display_name,
+            was: c.old_amount,
+            now: c.new_amount,
+          })),
+          institutions_with_live_fees: payload.coverage.institutions_live,
+          institutions_added_this_month: payload.coverage.institutions_added_in_window,
         };
 
         let pulse_overview: SectionOutput;
         try {
           pulse_overview = await generateSection({
             type: 'overview',
-            title: `Fee Market Movement — ${payload.period_label}`,
+            title: `Fee changes at the same institutions, ${payload.period_label}`,
             data: pulseData,
-            context: 'Write a 1-2 paragraph executive summary. 250 words maximum.',
+            context:
+              'Write one short paragraph, 120 words maximum. Describe the confirmed fee changes at the same institutions and what they show. ' +
+              'Coverage grew this month, so do not describe national medians or any market-wide price move. ' +
+              'If there are no confirmed changes, say so plainly. Do not advise any institution to change a fee.',
           });
           validateAndWarn('pulse_overview', pulse_overview, pulseData);
         } catch {
           pulse_overview = fallbackNarrative(
-            'Market movement data is presented in the tables below.',
+            'Confirmed fee changes at the same institutions are listed below.',
           );
         }
 
