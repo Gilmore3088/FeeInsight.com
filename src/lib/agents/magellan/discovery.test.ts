@@ -25,6 +25,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("stale-link freshness search")) return Promise.resolve([]);
     if (text.includes("AS profile_canonical_source_url")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -296,12 +297,14 @@ describe("Magellan agentic discovery", () => {
   });
 
   describe("pass 2 specialists", () => {
-    it("uses a path that worked for a same-platform bank in the same state", async () => {
-      const db = createDbMock([bank(60, "https://q2bank.example")], (text) =>
-        text.includes("AS url") && text.includes("upper(btrim(inst.state_code))")
-          ? [{ id: 61, url: "https://peer.example/about/deposit-pricing" }]
-          : undefined,
-      );
+    it("uses a path that produced live fees for a same-platform bank elsewhere", async () => {
+      const db = createDbMock([bank(60, "https://q2bank.example")], (text) => {
+        if (text.includes("to_regclass('public.pipeline_feedback')")) return [{ ready: true }];
+        if (text.includes("AS url") && text.includes("FROM pipeline_feedback")) {
+          return [{ id: 61, url: "https://peer.example/about/deposit-pricing", rejected: [], yield_kind: "produced_live_fees", live_fees: 12 }];
+        }
+        return undefined;
+      });
       const fetchImpl = site({
         "https://q2bank.example/": () => response('<script src="https://cdn.q2ebanking.com/x.js"></script><p>Hi</p>'),
         "https://q2bank.example/about/deposit-pricing": () => response(FEE_TABLE),
@@ -694,6 +697,54 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+    });
+  });
+
+  describe("stale-link freshness search", () => {
+    const staleBank = {
+      ...bank(78, "https://oldbank.example", {
+        fee_schedule_url: "https://oldbank.example/docs/2021-fee-schedule.pdf",
+        profile_canonical_source_url: "https://oldbank.example/docs/2021-fee-schedule.pdf",
+      }),
+      url_year: 2021,
+      effective_year: null,
+    };
+    const staleDb = () =>
+      createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [staleBank] : undefined)));
+
+    it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
+      const db = staleDb();
+      const fetchImpl = site({
+        "https://oldbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://oldbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://oldbank.example/disclosures/fee-schedule" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
+      expect(attempts(db)[0].detail).toMatchObject({
+        stale_link: "https://oldbank.example/docs/2021-fee-schedule.pdf",
+        stale_reason: "address names 2021",
+      });
+    });
+
+    it("keeps the link when the search finds the same schedule or nothing", async () => {
+      const db = staleDb();
+      const fetchImpl = site({
+        "https://oldbank.example/": () => response('<a href="/docs/2021-fee-schedule.pdf">Fee Schedule</a>'),
+        "https://oldbank.example/docs/2021-fee-schedule.pdf": () => response(FEE_TABLE),
+      });
+
+      await runMagellanDiscovery({ runId: 123, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
+      expect(attempts(db).length).toBeGreaterThan(0);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
     });
   });
 

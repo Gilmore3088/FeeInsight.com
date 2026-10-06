@@ -60,6 +60,15 @@ Darwin owns verification and classification.
   Disputes are meant for the Claude adjudicator (layer 3), Darwin's only paid call,
   billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
+- Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
+  `classify`, shadow mode): `verify.adjudicate` v1 sends Claude only the fees the free
+  layers disagree on: approved fees the category model disputes, and category-guard
+  rejects where the model is at least 0.9 sure of another category the guard accepts.
+  25 fees per call, at most 10 calls per run, `PIPELINE_PAID_VERIFY_MODEL` (default
+  Haiku 4.5), billed to Darwin's key under `agent:darwin`, which is fail-closed until its
+  caps are set. Each verdict (is it a fee, which category) is recorded per fee with its
+  side (`knox`, `model`, `other`, `not_a_fee`); it never changes a decision yet. On live
+  data at 2026-10-06 07:20 UTC, 23 approvals and 477 rejects qualified.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
