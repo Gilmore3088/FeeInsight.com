@@ -51,6 +51,7 @@ import {
   type NationalQuarterlyPayload,
 } from "@/lib/report-assemblers/national-quarterly";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { formatRatePercent } from "@/lib/percent-fees";
 import { developmentsContent, feeChangesContent } from "./developments";
 import { regulatoryExtras } from "./regulatory-section";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
@@ -127,6 +128,27 @@ function groupTable(rows: GroupRow[], groupLabel: string, caption: string): stri
       n: r.fees.overdraft?.institutions ?? 0,
     })),
     caption,
+  });
+}
+
+/** Fees stated as a rate, each compared only with other rates; empty until any institution states one. */
+function rateTable(data: NationalQuarterlyPayload): string {
+  const rows = (data.rate_categories ?? []).filter((r) => r.institution_count > 0);
+  if (rows.length === 0) return "";
+  return dataTable({
+    columns: [
+      { key: "fee", label: "Fee stated as a rate", align: "left" },
+      { key: "median", label: "Median rate", align: "right", format: "text" },
+      { key: "half", label: "Middle half", align: "right", format: "text" },
+      { key: "n", label: "Institutions", align: "right", format: "integer" },
+    ],
+    rows: rows.map((r) => ({
+      fee: r.display_name,
+      median: r.median_rate === null ? null : formatRatePercent(r.median_rate),
+      half: r.p25_rate === null || r.p75_rate === null ? null : `${formatRatePercent(r.p25_rate)} to ${formatRatePercent(r.p75_rate)}`,
+      n: r.institution_count,
+    })),
+    caption: "One rate per institution, compared only with other rates and never with the dollar figures above. A dash means too few institutions state the fee as a rate.",
   });
 }
 
@@ -656,6 +678,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       })),
       caption: `All ${data.categories.length} fee categories \u2014 ${data.total_institutions.toLocaleString()} institutions \u2014 as of ${data.report_date}`,
     }),
+    rateTable(data),
   ].join("\n");
 
   // ── Assemble with layout wrappers ───────────────────────────────────────────

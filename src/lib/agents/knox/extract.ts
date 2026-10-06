@@ -7,6 +7,7 @@ import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
+import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
@@ -420,6 +421,59 @@ export async function insertHeldCandidate(
   return inserted.length > 0;
 }
 
+/** Flag on a raw row that is a percentage fee (`amount_kind` 'percent'). */
+export const KNOX_RATE_FEE_FLAG = "knox_rate_fee";
+
+/**
+ * A percentage fee that traced to its text and whose category publishes rates: amount NULL,
+ * the rate in `rate_percent`, sent to Darwin (migration 20270110000006).
+ */
+export async function insertRateCandidate(
+  db: SqlTag,
+  options: { runId: number; row: KnoxTextRow; rate: RateFeeCandidate },
+): Promise<boolean> {
+  const documentTextId = Number(options.row.document_text_id);
+  const sourceDocumentId = Number(options.row.source_document_id);
+  const { rate } = options;
+  const agentEventId = stableUuid(
+    `knox:rate:${options.runId}:${documentTextId}:${sourceDocumentId}:${rate.canonicalHint}:${rate.feeName}:${rate.ratePercent}`,
+  );
+  const flags = ["needs_darwin_verification", `canonical_hint:${rate.canonicalHint}`, KNOX_RATE_FEE_FLAG];
+  const conditions =
+    `Knox read a percentage fee from Rosetta artifact #${documentTextId}. ` +
+    `canonical_hint=${rate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
+    `excerpt="${rate.excerpt.slice(0, 180)}"`;
+  const inserted = await db`
+    INSERT INTO raw_fee_observations (
+      institution_id, source_document_id, document_r2_key, source_url, extraction_confidence,
+      agent_event_id, fee_name, amount, frequency, conditions, outlier_flags, source,
+      amount_kind, rate_percent, rate_min_amount, rate_max_amount, rate_basis
+    )
+    VALUES (
+      ${Number(options.row.institution_id)},
+      ${sourceDocumentId},
+      ${null},
+      ${options.row.source_url},
+      ${confidenceFor(rate.excerpt)},
+      ${agentEventId}::uuid,
+      ${rate.feeName},
+      ${null},
+      ${rate.frequency},
+      ${conditions},
+      ${JSON.stringify(flags)}::jsonb,
+      'knox',
+      'percent',
+      ${rate.ratePercent},
+      ${rate.rateMinAmount},
+      ${rate.rateMaxAmount},
+      ${rate.rateBasis}
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING fee_raw_id
+  `;
+  return inserted.length > 0;
+}
+
 function institutionLabel(row: Pick<TextArtifactRow, "institution_id" | "institution_name">): string {
   return row.institution_name?.trim() || `Institution ${row.institution_id}`;
 }
@@ -597,7 +651,7 @@ export async function runKnoxExtract(
 
     const startedAt = Date.now();
     const free = runFreeSpecialists(row.normalized_text);
-    const { held, runs } = free;
+    const { held, rates, runs } = free;
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
     const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons));
@@ -612,6 +666,9 @@ export async function runKnoxExtract(
       for (const candidate of candidates) {
         const lessonFlag = lessonFlags.get(candidate);
         if (await insertCandidate(db, { runId: options.runId, row, candidate, extraFlags: lessonFlag ? [lessonFlag] : [] })) inserted += 1;
+      }
+      for (const rate of rates) {
+        if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
       }
       for (const heldCandidate of held) {
         if (await insertHeldCandidate(db, { runId: options.runId, row, held: heldCandidate })) {
