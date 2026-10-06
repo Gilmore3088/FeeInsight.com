@@ -18,6 +18,7 @@ import {
   isBenchmarkSource,
   parseBenchmarkRequest,
   notifyForLead,
+  parseCompetitors,
   parseInstitutionId,
   parseSrc,
 } from "./lead-notifications";
@@ -68,12 +69,15 @@ async function handlePOST(request: NextRequest) {
       ? cleanText(body.institutionName)?.slice(0, MAX_INSTITUTION_NAME_LENGTH) ?? null
       : null;
     const src = source === REPORT_SOURCE || benchmark ? parseSrc(body.src) : null;
+    // Optional on the institution report form: the requester's state and the competitors they want compared.
+    const reportState = source === REPORT_SOURCE ? parseStateCode(body.state) : null;
+    const competitors = source === REPORT_SOURCE ? parseCompetitors(body.competitors) : null;
     const useCase = placement
       ? buildCaptureAttribution(placement, institutionId, stateCode)
       : benchmarkScope
         ? buildBenchmarkUseCase(benchmarkScope, src)
         : source === REPORT_SOURCE
-          ? buildReportUseCase(cleanText(body.use_case), institutionId, src)
+          ? buildReportUseCase(cleanText(body.use_case), institutionId, src, { stateCode: reportState, competitors })
           : cleanText(body.use_case);
 
     if (benchmark && !benchmarkScope) {
@@ -185,6 +189,8 @@ async function handlePOST(request: NextRequest) {
       benchmarkScope,
       quoteCheck,
       heldDistrict,
+      reportState,
+      competitors,
     });
 
     return NextResponse.json(notifications ? { success: true, notifications } : { success: true });
