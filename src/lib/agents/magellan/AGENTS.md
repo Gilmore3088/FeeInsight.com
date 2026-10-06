@@ -33,7 +33,10 @@ Magellan owns institution source discovery and source fetching.
   (not `business`) are downloaded when new and again after 30 days, each as its own source
   document with `companion_source_id` set. It never touches the bank's fee link, fetch
   state or profile, and its attempts stay out of the playbook. Two 404/410s in a row, or
-  five failures, retire a page (`rejected`).
+  five failures, retire a page (`rejected`). Before fetching, it re-applies today's finder
+  rules to the state's stored pages (`reviewStoredCompanions`, up to 500): a page now ruled
+  out (loan, HELOC, derivatives notice) is retired with reason `not_consumer_fee_page`, and
+  a page named after its link text ("Download", "Product Details") is renamed from its URL.
 - The free `discover` step runs in every hourly backlog run, not only the full pass, while
   the state has a bank due a free search; discovery's own backoff decides who is due. The
   paid find (`discover-paid`) stays on the full pass.
@@ -58,7 +61,7 @@ and `detail.method_version`).
 | 1 | `discover.common_paths` | Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Paths that worked for banks on the same platform in the same state. |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
-| 2 | `discover.second_document` | `second-document.ts` (version 2, the companion finder), after the main loop: live banks with fewer than 8 published fee categories, or an HTML fee link and no monthly fee, get a search of the homepage, the fee page, up to 3 hub pages and the site's own search for "fee schedule". Every deposit-account page that lists a fee (named after its account, e.g. "Freedom Checking") and every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs) is stored in `institution_additional_sources`, up to 8 per bank. Business and loan pages are skipped. Never replaces the fee link. Each bank at most monthly. |
+| 2 | `discover.second_document` | `second-document.ts` (version 2, the companion finder), after the main loop: live banks with fewer than 8 published fee categories, or an HTML fee link and no monthly fee, get a search of the homepage, the fee page, up to 3 hub pages and the site's own search for "fee schedule". Every deposit-account page that lists a fee (named after its account, e.g. "Freedom Checking") and every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped. Never replaces the fee link. Each bank at most monthly. |
 | 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below). |
 
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML

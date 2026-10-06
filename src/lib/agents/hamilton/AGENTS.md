@@ -130,6 +130,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   the main fee link with its own earlier copies, each companion page (one account's page,
   a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
   outdates Value Checking's line, or the main schedule's; it publishes beside them.
+- Each publish step rolls back live fees read from companion pages Magellan retired as not
+  a consumer fee page (`companion-retire.ts`, reason `companion_page_retired`, up to 500 a
+  step) and rejects their verified rows, so they never publish again. Pages retired for a
+  dead link keep the fees they gave.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.

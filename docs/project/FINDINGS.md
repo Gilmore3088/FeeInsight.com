@@ -13,6 +13,28 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Companion pages picked up a HELOC PDF and pages named "Download"
+**What happened:** 25 minutes after the companion finder went live (06:39 UTC, read-only queries on
+prod), 25 fees from companion pages were live. One came from a HELOC disclosure: Frontier CU
+(institution 8455) published "early_closure" at $1,214.50 (published id 60403) from
+`heloc-important-terms-disclosures`, a link labelled "Download". Santander's three CFTC
+derivatives annexes were stored as consumer documents. Pages were named after their link text:
+PNC's "Product Details" and "Features and Fees", Frontier's "Download" and "See Rates".
+**Cause:** the finder's not-a-fee-document list had "loans" and "mortgage" but not "HELOC",
+"home equity", "line of credit" or "derivatives", and a fee-ish word in the path ("disclosures")
+made the PDF a fee document. Account names fell back to the URL only for "Learn more"-style labels.
+**Fix:** this PR. The finder skips HELOC, home equity, line of credit, introductory rate, lending,
+swap, derivatives and blog links, and names "Download"/"Features and Fees"/"Product Details" links
+from their URL. Every companion fetch re-applies today's rules to the pages already stored for
+its state: a page that is now ruled out is retired with reason `not_consumer_fee_page`, a
+link-text name is replaced. Each Hamilton publish step then rolls back live fees from retired
+pages (reason `companion_page_retired`) and rejects their verified rows, with a
+`hamilton.companion_fees_rolled_back` run event. Dry run on prod: 5 pages retired, 1 live fee
+(60403) taken down. The sentence-fragment and $0 "free/includes" fees from account pages
+(60485, 60393, 60386, 60377, 60409, 60387) are Knox/Darwin rules, routed to the 95% thread.
+**Lesson:** a finder rule must reach pages found before it. Any new exclusion goes in
+`second-document.ts` and the companion review applies it to every state on its next fetch.
+
 ## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
 **What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
 fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
