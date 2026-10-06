@@ -36,11 +36,19 @@ type SqlTag = typeof sql;
  * Version 1's dry run released on the schedule check alone, and a hand check of 20 of
  * its releases found 10 right: a name and amount on the schedule say nothing about the
  * category, and being far from peers was often a sign of a wrong category. Version 2
- * adds the gates above. Both versions record verdicts only until DARWIN_RELEASE_ACTS is
- * switched on, which bumps the version so every held fee is judged again.
+ * adds the gates above.
+ *
+ * Version 3 (James, 2026-10-06 16:49 UTC, "Reject only" on the held-fees card) acts on
+ * rejects: each writes a "not_on_schedule" note to the learning store and leaves the held
+ * pile. The fee was never live, so nothing comes down; the notes carry check_name
+ * `darwin.release` and can be removed, and a version bump judges every held fee again.
+ * Releases stay a dry run (DARWIN_RELEASE_ACTS) until the review's own spot check passes.
  */
-export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 2 } as const;
+export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 3 } as const;
+/** Publish fees the release review confirms. Off: verdicts only. */
 export const DARWIN_RELEASE_ACTS = false;
+/** Record rejects in the learning store. */
+export const DARWIN_RELEASE_REJECTS_ACT = true;
 /**
  * Every fee the release publishes carries this flag on its verified row, so the whole
  * release can be found and rolled back.
@@ -258,9 +266,9 @@ function feedbackFor(
 
 /**
  * Judge up to DARWIN_RELEASE_BATCH held fees. Nothing is published here: a `review`
- * verdict waits for release-review.ts. With DARWIN_RELEASE_ACTS on, a reject writes its
- * "not_on_schedule" note to the learning store (the fee was never live, so nothing comes
- * down). With it off, verdicts are recorded only; a dry-run agent run records nothing.
+ * verdict waits for release-review.ts. With DARWIN_RELEASE_REJECTS_ACT on, a reject writes
+ * its "not_on_schedule" note to the learning store (the fee was never live, so nothing
+ * comes down). A dry-run agent run records nothing.
  */
 export async function runDarwinReleaseHeld(options: {
   runId: number;
@@ -273,7 +281,7 @@ export async function runDarwinReleaseHeld(options: {
 }): Promise<RunDarwinReleaseResult> {
   const { db } = options;
   const learning = !options.dryRun && (await learningSchemaReady(db));
-  const acts = DARWIN_RELEASE_ACTS && learning;
+  const acts = DARWIN_RELEASE_REJECTS_ACT && learning;
   const rows = await selectHeldFees(db, options.limit ?? DARWIN_RELEASE_BATCH, options.stateCode, options.institutionId);
   const texts = await loadSourceTexts(
     db,
@@ -333,7 +341,7 @@ export async function runDarwinReleaseHeld(options: {
           verdict,
           source_check: decision.sourceCheck,
           source_line: decision.sourceLine?.slice(0, 300) ?? null,
-          acted: acts,
+          acted: acts && verdict === "reject",
         },
       });
     }
