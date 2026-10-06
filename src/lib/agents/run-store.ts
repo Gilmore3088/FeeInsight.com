@@ -620,6 +620,9 @@ async function executeAgenticStep(
           learning_log: extraction.learning,
           lessons_loaded: extraction.lessonsLoaded,
           lesson_refiles: extraction.lessonRefiles,
+          calibration_groups: extraction.calibrationGroups,
+          calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
+          layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
           institution_results: institutionResults(

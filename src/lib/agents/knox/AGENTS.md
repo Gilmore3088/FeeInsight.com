@@ -189,6 +189,33 @@ re-check treats a read under the rejected category as reproducing such a row, so
 not undone. Lessons grow as Darwin and Hamilton record corrections; no rules version bump is
 needed, and they apply to texts read from then on. Dry runs don't read the store.
 
+**Per-bank memory.** A bank's own verdicts are enough for that bank: a name rejected under one
+category and verified under another at the same bank, with no verdict the other way there, is
+re-filed at that bank only (369 lessons at 307 banks, 6 Oct 2026). The bank's lesson comes
+first, then a person's label, then the global lessons.
+
+**Weekly labels (`label-queue.ts`, /admin/knox/labels).** Names the store can't settle on its
+own (rejected at 2 or more banks and never verified, or judged both ways) are listed for a
+person, 25 at a time, most-judged first. A label is a `name_label` row in the store; from the
+next extract Knox files that exact name under the labelled category from any other. "No category
+fits" only takes the name off the queue. A label that agrees with the rules stops a global
+lesson from moving the fee.
+
+## Calibrated confidence (`calibration.ts`, shadow)
+Knox's confidence is a fixed formula (0.82 to 0.94), so every read clears Hamilton's 0.8 floor.
+Each extract step reads how many of Knox's fees published in the last 14 days are still live,
+by the strategy that read them and their category, and writes the formula's value blended with
+that survival (weighted as 20 fees) into the audit text as `calibrated_confidence=`. The step
+reports `calibration_groups` and `calibrated_below_publish_floor`. `extraction_confidence` is
+unchanged until someone reviews the calibrated values; switching it over is a separate change.
+
+## Layout spotting (`layout-signature.ts`)
+Each extract attempt records the text's layout signature (`table/short`, `leaders/short`,
+`sentences/long`, `split/short`, `plain/long`, ...) and how many lines carry a price. The step's
+`layouts` detail counts texts per signature and how many read thin (fewer than 5 fees from 5 or
+more priced lines), so a layout the rules miss shows up as one group instead of scattered bad
+documents.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
