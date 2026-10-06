@@ -21,10 +21,16 @@ history already held `20270108000000_branch_deposits_market_indexes`, which is o
 `claude/hamilton-improvements-69gnln` branch (PR 93) but not on `main`.
 **Cause:** a migration was recorded on prod from a branch before it merged, so `main`'s new
 files numbered below it are "older than the last applied migration" and the deploy does not run them.
-**Fix:** renumbered both files to `20270108000001` and `20270108000002` (this PR). Neither has run
-anywhere, so nothing is applied twice.
+**Fix:** renumbered both files to `20270108000001` and `20270108000002` (PR 186). That was not
+enough: after PR 186 merged (02:05 UTC) prod still had neither change, and Supabase's `main`
+branch shows status `MIGRATIONS_FAILED`, last updated 2026-10-05 20:48 UTC (Supabase
+`list_branches`). The GitHub deploy is not applying merged migrations at all. Meanwhile PR 173's
+NCUA writer failed on prod at 02:07 UTC with `column "nsf_revenue" ... does not exist` (Postgres
+log). Applying the two files is with James (retry the deploy, or run them in the SQL editor and
+record them in history).
 **Lesson:** number a new migration above both the highest file on `main` and the highest version
-in prod's `supabase_migrations.schema_migrations`; check prod, not just the folder.
+in prod's `supabase_migrations.schema_migrations`. After merging a migration, confirm on prod that
+it ran before merging code that depends on it; ship the column before the code that writes it.
 
 ## 2026-10-06: New call-report fields need a re-pull; credit unions split overdraft and NSF
 **What happened:** Hamilton needs per-fee income for overdraft and NSF. Banks file one combined
