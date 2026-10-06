@@ -6,7 +6,13 @@
  *
  * Plain fetch, no SDK. Never throws into request paths.
  */
-import { listStateGroups, stateGroupName } from "@/lib/agents/marketing/mailerlite-campaigns";
+import {
+  STATE_GROUP_PREFIX,
+  listGroups,
+  nationalGroupId,
+  stateGroupName,
+  toStateGroups,
+} from "@/lib/agents/marketing/mailerlite-campaigns";
 
 const MAILERLITE_SUBSCRIBERS_ENDPOINT = "https://connect.mailerlite.com/api/subscribers";
 
@@ -82,7 +88,7 @@ function authHeaders() {
 
 /** The chosen state's group (made the first time) and every other state group. */
 async function stateGroups(state: string): Promise<{ target: string; others: string[] }> {
-  const all = await listStateGroups();
+  const all = toStateGroups(await listGroups());
   let target = all.find((group) => group.stateCode === state)?.groupId ?? null;
   if (!target) {
     const response = await fetch(`${apiBase()}/groups`, {
@@ -95,6 +101,18 @@ async function stateGroups(state: string): Promise<{ target: string; others: str
     target = String(body.data.id);
   }
   return { target, others: all.filter((group) => group.groupId !== target).map((group) => group.groupId) };
+}
+
+/** Puts the subscriber in the national group when they have no state, and takes them out when they do. */
+async function syncNationalGroup(id: string, inState: boolean, joined: Set<string> | null): Promise<void> {
+  const national = await nationalGroupId();
+  if (!national) return;
+  const isIn = joined ? joined.has(national) : null;
+  if (inState && isIn !== false) {
+    await fetch(`${apiBase()}/subscribers/${id}/groups/${national}`, { method: "DELETE", headers: authHeaders() });
+  } else if (!inState && !isIn) {
+    await fetch(`${apiBase()}/subscribers/${id}/groups/${national}`, { method: "POST", headers: authHeaders() });
+  }
 }
 
 /** Upserts the subscriber (MailerLite's POST /subscribers is create-or-update). */
@@ -137,6 +155,16 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
       await Promise.all(leave.map((groupId) =>
         fetch(`${apiBase()}/subscribers/${id}/groups/${groupId}`, { method: "DELETE", headers: authHeaders() }).catch(() => null),
       ));
+    }
+    // One marketing email a month: a reader with no state gets the national email (its own
+    // group); a reader in a state group gets that state's edition instead.
+    if (id && input.subscribed) {
+      const joined = Array.isArray(body?.data?.groups) ? body.data.groups : null;
+      const inState = Boolean(state) || Boolean(joined?.some((group) => String(group.name ?? "").startsWith(STATE_GROUP_PREFIX)));
+      // Without the groups in the answer (and no state picked now) there's no telling; leave it.
+      if (state || joined) {
+        await syncNationalGroup(id, inState, joined ? new Set(joined.map((group) => String(group.id))) : null).catch(() => null);
+      }
     }
     return { status: "synced", subscriberId: id };
   } catch (error) {
