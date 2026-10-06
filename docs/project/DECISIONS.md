@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Darwin's held-fee pass acts on rejects only; every release stays held.** James, 16:49 UTC,
+chose "Reject only" on the Darwin thread's card after the v1 spot check found 12 of 20 releases
+right. Held fees the bank's schedule doesn't state leave the held pile with a `not_on_schedule`
+note (`verify.release` v3). Releases stay a dry run until the stricter Claude review passes its
+own spot check (at least 19 of 20 right), and switching them on needs James's word.
+
 **Darwin's held fees get a way out: release or reject against the bank's schedule.** James, 13:20
 UTC ("i need you to close all those gaps with the agents"), taken as the go-ahead on the
 held-fees card's recommended option. Each fee Darwin holds (outside its range or far from peers)
