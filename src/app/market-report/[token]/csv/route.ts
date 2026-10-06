@@ -1,12 +1,12 @@
 /**
  * /market-report/[token]/csv — the report's numbers as a spreadsheet: one row per fee line
  * for the institution (with the local median, middle half and rank), then every competitor
- * figure behind them with the line of its schedule that states it. Same signed link and the
- * same readiness bar as the page; nothing is shown for a market that does not pass it.
+ * figure behind them with the line of its schedule that states it. Same signed link, the
+ * same readiness bar and the same saved copy for a paid report as the page.
  */
-import { analyzeMarket, buildReportCsv } from "@/lib/custom-report/analysis";
+import { buildReportCsv } from "@/lib/custom-report/analysis";
 import { verifyReportToken } from "@/lib/custom-report/link";
-import { getCustomReportMarketDataCached } from "@/lib/data-store/public-cached-reads";
+import { loadMarketReport } from "@/lib/custom-report/report-data";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +14,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   const { token } = await params;
   const verified = verifyReportToken(token);
   if (!verified) return new Response("Not found", { status: 404 });
-  const data = await getCustomReportMarketDataCached(verified.institutionId);
-  if (!data || !data.market) return new Response("Not found", { status: 404 });
-  const analysis = analyzeMarket(data);
+  const report = await loadMarketReport(verified.institutionId);
+  if (!report) return new Response("Not found", { status: 404 });
+  const { data, analysis } = report;
   if (!analysis.readiness.ready) {
     return new Response("This market is being refreshed, so there is no comparison to download right now.", { status: 409 });
   }

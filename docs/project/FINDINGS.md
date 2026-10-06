@@ -1067,7 +1067,6 @@ fee changes; a page that still is not a fee page is rejected again the normal wa
 **Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
 under the new one; a ban written by a judgment the code no longer makes outlives its reason.
 
-<<<<<<< HEAD
 ## 2026-10-06: Knox's held lines never got the newer rules
 **What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
 Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an
@@ -1083,7 +1082,7 @@ on all 11,783 current-text held lines: 1,529 get a category and go to Darwin (to
 early closure 168, monthly maintenance 143, NSF 113, copies 106); nothing live is taken down.
 **Lesson:** a dedupe key that ignores a row's state lets the first, weakest answer win forever;
 when a reader improves, re-read what it set aside, not just what it never saw.
-=======
+
 ## 2026-10-06: Rosetta never heard whether its texts' fees held up
 **What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
 stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
@@ -1101,4 +1100,13 @@ on them, 1 PDF for the paid pass now. A new text replaces the old only when it l
 many fees, so no live fee is taken down by the re-read itself.
 **Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
 
->>>>>>> origin/main
+## 2026-10-06: a paid report could open blank, and FINDINGS.md shipped with conflict markers
+**What happened:** the private institution report is recomputed from live data on every view.
+The readiness check runs at quote and at checkout, but a market that thinned out after payment
+showed the buyer "This market is being refreshed" with no numbers (value funnel audit). Separately,
+`docs/project/FINDINGS.md` reached main with `<<<<<<<`/`>>>>>>>` markers from a merge (PR 258).
+**Fix:** migration 20270110000005 saves the report's market data on the request when checkout
+starts; `loadMarketReport` (`src/lib/custom-report/report-data.ts`) serves that saved copy, dated,
+when the live market no longer passes. The markers are removed (both sides kept).
+**Lesson:** what a customer paid for has to be stored, not recomputed; and a docs merge needs the
+same conflict check as code (`git diff --check` catches leftover markers).

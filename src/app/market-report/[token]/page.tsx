@@ -10,7 +10,6 @@ import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
 import { SITE_NAME } from "@/lib/constants";
 import {
-  analyzeMarket,
   MIN_LOCAL_PEERS_PER_LINE,
   NAMED_WITHOUT_DEPOSITS,
   type LinePosition,
@@ -18,7 +17,7 @@ import {
 } from "@/lib/custom-report/analysis";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { verifyReportToken } from "@/lib/custom-report/link";
-import { getCustomReportMarketDataCached } from "@/lib/data-store/public-cached-reads";
+import { loadMarketReport } from "@/lib/custom-report/report-data";
 import { TrackView } from "@/components/track-view";
 import { PrintButton } from "./print-button";
 
@@ -75,12 +74,13 @@ export default async function MarketReportPage({ params }: PageProps) {
   const verified = verifyReportToken(token);
   if (!verified) notFound();
 
-  const data = await getCustomReportMarketDataCached(verified.institutionId);
-  if (!data || !data.market) notFound();
-  const analysis = analyzeMarket(data);
+  const report = await loadMarketReport(verified.institutionId);
+  if (!report || !report.data.market) notFound();
+  const { data, analysis, savedAt } = report;
+  const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
   const name = data.subject.institution_name;
-  const marketLabel = `${data.market.places[0]} area${data.market.county_fips.length > 1 ? ` (${data.market.county_fips.length} counties)` : ""}`;
+  const marketLabel = `${market.places[0]} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
   const comparable = analysis.lines.filter((l) => l.comparable);
   const tableKeys = comparable.slice(0, 6).map((l) => l.key);
   const ownFees = Object.fromEntries(analysis.lines.filter((l) => l.own).map((l) => [l.key, l.own!.amount]));
@@ -90,7 +90,11 @@ export default async function MarketReportPage({ params }: PageProps) {
     <div className="min-h-screen bg-[#FAF7F2]">
       <TrackView
         event="market_report_view"
-        eventProps={{ institution_id: verified.institutionId, ready: analysis.readiness.ready ? "yes" : "no" }}
+        eventProps={{
+          institution_id: verified.institutionId,
+          ready: analysis.readiness.ready ? "yes" : "no",
+          saved_copy: savedAt ? "yes" : "no",
+        }}
       />
       <ReportChrome preparedFor={name} />
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-10">
@@ -140,6 +144,13 @@ export default async function MarketReportPage({ params }: PageProps) {
           </section>
         ) : (
           <>
+            {savedAt && (
+              <p className="mt-6 rounded-md border border-[#E0D7C9] bg-[#FDFBF8] px-4 py-3 text-sm text-[#5A5347]" role="status">
+                These figures are the ones saved on {DATE.format(new Date(savedAt))}, when this report was bought. Our live
+                data for your market is being refreshed; the report switches back to live figures once it passes our checks
+                again.
+              </p>
+            )}
             <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="findings-heading">
               <h2 id="findings-heading" className="text-xl text-[#1A1815]" style={SERIF}>
                 What stands out
@@ -208,7 +219,7 @@ export default async function MarketReportPage({ params }: PageProps) {
                   Named competitors, same lines
                 </h2>
                 <p className="mt-1 text-[13px] text-[#6B6255]">
-                  Banks by deposits held in your market (FDIC Summary of Deposits, {data.market.sod_year}), then up to{" "}
+                  Banks by deposits held in your market (FDIC Summary of Deposits, {market.sod_year}), then up to{" "}
                   {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how many of
                   your fees they publish. Each amount links to the schedule it was read from.
                 </p>
@@ -272,9 +283,9 @@ export default async function MarketReportPage({ params }: PageProps) {
                 Sources and method
               </h2>
               <p className="mt-2">
-                Your market is the {data.market.county_fips.length === 1 ? "county" : `${data.market.county_fips.length} counties`}{" "}
-                {data.market.basis === "branch_counties" ? "holding most of your deposits" : "around your headquarters"} (FDIC
-                Summary of Deposits, {data.market.sod_year}). Competitors are every bank with a branch there and every
+                Your market is the {market.county_fips.length === 1 ? "county" : `${market.county_fips.length} counties`}{" "}
+                {market.basis === "branch_counties" ? "holding most of your deposits" : "around your headquarters"} (FDIC
+                Summary of Deposits, {market.sod_year}). Competitors are every bank with a branch there and every
                 institution headquartered there. Each figure is a published, verified fee from the institution&apos;s own
                 schedule; one representative amount per institution and fee line, with fee caps excluded. A figure is used only
                 when a line of that institution&apos;s own stored schedule states that amount as the fee; amounts that are
