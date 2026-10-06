@@ -21,18 +21,27 @@ export type SourceCheckFailure =
 export type SourceCheckResult = { ok: true; sourceLine: string } | { ok: false; reason: SourceCheckFailure };
 
 const LONG_LINE = 300;
+/** Only a short line is read price-first; a flattened paragraph can open with any price. */
+const PRICE_FIRST_MAX_LENGTH = 120;
+/**
+ * A line that is a price ("$10.00", "Free", "Per Item | $25.00", "- $5 each"), not another
+ * fee's row ("Incoming | $10.00").
+ */
+const PRICE_LINE = /^\s*[-–:]?\s*(\$|\d|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
+/** A box or item size ("3 X 10", "5\" x 10\"") read as one word. */
+const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
 const PRICE_BELOW_LINES = 2;
 const PRICE_BELOW_MAX_LENGTH = 40;
 const CATEGORY_LOOKBACK_LINES = 3;
-const NAME_HEADING_LINES = 4;
+const NAME_HEADING_LINES = 8;
 const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
-const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between)\s*$/i;
-const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up)/i;
-const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d.,$])(\d+)\.(\d{2})(?![\d])/g;
+const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
+const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
   value: number;
@@ -41,8 +50,9 @@ interface MoneyToken {
 }
 
 function comparable(value: string): string {
-  return value
+  return ` ${value} `
     .toLowerCase()
+    .replace(SIZE, (_match, width: string, length: string) => ` ${width}x${length} `)
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/[|•*·]/g, " ")
     .replace(/\s+/g, " ")
@@ -72,19 +82,20 @@ function nameStems(feeName: string): string[] {
   const words = comparable(feeName)
     .replace(/[^a-z0-9' ]/g, " ")
     .split(" ")
-    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word) && !/^\d+$/.test(word));
-  return Array.from(new Set(words.map((word) => word.slice(0, STEM_LENGTH))));
+    .filter((word) => (word.length >= 3 && !STOP_WORDS.has(word) && !/^\d+$/.test(word)) || /^\d+x\d+$/.test(word));
+  // A size is matched whole, so "5x10" never matches inside "15x10".
+  return Array.from(new Set(words.map((word) => (/^\d+x\d+$/.test(word) ? ` ${word} ` : word.slice(0, STEM_LENGTH)))));
 }
 
 function namesFee(line: string, stems: string[], atLeast?: number): boolean {
   if (stems.length === 0) return false;
-  const haystack = comparable(line);
+  const haystack = ` ${comparable(line)} `;
   const found = stems.filter((stem) => haystack.includes(stem)).length;
   return found >= (atLeast ?? Math.max(1, Math.ceil(stems.length * NAME_WORD_SHARE)));
 }
 
 function stemCount(text: string, stems: string[]): number {
-  const haystack = comparable(text);
+  const haystack = ` ${comparable(text)} `;
   return stems.filter((stem) => haystack.includes(stem)).length;
 }
 
@@ -103,7 +114,15 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   const prices = tokens.filter((t) => !isThreshold(line, t));
   const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
   const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
-  const scores = Math.max(0, ...before) > 0 ? before : after;
+  // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
+  // names each fee after its price.
+  const priceFirst =
+    line.length <= PRICE_FIRST_MAX_LENGTH &&
+    !line.includes("|") &&
+    prices.length > 0 &&
+    line.slice(0, prices[0].start).trim() === "" &&
+    /[a-z0-9]/i.test(line.slice(prices[prices.length - 1].end));
+  const scores = !priceFirst && Math.max(0, ...before) > 0 ? before : after;
   const best = Math.max(0, ...scores);
   const index = prices.findIndex((price, i) => scores[i] === best && Math.abs(price.value - amount) < 0.005);
   if (best === 0 || index < 0) {
@@ -112,7 +131,11 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   // A fee that depends on a balance band ("Negative $25 or less | $5") has no single
   // comparable value, so it never stands in for the bank's fee.
   const from = index === 0 ? 0 : prices[index - 1].end;
-  return tokens.some((t) => t.start >= from && t.start < prices[index].start && isThreshold(line, t)) ? "tiered_fee" : null;
+  // A minimum charge ("$10.00 minimum / $25.00 per hour") or a note in the name
+  // ("Gift Cards (load $10-$1000)") is not a balance band.
+  const inNote = (t: MoneyToken) => line.lastIndexOf("(", t.start) > line.lastIndexOf(")", t.start);
+  const band = (t: MoneyToken) => isThreshold(line, t) && !/^\s*min/i.test(line.slice(t.end)) && !inNote(t);
+  return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
@@ -123,7 +146,7 @@ function feeRow(lines: string[], index: number): string {
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
-    .find((next) => next.length <= PRICE_BELOW_MAX_LENGTH && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
+    .find((next) => next.length <= PRICE_BELOW_MAX_LENGTH && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   return between.every((next) => /^\s*(\/|per\b)/i.test(next)) ? `${line} | ${price}` : line;

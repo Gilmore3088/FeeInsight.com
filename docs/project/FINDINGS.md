@@ -440,4 +440,11 @@ state or an institution. Most publish steps have neither, and the Texas lane ran
 three times since the check shipped, so 119 of 183 Texas institutions with live fees (499 of 2,662
 nationally, holding 7,888 live fees) had never been checked.
 **Fix:** same PR: every publish step source-checks a batch of 40 institutions, any state's when the
-step has none, institutions never checked first.
+step has none, institutions never checked first. A read-only dry run of the check over the 7,797
+never-checked live fees (495 institutions, all states) first predicted 709 takedowns; spot checks
+found reader misses, fixed in the same PR (dot leaders before a bare amount, a "$10 minimum" before
+the real price, a range inside a name's note, a heading over rows that carry their own names, box
+sizes like "5 x 10", and price-first lists). After the fixes 557 would come down at 182
+institutions: 195 imported fees with no source document, 15 with no amount, 245 whose amount is not
+the price on the matching row, 56 whose name is not in the schedule, 46 whose amount is a limit.
+**Lesson:** dry-run a takedown rule over the rows it has never touched before turning it on.
