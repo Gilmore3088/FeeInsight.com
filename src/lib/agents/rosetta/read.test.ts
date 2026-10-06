@@ -565,6 +565,21 @@ describe("Rosetta agentic read", () => {
       expect(clear).toEqual(expect.arrayContaining(["rosetta_dead_link", true, htmlCandidate.document_url]));
     });
 
+    it("reads only a bank's current document, and never re-downloads a dead link", async () => {
+      const db = vaultDb([]);
+
+      await runRosettaRead({ runId: 607, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+
+      const query = String(db.unsafe.mock.calls[0][0]);
+      // A newer download replaces this one; a newer failed download does too when we hold no copy.
+      expect(query).toContain("FROM source_documents newer");
+      expect(query).toContain("(newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM cr.id)");
+      expect(query).toContain("(newer.status = 'failed' AND cr.document_r2_key IS NULL)");
+      // A link that already came back gone is not fetched again unless the vault has the bytes.
+      expect(query).toMatch(/cr\.document_r2_key IS NULL\s+AND EXISTS \(\s+SELECT 1\s+FROM pipeline_attempts dead/);
+      expect(query).toContain("dead.outcome IN ('http_404', 'http_410')");
+    });
+
     it("keeps a link that blocked us once, and sends it back when the block repeats", async () => {
       const blocked = () => vi.fn().mockResolvedValue(response("Forbidden", "text/html", 403));
 

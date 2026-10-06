@@ -32,6 +32,7 @@ import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scorebo
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
+import { tallyByInstitution, type Sample } from "./flow-model";
 import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
@@ -57,6 +58,14 @@ const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "repo
 const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
 type SqlTag = typeof sql;
+
+/**
+ * Every institution's totals for a fee step, so the live board's counts are the step's real
+ * numbers rather than whatever fell into the ten sample rows. Capped to keep events small.
+ */
+function institutionResults(stepKey: string, rows: Sample[]) {
+  return tallyByInstitution(stepKey, rows).slice(0, 50);
+}
 
 /** A completed run's summary is what its steps actually reported, never stock text. */
 export async function completedRunSummary(db: SqlTag, runId: number, completed: number, total: number): Promise<string> {
@@ -542,6 +551,10 @@ async function executeAgenticStep(
           learning_log: extraction.learning,
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
+          institution_results: institutionResults(
+            "extract",
+            extraction.results.map((result) => ({ institution_id: result.institutionId, inserted: result.inserted })),
+          ),
           sample_results: extraction.results.slice(0, 10).map((result) => ({
             document_text_id: result.documentTextId,
             source_document_id: result.sourceDocumentId,
@@ -586,6 +599,10 @@ async function executeAgenticStep(
           learning_log: verification.learning,
           verify_limit: verification.limit,
           dry_run: verification.dryRun,
+          institution_results: institutionResults(
+            "classify",
+            verification.results.map((result) => ({ institution_id: result.institutionId, status: result.status, reason: result.reason })),
+          ),
           sample_results: verification.results.slice(0, 10).map((result) => ({
             fee_raw_id: result.feeRawId,
             institution_id: result.institutionId,
@@ -837,6 +854,10 @@ async function executeAgenticStep(
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,
           index_categories: indexRefresh?.categories ?? 0,
+          institution_results: institutionResults(
+            "publish",
+            published.results.map((result) => ({ institution_id: result.institutionId, status: result.status, reason: result.reason })),
+          ),
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
             institution_id: result.institutionId,

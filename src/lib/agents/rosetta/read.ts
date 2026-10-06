@@ -799,6 +799,8 @@ async function selectCandidates(
     params.push(normalizedState);
     filters.push(`AND upper(btrim(ct.state_code)) = $${params.length}`);
   }
+  // Without the vault migration no document has a stored copy.
+  const notInVault = vaultSchema ? "cr.document_r2_key IS NULL" : "TRUE";
   let playbookColumns = "";
   // Without the attempt log there is no reader version to compare, so never re-read.
   let rereadable = "FALSE";
@@ -859,6 +861,19 @@ async function selectCandidates(
                     OR (cr.content_hash IS NOT NULL AND prior.institution_id = cr.institution_id AND prior.source_hash = cr.content_hash)
                   )
              ) AS is_reread`;
+    // A copy that is not in the vault whose link already came back gone (404/410) is not
+    // fetched again: the first time, Rosetta sent the bank back to Magellan.
+    filters.push(`AND NOT (
+           ${notInVault}
+           AND EXISTS (
+             SELECT 1
+               FROM pipeline_attempts dead
+              WHERE dead.institution_id = cr.institution_id
+                AND dead.stage = 'read'
+                AND dead.source_document_id = cr.id
+                AND dead.outcome IN ('http_404', 'http_410')
+           )
+         )`);
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -890,6 +905,19 @@ async function selectCandidates(
          AND cr.document_url IS NOT NULL
          ${filters.join("\n         ")}
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+         -- Only the bank's current document. A newer download replaces this one, and when
+         -- Magellan's newer download failed, a copy that is not in the vault would only be
+         -- fetched again from the link Magellan just could not get.
+         AND NOT EXISTS (
+           SELECT 1
+             FROM source_documents newer
+            WHERE newer.institution_id = cr.institution_id
+              AND newer.id > cr.id
+              AND (
+                (newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM cr.id)
+                OR (newer.status = 'failed' AND ${notInVault})
+              )
+         )
          AND (
            profile.read_strategy IS NULL
            -- Scans and JavaScript pages are read too: pass 2 escalates to OCR and fallbacks.

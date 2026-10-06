@@ -40,6 +40,8 @@ export interface FlowNow {
 export interface FlowSnapshot {
   moves: FlowMove[];
   now: FlowNow[];
+  /** Live fee count per institution that just went live. */
+  liveFees?: Record<number, number>;
   generatedAt: string;
 }
 
@@ -72,6 +74,80 @@ function fees(count: number): string {
   return `${count} fee${count === 1 ? "" : "s"}`;
 }
 
+/**
+ * One institution's totals for a fee step (extract, classify, publish), counted over every
+ * result of the step, not the ten sample rows. A step records these as `institution_results`
+ * so the board's counts match what the agent actually did.
+ */
+export interface InstitutionTally {
+  institution_id: number;
+  /** Fees the step handled: inserted (extract), checked (classify) or offered (publish). */
+  total: number;
+  /** Fees that went through: inserted, passed, or published. */
+  ok: number;
+  /** Publish only: fees already live with the same value. */
+  already_live: number;
+  /** The first reason a fee was held back, if any. */
+  reason: string | null;
+}
+
+function emptyTally(institutionId: number): InstitutionTally {
+  return { institution_id: institutionId, total: 0, ok: 0, already_live: 0, reason: null };
+}
+
+const ALREADY_LIVE = /identical|already published/i;
+
+/** Pure: per-institution totals for a fee step, in the order institutions first appear. */
+export function tallyByInstitution(stepKey: string, samples: Sample[]): InstitutionTally[] {
+  const tallies = new Map<number, InstitutionTally>();
+  for (const sample of samples) {
+    const id = Number(sample.institution_id ?? 0);
+    const tally = tallies.get(id) ?? emptyTally(id);
+    tallies.set(id, tally);
+    if (stepKey === "extract") {
+      const inserted = Number(sample.inserted ?? 0);
+      tally.total += inserted;
+      tally.ok += inserted;
+      continue;
+    }
+    tally.total += 1;
+    const passed = stepKey === "publish" ? sample.status === "published" : sample.status === "verified";
+    if (passed) {
+      tally.ok += 1;
+    } else if (stepKey === "publish" && ALREADY_LIVE.test(String(sample.reason ?? ""))) {
+      tally.already_live += 1;
+    } else if (tally.reason === null) {
+      tally.reason = sample.reason == null ? "" : String(sample.reason);
+    }
+  }
+  return [...tallies.values()];
+}
+
+/** Pure: one plain sentence for one institution's totals in a fee step. */
+export function describeTally(stepKey: string, tally: InstitutionTally): { text: string; tone: MoveTone } {
+  const held = tally.total - tally.ok - tally.already_live;
+  if (stepKey === "extract") {
+    return tally.ok > 0
+      ? { text: `Pulled ${fees(tally.ok)} out of the document`, tone: "ok" }
+      : { text: "Found no fees in the document", tone: "warn" };
+  }
+  if (stepKey === "publish") {
+    if (tally.ok === 0) {
+      if (held === 0) return { text: "Already live; nothing new to publish", tone: "ok" };
+      const live = tally.already_live > 0 ? `, ${tally.already_live} already live` : "";
+      return { text: `Held back ${fees(held)} (${plainReason(tally.reason)})${live}`, tone: "warn" };
+    }
+    const extras = [
+      tally.already_live > 0 ? `${tally.already_live} already live` : null,
+      held > 0 ? `${held} held back` : null,
+    ].filter(Boolean);
+    return { text: `Published ${fees(tally.ok)} to the site${extras.length > 0 ? `, ${extras.join(", ")}` : ""}`, tone: "ok" };
+  }
+  if (held === 0) return { text: `Checked ${fees(tally.ok)}: all passed`, tone: "ok" };
+  if (tally.ok === 0) return { text: `Held back ${fees(held)} (${plainReason(tally.reason)})`, tone: "warn" };
+  return { text: `Checked ${fees(tally.total)}: ${tally.ok} passed, ${held} held back`, tone: "ok" };
+}
+
 /** Pure: one plain sentence for what an agent did to one institution. */
 export function describeSamples(stepKey: string, samples: Sample[]): { text: string; tone: MoveTone } {
   const first = samples[0] ?? {};
@@ -95,30 +171,10 @@ export function describeSamples(stepKey: string, samples: Sample[]): { text: str
       if (status === "deferred") return { text: "Scanned image; will read it next pass", tone: "warn" };
       if (status === "empty" || status === "skipped") return { text: "Page needs a browser to show its text", tone: "warn" };
       return { text: `Couldn't open the document (${plainHttp(first.error)})`, tone: "error" };
-    case "extract": {
-      const inserted = samples.reduce((sum, sample) => sum + Number(sample.inserted ?? 0), 0);
-      return inserted > 0
-        ? { text: `Pulled ${fees(inserted)} out of the document`, tone: "ok" }
-        : { text: "Found no fees in the document", tone: "warn" };
-    }
-    case "classify": {
-      const passed = samples.filter((sample) => sample.status === "verified").length;
-      const held = samples.length - passed;
-      if (held === 0) return { text: `Checked ${fees(passed)}: all passed`, tone: "ok" };
-      if (passed === 0) return { text: `Held back ${fees(held)} (${plainReason(samples[0].reason)})`, tone: "warn" };
-      return { text: `Checked ${fees(samples.length)}: ${passed} passed, ${held} held back`, tone: "ok" };
-    }
-    case "publish": {
-      const published = samples.filter((sample) => sample.status === "published").length;
-      const rest = samples.length - published;
-      if (published === 0) {
-        if (samples.every((sample) => /identical|already published/i.test(String(sample.reason ?? "")))) {
-          return { text: "Already live; nothing new to publish", tone: "ok" };
-        }
-        return { text: `Held back ${fees(samples.length)} (${plainReason(samples[0].reason)})`, tone: "warn" };
-      }
-      return { text: `Published ${fees(published)} to the site${rest > 0 ? `, ${rest} already live` : ""}`, tone: "ok" };
-    }
+    case "extract":
+    case "classify":
+    case "publish":
+      return describeTally(stepKey, tallyByInstitution(stepKey, samples)[0] ?? emptyTally(0));
     default:
       return { text: "Handled", tone: "ok" };
   }
@@ -142,7 +198,27 @@ export function movesFromEvents(rows: Array<Record<string, unknown>>, names: Map
   for (const row of rows) {
     const stepKey = String(row.step_key ?? "");
     const detail = toObject(row.detail);
+    const push = (institutionId: number, fallbackName: string, { text, tone }: { text: string; tone: MoveTone }) =>
+      moves.push({
+        key: `${String(row.id)}-${institutionId}`,
+        at: new Date(row.created_at as string | Date).toISOString(),
+        agent: STEP_OWNER[stepKey] ?? "atlas",
+        stateCode: row.state_code ? String(row.state_code) : null,
+        institutionId,
+        institutionName: names.get(institutionId) ?? fallbackName,
+        text,
+        tone,
+      });
     const samples = Array.isArray(detail.sample_results) ? (detail.sample_results as Sample[]) : [];
+    // Fee steps record every institution's real totals; older events only have the samples.
+    if (Array.isArray(detail.institution_results)) {
+      for (const tally of detail.institution_results as InstitutionTally[]) {
+        const institutionId = Number(tally.institution_id);
+        if (!Number.isFinite(institutionId) || institutionId <= 0) continue;
+        push(institutionId, `Institution ${institutionId}`, describeTally(stepKey, tally));
+      }
+      continue;
+    }
     const byInstitution = new Map<number, Sample[]>();
     for (const sample of samples) {
       const id = Number(sample.institution_id);
@@ -150,20 +226,31 @@ export function movesFromEvents(rows: Array<Record<string, unknown>>, names: Map
       byInstitution.set(id, [...(byInstitution.get(id) ?? []), sample]);
     }
     for (const [institutionId, group] of byInstitution) {
-      const { text, tone } = describeSamples(stepKey, group);
-      moves.push({
-        key: `${String(row.id)}-${institutionId}`,
-        at: new Date(row.created_at as string | Date).toISOString(),
-        agent: STEP_OWNER[stepKey] ?? "atlas",
-        stateCode: row.state_code ? String(row.state_code) : null,
-        institutionId,
-        institutionName: names.get(institutionId) ?? String(group[0].institution_name ?? `Institution ${institutionId}`),
-        text,
-        tone,
-      });
+      push(institutionId, String(group[0].institution_name ?? `Institution ${institutionId}`), describeSamples(stepKey, group));
     }
   }
   return moves;
+}
+
+/** A Hamilton move that put at least one fee on the site. */
+export function isWentLive(move: FlowMove): boolean {
+  return move.agent === "hamilton" && move.text.startsWith("Published");
+}
+
+/**
+ * Pure: an agent's latest moves, one per institution. A bank with several documents, or
+ * handled by two of the agent's steps, shows once with its newest result.
+ */
+export function latestPerInstitution(moves: FlowMove[], keep: (move: FlowMove) => boolean, limit: number): FlowMove[] {
+  const seen = new Set<number>();
+  const out: FlowMove[] = [];
+  for (const move of moves) {
+    if (!keep(move) || seen.has(move.institutionId)) continue;
+    seen.add(move.institutionId);
+    out.push(move);
+    if (out.length === limit) break;
+  }
+  return out;
 }
 
 function stateList(codes: string[]): string {
