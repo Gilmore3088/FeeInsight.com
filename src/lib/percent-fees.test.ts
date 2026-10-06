@@ -5,7 +5,8 @@ import { summarizeRates } from "@/lib/data-store/fee-stats";
 import { statedInOwnSource, verificationReasonCode, type RawFeeRow } from "@/lib/agents/darwin/verify";
 import { traceLiveFee } from "@/lib/agents/hamilton/source-check";
 import { decidePriorFee } from "@/lib/agents/hamilton/publish";
-import { formatRateFee, percentFeeAllowed } from "./percent-fees";
+import { toRateFees } from "@/lib/data-store/rate-fees";
+import { formatRateFee, percentFeeAllowed, rateDisplayParts } from "./percent-fees";
 
 const schedule = [
   "DEBIT CARD SERVICES",
@@ -137,5 +138,25 @@ describe("percentage fees", () => {
     expect(stats.institution_count).toBe(6);
     expect(stats.median_rate).toBe(1.55);
     expect(summarizeRates([{ institution_id: 1, rate_percent: 5, amount_kind: "flat" }]).institution_count).toBe(0);
+  });
+});
+
+describe("rate display", () => {
+  it("splits the rate from what it is a share of", () => {
+    expect(rateDisplayParts({ amount_kind: "percent", rate_percent: 3, rate_basis: "advance", rate_min_amount: 10 })).toEqual({
+      rate: "3%",
+      detail: "of the advance ($10 minimum)",
+    });
+    expect(rateDisplayParts({ amount_kind: "percent", rate_percent: "1.1" })).toEqual({ rate: "1.1%", detail: null });
+    expect(rateDisplayParts({ amount_kind: "flat", rate_percent: null })).toBeNull();
+  });
+
+  it("drops catalog rows with no usable rate and labels the rest", () => {
+    const fees = toRateFees([
+      { id: "7", institution_id: "42", fee_name: "Foreign Transaction Fee", fee_category: "card_foreign_txn", frequency: "per_item", conditions: null, source_url: null, amount_kind: "percent", rate_percent: "1.0000", rate_basis: "transaction" },
+      { id: "8", institution_id: "42", fee_name: "Broken", fee_category: "cash_advance", frequency: null, conditions: null, source_url: null, amount_kind: "percent", rate_percent: null },
+    ]);
+    expect(fees).toHaveLength(1);
+    expect(fees[0]).toMatchObject({ id: 7, institution_id: 42, rate_percent: 1, rate_label: "1% of the transaction" });
   });
 });

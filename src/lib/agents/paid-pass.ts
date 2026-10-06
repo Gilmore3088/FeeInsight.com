@@ -1,6 +1,8 @@
 import { getAnthropicMessagesClient, type Anthropic } from "@/lib/ai-provider";
 import type { sql } from "@/lib/data-store/connection";
-import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD } from "@/lib/ai-provider-usage";
+
+export { WEB_SEARCH_COST_MICROUSD };
 
 /**
  * Pass 3, the paid last pass. Free methods (pass 1) and heavier free methods (pass 2)
@@ -12,9 +14,6 @@ import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-p
  */
 
 export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton";
-
-/** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
-export const WEB_SEARCH_COST_MICROUSD = 10_000;
 
 /** Models per paid job; override per environment. */
 export const PAID_PASS_MODELS = {
@@ -64,17 +63,20 @@ export async function paidModelCall({
   return { message, costMicrousd: paidCallCostMicrousd(params.model, message) };
 }
 
-/** Token cost plus server-tool charges (web search) for one response. */
+/**
+ * Token cost plus server-tool charges (web search) for one response: the same estimate
+ * trackAnthropicRequest writes to ai_api_usage_events, so the attempt log and the ledger
+ * the budget caps read agree.
+ */
 export function paidCallCostMicrousd(model: string, message: Pick<Anthropic.Message, "usage">): number {
   const usage = message.usage;
-  const tokens = estimateAnthropicCostMicrousd(model, {
+  return estimateAnthropicCostMicrousd(model, {
     inputTokens: usage?.input_tokens ?? 0,
     outputTokens: usage?.output_tokens ?? 0,
     cacheReadInputTokens: usage?.cache_read_input_tokens ?? 0,
     cacheCreationInputTokens: usage?.cache_creation_input_tokens ?? 0,
+    webSearchRequests: usage?.server_tool_use?.web_search_requests ?? 0,
   }) ?? 0;
-  const searches = Number(usage?.server_tool_use?.web_search_requests ?? 0);
-  return tokens + (Number.isFinite(searches) ? searches * WEB_SEARCH_COST_MICROUSD : 0);
 }
 
 /** Text of a model response, joined across text blocks. */

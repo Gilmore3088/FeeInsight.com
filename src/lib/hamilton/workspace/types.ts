@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.6.1";
+export const WORKSPACE_ENGINE_VERSION = "1.7.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -335,7 +335,29 @@ export interface FeeResearch {
   changeEvents?: ChangeEvent[];
   /** How the comparison group structures overdraft and NSF, beyond the price. */
   structure?: FeeStructureSet | null;
+  /**
+   * The fee where it is stated as a rate ("1% of the transaction"); only for the fees that
+   * may publish as one. Kept apart from every dollar figure above and never pooled with them.
+   */
+  rates?: RateResearch | null;
   provenance: Provenance;
+}
+
+/** One of the bank's own fees stated as a rate. */
+export interface RateFeeLine {
+  feeName: string;
+  /** "3% of the advance ($10 minimum)". */
+  label: string;
+  ratePercent: number;
+  sourceUrl: string | null;
+}
+
+export interface RateResearch {
+  /** The bank's own rate fees in this category, highest rate first. */
+  own: RateFeeLine[];
+  /** Rates across institutions nationally, one per institution; null figures when too few state one. */
+  national: { n: number; median: number | null; p25: number | null; p75: number | null; min: number | null; max: number | null };
+  source: SourceRef;
 }
 
 export type EconomicIndicatorKey =

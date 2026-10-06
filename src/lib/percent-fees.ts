@@ -81,3 +81,11 @@ export function formatRateFee(row: RateFields): string | null {
 export function formatRatePercent(rate: number | null | undefined): string {
   return rate == null || !Number.isFinite(rate) ? "n/a" : rateText(rate);
 }
+
+/** The rate on its own ("1.1%") and the words after it ("of the transaction ($10 minimum)"). */
+export function rateDisplayParts(row: RateFields): { rate: string; detail: string | null } | null {
+  const label = formatRateFee(row);
+  if (label == null) return null;
+  const space = label.indexOf(" ");
+  return space < 0 ? { rate: label, detail: null } : { rate: label.slice(0, space), detail: label.slice(space + 1) };
+}
