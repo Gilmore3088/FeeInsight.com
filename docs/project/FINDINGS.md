@@ -1113,8 +1113,8 @@ name supersedes it instead of publishing beside it.
 to old ones must apply it too, or the change makes duplicates.
 
 ## 2026-10-06: Knox held low-balance fees written as account rows or prose
-**What happened:** about 800 held lines at banks are low-balance charges Knox could not
-name: "Money Market Checking | $10.00 monthly for average balances below $1,000", "A club fee
+**What happened:** about 800 held lines mention a balance condition, and many are low-balance
+charges Knox could not name: "Money Market Checking | $10.00 monthly for average balances below $1,000", "A club fee
 of $8.00 will be imposed every statement cycle if the balance ... falls below $3,000",
 "Average Daily Balance below $2,500 | $10.00/month", "MININUM BALANCE FEE ..... $5".
 **Cause:** the low-balance name pattern needed "minimum balance ... fee" in the name; a prose
