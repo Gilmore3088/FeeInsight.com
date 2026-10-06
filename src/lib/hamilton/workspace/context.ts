@@ -16,7 +16,7 @@ import {
 } from "./implementation";
 import { priceBands } from "./bands";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
-import type { Fact, MarketLayer, MarketLayerScope, Observation, SourceRef } from "./types";
+import type { Fact, MarketLayer, MarketLayerScope, Observation, PeerValue, SourceRef } from "./types";
 
 const FEE_SOURCE: SourceRef = {
   label: "Fees on each institution's own published schedule (verified, live)",
@@ -37,6 +37,7 @@ export function marketLayer(
   amounts: number[],
   current: number | null,
   publishedAt: (string | null)[] = [],
+  members: PeerValue[] = [],
 ): MarketLayer {
   const sorted = [...amounts].sort((a, b) => a - b);
   const enough = sorted.length >= MIN_PEERS_FOR_POSITION;
@@ -51,6 +52,7 @@ export function marketLayer(
     position: current === null ? null : pricePosition(current, sorted),
     amounts: sorted,
     bands: priceBands(sorted, current),
+    members: [...members].sort((a, b) => a.amount - b.amount || a.institutionName.localeCompare(b.institutionName)),
     asOf,
     source: { ...FEE_SOURCE, asOf },
   };

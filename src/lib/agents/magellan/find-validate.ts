@@ -1,5 +1,5 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
-import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -13,7 +13,7 @@ type Fetcher = typeof fetch;
 
 export const FIND_REQUEST_TIMEOUT_MS = 8_000;
 /** PDFs larger than this are not downloaded to check; they are judged by their label. */
-const MAX_PDF_CHECK_BYTES = 8 * 1024 * 1024;
+export const MAX_PDF_CHECK_BYTES = 8 * 1024 * 1024;
 const PDF_CHECK_PAGES = 3;
 const PDF_CHECK_TIMEOUT_MS = 6_000;
 /** A scanned or unreadable PDF needs at least this link score to be accepted. */
@@ -37,6 +37,36 @@ const FEE_CONTENT_KEYWORDS = [
   "fee disclosure",
 ];
 
+/**
+ * An account or product page ("/personal/checking", "/savings-accounts"): it may quote a
+ * monthly fee or two, but it is not the bank's fee schedule. Such pages are kept as
+ * companion account pages (`second-document.ts`), never as the bank's fee link.
+ */
+const PRODUCT_PATH =
+  /\/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)/i;
+const FEE_NAMED_PATH = /(fee|schedule|charge|disclos|truth|pricing)/i;
+
+export function looksLikeProductPage(url: string): boolean {
+  let path: string;
+  try {
+    const parsed = new URL(url);
+    path = decodeURIComponent(parsed.pathname + parsed.search);
+  } catch {
+    return false;
+  }
+  return PRODUCT_PATH.test(path) && !FEE_NAMED_PATH.test(path) && !looksLikePdfUrl(url);
+}
+
+/** Page text without its site navigation, header and footer, where fee words appear on every page. */
+export function mainContentText(html: string): string {
+  return htmlToScoringText(
+    html
+      .replace(/<nav\b[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<header\b[\s\S]*?<\/header>/gi, " ")
+      .replace(/<footer\b[\s\S]*?<\/footer>/gi, " "),
+  );
+}
+
 export interface FeeCandidate {
   url: string;
   /** Link score 0..1 from its label and address (see `scoreLink` in finders.ts). */
@@ -51,6 +81,7 @@ export type CandidateVerdict =
   | "not_fee_page"
   | "rate_page"
   | "too_few_fee_words"
+  | "product_page"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -90,15 +121,15 @@ export function looksLikePdfUrl(url: string): boolean {
   return /\.pdf($|\?)/i.test(url);
 }
 
-/** Text of the first pages of a PDF, or null when it has none (a scan) or cannot be read. */
-export async function pdfCheckText(bytes: Uint8Array): Promise<string | null> {
+/** Text of the first `maxPages` pages of a PDF, or null when it has none (a scan) or cannot be read. */
+export async function pdfCheckText(bytes: Uint8Array, maxPages = PDF_CHECK_PAGES): Promise<string | null> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     const { getDocumentProxy } = await import("unpdf");
     const read = (async () => {
       const pdf = await getDocumentProxy(bytes);
       try {
-        const pages = Math.min(Number(pdf.numPages ?? 0), PDF_CHECK_PAGES);
+        const pages = Math.min(Number(pdf.numPages ?? 0), maxPages);
         const lines: string[] = [];
         for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) {
           const content = await (await pdf.getPage(pageNumber)).getTextContent();
@@ -154,11 +185,13 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   }
 
   const rawBody = await response.text();
-  const body = rawBody.toLowerCase();
+  const mainText = mainContentText(rawBody);
+  const body = mainText.toLowerCase();
+  // Fee words in a footer or menu ("Fee Schedule | Truth in Savings") appear on every page
+  // of the site, so they are counted on the page's own content only.
   const keywordMatches = FEE_CONTENT_KEYWORDS.filter((keyword) => body.includes(keyword)).length;
-  // Fee words in a footer ("Fee Schedule | Truth in Savings") are not a fee page: the page
-  // must actually list fees with amounts, or at least not clearly fail the fee-page check.
-  const page = scoreFeePage(htmlToScoringText(rawBody), candidate.url);
+  // The page must actually list fees with amounts, or at least not clearly fail the check.
+  const page = scoreFeePage(mainText, candidate.url);
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody };
   }
@@ -166,18 +199,29 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   if (page.verdict !== "fee_page" && page.rateTerms >= 4 && page.feeLines < 2) {
     return { ...rejected("rate_page", `Candidate is a rates page (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score), html: rawBody };
   }
-  if (page.verdict === "fee_page" || keywordMatches >= 2 || (candidate.score >= 0.88 && keywordMatches >= 1)) {
+  // Below the fee-page bar (3 fee lines) a page is accepted only when its address names
+  // the fee page, or its link label is strong and it lists at least one fee. A checking
+  // account page quoting its monthly fee is not the schedule (Magellan audit, Oct 6:
+  // 853 of 4,451 fee links were product pages, median 4 live fees vs 15).
+  const accepted =
+    page.verdict === "fee_page" ||
+    (keywordMatches >= 2 && urlNamesFeePage(candidate.url)) ||
+    (keywordMatches >= 2 && candidate.score >= 0.88 && page.feeLines >= 1 && !looksLikeProductPage(candidate.url));
+  if (accepted) {
     return {
       ok: true,
       documentType: "html",
-      confidence: Math.max(candidate.score, page.verdict === "fee_page" ? 0.88 : keywordMatches >= 2 ? 0.84 : 0.78),
+      confidence: Math.max(candidate.score, page.verdict === "fee_page" ? 0.88 : 0.8),
       reason: `${keywordMatches} fee keywords, ${page.feeLines} fee lines found on candidate page`,
       verdict: "accepted_html",
       status: response.status,
       html: rawBody,
     };
   }
-  return { ...rejected("too_few_fee_words", `${keywordMatches} fee keywords found on candidate page`, response.status, candidate.score), html: rawBody };
+  if (looksLikeProductPage(candidate.url)) {
+    return { ...rejected("product_page", `Candidate is an account or product page (${page.feeLines} fee lines, ${keywordMatches} fee keywords)`, response.status, candidate.score), html: rawBody };
+  }
+  return { ...rejected("too_few_fee_words", `${keywordMatches} fee keywords, ${page.feeLines} fee lines found on candidate page`, response.status, candidate.score), html: rawBody };
 }
 
 async function validatePdf(candidate: FeeCandidate, response: Response): Promise<CandidateValidation> {

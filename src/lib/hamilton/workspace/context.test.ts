@@ -16,6 +16,22 @@ describe("marketLayer", () => {
   });
 });
 
+describe("marketLayer members", () => {
+  it("lists the institutions behind the layer, lowest amount first", () => {
+    const member = (id: number, name: string, amount: number) => ({
+      institutionId: id, institutionName: name, amount, stateCode: "TN",
+      sourceDocumentIds: [id], documentUrls: [`https://example.test/${id}.pdf`], publishedAt: "2026-10-01T00:00:00Z",
+    });
+    const layer = marketLayer("state", "Tennessee", [35, 25, 25], null, [], [member(1, "Zeta", 35), member(2, "Beta", 25), member(3, "Alpha", 25)]);
+    expect(layer.members.map((m) => m.institutionName)).toEqual(["Alpha", "Beta", "Zeta"]);
+    expect(layer.members[0].documentUrls[0]).toBe("https://example.test/3.pdf");
+  });
+
+  it("is empty when no members are given", () => {
+    expect(marketLayer("national", "National", [30], null).members).toEqual([]);
+  });
+});
+
 describe("feeRules", () => {
   it("cites the credit union notice rule and the overdraft notices", () => {
     const labels = feeRules("overdraft", "credit_union").map((f) => f.source.label);

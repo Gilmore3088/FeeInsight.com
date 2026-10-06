@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -367,6 +367,20 @@ describe("Knox extract.rules", () => {
     expect(extractFromSegment("CUTX- OWNED OR NETWORK ATM TRANSACTION FEE | No Charge").held).toEqual([]);
     expect(extractFromSegment("Stop Payments, two per year | Free").held).toEqual([]);
     expect(extractFromSegment("Non-network ATM withdrawal | Free").held).toMatchObject([{ shape: "zero", canonicalHint: "atm_non_network" }]);
+  });
+
+  it("v13 reads no $0 price from a free allowance or a condition", () => {
+    for (const name of [
+      "2 free cashiers checks monthly",
+      "Monthly Service Charge if any of the following qualifications are met",
+      "Temporary checks (first 3 pgs for new acct Free)",
+      "minimum daily balance to waive monthly maintenance fees",
+    ]) {
+      expect(notAZeroPrice("other", name)).toBe(true);
+    }
+    for (const name of ["Free bill pay", "eStatement (including images if requested)", "Returned Check Fee We do not charge a fee when we return an item"]) {
+      expect(notAZeroPrice("other", name)).toBe(false);
+    }
   });
 
   it("v5 reads a price written without a leading zero", () => {

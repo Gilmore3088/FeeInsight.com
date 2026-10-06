@@ -97,6 +97,57 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
  * One institution's value per category under the statistics contract (the median of its
  * approved, sourced amounts; overdraft's highest tier), so "your fee" is measured the same way as the benchmark.
  */
+export interface InstitutionFeeRow {
+  id: number;
+  feeName: string;
+  amount: number | null;
+  sourceDocumentId: number | null;
+  /** The schedule document the row was read from. */
+  documentUrl: string | null;
+  /** The page the schedule was found on, when it differs from the document. */
+  sourceUrl: string | null;
+  publishedAt: string | null;
+  /** The Darwin event that verified the row against its document; null when not recorded. */
+  verifiedByEventId: string | null;
+}
+
+/**
+ * Every live row behind one institution's value for a fee (the same rows its statistics value
+ * is built from), highest amount first: the audit trail for "your fee".
+ */
+export async function getInstitutionFeeRows(institutionId: number, category: string): Promise<InstitutionFeeRow[]> {
+  const rows = await sql.unsafe(
+    `SELECT ef.id, ef.fee_name, ef.amount, ef.source_document_id, ef.document_url, ef.source_url,
+            ef.created_at, ef.verified_by_agent_event_id
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = $1
+        AND ef.fee_category = $2
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}
+      ORDER BY ef.amount DESC NULLS LAST, ef.id`,
+    [institutionId, category] as never[],
+  ) as {
+    id: number | string;
+    fee_name: string;
+    amount: number | string | null;
+    source_document_id: number | string | null;
+    document_url: string | null;
+    source_url: string | null;
+    created_at: Date | string | null;
+    verified_by_agent_event_id: string | null;
+  }[];
+  return rows.map((r) => ({
+    id: Number(r.id),
+    feeName: r.fee_name,
+    amount: r.amount === null ? null : Number(r.amount),
+    sourceDocumentId: r.source_document_id === null ? null : Number(r.source_document_id),
+    documentUrl: r.document_url,
+    sourceUrl: r.source_url,
+    publishedAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at ? String(r.created_at) : null,
+    verifiedByEventId: r.verified_by_agent_event_id ? String(r.verified_by_agent_event_id) : null,
+  }));
+}
+
 export async function getInstitutionFeeValues(
   institutionId: number,
   categories?: string[],
