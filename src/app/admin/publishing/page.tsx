@@ -6,7 +6,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { getReportFreshness, type ReportFreshness } from "@/lib/data-store/feed-freshness";
 import { buildPublishingCalendar, type Audience } from "@/lib/console/publishing-calendar";
 import { getSentEmailLog, type SentEmailLog } from "@/lib/email/resend-log";
-import { RoomHeader, RoomScreens, Unreadable } from "../room-hub";
+import { RoomHeader, Unreadable } from "../room-hub";
 
 const AUDIENCE_TONE: Record<Audience, string> = {
   Public: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -112,7 +112,6 @@ export default async function PublishingRoomPage() {
 
       <EmailLog log={emails} />
 
-      <RoomScreens room="publishing" />
     </div>
   );
 }

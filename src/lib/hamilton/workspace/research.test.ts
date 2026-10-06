@@ -44,6 +44,7 @@ describe("localMarketView", () => {
     institutionId: 1,
     institutionName: "Subject Bank",
     stateCode: "TX",
+    fedDistrict: 11,
     charterType: "bank",
     assetTier: "community_mid",
     peerLabel: "TX peers",
