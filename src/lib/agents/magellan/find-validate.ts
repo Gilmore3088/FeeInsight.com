@@ -98,6 +98,8 @@ export interface CandidateValidation {
   status: number | null;
   /** The page HTML, when it was HTML (finders follow its links). */
   html: string | null;
+  /** The text the fee-page check scored, for the shadow page classifier. */
+  scoringText?: string | null;
 }
 
 export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS): Promise<Response> {
@@ -193,11 +195,11 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   // The page must actually list fees with amounts, or at least not clearly fail the check.
   const page = scoreFeePage(mainText, candidate.url);
   if (page.verdict === "wrong_document") {
-    return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody };
+    return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
   // A rates page lists APYs and minimum balances; its footer may still say "Fee Schedule".
   if (page.verdict !== "fee_page" && page.rateTerms >= 4 && page.feeLines < 2) {
-    return { ...rejected("rate_page", `Candidate is a rates page (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score), html: rawBody };
+    return { ...rejected("rate_page", `Candidate is a rates page (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
   // Below the fee-page bar (3 fee lines) a page is accepted only when its address names
   // the fee page, or its link label is strong and it lists at least one fee. A checking
@@ -216,12 +218,13 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
       verdict: "accepted_html",
       status: response.status,
       html: rawBody,
+      scoringText: mainText,
     };
   }
   if (looksLikeProductPage(candidate.url)) {
-    return { ...rejected("product_page", `Candidate is an account or product page (${page.feeLines} fee lines, ${keywordMatches} fee keywords)`, response.status, candidate.score), html: rawBody };
+    return { ...rejected("product_page", `Candidate is an account or product page (${page.feeLines} fee lines, ${keywordMatches} fee keywords)`, response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
-  return { ...rejected("too_few_fee_words", `${keywordMatches} fee keywords, ${page.feeLines} fee lines found on candidate page`, response.status, candidate.score), html: rawBody };
+  return { ...rejected("too_few_fee_words", `${keywordMatches} fee keywords, ${page.feeLines} fee lines found on candidate page`, response.status, candidate.score), html: rawBody, scoringText: mainText };
 }
 
 async function validatePdf(candidate: FeeCandidate, response: Response): Promise<CandidateValidation> {
@@ -255,10 +258,10 @@ async function validatePdf(candidate: FeeCandidate, response: Response): Promise
   if (!text) return acceptUnread("has no readable text (likely a scan)");
   const page = scoreFeePage(text);
   if (page.verdict === "wrong_document") {
-    return rejected("not_fee_page", `PDF is not a fee schedule (${page.reason})`, response.status, candidate.score);
+    return { ...rejected("not_fee_page", `PDF is not a fee schedule (${page.reason})`, response.status, candidate.score), scoringText: text };
   }
   if (page.verdict !== "fee_page" && page.rateTerms >= 4 && page.feeLines < 2) {
-    return rejected("rate_page", `PDF is a rate sheet (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score);
+    return { ...rejected("rate_page", `PDF is a rate sheet (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score), scoringText: text };
   }
   return {
     ok: true,
@@ -268,5 +271,6 @@ async function validatePdf(candidate: FeeCandidate, response: Response): Promise
     verdict: "accepted_pdf",
     status: response.status,
     html: null,
+    scoringText: text,
   };
 }

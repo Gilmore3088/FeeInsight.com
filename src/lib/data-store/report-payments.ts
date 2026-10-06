@@ -1,6 +1,6 @@
 /**
  * Quote and payment state of an institution report request (leads row). The payment
- * columns come from migration 20270110000002; until it has run they read as missing,
+ * columns come from migration 20270110000003; until it has run they read as missing,
  * so the leads page and the pay page say "not quoted" instead of failing.
  */
 import { sql } from "./connection";

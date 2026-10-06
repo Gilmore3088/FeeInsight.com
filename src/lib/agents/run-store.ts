@@ -17,6 +17,7 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
+import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -27,6 +28,7 @@ import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
+import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
@@ -369,11 +371,14 @@ async function executeAgenticStep(
         stateCode,
         dryRun: run.runKind === "dry_run",
       });
+      // MG-4: retrain the shadow fee-page classifier from the ledger when it is 6+ hours old.
+      const pageClassifier = await refreshPageClassifier(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
           link_outcomes: linkOutcomes,
+          page_classifier: { ...pageClassifier, scored_with: discovery.pageClassifier },
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -464,12 +469,15 @@ async function executeAgenticStep(
     }
     case "discover-paid":
     case "read-paid":
-    case "extract-paid": {
+    case "extract-paid":
+    case "verify-paid": {
       const runner = step.stepKey === "discover-paid"
         ? runMagellanPaidFind
         : step.stepKey === "read-paid"
           ? runRosettaPaidRead
-          : runKnoxPaidExtract;
+          : step.stepKey === "extract-paid"
+            ? runKnoxPaidExtract
+            : runDarwinAdjudicate;
       const paid = await runner({
         runId: run.id,
         stepId: step.id,

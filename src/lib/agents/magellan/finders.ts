@@ -1,4 +1,5 @@
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { classifyPage, type PageClassifier } from "@/lib/agents/magellan/page-classifier";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { classifyFetchFailure } from "@/lib/agents/learning/outcomes";
 
@@ -120,9 +121,11 @@ export const FINDERS = {
   // 2: robots.txt Disallow rules respected, /sitemap_index.xml fallback, fee-named PDFs.
   sitemap: { strategy: "discover.sitemap", version: 2, pass: 1 },
   hubPages: { strategy: "discover.hub_pages", version: 1, pass: 1 },
-  platformPaths: { strategy: "discover.platform_paths", version: 1, pass: 1 },
+  // 2: learned paths scored by the live fees their links produced (outcome ledger).
+  platformPaths: { strategy: "discover.platform_paths", version: 2, pass: 1 },
   commonPaths: { strategy: "discover.common_paths", version: 1, pass: 1 },
-  peerHint: { strategy: "discover.peer_hint", version: 1, pass: 2 },
+  // 2: paths with live fees on the same platform nationwide, not same-state guesses.
+  peerHint: { strategy: "discover.peer_hint", version: 2, pass: 2 },
   siteCrawl: { strategy: "discover.site_crawl", version: 1, pass: 2 },
 } as const;
 
@@ -167,6 +170,8 @@ export interface TrailEntry {
   label: string;
   score: number;
   verdict: string;
+  /** Shadow page classifier: its probability that the page is a fee schedule (decides nothing). */
+  page_p?: number;
 }
 
 export interface FoundDocument {
@@ -225,6 +230,8 @@ export interface SearchContext {
   robots?: string | null;
   /** HTML of same-site pages already opened, so the crawl does not fetch them twice. */
   pages: Map<string, string>;
+  /** The learned fee-page classifier, in shadow: scores each opened candidate, decides nothing. */
+  pageClassifier?: PageClassifier | null;
 }
 
 export function cleanText(value: string): string {
@@ -395,6 +402,9 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     try {
       const validation = await validateFeeCandidate(candidate, ctx.fetchImpl);
       entry.verdict = validation.verdict;
+      if (ctx.pageClassifier && validation.scoringText) {
+        entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
+      }
       if (validation.html && sameSite(new URL(candidate.url), ctx.site)) ctx.pages.set(identity, validation.html);
       if (validation.ok) {
         result.found = foundFrom(candidate, validation);
@@ -701,13 +711,13 @@ export async function findCommonPaths(ctx: SearchContext): Promise<FinderResult>
 
 // --- Pass 2 ------------------------------------------------------------------------
 
-/** Paths that worked for banks on the same platform in the same state. */
+/** Paths that produced live fees for banks on the same platform, nationwide. */
 export async function findPeerHint(ctx: SearchContext): Promise<FinderResult> {
   if (!ctx.platform) return emptyResult(false);
   const paths = await ctx.knowledge.peerPaths(ctx.platform, ctx.stateCode, ctx.institutionId);
   const candidates = pathCandidates(ctx, paths, "peer_hint").filter((candidate) => !ctx.tried.has(urlIdentity(candidate.url)));
   if (candidates.length === 0) return emptyResult(false);
-  const result = { ...emptyResult(true), note: `platform ${ctx.platform} in ${ctx.stateCode ?? "any state"}` };
+  const result = { ...emptyResult(true), note: `platform ${ctx.platform}, nationwide` };
   await tryCandidates(ctx, result, candidates, MAX_PEER_PATHS);
   return result;
 }

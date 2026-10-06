@@ -46,7 +46,7 @@ export async function setReportQuoteAction(_prev: ReportQuoteState, formData: Fo
   const lead = await getReportPaymentLead(id);
   if (!lead) return { status: "error", message: "Lead not found." };
   if (!lead.paymentColumns) {
-    return { status: "error", message: "The payment columns are missing: run migration 20270110000002 first." };
+    return { status: "error", message: "The payment columns are missing: run migration 20270110000003 first." };
   }
   if (lead.paidAt) return { status: "error", message: "This request is already paid." };
   if (!isReportRequestSource(lead.source)) return { status: "error", message: "Only institution report requests can be quoted." };

@@ -7,7 +7,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { LEAD_STATUS_LABELS, isLeadOverdue, isLeadStatus, isRequestLead, type LeadStatus } from "@/lib/leads/lead-status";
 import { countInstitutionsPassingReportRule, getMarketReadiness } from "@/lib/data-store/market-readiness";
 import { getProAccounts, type ProAccount } from "@/lib/data-store/pro-accounts";
-import { RoomHeader, RoomScreens, Unreadable } from "../room-hub";
+import { RoomHeader, Unreadable } from "../room-hub";
 
 /** Board columns, left to right, in the order a request moves. */
 const LANES: { title: string; note: string; statuses: LeadStatus[] }[] = [
@@ -118,7 +118,6 @@ export default async function CustomersRoomPage() {
       {proAccounts ? <ProAccounts accounts={proAccounts} /> : <Unreadable what="Pro accounts" />}
 
       {markets === null ? <Unreadable what="Market readiness" /> : null}
-      <RoomScreens room="customers" />
     </div>
   );
 }

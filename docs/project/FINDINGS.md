@@ -35,6 +35,18 @@ Funnel fixes PR (this branch).
 **Lesson:** a public server action that creates rows or sends email needs
 `isServerActionRateLimited` with its own policy, the same as an API route.
 
+## 2026-10-06: Rosetta re-downloaded links that kept timing out or blocking it
+**What happened:** the Rosetta audit (read-only queries on prod, early 2026-10-06 UTC) counted 3,086 failed downloads in 24 hours. PR 155 stopped the 404 repeats (none after 01:00 UTC), but 26 tries on 14 documents that failed with 403s, timeouts and network errors kept coming back. The fee-page check also counted only "$" amounts, so a page that writes fees as "75¢" or "$.50" scored fewer amounts than it has.
+**Cause:** a timeout, network error or server error was "transient" with no limit, so the same document was downloaded every run. A 403 was handed back only when it repeated, and only while the bank's link still pointed at it. The amount pattern was `\$\s?[0-9]`.
+**Fix:** this PR. The third failed download of a document in 7 days (403, 429, 5xx, timeout, network error) sends the bank back to Magellan, and the document is not downloaded again until 7 days pass. The fee-page check now also counts "$.50", "75¢" and "50 cents". Neither change takes down a live fee.
+**Lesson:** every retryable outcome needs a cap. "Transient" without a limit is an endless loop.
+
+## 2026-10-06: Out-of-date fee links were never searched again
+**What happened:** 437 active banks' fee links are 3+ years old by their own "Effective" date or the year in their address (read-only query on prod, 07:30 UTC). Chase's stored link is a 2021 news article about overdraft fees. A bank with any link was never re-searched unless the link died.
+**Cause:** discovery only selects banks with no link or a failed one; nothing looked at a link's age.
+**Fix:** freshness search in `magellan/discovery.ts` (this PR): one re-search per stale bank in spare capacity, an hourly slot at a time (48 ms per slot); the link changes only when a different page passes the fee-page check.
+**Lesson:** a link that still loads is not a current schedule. Check age, not just reachability.
+
 ## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
 **What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
 our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
@@ -898,3 +910,30 @@ was measured and not added: 446 live names end in "of" ("An overdraft fee of"), 
 the bank's real price.
 **Lesson:** judge a name-shape rule by the live prices it would remove, not by the bad names it
 catches.
+
+## 2026-10-06: Re-reading one fee schedule recorded false price changes
+**What happened:** building the National report's fee-change chapter (read-only check, 07:05 UTC), three
+of the five price changes recorded since July 8 came from two readings of the same schedule edition:
+Net Federal Credit Union stop payment $35 to $30 (both readings "Effective February 1, 2026") and
+Commonwealth Federal Credit Union returned deposited item $10 to $32 (both readings carry the same
+"RFD 3-24-2026" form stamp; the older reading put "$10.00" from the line above in front of the fee).
+The Monthly Pulse rule confirmed both.
+**Cause:** the confirm rule checks each reading line by line. A PDF read twice can come out in a
+different column order, pairing a fee with its neighbour's price, and both readings then "state" a price.
+**Fix:** PR 235 (also carried in PR 220): `confirmFeeChange` drops a change when both texts
+state exactly the same dollar amounts (one edition read twice) or when the earlier schedule already
+stated the new price. The Hamilton Briefing's competitor moves now read only these confirmed
+changes, so a misread schedule no longer shows as a competitor's price move. Of the five recorded changes, the two at New Hampshire Federal Credit Union
+(October 2024 schedule to August 2026 schedule) remain.
+**Lesson:** a change between two readings needs proof the document itself changed, not only that each
+reading parses.
+
+## 2026-10-06: Single-quarter income reads doubled credit-union income
+**What happened:** a read-only check (07:30 UTC) found the district, size-tier, top-institution,
+peer-ranking and institution-trend income reads summed NCUA 5300 service charges as reported. For
+Q2 2026 that was $5.16B for credit unions against $2.64B earned in the quarter.
+**Cause:** NCUA income lines are year to date; FDIC lines are quarterly. getRevenueTrend and the peer
+medians already split NCUA into quarters, but the single-quarter reads in `call-reports.ts` did not.
+**Fix:** same PR: those reads join each credit union's prior quarter in the same year and use the
+difference (Q1 stands alone; a missing prior quarter leaves the row out). Read-only; no data change.
+**Lesson:** a unit rule fixed in one query must live in a shared helper, or the next query repeats the bug.

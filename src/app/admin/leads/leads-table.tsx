@@ -140,7 +140,7 @@ function ReportQuotePanel({ lead }: { lead: LeadRow }) {
     <div className="mb-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.02]">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Quote and card payment</p>
       {!lead.payment_columns ? (
-        <p className="mt-1 text-xs text-gray-500">Quoting turns on after migration 20270110000002 runs.</p>
+        <p className="mt-1 text-xs text-gray-500">Quoting turns on after migration 20270110000003 runs.</p>
       ) : (
         <>
           <form action={quoteAction} className="mt-1.5 flex flex-wrap items-center gap-2">

@@ -2177,7 +2177,7 @@ export interface LeadRow {
   quote_institution_id: number | null;
   quote_sent_at: string | null;
   paid_at: string | null;
-  /** False until migration 20270110000002 has added the payment columns. */
+  /** False until migration 20270110000003 has added the payment columns. */
   payment_columns: boolean;
 }
 

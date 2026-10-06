@@ -46,6 +46,11 @@ Hamilton supports the decision; it does not make it.
   objective.
 - The Ask bar returns `{kind, shortAnswer, pageChange, savedFact?}` with kinds research,
   scenario, saved_fact, deliverable_draft, opinion and clarifying_question.
+- Every fee answer plays four roles (James, 2026-10-06): Inquisitive Economist, Rigorous
+  Consultant, Artistic Data Engineer, Technical yet Clear Writer. `buildFeeAnswer`
+  (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
+  question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
+  checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
 - Decisions, their event log, client-given facts and uploads are kept in
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
