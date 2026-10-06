@@ -536,6 +536,23 @@ describe("decidePriorFee", () => {
     expect(decidePriorFee(row, [newer])).toEqual({ kind: "older_document", prior: newer });
   });
 
+  it("keeps each companion page's line: one account's page never replaces or outdates another's", () => {
+    const freedom = { ...row, fee_name: "Monthly service fee", document_stream: "41" };
+    const value = live({ fee_published_id: 607, fee_name: "Monthly service fee", document_stream: "42" });
+    const valueNewer = live({ fee_published_id: 608, fee_name: "Monthly service fee", document_stream: "42", document_crawled_at: "2026-10-04T00:00:00.000Z" });
+    expect(decidePriorFee(freedom, [value])).toEqual({ kind: "additional_line" });
+    expect(decidePriorFee(freedom, [valueNewer])).toEqual({ kind: "additional_line" });
+    // Nor does a companion page touch the main fee link's line, or the other way round.
+    expect(decidePriorFee(freedom, [live({ fee_published_id: 609, fee_name: "Monthly service fee" })])).toEqual({ kind: "additional_line" });
+    expect(decidePriorFee({ ...row, fee_name: "Monthly service fee" }, [value])).toEqual({ kind: "additional_line" });
+  });
+
+  it("still replaces the same page's older line", () => {
+    const freedom = { ...row, document_stream: "41" };
+    const earlier = live({ fee_published_id: 610, document_stream: "41" });
+    expect(decidePriorFee(freedom, [earlier])).toEqual({ kind: "supersede", prior: earlier });
+  });
+
   it("does not record a change when either document's date is unknown", () => {
     expect(decidePriorFee({ ...row, document_crawled_at: null }, [live({})])).toEqual({ kind: "additional_line" });
     expect(decidePriorFee(row, [live({ document_crawled_at: null })])).toEqual({ kind: "additional_line" });

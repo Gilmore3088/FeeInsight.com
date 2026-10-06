@@ -2,15 +2,17 @@ import type { sql } from "@/lib/data-store/connection";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { companionStreamsReady } from "@/lib/agents/companion-streams";
 
-import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
+import { fetchWithTimeout, looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import {
+  cleanText,
   hubPages,
-  MIN_LINK_SCORE,
   pageLinks,
-  scoreLink,
+  sameSite,
   urlIdentity,
-  type LinkCandidate,
+  type LinkSource,
   type PageLink,
   type TrailEntry,
 } from "./finders";
@@ -19,25 +21,39 @@ type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
 /**
- * Pass 2, second-document finder. A live bank whose published fees cover fewer than
- * THIN_BANK_CATEGORY_LIMIT categories often keeps the rest in another document: a
- * business fee schedule, or an "other services" / miscellaneous fee list. This looks
- * for one on the homepage, the stored fee page and one hop of hub pages, validates it
- * with the same fee-page check, and stores it in `institution_additional_sources`
- * (never replacing the bank's fee link). Runs inside the `discover` step after the
- * main search, with whatever time the step has left, and logs every bank it checks.
+ * Pass 2, companion finder. Many banks, small credit unions above all, do not publish
+ * one fee schedule: each checking account's page lists its own fees (Triangle FCU's
+ * Freedom and Value Checking), the overdraft fee sits in a courtesy pay PDF, and
+ * wires and cashier's checks are on an "additional services" page. Discovery stops at
+ * the first page that passes the fee-page check, so such a bank ends up with a few fees
+ * from one page.
+ *
+ * For live banks with few fee categories (or no monthly fee on an HTML fee link) this
+ * reads the homepage, the stored fee page, a few hub pages (Checking, Accounts,
+ * Disclosures) and the site's own search for "fee schedule", then keeps every page that
+ * lists fees: deposit-account pages (named after their account) and fee documents
+ * (schedules, disclosures, courtesy pay policies, PDFs behind opaque /assets/files
+ * links). Each page is stored in `institution_additional_sources` (never replacing the
+ * bank's fee link); the companion fetch (`companion-fetch.ts`) downloads it as its own
+ * document stream. Runs inside the `discover` step after the main search, with whatever
+ * time the step has left, and logs every bank it checks.
  */
 
-export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 1 } as const;
-export const THIN_BANK_CATEGORY_LIMIT = 5;
-export const SECOND_DOCUMENT_BANKS_PER_STEP = 5;
-const MAX_CANDIDATES = 3;
-const MAX_HUBS = 2;
+export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 2 } as const;
+/** Live banks with fewer published fee categories than this are searched. */
+export const THIN_BANK_CATEGORY_LIMIT = 8;
+export const SECOND_DOCUMENT_BANKS_PER_STEP = 6;
+/** Pages kept per bank, account pages and fee documents together. */
+export const MAX_COMPANIONS_PER_BANK = 8;
+const MAX_ACCOUNT_PAGES_CHECKED = 8;
+const MAX_FEE_DOCUMENTS_CHECKED = 5;
+const MAX_HUBS = 3;
 const RECHECK_DAYS = 30;
+const SEARCH_QUERY = "fee schedule";
 
-export type AdditionalDocumentRole = "business" | "other_services" | "consumer_supplement";
+export type AdditionalDocumentRole = "business" | "other_services" | "consumer_supplement" | "account_page";
 
-const BUSINESS = /\b(business|commercial|corporate|treasury management)\b/;
+const BUSINESS = /\b(business|commercial|corporate|treasury management|merchant)\b/;
 const OTHER_SERVICES = /\b(other services|other fees|miscellaneous|additional services|general fees|service fees|common fees)\b/;
 
 export function additionalDocumentRole(text: string): AdditionalDocumentRole {
@@ -47,30 +63,139 @@ export function additionalDocumentRole(text: string): AdditionalDocumentRole {
   return "consumer_supplement";
 }
 
-/** A link that may be another fee document: fee words plus, ideally, a business/other-services label. */
-export function secondDocumentCandidates(links: PageLink[], foundOn: string | null, exclude: Set<string>): LinkCandidate[] {
-  return links
-    .filter((link) => !exclude.has(urlIdentity(link.url)))
-    .map((link) => {
-      const scored = scoreLink(link.url, link.label, "homepage_link", foundOn);
-      const lower = `${link.label} ${link.url}`.toLowerCase().replace(/[-_]+/g, " ");
-      const feeWord = /\b(fees?|charges?|pricing)\b/.test(lower);
-      const specific = BUSINESS.test(lower) || OTHER_SERVICES.test(lower);
-      return { ...scored, score: Math.min(0.98, scored.score + (feeWord && specific ? 0.2 : 0)) };
-    })
-    .filter((candidate) => candidate.score >= MIN_LINK_SCORE)
-    .sort((a, b) => b.score - a.score);
+const STRONG_FEE_DOCUMENT =
+  /\b(fee schedules?|schedules? of (fees|charges)|service charges?|truth in savings|courtesy pay|overdraft (privilege|protection|polic(y|ies)|services?|practices)|bounce (protection|coverage)|fee disclosures?|account fees|other fees|additional services|miscellaneous fees)\b/;
+const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
+const NOT_A_FEE_DOCUMENT =
+  /\b(privacy|careers?|jobs|mortgage|loans?|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility)\b/;
+/** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
+const ACCOUNT_PAGE =
+  /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
+const GENERIC_LABEL = /^(learn more|read more|more|details|view|click here|here|see details|explore|open|open now|get started|compare|go|>|»)$/i;
+
+export type CompanionKind = "account_page" | "fee_document";
+
+export interface CompanionCandidate {
+  url: string;
+  label: string;
+  kind: CompanionKind;
+  score: number;
+  reasons: string[];
+  foundOn: string | null;
+  source: LinkSource;
 }
 
-const readyCache = new WeakMap<object, boolean>();
+function linkText(link: PageLink): string {
+  let path = link.url;
+  try {
+    path = decodeURIComponent(new URL(link.url).pathname);
+  } catch {
+    // keep the raw URL
+  }
+  return `${link.label} ${path}`.toLowerCase().replace(/[-_/.]+/g, " ");
+}
 
-/** True once the `institution_additional_sources` migration is applied (positive answer cached). */
-export async function additionalSourcesReady(db: SqlTag): Promise<boolean> {
-  if (readyCache.get(db)) return true;
-  const [row] = await db`SELECT to_regclass('public.institution_additional_sources') IS NOT NULL AS ready`;
-  const ready = row?.ready === true;
-  if (ready) readyCache.set(db, true);
-  return ready;
+/**
+ * What a link may be: a page about one deposit account, a fee document, or neither.
+ * Business and loan links are skipped (their fees are not the consumer schedule).
+ */
+export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string | null = null): CompanionCandidate | null {
+  const lower = linkText(link);
+  if (BUSINESS.test(lower) || NOT_A_FEE_DOCUMENT.test(lower)) return null;
+  let url: URL;
+  try {
+    url = new URL(link.url);
+  } catch {
+    return null;
+  }
+  const source: LinkSource = "homepage_link";
+  const strong = STRONG_FEE_DOCUMENT.exec(lower);
+  const medium = MEDIUM_FEE_DOCUMENT.exec(lower);
+  const document = looksLikePdfUrl(link.url) || /\/(assets\/files|files|documents?|uploads|media)\//i.test(url.pathname);
+  if (strong || (medium && document)) {
+    const reasons = [strong?.[0] ?? medium?.[0] ?? "", document ? "document" : ""].filter(Boolean);
+    const score = Math.min(0.98, (strong ? 0.88 : 0.8) + (document ? 0.05 : 0));
+    return { url: link.url, label: link.label, kind: "fee_document", score, reasons, foundOn, source };
+  }
+  const account = ACCOUNT_PAGE.exec(lower);
+  if (account && sameSite(url, site) && !document) {
+    // A link named after one account ("Freedom Checking") beats a section link ("Checking").
+    const named = link.label.trim().split(/\s+/).length >= 2 ? 0.05 : 0;
+    const checking = /checking|share draft/.test(account[0]) ? 0.05 : 0;
+    return { url: link.url, label: link.label, kind: "account_page", score: 0.75 + named + checking, reasons: [account[0]], foundOn, source };
+  }
+  return null;
+}
+
+/** Candidate pages from a set of links, best first, minus pages already known. */
+export function companionCandidates(links: PageLink[], site: URL, exclude: Set<string>): CompanionCandidate[] {
+  const seen = new Set<string>();
+  const candidates: CompanionCandidate[] = [];
+  for (const link of links) {
+    const identity = urlIdentity(link.url);
+    if (exclude.has(identity) || seen.has(identity)) continue;
+    seen.add(identity);
+    const candidate = classifyCompanionLink(link, site);
+    if (candidate) candidates.push(candidate);
+  }
+  return candidates.sort((a, b) => b.score - a.score);
+}
+
+/** The account a page belongs to: its link label, or its last path segment for "Learn more" links. */
+export function accountNameFor(label: string, url: string): string {
+  const cleaned = cleanText(label).replace(/\s+/g, " ").trim();
+  if (cleaned && !GENERIC_LABEL.test(cleaned) && cleaned.length <= 80) return cleaned;
+  try {
+    const segment = new URL(url).pathname.split("/").filter(Boolean).pop() ?? "";
+    const words = decodeURIComponent(segment).replace(/\.[a-z0-9]+$/i, "").split(/[-_\s]+/).filter(Boolean);
+    if (words.length > 0) return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  } catch {
+    // fall through
+  }
+  return cleaned || url;
+}
+
+/**
+ * The site's own search for "fee schedule", from a GET search form on the page
+ * (`<form action="/search"><input name="q">`). Null when the page has none.
+ */
+export function siteSearchUrl(html: string, site: URL): string | null {
+  const forms = html.match(/<form\b[\s\S]*?<\/form>/gi) ?? [];
+  for (const form of forms) {
+    const openTag = form.slice(0, form.indexOf(">") + 1);
+    const method = /\bmethod\s*=\s*["']?([a-z]+)/i.exec(openTag)?.[1]?.toLowerCase() ?? "get";
+    if (method !== "get") continue;
+    const inputs = form.match(/<input\b[^>]*>/gi) ?? [];
+    const searchInput = inputs.find((input) => {
+      const name = /\bname\s*=\s*["']([^"']+)["']/i.exec(input)?.[1] ?? "";
+      const type = (/\btype\s*=\s*["']?([a-z]+)/i.exec(input)?.[1] ?? "text").toLowerCase();
+      return (type === "search" || type === "text") && /^(q|s|query|search|keys|keywords?|term|searchterm|search_api_fulltext|k)$/i.test(name);
+    });
+    if (!searchInput) continue;
+    const looksLikeSearch = /search/i.test(form) || /\btype\s*=\s*["']?search/i.test(searchInput);
+    if (!looksLikeSearch) continue;
+    const name = /\bname\s*=\s*["']([^"']+)["']/i.exec(searchInput)![1];
+    const action = /\baction\s*=\s*["']([^"']*)["']/i.exec(openTag)?.[1] ?? "";
+    try {
+      const target = new URL(action || "/", site);
+      if (!sameSite(target, site) || (target.protocol !== "http:" && target.protocol !== "https:")) continue;
+      target.hash = "";
+      target.searchParams.set(name, SEARCH_QUERY);
+      return target.toString();
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** An account page is kept when it lists at least one fee with an amount. */
+export function accountPageListsFees(html: string, url: string): { ok: boolean; feeLines: number; reason: string } {
+  const page = scoreFeePage(htmlToScoringText(html), url);
+  if (page.verdict === "wrong_document" || page.feeLines < 1) {
+    return { ok: false, feeLines: page.feeLines, reason: page.reason };
+  }
+  return { ok: true, feeLines: page.feeLines, reason: `${page.feeLines} fee line${page.feeLines === 1 ? "" : "s"} on the account page` };
 }
 
 interface ThinBankRow {
@@ -82,21 +207,33 @@ interface ThinBankRow {
   categories: number | string;
 }
 
+export interface CompanionPage {
+  url: string;
+  role: AdditionalDocumentRole;
+  kind: CompanionKind;
+  accountName: string;
+  documentType: string | null;
+  reason: string;
+}
+
 export interface SecondDocumentResult {
   institutionId: number;
   categories: number;
   outcome: AttemptOutcome;
+  /** The first page found, kept for the run summary. */
   url: string | null;
   role: AdditionalDocumentRole | null;
   documentType: string | null;
   reason: string;
   fetches: number;
+  pages: CompanionPage[];
 }
 
 export interface RunSecondDocumentFindResult {
   /** "schema_pending" until the migration is applied; "no_attempt_log" without the learning core. */
   status: "ran" | "schema_pending" | "no_attempt_log" | "out_of_time";
   checked: number;
+  /** Companion pages stored this step. */
   found: number;
   results: SecondDocumentResult[];
 }
@@ -104,12 +241,13 @@ export interface RunSecondDocumentFindResult {
 async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: number): Promise<ThinBankRow[]> {
   return db<ThinBankRow[]>`
     WITH thin AS (
-      SELECT c.institution_id, count(DISTINCT c.fee_category)::int AS categories
+      SELECT c.institution_id,
+             count(DISTINCT c.fee_category)::int AS categories,
+             bool_or(c.fee_category = 'monthly_maintenance') AS has_monthly_fee
         FROM published_fee_catalog c
         JOIN institution_sources scoped ON scoped.id = c.institution_id
        WHERE (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
        GROUP BY c.institution_id
-      HAVING count(DISTINCT c.fee_category) < ${THIN_BANK_CATEGORY_LIMIT}
     )
     SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, thin.categories
       FROM thin
@@ -117,6 +255,11 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
      WHERE COALESCE(inst.status, 'active') = 'active'
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
        AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
+       -- Few categories, or an HTML fee link with no monthly fee: the product-page pattern.
+       AND (
+         thin.categories < ${THIN_BANK_CATEGORY_LIMIT}
+         OR (NOT thin.has_monthly_fee AND inst.fee_schedule_url !~* '\\.pdf($|\\?)')
+       )
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_attempts pa
           WHERE pa.institution_id = inst.id
@@ -161,14 +304,16 @@ async function searchBank(
   const institutionId = Number(row.id);
   const categories = Number(row.categories);
   const trail: TrailEntry[] = [];
+  const pages: CompanionPage[] = [];
   let fetches = 0;
-  const done = (fields: Partial<SecondDocumentResult> & Pick<SecondDocumentResult, "outcome" | "reason">) => ({
+  const done = (fields: Pick<SecondDocumentResult, "outcome" | "reason">) => ({
     institutionId,
     categories,
-    url: null,
-    role: null,
-    documentType: null,
+    url: pages[0]?.url ?? null,
+    role: pages[0]?.role ?? null,
+    documentType: pages[0]?.documentType ?? null,
     fetches,
+    pages,
     trail,
     ...fields,
   });
@@ -177,9 +322,21 @@ async function searchBank(
   if (!site) return done({ outcome: "invalid_url", reason: "Invalid website_url" });
   const exclude = new Set([...known, urlIdentity(row.fee_schedule_url)]);
 
-  const openHtml = async (url: string, source: TrailEntry["source"]): Promise<string | null> => {
+  // Hub pages are often account pages too: each URL is requested once.
+  const opened = new Map<string, string | null>();
+  const openHtml = async (url: string, source: TrailEntry["source"], label = ""): Promise<string | null> => {
+    const identity = urlIdentity(url);
+    if (opened.has(identity)) {
+      trail.push({ url, source, foundOn: null, label, score: 0, verdict: "cached" });
+      return opened.get(identity) ?? null;
+    }
+    const html = await requestHtml(url, source, label);
+    opened.set(identity, html);
+    return html;
+  };
+  const requestHtml = async (url: string, source: TrailEntry["source"], label: string): Promise<string | null> => {
     fetches += 1;
-    const entry: TrailEntry = { url, source, foundOn: null, label: "", score: 0, verdict: "" };
+    const entry: TrailEntry = { url, source, foundOn: null, label, score: 0, verdict: "" };
     trail.push(entry);
     try {
       const response = await fetchWithTimeout(fetchImpl, url);
@@ -198,24 +355,66 @@ async function searchBank(
     return done({ outcome: classifyFetchFailure(status || null), reason: `Homepage ${trail[0]?.verdict ?? "failed"}` });
   }
   const links: PageLink[] = [...pageLinks(homepage, site)];
-  // The stored fee page often links to its business or other-services companion.
-  if (!/\.pdf($|\?)/i.test(row.fee_schedule_url) && Date.now() < deadline) {
+  // The stored fee page often links to the account pages and the full schedule.
+  if (!looksLikePdfUrl(row.fee_schedule_url) && Date.now() < deadline) {
     const feePage = await openHtml(row.fee_schedule_url, "known_link");
     if (feePage) links.push(...pageLinks(feePage, site));
   }
-  for (const hub of hubPages(links, site, exclude, MAX_HUBS)) {
+  // The site's own search for "fee schedule" (James found Triangle FCU's fees this way).
+  const searchUrl = siteSearchUrl(homepage, site);
+  if (searchUrl && Date.now() < deadline) {
+    const results = await openHtml(searchUrl, "crawl_page", "site search");
+    if (results) links.push(...pageLinks(results, site));
+  }
+  const hubs = hubPages(links.filter((link) => !BUSINESS.test(linkText(link)) && !NOT_A_FEE_DOCUMENT.test(linkText(link))), site, exclude, MAX_HUBS);
+  for (const hub of hubs) {
     if (Date.now() > deadline) break;
-    const html = await openHtml(hub.url, "hub_page");
+    const html = await openHtml(hub.url, "hub_page", hub.label);
     if (html) links.push(...pageLinks(html, site));
   }
 
-  const unique = [...new Map(links.map((link) => [urlIdentity(link.url), link])).values()];
-  const candidates = secondDocumentCandidates(unique, null, exclude).slice(0, MAX_CANDIDATES);
-  if (candidates.length === 0) return done({ outcome: "no_candidates", reason: "No other fee documents linked" });
+  const candidates = companionCandidates(links, site, exclude);
+  const accountPages = candidates.filter((candidate) => candidate.kind === "account_page").slice(0, MAX_ACCOUNT_PAGES_CHECKED);
+  if (candidates.length === 0) return done({ outcome: "no_candidates", reason: "No account pages or fee documents linked" });
 
+  const kept = new Set<string>();
+  const keep = (page: CompanionPage) => {
+    if (pages.length >= MAX_COMPANIONS_PER_BANK || kept.has(urlIdentity(page.url))) return;
+    kept.add(urlIdentity(page.url));
+    pages.push(page);
+  };
+
+  // Account pages first: each one also links to the documents it relies on ("see the fee schedule").
+  const moreLinks: PageLink[] = [];
+  for (const candidate of accountPages) {
+    if (Date.now() > deadline || pages.length >= MAX_COMPANIONS_PER_BANK) break;
+    const html = await openHtml(candidate.url, "crawl_page", candidate.label);
+    const entry = trail[trail.length - 1];
+    entry.score = Math.round(candidate.score * 100) / 100;
+    if (!html) continue;
+    moreLinks.push(...pageLinks(html, site));
+    const check = accountPageListsFees(html, candidate.url);
+    entry.verdict = check.ok ? "accepted_html" : "too_few_fee_words";
+    if (check.ok) {
+      keep({
+        url: candidate.url,
+        role: "account_page",
+        kind: "account_page",
+        accountName: accountNameFor(candidate.label, candidate.url),
+        documentType: "html",
+        reason: check.reason,
+      });
+    }
+  }
+
+  const checked = new Set(accountPages.map((candidate) => urlIdentity(candidate.url)));
+  const documents = companionCandidates([...links, ...moreLinks], site, new Set([...exclude, ...checked]))
+    .filter((candidate) => candidate.kind === "fee_document")
+    .slice(0, MAX_FEE_DOCUMENTS_CHECKED);
   let rejectedAny = false;
-  for (const candidate of candidates) {
-    if (Date.now() > deadline) return done({ outcome: "timeout", reason: "Out of time" });
+  for (const candidate of documents) {
+    if (Date.now() > deadline) break;
+    if (pages.length >= MAX_COMPANIONS_PER_BANK) break;
     fetches += 1;
     const entry: TrailEntry = { url: candidate.url, source: candidate.source, foundOn: candidate.foundOn, label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "" };
     trail.push(entry);
@@ -223,20 +422,27 @@ async function searchBank(
       const validation = await validateFeeCandidate(candidate, fetchImpl);
       entry.verdict = validation.verdict;
       if (validation.ok) {
-        return done({
-          outcome: "ok",
+        keep({
           url: candidate.url,
           role: additionalDocumentRole(`${candidate.label} ${new URL(candidate.url).pathname}`),
+          kind: "fee_document",
+          accountName: accountNameFor(candidate.label, candidate.url),
           documentType: validation.documentType,
           reason: validation.reason,
         });
+      } else {
+        rejectedAny = rejectedAny || !validation.verdict.startsWith("http_");
       }
-      rejectedAny = rejectedAny || !validation.verdict.startsWith("http_");
     } catch {
       entry.verdict = "fetch_failed";
     }
   }
-  return done({ outcome: rejectedAny ? "wrong_document" : "no_candidates", reason: "No candidate passed the fee-page check" });
+
+  if (pages.length > 0) {
+    return done({ outcome: "ok", reason: `${pages.length} companion page${pages.length === 1 ? "" : "s"} list fees` });
+  }
+  if (Date.now() > deadline) return done({ outcome: "timeout", reason: "Out of time" });
+  return done({ outcome: rejectedAny || accountPages.length > 0 ? "wrong_document" : "no_candidates", reason: "No candidate listed fees" });
 }
 
 export async function runSecondDocumentFind(options: {
@@ -253,7 +459,7 @@ export async function runSecondDocumentFind(options: {
   const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, results: [] });
   if (!options.learning) return empty("no_attempt_log");
   if (Date.now() > options.deadline) return empty("out_of_time");
-  if (!(await additionalSourcesReady(options.db))) return empty("schema_pending");
+  if (!(await companionStreamsReady(options.db))) return empty("schema_pending");
 
   const db = options.db;
   const rows = await selectThinBanks(db, normalizeStateCode(options.stateCode ?? undefined), options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP);
@@ -267,13 +473,13 @@ export async function runSecondDocumentFind(options: {
     const { trail, ...summary } = result;
     results.push(summary);
     if (options.dryRun) continue;
-    if (result.outcome === "ok" && result.url) {
+    for (const page of result.pages) {
       await db`
         INSERT INTO institution_additional_sources
-          (institution_id, url, document_type, document_role, found_by_strategy, strategy_version, agent_run_id, reason)
+          (institution_id, url, document_type, document_role, account_name, found_by_strategy, strategy_version, agent_run_id, reason)
         VALUES
-          (${institutionId}, ${result.url}, ${result.documentType}, ${result.role}, ${SECOND_DOCUMENT_FINDER.strategy},
-           ${SECOND_DOCUMENT_FINDER.version}, ${options.runId}, ${result.reason})
+          (${institutionId}, ${page.url}, ${page.documentType}, ${page.role}, ${page.accountName}, ${SECOND_DOCUMENT_FINDER.strategy},
+           ${SECOND_DOCUMENT_FINDER.version}, ${options.runId}, ${page.reason})
         ON CONFLICT (institution_id, url) DO NOTHING
       `;
     }
@@ -284,7 +490,7 @@ export async function runSecondDocumentFind(options: {
       version: SECOND_DOCUMENT_FINDER.version,
       fingerprint: row.fee_schedule_url,
       outcome: result.outcome,
-      yieldCount: result.url ? 1 : 0,
+      yieldCount: result.pages.length,
       costMicrousd: 0,
       durationMs: Date.now() - startedAt,
       runId: options.runId,
@@ -292,8 +498,7 @@ export async function runSecondDocumentFind(options: {
       detail: {
         pass: 2,
         url: result.url,
-        role: result.role,
-        document_type: result.documentType,
+        pages: result.pages.map((page) => ({ url: page.url, kind: page.kind, role: page.role, account: page.accountName, document_type: page.documentType })),
         published_categories: result.categories,
         reason: result.reason,
         pages_fetched: result.fetches,
@@ -301,5 +506,5 @@ export async function runSecondDocumentFind(options: {
       },
     });
   }
-  return { status: "ran", checked: results.length, found: results.filter((result) => result.url).length, results };
+  return { status: "ran", checked: results.length, found: results.reduce((total, result) => total + result.pages.length, 0), results };
 }

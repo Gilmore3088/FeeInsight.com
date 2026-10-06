@@ -124,6 +124,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   Other lines of the same schedule, or differently named lines from another document,
   publish side by side with no change record. A row from an older document than a live
   line is skipped (`Older document than the live price`).
+- Document age is compared only within one stream (`src/lib/agents/companion-streams.ts`):
+  the main fee link with its own earlier copies, each companion page (one account's page,
+  a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
+  outdates Value Checking's line, or the main schedule's; it publishes beside them.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.
