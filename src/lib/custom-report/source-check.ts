@@ -102,11 +102,26 @@ function zeroTokens(line: string): MoneyToken[] {
   }));
 }
 
+/** "Overdraft Fee Assessed when ... per day. | $36.00": the title that opens a long description row. */
+const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
+const PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/;
+
+/**
+ * A long line split into sentences. A description row whose only other cell is its price
+ * also keeps its title with that price, since the sentences leave the price on its own.
+ */
+function longLineParts(line: string): string[] {
+  const parts = line.split(/(?<=[.;])\s+|\s{3,}|•/);
+  const cells = line.split("|").map((cell) => cell.trim());
+  const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
+  return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
+}
+
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .flatMap((line) => (line.length > LONG_LINE ? line.split(/(?<=[.;])\s+|\s{3,}|•/) : [line]))
+    .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter((line) => line.length > 0);
 }

@@ -6,7 +6,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.2.0",
+    version: "1.3.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
@@ -40,6 +40,14 @@ const spec = {
       },
     },
     schemas: {
+      Attribution: {
+        type: "object",
+        description: "Credit line to display with the data.",
+        properties: {
+          text: { type: "string", example: "Source: Bank Fee Index, feeinsight.com" },
+          url: { type: "string", example: "https://feeinsight.com" },
+        },
+      },
       Error: {
         type: "object",
         description: "Every error has a readable message and a stable machine code.",
@@ -49,6 +57,7 @@ const spec = {
             type: "string",
             enum: [
               "api_key_required",
+              "data_unavailable",
               "invalid_api_key",
               "invalid_parameter",
               "not_found",
@@ -287,6 +296,14 @@ const spec = {
       },
     },
     parameters: {
+      AssetTierParam: {
+        name: "asset_tier",
+        in: "query",
+        schema: { type: "string" },
+        description:
+          "Asset-size tier(s), comma-separated: community_small (under $300M), community_mid ($300M-$1B), community_large ($1B-$10B), regional ($10B-$50B), large_regional ($50B-$250B), super_regional (over $250B)",
+        example: "community_small,community_mid",
+      },
       FormatParam: {
         name: "format",
         in: "query",
@@ -389,6 +406,7 @@ const spec = {
               "Fed district number(s), comma-separated (1-12). Example: 7 or 2,7,12",
             example: "7",
           },
+          { $ref: "#/components/parameters/AssetTierParam" },
           { $ref: "#/components/parameters/FormatParam" },
         ],
         responses: {
@@ -415,6 +433,10 @@ const spec = {
                           nullable: true,
                         },
                         district: {
+                          type: "string",
+                          nullable: true,
+                        },
+                        asset_tier: {
                           type: "string",
                           nullable: true,
                         },
@@ -489,6 +511,34 @@ const spec = {
               "Search by institution name, e.g. Frost. Institutions with published fees sort first; fed_district is null in name-search results.",
           },
           {
+            name: "fee_category",
+            in: "query",
+            schema: { type: "string" },
+            description:
+              "Rank institutions by one fee (Pro and Enterprise only), e.g. overdraft. Each row gains fee_amount: the institution's lowest published amount, or null when it has none (those sort last). Combines with state, charter and q.",
+            example: "overdraft",
+          },
+          {
+            name: "sort",
+            in: "query",
+            schema: { type: "string", enum: ["highest", "lowest"], default: "highest" },
+            description: "Ranking order with fee_category",
+          },
+          { $ref: "#/components/parameters/AssetTierParam" },
+          {
+            name: "city",
+            in: "query",
+            schema: { type: "string", maxLength: 80 },
+            description: "Exact city name, case-insensitive (list only, not with q or fee_category)",
+            example: "Austin",
+          },
+          {
+            name: "quarters",
+            in: "query",
+            schema: { type: "integer", default: 8, minimum: 1, maximum: 66 },
+            description: "With id: how many call report quarters to return, newest first (back to 2010)",
+          },
+          {
             name: "page",
             in: "query",
             schema: {
@@ -555,6 +605,127 @@ const spec = {
         },
       },
     },
+    "/revenue": {
+      get: {
+        operationId: "getRevenueTrend",
+        summary: "Market-wide fee revenue by quarter",
+        description:
+          "Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of US dollars per quarter, newest first. view=national splits banks and credit unions and adds year-over-year change; view=districts gives one row per Fed district per quarter. Pro and Enterprise only.",
+        tags: ["Revenue"],
+        parameters: [
+          {
+            name: "view",
+            in: "query",
+            schema: { type: "string", enum: ["national", "districts"], default: "national" },
+          },
+          {
+            name: "quarters",
+            in: "query",
+            schema: { type: "integer", default: 8, minimum: 1, maximum: 66 },
+            description: "Quarters to return, back to 2010",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Quarterly service-charge income",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    view: { type: "string" },
+                    units: { type: "string" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          quarter: { type: "string", example: "2026-Q1" },
+                          fed_district: { type: "integer", description: "districts view only" },
+                          service_charges: { type: "number" },
+                          bank_service_charges: { type: "number", description: "national view only" },
+                          credit_union_service_charges: { type: "number", description: "national view only" },
+                          institutions: { type: "integer" },
+                          yoy_change_pct: { type: "number", nullable: true, description: "national view only" },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
+    "/fee-changes": {
+      get: {
+        operationId: "getFeeChanges",
+        summary: "Detected fee changes",
+        description:
+          "Fee changes our monitoring detected when an institution's published schedule changed between reads, newest first, at most 200. Coverage is still small and growing. Pro and Enterprise only.",
+        tags: ["Fees"],
+        parameters: [
+          {
+            name: "days",
+            in: "query",
+            schema: { type: "integer", default: 90, minimum: 1, maximum: 365 },
+          },
+          {
+            name: "category",
+            in: "query",
+            schema: { type: "string" },
+            description: "Fee category key, e.g. overdraft",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Detected fee changes",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    days: { type: "integer" },
+                    category: { type: "string", nullable: true },
+                    note: { type: "string" },
+                    count: { type: "integer" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          institution_id: { type: "integer" },
+                          institution_name: { type: "string" },
+                          category: { type: "string" },
+                          display_name: { type: "string" },
+                          previous_amount: { type: "number", nullable: true },
+                          new_amount: { type: "number", nullable: true },
+                          change: { type: "string" },
+                          detected_at: { type: "string", format: "date-time" },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
   },
   tags: [
     {
@@ -571,6 +742,10 @@ const spec = {
       name: "Institutions",
       description:
         "Institution profiles and their individual fee schedules.",
+    },
+    {
+      name: "Revenue",
+      description: "Market-wide deposit service-charge income from FDIC and NCUA call reports.",
     },
   ],
   "x-rateLimit": {
