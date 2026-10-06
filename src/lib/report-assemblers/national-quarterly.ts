@@ -13,6 +13,7 @@
 import { createHash } from "crypto";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store/fee-index";
 import { getRevenueTrend } from "@/lib/data-store/call-reports";
+import { getPublicStatsSummary } from "@/lib/public-stats";
 import { getBeigeBookHeadlines, getBeigeBookThemes, getFredSummary } from "@/lib/data-store/fed";
 import type { BeigeBookTheme } from "@/lib/data-store/fed";
 import { getDisplayName, FEE_TIERS } from "@/lib/fee-taxonomy";
@@ -294,8 +295,17 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const total_bank_institutions = bankEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
   const total_cu_institutions = cuEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
 
-  // total_institutions: broadest coverage — max institution_count across all categories
-  const total_institutions = nationalEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
+  // total_institutions: the site's own count of institutions with published fees, so the
+  // report and every public page state one number. The largest single category's count
+  // (the old rule) understated coverage by a fifth.
+  const largestCategory = nationalEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
+  let total_institutions = largestCategory;
+  try {
+    const summary = await getPublicStatsSummary();
+    if (summary.institutions > 0) total_institutions = summary.institutions;
+  } catch (err) {
+    console.warn("[assembleNationalQuarterly] public stats summary failed, using largest category count:", err);
+  }
 
   // Suppress unused variable warnings
   void bankInstitutionSet;

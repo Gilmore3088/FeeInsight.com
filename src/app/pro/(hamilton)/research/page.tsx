@@ -10,7 +10,8 @@ import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data"
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
-import { getServiceChargeContext, type ServiceChargeContext } from "@/lib/data-store/service-charge-context";
+import { getRevenueTrend, type RevenueSnapshot } from "@/lib/data-store/call-reports";
+import type { FeeResearch, InstitutionFinancials } from "@/lib/hamilton/workspace/types";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
 import { getArticles } from "@/lib/data-store/news";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch } from "@/lib/hamilton/workspace/research";
@@ -43,66 +44,92 @@ function researchHref(p: { fee: string; layer: string }, instId: string | null) 
   return hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(p.fee)}&layer=${p.layer}`, instId);
 }
 
-// Filings change quarterly; the national and peer sums take a second or two, so keep them a few hours.
-const getCachedServiceCharges = unstable_cache(
-  async (institutionId: number) => getServiceChargeContext(institutionId, 8).catch(() => null),
-  ["hamilton-research-service-charges-v1"],
+// National income changes quarterly and the sum over every filer takes a moment, so keep it a few hours.
+const getCachedNationalTrend = unstable_cache(
+  async () => (await getRevenueTrend(8).catch(() => ({ quarters: [] as RevenueSnapshot[] }))).quarters,
+  ["hamilton-research-national-income-v1"],
   { revalidate: 6 * 60 * 60 },
 );
 
-function fmtYoy(pct: number | null): string {
-  if (pct == null) return "No same quarter a year earlier on file";
-  if (pct === 0) return "Level with the same quarter a year earlier";
-  return `${pct > 0 ? "Up" : "Down"} ${Math.abs(pct).toFixed(1)}% from the same quarter a year earlier`;
+function fmtYoy(pct: number | null, against = "the same quarter a year earlier"): string {
+  if (pct == null) return `No ${against.replace(/^the /, "")} on file to compare`;
+  if (pct === 0) return `Level with ${against}`;
+  return `${pct > 0 ? "Up" : "Down"} ${Math.abs(pct).toFixed(1)}% on ${against}`;
 }
 
-function FilingExhibits({ ctx, name, credit }: { ctx: ServiceChargeContext; name: string; credit: boolean }) {
-  const oldestFirst = [...ctx.quarters].reverse();
-  const latest = ctx.quarters[0];
+const quarterLabel = (q: string) => q.replace("-", " ");
+/** "2026-06-30" to "2026-Q2". */
+const quarterOf = (isoDate: string) => `${isoDate.slice(0, 4)}-Q${Math.ceil(Number(isoDate.slice(5, 7)) / 3)}`;
+
+function FilingExhibits({
+  own,
+  national,
+  revenueLine,
+  name,
+  credit,
+}: {
+  own: InstitutionFinancials | null;
+  national: RevenueSnapshot[];
+  revenueLine: FeeResearch["revenueLine"];
+  name: string;
+  credit: boolean;
+}) {
   const kind = credit ? "credit unions" : "banks";
-  const line = credit ? "Fee income" : "Service charges on deposit accounts";
-  const peerLabel = `Median of ${latest.peerCount.toLocaleString("en-US")} ${kind} with ${ctx.tierLabel}`;
-  const multiple = latest.own != null && latest.peerMedian ? latest.own / latest.peerMedian : null;
-  const source = credit
-    ? "NCUA 5300 call report, account 131 (fee income). Filed year to date; each quarter here is that quarter alone."
-    : "FDIC call report, service charges on deposit accounts. Filed for the quarter.";
+  const ownOldest = own ? [...own.quarters].reverse() : [];
+  const natOldest = [...national].reverse();
+  const natLatest = national[0] ?? null;
+  const natPrior = natLatest ? national.find((q) => q.quarter === `${Number(natLatest.quarter.slice(0, 4)) - 1}${natLatest.quarter.slice(4)}`) : null;
+  const groupNow = natLatest ? (credit ? natLatest.cu_service_charges : natLatest.bank_service_charges) : null;
+  const groupPrior = natPrior ? (credit ? natPrior.cu_service_charges : natPrior.bank_service_charges) : null;
+  const groupYoy = groupNow != null && groupPrior ? Math.round(((groupNow - groupPrior) / groupPrior) * 1000) / 10 : null;
   return (
     <>
-      <Exhibit number={2} title={`${line} each quarter, ${name} against its peers`} source={source}>
-        <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
-          <QuarterLines
-            quarters={oldestFirst.map((q) => q.quarter)}
-            series={[
-              { label: name, values: oldestFirst.map((q) => q.own), own: true },
-              { label: peerLabel, values: oldestFirst.map((q) => q.peerMedian) },
-            ]}
-          />
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-            <Figure label={`You, ${latest.quarter.replace("-", " ")}`} value={latest.own != null ? fmtFiledThousands(latest.own) : "Not filed"} note={fmtYoy(ctx.ownYoyPct)} />
-            <Figure label="Peer median" value={latest.peerMedian != null ? fmtFiledThousands(latest.peerMedian) : "Too few peers"} note={fmtYoy(ctx.peerYoyPct)} />
-            {multiple != null ? (
-              <Figure label="Against the median" value={`${multiple.toFixed(1)}×`} note={`Your ${line.toLowerCase()} over the peer median, latest quarter`} />
-            ) : null}
+      {own && own.quarters.length > 0 ? (
+        <Exhibit number={2} title={`${name}'s fee income each quarter`} source={`${own.sourceRef.label}. Each quarter stands alone; credit union year-to-date filings are split into quarters.`}>
+          <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
+            <QuarterLines
+              quarters={ownOldest.map((q) => quarterOf(q.quarterEnd))}
+              series={[{ label: own.label, values: ownOldest.map((q) => q.amount / 1000), own: true }]}
+            />
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
+              <Figure label={`Latest quarter, ${quarterLabel(quarterOf(own.quarterEnd))}`} value={fmtFiledThousands(own.quarters[0].amount / 1000)} />
+              {own.latestTtm != null ? (
+                <Figure label="Last four quarters" value={fmtFiledThousands(own.latestTtm / 1000)} note={fmtYoy(own.yoyPct, "the four quarters before")} />
+              ) : null}
+            </div>
           </div>
-        </div>
-      </Exhibit>
-      <Exhibit number={3} title={`${line}, every ${credit ? "credit union" : "bank"} in the country`} source={source}>
-        <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
-          <QuarterLines
-            quarters={oldestFirst.map((q) => q.quarter)}
-            series={[{ label: `All ${kind} that filed, summed`, values: oldestFirst.map((q) => q.nationalTotal), own: true }]}
-          />
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-            <Figure label={`Nationally, ${latest.quarter.replace("-", " ")}`} value={fmtFiledThousands(latest.nationalTotal)} note={fmtYoy(ctx.nationalYoyPct)} />
-            <Figure label="Filers" value={latest.nationalCount.toLocaleString("en-US")} note={`${kind[0].toUpperCase()}${kind.slice(1)} reporting this line that quarter`} />
+          <p className="mt-4 text-xs leading-relaxed text-warm-600">
+            {revenueLine
+              ? `${revenueLine.label}: ${fmtFiledThousands(revenueLine.annualIncome / 1000)} over the last four quarters${revenueLine.combinedWith ? `, reported together with ${revenueLine.combinedWith}` : ""}.`
+              : credit
+                ? "The 5300 also has separate overdraft (IS0048) and NSF (IS0049) income lines. Fee Insight hasn't loaded those yet, so they aren't shown."
+                : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). Fee Insight hasn't loaded that line yet, so it isn't shown."}
+          </p>
+        </Exhibit>
+      ) : (
+        <p className="text-sm text-warm-700">No call report figures on file for {name} yet.</p>
+      )}
+      {natLatest ? (
+        <Exhibit number={3} title="Service charges on deposit accounts, every filer in the country" source="FDIC call reports and NCUA 5300 reports, all filers on file. Credit union year-to-date filings are split into quarters.">
+          <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
+            <QuarterLines
+              quarters={natOldest.map((q) => q.quarter)}
+              series={[
+                { label: `All ${kind}`, values: natOldest.map((q) => (credit ? q.cu_service_charges : q.bank_service_charges)), own: true },
+                { label: `All ${credit ? "banks" : "credit unions"}`, values: natOldest.map((q) => (credit ? q.bank_service_charges : q.cu_service_charges)) },
+              ]}
+            />
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
+              <Figure label={`All ${kind}, ${quarterLabel(natLatest.quarter)}`} value={fmtFiledThousands(groupNow ?? 0)} note={fmtYoy(groupYoy)} />
+              <Figure
+                label="Banks and credit unions together"
+                value={fmtFiledThousands(natLatest.total_service_charges)}
+                note={`${natLatest.total_institutions.toLocaleString("en-US")} filers; ${fmtYoy(natLatest.yoy_change_pct).toLowerCase()}`}
+              />
+            </div>
           </div>
-        </div>
-        <p className="mt-4 text-xs leading-relaxed text-warm-600">
-          {credit
-            ? "The 5300 also has separate overdraft (IS0048) and NSF (IS0049) income lines. Fee Insight hasn't loaded those yet, so they aren't shown."
-            : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). Fee Insight hasn't loaded that line yet, so it isn't shown."}
-        </p>
-      </Exhibit>
+        </Exhibit>
+      ) : null}
     </>
   );
 }
@@ -153,8 +180,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   const layerKey = parseLayer(params.layer ?? (ws.layers.some((l) => l.key === "local") ? "local" : "state"));
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
-  const [filings, complaints, articles, research] = await Promise.all([
-    inst ? getCachedServiceCharges(inst.id) : null,
+  const [national, complaints, articles, research] = await Promise.all([
+    inst ? getCachedNationalTrend() : [],
     inst ? getInstitutionComplaintProfile(inst.id).catch(() => null) : null,
     getArticles({ topic: OVERDRAFT_FAMILY.has(ws.fee) ? "overdraft" : "fees_pricing", limit: 5 }).catch(() => []),
     inst ? getFeeResearch(inst.id, ws.fee).catch(() => null) : null,
@@ -175,7 +202,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}`,
     instId,
   );
-  const latest = filings?.quarters[0] ?? null;
+  const own = research?.institutionFinancials ?? null;
+  const latest = own ? { quarter: quarterOf(own.quarterEnd) } : null;
   const credit = inst?.charterType === "credit_union";
   const trail = buildAuditTrail({
     feeName: ws.feeName,
@@ -186,9 +214,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     callReport: latest
       ? {
           quarter: latest.quarter,
-          source: credit
-            ? "NCUA 5300 call report, fee income (account 131); year-to-date filings turned into single quarters. Peer and national figures use every credit union that filed."
-            : "FDIC call report, service charges on deposit accounts, quarterly. Peer and national figures use every bank that filed.",
+          source: `${own!.sourceRef.label}, from the Hamilton engine; year-to-date filings split into quarters. National figures sum every FDIC and NCUA filer on file.`,
         }
       : null,
     complaints: Boolean(complaints && complaints.total_complaints > 0),
@@ -312,11 +338,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           title={`${inst.name} in the regulator filings`}
           note={credit ? "From the NCUA 5300 call report every credit union files each quarter, and the CFPB complaint database." : "From the FDIC call report every bank files each quarter, and the CFPB complaint database."}
         >
-          {filings && filings.quarters.length > 0 ? (
-            <FilingExhibits ctx={filings} name={inst.name} credit={credit} />
-          ) : (
-            <p className="text-sm text-warm-700">No call report figures on file for this institution yet.</p>
-          )}
+          <FilingExhibits own={own} national={national} revenueLine={research?.revenueLine ?? null} name={inst.name} credit={credit} />
           <div>
             <Exhibit number={4} title="Consumer complaints" source="CFPB Consumer Complaint Database">
               {complaints && complaints.total_complaints > 0 ? (
@@ -348,12 +370,19 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           {rules.noticeSummary.replace("An increase needs", "Raising it needs")} Lowering or removing a fee needs no advance notice.
         </Callout>
         <ul className="flex flex-col gap-2 text-sm text-warm-800">
-          {ruleItems.map((i) => (
-            <li key={i.text} className="flex flex-wrap justify-between gap-2 border-b border-warm-200 pb-2">
-              <span className="min-w-0">{i.text}</span>
-              <a href={i.rule!.url} className="text-terra-text underline" target="_blank" rel="noreferrer">
-                {i.rule!.label}
-              </a>
+          {(research && research.regulation.length > 0
+            ? research.regulation.map((f) => ({ text: f.text, label: f.source.label, url: f.source.url ?? null }))
+            : ruleItems.map((i) => ({ text: i.text, label: i.rule!.label, url: i.rule!.url }))
+          ).map((r) => (
+            <li key={r.text} className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-warm-200 pb-2">
+              <span className="min-w-0 flex-1">{r.text}</span>
+              {r.url ? (
+                <a href={r.url} className="text-terra-text underline" target="_blank" rel="noreferrer">
+                  {r.label}
+                </a>
+              ) : (
+                <span className="text-warm-600">{r.label}</span>
+              )}
             </li>
           ))}
         </ul>

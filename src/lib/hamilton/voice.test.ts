@@ -69,9 +69,16 @@ describe("HAMILTON_VOICE", () => {
 
 describe("consultant bar", () => {
   it("tells Hamilton not to restate what the public site shows", () => {
-    expect(HAMILTON_VERSION).toBe("3.2.0");
+    expect(HAMILTON_VERSION).toBe("3.3.0");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Consultant, not restatement.");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Never answer by repeating them.");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Never tell the institution to raise, lower or drop a fee.");
+  });
+});
+
+describe("implication, never prescription", () => {
+  it("never asks Hamilton for what the reader should do", () => {
+    expect(HAMILTON_SYSTEM_PROMPT).not.toMatch(/what to do about it|should the reader DO|language: 'Banks must'|or recommendation/);
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("You support the decision; you never make it.");
   });
 });

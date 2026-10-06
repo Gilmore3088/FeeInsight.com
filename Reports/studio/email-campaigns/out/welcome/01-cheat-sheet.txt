@@ -1,57 +1,37 @@
-What 1,232 banks and credit unions actually publish, from overdraft to wires.
+What U.S. banks and credit unions actually publish, from overdraft to wires.
 
 WELCOME · EMAIL 1 OF 5
 
-The fee cheat sheet we wish every bank had taped to the wall
-============================================================
+The fee cheat sheet every bank should keep open
+===============================================
 
-Thanks for signing up. You'll get 5 short emails over two weeks. Each one gives you something you can use the day it lands. The first is the most useful thing we have: what U.S. banks and credit unions actually publish for the fees customers notice most.
+Thanks for signing up. You'll get 5 short emails over two weeks, each with something you can use the day it lands. The first is the most useful thing we have: what U.S. banks and credit unions actually publish for the 15 fees customers notice most.
 
-* 1,232 — institutions with a published fee schedule in the index
-* 4,011 — verified fee records, each linked to its source document
-* 53 — states and territories covered
-
-
-THE BENCHMARK TABLE
-
-Fee | low 25% | median | high 25% | banks | CUs | n
-Overdraft (paid item) | $9 | $29 | $34 | $30 | $25 | 88
-NSF (returned item) | $10 | $25 | $30 | $18 | $25 | 173
-Monthly maintenance | $2 | $5 | $15 | $8 | $5 | 133
-Stop payment | $15 | $25 | $30 | $30 | $20 | 125
-Deposited item returned | $10 | $15 | $25 | $15 | $20 | 82
-Debit card replacement | $7.63 | $20 | $43.75 | $10 | $25 | 174
-Overdraft protection transfer | $3 | $5 | $10 | $5 | $5 | 69
-Out-of-network ATM | $1 | $2 | $3 | $2 | $1.50 | 69
-Cashier's check | $3 | $5 | $7.25 | $7 | $5 | 68
-Paper statement | $2 | $3 | $5 | $3 | $3 | 86
-Domestic wire, outgoing | $15 | $20 | $25 | $20 | $20 | 94
-Domestic wire, incoming | $10 | $10 | $15 | $15 | $10 | 53
-International wire, outgoing | $30 | $40 | $50 | $40 | $40 | 44
-Bank Fee Index, October 3, 2026. One headline amount per institution (lowest published amount for that fee). "Low 25%" and "High 25%" are the 25th and 75th percentiles; n = institutions with that fee published. Banks and CUs columns are medians.
+Open the national fee report: https://feeinsight.com/reports/benchmark/national?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=cheat-sheet
+Free, no login. The numbers update as new fee schedules are verified.
 
 
 HOW TO READ IT IN 30 SECONDS
 
 - Median is the typical price. Half of institutions charge more and half charge less.
-- Low 25% / High 25% marks the normal range. A fee above the High 25% column is in the most expensive quarter of the market.
-- Banks vs CUs often differ more than you'd expect. Credit unions charge a lower median overdraft ($25 vs $30) but a higher median NSF ($25 vs $18) and card replacement ($25 vs $10).
+- The middle half (25th to 75th percentile) is the normal range. A fee above it is in the most expensive quarter of the market.
+- Banks vs credit unions often differ more than you'd expect, so the report shows them side by side.
 
 
 [ DO THIS IN 15 MINUTES ]
 [ ] Open your own fee schedule (or your bank's, if you're a customer).
-[ ] Write your amount next to each row of the table above.
-[ ] Circle any fee above the High 25% column. Those are the ones customers, examiners and competitors notice first.
+[ ] Write your amount next to each fee in the national report.
+[ ] Circle any fee above the middle half. Those are the ones customers, examiners and competitors notice first.
 
-Want the same comparison for a specific institution? Every institution in the index has a free public profile. Search institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=cheat-sheet) or browse fees by category (https://feeinsight.com/fees?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=cheat-sheet).
+Want a specific institution? Every one we track has a free public profile: search institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=cheat-sheet) or browse fees by category (https://feeinsight.com/fees?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=cheat-sheet).
 
-Next email: overdraft and NSF, the two fees that changed the most since 2021, and where pricing sits today.
+Next email: overdraft and NSF, the two fees that changed the most since 2021, and the rules behind them.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 
 ----
-Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
 [Fee Insight mailing address]

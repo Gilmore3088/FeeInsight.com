@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAGELLAN_FETCH_STRATEGY, runMagellanFetch } from "./fetch";
+import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, runMagellanFetch } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -163,6 +163,16 @@ describe("Magellan agentic fetch", () => {
     expect(sqlText).toContain("inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
     expect(sqlText).toContain("CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END");
     expect(db.mock.calls[0]).toContain(true);
+  });
+
+  it("also re-fetches links last fetched over a month ago in a backlog run", async () => {
+    const db = createDbMock([]);
+
+    await runMagellanFetch({ runId: 106, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
+
+    const sqlText = templateText(db.mock.calls[0][0]);
+    expect(sqlText).toContain("OR inst.last_crawl_at < NOW() - make_interval(days =>");
+    expect(db.mock.calls[0]).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
   });
 
   it("filters fetch candidates by state lane and profile memory", async () => {

@@ -21,8 +21,9 @@ Magellan owns institution source discovery and source fetching.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 - A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and
   `last_rescue_attempt_at > last_crawl_at`) is fetched first, regardless of the retry
-  window, and the state's hourly backlog run fetches those links only
-  (`new_links_only`), so a link found mid-month is read the same hour, not next month.
+  window. The state's hourly backlog run (`new_links_only`) fetches those links and any
+  link last fetched over 30 days ago (`MAGELLAN_STALE_LINK_REFETCH_DAYS`), so a link found
+  mid-month is read the same hour and no schedule goes months without a fetch.
 - The free `discover` step runs in every hourly backlog run, not only the full pass, while
   the state has a bank due a free search; discovery's own backoff decides who is due. The
   paid find (`discover-paid`) stays on the full pass.

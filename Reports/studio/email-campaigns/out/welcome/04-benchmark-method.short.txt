@@ -1,10 +1,10 @@
-Peer group, percentile, outlier rule. The same steps behind our paid reports, free.
+Peer group, percentile, outlier rule. The steps behind our reports, free.
 
 Benchmark any fee schedule in 30 minutes
 [ THE METHOD ]
-1. Pick a real peer group. Same charter type (bank or credit union) and a similar asset size. Comparing a $300M credit union with a national bank tells you nothing.
-2. Use the headline amount. For each fee, take the lowest published price on the schedule. That's what a customer can get, and what a competitor will quote.
-3. Place yourself by percentile. Sort the peers' prices. Where do you land? Below the 25th percentile is low, above the 75th is high.
+1. Pick a real peer group. Same charter type (bank or credit union) and the institutions your customers actually compare you to. A $300M credit union and a national bank tell you nothing about each other.
+2. Compare like with like. Same fee, same channel, same conditions. A branch price against an online price isn't a comparison.
+3. Place yourself by percentile. Sort the peers' prices. Below the 25th percentile is low; above the 75th is high.
 4. Flag outliers with one rule. A fee is an outlier if it's more than 2× the peer median, or more than 1.5× the interquartile range above the 75th percentile. Outliers get a written reason or a review.
 [ MISTAKES WE SEE CONSTANTLY ]
 

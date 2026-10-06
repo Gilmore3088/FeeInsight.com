@@ -48,6 +48,19 @@ near a fee name into that category.
 **Fix:** none yet; reported to Improving Hamilton for whoever owns Knox and Darwin.
 **Lesson:** a headline fee should be checked against its row's fee name before it leads a page.
 
+## 2026-10-06: Texas fee schedules went months without a re-fetch
+**What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
+the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
+Of 741 Texas rows, 479 were last crawled over 90 days ago; 189 active fee links had not been fetched
+in 30+ days, and 695 such links existed across 13 states.
+**Cause:** stale links were only re-fetched in a state's full pass, 50 at a time in Texas, while the
+hourly backlog fetch took only newly found links. About 300 of the stale Texas rows have no fee link
+at all; their old crawl date still counts toward the freshness median.
+**Fix:** this PR: the hourly backlog fetch (free) also re-fetches links last fetched over 30 days ago,
+and a state with such links counts as having a backlog.
+**Lesson:** a freshness check that reads `last_crawl_at` needs a schedule that actually refreshes it;
+check crawl-age spread per state, not only the national median.
+
 ## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
 **What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
 and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the
@@ -56,10 +69,18 @@ history already held `20270108000000_branch_deposits_market_indexes`, which is o
 `claude/hamilton-improvements-69gnln` branch (PR 93) but not on `main`.
 **Cause:** a migration was recorded on prod from a branch before it merged, so `main`'s new
 files numbered below it are "older than the last applied migration" and the deploy does not run them.
-**Fix:** renumbered both files to `20270108000001` and `20270108000002` (this PR). Neither has run
-anywhere, so nothing is applied twice.
-**Lesson:** number a new migration above both the highest file on `main` and the highest version
-in prod's `supabase_migrations.schema_migrations`; check prod, not just the folder.
+**Fix:** renumbered both files to `20270108000001` and `20270108000002` (PR 186). That was not
+enough: after PR 186 merged (02:05 UTC) prod still had neither change, and Supabase's `main`
+branch shows status `MIGRATIONS_FAILED`, last updated 2026-10-05 20:48 UTC (Supabase
+`list_branches`). The GitHub deploy is not applying merged migrations at all. Meanwhile PR 173's
+NCUA writer failed on prod at 02:07 UTC with `column "nsf_revenue" ... does not exist` (Postgres
+log). **Real cause:** prod's history (74 versions) lists `20270108000000`, but `main` had no file for it
+(it lives on the PR 93 branch). The Supabase deploy stops when prod lists a version the repo lacks,
+so no deploy has succeeded since the integration was turned on. Adding that already-applied file to
+`main` (PR 189) lets the deploy run the two new ones.
+**Lesson:** every version in prod's `supabase_migrations.schema_migrations` needs its file on
+`main`, and a new migration is numbered above both. After merging a migration, confirm on prod that
+it ran before merging code that depends on it; ship the column before the code that writes it.
 
 ## 2026-10-06: New call-report fields need a re-pull; credit unions split overdraft and NSF
 **What happened:** Hamilton needs per-fee income for overdraft and NSF. Banks file one combined
@@ -460,3 +481,111 @@ name (ignoring case) and same amount gave extra live rows of 95 counter check, 5
 so the published numbers were not affected.
 **Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
 name and price into one line marked "listed N times". Live rows are unchanged.
+
+## 2026-10-06: Texas live fees were never source-checked
+**What happened:** a fresh random sample of 150 live Texas fees (03:20 UTC Oct 6) found 136 that
+match the bank's own schedule (90.7%), 8 wrong and 6 with no source document at all. Texas had 107
+live fees with no source document, all old imported rows.
+**Cause:** the source check that takes down untraceable fees ran only in publish steps that had a
+state or an institution. Most publish steps have neither, and the Texas lane ran one with a state
+three times since the check shipped, so 119 of 183 Texas institutions with live fees (499 of 2,662
+nationally, holding 7,888 live fees) had never been checked.
+**Fix:** same PR: every publish step source-checks a batch of 40 institutions, any state's when the
+step has none, institutions never checked first. A read-only dry run of the check over the 7,797
+never-checked live fees (495 institutions, all states) first predicted 709 takedowns; spot checks
+found reader misses, fixed in the same PR (dot leaders before a bare amount, a "$10 minimum" before
+the real price, a range inside a name's note, a heading over rows that carry their own names, box
+sizes like "5 x 10", and price-first lists). After the fixes 557 would come down at 182
+institutions: 195 imported fees with no source document, 15 with no amount, 245 whose amount is not
+the price on the matching row, 56 whose name is not in the schedule, 46 whose amount is a limit.
+**Lesson:** dry-run a takedown rule over the rows it has never touched before turning it on.
+
+## 2026-10-06: Generated reports waited behind the whole pipeline queue
+**What happened:** National Index and Monthly Pulse runs started from /admin/hamilton/reports at
+03:03 UTC Oct 6 sat "pending" with no step started.
+**Cause:** the agent tick takes queued runs oldest first. The state backlog adds two lane runs every
+five minutes and finishes about two, so about 20 lane runs (roughly 50 minutes of work) were always
+queued ahead of any new report run. Read-only check at 03:08 UTC: 17 lane runs queued ahead of the two
+report runs.
+**Fix:** same PR: the tick takes queued report runs before pipeline runs; the rest keeps its order.
+
+## 2026-10-06: The National report carried fixed claims and advice, and misstated fee income
+**What happened:** the Q4 2026 National report (run 1309) was titled "The Death of Fee-Based
+Differentiation", showed "5 Truths", "SO WHAT" boxes and a "What Winning Institutions Do Next"
+page, showed service charges as "$0.0B", and said 2,075 institutions.
+**Cause:** the title, the truths' wording, every box and the playbook were fixed text in
+`templates/national-quarterly.ts`, and the section prompts told Hamilton the conclusion (for
+example "the data confirms fee revenue is dominated by NSF/overdraft", which call reports cannot
+show). Call-report income is in thousands of dollars but was divided as dollars. NCUA 5300 fee
+income is year to date, and `getRevenueTrend` summed it as quarterly: Q2 2026 read $14.49B and a
+64% bank share; per quarter it is $11.97B and 78% (read-only check, 03:40 UTC). The institution
+count was the largest single category's count, not the site's count (2,669).
+**Fix:** same PR: headings and cards state payload figures only; no fixed claims, advice or
+playbook; prompts ask for what the data shows and never for advice (Hamilton voice 3.3.0);
+NCUA income converted to quarters; thousands formatted correctly; the count comes from
+`getPublicStatsSummary`.
+
+## 2026-10-06: Recorded fee changes are mostly not price changes
+**What happened:** of 9 increases and decreases in `fee_change_records` in the last 30 days, 7
+were not changes: a page that lists two prices for one fee (Canyon View FCU returned deposit $3
+and $10, First National Bank of Mount Dora monthly fee $5 and $32, Morgantown notary $5 and $10)
+or two different fees in one category (True North "Express Checking Plus" $5 against "True
+Options" $10). Only New Hampshire FCU's two changes hold up (Oct 2024 schedule to Aug 2026).
+**Cause:** the publisher records a change when a newer document carries the fee at a new amount,
+even when that document also states the old amount.
+**Fix:** the Monthly Pulse now reports a change only when the old and new rows share a fee name,
+the earlier schedule states the old price, and the newest schedule states the new price but not
+the old one (`checkFeeAgainstSource`). The publisher still records the extra rows; fixing it there
+is still open.
+
+## 2026-10-06: The shared source check misreads one-line dotted-leader schedules
+**What happened:** on Commonwealth FCU's schedule, which is stored as one long line ("Greater
+than $100.00 ..... $10.00 Returned Deposited Item ..... $32.00"), `checkFeeAgainstSource` says
+"Returned Deposited Item" is $10 and that $32 is "amount_not_the_fee".
+**Cause:** in dotted-leader layouts the price follows the name, but the check took the amount just
+before the name. Not fixed yet; it affects any schedule stored without line breaks.
+
+## 2026-10-06: A fee listed at two prices on one schedule was recorded as a price change
+**What happened:** 9 fee-price changes were recorded since Oct 1 (read-only check, 04:00 UTC Oct 6).
+Four came from schedules that list the same fee name at both prices (two products or two tiers):
+Morgantown's notary fee $5 to $10, Mount Dora's monthly fee $5 to $32, Canyon View's returned
+deposit $3 to $10 and Commonwealth's overdraft $4 to $32. Two more (True North, First Community)
+were recorded before publish required the same fee name. Commonwealth's returned deposited item $10
+to $32 comes from two documents with one price each and may be real. The two New Hampshire FCU
+changes are real.
+**Cause:** Hamilton's publish replaced a live fee with a same-named line from a newer document and
+recorded the difference as a change, without asking whether either schedule lists both prices.
+Five live fees were closed this way; at Mount Dora the $5 monthly fee is no longer live.
+**Fix:** same PR: before replacing a live fee, publish checks both documents' extracted lines. If the
+newer one also lists the old price under that name, or the older one lists the new price, the new
+line is published as an additional line and no change is recorded. Applies to every state. Repairing
+the five closed rows and the false change records is SQL for James (sql-to-run issue).
+
+## 2026-10-06: Darwin's category guard let other banks' customers' ATM fees and gift card extras through
+**What happened:** the Texas accuracy sample (136 of 150 correct) found 8 fees in the wrong category.
+A read-only check of all live rows in those categories found 61 the same way: 34 non-network ATM
+fees that are really the surcharge a credit union charges non-members at its own ATMs or its own and
+in-network ATMs, 12 gift card purchases that are reload, inactivity or unrelated fees, 5 card
+replacements that are gift card replacements, 4 monthly fees that are per-transaction charges or
+earnings-credit notes, and 6 card disputes that are deposited-item or loan chargebacks.
+**Fix:** same PR: category guard v8 adds those exclusions and guards gift card purchase and card
+dispute. Darwin applies it to new rows; James clicks /admin/atlas/details > Misfiled fees > Dry run,
+then Roll back, after the deploy to take the 61 live rows down.
+
+## 2026-10-06: Hamilton's workspace showed one peer group and none of the national data
+**What happened:** James saw "very little national data like NCUA reports, filings". The workspace
+engine's `getFeeResearch` returned only the narrowest peer group for a fee, with
+`revenueLine: null`, no national, Fed district or state view, none of the bank's own call report
+income and no rules. The Briefing had no industry income and no regulator items.
+**Fix:** each fee now carries four market layers (national, Fed district, state, charter and size)
+with percentiles where at least 5 institutions publish it; the bank's own service charge income by
+quarter (NCUA year-to-date split into quarters); the filed overdraft and NSF income line when one
+exists; the notice and disclosure rules that apply; and fee-related regulator releases. The
+Briefing adds national service charge income and a rule_change item for each fee-related release.
+**Still empty, honestly:** no institution has overdraft or NSF income stored yet (credit union
+lines land with the NCUA re-pull; bank RIAD H032 isn't loaded). The regulator feed
+(`reg_articles`, FDIC/Fed/OCC/CFPB press releases since 2025-01-28) has no release in the last
+year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the standing rules show.
+**Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
+same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
+`data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.

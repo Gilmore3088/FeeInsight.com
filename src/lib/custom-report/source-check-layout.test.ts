@@ -40,4 +40,23 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(paragraph, "Stop Payment (Valid for six months)", 3, ".").ok).toBe(false);
     expect(checkFeeAgainstSource("$1.95 each thereafter) | $1.95 | NSF/Overdraft Fee | $32.00", "NSF/Overdraft Fee", 32, ".").ok).toBe(true);
   });
+  it("reads layouts the live dry run of Oct 6 showed it missing", () => {
+    // Dot leaders before a bare amount.
+    expect(checkFeeAgainstSource("Courtesy Pay .......................30.00", "Courtesy Pay", 30, ".").ok).toBe(true);
+    // A minimum charge before the hourly price.
+    expect(checkFeeAgainstSource("Account Research/Balancing | $10.00 minimum / $25.00 per hour", "Account Research/Balancing", 25, ".").ok).toBe(true);
+    // A range in the name is not the price.
+    expect(checkFeeAgainstSource("VISA Gift Cards (load $10-$1000) | $4.00 each", "VISA Gift Cards", 4, ".").ok).toBe(true);
+    // A heading over sub-rows that carry their own names and prices.
+    const wires = "Wire Transfer\nIncoming | $10.00\nOutgoing | $30.00";
+    expect(checkFeeAgainstSource(wires, "Wire Transfer: Outgoing", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(wires, "Wire Transfer: Outgoing", 10, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Stop Payment Fee:\nPer Item | $25.00", "Stop Payment Fee: Per Item", 25, ".").ok).toBe(true);
+    // Box sizes are matched whole, and a price-first list names each box after its price.
+    expect(checkFeeAgainstSource("5 x 10 | $60.00\n15 x 10 | $90.00", "5 x 10", 60, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("5 x 10 | $60.00\n15 x 10 | $90.00", "5 x 10", 90, ".").ok).toBe(false);
+    const prices = "$25 (3 X 5), $35 (3 X 10), $55 (5 X 10), $80 (10 X 10)";
+    expect(checkFeeAgainstSource(prices, "(5 X 10)", 55, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(prices, "(5 X 10)", 80, ".").ok).toBe(false);
+  });
 });

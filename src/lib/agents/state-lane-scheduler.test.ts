@@ -151,6 +151,16 @@ describe("state lane scheduler", () => {
     expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
   });
 
+  it("counts fee links last fetched over a month ago as backlog, so they are re-fetched hourly", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("TX");
+
+    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    expect(backlogQuery).toContain("inst.last_crawl_at < NOW() - make_interval(days =>");
+    expect(sqlMock.mock.calls[0]).toContain(30);
+  });
+
   it("counts raw rows Darwin has not decided as backlog", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
