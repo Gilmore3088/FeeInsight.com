@@ -33,6 +33,15 @@ Knox owns conservative raw fee extraction.
   recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
+## Rule-change gate
+
+`answer-key-gate.test.ts` scores the free team plus Darwin's rule checks (the set the rules
+re-check keeps live) against 43 hand-checked Texas schedules (`__fixtures__/texas-answer-keys.json.gz`,
+26 used while writing rules, 17 held out). CI fails a change that loses a right fee or adds a
+wrong read. When a change really improves Knox, raise the floors in the same PR; lower one only
+with the reason in the PR. Baseline at v12: 436 right of 454 reads (96.0%), 436 of 772 key fees
+found (56.5%); held out: 41 of 47 (87.2%), 41 of 99 found.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

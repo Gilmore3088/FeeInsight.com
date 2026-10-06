@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**One shared learning store for every agent: `pipeline_feedback`.** Agreed by the Knox, Magellan
+and Darwin threads at 05:50 UTC, following James's "knowledge flow through to other agents, to and
+from" (05:41 UTC). One row is one judgement about one agent's output (a takedown, a Darwin
+category reject, an answer-key fee, a link's live-fee count), upserted on `dedupe_key`. No agent
+keeps its own copy. Fields and keys: `src/lib/agents/learning/AGENTS.md`.
+
 **Darwin is rebuilt as a full verification layer, with Claude as the last resort.** James, 05:29
 UTC ("i want to build the entire Darwin layer. But the API call should be last result"). Free
 methods run first: reading the schedule as rows, a learned category model, learned price ranges,

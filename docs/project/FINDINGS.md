@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A fee the rules re-check took down could never come back under the same name
+**What happened:** the Hamilton audit saw real fees taken down as `rules_recheck_unreproduced`
+(4,122 on prod at 06:00 UTC, read-only query) with no way back. Only 443 of them are live again, all
+under a new name.
+**Cause:** the re-check only rolls back. It asks Knox to re-extract a text with missing fees, but
+Knox's raw-row dedupe index (`raw_fee_observations_knox_agentic_dedup_idx`: document, lower(name),
+price) refuses the same raw row, so a fee re-read under the same name inserts nothing. A document
+whose live fees were all taken down was never re-checked again either.
+**Fix:** this PR: re-check version 2 restores such a fee (same text, name, category and price, still
+traces to the text, no live copy). A real-code dry run over 60 sampled documents (145 taken-down
+fees) found 1 candidate, already live elsewhere, so today it restores close to nothing; it matters
+after the next rules fix.
+**Lesson:** any step that takes data down needs its way back in the same change, checked against
+the dedupe rules of the stage that would otherwise re-create it.
+
 ## 2026-10-06: Knox reads the same web page several times, and checks nothing he writes
 **What happened:** the Knox audit (read-only prod queries, 05:00-05:30 UTC) found 632 fee pages stored
 as 2 to 10 separate `source_documents`. Knox extracts every copy: 14,895 extra raw rows, of which Darwin

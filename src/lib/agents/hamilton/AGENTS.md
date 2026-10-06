@@ -179,6 +179,15 @@ newest stays. The attempt's `missing_fees` counts fees today's rules read from t
 document's latest text that are not live; Knox extracts such a text again, so a rules
 fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only removes.
 
+The re-check also undoes its own takedowns (strategy version 2). A fee it took down comes
+back (verified row too) when today's rules read it again from its text under the same name,
+category and price, it still traces to that text (`checkFeeAgainstSource`), and no live fee
+of the institution has that category and price. Knox cannot bring that fee back itself:
+re-extracting would insert the same raw row, which the raw-row dedupe index (document, name,
+price) refuses. A fee read again under a new name returns the normal way, through Darwin.
+Documents whose live fees were all taken down are re-checked too. Step detail:
+`rules_recheck_restores`.
+
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
