@@ -11,6 +11,24 @@ import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
  */
 const SAME_SCALE_SOURCES = "inf.source IN ('fdic', 'ncua')";
 
+/**
+ * NCUA 5300 income lines are year-to-date; FDIC rows are already quarterly. Single-quarter
+ * reads join each NCUA row to the same credit union's prior quarter in the same year
+ * (`prev`), and QUARTER_SC is that quarter's own service-charge income: the YTD minus the
+ * prior YTD (Q1 stands alone), or NULL when the prior quarter is missing. Reading the raw
+ * YTD as a quarter doubled Q2 credit-union income (Q2 2026: $5.16B YTD vs $2.64B in the quarter).
+ */
+const PRIOR_QUARTER_JOIN = `LEFT JOIN institution_financial_records prev
+       ON inf.source = 'ncua'
+      AND prev.institution_id = inf.institution_id
+      AND prev.source = inf.source
+      AND EXTRACT(QUARTER FROM inf.report_date::date) > 1
+      AND prev.report_date = TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date)::date - 1, 'YYYY-MM-DD')`;
+const QUARTER_SC = `(CASE
+       WHEN inf.source <> 'ncua' OR EXTRACT(QUARTER FROM inf.report_date::date) = 1 THEN inf.service_charge_income
+       WHEN prev.service_charge_income IS NOT NULL THEN inf.service_charge_income - prev.service_charge_income
+     END)`;
+
 export interface RevenueSnapshot {
   quarter: string;
   total_service_charges: number;
@@ -207,14 +225,15 @@ export async function getTopRevenueInstitutions(
          ct.institution_name,
          COALESCE(ct.charter_type, 'unknown') AS charter_type,
          inf.report_date::text                                   AS report_date,
-         inf.service_charge_income,
+         ${QUARTER_SC}                                           AS service_charge_income,
          inf.total_assets
        FROM institution_financial_records inf
        JOIN institution_sources ct ON ct.id = inf.institution_id
+       ${PRIOR_QUARTER_JOIN}
        WHERE inf.report_date = $1
-         AND inf.service_charge_income > 0
+         AND ${QUARTER_SC} > 0
          AND ${SAME_SCALE_SOURCES}
-       ORDER BY inf.service_charge_income DESC
+       ORDER BY ${QUARTER_SC} DESC
        LIMIT $2`,
       [latestDate, limit]
     ) as {
@@ -262,15 +281,16 @@ export async function getInstitutionRevenueTrend(
          SELECT
            TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
            inf.report_date::date AS report_date,
-           inf.service_charge_income,
+           ${QUARTER_SC} AS service_charge_income,
            inf.fee_income_ratio,
            ROW_NUMBER() OVER (
              PARTITION BY DATE_TRUNC('quarter', inf.report_date::date)
              ORDER BY inf.report_date::date DESC, inf.id DESC
            ) AS quarter_rank
          FROM institution_financial_records inf
+         ${PRIOR_QUARTER_JOIN}
          WHERE inf.institution_id = $1
-           AND inf.service_charge_income IS NOT NULL
+           AND ${QUARTER_SC} IS NOT NULL
            AND ${SAME_SCALE_SOURCES}
        ) ranked
        WHERE quarter_rank = 1
@@ -319,12 +339,13 @@ export async function getInstitutionPeerRanking(
   const sql = getSql();
 
   const instRows = await sql.unsafe(
-    `SELECT ct.institution_name, inf.total_assets, inf.service_charge_income,
+    `SELECT ct.institution_name, inf.total_assets, ${QUARTER_SC} AS service_charge_income,
             inf.fee_income_ratio, inf.report_date
      FROM institution_financial_records inf
      JOIN institution_sources ct ON ct.id = inf.institution_id
+     ${PRIOR_QUARTER_JOIN}
      WHERE inf.institution_id = $1
-       AND inf.service_charge_income IS NOT NULL
+       AND ${QUARTER_SC} IS NOT NULL
        AND inf.total_assets IS NOT NULL
        AND ${SAME_SCALE_SOURCES}
      ORDER BY inf.report_date DESC
@@ -354,12 +375,13 @@ export async function getInstitutionPeerRanking(
   const statsRows = await sql.unsafe(
     `SELECT
        COUNT(DISTINCT inf.institution_id)::int AS peer_count,
-       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.service_charge_income) AS median_sc,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${QUARTER_SC}) AS median_sc,
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.fee_income_ratio) AS median_fee_ratio
      FROM institution_financial_records inf
+     ${PRIOR_QUARTER_JOIN}
      WHERE inf.report_date = $1
        AND inf.total_assets >= $2 AND inf.total_assets < $3
-       AND inf.service_charge_income > 0
+       AND ${QUARTER_SC} > 0
        AND ${SAME_SCALE_SOURCES}`,
     [inst.report_date, tierMin, tierMax]
   ) as { peer_count: string; median_sc: string; median_fee_ratio: string | null }[];
@@ -367,9 +389,10 @@ export async function getInstitutionPeerRanking(
   const rankRows = await sql.unsafe(
     `SELECT COUNT(*)::int AS better_count
      FROM institution_financial_records inf
+     ${PRIOR_QUARTER_JOIN}
      WHERE inf.report_date = $1
        AND inf.total_assets >= $2 AND inf.total_assets < $3
-       AND inf.service_charge_income > $4
+       AND ${QUARTER_SC} > $4
        AND ${SAME_SCALE_SOURCES}`,
     [inst.report_date, tierMin, tierMax, scIncome]
   ) as { better_count: string }[];
@@ -424,14 +447,15 @@ export async function getDistrictFeeRevenue(
     `SELECT
        ct.fed_district,
        COUNT(DISTINCT inf.institution_id)::int  AS institution_count,
-       COALESCE(SUM(inf.service_charge_income), 0)::bigint AS total_sc_income,
-       COALESCE(AVG(inf.service_charge_income), 0)::bigint AS avg_sc_income,
+       COALESCE(SUM(${QUARTER_SC}), 0)::bigint AS total_sc_income,
+       COALESCE(AVG(${QUARTER_SC}), 0)::bigint AS avg_sc_income,
        COALESCE(SUM(inf.other_noninterest_income), 0)::bigint AS total_other_noninterest
      FROM institution_financial_records inf
      JOIN institution_sources ct ON ct.id = inf.institution_id
+     ${PRIOR_QUARTER_JOIN}
      WHERE inf.report_date = $1
        AND ct.fed_district = $2
-       AND inf.service_charge_income > 0
+       AND ${QUARTER_SC} > 0
        AND ${SAME_SCALE_SOURCES}
      GROUP BY ct.fed_district`,
     [date, district]
@@ -487,11 +511,12 @@ export async function getRevenueByTier(
          ELSE                                               'mega'
        END AS tier,
        COUNT(DISTINCT inf.institution_id)::int        AS institution_count,
-       SUM(inf.service_charge_income)::bigint          AS total_sc_income,
-       AVG(inf.service_charge_income)::bigint          AS avg_sc_income
+       SUM(${QUARTER_SC})::bigint                      AS total_sc_income,
+       AVG(${QUARTER_SC})::bigint                      AS avg_sc_income
      FROM institution_financial_records inf
+     ${PRIOR_QUARTER_JOIN}
      WHERE inf.report_date = $1
-       AND inf.service_charge_income > 0
+       AND ${QUARTER_SC} > 0
        AND inf.total_assets > 0
        AND ${SAME_SCALE_SOURCES}
      GROUP BY 1
