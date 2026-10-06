@@ -1225,3 +1225,24 @@ showed the buyer "This market is being refreshed" with no numbers (value funnel 
 starts; `loadMarketReport` (`src/lib/custom-report/report-data.ts`) serves that saved copy, dated,
 when the live market no longer passes.
 **Lesson:** what a customer paid for has to be stored, not recomputed.
+
+## 2026-10-06: Fees a bank removed from its page stayed live
+**What happened:** the Hamilton publish audit found live fees read from an older copy of a page when
+Magellan had since fetched a newer, different copy. The source check reads each document's own text,
+so a fee that disappeared from the newer copy still traced to the older copy and stayed live. Read-only
+count at 13:25 UTC: 12,924 live fees in 1,103 older documents at 965 banks have a newer copy Rosetta
+read.
+**Cause:** each changed fetch is a new `source_documents` row, and nothing compared a live fee against
+the newest copy of its page (AGENTS.md listed this as not built).
+**Fix:** same PR: `hamilton/newer-copy-retire.ts` checks a batch of older documents per publish step
+against their newest copy and retires a fee only when its line is gone, with a restore path. A first
+version that trusted the shared reader alone would have retired 45 fees; every one sampled was still on
+the page, flattened differently (rows glued together, the price column lost, a stray quote mark). The
+check now also looks for the fee's words anywhere in the newer copy. Dry run over all 1,103 documents:
+12,652 fees still stated, 265 still named but not read at their price (kept), 1 retired ("Escheating to
+State $2", replaced on the page by a $5 dormant letter fee), and 169 newer copies not recognizably the
+same schedule (a navigation page among them), which retire nothing.
+**Lesson:** a newer copy of a page is often a worse rendering of the same schedule. Comparing two
+copies with a line reader measures the renderer, not the bank; a line is gone only when its words are.
+Open for Knox and Magellan: about half of these newer copies have no Knox read yet (446 of 969 had
+any raw rows at 13:22 UTC), so price changes in them do not publish.

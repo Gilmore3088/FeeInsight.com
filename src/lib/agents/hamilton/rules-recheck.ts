@@ -390,7 +390,6 @@ export async function rollBackUnreproducedFees(
             restored: result.restores.filter((fee) => fee.sourceDocumentId === document.sourceDocumentId).length,
             [MISSING_FEES_DETAIL]: document.missing ?? 0,
           },
-          foldIntoPlaybook: false,
         });
       }
       await scope`
