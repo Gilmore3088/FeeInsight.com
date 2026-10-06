@@ -11,6 +11,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { NOT_CONSUMER_FEE_PAGE_REASON, companionStreamsReady } from "@/lib/agents/companion-streams";
 
 import { accountNameFor, isGenericAccountName, isNonDepositLink } from "./second-document";
+import { markCurrentCopy } from "./current-copy";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -271,6 +272,8 @@ async function fetchOne(
   if (outcome === "unchanged" && sourceDocumentId != null) {
     await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = ${sourceDocumentId}`;
   }
+  // The copy this fetch stored or confirmed is the page's current one.
+  await markCurrentCopy(db, sourceDocumentId);
 
   await db`
     UPDATE institution_additional_sources

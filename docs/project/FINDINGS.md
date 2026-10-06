@@ -45,6 +45,19 @@ finders first. Launches go from 2 to 3 per tick.
 **Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
 ("Magellan uses the hints") needs a caller and a test.
 
+## 2026-10-06: A page kept every copy Magellan ever stored, with no "current" mark
+**What happened:** 18,374 `source_documents` rows cover 8,233 pages (institution + URL),
+read-only prod query 13:45 UTC Oct 6. Of the older rows, 6,936 are failed fetches and 3,061 are
+older successful copies at 1,712 banks, and 12,835 live catalog fees cite one of them.
+**Cause:** fetch inserts a new row when a page's content changes and nothing marked which copy
+is current, so each reader worked out "newest" its own way.
+**Fix:** this PR: `source_documents.superseded_by_id` (migration `20270110000004`) marks older
+successful copies of a page; Magellan's fetch keeps it current (`magellan/current-copy.ts`).
+Rows are only marked, never deleted, so every fee keeps its source link. Knox re-reads the
+current copy and supersedes the old fees.
+**Lesson:** when an agent stores history, it also stores which row is current, in one field
+every reader shares.
+
 ## 2026-10-06: Institutions with no website were never searched
 **What happened:** 585 active institutions have no `website_url` (510 credit unions, 75 banks; 45
 in TX, 27 in CA, prod read-only query 13:30 UTC). Every finder and the paid pass start from the
@@ -1086,6 +1099,51 @@ fee changes; a page that still is not a fee page is rejected again the normal wa
 **Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
 under the new one; a ban written by a judgment the code no longer makes outlives its reason.
 
+## 2026-10-06: Knox sent Darwin fees the shared accuracy check can't trace
+**What happened:** the Knox audit found Knox never checked its own reads against the line they
+came from; only the paid pass did. Darwin rejects such reads as `not_in_source` (PR 200), so
+they reached the raw tier and died there, and a fee read twice could keep the untraceable name.
+**Fix:** same PR (Knox v17): the free team runs `checkFeeAgainstSource` on every find and $0 row.
+Untraceable ones are held for review as `untraced`, and a traceable reading of the same fee wins.
+On the answer keys, counted the way Darwin publishes, v17 matches or beats main's v16 (Texas 444
+right / 15 wrong both; seven states 660 / 48 against 659 / 48). Dry run on 117 sampled live documents:
+the rules re-check would keep 1,413 of 1,437 live fees against 1,416 today. The 3 that come down
+are a $5 business counter-check price read as consumer (document 12657) and two safe deposit
+fees at document 10091 that are live under shifted names ("Drill box fee" at $25, a
+disclaimer at $200); Hamilton's source check applies the same rule and would pull them too.
+**Then fixed in the shared check** (`src/lib/custom-report/source-check.ts`, same PR): it now reads
+- a dot-leader name with the price that opens the next line, not the price in front of it;
+- a price past a note line ("(up to $1,000)", "If checks are not on order");
+- FREE/NONE on a line that also states other prices, as that segment's price. It is not read
+  as the price when it is an allowance ("(2 FREE PER MONTH) | $1.00"), one column of a table
+  whose next column prices the fee ("NSF | NONE | $14.00"), or the free word of a later name;
+- a cap stated after the row's own price ("$35 per item, maximum of $175 per day") for a fee
+  named as the cap.
+
+Answer keys before and after: Texas 444 to 446 right, held out 43 to 43, seven states 660 to 665,
+wrong unchanged (15, 6, 48). Dry run, read-only:
+- The rules re-check keeps 1,415 of 1,437 sampled live fees; it kept 1,413 before this fix and
+  keeps 1,416 on main.
+- Of 704 live fees with names, 3 more trace and 0 stop tracing.
+- Of 70 fees the source check took down, 4 trace again, all FREE rows on flattened lines.
+- Of 24 fees Darwin rejected as `not_in_source`, 1 traces.
+
+Most takedowns and rejections stay down because the price really isn't on the row, which is
+correct.
+**Lesson:** an extractor should apply the publish gate's own check before it hands a fee on,
+so a disagreement shows up as a held row, not a silent rejection two agents later.
+
+## 2026-10-06: Published fee names carried table separators and fragments
+**What happened:** Knox named a fee with the whole text of its cell run, so live names read
+"Copy of Paid Check | Per Item", "/Item Cashier's Check", "b. Non-Sufficient Funds (NSF)" or
+ended in dot leaders. In a read-only sample of 117 live documents, 136 candidate names were untidy.
+**Fix:** `tidyFeeName` (`src/lib/agents/knox/layout.ts`) cleans every free read's name, down to 3
+untidy in the same sample with the gates unchanged. Hamilton's `decidePriorFee` and the rules
+re-check restore compare tidied names, so a price change on a line live under its old untidy
+name supersedes it instead of publishing beside it.
+**Lesson:** when a normalizer changes what an agent writes, every place that matches new rows
+to old ones must apply it too, or the change makes duplicates.
+
 ## 2026-10-06: Knox's held lines never got the newer rules
 **What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
 Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an
@@ -1101,7 +1159,6 @@ on all 11,783 current-text held lines: 1,529 get a category and go to Darwin (to
 early closure 168, monthly maintenance 143, NSF 113, copies 106); nothing live is taken down.
 **Lesson:** a dedupe key that ignores a row's state lets the first, weakest answer win forever;
 when a reader improves, re-read what it set aside, not just what it never saw.
-
 ## 2026-10-06: Rosetta never heard whether its texts' fees held up
 **What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
 stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:

@@ -22,6 +22,9 @@ export interface ReportRequestNotificationInput {
   src: string | null;
   /** Whether we can build this institution's report from live data; James's email only. */
   quoteCheck?: string | null;
+  /** Optional, from the form: the requester's state and the competitors they want compared. */
+  stateCode?: string | null;
+  competitors?: string | null;
   /** Set when the data check held the request: the requester hears so at once. */
   held?: { district: number | null };
 }
@@ -86,6 +89,8 @@ export async function sendReportRequestNotifications(
       detailLine("Name", input.name),
       detailLine("Email", input.email),
       detailLine("Role", input.role),
+      detailLine("State", input.stateCode),
+      detailLine("Competitors named", input.competitors),
       detailLine("Source", input.src),
     ].filter((line): line is string => line !== null),
     "",
