@@ -29,6 +29,8 @@ import {
   fmtFiledThousands,
   fmtMoney,
 } from "@/components/hamilton/memo/memo";
+import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 
 export const metadata: Metadata = { title: "My fees" };
 
@@ -234,6 +236,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   });
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
   const localBanks = ws.local?.competitors ?? [];
+  const hamiltonRead = research ? buildFeeAnswer(research) : null;
 
   return (
     <MemoPage>
@@ -273,6 +276,22 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             active: f.category === ws.fee,
           }))}
         />
+      ) : null}
+
+      {hamiltonRead ? (
+        <MemoSection title="Hamilton's read" note="Built from the figures below; every line names its source.">
+          <AnswerView
+            answer={hamiltonRead}
+            {...(hamiltonRead.question?.fieldKey.endsWith(".annual_items")
+              ? {
+                  questionAction: "/pro/simulate",
+                  questionName: "paid",
+                  questionWhy: "Your answer opens Try a price with yearly fee income worked out from your own volume.",
+                  questionKeep: { fee: ws.fee, layer: layerKey, instId },
+                }
+              : {})}
+          />
+        </MemoSection>
       ) : null}
 
       <MemoSection title="The market, layer by layer" note="One institution, one value each. Overdraft counts at a bank's highest tier.">

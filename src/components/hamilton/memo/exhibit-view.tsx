@@ -4,64 +4,11 @@
  * The engine returns data only (`HamiltonAnswer`, `Exhibit`); every chart decision lives here.
  */
 import type { ReactNode } from "react";
-import { Callout, QuestionCard, SERIF, fmtMoney, labelRows } from "./memo";
+import { Callout, QuestionCard, SERIF, fmtMoney } from "./memo";
+import type { Exhibit, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 
-// Mirrors engine 1.4.0 (src/lib/hamilton/workspace/types.ts, PR 238). Import from there once it merges.
-interface SourceRef {
-  label: string;
-  url?: string | null;
-  asOf?: string | null;
-}
-interface Fact {
-  text: string;
-  source: SourceRef;
-  sampleSize?: number;
-}
-interface ExhibitMarker {
-  label: string;
-  scope: string;
-  value: number;
-  n: number;
-}
-export type ExhibitSpec =
-  | {
-      kind: "fee_position";
-      title: string;
-      unit: "dollars";
-      own: number | null;
-      ownLabel: string;
-      band: { label: string; p25: number; median: number; p75: number; n: number };
-      markers: ExhibitMarker[];
-      sources: SourceRef[];
-      note?: string;
-    }
-  | {
-      kind: "trend";
-      title: string;
-      unit: "dollars" | "percent";
-      series: { label: string; points: { date: string; value: number }[] }[];
-      sources: SourceRef[];
-      note?: string;
-    }
-  | {
-      kind: "competitor_range";
-      title: string;
-      unit: "dollars";
-      own: number | null;
-      ownLabel: string;
-      items: { name: string; amount: number; url: string | null }[];
-      sources: SourceRef[];
-      note?: string;
-    };
-export interface AnswerSpec {
-  feeCategory: string;
-  headline: string;
-  claims: Fact[];
-  drivers: Fact[];
-  exhibit: ExhibitSpec | null;
-  question: { prompt: string; inputKind: "number" | "percent" | "file" | "text"; fieldKey: string } | null;
-  evidenceLevel: "market" | "working_estimate" | "institution";
-}
+export type ExhibitSpec = Exhibit;
+export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "claims" | "drivers" | "exhibit" | "question" | "evidenceLevel">;
 
 export const EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string> = {
   market: "Market data only",
@@ -128,21 +75,43 @@ export function axisFor(values: readonly number[]): { lo: number; hi: number; at
   return { lo, hi, at: (v) => ((v - lo) / (hi - lo || 1)) * 100 };
 }
 
+/**
+ * Places labels centred on their marks, kept inside the track, in as few rows as fit without
+ * overlap. Widths are in % of the track (an estimate from the label's length).
+ */
+export function placeLabels(items: readonly { x: number; width: number }[]): { left: number; row: number }[] {
+  const rowEnds: number[] = [];
+  return items.map(({ x, width }) => {
+    const left = Math.min(Math.max(x - width / 2, 0), Math.max(100 - width, 0));
+    let row = rowEnds.findIndex((end) => left >= end + 1.5);
+    if (row === -1) row = rowEnds.length;
+    rowEnds[row] = left + width;
+    return { left, row };
+  });
+}
+
+/** About how wide an 11px label is on a ~900px track, in %. */
+const labelWidth = (text: string) => text.length * 0.58 + 1;
+
 function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> }) {
   const values = [x.band.p25, x.band.p75, x.band.median, ...x.markers.map((m) => m.value), ...(x.own != null ? [x.own] : [])];
   const axis = axisFor(values);
-  const markers = [...x.markers].sort((a, b) => a.value - b.value);
-  const rows = labelRows(markers.map((m) => axis.at(m.value)), 16);
-  const rowCount = Math.max(1, ...rows.map((r) => r + 1));
+  // The band already draws the peer median; markers add the wider markets.
+  const markers = x.markers.filter((m) => m.scope !== "peer").sort((a, b) => a.value - b.value);
+  const markerText = (m: (typeof markers)[number]) => `${m.label} ${fmtMoney(m.value)}`;
+  const placed = placeLabels(markers.map((m) => ({ x: axis.at(m.value), width: labelWidth(markerText(m)) })));
+  const rowCount = Math.max(1, ...placed.map((p) => p.row + 1));
+  const ownText = x.own != null ? `${x.ownLabel} ${fmtMoney(x.own)}` : "";
+  const ownPlaced = x.own != null ? placeLabels([{ x: axis.at(x.own), width: labelWidth(ownText) + 1 }])[0] : null;
   return (
     <div>
-      <div className="relative" style={{ height: `${3.5 + rowCount * 1.6}rem` }}>
-        {x.own != null ? (
+      <div className="relative" style={{ height: `${3.6 + rowCount * 1.5}rem` }}>
+        {ownPlaced ? (
           <span
-            className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
-            style={{ left: `${axis.at(x.own)}%` }}
+            className="absolute top-0 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
+            style={{ left: `${ownPlaced.left}%` }}
           >
-            {x.ownLabel} {fmtMoney(x.own)}
+            {ownText}
           </span>
         ) : null}
         <span className="absolute inset-x-0 top-8 h-2 rounded-full bg-warm-200" />
@@ -154,12 +123,15 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span className="absolute top-6 h-6 w-0.5 -translate-x-1/2 bg-warm-800" style={{ left: `${axis.at(x.band.median)}%` }} title={`${x.band.label} median ${fmtMoney(x.band.median)}`} />
         {markers.map((m, i) => (
           <span key={`${m.scope}-${m.label}`}>
-            <span className="absolute top-[2.4rem] h-3 w-px -translate-x-1/2 bg-warm-600" style={{ left: `${axis.at(m.value)}%` }} />
             <span
-              className="absolute -translate-x-1/2 whitespace-nowrap text-[11px] text-warm-700 [font-variant-numeric:tabular-nums]"
-              style={{ left: `${axis.at(m.value)}%`, top: `${3.3 + rows[i] * 1.6}rem` }}
+              className="absolute top-[2.4rem] w-px -translate-x-1/2 bg-warm-400"
+              style={{ left: `${axis.at(m.value)}%`, height: `${0.85 + placed[i].row * 1.5}rem` }}
+            />
+            <span
+              className="absolute z-10 whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums]"
+              style={{ left: `${placed[i].left}%`, top: `${3.3 + placed[i].row * 1.5}rem` }}
             >
-              {m.label} {fmtMoney(m.value)}
+              {markerText(m)}
             </span>
           </span>
         ))}
@@ -356,11 +328,16 @@ function FactList({ facts }: { facts: readonly Fact[] }) {
 export function AnswerView({
   answer,
   questionAction,
+  questionName,
+  questionWhy = "Hamilton uses your answer in place of a market assumption.",
   questionKeep = {},
 }: {
   answer: AnswerSpec;
   /** Where the question card submits; omit to show the question without a form. */
   questionAction?: string;
+  /** The form field the answer is sent as; the question's memory key by default. */
+  questionName?: string;
+  questionWhy?: string;
   questionKeep?: Record<string, string | null | undefined>;
 }) {
   const q = answer.question;
@@ -381,8 +358,8 @@ export function AnswerView({
         questionAction ? (
           <QuestionCard
             prompt={q.prompt}
-            why="Hamilton keeps your answer with your institution's figures and uses it from then on."
-            name={q.fieldKey}
+            why={questionWhy}
+            name={questionName ?? q.fieldKey}
             inputKind={q.inputKind}
             action={questionAction}
             keep={questionKeep}

@@ -13,7 +13,8 @@ import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { annualItemsQuestion, waiverRateQuestion } from "@/lib/hamilton/workspace/scenario";
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import {
   AuditPanel,
   Callout,
@@ -126,6 +127,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
   });
   // Hamilton asks for one figure at a time: the volume first, then the waiver share.
   const question = current == null ? null : paidItems == null ? { q: annualItemsQuestion(ws.fee), name: "paid" } : waiverRate == null ? { q: waiverRateQuestion(ws.fee), name: "waiver" } : null;
+  // The engine's market exhibit, drawn the same way as on My fees and in Ask.
+  const positionExhibit = ws.research ? buildFeeAnswer(ws.research, { focus: "position" }).exhibit : null;
   const evidenceLabel = (e: "market" | "institution") => (e === "institution" ? "Your figures" : "Market data only");
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
 
@@ -160,7 +163,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
 
       {question ? (
         <QuestionCard
-          prompt={question.q.prompt.replace(getDisplayName(ws.fee), ws.feeName.toLowerCase())}
+          prompt={question.q.prompt}
           why={
             question.name === "paid"
               ? "With it, each price below shows a yearly fee income figure from your own volume instead of a change per 1,000 items."
@@ -322,13 +325,17 @@ export default async function ModelPage({ searchParams }: PageProps) {
         </Callout>
       </MemoSection>
 
-      <Exhibit
-        number={1}
-        title={`${ws.feeName} prices, ${layer.label}`}
-        source={`${layer.scope}. Published fees verified against each institution's own fee schedule; one value per institution.`}
-      >
-        <DistributionBars amounts={layer.amounts} own={current} tested={prices.length === 1 ? prices[0] : null} />
-      </Exhibit>
+      {positionExhibit ? (
+        <ExhibitView exhibit={positionExhibit} />
+      ) : (
+        <Exhibit
+          number={1}
+          title={`${ws.feeName} prices, ${layer.label}`}
+          source={`${layer.scope}. Published fees verified against each institution's own fee schedule; one value per institution.`}
+        >
+          <DistributionBars amounts={layer.amounts} own={current} tested={prices.length === 1 ? prices[0] : null} />
+        </Exhibit>
+      )}
 
       <AuditPanel trail={trail} downloadHref={csvHref} />
 

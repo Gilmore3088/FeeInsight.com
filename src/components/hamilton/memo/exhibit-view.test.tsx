@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AnswerView, ExhibitView, axisFor } from "./exhibit-view";
+import { AnswerView, ExhibitView, axisFor, placeLabels } from "./exhibit-view";
 
 const src = { label: "Bank Fee Index", asOf: "2026-10-01" };
 
@@ -12,6 +12,21 @@ describe("axisFor", () => {
     expect(axisFor([0, 30]).lo).toBe(0);
     expect(a.at(a.lo)).toBe(0);
     expect(a.at(a.hi)).toBe(100);
+  });
+});
+
+describe("placeLabels", () => {
+  it("keeps labels inside the track and stacks only the ones that would overlap", () => {
+    const placed = placeLabels([
+      { x: 2, width: 20 },
+      { x: 10, width: 20 },
+      { x: 60, width: 20 },
+      { x: 99, width: 20 },
+    ]);
+    expect(placed[0]).toEqual({ left: 0, row: 0 });
+    expect(placed[1].row).toBe(1);
+    expect(placed[2].row).toBe(0);
+    expect(placed[3].left).toBe(80);
   });
 });
 
@@ -28,7 +43,7 @@ describe("AnswerView", () => {
       own: 32,
       ownLabel: "You",
       band: { label: "Peer group", p25: 28, median: 31, p75: 35, n: 18 },
-      markers: [{ label: "Texas", scope: "state", value: 30, n: 210 }],
+      markers: [{ label: "Texas", scope: "state" as const, value: 30, n: 210 }],
       sources: [src],
     },
     question: { prompt: "About how many overdraft fees did you charge?", inputKind: "number" as const, fieldKey: "fee.overdraft.annual_items" },
