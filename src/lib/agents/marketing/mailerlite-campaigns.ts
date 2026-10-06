@@ -10,8 +10,15 @@ const API = "https://connect.mailerlite.com/api";
 /** The verified MailerLite sender. Reply-To stays the contact address. */
 export const MARKETING_SENDER = { from: "hello@bankfeeindex.com", fromName: "Fee Insight", replyTo: "hello@bankfeeindex.com" };
 
-export function marketingGroupId(): string | null {
-  return (process.env.MAILERLITE_MARKETING_GROUP_ID || process.env.MAILERLITE_GROUP_ID || "").trim() || null;
+/**
+ * Who gets the monthly emails: MAILERLITE_MARKETING_GROUP_ID when set, else every signup
+ * group (newsletter, report requests, watchers), so no confirmed reader is left out.
+ * Each lead sits in one of those groups, so their counts add up without double counting.
+ */
+export function marketingGroupIds(): string[] {
+  const env = (name: string) => (process.env[name] || "").trim();
+  if (env("MAILERLITE_MARKETING_GROUP_ID")) return [env("MAILERLITE_MARKETING_GROUP_ID")];
+  return [...new Set(["MAILERLITE_GROUP_ID", "MAILERLITE_REPORT_GROUP_ID", "MAILERLITE_WATCHER_GROUP_ID"].map(env).filter(Boolean))];
 }
 
 export function mailerLiteConfigured(): boolean {
@@ -117,7 +124,7 @@ export interface DraftInput {
   subjectA: string;
   subjectB: string;
   html: string;
-  groupId: string;
+  groupIds: string[];
 }
 
 /**
@@ -132,7 +139,7 @@ export async function createAbDraft(input: DraftInput, fetcher?: FetchLike): Pro
       body: JSON.stringify({
         name: input.name,
         type: "ab",
-        groups: [input.groupId],
+        groups: input.groupIds,
         emails: [{
           subject: input.subjectA,
           from_name: MARKETING_SENDER.fromName,
@@ -226,8 +233,78 @@ export async function sendCampaignNow(id: string, fetcher?: FetchLike): Promise<
   await call(`campaigns/${encodeURIComponent(id)}/schedule`, { method: "POST", body: JSON.stringify({ delivery: "instant" }) }, fetcher);
 }
 
-export async function activeSubscriberCount(groupId: string, fetcher?: FetchLike): Promise<number | null> {
+/** Active subscribers across the given groups; null when MailerLite can't be read. */
+export async function activeSubscriberCount(groupIds: string[], fetcher?: FetchLike): Promise<number | null> {
   const body = await call<{ data?: Array<{ id: string; active_count?: number }> }>("groups?limit=100", {}, fetcher).catch(() => null);
-  const group = body?.data?.find((row) => String(row.id) === groupId);
-  return typeof group?.active_count === "number" ? group.active_count : null;
+  if (!body) return null;
+  const counts = groupIds.map((id) => body.data?.find((row) => String(row.id) === id)?.active_count);
+  return counts.every((count) => typeof count === "number") ? counts.reduce<number>((sum, count) => sum + (count ?? 0), 0) : null;
+}
+
+/** A regular (single-subject) draft, for audiences too small for an A/B test. */
+export async function createRegularDraft(
+  input: { name: string; subject: string; html: string; groupId: string },
+  fetcher?: FetchLike,
+): Promise<AgentCampaign> {
+  const body = await call<{ data: RawCampaign }>(
+    "campaigns",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: input.name,
+        type: "regular",
+        groups: [input.groupId],
+        emails: [{
+          subject: input.subject,
+          from_name: MARKETING_SENDER.fromName,
+          from: MARKETING_SENDER.from,
+          reply_to: MARKETING_SENDER.replyTo,
+          content: input.html,
+        }],
+      }),
+    },
+    fetcher,
+  );
+  return toAgentCampaign(body.data);
+}
+
+// ---------------------------------------------------------------- state groups
+
+/** Readers who chose a state sit in that state's group, e.g. "Fee Insight · State · TX". */
+export const STATE_GROUP_PREFIX = "Fee Insight · State · ";
+
+export function stateGroupName(stateCode: string): string {
+  return `${STATE_GROUP_PREFIX}${stateCode}`;
+}
+
+export interface StateGroup {
+  stateCode: string;
+  groupId: string;
+  activeCount: number;
+}
+
+/** Every state group, with its active subscriber count. */
+export async function listStateGroups(fetcher?: FetchLike): Promise<StateGroup[]> {
+  const groups: StateGroup[] = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const body = await call<{ data?: Array<{ id: string; name: string; active_count?: number }>; meta?: { last_page?: number } }>(
+      `groups?limit=100&page=${page}`,
+      {},
+      fetcher,
+    );
+    for (const group of body.data ?? []) {
+      if (!group.name.startsWith(STATE_GROUP_PREFIX)) continue;
+      groups.push({ stateCode: group.name.slice(STATE_GROUP_PREFIX.length), groupId: String(group.id), activeCount: group.active_count ?? 0 });
+    }
+    if (!body.meta?.last_page || page >= body.meta.last_page) break;
+  }
+  return groups;
+}
+
+/** The state's group id, creating the group the first time a reader picks that state. */
+export async function ensureStateGroup(stateCode: string, fetcher?: FetchLike): Promise<string> {
+  const existing = (await listStateGroups(fetcher)).find((group) => group.stateCode === stateCode);
+  if (existing) return existing.groupId;
+  const body = await call<{ data: { id: string } }>("groups", { method: "POST", body: JSON.stringify({ name: stateGroupName(stateCode) }) }, fetcher);
+  return String(body.data.id);
 }

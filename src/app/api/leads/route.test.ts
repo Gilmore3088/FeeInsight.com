@@ -128,6 +128,12 @@ describe("POST /api/leads", () => {
     expect(insert.values).toEqual(["Newsletter signup", "a@b.co", null, null, null, "newsletter"]);
   });
 
+  it("keeps the state a newsletter reader picks, for their state's edition", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    await post({ name: "Newsletter signup", email: "a@b.co", source: "newsletter", state: "tx" });
+    expect(issued(1).values).toEqual(["Newsletter signup", "a@b.co", null, null, "state=TX", "newsletter"]);
+  });
+
   it("does not overwrite an existing qualified lead on newsletter signup", async () => {
     sqlMock.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([]);
     const res = await post({ name: "Newsletter signup", email: "cmo@bank.com", source: "newsletter" });

@@ -6,6 +6,7 @@ import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
+  NEWSLETTER_SOURCE,
   buildCaptureAttribution,
   isEmailOnlySource,
   parseStateCode,
@@ -62,7 +63,8 @@ async function handlePOST(request: NextRequest) {
     const role = cleanText(body.role);
     const institutionId =
       source === REPORT_SOURCE || placement ? parseInstitutionId(body.institutionId) : null;
-    const stateCode = placement ? parseStateCode(body.state) : null;
+    // The newsletter form may name a state too, for that state's monthly edition.
+    const stateCode = placement || source === NEWSLETTER_SOURCE ? parseStateCode(body.state) : null;
     const institutionName = placement
       ? cleanText(body.institutionName)?.slice(0, MAX_INSTITUTION_NAME_LENGTH) ?? null
       : null;
@@ -73,7 +75,9 @@ async function handlePOST(request: NextRequest) {
         ? buildBenchmarkUseCase(benchmarkScope, src)
         : source === REPORT_SOURCE
           ? buildReportUseCase(cleanText(body.use_case), institutionId, src)
-          : cleanText(body.use_case);
+          : source === NEWSLETTER_SOURCE && stateCode
+            ? `state=${stateCode}`
+            : cleanText(body.use_case);
 
     if (benchmark && !benchmarkScope) {
       return NextResponse.json({ error: "Pick a Fed district for the district report" }, { status: 400 });
@@ -129,7 +133,7 @@ async function handlePOST(request: NextRequest) {
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
         WHERE id = ${existing.id}`;
-      if ((placement || benchmarkScope) && useCase) {
+      if ((placement || benchmarkScope || (source === NEWSLETTER_SOURCE && stateCode)) && useCase) {
         // Attribution accumulates too: a returning lead signing up from a new placement,
         // or asking for another free report, keeps its earlier use_case and gains this one.
         await sql`

@@ -4,12 +4,14 @@ import { useState } from "react";
 import { trackEvent } from "@/lib/analytics";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { HoneypotField, honeypotValue } from "./honeypot-field";
+import { StateSelect } from "./state-select";
 
 const NEWSLETTER_SOURCE = "newsletter";
 const NEWSLETTER_LEAD_NAME = "Newsletter signup";
 
 export function EmailSignup() {
   const [email, setEmail] = useState("");
+  const [state, setState] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -26,6 +28,7 @@ export function EmailSignup() {
           name: NEWSLETTER_LEAD_NAME,
           email: email.trim(),
           source: NEWSLETTER_SOURCE,
+          ...(state ? { state } : {}),
           [LEAD_HONEYPOT_FIELD]: honeypot,
         }),
       });
@@ -33,6 +36,7 @@ export function EmailSignup() {
         trackEvent("newsletter_signup", { placement: "footer" });
         setStatus("success");
         setEmail("");
+        setState("");
       } else {
         setStatus("error");
       }
@@ -44,7 +48,7 @@ export function EmailSignup() {
   if (status === "success") {
     return (
       <p className="text-[12px] text-emerald-700" role="status">
-        You&apos;re on the list — the next issue goes out with the next index update.
+        Almost done: check your inbox and click the confirm link to start getting the monthly update.
       </p>
     );
   }
@@ -56,8 +60,17 @@ export function EmailSignup() {
         Monthly fee index update
       </label>
       <p className="text-[12px] leading-relaxed text-[#6B6255]">
-        New benchmarks, notable fee changes, one chart. About once a month.
+        New benchmarks, notable fee changes, one chart. About once a month. Pick a state to get its numbers too.
       </p>
+      <label htmlFor="footer-newsletter-state" className="sr-only">
+        Your state (optional)
+      </label>
+      <StateSelect
+        id="footer-newsletter-state"
+        value={state}
+        onChange={setState}
+        className="w-full max-w-[200px] rounded-lg border border-[#D4C9BA] bg-[#FAF7F2] px-2 py-1.5 text-[12px] text-[#1A1815] focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#C44B2E]/30"
+      />
       <div className="flex gap-2">
         <input
           id="footer-newsletter-email"

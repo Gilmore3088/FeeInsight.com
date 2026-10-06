@@ -19,7 +19,12 @@ MailerLite: planning, writing, A/B testing, scoring and learning. It never sends
    ("raise your fee", turnaround promises, the product name outside the footer) reject the
    copy. One retry with the reasons, then the format is reported as not drafted. Each passing
    email becomes an A/B subject-test draft in MailerLite. A month already drafted is skipped.
-3. `marketing-send` (free): only from `/api/admin/marketing/approve`, when James approves the
+3. `marketing-states` (free): one state edition per state whose MailerLite group ("Fee Insight ·
+   State · XX") has readers. Fixed wording built from the state's medians against the national
+   ones (fees with 10+ institutions in the state; 3+ such fees or the state waits), drafted as a
+   regular campaign to that state group. Readers pick a state in the footer signup or on the
+   confirm page; it rides on `leads.use_case` as `state=XX` and joins them to the state group.
+4. `marketing-send` (free): only from `/api/admin/marketing/approve`, when James approves the
    month at `/admin/customers/marketing`. Refused while `MARKETING_MAILING_ADDRESS` is unset.
    Drafts are written whether or not the address is set (the footer leaves that line out, so
    James can review and show them); before each send the step puts the address in the footer.

@@ -115,6 +115,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "lead-watch",
   "marketing-score",
   "marketing-send",
+  "marketing-states",
   "score-answer-key",
   "scoreboard-snapshot",
 ];

@@ -3,19 +3,20 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { CAMPAIGN_NAME_PREFIX, formatBrief, parseCampaignName, scoreCampaign } from "@/lib/agents/marketing/formats";
-import { listCampaigns, mailerLiteConfigured, marketingGroupId, activeSubscriberCount, type AgentCampaign } from "@/lib/agents/marketing/mailerlite-campaigns";
+import { listCampaigns, mailerLiteConfigured, marketingGroupIds, activeSubscriberCount, type AgentCampaign } from "@/lib/agents/marketing/mailerlite-campaigns";
 import { mailingAddress } from "@/lib/agents/marketing/monthly";
+import { STATE_EDITION_FORMAT } from "@/lib/agents/marketing/state-edition";
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
 
 async function load() {
   if (!mailerLiteConfigured()) return { error: "MAILERLITE_API_KEY is not set, so Hamilton can't read campaigns." } as const;
   try {
-    const groupId = marketingGroupId();
+    const groupIds = marketingGroupIds();
     const [drafts, sent, groupSize] = await Promise.all([
       listCampaigns("draft", CAMPAIGN_NAME_PREFIX),
       listCampaigns("sent", CAMPAIGN_NAME_PREFIX),
-      groupId ? activeSubscriberCount(groupId) : Promise.resolve(null),
+      groupIds.length ? activeSubscriberCount(groupIds) : Promise.resolve(null),
     ]);
     return { drafts, sent, groupSize } as const;
   } catch (error) {
@@ -48,7 +49,8 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
         <h1 className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">Monthly marketing</h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
           On the 1st, Hamilton scores last month&apos;s emails, picks two formats it hasn&apos;t used in three months,
-          writes them from live data and drafts each as an A/B subject test in MailerLite. Nothing sends until you approve the month here.
+          writes them from live data and drafts each as an A/B subject test in MailerLite. Readers who picked a state also get
+          that state&apos;s edition. Nothing sends until you approve the month here.
         </p>
       </header>
 
@@ -71,12 +73,15 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
           <section>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Waiting for your approval</h2>
             <p className="text-sm text-gray-500">
-              Newsletter group: {data.groupSize === null ? "size unknown" : `${data.groupSize} active subscriber${data.groupSize === 1 ? "" : "s"}`}.
+              Readers: {data.groupSize === null ? "size unknown" : `${data.groupSize} active subscriber${data.groupSize === 1 ? "" : "s"}`}.
             </p>
             {data.drafts.length === 0 ? (
               <p className="mt-3 text-sm text-gray-600">No drafts. The next set is written on the 1st.</p>
             ) : (
-              byMonth(data.drafts).map(([month, campaigns]) => (
+              byMonth(data.drafts).map(([month, all]) => {
+                const editions = all.filter((c) => parseCampaignName(c.name)?.format === STATE_EDITION_FORMAT);
+                const campaigns = all.filter((c) => parseCampaignName(c.name)?.format !== STATE_EDITION_FORMAT);
+                return (
                 <div key={month} className="mt-4 rounded-md border border-black/10 p-4 dark:border-white/10">
                   <h3 className="font-semibold">{month}</h3>
                   <ul className="mt-2 space-y-3 text-sm">
@@ -93,6 +98,21 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                       );
                     })}
                   </ul>
+                  {editions.length ? (
+                    <div className="mt-3 text-sm">
+                      <p className="font-medium">State editions ({editions.length}), each to readers who picked that state</p>
+                      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                        {editions.map((campaign) => {
+                          const code = campaign.name.split(" · ")[2] ?? campaign.name;
+                          return campaign.previewUrl ? (
+                            <a key={campaign.id} className="text-[#C44B2E] underline" href={campaign.previewUrl} target="_blank" rel="noreferrer">{code}</a>
+                          ) : (
+                            <span key={campaign.id}>{code}</span>
+                          );
+                        })}
+                      </p>
+                    </div>
+                  ) : null}
                   <form action="/api/admin/marketing/approve" method="post" className="mt-4">
                     <input type="hidden" name="month" value={month} />
                     <button
@@ -104,7 +124,8 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                     </button>
                   </form>
                 </div>
-              ))
+                );
+              })
             )}
           </section>
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SubscriptionAction } from "@/lib/email/subscription-token";
+import { StateSelect } from "@/components/public/state-select";
 import {
   FEE_ALERT_UNSUBSCRIBE_ACTION,
   FEE_ALERT_UNSUBSCRIBE_API_PATH,
@@ -42,6 +43,7 @@ export function SubscriptionActionForm({
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [error, setError] = useState("");
+  const [state, setState] = useState("");
   const copy = COPY[action];
 
   async function submit() {
@@ -51,7 +53,9 @@ export function SubscriptionActionForm({
       const resp = await fetch(isFeeAlert ? FEE_ALERT_UNSUBSCRIBE_API_PATH : SUBSCRIPTION_API_PATH, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isFeeAlert ? { action, uid, email, token } : { action, email, token }),
+        body: JSON.stringify(
+          isFeeAlert ? { action, uid, email, token } : { action, email, token, ...(action === "confirm" && state ? { state } : {}) },
+        ),
       });
       if (resp.ok) {
         setStatus("done");
@@ -79,6 +83,19 @@ export function SubscriptionActionForm({
       <p className="text-[15px] leading-relaxed text-[#5A5347]">
         {copy.prompt} <strong className="text-[#1A1815]">{email}</strong>?
       </p>
+      {action === "confirm" ? (
+        <div className="space-y-1">
+          <label htmlFor="preferences-state" className="block text-[13px] text-[#5A5347]">
+            Pick your state to also get its numbers each month.
+          </label>
+          <StateSelect
+            id="preferences-state"
+            value={state}
+            onChange={setState}
+            className="w-full max-w-xs rounded-md border border-[#D4C9BA] bg-[#FAF7F2] px-3 py-2 text-[14px] text-[#1A1815] focus:outline-none focus:ring-1 focus:ring-[#C44B2E]/30"
+          />
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={submit}

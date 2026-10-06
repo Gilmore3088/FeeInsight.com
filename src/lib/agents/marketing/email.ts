@@ -95,7 +95,7 @@ const paragraphs = (text: string) =>
  * Without a mailing address the footer simply leaves that line out, so drafts can be reviewed and shown;
  * the send step adds the address (`withMailingAddress`) before anything goes out.
  */
-export function renderEmail(copy: EmailCopy, bundle: FactBundle, format: MarketingFormatKey, mailingAddress: string | null): string {
+export function renderEmail(copy: EmailCopy, bundle: FactBundle, format: string, mailingAddress: string | null): string {
   const table = renderTable(copy.table, bundle);
   const sources = `National figures as of ${esc(bundle.asOf)}, from ${bundle.liveFees.toLocaleString("en-US")} live fees across ${bundle.liveInstitutions.toLocaleString("en-US")} institutions. The middle half is the 25th to 75th percentile.`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(copy.headline)}</title></head>

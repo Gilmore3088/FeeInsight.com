@@ -11,6 +11,7 @@ import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import {
   currentMonth,
+  mailingAddress,
   runMarketingScore,
   runMarketingSend,
   runMarketingWrite,
@@ -18,6 +19,7 @@ import {
   summarizeSend,
   summarizeWrite,
 } from "@/lib/agents/marketing/monthly";
+import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing/state-edition";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
@@ -1107,6 +1109,15 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
       });
       return { status: "completed", summary: summarizeWrite(result), detail: { ...result } };
+    }
+    case "marketing-states": {
+      const result = await runStateEditions({
+        db: tx,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        mailingAddress: mailingAddress(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeStateEditions(result), detail: { ...result } };
     }
     case "marketing-send": {
       const month = stringRunParam(params, ["month"]);

@@ -14,13 +14,14 @@ import {
   type CampaignResult,
   type MarketingFormatKey,
 } from "./formats";
+import { STATE_EDITION_FORMAT } from "./state-edition";
 import {
   activeSubscriberCount,
   createAbDraft,
   getDraftContent,
   listCampaigns,
   mailerLiteConfigured,
-  marketingGroupId,
+  marketingGroupIds,
   sendCampaignNow,
   updateAbDraftHtml,
   type AgentCampaign,
@@ -271,7 +272,7 @@ export async function runMarketingWrite({
   fetcher?: FetchLike;
   create?: PaidMessageCreator;
 }): Promise<WriteResult> {
-  const groupId = marketingGroupId();
+  const groupIds = marketingGroupIds();
   const base: WriteResult = {
     month,
     planned: [],
@@ -284,10 +285,12 @@ export async function runMarketingWrite({
     skipped: null,
   };
   if (!(await feedbackSchemaReady(db))) return { ...base, skipped: "pipeline_feedback is not migrated yet" };
-  if (!mailerLiteConfigured() || !groupId) return { ...base, skipped: "MAILERLITE_API_KEY or the marketing group id is not set" };
+  if (!mailerLiteConfigured() || !groupIds.length) return { ...base, skipped: "MAILERLITE_API_KEY or the marketing group id is not set" };
 
-  const existing = (await listCampaigns("draft", `${CAMPAIGN_NAME_PREFIX} ${month} `, fetcher));
-  base.groupSize = await activeSubscriberCount(groupId, fetcher);
+  // State editions are drafted by their own step; only the rotating formats count here.
+  const existing = (await listCampaigns("draft", `${CAMPAIGN_NAME_PREFIX} ${month} `, fetcher))
+    .filter((campaign) => parseCampaignName(campaign.name)?.format !== STATE_EDITION_FORMAT);
+  base.groupSize = await activeSubscriberCount(groupIds, fetcher);
   if (existing.length) {
     return {
       ...base,
@@ -331,7 +334,7 @@ export async function runMarketingWrite({
           subjectA: written.copy.subjectA,
           subjectB: written.copy.subjectB,
           html,
-          groupId,
+          groupIds,
         },
         fetcher,
       );

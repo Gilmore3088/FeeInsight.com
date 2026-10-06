@@ -36,6 +36,7 @@ async function handleGET(request: NextRequest) {
     steps: [
       { key: "marketing-score", agent: "hamilton", title: "Score last month's campaigns and store the market snapshot" },
       { key: "marketing-write", agent: "hamilton", title: "Plan, write and draft this month's campaigns" },
+      { key: "marketing-states", agent: "hamilton", title: "Draft this month's state editions for readers who picked a state" },
     ],
   });
   const result = started.reused

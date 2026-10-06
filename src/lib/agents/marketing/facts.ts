@@ -51,7 +51,7 @@ export async function readNational(db: SqlTag): Promise<FeeStat[]> {
   }));
 }
 
-async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: string) {
+async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: string, minInstitutions = MIN_INSTITUTIONS_FOR_SPLIT) {
   const rows = await db`
     WITH per AS (
       SELECT ef.fee_category, ef.institution_id, ct.charter_type, ct.state_code, MAX(ef.amount) AS amount
@@ -70,7 +70,7 @@ async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: st
            COUNT(*) AS institutions
       FROM per
      GROUP BY 1, 2
-    HAVING COUNT(*) >= ${MIN_INSTITUTIONS_FOR_SPLIT}`;
+    HAVING COUNT(*) >= ${minInstitutions}`;
   return rows.map((row) => ({
     bucket: String(row.bucket ?? ""),
     stat: {
@@ -81,6 +81,18 @@ async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: st
       institutions: num(row.institutions),
     } satisfies FeeStat,
   }));
+}
+
+/** One state's headline fees, one value per institution, each backed by `minInstitutions` or more. */
+export async function readStateFees(db: SqlTag, stateCode: string, minInstitutions: number): Promise<FeeStat[]> {
+  const rows = await readSplit(db, "state", stateCode, minInstitutions);
+  return rows.map((row) => row.stat);
+}
+
+/** Live institution and fee counts, for the sources line under each table. */
+export async function readTotals(db: SqlTag): Promise<{ institutions: number; fees: number }> {
+  const [row] = await db`SELECT COUNT(DISTINCT institution_id) AS institutions, COUNT(*) AS fees FROM published_fee_catalog`;
+  return { institutions: num(row?.institutions), fees: num(row?.fees) };
 }
 
 /** States with the most institutions publishing fees, best covered first. */

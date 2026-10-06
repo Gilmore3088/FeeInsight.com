@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { allowedNumbers, pickSpotlightState, unbackedNumbers, type FactBundle } from "./facts";
-import { copyProblems, renderEmail, withMailingAddress, type EmailCopy } from "./email";
+import { copyProblems, copyText, renderEmail, withMailingAddress, type EmailCopy } from "./email";
 import { campaignName, parseCampaignName, planMonth, scoreCampaign, type CampaignResult, FORMAT_COOLDOWN_MONTHS } from "./formats";
-import { createAbDraft, toAgentCampaign } from "./mailerlite-campaigns";
+import { createAbDraft, marketingGroupIds, toAgentCampaign } from "./mailerlite-campaigns";
+import { stateEditionCopy } from "./state-edition";
 import { lessonsFrom, runMarketingSend, summarizeWrite } from "./monthly";
 
 const bundle: FactBundle = {
@@ -117,7 +118,7 @@ describe("MailerLite", () => {
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify({ data: { id: "9", name: "FI Agent 2026-11 · myth_check · x", status: "draft", type: "ab", emails: [{ subject: "A" }, { subject: "B" }] } }), { status: 201 }),
     );
-    const draft = await createAbDraft({ name: "FI Agent 2026-11 · myth_check · x", subjectA: "A", subjectB: "B", html: "<p/>", groupId: "1" }, fetcher);
+    const draft = await createAbDraft({ name: "FI Agent 2026-11 · myth_check · x", subjectA: "A", subjectB: "B", html: "<p/>", groupIds: ["1"] }, fetcher);
     expect(draft.status).toBe("draft");
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toMatch(/\/campaigns$/);
@@ -205,5 +206,53 @@ describe("lessons and summaries", () => {
     expect(text).toMatch(/Drafted 1 of 2/);
     expect(text).toMatch(/812/);
     expect(text).toMatch(/MARKETING_MAILING_ADDRESS/);
+  });
+});
+
+describe("state editions", () => {
+  const tnBundle: FactBundle = {
+    ...bundle,
+    national: [
+      { key: "overdraft", median: 30, p25: 25, p75: 32, institutions: 1509 },
+      { key: "stop_payment", median: 26, p25: 20, p75: 30, institutions: 2212 },
+      { key: "wire_domestic_outgoing", median: 25, p25: 20, p75: 25, institutions: 1434 },
+      { key: "cashiers_check", median: 5, p25: 3, p75: 6, institutions: 1605 },
+    ],
+    state: {
+      code: "TN",
+      name: "Tennessee",
+      fees: [
+        { key: "overdraft", median: 32, p25: 30, p75: 35, institutions: 32 },
+        { key: "stop_payment", median: 30, p25: 25, p75: 32.5, institutions: 49 },
+        { key: "wire_domestic_outgoing", median: 20, p25: 20, p75: 25, institutions: 21 },
+        { key: "cashiers_check", median: 5, p25: 3, p75: 5, institutions: 36 },
+      ],
+    },
+  };
+
+  it("writes a state's edition from its own numbers, and every number checks out", () => {
+    const edition = stateEditionCopy(tnBundle)!;
+    expect(edition.headline).toBe("Tennessee runs above the national median on 2 fees and below on 1");
+    expect(edition.sections[0].body).toMatch(/Stop payment: \$30 in Tennessee across 49 institutions, against \$26 nationally/i);
+    expect(edition.sections[1].body).toMatch(/\$20 in Tennessee across 21 institutions/);
+    expect(edition.subjectA).toMatch(/^Tennessee: Overdraft/);
+    expect(copyProblems(edition)).toEqual([]);
+    const allowed = allowedNumbers(tnBundle);
+    ["0", "1", "2", "3", "4"].forEach((n) => allowed.add(n));
+    expect(unbackedNumbers(copyText(edition), allowed)).toEqual([]);
+  });
+
+  it("skips a state with too little data", () => {
+    expect(stateEditionCopy({ ...tnBundle, state: { ...tnBundle.state!, fees: tnBundle.state!.fees.slice(0, 2) } })).toBeNull();
+  });
+
+  it("sends monthly emails to every signup group unless one is named", () => {
+    process.env.MAILERLITE_GROUP_ID = "news";
+    process.env.MAILERLITE_REPORT_GROUP_ID = "report";
+    process.env.MAILERLITE_WATCHER_GROUP_ID = "watch";
+    expect(marketingGroupIds()).toEqual(["news", "report", "watch"]);
+    process.env.MAILERLITE_MARKETING_GROUP_ID = "only";
+    expect(marketingGroupIds()).toEqual(["only"]);
+    for (const key of ["MAILERLITE_GROUP_ID", "MAILERLITE_REPORT_GROUP_ID", "MAILERLITE_WATCHER_GROUP_ID", "MAILERLITE_MARKETING_GROUP_ID"]) delete process.env[key];
   });
 });

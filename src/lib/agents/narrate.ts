@@ -194,6 +194,10 @@ export function narrateStepFinished(
       if (detail.already_drafted === true || detail.alreadyDrafted === true) return "This month's campaigns are already drafted and waiting for James.";
       return `Drafted ${count(drafts, "marketing campaign")} for James to approve.`;
     }
+    case "marketing-states": {
+      const drafts = Array.isArray(detail.drafts) ? detail.drafts.length : 0;
+      return drafts ? `Drafted ${count(drafts, "state edition")} for James to approve.` : "No state editions to draft this month.";
+    }
     case "marketing-send": {
       const sent = Array.isArray(detail.sent) ? detail.sent.length : 0;
       return `Sent ${count(sent, "approved marketing campaign")}.`;
@@ -305,6 +309,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-score": "hamilton",
   "marketing-write": "hamilton",
   "marketing-send": "hamilton",
+  "marketing-states": "hamilton",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
   discover: "magellan",
