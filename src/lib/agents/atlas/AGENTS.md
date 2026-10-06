@@ -28,8 +28,10 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   full pass of each calendar quarter is a re-check (`recheck: 'quarterly'` in the run
   params; the `discover` and `fetch` steps read it and Magellan re-validates every link
   and re-searches dead and needs-human banks). Between full passes a lane runs hourly
-  catch-up passes (read, extract, classify, publish) only while the state has free work
-  left (`stateHasDocumentBacklog`); otherwise it sleeps until next month.
+  catch-up passes (discover, fetch, read, extract, classify, publish) only while the state has
+  free work left (`stateHasDocumentBacklog`, which must use the same filters as those steps'
+  selectors); otherwise it sleeps until its next full pass, checking again at least every 12
+  hours (`STATE_LANE_IDLE_RECHECK_HOURS`).
 - Idempotency keys (they only dedupe active runs): `atlas:state-lane:<ST>:<YYYY-MM>`,
   `atlas:state-lane-recheck:<ST>:<YYYY>-Q<n>`, `atlas:state-lane-backlog:<ST>:<YYYY-MM-DDTHH>`.
 - State experts (`state-expert/`): one design, 55 memories (`state_memory`). The roster

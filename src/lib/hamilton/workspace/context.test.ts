@@ -6,6 +6,8 @@ describe("marketLayer", () => {
     const layer = marketLayer("national", "National", [25, 30, 32, 35, 35, 36], 35, ["2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]);
     expect(layer).toMatchObject({ scope: "national", n: 6, p25: 30.5, median: 33.5, p75: 35, asOf: "2026-10-01" });
     expect(layer.position).toBe(67);
+    expect(layer.amounts).toEqual([25, 30, 32, 35, 35, 36]);
+    expect(layer.bands.reduce((n, b) => n + b.count, 0)).toBe(6);
   });
 
   it("keeps a thin layer but leaves its percentiles empty", () => {

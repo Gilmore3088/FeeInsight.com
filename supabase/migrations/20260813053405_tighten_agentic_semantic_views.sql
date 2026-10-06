@@ -1,3 +1,12 @@
+-- Changes the legacy tables (crawl_targets and friends) production had before
+-- 2026-08-13. A database built from the preview baseline in 20260406_report_jobs.sql
+-- already has the current schema and no legacy tables, so it skips this file.
+DO $legacy_guard$
+BEGIN
+  IF to_regclass('public.crawl_targets') IS NULL AND to_regclass('public.institution_sources') IS NOT NULL THEN
+    RETURN;
+  END IF;
+  EXECUTE $migration$
 -- Tighten semantic agentic views so current contracts no longer expose
 -- crawler-era alias columns. Preserve historical extracted fee data under an
 -- explicit archive name instead of keeping it as an active table.
@@ -239,3 +248,7 @@ DROP FUNCTION IF EXISTS public._block_extracted_fees_writes();
 
 COMMENT ON TABLE public.historical_fee_observation_archive IS
   'Historical pre-agentic fee observation archive retained for audit/backfill only. Not an active read or write contract.';
+
+$migration$;
+END
+$legacy_guard$;

@@ -414,6 +414,10 @@ async function executeAgenticStep(
           fetched_documents: fetched.succeeded,
           unchanged_documents: fetched.unchanged,
           reused_documents: fetched.reusedDocuments,
+          companion_pages_status: fetched.companions?.status ?? null,
+          companion_pages_fetched: fetched.companions?.fetched ?? 0,
+          companion_pages_unchanged: fetched.companions?.unchanged ?? 0,
+          companion_pages_failed: fetched.companions?.failed ?? 0,
           stored_documents: fetched.storedDocuments,
           vault: fetched.vault,
           failed_fetches: fetched.failed,
@@ -988,13 +992,14 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: result.deliveryStatus === "sent"
-          ? `Atlas emailed the daily brief to ${result.recipient}.`
+          ? `Atlas emailed the morning brief to ${[result.recipient, ...result.cc].join(", ")}.`
           : `Atlas wrote the daily brief but did not email it: ${result.deliveryReason ?? result.deliveryStatus}.`,
         detail: {
           delivery_status: result.deliveryStatus,
           delivery_reason: result.deliveryReason,
           subject: result.brief.subject,
           lines: result.brief.lines,
+          needs_you: result.brief.needsYou?.map((item) => ({ id: item.id, severity: item.severity, title: item.title })) ?? null,
           funnel: result.funnel,
         },
       };

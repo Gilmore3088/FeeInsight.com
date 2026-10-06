@@ -34,6 +34,24 @@ const RATE_TERM = /(APY|APR|annual percentage)/g;
 const ARTICLE_PATH = /\/(news|newsroom|press|press-releases?|pressroom|ir|investors?|investor-relations|blogs?)\//i;
 const SCHEDULE_PATH = /(fee-?schedule|schedule-of-(fees|charges)|fee-?disclosure|service-charges|pricing)/i;
 
+/** A path segment that is the bank's fee page: "/fees", "/account-fees", "/fees-and-charges". */
+const FEE_PATH = /(^|[/_-])fees?([/_.-]|$)/i;
+
+/**
+ * Does the link itself say it is the fee page? Rosetta uses this to try the free
+ * JavaScript fallbacks on such a page when its static text shows no fees.
+ */
+export function urlNamesFeePage(url: string | null | undefined): boolean {
+  if (!url) return false;
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+  return SCHEDULE_PATH.test(path) || FEE_PATH.test(path);
+}
+
 export function isArticleUrl(url: string | null | undefined): boolean {
   if (!url) return false;
   let path: string;

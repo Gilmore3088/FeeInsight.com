@@ -13,7 +13,7 @@ import {
   isVaultKey,
   type DocumentVault,
 } from "@/lib/agents/document-vault";
-import { FEE_PAGE_CHECK_VERSION, scoreFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
+import { FEE_PAGE_CHECK_VERSION, scoreFeePage, urlNamesFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
 import {
@@ -30,6 +30,7 @@ import {
   type AttemptOutcome,
 } from "@/lib/agents/learning/outcomes";
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
 import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
 import {
@@ -89,6 +90,8 @@ interface ReadCandidateRow {
   do_not_retry?: unknown;
   /** True when an older reader version already produced a text for these bytes. */
   is_reread?: boolean | null;
+  /** Set for a companion page (account page, other fee document); see companion-streams.ts. */
+  companion_source_id?: number | string | null;
 }
 
 /**
@@ -637,7 +640,8 @@ async function readCandidate(
   base.documentType = documentTypeForFormat(format);
   const decision = chooseStrategy({
     stage: "read",
-    playbook: playbookFromRow(row),
+    // The bank's playbook describes its main fee link, not its companion pages.
+    playbook: playbookFromRow(row.companion_source_id == null ? row : null),
     fingerprint: row.content_hash,
     candidates: READ_STRATEGIES[format],
   });
@@ -733,10 +737,14 @@ async function readCandidate(
     normalizedText = extracted.text;
     base.tableRows = extracted.tableRows;
     rows = extracted.rows;
-    // A page built by JavaScript: empty, or an app shell whose text is no fee schedule.
+    // A page built by JavaScript: empty, or an app shell or a page its own link names as
+    // the fee page, whose static text is no fee schedule. A fee page whose fees load by
+    // script often has more than a shell's worth of menu text (atfcu.org/fees: 2,452
+    // characters, no amounts), so the link is checked as well as the HTML.
     const shell =
       normalizedText.length === 0 ||
-      (looksLikeJsShell(raw, normalizedText) && scoreFeePage(normalizedText).verdict === "wrong_document");
+      ((looksLikeJsShell(raw, normalizedText) || urlNamesFeePage(finalUrl)) &&
+        scoreFeePage(normalizedText).verdict === "wrong_document");
     if (shell) {
       const fallback = await tryJsFallback(raw, finalUrl, ctx);
       base.followUps.push(fallback.attempt);
@@ -787,6 +795,7 @@ async function selectCandidates(
   institutionId?: number,
   stateCode?: string,
   vaultSchema = false,
+  companionStreams = false,
 ): Promise<ReadCandidateRow[]> {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
@@ -890,13 +899,19 @@ async function selectCandidates(
              cr.document_r2_key,
              cr.content_type AS stored_content_type`
     : "";
+  // Each companion page is its own stream (companion-streams.ts): a newer document of one
+  // stream never hides the current document of another.
+  const companionColumns = companionStreams ? `,
+             cr.companion_source_id` : "";
+  const sameStream = companionStreams ? "AND newer.companion_source_id IS NOT DISTINCT FROM cr.companion_source_id" : "";
+  const companionPage = companionStreams ? "cr.companion_source_id IS NOT NULL" : "FALSE";
   return db.unsafe<ReadCandidateRow[]>(
     `
       SELECT cr.id AS source_document_id,
              cr.institution_id,
              ct.institution_name,
              cr.document_url,
-             cr.content_hash${playbookColumns}${vaultColumns}
+             cr.content_hash${playbookColumns}${vaultColumns}${companionColumns}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -913,13 +928,15 @@ async function selectCandidates(
              FROM source_documents newer
             WHERE newer.institution_id = cr.institution_id
               AND newer.id > cr.id
+              ${sameStream}
               AND (
                 (newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM cr.id)
                 OR (newer.status = 'failed' AND ${notInVault})
               )
          )
          AND (
-           profile.read_strategy IS NULL
+           ${companionPage}
+           OR profile.read_strategy IS NULL
            -- Scans and JavaScript pages are read too: pass 2 escalates to OCR and fallbacks.
            OR profile.read_strategy IN ('pdf_text', 'html_dom', 'ocr', 'browser_render')
          )
@@ -997,6 +1014,9 @@ export async function recordReadResult(
        WHERE id = ${textArtifactId}
     `;
   }
+  // A companion page's read says nothing about the bank's main fee link: the profile
+  // (canonical link, read strategy) stays as the main link left it.
+  if ((await companionSourceOf(db, result.sourceDocumentId)) != null) return;
   const readStrategy = readStrategyForResult(result);
   const sourceKind = sourceKindForResult(result);
   const terminalBacklog = result.status === "needs_ocr" || result.status === "empty" || result.status === "skipped";
@@ -1114,6 +1134,14 @@ export async function sendBackToMagellan(
     onlyIfCurrentUrl?: boolean;
   },
 ): Promise<boolean> {
+  // A companion page that is not a fee page (or is gone) is retired on its own; the
+  // bank keeps its main fee link.
+  const companionSourceId = await companionSourceOf(db, input.sourceDocumentId);
+  if (companionSourceId != null) {
+    await rejectCompanionPage(db, companionSourceId, input.reason);
+    return false;
+  }
+  const companionStreams = await companionStreamsReady(db);
   const onlyIfCurrentUrl = input.onlyIfCurrentUrl === true;
   const rejected = JSON.stringify([{ url: input.url, reason: input.reason, at: new Date().toISOString() }]);
   await db`
@@ -1145,6 +1173,7 @@ export async function sendBackToMagellan(
           WHERE newer.institution_id = inst.id
             AND newer.status = 'success'
             AND newer.id > ${input.sourceDocumentId}
+            ${companionStreams ? db`AND newer.companion_source_id IS NULL` : db``}
        )
     RETURNING inst.id
   `;
@@ -1268,7 +1297,8 @@ export async function runRosettaRead(
   const vault = vaultSchema ? options.vault ?? getDocumentVault() : null;
   // Table rows and the reader column need migration 20270106020000.
   const textColumns = !dryRun && (await rosettaTextColumnsReady(db));
-  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode, vaultSchema);
+  const companionStreams = !dryRun && (await companionStreamsReady(db));
+  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode, vaultSchema, companionStreams);
 
   // Free OCR is local work, so a dry run skips it. The worker starts on the first scan.
   const ownsOcr = !options.scannedPdfReader;
@@ -1288,6 +1318,8 @@ export async function runRosettaRead(
   try {
     for (const row of rows) {
       const { result, normalizedText } = await readCandidate(row, ctx);
+      // A companion page's reads stay out of the bank's playbook (its main fee link's).
+      const foldIntoPlaybook = row.companion_source_id == null;
       results.push(result);
       if (dryRun || result.status === "known_failure" || result.status === "deferred") continue;
       // A re-read replaces the earlier text only with a better answer; otherwise the old
@@ -1335,6 +1367,7 @@ export async function runRosettaRead(
           durationMs: result.durationMs,
           runId: options.runId,
           stepId: options.stepId ?? null,
+          foldIntoPlaybook,
           format: result.format,
           detail: {
             url: result.sourceUrl,
@@ -1364,6 +1397,7 @@ export async function runRosettaRead(
             durationMs: followUp.durationMs,
             runId: options.runId,
             stepId: options.stepId ?? null,
+            foldIntoPlaybook,
             detail: { url: result.sourceUrl, ...followUp.detail },
           });
         }
@@ -1380,6 +1414,7 @@ export async function runRosettaRead(
             costMicrousd: 0,
             runId: options.runId,
             stepId: options.stepId ?? null,
+            foldIntoPlaybook,
             detail: {
               tables: new Set(result.rows.map((tableRow) => tableRow.table)).size,
               origins: [...new Set(result.rows.map((tableRow) => tableRow.origin))],
@@ -1400,6 +1435,7 @@ export async function runRosettaRead(
             costMicrousd: 0,
             runId: options.runId,
             stepId: options.stepId ?? null,
+            foldIntoPlaybook,
             detail: { url: result.sourceUrl, ...(result.pageCheck ?? {}) },
           });
         }

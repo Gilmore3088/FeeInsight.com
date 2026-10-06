@@ -27,7 +27,7 @@ const PRICE_FIRST_MAX_LENGTH = 120;
  * A line that is a price ("$10.00", "Free", "Per Item | $25.00", "- $5 each"), not another
  * fee's row ("Incoming | $10.00").
  */
-const PRICE_LINE = /^\s*[-–:]?\s*(\$|\d|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
+const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
 /** A box or item size ("3 X 10", "5\" x 10\"") read as one word. */
 const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
@@ -188,7 +188,8 @@ export function checkFeeAgainstSource(
     const line = lines[i];
     // A name may be split under a heading ("Wire Transfer:" / "Incoming | FREE"): the
     // line must carry one of its words and, with the headings above, carry all of them. A heading
-    // that names the fee by itself is that fee's own row.
+    // that names the fee by itself is that fee's own row, unless the line adds a word the
+    // heading lacks ("WIRE TRANSFERS (OUTGOING)" / "DOMESTIC WIRE | $35").
     // Headings carry no price, inline or printed under them ("Incoming Domestic" / "$14.00"
     // is a fee's row, not a heading).
     const headings: string[] = [];
@@ -197,7 +198,7 @@ export function checkFeeAgainstSource(
     }
     const underHeading =
       namesFee(line, stems, 1) &&
-      !headings.some((above) => namesFee(above, stems)) &&
+      !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !` ${comparable(line)} `.includes(stem) || ` ${comparable(above)} `.includes(stem))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     const amountProblem = statesAmount(feeRow(lines, i), rounded, stems);

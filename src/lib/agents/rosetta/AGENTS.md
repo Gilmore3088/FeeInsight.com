@@ -8,6 +8,12 @@ Rosetta owns source text normalization.
   replaces an older one, and a newer failed download replaces an older one we hold no vault
   copy of. A document with no vault copy whose link already returned 404/410 is not
   downloaded again; the first 404 sends the bank back to Magellan.
+- "Current" is per stream (`src/lib/agents/companion-streams.ts`): the main fee link is one
+  stream and each companion page (`source_documents.companion_source_id`) is its own, so a
+  bank's account pages and its fee schedule are all read. A companion page that is not a
+  fee page, needs JavaScript, or is gone is marked `rejected` in
+  `institution_additional_sources`; it never sends the bank's main link back to Magellan,
+  and its reads never change the bank's source profile or playbook.
 - Rosetta writes normalized text artifacts to `agent_source_texts`.
 - Rosetta may classify unreadable, scanned, truncated, or unsupported source documents for manual/OCR follow-up.
 
@@ -43,7 +49,8 @@ Rosetta owns source text normalization.
     scan. Over the allowance the scan is `deferred` (nothing written, read next run).
     OCR that fails, is too long, or has mean confidence under `OCR_MIN_CONFIDENCE` leaves
     the text `needs_ocr` for pass 3. OCR fixes only unambiguous `$` misreads (`#35.00`).
-  - A JavaScript page (no text, or an app shell whose text fails the fee-page check)
+  - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
+    such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
     `window.X = {...}`), then linked PDF/print versions, then `?print=1`, `?output=amp`,
     `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches). The stored `source_url` is the
