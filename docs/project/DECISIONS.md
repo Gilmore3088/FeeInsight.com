@@ -127,6 +127,14 @@ yet. Pages offer an email link, never a scheduler; PR 178 changed the private re
 "Book 15 minutes" button to "Email us about this report". Any new paid service waits until a
 report has sold.
 
+**Atlas schedules by where the work is, and daily passes count only findable banks.** James,
+13:20 UTC ("i need you to close all those gaps with the agents", on the agent audits). Each
+state lane is ranked by its banks with open work or a recent error, and the busiest due lane
+goes first. A state stays on daily full passes only while more than 50 of its banks still have
+no link and could be found by a search. Dead ends wait for the quarterly re-check. A state with
+paid-find targets or banks with no website still due a website search also stays daily, so
+those paid steps keep running inside the paid caps (coordinator, 13:39 UTC).
+
 ## 2026-10-05
 
 **Package all 16 years of call reports on institution pages, deeper for Pro.** James, 22:25 and

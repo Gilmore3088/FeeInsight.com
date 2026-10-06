@@ -49,6 +49,53 @@ foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is 
 **Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
 under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
 
+## 2026-10-06: No bank market can pass the report rule soon, and percentage fees never count
+**What happened:** read-only, 14:10 UTC: 6 of 109 state markets pass James's report rule (16
+rich institutions of one type in a state), all credit unions. The closest bank market is MA
+(12 of 16); OK and IL banks have 9. AK has 5 banks in total and WA 31 with 1 rich, so the
+real requesters there (First National Bank Alaska, Banner Bank) cannot pass the state rule.
+`card_foreign_txn` is a headline fee live at 42 institutions, while 347 more have a foreign
+transaction fee held as `knox_review:percentage`.
+**Cause:** the rule counts only same-state, same-type peers. Percentage fees have no path
+to the catalog. Requester gaps were wrong or partial links (a business-only PDF; a general
+services page without account fees) and Knox misses (wires, prose maintenance fee).
+**Fix:** Atlas now runs states with a failing report request and near-ready bank markets
+first. The link and extraction gaps went to Magellan and Knox. The rule itself (peer fallback
+for small states) and percentage fees are open.
+**Lesson:** check whether a market can reach a threshold at all before scheduling toward it.
+
+## 2026-10-06: The spend ledger left out web search charges, so caps undercounted Magellan
+**What happened:** read-only, 13:50 UTC: `pipeline_attempts` recorded $8.35 for today's 152
+paid web searches; `ai_api_usage_events`, which the budget caps and per-run limits sum, recorded
+$4.41 for the same 152 calls. October so far: $16.47 in attempts, $8.75 in the ledger.
+**Cause:** `trackAnthropicRequest` priced tokens only. Anthropic also bills $10 per 1,000 server
+web searches; `paid-pass.ts` added that to the attempt cost, but the ledger never saw it.
+**Fix:** the ledger estimate (`estimateAnthropicCostMicrousd`) counts
+`server_tool_use.web_search_requests`, and `paidCallCostMicrousd` uses that same estimate, so the
+attempt log and the ledger agree. Covers paid find and website find. Earlier rows stay as written
+(about $7.72 under for October), well inside Magellan's $150 cap.
+**Lesson:** a charge priced in one place and logged in another drifts; price it once, in the
+function the caps read.
+
+## 2026-10-06: Atlas took states in waiting order, not where the work was
+**What happened:** after PR 204, a state's median gap between runs was still 135 minutes (live,
+13:20 UTC, last 6 h). Every lane's `priority_score` was 0, so Atlas picked whichever lane had
+waited longest. Texas (196 banks due a search, 181 not source-checked) waited as long as
+Vermont. The daily-pass rule counted 2,024 dead-end banks, which kept 23 states on daily paid
+passes that could never turn off. The state experts ranked finder strategies (Texas: site crawl
+80%, sitemap 0 of 23), but nothing read the ranking.
+**Cause:** `priority_score` was never written, and the daily rule counted every bank missing a
+link. `stateExpertHints` had no caller.
+**Fix:** the Atlas gaps PR. The hourly sync scores each lane by its banks with open work or a
+recent error, and due lanes run highest first; a lane 3 h overdue goes first. Only findable
+banks count toward the daily rule (5 states on that count alone: TX, IL, MN, IA, MO), and a
+state with paid-find or no-website targets stays daily so the paid steps still run (live
+13:45 UTC: 51 states have paid-find targets, 459 banks, plus 582 institutions with no
+website). Magellan runs each state's best
+finders first. Launches go from 2 to 3 per tick.
+**Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
+("Magellan uses the hints") needs a caller and a test.
+
 ## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
 **What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
 at 14:41. The lead rows showed confirmed and not unsubscribed, but MailerLite subscriber
