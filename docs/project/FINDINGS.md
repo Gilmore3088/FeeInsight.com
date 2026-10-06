@@ -13,6 +13,34 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Darwin passed fees the bank's own schedule does not state
+**What happened:** of the Darwin-verified fees published and later taken down (read-only query on prod,
+04:50 UTC), 2,740 failed Hamilton's source check (1,370 name not in the text, 1,064 amount not the fee,
+304 amount is a threshold), 2,685 of them published in the last 24 hours. Another 4,032 were rolled
+back when newer Knox rules no longer read them, and 454 failed the category guard. 37,709 Darwin-verified
+fees are live.
+**Cause:** Darwin checked a fee's name, category, range and peers but never read the document. The
+check that reads it (`checkFeeAgainstSource`) ran only after publication, as Hamilton's takedown sweep.
+**Fix:** this PR: Darwin runs the shared source check against the fee's own stored text before verifying
+it (reason code `not_in_source`, rejected). Hamilton's sweep stays as the safety net for live fees.
+**Lesson:** a check that can stop a wrong fee before it goes live belongs at the gate, not only in a
+sweep afterwards.
+
+## 2026-10-06: The live board showed a Darwin backlog that did not exist
+**What happened:** /admin/live showed 2,838 banks waiting at Darwin (04:30 UTC, read-only query on prod).
+Every one of the 18,843 Knox rows behind that number already had a Darwin decision under the current
+rules (`verify.rules` v3): 9,756 duplicates of a fee verified in the same batch, 5,322 rejected for
+category mismatch, 2,374 held as outside the category's range, 1,391 held as peer outliers. Zero rows
+were unchecked. Darwin's classify step ran 523 times in 24 hours with a median of 0.9 s (p90 8.2 s);
+its queue wait (median 329 s) matched Knox's and Hamilton's.
+**Cause:** the board's Darwin count (`getFlowWaiting` in `src/lib/agents/flow.ts`) counted every raw
+row missing from `verified_fee_observations`. Rejected, held and duplicate rows never get there, so
+they counted as waiting forever.
+**Fix:** this PR: the count skips rows that already have a `verify.rules` attempt at the current version,
+the same test Darwin's own batch query uses.
+**Lesson:** a "waiting" count must use the stage's own done-marker (its `pipeline_attempts` row), not
+"missing from the next table", or every rejection reads as backlog.
+
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
 the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
