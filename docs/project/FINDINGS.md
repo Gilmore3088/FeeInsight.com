@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Report PDFs printed an empty State Index and wasted pages
+**What happened:** James showed two report PDFs from /admin/hamilton/reports. The State Index PDF
+said its template was "under development": `state-fee-index.ts` was a stub and the `state_index`
+case in `assemble-and-render.ts` passed it no data. Every report also wasted pages: the cream page
+background printed as a box on each page, the cover's `min-height: 90vh` left the next section's
+heading alone at the bottom of the cover, and forced breaks (`.chapter-divider { break-before: page }`,
+`pageBreak()` calls) left pages mostly blank (a fixture render of the National Quarterly went from
+13 pages to 10).
+**Cause:** the state report was never built for print, and the print rules forced page breaks
+instead of keeping headings with their content.
+**Fix:** branch `claude/state-pdf-report`. The State Index renders from the public state report's
+own readers and helpers (moved to `src/lib/research-report/`), with no model calls. Print rules in
+`report-templates/base/styles.ts`: white page, a one-page cover with `break-after: page`, headings
+`break-after: avoid`, no forced chapter breaks, short tables kept whole and long ones split between rows.
+**Lesson:** check a report's print layout by printing a fixture render in Chromium and looking at
+every page; a template that compiles can still print blank or half-empty pages.
+
 ## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
 **What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
 and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the

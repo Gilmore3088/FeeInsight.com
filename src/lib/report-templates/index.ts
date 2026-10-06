@@ -35,6 +35,10 @@ export {
   layoutStatement,
   revenuePyramid,
   dataFramework,
+  figureFindings,
+  reportSection,
+  emptyNotice,
+  escapeHtml,
 } from "./base/components";
 
 export type {
@@ -53,6 +57,7 @@ export type {
   ComparisonChartBar,
   PlaybookSegment,
   RevenuePyramidTier,
+  FigureFinding,
 } from "./base/components";
 
 export { PALETTE, TYPOGRAPHY, REPORT_CSS } from "./base/styles";

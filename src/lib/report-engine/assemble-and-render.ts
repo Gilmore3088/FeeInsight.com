@@ -19,67 +19,13 @@ import { assemblePeerCompetitivePayload } from '@/lib/report-assemblers/peer-com
 import type { PeerCompetitiveFilters } from '@/lib/report-assemblers/peer-competitive';
 import { renderNationalQuarterlyReport } from '@/lib/report-templates/templates/national-quarterly';
 import { renderStateFeeIndexReport } from '@/lib/report-templates/templates/state-fee-index';
+import { loadStateReportData } from '@/lib/research-report/load-state-report';
+import { STATE_NAMES } from '@/lib/us-states';
 import { renderMonthlyPulseReport } from '@/lib/report-templates/templates/monthly-pulse';
 import { renderPeerCompetitiveReport } from '@/lib/report-templates/templates/peer-competitive';
 import { runEditorReview } from '@/lib/report-engine/editor';
 import type { SectionOutput, ThesisOutput, ValidatedSection } from '@/lib/hamilton/types';
 import type { ReportType } from '@/lib/report-engine/types';
-
-// ─── State Name Map ────────────────────────────────────────────────────────────
-
-const STATE_NAMES: Record<string, string> = {
-  AL: 'Alabama',
-  AK: 'Alaska',
-  AZ: 'Arizona',
-  AR: 'Arkansas',
-  CA: 'California',
-  CO: 'Colorado',
-  CT: 'Connecticut',
-  DC: 'District of Columbia',
-  DE: 'Delaware',
-  FL: 'Florida',
-  GA: 'Georgia',
-  HI: 'Hawaii',
-  ID: 'Idaho',
-  IL: 'Illinois',
-  IN: 'Indiana',
-  IA: 'Iowa',
-  KS: 'Kansas',
-  KY: 'Kentucky',
-  LA: 'Louisiana',
-  ME: 'Maine',
-  MD: 'Maryland',
-  MA: 'Massachusetts',
-  MI: 'Michigan',
-  MN: 'Minnesota',
-  MS: 'Mississippi',
-  MO: 'Missouri',
-  MT: 'Montana',
-  NE: 'Nebraska',
-  NV: 'Nevada',
-  NH: 'New Hampshire',
-  NJ: 'New Jersey',
-  NM: 'New Mexico',
-  NY: 'New York',
-  NC: 'North Carolina',
-  ND: 'North Dakota',
-  OH: 'Ohio',
-  OK: 'Oklahoma',
-  OR: 'Oregon',
-  PA: 'Pennsylvania',
-  RI: 'Rhode Island',
-  SC: 'South Carolina',
-  SD: 'South Dakota',
-  TN: 'Tennessee',
-  TX: 'Texas',
-  UT: 'Utah',
-  VT: 'Vermont',
-  VA: 'Virginia',
-  WA: 'Washington',
-  WV: 'West Virginia',
-  WI: 'Wisconsin',
-  WY: 'Wyoming',
-};
 
 // ─── Fallback Narrative ────────────────────────────────────────────────────────
 
@@ -338,19 +284,17 @@ export async function assembleAndRender(
       }
 
       case 'state_index': {
-        // T-18-01: state_code guarded — defaults to 'US' if absent/wrong type
-        const stateCode =
-          typeof params.state_code === 'string'
-            ? params.state_code.toUpperCase()
-            : 'US';
-        const stateName = STATE_NAMES[stateCode] ?? stateCode;
+        // T-18-01: state_code guarded; an unknown or missing code fails the job.
+        const stateCode = typeof params.state_code === 'string' ? params.state_code.toUpperCase() : '';
+        if (!STATE_NAMES[stateCode]) {
+          throw new Error(`state_index needs a valid state_code (got ${JSON.stringify(params.state_code ?? null)})`);
+        }
 
-        // State template is a stub — no fee data, no Hamilton calls
-        return renderStateFeeIndexReport({
-          stateCode,
-          stateName,
-          generatedAt: new Date().toISOString().slice(0, 10),
+        // Deterministic: the public state report's readers and computations, no model calls.
+        const data = await loadStateReportData(stateCode, {
+          includeAllCategories: params.include_all_categories === true,
         });
+        return renderStateFeeIndexReport({ data, generatedAt: new Date().toISOString().slice(0, 10) });
       }
 
       case 'monthly_pulse': {

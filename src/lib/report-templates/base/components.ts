@@ -9,7 +9,7 @@
 import { PALETTE } from "./styles";
 import { RESEARCH_IMPRINT, SITE_NAME } from "@/lib/constants";
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -95,6 +95,9 @@ function formatCell(val: string | number | null | undefined, fmt?: string): stri
   return escapeHtml(String(val));
 }
 
+/** Tables with at most this many rows never split across pages in print. */
+export const SHORT_TABLE_ROWS = 6;
+
 /**
  * Full-width data table with warm styling matching brief-generator.ts visual language.
  * Null values render as "—" (em dash). Positive percent values get "+" prefix.
@@ -116,8 +119,10 @@ export function dataTable(props: DataTableProps): string {
     })
     .join("");
 
+  // A short table prints whole; a long one splits between rows (print rules in styles.ts).
+  const short = props.rows.length <= SHORT_TABLE_ROWS ? " report-table-short" : "";
   return `
-<div class="report-table-wrapper">
+<div class="report-table-wrapper${short}">
   ${props.caption ? `<div class="report-table-caption">${escapeHtml(props.caption)}</div>` : ""}
   <table class="report-table">
     <thead><tr>${headers}</tr></thead>
@@ -323,7 +328,8 @@ export interface TocEntry {
   number?: string;       // "01", "02" etc — omit for exec summary, playbook, appendix
   title: string;
   description: string;   // subtitle line
-  page: number;
+  /** Omit when the page is not known: chapters flow, so a fixed number would go stale. */
+  page?: number;
   sectionLabel?: string; // "Core Analysis", "Strategy", "Data" — renders as group header
 }
 
@@ -343,7 +349,12 @@ export function tableOfContents(chapters: TocEntry[]): string {
         parts.push(`<div class="toc-section-label">${escapeHtml(ch.sectionLabel)}</div>`);
       }
 
-      const pageStr = String(ch.page).padStart(2, "0");
+      const pageStr = ch.page === undefined ? "" : String(ch.page).padStart(2, "0");
+      const pageCell = pageStr
+        ? `
+          <span class="toc-leader"></span>
+          <span class="toc-entry-page">${escapeHtml(pageStr)}</span>`
+        : "";
 
       if (ch.number) {
         // Numbered chapter entry with large number
@@ -352,9 +363,7 @@ export function tableOfContents(chapters: TocEntry[]): string {
       <div class="toc-chapter-num">${escapeHtml(ch.number)}</div>
       <div class="toc-entry-body">
         <div class="toc-entry-title-row">
-          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>
-          <span class="toc-leader"></span>
-          <span class="toc-entry-page">${escapeHtml(pageStr)}</span>
+          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>${pageCell}
         </div>
         <div class="toc-entry-desc">${escapeHtml(ch.description)}</div>
       </div>
@@ -365,9 +374,7 @@ export function tableOfContents(chapters: TocEntry[]): string {
     <div class="toc-entry">
       <div class="toc-entry-body">
         <div class="toc-entry-title-row">
-          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>
-          <span class="toc-leader"></span>
-          <span class="toc-entry-page">${escapeHtml(pageStr)}</span>
+          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>${pageCell}
         </div>
         <div class="toc-entry-desc">${escapeHtml(ch.description)}</div>
       </div>
@@ -601,6 +608,54 @@ export function playbook(segments: PlaybookSegment[]): string {
   <h2 class="playbook-heading">What Winning Institutions Will Do Next</h2>
   <div class="playbook-segments">${segmentsHtml}\n  </div>
 </div>`;
+}
+
+// ─── Figure Findings ──────────────────────────────────────────────────────────
+
+export interface FigureFinding {
+  /** The number that leads the finding, already formatted (e.g. "$35.00", "+12%"). */
+  figure: string;
+  headline: string;
+  detail: string;
+}
+
+/**
+ * Executive-summary findings led by a figure, as on the public research pages:
+ * the figure in a fixed left column, the headline and its supporting detail beside it.
+ */
+export function figureFindings(findings: FigureFinding[]): string {
+  const items = findings
+    .map(
+      (f) => `
+  <div class="figure-finding">
+    <div class="figure-finding-figure">${escapeHtml(f.figure)}</div>
+    <div>
+      <div class="figure-finding-headline">${escapeHtml(f.headline)}</div>
+      <div class="figure-finding-detail">${escapeHtml(f.detail)}</div>
+    </div>
+  </div>`,
+    )
+    .join("");
+  return `<div class="figure-findings">${items}\n</div>`;
+}
+
+// ─── Report Section ───────────────────────────────────────────────────────────
+
+/**
+ * One report section: its header and content in a single block. In print the header
+ * stays on the same page as the first block of content (see the print rules in styles.ts).
+ */
+export function reportSection(header: SectionHeaderProps, content: string, id?: string): string {
+  return `
+<section class="report-section"${id ? ` id="${escapeHtml(id)}"` : ""}>
+  ${sectionHeader(header)}
+  ${content}
+</section>`;
+}
+
+/** Plain statement shown in place of an exhibit that has no data. */
+export function emptyNotice(text: string): string {
+  return `<p class="report-empty">${escapeHtml(text)}</p>`;
 }
 
 // ─── Layout Wrappers ──────────────────────────────────────────────────────────

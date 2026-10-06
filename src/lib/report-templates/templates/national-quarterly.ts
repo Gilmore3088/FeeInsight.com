@@ -25,7 +25,6 @@ import {
   hamiltonNarrativeBlock,
   compactTable,
   footnote,
-  pageBreak,
   soWhatBox,
   pullQuote,
   insightCardRow,
@@ -104,60 +103,53 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   });
 
   // ── Table of Contents ──────────────────────────────────────────────────────
+  // No page numbers: chapters flow rather than each starting a new page, so a fixed
+  // number would point at the wrong page.
   const toc = tableOfContents([
     {
       title: "5 Truths About Banking Fees",
       description: "A structural shift in how banks generate fee revenue",
-      page: 3,
       sectionLabel: "Executive Summary",
     },
     {
       number: "01",
       title: "The Illusion of Fee Differentiation",
       description: "Why pricing no longer drives advantage",
-      page: 4,
       sectionLabel: "Core Analysis",
     },
     {
       number: "02",
       title: "Banks vs Credit Unions: Two Models",
       description: "Convenience vs penalty economics",
-      page: 5,
     },
     {
       number: "03",
       title: "Where the Money Actually Comes From",
       description: "Revenue concentration + national data",
-      page: 6,
     },
     {
       number: "04",
       title: "The Industry Blind Spot",
       description: "Why pricing lacks benchmark context",
-      page: 7,
     },
     {
       number: "05",
       title: "The Future of Fee Strategy",
       description: "Behavior, bundling, and segmentation",
-      page: 8,
     },
     {
       title: "What Winning Institutions Do Next",
       description: "Actionable recommendations by charter type",
-      page: 9,
       sectionLabel: "Strategy",
     },
     {
       title: "Methodology",
       description: "Data sources, computation methods, and maturity definitions",
-      page: 10,
       sectionLabel: "Data",
     },
     {
       title: "Full Category Index",
       description: "Complete national benchmark data for all tracked fee categories",
-      page: 11,
     },
   ]);
 
@@ -292,7 +284,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   }));
 
   const ch1 = [
-    pageBreak(),
     chapterDivider("01", "The Illusion of Fee Differentiation"),
     horizontalBarChart({
       bars: tightestBars,
@@ -317,7 +308,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }));
 
   const ch2 = [
-    pageBreak(),
     chapterDivider("02", "Banks vs Credit Unions: Two Models"),
     comparisonChart({
       bars: comparisonBars,
@@ -364,7 +354,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   const longTailCount = Math.max(revenueProxy.length - 8, 0);
 
   const ch3Sections: string[] = [
-    pageBreak(),
     chapterDivider("03", "Where the Money Actually Comes From"),
   ];
 
@@ -459,7 +448,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Ch4: The Industry Blind Spot ──────────────────────────────────────────
   const ch4 = [
-    pageBreak(),
     chapterDivider("04", "The Industry Blind Spot"),
     statCardRow([
       {
@@ -484,7 +472,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Ch5: The Future of Fee Strategy ───────────────────────────────────────
   const ch5 = [
-    pageBreak(),
     chapterDivider("05", "The Future of Fee Strategy"),
     statCardRow([
       {
@@ -509,7 +496,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Playbook ──────────────────────────────────────────────────────────────
   const playbookSection = [
-    pageBreak(),
     playbook([
       {
         title: "If You Are a Bank",
@@ -549,13 +535,13 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   ].join(" ");
 
   const methodology = [
-    pageBreak(),
     footnote(methodologyText),
   ].join("\n");
 
   // ── Appendix ──────────────────────────────────────────────────────────────
-  // No pageBreak() here — methodology flows directly into appendix to avoid blank pages.
-  // The compact table uses break-inside:auto so it flows across pages naturally.
+  // Chapters, methodology and appendix all flow: no forced page breaks after the table of
+  // contents, so no page is left mostly blank. Each chapter heading stays with its first
+  // block (print rules in base/styles.ts), and the compact table splits between rows.
   const appendix = [
     chapterDivider("A", "Full Category Index"),
     compactTable({

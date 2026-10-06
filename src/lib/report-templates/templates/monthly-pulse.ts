@@ -7,11 +7,13 @@
  * Rigid section order (never reorder):
  *   1. Cover page
  *   2. Pulse Overview — Hamilton narrative (1-2 paragraphs, 250-word max per D-09)
- *   3. Page break (only when both movers_up and movers_down are non-empty)
- *   4. Movers Up table — conditional on movers_up.length > 0
- *   5. Movers Down table — conditional on movers_down.length > 0
- *   6. No-movement notice — when both movers lists are empty
- *   7. Methodology footnote
+ *   3. Movers Up table — conditional on movers_up.length > 0
+ *   4. Movers Down table — conditional on movers_down.length > 0
+ *   5. No-movement notice — when both movers lists are empty
+ *   6. Methodology footnote
+ *
+ * Sections flow without forced page breaks so no page is left mostly blank; each
+ * section heading stays with its table (print rules in base/styles.ts).
  */
 
 import {
@@ -21,7 +23,6 @@ import {
   dataTable,
   hamiltonNarrativeBlock,
   footnote,
-  pageBreak,
 } from "../index";
 import type { MonthlyPulsePayload, PulseMover } from "../../report-assemblers/monthly-pulse";
 import type { GenerateSectionOutput } from "../../hamilton/types";
@@ -88,11 +89,7 @@ export function renderMonthlyPulseReport(input: MonthlyPulseReportInput): string
     hamiltonNarrativeBlock(narratives.pulse_overview.narrative),
   ].join("\n");
 
-  // Section 3: Page break — only when both tables will render
-  const breakBetween =
-    hasMoversUp && hasMoversDown ? pageBreak() : "";
-
-  // Section 4: Movers Up — conditional
+  // Section 3: Movers Up — conditional
   const moversUpSection = hasMoversUp
     ? [
         sectionHeader({
@@ -107,7 +104,7 @@ export function renderMonthlyPulseReport(input: MonthlyPulseReportInput): string
       ].join("\n")
     : "";
 
-  // Section 5: Movers Down — conditional
+  // Section 4: Movers Down — conditional
   const moversDownSection = hasMoversDown
     ? [
         sectionHeader({
@@ -122,13 +119,13 @@ export function renderMonthlyPulseReport(input: MonthlyPulseReportInput): string
       ].join("\n")
     : "";
 
-  // Section 6: No-movement notice — when both lists are empty
+  // Section 5: No-movement notice — when both lists are empty
   const stableMarketNotice =
     !hasMoversUp && !hasMoversDown
       ? `<p class="report-narrative">No fee categories exceeded the 5% movement threshold this period. The market is stable.</p>`
       : "";
 
-  // Section 7: Methodology footnote
+  // Section 6: Methodology footnote
   const methodologyText = [
     "Movement computed by comparing current median to prior cached index snapshot.",
     "Categories shown only when change exceeds \u00b15% threshold.",
@@ -139,7 +136,6 @@ export function renderMonthlyPulseReport(input: MonthlyPulseReportInput): string
   const body = [
     cover,
     overviewSection,
-    breakBetween,
     moversUpSection,
     moversDownSection,
     stableMarketNotice,
