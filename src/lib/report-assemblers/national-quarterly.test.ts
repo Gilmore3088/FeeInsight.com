@@ -27,6 +27,9 @@ vi.mock("@/lib/fee-taxonomy", () => ({
   FEE_TIERS: {},
 }));
 vi.mock("@/lib/report-engine/types", () => ({}));
+vi.mock("@/lib/public-stats", () => ({
+  getPublicStatsSummary: vi.fn(),
+}));
 
 import { buildThesisSummary } from "./national-quarterly";
 import type { NationalQuarterlyPayload } from "./national-quarterly";

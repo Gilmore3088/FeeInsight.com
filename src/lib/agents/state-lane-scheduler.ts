@@ -11,6 +11,7 @@ import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -37,6 +38,12 @@ export const STATE_LANE_DOCUMENT_BATCH_BY_STATE: Readonly<Record<string, number>
  * While a state still has a free-work backlog, its lane runs again this soon.
  */
 export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
+/**
+ * A lane with no backlog checks again this soon, even when its next full pass is weeks
+ * away: a missed search becomes due again after 12 hours and a fee link goes stale after
+ * a month, and a lane asleep until next month would leave both waiting.
+ */
+export const STATE_LANE_IDLE_RECHECK_HOURS = 12;
 
 /**
  * Focus report markets (James, 2026-10-05: Texas and California). Their full passes look
@@ -141,7 +148,8 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 /**
  * Steps an hourly backlog run takes: search banks that are due a free search and still
  * have no fee link (James, 2026-10-05: free discovery is never held to the monthly
- * cadence), fetch fee links found since their bank's last fetch, then re-read,
+ * cadence), fetch fee links found since their bank's last fetch or last fetched over a
+ * month ago (MAGELLAN_STALE_LINK_REFETCH_DAYS), then re-read,
  * re-extract, verify and publish the documents the state already has. Discovery's own
  * backoff (12 hours after a miss that may clear, a month or a quarter after a dead end)
  * keeps a bank from being searched more often than that. The paid find and
@@ -152,7 +160,7 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "classify", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
-  .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch newly found fee links", input: { ...step.input, new_links_only: true } } : step));
+  .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));
 
 export type StateLaneMode = "full" | "backlog";
 
@@ -287,6 +295,20 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                     AND pa.strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
                     AND pa.strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
                )
+               -- Knox never extracts a text it already extracted under another document id
+               -- (selectTextArtifacts). Without this, 1,506 such texts (2026-10-06) kept every
+               -- lane awake hourly with nothing to do.
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM agent_source_texts prior
+                   JOIN raw_fee_observations prior_fr
+                     ON prior_fr.source = 'knox'
+                    AND prior_fr.source_document_id = prior.source_document_id
+                  WHERE adt.text_hash IS NOT NULL
+                    AND prior.institution_id = adt.institution_id
+                    AND prior.text_hash = adt.text_hash
+                    AND prior.id <> adt.id
+               )
              )
              OR (
                (SELECT COUNT(*) FROM raw_fee_observations fr
@@ -331,6 +353,21 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            AND inst.rescue_status = 'rescued'
            AND inst.fee_schedule_url IS NOT NULL
            AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+      ) OR EXISTS (
+        -- A fee link last fetched over a month ago. Matches Magellan's backlog fetch
+        -- selection; a fetch, failed or not, stamps last_crawl_at, so a lane never loops on it.
+        SELECT 1
+          FROM institution_sources inst
+          LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND COALESCE(inst.status, 'active') = 'active'
+           AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+           AND (
+             profile.canonical_source_url IS NOT NULL
+             OR NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL
+           )
+           AND inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS})
       ) OR EXISTS (
         -- Raw rows Darwin has not decided under the current rules (the rows its
         -- verify step selects), so a large extraction drains hourly, not next month.
@@ -522,7 +559,7 @@ async function markLaneScheduled(
            last_run_at = NOW(),
            next_run_after = CASE
              WHEN ${backlog} THEN NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-             ELSE ${nextFullPassAt(daily)}::timestamptz
+             ELSE LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour')
            END,
            lease_token = NULL,
            lease_expires_at = NULL,
@@ -531,11 +568,14 @@ async function markLaneScheduled(
   `;
 }
 
-/** Nothing due and no backlog: the lane sleeps until its next full pass (next month, or tomorrow for a daily focus state). */
+/**
+ * Nothing due and no backlog: the lane sleeps until its next full pass (next month, or
+ * tomorrow for a daily state), or at most STATE_LANE_IDLE_RECHECK_HOURS.
+ */
 async function markLaneIdle(stateCode: string, daily: boolean): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
-       SET next_run_after = ${nextFullPassAt(daily)}::timestamptz,
+       SET next_run_after = LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour'),
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()

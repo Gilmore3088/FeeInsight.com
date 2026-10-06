@@ -4,14 +4,18 @@
  * Pure function: (input) => HTML string.
  * No async, no AI calls — narratives are pre-computed and injected.
  *
- * V3 Chapter Structure:
- *   Cover -> TOC -> Executive Summary ("5 Truths") ->
- *   Ch1: The Illusion of Fee Differentiation ->
- *   Ch2: Banks vs Credit Unions: Two Models ->
- *   Ch3: Where the Money Actually Comes From ->
- *   Ch4: The Industry Blind Spot ->
- *   Ch5: The Future of Fee Strategy ->
- *   Playbook -> Methodology -> Appendix
+ * Chapter structure:
+ *   Cover -> TOC -> The Quarter in Figures ->
+ *   Ch1: Where Prices Cluster and Where They Spread ->
+ *   Ch2: Banks and Credit Unions ->
+ *   Ch3: Fee Income in Call Reports ->
+ *   Ch4: Data Coverage ->
+ *   Ch5: What to Watch ->
+ *   Methodology -> Appendix
+ *
+ * Every heading and card states a figure from the payload. There is no fixed thesis,
+ * "so what" advice or playbook: Hamilton supports decisions and never tells an
+ * institution what to charge (James, 2026-10-06).
  */
 
 import {
@@ -19,20 +23,16 @@ import {
   coverPage,
   tableOfContents,
   statCardRow,
-  keyFinding,
   horizontalBarChart,
   chapterDivider,
   hamiltonNarrativeBlock,
   compactTable,
   footnote,
-  soWhatBox,
   pullQuote,
   insightCardRow,
   comparisonChart,
-  playbook,
   layoutAnalytical,
   layoutStatement,
-  revenuePyramid,
   dataFramework,
   PALETTE,
 } from "../index";
@@ -61,8 +61,9 @@ function fmtFee(amount: number | null): string {
   return `$${amount.toFixed(2)}`;
 }
 
-function fmtBillions(amount: number): string {
-  return `$${(amount / 1_000_000_000).toFixed(1)}B`;
+/** Call-report income is reported in thousands of dollars. */
+function fmtThousandsAsBillions(thousands: number): string {
+  return `$${(thousands / 1_000_000).toFixed(1)}B`;
 }
 
 function fmtPct(value: number | null): string {
@@ -96,51 +97,44 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Cover ──────────────────────────────────────────────────────────────────
   const cover = coverPage({
-    title: "The Death of Fee-Based Differentiation",
-    subtitle: `${data.total_institutions.toLocaleString()} Institutions \u2014 Full Fee Catalog \u2014 National Benchmark Analysis`,
+    title: `National Fee Index, ${data.quarter}`,
+    subtitle: `${data.total_institutions.toLocaleString()} institutions with published fees \u2014 ${d.categories_with_data_count} fee categories`,
     report_date: formattedDate,
     series: `National Quarterly Report \u2014 ${data.quarter}`,
   });
 
   // ── Table of Contents ──────────────────────────────────────────────────────
-  // No page numbers: chapters flow rather than each starting a new page, so a fixed
-  // number would point at the wrong page.
   const toc = tableOfContents([
     {
-      title: "5 Truths About Banking Fees",
-      description: "A structural shift in how banks generate fee revenue",
+      title: "The Quarter in Figures",
+      description: "Headline medians, charter comparison and call-report income",
       sectionLabel: "Executive Summary",
     },
     {
       number: "01",
-      title: "The Illusion of Fee Differentiation",
-      description: "Why pricing no longer drives advantage",
+      title: "Where Prices Cluster and Where They Spread",
+      description: "Spread around the national median, by fee",
       sectionLabel: "Core Analysis",
     },
     {
       number: "02",
-      title: "Banks vs Credit Unions: Two Models",
-      description: "Convenience vs penalty economics",
+      title: "Banks and Credit Unions",
+      description: "Medians by charter where both publish the fee",
     },
     {
       number: "03",
-      title: "Where the Money Actually Comes From",
-      description: "Revenue concentration + national data",
+      title: "Fee Income in Call Reports",
+      description: "FDIC and NCUA service-charge income",
     },
     {
       number: "04",
-      title: "The Industry Blind Spot",
-      description: "Why pricing lacks benchmark context",
+      title: "Data Coverage",
+      description: "How much of each category is published",
     },
     {
       number: "05",
-      title: "The Future of Fee Strategy",
-      description: "Behavior, bundling, and segmentation",
-    },
-    {
-      title: "What Winning Institutions Do Next",
-      description: "Actionable recommendations by charter type",
-      sectionLabel: "Strategy",
+      title: "What to Watch",
+      description: "Questions the next quarters of data can settle",
     },
     {
       title: "Methodology",
@@ -153,45 +147,51 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     },
   ]);
 
-  // ── Executive Summary: "5 Truths About Banking Fees" ──────────────────────
+  // ── Executive Summary: the quarter in figures ─────────────────────────────
   const commoditizedPct = d.total_priced_categories > 0
     ? Math.round((d.commoditized_count / d.total_priced_categories) * 100)
     : 0;
-
-  // Build 5 Truths as individual insight cards — each: bold claim, proof stat, arrow implication
-  const fiveTruths = [
-    {
-      number: `${commoditizedPct}%`,
-      insight: "Pricing is not a competitive advantage",
-      supporting: `${d.commoditized_count} of ${d.total_priced_categories} categories cluster within narrow IQR ranges. Competing on price alone is ineffective.`,
-    },
-    {
-      number: String(d.bank_higher_count),
-      insight: "Credit unions win perception, not pricing",
-      supporting: `Banks charge more in ${d.bank_higher_count} of ${d.comparable_count} comparable categories, yet CUs carry higher penalty exposure. Fee strategy must align with customer behavior.`,
-    },
-    {
-      number: d.bank_revenue_share_pct !== null ? `${d.bank_revenue_share_pct.toFixed(0)}%` : "\u2014",
-      insight: "Revenue visibility is broken",
-      supporting: d.bank_revenue_share_pct !== null
-        ? `Banks hold ${d.bank_revenue_share_pct.toFixed(0)}% of fee revenue, yet no standardized benchmarking exists. Institutions are pricing without context.`
-        : "No standardized fee revenue benchmarking exists. Institutions are pricing without context.",
-    },
-    {
-      number: String(d.strong_maturity_count),
-      insight: "Fee income is concentrated",
-      supporting: `Only ${d.strong_maturity_count} categories have strong data maturity out of ${d.total_priced_categories}. Optimization must focus on high-impact fees.`,
-    },
-    {
-      number: d.avg_iqr_spread_pct !== null ? `${d.avg_iqr_spread_pct.toFixed(0)}%` : "\u2014",
-      insight: "Behavior beats pricing",
-      supporting: `Average IQR spread of ${d.avg_iqr_spread_pct !== null ? d.avg_iqr_spread_pct.toFixed(0) + "%" : "N/A"} confirms static fee schedules cannot capture value. Future advantage = segmentation + behavior.`,
-    },
-  ];
+  const byCategory = new Map(data.categories.map((c) => [c.fee_category, c]));
+  const headlineCard = (key: string, label: string) => {
+    const c = byCategory.get(key);
+    if (!c || c.median_amount === null) return null;
+    return {
+      number: fmtFee(c.median_amount),
+      insight: `${label} national median`,
+      supporting: `Middle half ${fmtFee(c.p25_amount)} to ${fmtFee(c.p75_amount)}, from ${c.institution_count.toLocaleString()} institutions.`,
+    };
+  };
+  const figures = [
+    headlineCard("overdraft", "Overdraft"),
+    headlineCard("nsf", "NSF / returned item"),
+    d.comparable_count > 0
+      ? {
+          number: `${d.bank_higher_count} of ${d.comparable_count}`,
+          insight: "Categories where banks' median is higher",
+          supporting: `Credit unions' median is higher in ${d.cu_higher_count}; the rest are equal.`,
+        }
+      : null,
+    data.revenue && data.revenue.total_service_charges > 0
+      ? {
+          number: fmtThousandsAsBillions(data.revenue.total_service_charges),
+          insight: `Service-charge income, ${data.revenue.latest_quarter}`,
+          supporting: data.revenue.yoy_change_pct !== null
+            ? `${data.revenue.yoy_change_pct > 0 ? "+" : ""}${data.revenue.yoy_change_pct.toFixed(1)}% from a year earlier, FDIC and NCUA filings.`
+            : "FDIC and NCUA filings.",
+        }
+      : null,
+    d.avg_iqr_spread_pct !== null
+      ? {
+          number: `${d.avg_iqr_spread_pct.toFixed(0)}%`,
+          insight: "Average spread of the middle half",
+          supporting: `Across ${d.total_priced_categories} priced categories, as a share of each median.`,
+        }
+      : null,
+  ].filter((f): f is { number: string; insight: string; supporting: string } => f !== null);
 
   const execSummary = [
-    chapterDivider("", "5 Truths About Banking Fees in 2026"),
-    insightCardRow(fiveTruths),
+    chapterDivider("", "The Quarter in Figures"),
+    insightCardRow(figures),
     hamiltonNarrativeBlock(narratives.executive_summary.narrative),
   ].join("\n");
 
@@ -284,14 +284,13 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   }));
 
   const ch1 = [
-    chapterDivider("01", "The Illusion of Fee Differentiation"),
+    chapterDivider("01", "Where Prices Cluster and Where They Spread"),
     horizontalBarChart({
       bars: tightestBars,
-      title: "Top 10 Functionally Undifferentiated Fees (Smallest IQR Spread)",
+      title: "Fees with the narrowest middle half (spread as % of median)",
       source: `Bank Fee Index \u2014 ${data.total_institutions.toLocaleString()} institutions`,
     }),
     hamiltonNarrativeBlock(narratives.fee_differentiation.narrative),
-    soWhatBox("Stop competing on price alone. Differences exist but are too small to influence customer choice. Differentiation must come from experience, packaging, and targeting."),
   ].join("\n");
 
   // ── Ch2: Banks vs Credit Unions — Two Models ─────────────────────────────
@@ -308,7 +307,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }));
 
   const ch2 = [
-    chapterDivider("02", "Banks vs Credit Unions: Two Models"),
+    chapterDivider("02", "Banks and Credit Unions"),
     comparisonChart({
       bars: comparisonBars,
       leftLabel: "Banks",
@@ -318,12 +317,12 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }),
     statCardRow([
       {
-        label: "Banks Charge More",
+        label: "Bank median higher",
         value: String(d.bank_higher_count),
         source: "categories",
       },
       {
-        label: "CUs Charge More",
+        label: "Credit union median higher",
         value: String(d.cu_higher_count),
         source: "categories",
       },
@@ -334,74 +333,38 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       },
     ]),
     hamiltonNarrativeBlock(narratives.banks_vs_credit_unions.narrative),
-    soWhatBox("Banks monetize convenience; credit unions monetize penalties. Neither model is sustainable without intentional fee architecture."),
   ].join("\n");
 
-  // ── Ch3: Where the Money Actually Comes From ─────────────────────────────
-  // Revenue proxy model: estimate impact from fee prevalence and median amount.
-  const revenueProxy = data.categories
-    .filter((c) => c.median_amount !== null && c.median_amount > 0 && c.institution_count > 0)
-    .map((c) => ({
-      display_name: c.display_name,
-      median: c.median_amount!,
-      institutions: c.institution_count,
-      estimated_impact: c.median_amount! * c.institution_count,
-    }))
-    .sort((a, b) => b.estimated_impact - a.estimated_impact);
-
-  const primaryDriverNames = revenueProxy.slice(0, 3).map((r) => r.display_name).join(" / ");
-  const secondaryDriverNames = revenueProxy.slice(3, 8).map((r) => r.display_name).join(", ");
-  const longTailCount = Math.max(revenueProxy.length - 8, 0);
-
+  // ── Ch3: Fee Income in Call Reports ─────────────────────────────────────
+  // Call reports give one service-charge line per institution, not income by fee
+  // category, so this chapter ranks no category by revenue.
   const ch3Sections: string[] = [
-    chapterDivider("03", "Where the Money Actually Comes From"),
+    chapterDivider("03", "Fee Income in Call Reports"),
   ];
 
-  // Revenue concentration pyramid — always shown
-  ch3Sections.push(
-    revenuePyramid([
-      {
-        label: primaryDriverNames,
-        description: "Primary Revenue Drivers",
-        widthPct: 30,
-      },
-      {
-        label: secondaryDriverNames,
-        description: "Secondary Drivers",
-        widthPct: 55,
-      },
-      {
-        label: `${longTailCount} Other Categories`,
-        description: "Long Tail -- Minimal Revenue",
-        widthPct: 90,
-      },
-    ])
-  );
-
   if (data.revenue) {
-    // Real revenue data path — filter out $0 values
     const revenueCards: Array<{ label: string; value: string; delta?: string; source?: string }> = [];
 
     if (data.revenue.total_service_charges > 0) {
       revenueCards.push({
-        label: "Total Service Charges",
-        value: fmtBillions(data.revenue.total_service_charges),
+        label: "Service-charge income",
+        value: fmtThousandsAsBillions(data.revenue.total_service_charges),
         delta: data.revenue.yoy_change_pct !== null ? `${data.revenue.yoy_change_pct > 0 ? "+" : ""}${data.revenue.yoy_change_pct.toFixed(1)}% YoY` : undefined,
         source: data.revenue.latest_quarter,
       });
     }
 
-    if (d.revenue_per_institution !== null && d.revenue_per_institution > 0) {
+    if (d.bank_revenue_share_pct !== null) {
       revenueCards.push({
-        label: "Revenue per Institution",
-        value: `$${(d.revenue_per_institution / 1_000_000).toFixed(1)}M`,
-        source: `${data.revenue.total_institutions.toLocaleString()} reporting institutions`,
+        label: "Banks' share",
+        value: `${d.bank_revenue_share_pct.toFixed(1)}%`,
+        source: d.cu_revenue_share_pct !== null ? `credit unions ${d.cu_revenue_share_pct.toFixed(1)}%` : undefined,
       });
     }
 
     if (data.revenue.total_institutions > 0) {
       revenueCards.push({
-        label: "Reporting Institutions",
+        label: "Reporting institutions",
         value: data.revenue.total_institutions.toLocaleString(),
         source: "FDIC + NCUA filings",
       });
@@ -412,43 +375,20 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }
   }
 
-  // Revenue contribution bar chart (proxy ranking) — after pyramid
-  ch3Sections.push(
-    horizontalBarChart({
-      bars: revenueProxy.slice(0, 8).map((r) => ({
-        label: r.display_name,
-        value: r.estimated_impact,
-        displayValue: `$${r.median.toFixed(2)} \u00d7 ${r.institutions.toLocaleString()}`,
-      })),
-      title: "Estimated Revenue Contribution (Median x Institution Count)",
-      source: `Bank Fee Index \u2014 ${data.total_institutions.toLocaleString()} institutions`,
-    })
-  );
-
-  // National Data Framework block
   ch3Sections.push(
     dataFramework(
-      "National Fee Revenue Framework",
-      `This analysis integrates FDIC Call Report service charge data, NCUA 5300 credit union filings, and observed pricing across ${data.total_institutions.toLocaleString()} institutions. Because fee revenue is not reported at the category level, this report models revenue concentration using median fee amounts, institutional prevalence, and regulatory reporting totals.`,
+      "What call reports can and cannot show",
+      "FDIC call reports give each bank's quarterly service charges on deposit accounts; NCUA 5300 reports give each credit union's fee income, reported year to date and converted here to the quarter. Neither splits income by fee, so this report does not say which fees earn the most.",
     )
   );
 
   ch3Sections.push(hamiltonNarrativeBlock(narratives.revenue_reality.narrative));
 
-  ch3Sections.push(
-    keyFinding(
-      "Most institutions optimize pricing across every category they publish \u2014 but revenue is driven by fewer than 5.",
-      "Key Finding",
-    )
-  );
-
-  ch3Sections.push(soWhatBox("Focus optimization on high-impact categories. Stop over-analyzing low-impact fees."));
-
   const ch3 = ch3Sections.join("\n");
 
   // ── Ch4: The Industry Blind Spot ──────────────────────────────────────────
   const ch4 = [
-    chapterDivider("04", "The Industry Blind Spot"),
+    chapterDivider("04", "Data Coverage"),
     statCardRow([
       {
         label: "Categories with Data",
@@ -467,12 +407,11 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       },
     ]),
     hamiltonNarrativeBlock(narratives.industry_blind_spot.narrative),
-    soWhatBox("No institution can benchmark fee revenue nationally today. This is the competitive blind spot the Bank Fee Index exists to close."),
   ].join("\n");
 
   // ── Ch5: The Future of Fee Strategy ───────────────────────────────────────
   const ch5 = [
-    chapterDivider("05", "The Future of Fee Strategy"),
+    chapterDivider("05", "What to Watch"),
     statCardRow([
       {
         label: "Avg Price Spread",
@@ -480,57 +419,26 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
         source: "IQR as % of median",
       },
       {
-        label: "Effectively Commoditized",
+        label: "Narrow middle half",
         value: `${commoditizedPct}%`,
         source: `${d.commoditized_count} of ${d.total_priced_categories} categories`,
       },
       {
-        label: "Institutions Tracked",
+        label: "Institutions with published fees",
         value: data.total_institutions.toLocaleString(),
         source: "national coverage",
       },
     ]),
     hamiltonNarrativeBlock(narratives.future_strategy.narrative),
-    soWhatBox("Future revenue growth comes from behavior design, bundling, and segmentation — not static price sheets."),
-  ].join("\n");
-
-  // ── Playbook ──────────────────────────────────────────────────────────────
-  const playbookSection = [
-    playbook([
-      {
-        title: "If You Are a Bank",
-        recommendations: [
-          "Monetize convenience fees where you hold pricing power (wires, specialized services)",
-          "Reduce reliance on penalty fees — regulatory and reputational risk is growing",
-          "Build fee bundles that align price with customer segment behavior",
-        ],
-      },
-      {
-        title: "If You Are a Credit Union",
-        recommendations: [
-          "Rebalance penalty fee exposure — NSF and overdraft concentration creates regulatory vulnerability",
-          "Expand digital and convenience monetization (mobile, instant transfers)",
-          "Leverage member data for behavior-based fee strategies",
-        ],
-      },
-      {
-        title: "If You Are Behind",
-        recommendations: [
-          "Stop benchmarking on price alone — your peers are already effectively commoditized",
-          "Start with segmentation: know which customers generate fee revenue and why",
-          "Invest in behavioral pricing models before competitors capture the advantage",
-        ],
-      },
-    ]),
   ].join("\n");
 
   // ── Methodology ───────────────────────────────────────────────────────────
   const methodologyText = [
-    "National medians computed from all non-rejected fee observations in the Bank Fee Index pipeline.",
+    "National medians computed from live published fees (published_fee_catalog), one value per institution per fee.",
     `Maturity: "strong" = 10+ approved observations; "provisional" = 10+ total; "insufficient" = below threshold.`,
     "Charter split computed from charter_type field on institution_sources.",
     "IQR spread = (P75 - P25) / Median. Categories with median below $0.50 excluded from spread analysis.",
-    "Revenue data sourced from FDIC Call Reports and NCUA 5300 filings.",
+    "Service-charge income from FDIC call reports (quarterly) and NCUA 5300 filings (year to date, converted to the quarter); figures are reported in thousands of dollars.",
     `${SITE_NAME} — ${SITE_DOMAIN} — Generated ${data.report_date}`,
   ].join(" ");
 
@@ -539,9 +447,9 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   ].join("\n");
 
   // ── Appendix ──────────────────────────────────────────────────────────────
-  // Chapters, methodology and appendix all flow: no forced page breaks after the table of
-  // contents, so no page is left mostly blank. Each chapter heading stays with its first
-  // block (print rules in base/styles.ts), and the compact table splits between rows.
+  // Chapters, methodology and appendix flow without forced page breaks, so no page is left
+  // mostly blank; each chapter heading stays with its first block (base/styles.ts).
+  // The compact table uses break-inside:auto so it flows across pages naturally.
   const appendix = [
     chapterDivider("A", "Full Category Index"),
     compactTable({
@@ -571,7 +479,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     layoutAnalytical(ch3),
     layoutAnalytical(ch4),
     layoutStatement(ch5),
-    layoutStatement(playbookSection),
     methodology,
     appendix,
   ]
@@ -579,7 +486,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     .join("\n\n");
 
   return wrapReport(body, {
-    title: "The Death of Fee-Based Differentiation",
+    title: `National Fee Index, ${data.quarter}`,
     author: HAMILTON_ATTRIBUTION,
     date: data.report_date,
   });

@@ -77,15 +77,25 @@ const RULES_JSON = JSON.stringify(
   })),
 );
 
-export async function getCustomReportMarketData(institutionId: number): Promise<CustomReportMarketData | null> {
-  const [subject] = await sql<
-    { id: number; institution_name: string; city: string | null; state_code: string | null; charter_type: string | null; cert_number: string | null; asset_size: string | null }[]
-  >`
-    SELECT id, institution_name, city, state_code, charter_type, cert_number::text AS cert_number, asset_size
-    FROM institution_sources WHERE id = ${institutionId}`;
-  if (!subject) return null;
+interface MarketCountyRow {
+  county_fips: string;
+  year: number;
+  city: string;
+  state: string;
+  basis: string;
+}
 
-  const counties = await sql<{ county_fips: string; year: number; city: string; state: string; basis: string }[]>`
+/**
+ * The counties that make up an institution's local market: up to MAX_MARKET_COUNTIES of
+ * its own branch counties (in the state holding most of its deposits), or, for an
+ * institution not in the Summary of Deposits (credit unions), its headquarters city's counties.
+ */
+async function loadMarketCounties(subject: {
+  cert_number: string | null;
+  state_code: string | null;
+  city: string | null;
+}): Promise<MarketCountyRow[]> {
+  return sql<MarketCountyRow[]>`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits),
     own_all AS (
       SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state,
@@ -114,6 +124,85 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     SELECT county_fips, year, city, state, 'branch_counties' AS basis FROM own
     UNION ALL
     SELECT county_fips, year, city, state, 'hq_city' AS basis FROM hq`;
+}
+
+export interface LocalMarketMember extends MarketInstitution {
+  /** True for the institution the market was built around. */
+  is_subject: boolean;
+}
+
+export interface LocalMarketMembers {
+  basis: "branch_counties" | "hq_city";
+  places: string[];
+  sod_year: number;
+  members: LocalMarketMember[];
+}
+
+/**
+ * Who competes in an institution's local market, by the same definition the custom report
+ * uses: institutions with branches in the market counties (with their deposits there), plus
+ * institutions headquartered in a market city that the Summary of Deposits does not cover.
+ * Null when the institution has no market counties on file.
+ */
+export async function getLocalMarketMembers(institutionId: number): Promise<LocalMarketMembers | null> {
+  const [subject] = await sql<{ id: number; city: string | null; state_code: string | null; cert_number: string | null }[]>`
+    SELECT id, city, state_code, cert_number::text AS cert_number FROM institution_sources WHERE id = ${institutionId}`;
+  if (!subject) return null;
+  const counties = await loadMarketCounties(subject);
+  if (counties.length === 0) return null;
+  const countyFips = counties.map((row) => String(row.county_fips));
+  const sodYear = Number(counties[0].year);
+  const rows = await sql<
+    { institution_id: number; institution_name: string; city: string | null; state_code: string | null; charter_type: string | null; market_deposits: string | null }[]
+  >`
+    WITH branches AS (
+      SELECT b.institution_id, b.state, UPPER(b.city) AS city, COALESCE(b.deposits, 0) AS deposits
+      FROM institution_branch_deposits b
+      WHERE b.year = ${sodYear} AND b.county_fips::text = ANY(${countyFips})
+    ),
+    rivals AS (
+      SELECT institution_id, SUM(deposits) AS deposits FROM branches
+      WHERE institution_id IS NOT NULL GROUP BY institution_id
+      UNION
+      SELECT s.id, NULL FROM institution_sources s
+      WHERE EXISTS (SELECT 1 FROM branches p WHERE p.state = s.state_code AND p.city = UPPER(s.city))
+        AND NOT EXISTS (SELECT 1 FROM branches b2 WHERE b2.institution_id = s.id)
+    ),
+    members AS (
+      SELECT institution_id, MAX(deposits) AS deposits FROM rivals GROUP BY institution_id
+    )
+    SELECT m.institution_id, s.institution_name, s.city, s.state_code, s.charter_type, m.deposits AS market_deposits
+    FROM members m
+    JOIN institution_sources s ON s.id = m.institution_id
+    ORDER BY m.deposits DESC NULLS LAST, s.institution_name`;
+  return {
+    basis: counties[0].basis === "hq_city" ? "hq_city" : "branch_counties",
+    places: [...new Set(counties.map((row) => `${row.city}, ${row.state}`))],
+    sod_year: sodYear,
+    members: rows.map((row) => {
+      const deposits = num(row.market_deposits);
+      return {
+        institution_id: Number(row.institution_id),
+        institution_name: row.institution_name,
+        city: row.city,
+        state_code: row.state_code,
+        charter_type: row.charter_type,
+        market_deposits: deposits === null ? null : deposits * SOD_THOUSANDS,
+        is_subject: Number(row.institution_id) === institutionId,
+      };
+    }),
+  };
+}
+
+export async function getCustomReportMarketData(institutionId: number): Promise<CustomReportMarketData | null> {
+  const [subject] = await sql<
+    { id: number; institution_name: string; city: string | null; state_code: string | null; charter_type: string | null; cert_number: string | null; asset_size: string | null }[]
+  >`
+    SELECT id, institution_name, city, state_code, charter_type, cert_number::text AS cert_number, asset_size
+    FROM institution_sources WHERE id = ${institutionId}`;
+  if (!subject) return null;
+
+  const counties = await loadMarketCounties(subject);
 
   const subjectRow = {
     institution_id: Number(subject.id),
@@ -301,11 +390,70 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   };
 }
 
-/** The institution a free-text name refers to, only when exactly one name matches. */
-export async function findInstitutionIdByExactName(name: string): Promise<number | null> {
+const NAME_TOKEN_EXPANSIONS: Record<string, string> = {
+  fcu: "federal credit union",
+  cu: "credit union",
+  natl: "national",
+  nat: "national",
+  bk: "bank",
+  svgs: "savings",
+  sb: "savings bank",
+};
+const LEGAL_SUFFIXES = new Set(["na", "inc", "co", "corp", "company", "corporation", "ltd", "llc"]);
+const GENERIC_NAME_TOKENS = new Set([
+  "bank", "credit", "union", "federal", "national", "first", "savings", "trust", "the", "and", "of",
+  "community", "state", "citizens", "farmers", "merchants", "peoples", "security", "home", "american",
+]);
+
+/**
+ * Folds the ways people type an institution's name onto one form: case, punctuation,
+ * "&" vs "and", a leading "The", legal suffixes (N.A., Inc.) and common abbreviations
+ * (FCU, CU). "The First National Bank of Elk City, N.A." and "first national bank of elk city"
+ * normalize the same.
+ */
+export function normalizeInstitutionName(name: string): string {
+  const tokens = name
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/['’.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .flatMap((token) => (NAME_TOKEN_EXPANSIONS[token] ?? token).split(" "));
+  if (tokens[0] === "the") tokens.shift();
+  while (tokens.length > 1 && LEGAL_SUFFIXES.has(tokens[tokens.length - 1])) tokens.pop();
+  return tokens.join(" ");
+}
+
+/** The most distinctive word of a normalized name, used to narrow the lookup. */
+function distinctiveToken(normalized: string): string | null {
+  const tokens = normalized.split(" ").filter((t) => t.length >= 3);
+  const specific = tokens.filter((t) => !GENERIC_NAME_TOKENS.has(t));
+  const pool = specific.length > 0 ? specific : tokens;
+  return pool.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
+/**
+ * The institution a free-text name refers to, only when exactly one name matches: first
+ * exactly (ignoring case), then after normalizeInstitutionName on both sides. Two or more
+ * matches stay unmatched, so James looks it up rather than quoting the wrong institution.
+ */
+export async function findInstitutionIdByName(name: string): Promise<number | null> {
   const trimmed = name.trim();
   if (trimmed.length < 3) return null;
-  const rows = await sql<{ id: number }[]>`
+  const exact = await sql<{ id: number }[]>`
     SELECT id FROM institution_sources WHERE lower(institution_name) = lower(${trimmed}) LIMIT 2`;
-  return rows.length === 1 ? Number(rows[0].id) : null;
+  if (exact.length === 1) return Number(exact[0].id);
+  if (exact.length > 1) return null;
+
+  const wanted = normalizeInstitutionName(trimmed);
+  const token = distinctiveToken(wanted);
+  if (!token) return null;
+  const candidates = await sql<{ id: number; institution_name: string }[]>`
+    SELECT id, institution_name FROM institution_sources
+    WHERE institution_name ILIKE ${"%" + token + "%"}
+    LIMIT 2000`;
+  const matches = candidates.filter((row) => normalizeInstitutionName(row.institution_name) === wanted);
+  return matches.length === 1 ? Number(matches[0].id) : null;
 }

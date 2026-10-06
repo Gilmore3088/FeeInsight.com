@@ -5,6 +5,22 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Darwin is rebuilt as a full verification layer, with Claude as the last resort.** James, 05:29
+UTC ("i want to build the entire Darwin layer. But the API call should be last result"). Free
+methods run first: reading the schedule as rows, a learned category model, learned price ranges,
+peer checks and the shared source check. Only fees those methods disagree on go to a Claude
+call, and only within Darwin's own budget. An internal validation team (the "solutions team")
+may be added to grade Darwin against an answer key. Knowledge flows to and from every agent
+(James, 05:41 UTC): Darwin's learning reads and writes the same shared corrections store Knox and
+Magellan use, never a Darwin-only copy. The build plan is in the Darwin v2 design
+artifact (https://claude.ai/artifact/Ta2Nv3YRVCZ55orVTsNMjL).
+
+**Every agent gets its own Anthropic API key so spend is tracked and capped per agent.** James,
+05:29 UTC. `src/lib/ai-provider.ts` reads `ANTHROPIC_API_KEY_<AGENT>` (ATLAS, MAGELLAN, ROSETTA,
+KNOX, DARWIN, HAMILTON) and falls back to the shared `ANTHROPIC_API_KEY`, so nothing stops while
+the keys are being added. Every model call names the agent it bills to. The Atlas details page
+shows which key each agent is using.
+
 **Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
 incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
 scenario and implementation plan carries its provenance: sources with links to the banks' own
@@ -35,6 +51,13 @@ yet. Pages offer an email link, never a scheduler; PR 178 changed the private re
 report has sold.
 
 ## 2026-10-05
+
+**Package all 16 years of call reports on institution pages, deeper for Pro.** James, 22:25 and
+22:38 UTC ("Go: phases 1 and 2"). Phase 1 shows the stored-but-hidden figures plus growth, peer
+rank and outliers. Phase 2 widens the FDIC and NCUA pulls (overdraft-related service charges and
+other deposit-fee lines) and re-pulls all 66 quarters as visible runs. Only figures the source
+reports: no overdraft/NSF split unless a filing reports one. Phases 3 (a Pro institution
+workspace) and 4 (free page tune-up) wait for his go-ahead.
 
 **The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
 gets in.** James, 23:28 UTC ("nobody else should have access to API"). Every `/api/v1` request

@@ -21,7 +21,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.0.0";
+export const WORKSPACE_ENGINE_VERSION = "1.2.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -69,10 +69,95 @@ export interface Observation {
   salience: number;
 }
 
+/** Where one fee sits in a market layer. */
+export type MarketLayerScope = "national" | "fed_district" | "state" | "charter_size" | "local";
+
+export interface MarketLayer {
+  scope: MarketLayerScope;
+  /** e.g. "National", "Fed district 11 (Dallas)", "Texas", "Credit unions, $300M to $1B". */
+  label: string;
+  /** Institutions in the layer that publish this fee (the bank itself excluded). */
+  n: number;
+  /** Null when fewer than MIN_PEERS_FOR_POSITION institutions publish the fee. */
+  p25: number | null;
+  median: number | null;
+  p75: number | null;
+  /** Percentile of the bank's own amount within the layer; null without enough peers or no own amount. */
+  position: number | null;
+  /** Every institution's value in the layer, lowest first, for distribution charts. */
+  amounts: number[];
+  /** The same values counted into price bands, the bank's band included. */
+  bands: PriceBand[];
+  asOf: string | null;
+  source: SourceRef;
+}
+
+/** The bank's local market: who has branches in its counties (or its headquarters city). */
+export interface LocalMarketInfo {
+  /** "branch_counties" for institutions in the FDIC Summary of Deposits; "hq_city" otherwise (credit unions). */
+  basis: "branch_counties" | "hq_city";
+  places: string[];
+  /** Summary of Deposits year the market was drawn from. */
+  sodYear: number;
+  /** Institutions in the market, the bank itself excluded, whether or not they publish this fee. */
+  institutions: number;
+  source: SourceRef;
+}
+
+export interface IncomeQuarter {
+  quarterEnd: string;
+  /** Dollars for that quarter alone (NCUA year-to-date figures already split into quarters). */
+  amount: number;
+}
+
+/** The institution's own fee income from its call report (FDIC) or 5300 (NCUA). */
+export interface InstitutionFinancials {
+  source: "fdic" | "ncua";
+  /** e.g. "Service charges on deposit accounts (FDIC call report)". */
+  label: string;
+  /** Newest first, up to eight quarters. */
+  quarters: IncomeQuarter[];
+  /** Trailing four quarters, when all four are on file. */
+  latestTtm: number | null;
+  /** The four quarters before, when all four are on file. */
+  priorTtm: number | null;
+  yoyPct: number | null;
+  quarterEnd: string;
+  sourceRef: SourceRef;
+  /** Median quarterly income of filers with the same charter and asset size, newest first. */
+  peerMedian: PeerIncomeSeries | null;
+}
+
+export interface PeerIncomeSeries {
+  /** e.g. "Credit unions, $300M to $1B in assets". */
+  label: string;
+  quarters: (IncomeQuarter & { institutions: number })[];
+  sourceRef: SourceRef;
+}
+
+/** Industry-wide deposit service charge income, from every FDIC and NCUA filer on file. */
+export interface MarketIncome {
+  quarter: string;
+  /** Dollars, that quarter. */
+  total: number;
+  banks: number;
+  creditUnions: number;
+  institutions: number;
+  /** Against the same quarter a year earlier, when on file. */
+  yoyPct: number | null;
+  sourceRef: SourceRef;
+}
+
 export interface Briefing {
   institutionId: number;
   institutionName: string;
   observations: Observation[];
+  /** The bank's own reported fee income; null when no filing is on file. */
+  institutionFinancials: InstitutionFinancials | null;
+  /** National deposit service charge income, newest quarter; null when none is on file. */
+  nationalIncome: MarketIncome | null;
+  /** The same, the last eight quarters on file, newest first. */
+  nationalIncomeSeries: MarketIncome[];
   /** Fees on the bank's published schedule that Hamilton reviewed. */
   feesReviewed: number;
   peerLabel: string;
@@ -84,6 +169,8 @@ export interface PeerValue {
   institutionId: number;
   institutionName: string;
   amount: number;
+  /** Deposits held in the bank's market counties (FDIC Summary of Deposits), dollars; local competitors only. */
+  marketDeposits?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
   documentUrls: string[];
@@ -121,11 +208,22 @@ export interface FeeResearch {
   peers: PeerValue[];
   band: { p25: number; median: number; p75: number; n: number } | null;
   bands: PriceBand[];
-  /** Named competitors in the bank's market; null until the local-market reader lands. */
+  /**
+   * The same fee in every wider market the bank belongs to: national, its Fed district,
+   * its state, and its charter and asset size. Each layer is shown even when thin, with
+   * null percentiles when too few institutions publish the fee.
+   */
+  layers: MarketLayer[];
+  /** Named competitors in the bank's local market that publish this fee, largest deposits first; null when no market is on file. */
   localCompetitors: PeerValue[] | null;
+  localMarket: LocalMarketInfo | null;
   recentChanges: Fact[];
   /** Reported income for this fee, when a filing carries a line for it. */
   revenueLine: RevenueLine | null;
+  /** The bank's total deposit service charge income, as context for this fee. */
+  institutionFinancials: InstitutionFinancials | null;
+  /** Rules that govern changing this fee, then recent regulator releases that mention it. */
+  regulation: Fact[];
   provenance: Provenance;
 }
 

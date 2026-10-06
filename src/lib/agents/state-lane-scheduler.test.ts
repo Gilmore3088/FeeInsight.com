@@ -30,6 +30,7 @@ import {
   scheduleDueStateLaneRuns,
   startStateLaneRun,
   stateHasDocumentBacklog,
+  STATE_LANE_IDLE_RECHECK_HOURS,
   stateLaneCadence,
   stateLaneSteps,
 } from "./state-lane-scheduler";
@@ -149,6 +150,26 @@ describe("state lane scheduler", () => {
     const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
     expect(backlogQuery).toContain("inst.last_rescue_attempt_at IS NULL");
     expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
+  });
+
+  it("counts fee links last fetched over a month ago as backlog, so they are re-fetched hourly", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("TX");
+
+    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    expect(backlogQuery).toContain("inst.last_crawl_at < NOW() - make_interval(days =>");
+    expect(sqlMock.mock.calls[0]).toContain(30);
+  });
+
+  it("does not count a text Knox already extracted under another document as backlog", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("PA");
+
+    const query = templateText(sqlMock.mock.calls[0][0]);
+    expect(query).toContain("prior.text_hash = adt.text_hash");
+    expect(query).toContain("prior.id <> adt.id");
   });
 
   it("counts raw rows Darwin has not decided as backlog", async () => {
@@ -299,7 +320,7 @@ describe("state lane scheduler", () => {
     expect(params).not.toHaveProperty("fetch_limit");
   });
 
-  it("puts a lane to sleep until next month when nothing is due and there is no backlog", async () => {
+  it("puts a lane to sleep until next month, checking again within 12 hours, when nothing is due and there is no backlog", async () => {
     const txMock = vi.fn().mockResolvedValue([{ state_code: "PA" }]);
     withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: false });
@@ -308,7 +329,8 @@ describe("state lane scheduler", () => {
 
     expect(result).toMatchObject({ selected: 1, scheduled: 0, idle: 1 });
     expect(startAgentRunMock).not.toHaveBeenCalled();
-    expect(laneUpdate()?.values).toEqual(expect.arrayContaining([nextMonthStart().toISOString(), "PA"]));
+    expect(laneUpdate()?.values).toEqual(expect.arrayContaining([nextMonthStart().toISOString(), STATE_LANE_IDLE_RECHECK_HOURS, "PA"]));
+    expect(laneUpdate()?.text).toContain("LEAST(");
   });
 
   it("keys runs by window: monthly full pass, quarterly re-check, hourly catch-up", () => {

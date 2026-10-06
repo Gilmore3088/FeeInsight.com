@@ -4,9 +4,11 @@ import { sql } from "./connection";
  * Market readiness: is there enough live fee data in a market for a competitive report?
  *
  * An institution is "rich" when it has at least RICH_MIN_CATEGORIES of the 15 headline
- * fee categories live in published_fee_catalog. A market (one state, one charter type) is
- * ready when at least MARKET_READY_MIN_RICH of its institutions are rich, so a report can
- * compare a bank with real local peers instead of a national fallback.
+ * fee categories live in published_fee_catalog. James's report rule: an institution can
+ * get a report when it is rich and at least MIN_RICH_COMPETITORS other institutions of its
+ * type in its state are rich. A market (one state, one charter type) is ready when a rich
+ * institution there passes that rule, i.e. MARKET_READY_MIN_RICH rich institutions.
+ * The institution report's quote check applies the same rule (custom-report/quote-check).
  */
 export const HEADLINE_FEE_KEYS = [
   "monthly_maintenance",
@@ -27,7 +29,10 @@ export const HEADLINE_FEE_KEYS = [
 ] as const;
 
 export const RICH_MIN_CATEGORIES = 9;
-export const MARKET_READY_MIN_RICH = 15;
+/** Rich same-state, same-type competitors a report needs, not counting the institution itself. */
+export const MIN_RICH_COMPETITORS = 15;
+/** Rich institutions a market needs so each of them has MIN_RICH_COMPETITORS rich competitors. */
+export const MARKET_READY_MIN_RICH = MIN_RICH_COMPETITORS + 1;
 
 export interface MarketReadiness {
   state_code: string;
@@ -48,6 +53,57 @@ export function isInstitutionRich(headlineCategories: number): boolean {
 
 export function isMarketReady(rich: number): boolean {
   return rich >= MARKET_READY_MIN_RICH;
+}
+
+/**
+ * James's report rule for one institution: RICH_MIN_CATEGORIES+ headline categories of its
+ * own, and MIN_RICH_COMPETITORS+ rich institutions of its type in its state besides itself.
+ */
+export function passesReportRule(ownCategories: number, richCompetitors: number): boolean {
+  return isInstitutionRich(ownCategories) && richCompetitors >= MIN_RICH_COMPETITORS;
+}
+
+/** Institutions passing the report rule across all markets: every rich institution in a ready market. */
+export function countInstitutionsPassingReportRule(markets: Pick<MarketReadiness, "rich" | "ready">[]): number {
+  return markets.reduce((total, market) => total + (market.ready ? market.rich : 0), 0);
+}
+
+export interface ReportRuleCheck {
+  state_code: string | null;
+  charter_type: string | null;
+  ownCategories: number;
+  /** Rich institutions of the same type in the same state, not counting this one. */
+  richCompetitors: number;
+  passes: boolean;
+}
+
+/** James's report rule for one institution, from the same counts getMarketReadiness uses. */
+export async function getReportRuleCheck(institutionId: number): Promise<ReportRuleCheck | null> {
+  const keys = [...HEADLINE_FEE_KEYS];
+  const [row] = await sql<
+    { state_code: string | null; charter_type: string | null; own: string | null; rich_competitors: string }[]
+  >`
+    WITH coverage AS (${headlineCoverageSql(keys)}),
+    subject AS (SELECT id, state_code, charter_type FROM institution_sources WHERE id = ${institutionId})
+    SELECT subject.state_code, subject.charter_type,
+           (SELECT categories FROM coverage WHERE coverage.institution_id = subject.id) AS own,
+           (SELECT COUNT(*) FROM institution_sources s
+              JOIN coverage ON coverage.institution_id = s.id
+             WHERE s.id <> subject.id
+               AND s.state_code = subject.state_code
+               AND s.charter_type = subject.charter_type
+               AND coverage.categories >= ${RICH_MIN_CATEGORIES}) AS rich_competitors
+    FROM subject`;
+  if (!row) return null;
+  const ownCategories = Number(row.own ?? 0);
+  const richCompetitors = Number(row.rich_competitors);
+  return {
+    state_code: row.state_code,
+    charter_type: row.charter_type,
+    ownCategories,
+    richCompetitors,
+    passes: passesReportRule(ownCategories, richCompetitors),
+  };
 }
 
 export function toMarketReadiness(row: {

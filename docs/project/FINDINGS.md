@@ -13,6 +13,81 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Knox reads the same web page several times, and checks nothing he writes
+**What happened:** the Knox audit (read-only prod queries, 05:00-05:30 UTC) found 632 fee pages stored
+as 2 to 10 separate `source_documents`. Knox extracts every copy: 14,895 extra raw rows, of which Darwin
+dropped 9,782 as duplicates. 4,972 live fees at 430 banks come from an older copy of a page that has a
+newer one; 89 of them have a price the newest copy does not show. Separately, pass 2 specialists keep only
+rows that already pass Darwin's checks, so Darwin cannot catch them: 21% of their approved fees were
+pulled later (1,027 name not on the page, 738 wrong number) against 12% for the line rules. Accuracy:
+86.0% on 578 fees at 29 Texas answer-key banks (54% of each schedule found); 76 of 103 right in a national
+random sample of stored rows, 9 of 103 still wrong when the same lines are replayed through rules v11.
+**Cause:** Knox's "read each text once" and older-text retirement are keyed on one document, not on the
+page's address. Knox never runs `checkFeeAgainstSource` on his own rows.
+**Fix:** rules v12 (PR 207) reads price-first table rows ("$20.00 | Domestic outgoing wire", which the
+rules re-check could not reproduce) and stops two misreads seen in the sample: a limit, threshold or refundable
+deposit after a price ("Money Orders ($1,000 Limit)") and a column label cell ("Fee Rush Card Fee |
+Amount $50") hiding the fee name. One document per page and a Knox self-check are open, waiting for James.
+**Lesson:** a dedupe or retirement rule must be keyed on what is really the same thing (the page), not on
+the row id that stored it. A specialist that pre-filters by the next agent's rules removes that agent's check.
+
+## 2026-10-06: Every state lane stayed awake with nothing to do, so busy states waited two hours
+**What happened:** the Atlas audit (read-only queries on prod, 05:00 UTC) found no state lane ever
+went to sleep. The scheduler starts 2 lanes per 5-minute tick (24 an hour) for 55 lanes, so each
+state ran every 130 minutes (median gap over 24 hours) instead of hourly; 32 lanes were overdue
+at 05:01 and none was queued. 108 of 444 backlog runs in 24 hours found nothing to read, extract,
+verify, publish, discover or fetch, while Texas had 229 banks due a free search.
+**Cause:** `stateHasDocumentBacklog` counted 1,536 thin texts as "to re-extract", but 1,506 of them
+are texts Knox already extracted under another document id, which Knox's own selector skips
+forever. The check and the step disagreed, so the lane looped.
+**Fix:** this PR: the backlog check skips the same duplicate texts Knox skips, and an idle lane
+checks again within 12 hours instead of sleeping until next month (so a missed search coming due
+or a link going stale still wakes it). 22 lanes with no work now sleep and give their slots to
+the 31 with work.
+**Lesson:** a lane's "is there work" check must use the same filters as the step that does the
+work. When a step's selector changes, change the backlog check with it.
+
+## 2026-10-06: Darwin passed fees the bank's own schedule does not state
+**What happened:** of the Darwin-verified fees published and later taken down (read-only query on prod,
+04:50 UTC), 2,740 failed Hamilton's source check (1,370 name not in the text, 1,064 amount not the fee,
+304 amount is a threshold), 2,685 of them published in the last 24 hours. Another 4,032 were rolled
+back when newer Knox rules no longer read them, and 454 failed the category guard. 37,709 Darwin-verified
+fees are live.
+**Cause:** Darwin checked a fee's name, category, range and peers but never read the document. The
+check that reads it (`checkFeeAgainstSource`) ran only after publication, as Hamilton's takedown sweep.
+**Fix:** this PR: Darwin runs the shared source check against the fee's own stored text before verifying
+it (reason code `not_in_source`, rejected). Hamilton's sweep stays as the safety net for live fees.
+**Lesson:** a check that can stop a wrong fee before it goes live belongs at the gate, not only in a
+sweep afterwards.
+
+## 2026-10-06: The live board showed a Darwin backlog that did not exist
+**What happened:** /admin/live showed 2,838 banks waiting at Darwin (04:30 UTC, read-only query on prod).
+Every one of the 18,843 Knox rows behind that number already had a Darwin decision under the current
+rules (`verify.rules` v3): 9,756 duplicates of a fee verified in the same batch, 5,322 rejected for
+category mismatch, 2,374 held as outside the category's range, 1,391 held as peer outliers. Zero rows
+were unchecked. Darwin's classify step ran 523 times in 24 hours with a median of 0.9 s (p90 8.2 s);
+its queue wait (median 329 s) matched Knox's and Hamilton's.
+**Cause:** the board's Darwin count (`getFlowWaiting` in `src/lib/agents/flow.ts`) counted every raw
+row missing from `verified_fee_observations`. Rejected, held and duplicate rows never get there, so
+they counted as waiting forever.
+**Fix:** this PR: the count skips rows that already have a `verify.rules` attempt at the current version,
+the same test Darwin's own batch query uses.
+**Lesson:** a "waiting" count must use the stage's own done-marker (its `pipeline_attempts` row), not
+"missing from the next table", or every rejection reads as backlog.
+
+## 2026-10-06: Texas fee schedules went months without a re-fetch
+**What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
+the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
+Of 741 Texas rows, 479 were last crawled over 90 days ago; 189 active fee links had not been fetched
+in 30+ days, and 695 such links existed across 13 states.
+**Cause:** stale links were only re-fetched in a state's full pass, 50 at a time in Texas, while the
+hourly backlog fetch took only newly found links. About 300 of the stale Texas rows have no fee link
+at all; their old crawl date still counts toward the freshness median.
+**Fix:** this PR: the hourly backlog fetch (free) also re-fetches links last fetched over 30 days ago,
+and a state with such links counts as having a backlog.
+**Lesson:** a freshness check that reads `last_crawl_at` needs a schedule that actually refreshes it;
+check crawl-age spread per state, not only the national median.
+
 ## 2026-10-06: Report PDFs printed an empty State Index and wasted pages
 **What happened:** James showed two report PDFs from /admin/hamilton/reports. The State Index PDF
 said its template was "under development": `state-fee-index.ts` was a stub and the `state_index`
@@ -447,3 +522,170 @@ name (ignoring case) and same amount gave extra live rows of 95 counter check, 5
 so the published numbers were not affected.
 **Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
 name and price into one line marked "listed N times". Live rows are unchanged.
+
+## 2026-10-06: Texas live fees were never source-checked
+**What happened:** a fresh random sample of 150 live Texas fees (03:20 UTC Oct 6) found 136 that
+match the bank's own schedule (90.7%), 8 wrong and 6 with no source document at all. Texas had 107
+live fees with no source document, all old imported rows.
+**Cause:** the source check that takes down untraceable fees ran only in publish steps that had a
+state or an institution. Most publish steps have neither, and the Texas lane ran one with a state
+three times since the check shipped, so 119 of 183 Texas institutions with live fees (499 of 2,662
+nationally, holding 7,888 live fees) had never been checked.
+**Fix:** same PR: every publish step source-checks a batch of 40 institutions, any state's when the
+step has none, institutions never checked first. A read-only dry run of the check over the 7,797
+never-checked live fees (495 institutions, all states) first predicted 709 takedowns; spot checks
+found reader misses, fixed in the same PR (dot leaders before a bare amount, a "$10 minimum" before
+the real price, a range inside a name's note, a heading over rows that carry their own names, box
+sizes like "5 x 10", and price-first lists). After the fixes 557 would come down at 182
+institutions: 195 imported fees with no source document, 15 with no amount, 245 whose amount is not
+the price on the matching row, 56 whose name is not in the schedule, 46 whose amount is a limit.
+**Lesson:** dry-run a takedown rule over the rows it has never touched before turning it on.
+**Guard (follow-up PR):** the admin home page alert banner now lists, by state, institutions
+holding a live fee published over 12 hours ago and not source-checked since, so a gap in any state
+shows within a day instead of waiting for an accuracy sample. Read-only at 04:50 UTC Oct 6 it lists
+248 institutions (TX 66, CA 50, NY 45, PA 36, MI 21, OH 14, IL 10, WI 6), shrinking as every
+publish step works through them.
+
+## 2026-10-06: Generated reports waited behind the whole pipeline queue
+**What happened:** National Index and Monthly Pulse runs started from /admin/hamilton/reports at
+03:03 UTC Oct 6 sat "pending" with no step started.
+**Cause:** the agent tick takes queued runs oldest first. The state backlog adds two lane runs every
+five minutes and finishes about two, so about 20 lane runs (roughly 50 minutes of work) were always
+queued ahead of any new report run. Read-only check at 03:08 UTC: 17 lane runs queued ahead of the two
+report runs.
+**Fix:** same PR: the tick takes queued report runs before pipeline runs; the rest keeps its order.
+
+## 2026-10-06: The National report carried fixed claims and advice, and misstated fee income
+**What happened:** the Q4 2026 National report (run 1309) was titled "The Death of Fee-Based
+Differentiation", showed "5 Truths", "SO WHAT" boxes and a "What Winning Institutions Do Next"
+page, showed service charges as "$0.0B", and said 2,075 institutions.
+**Cause:** the title, the truths' wording, every box and the playbook were fixed text in
+`templates/national-quarterly.ts`, and the section prompts told Hamilton the conclusion (for
+example "the data confirms fee revenue is dominated by NSF/overdraft", which call reports cannot
+show). Call-report income is in thousands of dollars but was divided as dollars. NCUA 5300 fee
+income is year to date, and `getRevenueTrend` summed it as quarterly: Q2 2026 read $14.49B and a
+64% bank share; per quarter it is $11.97B and 78% (read-only check, 03:40 UTC). The institution
+count was the largest single category's count, not the site's count (2,669).
+**Fix:** same PR: headings and cards state payload figures only; no fixed claims, advice or
+playbook; prompts ask for what the data shows and never for advice (Hamilton voice 3.3.0);
+NCUA income converted to quarters; thousands formatted correctly; the count comes from
+`getPublicStatsSummary`.
+
+## 2026-10-06: Recorded fee changes are mostly not price changes
+**What happened:** of 9 increases and decreases in `fee_change_records` in the last 30 days, 7
+were not changes: a page that lists two prices for one fee (Canyon View FCU returned deposit $3
+and $10, First National Bank of Mount Dora monthly fee $5 and $32, Morgantown notary $5 and $10)
+or two different fees in one category (True North "Express Checking Plus" $5 against "True
+Options" $10). Only New Hampshire FCU's two changes hold up (Oct 2024 schedule to Aug 2026).
+**Cause:** the publisher records a change when a newer document carries the fee at a new amount,
+even when that document also states the old amount.
+**Fix:** the Monthly Pulse now reports a change only when the old and new rows share a fee name,
+the earlier schedule states the old price, and the newest schedule states the new price but not
+the old one (`checkFeeAgainstSource`). The publisher still records the extra rows; fixing it there
+is still open.
+
+## 2026-10-06: The shared source check misreads one-line dotted-leader schedules
+**What happened:** on Commonwealth FCU's schedule, which is stored as one long line ("Greater
+than $100.00 ..... $10.00 Returned Deposited Item ..... $32.00"), `checkFeeAgainstSource` says
+"Returned Deposited Item" is $10 and that $32 is "amount_not_the_fee".
+**Cause:** in dotted-leader layouts the price follows the name, but the check took the amount just
+before the name. Not fixed yet; it affects any schedule stored without line breaks.
+
+## 2026-10-06: A fee listed at two prices on one schedule was recorded as a price change
+**What happened:** 9 fee-price changes were recorded since Oct 1 (read-only check, 04:00 UTC Oct 6).
+Four came from schedules that list the same fee name at both prices (two products or two tiers):
+Morgantown's notary fee $5 to $10, Mount Dora's monthly fee $5 to $32, Canyon View's returned
+deposit $3 to $10 and Commonwealth's overdraft $4 to $32. Two more (True North, First Community)
+were recorded before publish required the same fee name. Commonwealth's returned deposited item $10
+to $32 comes from two documents with one price each and may be real. The two New Hampshire FCU
+changes are real.
+**Cause:** Hamilton's publish replaced a live fee with a same-named line from a newer document and
+recorded the difference as a change, without asking whether either schedule lists both prices.
+Five live fees were closed this way; at Mount Dora the $5 monthly fee is no longer live.
+**Fix:** same PR: before replacing a live fee, publish checks both documents' extracted lines. If the
+newer one also lists the old price under that name, or the older one lists the new price, the new
+line is published as an additional line and no change is recorded. Applies to every state. Repairing
+the five closed rows and the false change records is SQL for James (sql-to-run issue).
+
+## 2026-10-06: Darwin's category guard let other banks' customers' ATM fees and gift card extras through
+**What happened:** the Texas accuracy sample (136 of 150 correct) found 8 fees in the wrong category.
+A read-only check of all live rows in those categories found 61 the same way: 34 non-network ATM
+fees that are really the surcharge a credit union charges non-members at its own ATMs or its own and
+in-network ATMs, 12 gift card purchases that are reload, inactivity or unrelated fees, 5 card
+replacements that are gift card replacements, 4 monthly fees that are per-transaction charges or
+earnings-credit notes, and 6 card disputes that are deposited-item or loan chargebacks.
+**Fix:** same PR: category guard v8 adds those exclusions and guards gift card purchase and card
+dispute. Darwin applies it to new rows; James clicks /admin/atlas/details > Misfiled fees > Dry run,
+then Roll back, after the deploy to take the 61 live rows down.
+
+## 2026-10-06: Hamilton's workspace showed one peer group and none of the national data
+**What happened:** James saw "very little national data like NCUA reports, filings". The workspace
+engine's `getFeeResearch` returned only the narrowest peer group for a fee, with
+`revenueLine: null`, no national, Fed district or state view, none of the bank's own call report
+income and no rules. The Briefing had no industry income and no regulator items.
+**Fix:** each fee now carries four market layers (national, Fed district, state, charter and size)
+with percentiles where at least 5 institutions publish it; the bank's own service charge income by
+quarter (NCUA year-to-date split into quarters); the filed overdraft and NSF income line when one
+exists; the notice and disclosure rules that apply; and fee-related regulator releases. The
+Briefing adds national service charge income and a rule_change item for each fee-related release.
+**Still empty, honestly:** no institution has overdraft or NSF income stored yet (credit union
+lines land with the NCUA re-pull; bank RIAD H032 isn't loaded). The regulator feed
+(`reg_articles`, FDIC/Fed/OCC/CFPB press releases since 2025-01-28) has no release in the last
+year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the standing rules show.
+**Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
+same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
+`data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.
+
+## 2026-10-06: Darwin rejected real fees Knox filed under a neighbouring category, and never re-checked them
+**What happened:** of the Knox fees that never reached verified, 5,322 were rejected because the name
+did not fit the category (Darwin thread, read-only, 04:30 UTC Oct 6). A read-only pass over the
+never-verified Knox names (05:10 UTC) found about 925 that are real fees whose own name says the
+neighbouring category: 356 overdraft transfers filed as overdraft, 248 international wires filed as
+domestic, 195 ATM/debit card replacements filed as ATM fees, 70 "Paid NSF" items (overdrafts) and 51
+returned deposited items filed as NSF, 5 NSF sweeps. Separately, 27 of 239 live minimum-balance fees
+were the balance to open an account, earn APY or avoid a fee, not a fee.
+**Cause:** Darwin only accepted or rejected the hinted category. And `CATEGORY_GUARD_VERSION` said a bump
+re-checks rows an older guard rejected, but Darwin never read it: a row decided under `verify.rules` v3
+was never selected again, so no guard fix could recover a wrongly rejected fee.
+**Fix:** same PR: `refileCategory` (fee-category-guard.ts) re-files a row to the category its own name
+names, only when that category's guard accepts it; Darwin checks the row under that category. Darwin
+records the guard version with each decision and re-selects a category rejection once when the guard
+version rises (now v9, which also adds a minimum-balance rule). Other decided rows stay closed, so
+`duplicate_in_batch` rows are never re-verified.
+**Lesson:** a "bump to re-check" version constant needs a test that the re-check really happens.
+## 2026-10-06: Rosetta rejected fee pages whose fees load by script
+**What happened:** the Rosetta audit compared stored text with 91 Texas fee schedules read
+independently. Two of them (atfcu.org/fees, firstcommand.com/.../fees/) were real schedules that
+Rosetta filed as "not a fee schedule": their static HTML held only menus (2,452 and 2,960
+characters, 0 and 1 dollar amounts) because the fee table loads by script. Rosetta tries its free
+JavaScript fallbacks (embedded data, linked PDF, print version) only for an app shell of at most
+1,500 characters, so these pages were rejected instead, the link was cleared and banned from
+discovery for 90 days. Live, read-only (05:10 UTC): 504 rejected HTML texts at 317 institutions
+have a link naming a fee page and at most one dollar amount; 221 of those institutions have no
+live fees.
+**Fix:** same PR: a page whose own link names the fee page ("/fees", "fee-schedule",
+"schedule-of-charges") and whose static text shows no fee schedule gets the free fallbacks first,
+whatever its length. Applies to every state's next read of such a page. Texts already rejected
+are not re-read by this PR (that needs a re-read rule; see the Rosetta scorecard).
+
+## 2026-10-06: Source-check fixes never reached fees already checked or taken down
+**What happened:** the Hamilton publish audit (05:10 UTC Oct 6) found 6,626 live fees at 410
+institutions not yet source-checked, and fees taken down by older readers that were never re-checked.
+For example, about 934 safe deposit box rentals were down although PR 195 taught the reader box sizes.
+Read-only at 05:15 UTC: 5,864 live fees at 363 institutions were unchecked, and the check covered
+about 170 institutions an hour.
+**Cause:** a state publish step checked only its own state, so most steps found little to check while
+other states waited. The check's fingerprint changes only when a new fee is published, so a reader fix
+never re-checked an institution or restored its takedowns.
+**Fix:** same PR: a state step checks its own state first, then fills its 40 from any state, never-checked
+institutions first. The source-check strategy goes to version 3, so every institution (2,922 due) is
+checked again with the current reader, restoring fees that now trace. The comment on the version says to
+bump it whenever `checkFeeAgainstSource` changes. The due query takes about 110 ms on prod. Spot checks of
+a read-only dry run found two layouts the reader misread, fixed in the same PR: a line under a heading that
+names most of the fee ("WIRE TRANSFERS (OUTGOING)" / "DOMESTIC WIRE | $35") and a price under the name
+that starts with "•" or "~". Dry run over all 43,577 live and taken-down fees: 1,477 restored (927 box
+sizes; 19 of 20 sampled box restores right), 445 taken down, of which 401 are at never-checked
+institutions the normal check reaches anyway and 44 are new from the bump. Paced at 40 institutions per
+publish step, about 720 an hour, so the re-check finishes in about four hours.
+**Lesson:** a check keyed on its input must also key on its own rules version, or improving the rules
+changes nothing already decided.
