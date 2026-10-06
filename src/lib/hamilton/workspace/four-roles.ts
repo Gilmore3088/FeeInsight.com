@@ -70,8 +70,33 @@ export function sentences(text: string): string[] {
   return out;
 }
 
+/** The storyline's sourced lines that state a figure: lenses and exhibit takeaways. */
+function storyFacts(answer: HamiltonAnswer): Fact[] {
+  const story = answer.storyline;
+  if (!story) return [];
+  return [
+    ...story.lenses.finance,
+    ...story.lenses.market,
+    ...story.exhibits.flatMap((e) => (e.takeaway ? [e.takeaway] : [])),
+  ];
+}
+
+function storyText(answer: HamiltonAnswer): string[] {
+  const story = answer.storyline;
+  if (!story) return [];
+  return [
+    story.governingThought,
+    ...story.situation.map((f) => f.text),
+    ...story.complication.map((f) => f.text),
+    ...story.exhibits.flatMap((e) => [e.actionTitle, e.exhibit.title]),
+    ...storyFacts(answer).map((f) => f.text),
+    ...(story.options ?? []).flatMap((o) => [o.label, ...o.consequences.map((c) => c.text)]),
+    ...story.watch.map((f) => f.text),
+  ];
+}
+
 function allText(answer: HamiltonAnswer): string[] {
-  return [answer.headline, ...answer.claims.map((c) => c.text), ...answer.drivers.map((d) => d.text), answer.exhibit?.title ?? ""].filter(Boolean);
+  return [answer.headline, ...answer.claims.map((c) => c.text), ...answer.drivers.map((d) => d.text), answer.exhibit?.title ?? "", ...storyText(answer)].filter(Boolean);
 }
 
 function dated(fact: Fact): boolean {
@@ -94,7 +119,7 @@ function checkEconomist(answer: HamiltonAnswer): RoleCheck {
 function checkConsultant(answer: HamiltonAnswer): RoleCheck {
   const failures: string[] = [];
   if (answer.claims.length === 0) failures.push("No sourced claims.");
-  for (const claim of answer.claims) {
+  for (const claim of [...answer.claims, ...storyFacts(answer)]) {
     if (!/\d/.test(claim.text)) failures.push(`Claim has no number: "${claim.text}"`);
     if (!dated(claim)) failures.push(`Claim has no named, dated source: "${claim.text}"`);
     if (MARKET_FIGURE.test(claim.text) && !(claim.sampleSize && claim.sampleSize > 0)) {
@@ -143,6 +168,11 @@ function checkDataEngineer(answer: HamiltonAnswer): RoleCheck {
       if (!(p25 <= median && median <= p75)) failures.push("Exhibit band is out of order.");
       if (!exhibit.markers.some((m) => m.scope === "national")) failures.push("Fee position exhibit has no national marker.");
     }
+  }
+  for (const story of answer.storyline?.exhibits ?? []) {
+    if (!story.actionTitle.trim() || !/\d/.test(story.actionTitle)) failures.push(`Exhibit ${story.id} has no point with a number in its title.`);
+    if (story.exhibit.sources.length === 0) failures.push(`Exhibit ${story.id} names no source.`);
+    if (exhibitPoints(story.exhibit) === 0) failures.push(`Exhibit ${story.id} has no data to draw.`);
   }
   return { role: "data_engineer", pass: failures.length === 0, failures };
 }
