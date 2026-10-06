@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Institutions with no website were never searched
+**What happened:** 585 active institutions have no `website_url` (510 credit unions, 75 banks; 45
+in TX, 27 in CA, prod read-only query 13:30 UTC). Every finder and the paid pass start from the
+website, so these were skipped forever.
+**Cause:** the FDIC registry step fills `website_url` only when FDIC lists one, and the NCUA step
+stores none. Some state-chartered credit unions also carry a cut-off name ("CALIFORNIA", "HAVEN").
+**Fix:** Magellan's paid step now searches for the official homepage and saves it only after the
+homepage names the institution plus its city or charter number (`magellan/website-find.ts`).
+Rejected candidates stay on the attempt for a person. Cut-off names still need a registry fix.
+**Lesson:** every finder assumes a website; count the rows a precondition excludes before
+assuming a finder covers a state.
+
 ## 2026-10-06: Right price, wrong category is most of what keeps states under 95%
 **What happened:** after source check v3 finished every bank (10:25 UTC), Texas measured 96.7%
 (145 of 150 live fees, hand-checked) but the seven answer-key states stayed at 93.8% (393 of 419,
