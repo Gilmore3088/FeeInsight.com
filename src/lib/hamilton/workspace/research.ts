@@ -10,10 +10,12 @@ import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
 import { getInstitutionFeeRows, getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
+import { getStateEconomicContext } from "@/lib/data-store/economic-context";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ASSET_TIER_RANGES, buildInstitutionPeerFilterCandidates, describePeerFilters, type HamiltonPeerFilters } from "../peer-index";
+import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
   competitorMoveObservations,
@@ -28,6 +30,7 @@ import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type Service
 import {
   WORKSPACE_ENGINE_VERSION,
   type Briefing,
+  type EconomicBackdrop,
   type Fact,
   type FeeResearch,
   type InstitutionFinancials,
@@ -62,6 +65,7 @@ interface WorkspaceBase {
   institutionId: number;
   institutionName: string;
   stateCode: string | null;
+  fedDistrict: number | null;
   charterType: string;
   assetTier: string | null;
   /** National, Fed district, state, and charter and size, each loaded whole. */
@@ -153,6 +157,7 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
     institutionId,
     institutionName: institution.institution_name,
     stateCode: institution.state_code,
+    fedDistrict: institution.fed_district ?? null,
     charterType: institution.charter_type,
     assetTier: institution.asset_size_tier,
     layers: [
@@ -418,6 +423,18 @@ function quantile(sorted: number[], q: number): number {
   return Math.round((sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)) * 100) / 100;
 }
 
+/** The state economy, rates, prices and Beige Book; null on a failed read or no state. */
+export async function loadEconomy(stateCode: string | null, district: number | null): Promise<EconomicBackdrop | null> {
+  if (!stateCode) return null;
+  try {
+    const ctx = await getStateEconomicContext(stateCode, district);
+    return economicBackdrop(ctx, STATE_NAMES[stateCode] ?? stateCode, district, district ? DISTRICT_NAMES[district] ?? null : null);
+  } catch (error) {
+    console.error("[hamilton-research] economy read failed", { stateCode, error });
+    return null;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
@@ -425,13 +442,14 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
     getLocalMarketMembers(institutionId).catch(() => null),
     getInstitutionFeeRows(institutionId, feeCategory),
     loadNationalIncomeSeries(),
+    loadEconomy(base.stateCode, base.fedDistrict),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
@@ -472,6 +490,7 @@ export async function getFeeResearch(
     nationalIncomeSeries,
     institutionFinancials: financials,
     regulation: [...feeRules(feeCategory, base.charterType), ...feeRegulatoryNews(articles, feeCategory)],
+    economy,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
@@ -489,6 +508,8 @@ export async function getFeeResearch(
         ...(revenueLine ? [revenueLine.source] : []),
         ...(nationalIncomeSeries[0] ? [nationalIncomeSeries[0].sourceRef] : []),
         ...(local.info ? [local.info.source] : []),
+        ...(economy?.indicators.map((i) => i.source) ?? []),
+        ...(economy?.beigeBook ? [economy.beigeBook.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [
