@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, SECOND_SOURCE_FLAG } from "./peer-checks";
+import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -319,6 +320,32 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
       expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+    });
+
+    it("records the learned category model's dispute without changing the decision", async () => {
+      resetCategoryModelCache();
+      const catalog = [
+        { name: "overdraft fee", category_key: "overdraft", count: "40" },
+        { name: "paid overdraft item", category_key: "overdraft", count: "20" },
+        { name: "zipper bag", category_key: "night_deposit", count: "20" },
+        { name: "night deposit bag", category_key: "night_deposit", count: "20" },
+      ];
+      const db = learningDb([rawFee, { ...rawFee, fee_raw_id: 803, fee_name: "Zipper bag", amount: "5.00" }]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("FROM published_fee_catalog")
+          ? Promise.resolve(catalog)
+          : base(strings, ...values)) as never);
+
+      const result = await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
+
+      resetCategoryModelCache();
+      expect(result.categoryModelDisputes).toBe(1);
+      expect(result.results[1].categoryModel).toMatchObject({ disputed: true, suggested: "night_deposit" });
+      expect(result.results[1].decision).not.toBe("needs_review");
+      const shadow = attemptValues(db).filter((values) => values.includes(DARWIN_CATEGORY_MODEL_STRATEGY.strategy));
+      expect(shadow).toHaveLength(2);
+      expect(shadow[1]).toEqual(expect.arrayContaining(["raw:803", "evidence_mismatch"]));
     });
 
     it("re-checks category rejections once after the category guard changes", async () => {

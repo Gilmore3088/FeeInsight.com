@@ -24,6 +24,10 @@ Magellan owns institution source discovery and source fetching.
   window. The state's hourly backlog run (`new_links_only`) fetches those links and any
   link last fetched over 30 days ago (`MAGELLAN_STALE_LINK_REFETCH_DAYS`), so a link found
   mid-month is read the same hour and no schedule goes months without a fetch.
+- A fetch that finds the link gone (HTTP 404/410, or a deep link whose redirects end on a
+  homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
+  `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
+  again. A locked correction is kept; a 403 is retried, since a bot block can pass.
 - Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
   fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
   (not `business`) are downloaded when new and again after 30 days, each as its own source

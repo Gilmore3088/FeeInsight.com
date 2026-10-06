@@ -49,6 +49,16 @@ Darwin owns verification and classification.
     bank (an older copy or a sister document). Same amount: outcome `ok` and the
     verified row gets the `second_source_agrees` flag. Different amount only:
     `evidence_mismatch`, recorded as evidence, never blocking.
+- Layer 2, learned category check (`category-model.ts`, free, shadow mode):
+  `verify.category_model` v1 is a naive Bayes model over fee-name word stems and word
+  pairs, trained on the live published catalog (cached an hour per instance), so it
+  improves as wrong fees are taken down. It records, for every row with a category,
+  the probability of Knox's category and its own best guess. Below 0.05 the outcome is
+  `evidence_mismatch` (disputed); it never changes the decision yet. Step detail:
+  `category_model_disputes`. On the 43 Texas answer keys it disputed 20 of 61 wrong
+  approvals and 16 of 268 right ones, and its guess matched the key for 14 of the 20.
+  Disputes are meant for the Claude adjudicator (layer 3), Darwin's only paid call,
+  billed to `ANTHROPIC_API_KEY_DARWIN`.
 - The ranges in `envelopes.ts` are hand-set and deliberately wide. Learned p1/p99 ranges
   (`category_envelopes`) remain planned work.
 

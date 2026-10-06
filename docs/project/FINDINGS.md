@@ -39,6 +39,25 @@ after the next rules fix.
 **Lesson:** any step that takes data down needs its way back in the same change, checked against
 the dedupe rules of the stage that would otherwise re-create it.
 
+## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
+**What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
+fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
+failed two or more fetches in a row (one 11 times). Separately, 42 banks' fee links redirected to a
+homepage in the week to 2026-10-06 (for example a credit union's old fee PDF now landing on a renamed
+credit union's home page), and Magellan stored each homepage as the bank's fee document.
+**Cause:** a failed fetch only counted a failure and retried later (24 hours, then weekly). Discovery
+searches banks with no fee link, plus (PR 165) a failed link whose `last_crawl_at` is over 30 days
+old and holds no live fee. That PR 165 path never reaches a link the fetch queue keeps retrying,
+because every retry resets `last_crawl_at`: none of the 75 was older than 30 days. Rosetta sends a
+dead link back only for a document it re-reads (PR 155). A redirect was followed blindly, and the
+final address (the homepage) became the profile's fetch address.
+**Fix:** this PR closes the gap at the fetch itself, with the same hand-back Rosetta uses: a 404/410,
+or a deep link that redirects to a homepage, clears the fee link (unless a person locked it), records
+the URL as rejected and marks the bank due a search (`failure_reason = 'magellan_dead_link'`). A 403
+is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
+**Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
+loop on a dead address is a silent failure.
+
 ## 2026-10-06: Report requests never stored their "ready to quote" line
 **What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,
 5 Oct) were stored without the "Report check: ..." line that /api/leads should append, so /admin/leads
@@ -743,3 +762,18 @@ dumped from production on 2026-10-04, run only on a database without `institutio
 files that rewrote pre-2026-08-13 legacy tables skip themselves on such a database. The full history now
 replays on an empty database. Production never re-runs applied versions, so nothing changes there.
 Details in `docs/runbooks/supabase-migration-baseline.md`.
+
+## 2026-10-06: Banks below the 3-fee rule stayed on the site after takedowns
+**What happened:** the Hamilton publish audit (read-only, 05:35 UTC) found 163 banks with fewer than 3
+distinct live fees: 93 showing one fee (110 fees), 70 showing two (157 fees). 120 got there through
+takedowns (source check, rules re-check, category guard); 82 had fees live before the rule existed.
+They showed on the site and counted in every median as full banks.
+**Cause:** the 3-fee rule (PR 66) gated only a bank's first publish. Nothing re-applied it when
+takedowns removed fees later.
+**Fix:** same PR: `published_fee_catalog` shows a bank's live fees only while it has at least 3 distinct
+canonical fee keys live (migration 20270110000000, view only, no data change). The rows stay live in
+`published_fee_records`, so the publish gate still counts them and the bank reappears on its own.
+Magellan's thin-bank finder now reads `published_fee_records`, since the catalog hides the banks it
+looks for.
+**Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
+read.
