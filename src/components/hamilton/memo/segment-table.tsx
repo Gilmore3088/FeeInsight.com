@@ -96,13 +96,29 @@ function Head() {
   );
 }
 
-export function SegmentTable({ data, own, ownLabel, number = 2 }: { data: SegmentData; own: number | null; ownLabel: string; number?: number }) {
+export function SegmentTable({
+  data,
+  own,
+  ownLabel,
+  number = 2,
+  title: titleOverride,
+  showCounts = true,
+}: {
+  data: SegmentData;
+  own: number | null;
+  ownLabel: string;
+  number?: number;
+  /** The exhibit's point, when a storyline gives one. */
+  title?: string;
+  /** The segment counts strip; off when the caller has only the members. */
+  showCounts?: boolean;
+}) {
   // When the slice could not be built, the answer's first line already says why.
   if (data.problem || data.members.length === 0) return null;
   const max = Math.max(own ?? 0, ...data.members.map((m) => m.amount));
   const shown = data.members.slice(0, SHOWN);
   const rest = data.members.slice(SHOWN);
-  const title = `The ${data.members.length === 1 ? "one" : data.members.length.toLocaleString("en-US")} ${data.segment.label} that publish this fee, largest first`;
+  const title = titleOverride ?? `The ${data.members.length === 1 ? "one" : data.members.length.toLocaleString("en-US")} ${data.segment.label} that publish this fee, largest first`;
   return (
     <figure className="rounded-lg border border-warm-300 bg-warm-50 p-5 break-inside-avoid">
       <figcaption className="mb-4">
@@ -111,6 +127,7 @@ export function SegmentTable({ data, own, ownLabel, number = 2 }: { data: Segmen
           {title}
         </span>
       </figcaption>
+      {showCounts ? (
       <dl className="mb-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
         <div>
           <dt className="text-xs text-warm-600">In the segment</dt>
@@ -129,6 +146,7 @@ export function SegmentTable({ data, own, ownLabel, number = 2 }: { data: Segmen
           <dd className="text-lg text-warm-900 [font-variant-numeric:tabular-nums]">{data.withDailyCap}</dd>
         </div>
       </dl>
+      ) : null}
       <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">
         <table className="w-full min-w-[40rem] text-sm">
           <Head />

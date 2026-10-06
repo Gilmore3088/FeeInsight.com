@@ -52,7 +52,7 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
   ));
 }
 
-function ExhibitFrame({
+export function ExhibitFrame({
   title,
   sources,
   note,

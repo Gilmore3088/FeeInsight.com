@@ -11,6 +11,8 @@ import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/
 import { EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
 import { SegmentTable, type SegmentData } from "@/components/hamilton/memo/segment-table";
+import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
+import type { Storyline } from "@/components/hamilton/storyline/types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
@@ -207,10 +209,26 @@ export function StructuredAsk({
   const q = response.question ?? response.answer?.question ?? null;
   // The market slice the question named ("$10B and up"), when the engine sends it.
   const segment = (response as AskResponse & { segment?: SegmentData | null }).segment ?? null;
+  // The storyline answer (engine 1.6.0), when the engine sends one.
+  const storyline = (response.answer as (typeof response.answer & { storyline?: Storyline | null }) | undefined)?.storyline ?? null;
   const exhibitOwn = response.answer?.exhibit && response.answer.exhibit.kind !== "trend" ? response.answer.exhibit : null;
   return (
     <div className="flex flex-col gap-5">
-      {response.answer ? (
+      {response.answer && storyline ? (
+        <StorylineView
+          story={storyline}
+          nextSteps={
+            researchHrefFor ? (
+              <>
+                <LinkButton href={researchHrefFor(response.answer.feeCategory)}>Every market layer</LinkButton>
+                <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
+                  Try a price
+                </LinkButton>
+              </>
+            ) : null
+          }
+        />
+      ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
           nextSteps={
@@ -229,7 +247,7 @@ export function StructuredAsk({
           {response.shortAnswer}
         </p>
       )}
-      {segment ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "You"} /> : null}
+      {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "You"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
         <Callout>
           <span className="font-medium text-warm-900">If the objective is {response.opinion.assumedObjective.replace(/_/g, " ")}: </span>
