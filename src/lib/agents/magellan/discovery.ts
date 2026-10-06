@@ -28,6 +28,7 @@ import {
   type TrailEntry,
 } from "./finders";
 import { LINK_YIELD_SLOTS, linkYieldSlot } from "./outcomes";
+import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
@@ -335,6 +336,8 @@ export interface RunMagellanDiscoveryResult {
   /** Banks found although their homepage blocked bots. */
   blockedHomepageRescues: number;
   learning: boolean;
+  /** The shadow page classifier this step scored candidates with, if one is stored. */
+  pageClassifier: { trainedAt: string | null; positives: number; negatives: number } | null;
   methodVersion: number;
   secondDocuments: RunSecondDocumentFindResult | null;
   limit: number;
@@ -448,6 +451,8 @@ async function discoverForInstitution(
     resumable?: boolean;
     /** The bank has the whole per-bank budget (not squeezed by the step's end). */
     fullBudget?: boolean;
+    /** The learned fee-page classifier, in shadow (scores trail entries only). */
+    pageClassifier?: PageClassifier | null;
   },
 ): Promise<CandidateDiscoveryResult> {
   const startedAt = Date.now();
@@ -545,6 +550,7 @@ async function discoverForInstitution(
     politeDelayMs: options.politeDelayMs,
     knowledge: options.knowledge,
     pages: new Map(),
+    pageClassifier: options.pageClassifier ?? null,
   };
 
   // Pages already ruled out often link to the real schedule: follow them first, before
@@ -1312,6 +1318,8 @@ export async function runMagellanDiscovery(
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();
   const knowledge = dryRun ? NO_KNOWLEDGE : createPlatformLearner(db);
+  // MG-4 in shadow: the stored classifier scores every opened candidate (trail `page_p`).
+  const pageClassifier = learning ? await loadPageClassifier(db) : null;
 
   const startedAt = Date.now();
   const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
@@ -1331,6 +1339,7 @@ export async function runMagellanDiscovery(
       // The resume state lives on the attempt log, so it needs the learning schema.
       resumable: learning,
       fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= stepDeadline,
+      pageClassifier,
     });
     results.push(result);
     if (dryRun) continue;
@@ -1390,6 +1399,7 @@ export async function runMagellanDiscovery(
     websitesRepaired: results.filter((result) => result.websiteRepair?.save).length,
     blockedHomepageRescues: results.filter((result) => result.code === "found_blocked_homepage").length,
     learning,
+    pageClassifier: pageClassifier ? { trainedAt: pageClassifier.trainedAt, positives: pageClassifier.positives, negatives: pageClassifier.negatives } : null,
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
     limit,
