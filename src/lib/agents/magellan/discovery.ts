@@ -27,6 +27,7 @@ import {
   type SearchContext,
   type TrailEntry,
 } from "./finders";
+import { LINK_YIELD_SLOTS, linkYieldSlot } from "./outcomes";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
@@ -68,6 +69,18 @@ const BLOCKED_HOMEPAGE_FINDERS = new Set<FinderKey>(["knownLink", "sitemap"]);
  * to search those banks again after a finder change.
  */
 export const UPGRADE_SEARCH_VERSION = 1;
+/**
+ * Banks whose fee link looks out of date get one search for a newer schedule per version
+ * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
+ * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
+ * in its address, is STALE_AFTER_YEARS or more years before this year.
+ */
+export const FRESHNESS_SEARCH_VERSION = 1;
+export const STALE_AFTER_YEARS = 3;
+/** "Effective January 1, 2022", "Effective Date: 01/01/2022" in a schedule's opening text. */
+const EFFECTIVE_YEAR_SQL = "(?i)effective(?:\\s+date)?[:\\s]+(?:[a-z]+\\.?\\s+\\d{1,2},?\\s+|\\d{1,2}/\\d{1,2}/)(20\\d{2})";
+/** A year in the link's address ("/2022-fee-schedule.pdf", "/uploads/2021/05/"). */
+const URL_YEAR_SQL = "(?:^|[^0-9])(20[0-2][0-9])(?:[^0-9]|$)";
 /** Same address test as `looksLikeProductPage` (find-validate.ts), for SQL. */
 const PRODUCT_LINK_SQL =
   "^https?://[^/]+/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)";
@@ -202,6 +215,10 @@ interface DiscoveryCandidateRow {
   fee_schedule_url?: string | null;
   /** True when the bank has a product-page link and this is a search for the real schedule. */
   upgrade?: boolean;
+  /** True when the bank's link looks out of date and this is a search for a newer one. */
+  freshness?: boolean;
+  /** Why the link looks out of date ("effective 2021", "address names 2022"). */
+  stale_reason?: string | null;
   /** `detail.resume` of the bank's last search, when it was cut short by time. */
   discovery_resume?: unknown;
   /** True when the bank's last search was cut short by time (`retry_after`, `out_of_time`). */
@@ -937,6 +954,79 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
 }
 
 /**
+ * Banks whose fee link looks out of date (see FRESHNESS_SEARCH_VERSION), not yet searched
+ * for a newer schedule at this version. Their link is kept unless a different page
+ * passes the fee-page check.
+ */
+async function selectStaleCandidates(
+  db: SqlTag,
+  limit: number,
+  stateCode: string | undefined,
+  now = new Date(),
+): Promise<DiscoveryCandidateRow[]> {
+  if (limit <= 0) return [];
+  const normalizedState = normalizeStateCode(stateCode);
+  const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
+  const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
+  const rows = await db<Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null }>>`
+    -- stale-link freshness search
+    WITH due AS (
+      SELECT inst.id,
+             inst.institution_name,
+             inst.state_code,
+             inst.website_url,
+             inst.asset_size,
+             inst.rescue_status,
+             inst.fee_schedule_url,
+             profile.canonical_source_url AS profile_canonical_source_url,
+             profile.source_kind AS profile_source_kind,
+             profile.read_strategy AS profile_read_strategy,
+             profile.locked_by_correction AS profile_locked_by_correction,
+             profile.consecutive_failures AS profile_consecutive_failures,
+             substring(inst.fee_schedule_url from ${URL_YEAR_SQL})::int AS url_year,
+             (
+               SELECT substring(left(text.normalized_text, 4000) from ${EFFECTIVE_YEAR_SQL})::int
+                 FROM agent_source_texts text
+                WHERE text.institution_id = inst.id
+                  AND text.source_url = inst.fee_schedule_url
+                  AND text.status = 'completed'
+                ORDER BY text.id DESC
+                LIMIT 1
+             ) AS effective_year
+        FROM institution_sources inst
+        LEFT JOIN institution_source_profiles profile
+          ON profile.institution_id = inst.id
+       WHERE COALESCE(inst.status, 'active') = 'active'
+         -- One slot of banks per UTC hour (as the outcome ledger), so the text check stays small.
+         AND inst.id % ${LINK_YIELD_SLOTS} = ${linkYieldSlot(now)}
+         AND inst.fee_schedule_url IS NOT NULL
+         AND btrim(inst.fee_schedule_url) <> ''
+         AND inst.website_url IS NOT NULL
+         AND btrim(inst.website_url) <> ''
+         AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
+         AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+         AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+         AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.detail @> ${marker}::jsonb
+         )
+    )
+    SELECT * FROM due
+     WHERE COALESCE(effective_year, url_year) <= ${staleYear}
+     ORDER BY asset_size DESC NULLS LAST, id ASC
+     LIMIT ${limit}
+  `;
+  return rows.map(({ effective_year, url_year, ...row }) => ({
+    ...row,
+    freshness: true,
+    stale_reason: effective_year != null ? `effective ${effective_year}` : `address names ${url_year}`,
+  }));
+}
+
+/**
  * An upgrade search found the real schedule: the product page the bank linked before stays
  * as a companion account page, so the fees read from it keep their own document stream.
  */
@@ -1109,6 +1199,9 @@ async function recordFinderAttempts(
   const base = {
     method_version: DISCOVERY_METHOD_VERSION,
     ...(row.upgrade ? { upgrade_search: UPGRADE_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
+    ...(row.freshness
+      ? { freshness_search: FRESHNESS_SEARCH_VERSION, stale_link: row.fee_schedule_url ?? null, stale_reason: row.stale_reason ?? null }
+      : {}),
     website: row.website_url,
     searched_website: result.websiteRepair?.repaired ?? row.website_url,
     moved_to: result.movedTo,
@@ -1210,10 +1303,11 @@ export async function runMagellanDiscovery(
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
   const missing = await selectCandidates(db, limit, options.stateCode, learning);
-  // Spare capacity searches banks whose link is a product page (needs the attempt log).
-  const rows = learning
-    ? [...missing, ...(await selectUpgradeCandidates(db, limit - missing.length, options.stateCode))]
-    : missing;
+  // Spare capacity searches banks whose link is a product page, then banks whose link
+  // looks out of date (both need the attempt log).
+  const upgrades = learning ? await selectUpgradeCandidates(db, limit - missing.length, options.stateCode) : [];
+  const stale = learning ? await selectStaleCandidates(db, limit - missing.length - upgrades.length, options.stateCode) : [];
+  const rows = [...missing, ...upgrades, ...stale];
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();
@@ -1240,20 +1334,23 @@ export async function runMagellanDiscovery(
     });
     results.push(result);
     if (dryRun) continue;
+    // A re-search of a bank that already has a link (product page or stale) changes it only
+    // when a different page passes the fee-page check.
+    const reSearch = Boolean(row.upgrade || row.freshness);
     const upgraded = Boolean(
-      row.upgrade &&
+      reSearch &&
         result.outcome === "discovered" &&
         result.url &&
         row.fee_schedule_url &&
         urlIdentity(result.url) !== urlIdentity(row.fee_schedule_url),
     );
-    // An upgrade search that finds nothing new leaves the bank's link and rescue state alone.
-    if (!row.upgrade || upgraded) await recordDiscoveryResult(db, result);
-    if (upgraded && row.fee_schedule_url) {
+    // A re-search that finds nothing new leaves the bank's link and rescue state alone.
+    if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
+    if (upgraded && row.upgrade && row.fee_schedule_url) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (learning) await recordFinderAttempts(db, row, result, { runId: options.runId, stepId: options.stepId ?? null });
-    if ((!row.upgrade || upgraded) && result.outcome === "discovered" && result.url && result.code !== "locked") {
+    if ((!reSearch || upgraded) && result.outcome === "discovered" && result.url && result.code !== "locked") {
       await knowledge.recordFind({ platform: result.platform, url: result.url, foundByPlatformPath: result.foundBy === "platformPaths" || result.foundBy === "peerHint" });
     }
   }
