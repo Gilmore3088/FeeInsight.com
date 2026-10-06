@@ -35,10 +35,10 @@ const ownThree: RateResearch = {
 describe("fees stated as a rate", () => {
   it("leads with the bank's own rate against the national median rate, never a dollar figure", () => {
     const answer = buildFeeAnswer(foreignResearch(ownThree));
-    expect(answer.headline).toBe("Your foreign transaction fee is 3% of the transaction, above the national median rate of 1% across 40 institutions.");
+    expect(answer.headline).toBe("Your foreign transaction fee is 3% of the transaction, above the 1% national median.");
     expect(answer.claims[0].text).toBe("Your schedule states the foreign transaction fee as 3% of the transaction.");
     expect(answer.claims[0].source.table).toBe("published_fee_rate_catalog");
-    expect(answer.claims[1].text).toContain("the national median is 1% across 40 institutions. The middle half runs 1% to 2%.");
+    expect(answer.claims[1].text).toContain("Stated as a rate, the national median is 1% across 40 institutions; the middle half runs 1% to 2%.");
     expect(answer.claims[1].sampleSize).toBe(40);
     // No per-item dollar question for a fee charged as a rate; the volume it applies to instead.
     expect(answer.question?.fieldKey).toBe("fee.card_foreign_txn.annual_volume");
@@ -55,14 +55,14 @@ describe("fees stated as a rate", () => {
       expect(rate.exhibit.rows.map((r) => r.cells[0])).toEqual(["3% of the transaction", "1%", "1% to 2%", "0.5% to 3%"]);
     }
     expect(story.keyFigures.map((k) => k.value).slice(0, 2)).toEqual(["3%", "1%"]);
-    expect(story.lenses.market[0].text).toBe("At 3%, your rate sits above the middle half of 40 institutions (1% to 2%); competitors can claim a lower rate.");
+    expect(story.lenses.market[0].text).toBe("At 3%, you sit above the middle half of 40 institutions (1% to 2%); competitors can claim a lower rate.");
     expect(evaluateFourRoles(answer).roles.flatMap((r) => r.failures)).toEqual([]);
   });
 
   it("says so when too few institutions state a rate, and fills nothing in", () => {
     const thin: RateResearch = { ...ownThree, national: { n: 2, median: null, p25: null, p75: null, min: null, max: null } };
     const answer = buildFeeAnswer(foreignResearch(thin));
-    expect(answer.headline).toBe("Your foreign transaction fee is 3% of the transaction; too few institutions state it as a rate to set a benchmark.");
+    expect(answer.headline).toBe("Your foreign transaction fee is 3% of the transaction; too few institutions state a rate to compare.");
     expect(answer.claims.map((c) => c.text)).toContain("Only 2 institutions state the foreign transaction fee as a rate, too few for a national median.");
   });
 
