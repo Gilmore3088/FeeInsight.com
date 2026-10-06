@@ -461,6 +461,11 @@ sizes like "5 x 10", and price-first lists). After the fixes 557 would come down
 institutions: 195 imported fees with no source document, 15 with no amount, 245 whose amount is not
 the price on the matching row, 56 whose name is not in the schedule, 46 whose amount is a limit.
 **Lesson:** dry-run a takedown rule over the rows it has never touched before turning it on.
+**Guard (follow-up PR):** the admin home page alert banner now lists, by state, institutions
+holding a live fee published over 12 hours ago and not source-checked since, so a gap in any state
+shows within a day instead of waiting for an accuracy sample. Read-only at 04:50 UTC Oct 6 it lists
+248 institutions (TX 66, CA 50, NY 45, PA 36, MI 21, OH 14, IL 10, WI 6), shrinking as every
+publish step works through them.
 
 ## 2026-10-06: Generated reports waited behind the whole pipeline queue
 **What happened:** National Index and Monthly Pulse runs started from /admin/hamilton/reports at
