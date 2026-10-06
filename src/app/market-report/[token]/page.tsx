@@ -20,6 +20,7 @@ import { verifyReportToken } from "@/lib/custom-report/link";
 import { loadMarketReport } from "@/lib/custom-report/report-data";
 import { TrackView } from "@/components/track-view";
 import { PrintButton } from "./print-button";
+import { AtAGlance, SinceBought } from "./at-a-glance";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +77,7 @@ export default async function MarketReportPage({ params }: PageProps) {
 
   const report = await loadMarketReport(verified.institutionId);
   if (!report || !report.data.market) notFound();
-  const { data, analysis, savedAt } = report;
+  const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
   const name = data.subject.institution_name;
@@ -151,6 +152,8 @@ export default async function MarketReportPage({ params }: PageProps) {
                 again.
               </p>
             )}
+            <AtAGlance lines={analysis.lines} />
+            {sinceBought && <SinceBought savedAt={sinceBought.savedAt} changes={sinceBought.changes} />}
             <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="findings-heading">
               <h2 id="findings-heading" className="text-xl text-[#1A1815]" style={SERIF}>
                 What stands out
