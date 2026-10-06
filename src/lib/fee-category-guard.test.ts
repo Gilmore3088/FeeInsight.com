@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { checkFeeCategory, GUARDED_CATEGORIES } from "./fee-category-guard";
+import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -212,6 +212,44 @@ describe("checkFeeCategory", () => {
     for (const name of ["Debit Card Dispute", "Debit Card Chargeback Fee", "Charged Back Debit Card Disputes", "Chargeback Fee"]) {
       expect(checkFeeCategory("card_dispute", name)).toEqual({ ok: true });
     }
+  });
+
+  it("keeps balances to open, earn APY or avoid a fee out of minimum balance fees (live rows, Oct 6)", () => {
+    for (const name of [
+      "Minimum balance to open the account - You must deposit",
+      "Minimum balance to obtain the annual percentage yield disclosed - You must maintain a minimum balance of",
+      "Minimum Balance to Earn APY",
+      "Minimum Balance Required",
+      "Minimum balance to avoid fee",
+      "Membership Share",
+    ]) {
+      expect(checkFeeCategory("minimum_balance", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Minimum Balance Fee",
+      "Low Balance Fee (for Money Market Accounts)",
+      "Below minimum ADB fee (per month)",
+      "minimum monthly direct deposit or electronic deposit is required to avoid a monthly minimum balance fee of",
+      "Savings (if balances falls below minimum) (Balance Requirement Fee)",
+      "Share Draft Minimum Balance Fee (must maintain a balance of at all times)",
+    ]) {
+      expect(checkFeeCategory("minimum_balance", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("re-files a fee whose own name names the neighbouring category, never loosening a guard", () => {
+    expect(refileCategory("overdraft", "Overdraft Transfer from Savings")).toBe("od_protection_transfer");
+    expect(refileCategory("wire_domestic_outgoing", "International Wire Transfer (Outgoing)")).toBe("wire_intl_outgoing");
+    expect(refileCategory("atm_non_network", "ATM/Debit Card Replacement")).toBe("card_replacement");
+    expect(refileCategory("nsf", "Paid NSF Item Fee")).toBe("overdraft");
+    expect(refileCategory("nsf", "Deposited Item Returned")).toBe("deposited_item_return");
+    // Already right, or no better home: the hinted category stays and the guard decides.
+    expect(refileCategory("overdraft", "Overdraft Fee")).toBe("overdraft");
+    expect(refileCategory("overdraft", "Overdraft Fee - Daily Maximum")).toBe("overdraft");
+    expect(refileCategory("wire_domestic_outgoing", "Domestic Wire Transfers (outgoing) [International wires not available]")).toBe(
+      "wire_domestic_outgoing",
+    );
+    expect(refileCategory("atm_non_network", "Replacement ATM PIN numbers")).toBe("atm_non_network");
   });
 
   it("leaves amounts to Darwin's envelopes, the one definition of a plausible price", () => {

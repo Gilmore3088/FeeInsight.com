@@ -66,7 +66,7 @@ function countWords(text: string): number {
  * @throws Error if API key is missing or the provider call fails
  */
 export async function generateSection(input: SectionInput): Promise<SectionOutput> {
-  const client = getAnthropicMessagesClient("Hamilton section generation");
+  const client = getAnthropicMessagesClient("Hamilton section generation", "hamilton");
   const userMessage = buildUserMessage(input);
 
   let response: Awaited<ReturnType<typeof client.messages.create>>;
@@ -193,7 +193,7 @@ ${extraFields}  "narrative_summary": "<exactly 150 words, flowing prose, injecte
  * Per D-08: scope parameter adapts prompt depth (quarterly = full, others = lighter).
  */
 export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOutput> {
-  const client = getAnthropicMessagesClient("Hamilton thesis generation");
+  const client = getAnthropicMessagesClient("Hamilton thesis generation", "hamilton");
   const userMessage = buildThesisPrompt(input);
 
   let response: Awaited<ReturnType<typeof client.messages.create>>;

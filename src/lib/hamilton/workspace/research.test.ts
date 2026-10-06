@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choosePeers, marketLayerSets } from "./research";
+import { choosePeers, localMarketView, marketLayerSets } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -36,5 +36,44 @@ describe("marketLayerSets", () => {
 
   it("leaves out layers the institution has no data for", () => {
     expect(marketLayerSets({ state_code: null, charter_type: "bank", asset_size_tier: null, fed_district: null }).map((s) => s.scope)).toEqual(["national"]);
+  });
+});
+
+describe("localMarketView", () => {
+  const base = {
+    institutionId: 1,
+    institutionName: "Subject Bank",
+    stateCode: "TX",
+    charterType: "bank",
+    assetTier: "community_mid",
+    peerLabel: "TX peers",
+    ownValues: new Map([["overdraft", 30]]),
+    peers: new Map(),
+    layers: [{ scope: "national" as const, label: "National", values: new Map([["overdraft", [peer(35, 2), peer(25, 3), peer(32, 9)]]]) }],
+  };
+  const market = {
+    basis: "branch_counties" as const,
+    places: ["Austin, TX"],
+    sod_year: 2026,
+    members: [
+      { institution_id: 1, institution_name: "Subject Bank", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 5e8, is_subject: true },
+      { institution_id: 2, institution_name: "Bank 2", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 9e8, is_subject: false },
+      { institution_id: 3, institution_name: "Bank 3", city: "Austin", state_code: "TX", charter_type: "credit_union", market_deposits: null, is_subject: false },
+      { institution_id: 4, institution_name: "No fee published", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 1e8, is_subject: false },
+    ],
+  };
+
+  it("names local competitors that publish the fee, with their deposits, and builds a thin local layer", () => {
+    const view = localMarketView(base, market, "overdraft");
+    expect(view.competitors?.map((c) => [c.institutionName, c.amount, c.marketDeposits])).toEqual([
+      ["Bank 2", 35, 9e8],
+      ["Bank 3", 25, null],
+    ]);
+    expect(view.info).toMatchObject({ basis: "branch_counties", institutions: 3, sodYear: 2026 });
+    expect(view.layer).toMatchObject({ scope: "local", label: "Local market (Austin, TX)", n: 2, median: null, amounts: [25, 35] });
+  });
+
+  it("returns nothing when no market is on file", () => {
+    expect(localMarketView(base, null, "overdraft")).toEqual({ layer: null, competitors: null, info: null });
   });
 });

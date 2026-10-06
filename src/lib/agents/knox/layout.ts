@@ -86,14 +86,15 @@ export function looksLikeHeading(line: string): boolean {
 /**
  * A row name that only makes sense under its section heading: a direction, a unit or
  * a customer type ("Incoming Domestic" under "Wire Transfers", "Per Item" under
- * "Overdraft Fees"). Only such names borrow the heading, so a heading never lends its
- * category to an unrelated fee below it.
+ * "Overdraft Fees") or a column label ("Fee Rush Card Fee | Amount $50"). Only such
+ * names borrow the heading, so a heading never lends its category to an unrelated fee
+ * below it.
  */
 const COMPOSABLE_WORDS = new Set(
   (
     "domestic international foreign intl incoming outgoing in out per each item items presentment occurrence " +
     "transfer transfers wire request paid returned unpaid consumer business personal member members non " +
-    "nonmember customer first additional subsequent thereafter day month fee"
+    "nonmember customer first additional subsequent thereafter day month fee fees amount charge charges cost price"
   ).split(" "),
 );
 

@@ -8,7 +8,8 @@ import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
 import { getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "@/lib/data-store/fee-index";
-import { getRevenueTrend } from "@/lib/data-store/call-reports";
+import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
+import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -29,6 +30,8 @@ import {
   type Briefing,
   type Fact,
   type FeeResearch,
+  type InstitutionFinancials,
+  type LocalMarketInfo,
   type MarketIncome,
   type MarketLayer,
   type MarketLayerScope,
@@ -59,6 +62,7 @@ interface WorkspaceBase {
   institutionName: string;
   stateCode: string | null;
   charterType: string;
+  assetTier: string | null;
   /** National, Fed district, state, and charter and size, each loaded whole. */
   layers: LayerSet[];
   /** The narrowest default peer group, named on the Briefing. */
@@ -149,6 +153,7 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
     institutionName: institution.institution_name,
     stateCode: institution.state_code,
     charterType: institution.charter_type,
+    assetTier: institution.asset_size_tier,
     layers: [
       { scope: "national", label: "National", values: national },
       ...extra.map((l, i) => ({ scope: l.scope, label: l.label, values: valuesBySet[candidates.length + i] ?? new Map() })),
@@ -244,36 +249,101 @@ async function loadRegArticles(days: number, now = new Date()): Promise<RegArtic
   }
 }
 
-/** Industry deposit service charge income for the newest quarter on file, in dollars. */
-async function loadNationalIncome(): Promise<MarketIncome | null> {
-  const trend = await getRevenueTrend(5);
-  const latest = trend.latest;
-  if (!latest) return null;
+/** Industry deposit service charge income, newest quarter first, in dollars (eight quarters). */
+async function loadNationalIncomeSeries(): Promise<MarketIncome[]> {
+  // Twelve quarters so each of the newest eight has its year-earlier quarter for the change.
+  const trend = await getRevenueTrend(12);
   const thousands = 1000;
-  return {
-    quarter: latest.quarter,
-    total: latest.total_service_charges * thousands,
-    banks: latest.bank_service_charges * thousands,
-    creditUnions: latest.cu_service_charges * thousands,
-    institutions: latest.total_institutions,
-    yoyPct: latest.yoy_change_pct === null ? null : Math.round(latest.yoy_change_pct * 10) / 10,
+  return trend.quarters.slice(0, 8).map((q) => ({
+    quarter: q.quarter,
+    total: q.total_service_charges * thousands,
+    banks: q.bank_service_charges * thousands,
+    creditUnions: q.cu_service_charges * thousands,
+    institutions: q.total_institutions,
+    yoyPct: q.yoy_change_pct === null ? null : Math.round(q.yoy_change_pct * 10) / 10,
     sourceRef: {
       label: "FDIC call reports and NCUA 5300 reports, service charges on deposit accounts, all filers on file",
       table: "institution_financial_records",
-      asOf: latest.quarter,
+      asOf: q.quarter,
+    },
+  }));
+}
+
+/** The bank's own income with the median of its charter and asset size beside it, quarter by quarter. */
+async function withPeerMedian(base: WorkspaceBase, financials: InstitutionFinancials | null): Promise<InstitutionFinancials | null> {
+  if (!financials || !base.assetTier) return financials;
+  const label = base.layers.find((l) => l.scope === "charter_size")?.label;
+  const medians = await getPeerServiceChargeMedians(base.charterType, base.assetTier, 8).catch(() => []);
+  if (!label || medians.length === 0) return financials;
+  return {
+    ...financials,
+    peerMedian: {
+      label,
+      quarters: medians.map((m) => ({ quarterEnd: m.quarter_end, amount: m.median_thousands * 1000, institutions: m.institutions })),
+      sourceRef: {
+        label: `${financials.source === "ncua" ? "NCUA 5300" : "FDIC call report"} filers, ${label}, median quarterly service charges`,
+        table: "institution_financial_records",
+        asOf: medians[0].quarter_end,
+      },
     },
   };
+}
+
+const SOD_SOURCE_LABEL = "FDIC Summary of Deposits, branch deposits by county";
+
+/** The local market layer and named competitors for one fee, from the national values already loaded. */
+export function localMarketView(
+  base: WorkspaceBase,
+  market: LocalMarketMembers | null,
+  feeCategory: string,
+): { layer: MarketLayer | null; competitors: PeerValue[] | null; info: LocalMarketInfo | null } {
+  if (!market) return { layer: null, competitors: null, info: null };
+  const others = market.members.filter((m) => !m.is_subject);
+  const national = base.layers.find((l) => l.scope === "national")?.values.get(feeCategory) ?? [];
+  const byId = new Map(national.map((v) => [v.institution_id, v]));
+  const competitors: PeerValue[] = others
+    .filter((m) => byId.has(m.institution_id))
+    .map((m) => {
+      const v = byId.get(m.institution_id) as PeerFeeValue;
+      return {
+        institutionId: v.institution_id,
+        institutionName: v.institution_name,
+        amount: v.amount,
+        marketDeposits: m.market_deposits,
+        stateCode: v.state_code,
+        sourceDocumentIds: v.source_document_ids,
+        documentUrls: v.document_urls,
+        publishedAt: v.published_at,
+      };
+    });
+  const source: SourceRef = { label: SOD_SOURCE_LABEL, asOf: String(market.sod_year) };
+  const info: LocalMarketInfo = {
+    basis: market.basis,
+    places: market.places,
+    sodYear: market.sod_year,
+    institutions: others.length,
+    source,
+  };
+  const layer = marketLayer(
+    "local",
+    `Local market (${market.places.join("; ")})`,
+    competitors.map((c) => c.amount),
+    base.ownValues.get(feeCategory) ?? null,
+    competitors.map((c) => c.publishedAt),
+  );
+  return { layer, competitors, info };
 }
 
 export async function getWorkspaceBriefing(institutionId: number, now = new Date()): Promise<Briefing | null> {
   const base = await loadBase(institutionId);
   if (!base) return null;
-  const [changes, financialRows, articles, nationalIncome] = await Promise.all([
+  const [changes, financialRows, articles, nationalIncomeSeries] = await Promise.all([
     loadStateChanges(base.stateCode),
     loadServiceChargeRows(institutionId),
     loadRegArticles(RULE_CHANGE_WINDOW_DAYS, now),
-    loadNationalIncome(),
+    loadNationalIncomeSeries(),
   ]);
+  const nationalIncome = nationalIncomeSeries[0] ?? null;
   const positions = [...base.ownValues].map(([feeCategory, current]) => {
     const peers = base.peers.get(feeCategory);
     return {
@@ -284,7 +354,7 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
     };
   });
   const trend = serviceChargeTrend(financialRows);
-  const financials = institutionFinancials(financialRows);
+  const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const shift = revenueShiftObservation(trend);
   const bankCategories = new Set(base.ownValues.keys());
   const rules = ruleChangeObservations(articles, bankCategories);
@@ -300,6 +370,7 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
     observations,
     institutionFinancials: financials,
     nationalIncome,
+    nationalIncomeSeries,
     feesReviewed: base.ownValues.size,
     peerLabel: base.peerLabel,
     generatedAt: now.toISOString(),
@@ -316,6 +387,7 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
         FEE_SOURCE,
         { ...CHANGES_SOURCE, label: `${CHANGES_SOURCE.label}, ${base.stateCode ?? "no state"}, last ${COMPETITOR_MOVE_WINDOW_DAYS} days` },
         ...(financials ? [financials.sourceRef] : []),
+        ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(nationalIncome ? [nationalIncome.sourceRef] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${RULE_CHANGE_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
@@ -344,14 +416,16 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
-  const [changes, financialRows, articles] = await Promise.all([
+  const [changes, financialRows, articles, market] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
+    getLocalMarketMembers(institutionId).catch(() => null),
   ]);
-  const financials = institutionFinancials(financialRows);
+  const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const revenueLine = feeRevenueLine(financialRows, feeCategory, base.charterType);
-  const layers = feeLayers(base, feeCategory);
+  const local = localMarketView(base, market, feeCategory);
+  const layers = [...feeLayers(base, feeCategory), ...(local.layer ? [local.layer] : [])];
   const chosen = base.peers.get(feeCategory);
   const peers: PeerValue[] = (chosen?.values ?? []).map((p) => ({
     institutionId: p.institution_id,
@@ -384,8 +458,8 @@ export async function getFeeResearch(
       : null,
     bands: priceBands(sorted, current),
     layers,
-    // Named local competitors arrive with the local-market reader (PR 93).
-    localCompetitors: null,
+    localCompetitors: local.competitors,
+    localMarket: local.info,
     recentChanges,
     // Null until a filing carries a line for this fee: NCUA overdraft (IS0048) and NSF
     // (IS0049) income, or the bank overdraft-and-NSF line (RIAD H032, banks over $1B).
@@ -405,7 +479,9 @@ export async function getFeeResearch(
         FEE_SOURCE,
         CHANGES_SOURCE,
         ...(financials ? [financials.sourceRef] : []),
+        ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(revenueLine ? [revenueLine.source] : []),
+        ...(local.info ? [local.info.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [
@@ -415,6 +491,7 @@ export async function getFeeResearch(
         "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
         "Each peer's amount links to the schedule document it was read from.",
         `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
+        "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",
       ],
       clientFacts: [],
     },

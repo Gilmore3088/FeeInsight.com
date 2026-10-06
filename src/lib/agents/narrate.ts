@@ -69,24 +69,26 @@ export function narrateStepFinished(
         n(detail, "retry_after") > 0 && `${n(detail, "retry_after")} to retry later`,
         n(detail, "dead_institutions") > 0 && `${n(detail, "dead_institutions")} with no schedule found`,
         n(detail, "needs_human") > 0 && `${n(detail, "needs_human")} need a person`,
-        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "second fee document")} for banks with few fees`,
+        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "more fee page")} (account pages, fee documents) for banks with few fees`,
       ])}.`;
     }
     case "fetch": {
       const processed = n(detail, "processed_institutions");
-      if (processed === 0) return `Checked fee schedules ${scope}; none were due for a refresh.`;
+      const companions = n(detail, "companion_pages_fetched") + n(detail, "companion_pages_unchanged");
+      const companionNote = companions > 0 ? ` Also checked ${count(companions, "account page or fee document")}, ${n(detail, "companion_pages_fetched")} new.` : "";
+      if (processed === 0) return `Checked fee schedules ${scope}; none were due for a refresh.${companionNote}`;
       if (n(detail, "unchanged_documents") > 0) {
         return `Checked ${count(processed, "fee schedule")} ${scope}: ${n(detail, "fetched_documents").toLocaleString("en-US")} new, ${n(detail, "unchanged_documents").toLocaleString("en-US")} unchanged${joinParts([
           n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
           n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
           n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
-        ]).replace(/^: /, ", ")}.`;
+        ]).replace(/^: /, ", ")}.${companionNote}`;
       }
       return `Downloaded ${count(n(detail, "fetched_documents"), "fee schedule")} ${scope}${joinParts([
         n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
         n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
         n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
-      ])}.`;
+      ])}.${companionNote}`;
     }
     case "read": {
       const processed = n(detail, "processed_documents");

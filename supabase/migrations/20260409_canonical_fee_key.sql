@@ -1,3 +1,12 @@
+-- Changes the legacy tables (crawl_targets and friends) production had before
+-- 2026-08-13. A database built from the preview baseline in 20260406_report_jobs.sql
+-- already has the current schema and no legacy tables, so it skips this file.
+DO $legacy_guard$
+BEGIN
+  IF to_regclass('public.crawl_targets') IS NULL AND to_regclass('public.institution_sources') IS NOT NULL THEN
+    RETURN;
+  END IF;
+  EXECUTE $migration$
 -- Migration: Add canonical_fee_key and variant_type columns to extracted_fees
 -- Phase 55: Canonical Taxonomy Foundation
 --
@@ -25,3 +34,7 @@ COMMENT ON COLUMN extracted_fees.canonical_fee_key IS
 
 COMMENT ON COLUMN extracted_fees.variant_type IS
   'Fee variant: standard, rush, express, waived, daily_cap, per_item. NULL = standard.';
+
+$migration$;
+END
+$legacy_guard$;

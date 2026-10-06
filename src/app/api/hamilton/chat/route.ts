@@ -46,7 +46,7 @@ function estimateCostCents(model: string, inputTokens: number, outputTokens: num
 // Cost per 1M tokens (in cents)
 async function handlePOST(request: Request) {
   // Check API key
-  if (!hasAnthropicApiKey()) {
+  if (!hasAnthropicApiKey("hamilton")) {
     return Response.json(
       { error: MISSING_ANTHROPIC_API_KEY_MESSAGE },
       { status: 503 }
@@ -150,7 +150,7 @@ async function handlePOST(request: Request) {
   let providerFailed = false;
   try {
     const result = streamText({
-      model: getAnthropicLanguageModel(HAMILTON_MODEL),
+      model: getAnthropicLanguageModel(HAMILTON_MODEL, "hamilton"),
       system: systemPrompt,
       messages: await convertToModelMessages(messages),
       tools: buildHamiltonTools(),
