@@ -1,5 +1,6 @@
 import { UpgradeGate } from "@/components/upgrade-gate";
-import type { FinancialPoint, PeerMedianPoints } from "./financial-history";
+import type { FinancialPoint, GrowthRow, OutlierFlag, PeerMedianPoints, PeerRankRow } from "./financial-history";
+import { FinancialInsights } from "./financial-insights";
 import { FinancialProfileCharts } from "./financial-profile";
 import { BranchFootprintCard, ComplaintsCard, HoldingCompanyCard } from "./registry-cards";
 import type { BranchFootprint, ComplaintTrend, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
@@ -26,10 +27,19 @@ function LockedPreview() {
   );
 }
 
+export interface FinancialInsightData {
+  growth: GrowthRow[];
+  ranks: PeerRankRow[];
+  flags: OutlierFlag[];
+  peerCount: number | null;
+  peerQuarter: string | null;
+}
+
 export function FinancialProfileSection({
   isPro,
   points,
   peers,
+  insights = null,
   charterLabel,
   footprint = null,
   complaints = null,
@@ -38,6 +48,7 @@ export function FinancialProfileSection({
   isPro: boolean;
   points: FinancialPoint[];
   peers: PeerMedianPoints | null;
+  insights?: FinancialInsightData | null;
   charterLabel: string;
   footprint?: BranchFootprint | null;
   complaints?: ComplaintTrend | null;
@@ -66,6 +77,11 @@ export function FinancialProfileSection({
       <div className="mt-4">
         {isPro ? (
           <>
+            {insights && (
+              <div className="mb-5">
+                <FinancialInsights {...insights} charterLabel={charterLabel} />
+              </div>
+            )}
             {points.length > 0 && <FinancialProfileCharts points={points} peers={peers} charterLabel={charterLabel} />}
             {hasRegistryCards && (
               <div className="mt-4 grid gap-4">
@@ -82,7 +98,7 @@ export function FinancialProfileSection({
             <LockedPreview />
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div className="w-full max-w-md">
-                <UpgradeGate message="10+ years of call-report history with peer benchmarks, branch footprint, consumer complaints, and SEC filings" />
+                <UpgradeGate message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, and SEC filings" />
               </div>
             </div>
           </div>

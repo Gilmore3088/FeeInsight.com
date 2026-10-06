@@ -2,20 +2,18 @@
 
 ## Current State
 
-Fee Insight uses imperative Supabase migrations under `supabase/migrations/`.
-The live production database for this project is `rmhwbbjjctzfaqjyhomu`.
+The migration history replays on an empty database (2026-10-06, PR 196). Production's
+first tables were created before the history began, so the oldest file,
+`20260406_report_jobs.sql`, now opens with a baseline: the public schema dumped from
+production on 2026-10-04 (DDL only, no data), run only when `institution_sources` does
+not exist. The eight files that rewrote the pre-2026-08-13 legacy tables
+(`20260408_*` to `20260813063108_*`) skip themselves when `crawl_targets` is absent and
+`institution_sources` exists, which is true only on a database built from that baseline.
 
-The current migration history is not a complete fresh-stack bootstrap. A clean
-local replay fails at:
-
-```text
-Applying migration 20260408_enable_rls_all_tables.sql...
-ERROR: relation "agent_run_results" does not exist (SQLSTATE 42P01)
-```
-
-That migration enables RLS on tables that existed in the historical production
-baseline, but the baseline file referenced by older docs,
-`scripts/migrate-schema.sql`, is not present in the current checkout.
+Production applied all of these versions before the edits and never re-runs an applied
+version, so nothing changes there. Supabase preview branches and `supabase db reset`
+now build the current schema. Earlier, a clean replay failed at
+`20260408_enable_rls_all_tables.sql` with `relation "agent_run_results" does not exist`.
 
 ## What This Release Fixes
 

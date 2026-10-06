@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/data-store/connection";
+import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaiting, type Sample } from "./flow-model";
 
 export * from "./flow-model";
@@ -130,7 +131,14 @@ export const getFlowWaiting = unstable_cache(
         (SELECT COUNT(DISTINCT fr.institution_id)::int
            FROM raw_fee_observations fr
           WHERE fr.source = 'knox' AND fr.outlier_flags ? 'needs_darwin_verification'
-            AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)) AS darwin,
+            AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
+            -- Rows Darwin already decided (rejected, held for review, duplicate) never
+            -- reach the verified table, so only rows its current rules have not seen wait.
+            AND NOT EXISTS (
+              SELECT 1 FROM pipeline_attempts pa
+               WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+                 AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
+                 AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version})) AS darwin,
         (SELECT COUNT(DISTINCT fv.institution_id)::int
            FROM verified_fee_observations fv
           WHERE fv.review_status IN ('verified', 'approved')

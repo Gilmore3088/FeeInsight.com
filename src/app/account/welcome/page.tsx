@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
-import { activateIfPaid } from "@/lib/billing/activate-if-paid";
+import { activateIfPaid } from "@/lib/subscription-activation";
 import { redirect } from "next/navigation";
 import { canAccessPremium } from "@/lib/access";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";

@@ -1,13 +1,12 @@
-/**
- * Webhook-lag fallback: a user who has paid can reach Fee Insight before Stripe's webhook marks
- * them active. Ask Stripe directly and activate them, so they're never shown checkout again
- * (funnel audit finding 9: a paid user bounced from /pro to /subscribe could pay twice).
- * Returns true when this call activated the user.
- */
-import { sql } from "@/lib/data-store/connection";
 import type { User } from "@/lib/auth";
+import { sql } from "@/lib/data-store/connection";
 import { acceptPendingWorkspaceInvitationsForUser } from "@/lib/hamilton/institution-membership";
 
+/**
+ * Activation fallback for when the Stripe webhook has not landed yet: if the user's
+ * Stripe customer has an active subscription, mark the account active now. Used by the
+ * welcome page and by /subscribe, so a payer is never offered checkout a second time.
+ */
 export async function activateIfPaid(
   user: Pick<User, "id" | "username" | "email" | "role" | "subscription_status" | "stripe_customer_id">,
 ): Promise<boolean> {
@@ -33,10 +32,9 @@ export async function activateIfPaid(
         return true;
       }
     } catch (e) {
-      console.error("[billing] Failed to verify subscription:", e);
+      console.error("[welcome] Failed to verify subscription:", e);
     }
   }
 
   return false;
 }
-

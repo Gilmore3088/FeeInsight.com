@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
 
@@ -90,11 +91,41 @@ export function attemptAlerts(rows: AttemptRateRow[]): FailureAlert[] {
     }));
 }
 
+/**
+ * Coverage: a live fee must be checked against the bank's own schedule soon after it is
+ * published. On 2026-10-06, 495 institutions across the states had never been checked
+ * because the check ran only in publish steps that named a state. This alert fires for
+ * any state with institutions holding a live fee published this long ago and not checked
+ * since, so a gap in any state shows on the admin home page instead of waiting for a sample.
+ */
+export const SOURCE_CHECK_GRACE_HOURS = 12;
+
+interface UncheckedStateRow {
+  state_code: string | null;
+  institutions: number;
+}
+
+export function sourceCheckCoverageAlert(rows: UncheckedStateRow[]): FailureAlert[] {
+  const total = rows.reduce((sum, row) => sum + Number(row.institutions), 0);
+  if (total === 0) return [];
+  const byState = rows
+    .map((row) => `${row.state_code || "no state"} ${row.institutions}`)
+    .join(", ");
+  return [{
+    key: "coverage:source_check",
+    title: "Live fees are not being checked against bank schedules",
+    message: `${total} institution${total === 1 ? "" : "s"} in ${rows.length} state${rows.length === 1 ? "" : "s"} have live fees published over ${SOURCE_CHECK_GRACE_HOURS} hours ago and never checked against the bank's own schedule (${byState}).`,
+    failures: total,
+    total,
+    latestAt: null,
+  }];
+}
+
 /** Current alerts, most important first. Never throws: a broken check is not an outage. */
 export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]> {
   try {
     const window = `${FAILURE_ALERT_WINDOW_MINUTES} minutes`;
-    const [steps, attempts] = await Promise.all([
+    const [steps, attempts, unchecked] = await Promise.all([
       db<StepRateRow[]>`
         SELECT step_key,
                COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
@@ -116,8 +147,29 @@ export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]
          WHERE created_at > NOW() - ${window}::interval
          GROUP BY strategy
       `,
+      db<UncheckedStateRow[]>`
+        SELECT upper(btrim(inst.state_code)) AS state_code, COUNT(*)::int AS institutions
+          FROM (
+            SELECT fp.institution_id
+              FROM published_fee_records fp
+              LEFT JOIN LATERAL (
+                SELECT MAX(pa.created_at) AS checked_at
+                  FROM pipeline_attempts pa
+                 WHERE pa.institution_id = fp.institution_id
+                   AND pa.stage = 'publish'
+                   AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+              ) last_check ON true
+             WHERE fp.rolled_back_at IS NULL
+               AND fp.published_at < NOW() - ${`${SOURCE_CHECK_GRACE_HOURS} hours`}::interval
+               AND (last_check.checked_at IS NULL OR last_check.checked_at < fp.published_at)
+             GROUP BY fp.institution_id
+          ) unchecked
+          JOIN institution_sources inst ON inst.id = unchecked.institution_id
+         GROUP BY 1
+         ORDER BY 2 DESC, 1
+      `,
     ]);
-    return [...attemptAlerts(attempts), ...stepAlerts(steps)];
+    return [...sourceCheckCoverageAlert(unchecked), ...attemptAlerts(attempts), ...stepAlerts(steps)];
   } catch (error) {
     console.error("getFailureAlerts failed:", error);
     return [];
