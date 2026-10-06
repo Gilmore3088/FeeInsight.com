@@ -1,0 +1,162 @@
+/**
+ * The four-roles eval: checks one Hamilton answer against the roles James set
+ * (2026-10-06). Each check is mechanical, so a failing answer names exactly what broke.
+ *
+ * - Inquisitive Economist: at least one driver with a figure and a dated source; when the
+ *   answer rests on market data alone, it asks for the one missing figure.
+ * - Rigorous Consultant: every claim has a number, a named and dated source, and the peer
+ *   count for a market figure; the evidence level is set; no recommendation.
+ * - Artistic Data Engineer: one exhibit with a title, a source and data to draw.
+ * - Technical yet Clear Writer: the headline leads with its number; every sentence is under
+ *   25 words; no pipeline terms; units formatted.
+ */
+
+import type { Exhibit, Fact, HamiltonAnswer, HamiltonRole } from "./types";
+
+export const MAX_SENTENCE_WORDS = 25;
+
+export interface RoleCheck {
+  role: HamiltonRole;
+  pass: boolean;
+  failures: string[];
+}
+
+export interface FourRolesResult {
+  pass: boolean;
+  roles: RoleCheck[];
+}
+
+/** Words that tell the reader what to do with a fee; Hamilton gives an opinion only on request. */
+const RECOMMENDATION =
+  /\b(should|ought to|recommend(s|ed|ation)?|we suggest|you need to|consider (raising|lowering|cutting|dropping|eliminating)|(raise|lower|cut|drop|increase|reduce) (your|the|this) (fee|price))\b/i;
+
+/** Internal names a bank reader should never see: agent names, and any snake_case table or column name. */
+const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
+
+/** "$209400", "$2,640,000" (a total over $1 million belongs in words), "2.38%". */
+const UNFORMATTED_UNITS = [
+  { re: /\$\d{4,}(?![\d,])/, why: "dollar amount without thousands separators" },
+  { re: /\$\d{1,3}(,\d{3}){2,}(\.\d+)?(?!\s*(thousand|million|billion))/, why: "total over $1 million not written as millions" },
+  { re: /\d+\.\d{2,}%/, why: "percent with more than one decimal" },
+  { re: /(?<![$\d.,])0\.\d+(?![\d%])/, why: "share written as a decimal fraction" },
+];
+
+function words(sentence: string): number {
+  // A quotation is the source's words, not Hamilton's, so it does not count.
+  const own = sentence.replace(/"[^"]*"/g, "").trim();
+  return own ? own.split(/\s+/).length : 0;
+}
+
+/** Split prose into sentences, keeping a quoted passage inside its sentence. */
+export function sentences(text: string): string[] {
+  const out: string[] = [];
+  let current = "";
+  let inQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    current += c;
+    if (c === '"') inQuote = !inQuote;
+    const ends = /[.!?]/.test(c) || (c === '"' && /[.!?]/.test(text[i - 1] ?? ""));
+    if (!inQuote && ends && (i === text.length - 1 || /\s/.test(text[i + 1]))) {
+      // "$35.50" and "e.g." are not sentence ends: the next character is not a space or is lowercase.
+      const next = text.slice(i + 1).trimStart()[0];
+      if (next === undefined || /[A-Z"$0-9]/.test(next)) {
+        out.push(current.trim());
+        current = "";
+      }
+    }
+  }
+  if (current.trim()) out.push(current.trim());
+  return out;
+}
+
+function allText(answer: HamiltonAnswer): string[] {
+  return [answer.headline, ...answer.claims.map((c) => c.text), ...answer.drivers.map((d) => d.text), answer.exhibit?.title ?? ""].filter(Boolean);
+}
+
+function dated(fact: Fact): boolean {
+  return Boolean(fact.source.label?.trim()) && Boolean(fact.source.asOf);
+}
+
+const MARKET_FIGURE = /\bmedian|percentile|middle half|peers?\b|institutions\b/i;
+
+function checkEconomist(answer: HamiltonAnswer): RoleCheck {
+  const failures: string[] = [];
+  const grounded = answer.drivers.filter((d) => /\d/.test(d.text.replace(/"[^"]*"/g, "")) && dated(d));
+  if (grounded.length === 0) failures.push("No driver explains the number with a figure and a dated source (prices, rates, jobs or the Beige Book).");
+  if (answer.evidenceLevel === "market" && !answer.question) {
+    failures.push("The answer rests on market data alone but asks no clarifying question for the missing figure.");
+  }
+  if (answer.question && !answer.question.prompt.trim().endsWith("?")) failures.push("The clarifying question is not phrased as a question.");
+  return { role: "economist", pass: failures.length === 0, failures };
+}
+
+function checkConsultant(answer: HamiltonAnswer): RoleCheck {
+  const failures: string[] = [];
+  if (answer.claims.length === 0) failures.push("No sourced claims.");
+  for (const claim of answer.claims) {
+    if (!/\d/.test(claim.text)) failures.push(`Claim has no number: "${claim.text}"`);
+    if (!dated(claim)) failures.push(`Claim has no named, dated source: "${claim.text}"`);
+    if (MARKET_FIGURE.test(claim.text) && !(claim.sampleSize && claim.sampleSize > 0)) {
+      failures.push(`Market figure without its peer count: "${claim.text}"`);
+    }
+  }
+  if (!answer.evidenceLevel) failures.push("No evidence level.");
+  for (const text of allText(answer)) {
+    if (RECOMMENDATION.test(text.replace(/"[^"]*"/g, ""))) failures.push(`Recommendation not asked for: "${text}"`);
+  }
+  return { role: "consultant", pass: failures.length === 0, failures };
+}
+
+function exhibitPoints(exhibit: Exhibit): number {
+  switch (exhibit.kind) {
+    case "fee_position":
+      return exhibit.band.n;
+    case "trend":
+      return exhibit.series.reduce((sum, s) => sum + s.points.length, 0);
+    case "competitor_range":
+      return exhibit.items.length;
+  }
+}
+
+function checkDataEngineer(answer: HamiltonAnswer): RoleCheck {
+  const failures: string[] = [];
+  const exhibit = answer.exhibit;
+  if (!exhibit) {
+    failures.push("No exhibit.");
+  } else {
+    if (!exhibit.title.trim()) failures.push("Exhibit has no title.");
+    if (exhibit.sources.length === 0) failures.push("Exhibit names no source.");
+    if (exhibitPoints(exhibit) === 0) failures.push("Exhibit has no data to draw.");
+    if (exhibit.kind === "fee_position") {
+      const { p25, median, p75 } = exhibit.band;
+      if (!(p25 <= median && median <= p75)) failures.push("Exhibit band is out of order.");
+      if (!exhibit.markers.some((m) => m.scope === "national")) failures.push("Fee position exhibit has no national marker.");
+    }
+  }
+  return { role: "data_engineer", pass: failures.length === 0, failures };
+}
+
+function checkWriter(answer: HamiltonAnswer): RoleCheck {
+  const failures: string[] = [];
+  const head = sentences(answer.headline);
+  if (head.length !== 1) failures.push("The headline is not one sentence.");
+  if (!/\$\d|\d%|\d/.test(answer.headline)) failures.push("The headline carries no number.");
+  for (const text of allText(answer)) {
+    for (const sentence of sentences(text)) {
+      const n = words(sentence);
+      if (n >= MAX_SENTENCE_WORDS) failures.push(`${n}-word sentence: "${sentence}"`);
+    }
+    if (PIPELINE_TERMS.test(text)) failures.push(`Pipeline term in: "${text}"`);
+    const unquoted = text.replace(/"[^"]*"/g, "");
+    for (const { re, why } of UNFORMATTED_UNITS) {
+      if (re.test(unquoted)) failures.push(`${why}: "${text}"`);
+    }
+  }
+  return { role: "writer", pass: failures.length === 0, failures };
+}
+
+export function evaluateFourRoles(answer: HamiltonAnswer): FourRolesResult {
+  const roles = [checkEconomist(answer), checkConsultant(answer), checkDataEngineer(answer), checkWriter(answer)];
+  return { pass: roles.every((r) => r.pass), roles };
+}

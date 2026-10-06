@@ -16,8 +16,8 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * the floor there; never lower it silently.
  */
 const FLOORS = {
-  all: { right: 436, wrong: 18 },
-  holdout: { right: 41, wrong: 6 },
+  all: { right: 460, wrong: 18 },
+  holdout: { right: 43, wrong: 6 },
 };
 
 const fixture = JSON.parse(

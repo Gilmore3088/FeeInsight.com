@@ -3,6 +3,7 @@ import type { ReportJob } from "@/lib/report-engine/types";
 import { ReportControls } from "../report-controls";
 import { cancelAllPending } from "../actions";
 import { ReportsTable } from "./reports-table";
+import { ScreenHeader } from "../../room-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,7 @@ export default async function HamiltonReportsPage({
 
   return (
     <div className="space-y-6">
+      <ScreenHeader title="Reports" lede="Generate the National Index, Monthly Pulse and state reports, then publish them." />
       {/* Generation controls -- client component */}
       <ReportControls publishedJobIds={publishedJobIds} />
 

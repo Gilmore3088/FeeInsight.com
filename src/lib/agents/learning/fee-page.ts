@@ -22,7 +22,10 @@ export interface FeePageScore {
 /** Bump when the rules change, so earlier verdicts are re-checked. */
 export const FEE_PAGE_CHECK_VERSION = 1;
 
-const DOLLAR = /\$\s?[0-9]/g;
+/** "$35", "$ 35", "$.50", "75¢", "50 cents". */
+const AMOUNT_SOURCE = String.raw`\$\s?\.?[0-9]|\b[0-9]+\s?(?:¢|cents?\b)`;
+const DOLLAR = new RegExp(AMOUNT_SOURCE, "g");
+const HAS_AMOUNT = new RegExp(AMOUNT_SOURCE);
 const FEE_WORD = /(fee|charge|overdraft|nsf|insufficient|stop payment|wire|returned|statement|cashier|money order|dormant|inactive|research|safe deposit|replacement)/i;
 const RATE_TERM = /(APY|APR|annual percentage)/g;
 
@@ -68,7 +71,7 @@ export function scoreFeePage(text: string, url?: string | null): FeePageScore {
   const rateTerms = (text.match(RATE_TERM) ?? []).length;
   let feeLines = 0;
   for (const line of text.split("\n")) {
-    if (/\$\s?[0-9]/.test(line) && FEE_WORD.test(line)) feeLines += 1;
+    if (HAS_AMOUNT.test(line) && FEE_WORD.test(line)) feeLines += 1;
   }
 
   if (isArticleUrl(url)) {

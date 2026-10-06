@@ -5,7 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import { getCrewFeed, getCrewStatus } from "@/lib/agents/crew";
 import { getSpendSummary } from "@/lib/data-store/console-spend";
 import { CrewLive } from "../crew-live";
-import { RoomHeader, RoomScreens, Unreadable } from "../room-hub";
+import { RoomHeader, Unreadable } from "../room-hub";
 import { SpendPanel } from "../spend-panel";
 
 /** The Agents room: the six agents live, what each costs, and every agent screen. */
@@ -35,7 +35,6 @@ export default async function AgentsRoomPage() {
       </RoomHeader>
       <CrewLive initialCrew={crew} initialFeed={feed} />
       {spend ? <SpendPanel spend={spend} title="What each agent is spending" /> : <Unreadable what="Agent spend" />}
-      <RoomScreens room="agents" />
     </div>
   );
 }

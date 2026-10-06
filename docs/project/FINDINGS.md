@@ -13,6 +13,40 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: James's request email carried the paid report link
+**What happened:** the funnel re-audit found the report check line in James's request email and in
+`leads.use_case` included the live private report URL. That email's Reply-To is the requester, so a
+normal reply would hand them the paid report for free.
+**Cause:** the line was written when James sent the link by hand after agreeing a price.
+**Fix:** `describeQuoteCheck` no longer includes the link; only a Stripe payment issues it
+(funnel fixes PR 239). Links already stored in older rows' `use_case` are not removed.
+**Lesson:** anything in an email with the requester as Reply-To can reach the requester; never put
+a paid deliverable in it.
+
+## 2026-10-06: Server actions sat outside the API rate limits
+**What happened:** the funnel audit found free signup (`register`, a server action) had a honeypot
+but no rate limit, while every lead form had one. API limits only cover routes in
+`API_ROUTE_POLICIES`, and a policy test requires each of those to be an `/api` route file, so a
+server action could not be added there.
+**Cause:** the limiter counted audit rows per API route bucket; nothing wrote audit rows for actions.
+**Fix:** `src/lib/api-hardening/action-rate-limit.ts` gives an action its own policy, writes one audit
+row per attempt and counts them (signup: 8 per 10 minutes per connection, like the lead forms).
+Funnel fixes PR (this branch).
+**Lesson:** a public server action that creates rows or sends email needs
+`isServerActionRateLimited` with its own policy, the same as an API route.
+
+## 2026-10-06: Rosetta re-downloaded links that kept timing out or blocking it
+**What happened:** the Rosetta audit (read-only queries on prod, early 2026-10-06 UTC) counted 3,086 failed downloads in 24 hours. PR 155 stopped the 404 repeats (none after 01:00 UTC), but 26 tries on 14 documents that failed with 403s, timeouts and network errors kept coming back. The fee-page check also counted only "$" amounts, so a page that writes fees as "75¢" or "$.50" scored fewer amounts than it has.
+**Cause:** a timeout, network error or server error was "transient" with no limit, so the same document was downloaded every run. A 403 was handed back only when it repeated, and only while the bank's link still pointed at it. The amount pattern was `\$\s?[0-9]`.
+**Fix:** this PR. The third failed download of a document in 7 days (403, 429, 5xx, timeout, network error) sends the bank back to Magellan, and the document is not downloaded again until 7 days pass. The fee-page check now also counts "$.50", "75¢" and "50 cents". Neither change takes down a live fee.
+**Lesson:** every retryable outcome needs a cap. "Transient" without a limit is an endless loop.
+
+## 2026-10-06: Out-of-date fee links were never searched again
+**What happened:** 437 active banks' fee links are 3+ years old by their own "Effective" date or the year in their address (read-only query on prod, 07:30 UTC). Chase's stored link is a 2021 news article about overdraft fees. A bank with any link was never re-searched unless the link died.
+**Cause:** discovery only selects banks with no link or a failed one; nothing looked at a link's age.
+**Fix:** freshness search in `magellan/discovery.ts` (this PR): one re-search per stale bank in spare capacity, an hourly slot at a time (48 ms per slot); the link changes only when a different page passes the fee-page check.
+**Lesson:** a link that still loads is not a current schedule. Check age, not just reachability.
+
 ## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
 **What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
 our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
@@ -876,3 +910,69 @@ was measured and not added: 446 live names end in "of" ("An overdraft fee of"), 
 the bank's real price.
 **Lesson:** judge a name-shape rule by the live prices it would remove, not by the bad names it
 catches.
+
+## 2026-10-06: Re-reading one fee schedule recorded false price changes
+**What happened:** building the National report's fee-change chapter (read-only check, 07:05 UTC), three
+of the five price changes recorded since July 8 came from two readings of the same schedule edition:
+Net Federal Credit Union stop payment $35 to $30 (both readings "Effective February 1, 2026") and
+Commonwealth Federal Credit Union returned deposited item $10 to $32 (both readings carry the same
+"RFD 3-24-2026" form stamp; the older reading put "$10.00" from the line above in front of the fee).
+The Monthly Pulse rule confirmed both.
+**Cause:** the confirm rule checks each reading line by line. A PDF read twice can come out in a
+different column order, pairing a fee with its neighbour's price, and both readings then "state" a price.
+**Fix:** PR 235 (also carried in PR 220): `confirmFeeChange` drops a change when both texts
+state exactly the same dollar amounts (one edition read twice) or when the earlier schedule already
+stated the new price. The Hamilton Briefing's competitor moves now read only these confirmed
+changes, so a misread schedule no longer shows as a competitor's price move. Of the five recorded changes, the two at New Hampshire Federal Credit Union
+(October 2024 schedule to August 2026 schedule) remain.
+**Lesson:** a change between two readings needs proof the document itself changed, not only that each
+reading parses.
+
+## 2026-10-06: Single-quarter income reads doubled credit-union income
+**What happened:** a read-only check (07:30 UTC) found the district, size-tier, top-institution,
+peer-ranking and institution-trend income reads summed NCUA 5300 service charges as reported. For
+Q2 2026 that was $5.16B for credit unions against $2.64B earned in the quarter.
+**Cause:** NCUA income lines are year to date; FDIC lines are quarterly. getRevenueTrend and the peer
+medians already split NCUA into quarters, but the single-quarter reads in `call-reports.ts` did not.
+**Fix:** same PR: those reads join each credit union's prior quarter in the same year and use the
+difference (Q1 stands alone; a missing prior quarter leaves the row out). Read-only; no data change.
+**Lesson:** a unit rule fixed in one query must live in a shared helper, or the next query repeats the bug.
+
+## 2026-10-06: Knox named stacked fees after the line under the name
+**What happened:** Rosetta's read of Community Bank (Longview, TX, `cbanktexas.com/limit-and-fees`)
+and Wells Fargo's account fee summaries found fees Knox missed or misnamed: overdraft and NSF were
+published as "(for each overdraft item, ...)", and the debit card replacement, temporary checks,
+returned deposited items, non-Wells Fargo ATM $3 and $5, and money order $5 were missed.
+**Cause:** Knox's stacked-line pairing (`table-rows.ts`, `families.ts`) took the line right above
+a price as its name, so a qualifier line between name and price ("(for each ...)", "(up to
+$1,000)", "If checks are not on order") either became the name or broke the pair. Wells Fargo's
+section heading ran to 9 words, past the 6-word heading limit, so "Cash withdrawals - Within U.S."
+had no category to borrow.
+**Fix:** same PR (Knox v15): a qualifier line keeps the name above it, table headings may run to 10
+words, "At <Bank> ATMs" is not read as out-of-network, and two name patterns. Answer-key gates:
+Texas 455 to 460 right, seven states 677 to 681, wrong reads 77 to 76, no right fee lost. Dry run
+on 117 sampled live documents: 1,956 reads kept, 7 new (all checked right by hand), 1 replaced (a
+statement copy read as $15 "Consumer", which is the business price, now $5; that document has no
+fee in `published_fee_catalog`).
+**Still open:** hold statements, special statement cutoff, account activity printouts and a debit
+card's monthly charge have no category in `fee-taxonomy.ts`; the answer keys file them as
+unmapped. They stay out until the taxonomy has a place for them.
+**Lesson:** pages built as name / note / price stacks are common on bank summary pages; pair
+across the note rather than adding names per bank.
+
+## 2026-10-06: Every credit union's overdraft and NSF income was stored as $0 for 2026 Q2
+**What happened:** after the 08:07 UTC NCUA re-pull, all 4,299 credit-union rows for 2026-06-30 in
+`institution_financial_records` had `overdraft_revenue = 0` and `nsf_revenue = 0`. The stored raw
+values (`raw_json.ACCT_IS0048`, `ACCT_IS0049`) were `"0"` for every row, including the three largest
+credit unions, which charge these fees (read-only query on prod, 08:20 UTC). Earlier quarters had not
+been re-pulled yet and carry no IS0048 value at all.
+**Cause (confirmed 09:05 UTC from the re-pull's run log):** NCUA's public file is the source. Only
+`FS220P.txt` carries IS0048 and IS0049, and it holds zero for every credit union in every quarter from
+2025 Q1 to 2026 Q2. No file overwrote a real figure. The public 5300 data does not carry credit-union
+overdraft or NSF income, so Hamilton must not show it as a reported line until NCUA publishes nonzero values.
+**Fix:** a quarter where no credit union reports a nonzero value stores these two accounts as NULL,
+never zero; a zero or blank in a second file no longer overwrites a reported figure; every FS220 file
+is read; and the run log records which files carry IS0048 and IS0049 (`detail.account_files`) and
+which accounts were blanked. Parser version 3 makes the scheduler re-pull every quarter.
+**Lesson:** a new call-report account that is zero for every filer is a missing value, not a fact;
+check the share of nonzero values before any chart or estimate uses it.
