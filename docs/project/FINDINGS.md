@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Right price, wrong category is most of what keeps states under 95%
+**What happened:** after source check v3 finished every bank (10:25 UTC), Texas measured 96.7%
+(145 of 150 live fees, hand-checked) but the seven answer-key states stayed at 93.8% (393 of 419,
+`/mnt/project-files/accuracy/states-live-misses-2026-10-06-1320.csv`). 25 of the 26 misses had the
+right price. About 9 of them are the answer key's own gaps (a fee keyed "unmapped" or under the
+row next to it), about 9 are taxonomy calls (returned item: NSF or deposited item), and 8 are real.
+**Cause:** the source check confirms a fee's name and price in the schedule, never its category.
+Three Knox name rules filed real fees wrongly: "Int'l"/"out of country" wires as domestic,
+"Checkbook Balancing" as check printing, and "NSF Fee (applies when overdraft...)" as overdraft.
+**Fix:** Knox rules v16 (this PR). Read-only dry run over the 2,073 live fee names those rules can
+touch: 62 live fees change rule category; 21 of them are live under the wrong category today
+(6 wires, 12 checkbook balancing, 3 NSF), and the other 41 already sit in the right one. No live
+fee moves to a worse category. Answer-key gates: seven states 681 to 683 right and 58 to 55 wrong;
+Texas 460 to 461 right and 18 to 17 wrong.
+**Lesson:** a price check cannot catch category errors. Measure category separately, and fix the
+answer key when it is the thing that is wrong before counting a miss.
+
 ## 2026-10-06: James's request email carried the paid report link
 **What happened:** the funnel re-audit found the report check line in James's request email and in
 `leads.use_case` included the live private report URL. That email's Reply-To is the requester, so a

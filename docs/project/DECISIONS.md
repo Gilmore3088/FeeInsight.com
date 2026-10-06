@@ -14,6 +14,19 @@ reads them read-only with the daily scoreboard step and stores them in
 broken rule and every number that moved more than 25% since yesterday. A change to an agent's
 selector or behaviour updates its table and the health check in the same PR.
 
+**Each state gets its own monthly edition for readers who pick it.** James, 07:42 UTC ("50 different
+emails based on the states"). Readers choose a state at signup or on the confirm page and join that
+state's MailerLite group; the marketing run drafts one edition per state with readers, from data
+alone (no model call), sent with the month's approval. Monthly rather than weekly, because
+published fee schedules barely change week to week (Claude's default; one setting to change).
+Drafts no longer need the postal address: the send step adds it (James, 07:23 UTC).
+
+**A monthly marketing agent drafts the emails; James approves each month before anything sends.**
+James, 07:02 and 07:03 UTC ("approve each month"). Hamilton's marketing run on the 1st scores last
+month's campaigns, picks two formats not used in three months (readers tire of the same email),
+writes them from live data, and drafts each as an A/B subject test in MailerLite. One approval in
+/admin/customers/marketing sends the month. Results and lessons go to `pipeline_feedback`.
+
 **The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
 stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
 pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; the price comes from

@@ -67,6 +67,13 @@ cutoff, account activity printouts and a debit card's own monthly charge have no
 category (the keys file them as unmapped), so Knox still leaves them out. A rules
 change scores both gates; a fix that helps Texas and hurts another state fails.
 
+v16 (rules 16) fixes the category errors found in the live seven-state and Texas measures:
+"Int'l" and "out of country" wires are international (a "domestic/int'l" price stays
+domestic), "International Wire Out" is outgoing, checkbook balancing is account research
+rather than check printing, and a name that opens with NSF is NSF when only a condition
+mentions an overdraft ("NSF Fee (fee applies when overdraft is created)"); a combined
+"NSF/Overdraft" fee stays overdraft. At v16: Texas 461 of 478; seven states 683 right, 55 wrong.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
