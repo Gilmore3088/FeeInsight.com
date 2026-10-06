@@ -14,6 +14,22 @@ reads them read-only with the daily scoreboard step and stores them in
 broken rule and every number that moved more than 25% since yesterday. A change to an agent's
 selector or behaviour updates its table and the health check in the same PR.
 
+**Darwin is rebuilt as a full verification layer, with Claude as the last resort.** James, 05:29
+UTC ("i want to build the entire Darwin layer. But the API call should be last result"). Free
+methods run first: reading the schedule as rows, a learned category model, learned price ranges,
+peer checks and the shared source check. Only fees those methods disagree on go to a Claude
+call, and only within Darwin's own budget. An internal validation team (the "solutions team")
+may be added to grade Darwin against an answer key. Knowledge flows to and from every agent
+(James, 05:41 UTC): Darwin's learning reads and writes the same shared corrections store Knox and
+Magellan use, never a Darwin-only copy. The build plan is in the Darwin v2 design
+artifact (https://claude.ai/artifact/Ta2Nv3YRVCZ55orVTsNMjL).
+
+**Every agent gets its own Anthropic API key so spend is tracked and capped per agent.** James,
+05:29 UTC. `src/lib/ai-provider.ts` reads `ANTHROPIC_API_KEY_<AGENT>` (ATLAS, MAGELLAN, ROSETTA,
+KNOX, DARWIN, HAMILTON) and falls back to the shared `ANTHROPIC_API_KEY`, so nothing stops while
+the keys are being added. Every model call names the agent it bills to. The Atlas details page
+shows which key each agent is using.
+
 **Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
 incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
 scenario and implementation plan carries its provenance: sources with links to the banks' own

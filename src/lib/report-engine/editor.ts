@@ -154,7 +154,7 @@ export async function runEditorReview(
   sections: ValidatedSection[],
   thesis: ThesisOutput | null = null,
 ): Promise<EditorReviewResult> {
-  const client = getAnthropicMessagesClient("Hamilton editor review");
+  const client = getAnthropicMessagesClient("Hamilton editor review", "hamilton");
   const userMessage = buildUserMessage(sections, thesis);
 
   const response = await trackAnthropicRequest(

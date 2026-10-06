@@ -119,6 +119,7 @@ export function institutionFinancials(rows: ServiceChargeRow[]): InstitutionFina
       : null,
     quarterEnd: found.latest,
     sourceRef,
+    peerMedian: null,
   };
 }
 

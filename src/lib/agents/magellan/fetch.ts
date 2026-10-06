@@ -16,6 +16,7 @@ import {
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -123,6 +124,8 @@ export interface RunMagellanFetchResult {
   storedDocuments: number;
   vault: "on" | "not_configured" | "schema_pending";
   outcomes: Partial<Record<AttemptOutcome, number>>;
+  /** Companion pages (account pages, other fee documents) fetched after the fee links. */
+  companions: RunCompanionFetchResult | null;
   results: FetchResult[];
 }
 
@@ -762,6 +765,26 @@ export async function runMagellanFetch(
     }
   }
 
+  // Companion pages ride on the same step, each stored as its own document stream. A
+  // failure here never fails the fee-link fetch.
+  let companions: RunCompanionFetchResult | null = null;
+  if (!dryRun) {
+    try {
+      const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
+      companions = await runCompanionFetch({
+        db,
+        fetchImpl,
+        vault: companionVault,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        institutionId: options.institutionId ?? null,
+      });
+    } catch (error) {
+      console.error("Companion fetch failed:", error);
+    }
+  }
+
   return {
     selected: rows.length,
     processed: results.length,
@@ -777,6 +800,7 @@ export async function runMagellanFetch(
     storedDocuments: results.filter((result) => result.vaultStatus === "stored" || result.vaultStatus === "already_stored").length,
     vault: vaultOn ? "on" : vaultSchema ? "not_configured" : "schema_pending",
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
+    companions,
     results,
   };
 }

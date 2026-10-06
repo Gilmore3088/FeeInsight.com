@@ -14,6 +14,7 @@ import {
   REG_E_OPT_IN,
   isEftFee,
 } from "./implementation";
+import { priceBands } from "./bands";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import type { Fact, MarketLayer, MarketLayerScope, Observation, SourceRef } from "./types";
 
@@ -48,6 +49,8 @@ export function marketLayer(
     median: enough ? quantile(sorted, 0.5) : null,
     p75: enough ? quantile(sorted, 0.75) : null,
     position: current === null ? null : pricePosition(current, sorted),
+    amounts: sorted,
+    bands: priceBands(sorted, current),
     asOf,
     source: { ...FEE_SOURCE, asOf },
   };
