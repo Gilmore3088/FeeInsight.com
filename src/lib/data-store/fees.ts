@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { summarizeFeesBy, type StatsInputRow } from "./fee-stats";
+import { summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
 
 export interface FeeCategorySummary {
@@ -209,6 +209,11 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   by_fed_district: DimensionBreakdown[];
   by_state: DimensionBreakdown[];
   change_events: FeeChangeEvent[];
+  /**
+   * One value per institution (sourced rows only): the same population and per-institution
+   * rule as the national median, so the distribution chart and the median agree.
+   */
+  institution_values: number[];
 }> {
   const rawFees = await sql`
     SELECT ef.id, ct.institution_name, ef.institution_id,
@@ -233,7 +238,9 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   }));
 
   // Breakdowns follow the statistics contract: sourced rows only, one value per institution.
-  const sourcedFees = fees.filter((_, index) => rawFees[index].source_document_id !== null);
+  const sourcedFees = fees
+    .filter((_, index) => rawFees[index].source_document_id !== null)
+    .map((fee) => ({ ...fee, fee_category: category }));
 
   function buildBreakdown<T extends StatsInputRow>(
     rows: T[],
@@ -268,7 +275,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       AND ct.fed_district IS NOT NULL
   ` as { fed_district: number; amount: number | null; institution_id: number }[];
 
-  const by_fed_district_real = buildBreakdown(districtRows, (row) => `District ${Number(row.fed_district)}`);
+  const by_fed_district_real = buildBreakdown(districtRows.map((row) => ({ ...row, fee_category: category })), (row) => `District ${Number(row.fed_district)}`);
   by_fed_district_real.sort((a, b) => {
     const numA = parseInt(a.dimension_value.replace("District ", ""));
     const numB = parseInt(b.dimension_value.replace("District ", ""));
@@ -295,6 +302,9 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     by_fed_district: by_fed_district_real,
     by_state: by_state.slice(0, 15),
     change_events,
+    institution_values: [
+      ...valuePerInstitution(sourcedFees.map((fee) => ({ ...fee, fee_category: category }))).values(),
+    ].sort((a, b) => a - b),
   };
 }
 

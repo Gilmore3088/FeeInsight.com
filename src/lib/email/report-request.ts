@@ -18,6 +18,8 @@ export interface ReportRequestNotificationInput {
   role: string | null;
   institutionId: number | null;
   src: string | null;
+  /** Whether we can build this institution's report from live data; James's email only. */
+  quoteCheck?: string | null;
 }
 
 export interface ContactRequestNotificationInput {
@@ -30,8 +32,8 @@ export interface ContactRequestNotificationInput {
 }
 
 export const REPORT_REQUEST_CONFIRMATION_LINE =
-  "We confirm your peer set within one business day and deliver the " +
-  `${REPORT_OFFER.name} within 48 hours of confirmation.`;
+  "The institution report is paid. We reply within one business day with its scope and price; " +
+  "nothing is charged until you agree.";
 
 const CONTACT_CONFIRMATION_LINE = "We reply within one business day.";
 
@@ -44,7 +46,7 @@ export async function sendReportRequestNotifications(
 ): Promise<LeadNotificationOutcome> {
   const roleSuffix = input.role ? `, ${input.role}` : "";
   const notificationLines = [
-    `${input.name} requested a free ${REPORT_OFFER.name} for ${input.institution}.`,
+    `${input.name} requested a ${REPORT_OFFER.name} for ${input.institution}. It is priced on request: reply with scope and price within one business day.`,
     "",
     ...[
       detailLine("Institution", input.institution),
@@ -55,6 +57,7 @@ export async function sendReportRequestNotifications(
       detailLine("Source", input.src),
     ].filter((line): line is string => line !== null),
     "",
+    ...(input.quoteCheck ? [input.quoteCheck, ""] : []),
     "Reply to this email to reach the requester directly.",
   ];
 
@@ -70,7 +73,7 @@ export async function sendReportRequestNotifications(
       lines: [
         `We received your request for ${input.institution}. ${REPORT_REQUEST_CONFIRMATION_LINE}`,
         "",
-        "The report is free. Reply to this email with questions.",
+        "Reply to this email with questions.",
       ],
     },
   });

@@ -5,6 +5,9 @@ Started 2026-10-05; for anything earlier, see `git log`.
 
 ## 2026-10-05
 **Accuracy and data quality**
+- The source check reads each price on a multi-fee line as its own fee and restores correct fees version 1 took down; a tiered overdraft counts at its highest tier (#132).
+- The rules re-check re-extracts fees the new rules read and keeps one copy per fee (#125).
+- Institutions are no longer labeled "verified"; the directory and profiles show "N of 15 headline fees published" (#126, #131), from a per-institution headline coverage count (#129).
 - Knox: a declined debit-card overdraft is not an overdraft fee (#121).
 - Live fees the bank's own schedule doesn't state are taken down; imported fees are relinked to their stored schedule first (#119).
 - The category guard stops hiding real paper-statement and ACH stop-payment fees (#118).
@@ -16,6 +19,12 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Hamilton records a price change only when the price really changed (#78).
 
 **Pipeline**
+- Bulk fill: free discovery runs every hour and every state with many missing links runs daily full passes (#154).
+- Each pipeline tick uses its full time budget (#149).
+- A failed run's queued steps are cancelled instead of left queued (#133).
+- Newly found fee links are fetched in the next hourly pass, not next month (#130).
+- Texas lane reads and extracts 100 documents per pass and sends dead links back to discovery (#124).
+- Completed runs show their real result instead of a stock footer (#120).
 - Discovery follows fee links on ruled-out pages, such as SoFi's "Fee Sheet" (#116).
 - Texas and California run daily full passes while many links are missing (#117).
 - Only full passes with a state-expert step count toward a state's monthly cadence; Hamilton publishes 500 fees per pass (#84).
@@ -32,6 +41,13 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Publishes no longer expire every public cache (#77); the pipeline tick no longer jams the database (#76).
 
 **Public site and Hamilton**
+- Every public page states the same counts and medians (#135).
+- Public reports: the National Index and Monthly Pulse are rendered, stored and scheduled again (#143).
+- Hamilton Analyze gives customer answers with a short lead and no FFIEC duplicate rows (#139); Hamilton reports use customer wording, dollars and percents (#140).
+- State reports gain an economy and regulation exhibit (#108); economy charts treat a stored 0 as a missing month (#159).
+- Funnel fixes: upgrade prompts say what is locked, /districts lands on the grid (#128).
+- Seven years of BLS CPI so 5-year charts are complete (#127).
+- Admin crew home shows each data feed's newest period and each report's last run (#146).
 - Homepage: two clear journeys and the real sample report (#92).
 - State fee reports redesigned in the research consulting format (#106); /research redesigned as a visual research hub (#86).
 - No heading line wraps a single word, site-wide and in reports (#105).
@@ -42,6 +58,18 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Partner API: brainstorm notes, call report quarters, CFPB complaints, CSV for paid keys (#90).
 - API spec: `/fees?category` and `/institutions?id` are now query parameters on `/fees` and `/institutions`, so code generators and Postman import the spec cleanly.
 - The Live page became a visual flow board (#80).
+
+**Project and tooling**
+- CLAUDE.md cleaned up; `docs/project/` added for checkpoints, findings, decisions and this changelog (#122).
+- The Firecrawl connector is blocked for Claude sessions in this repo (#137); docs use the feeinsight.com repo name after the GitHub rename (#145).
+
+**Revenue and leads**
+- Free national and Fed district fee reports open instantly from an email; the institution report is the paid step, and no page or email promises "48 hours" (#150).
+- Clicks, checkout and sign-ups are sent to Vercel Analytics (#147); Plausible removed (#151).
+- Every report request gets its own lead row, so a repeat email (the First National Bank Alaska request) shows in /admin/leads (#148).
+- Lead loop with statuses, 24-hour due times and failed-email alerts (#136); spam guards on forms (#138).
+- Pro welcome email (#141); hosted report next steps (#142); For Institutions buttons and tracking (#144).
+- New /reports page (#85); the sample is offline and "$300 value" is gone (#123).
 
 ## 2026-10-04 (from 19:56 UTC)
 - Rosetta read fixed: every read had failed with "bigint < text[]" (#72).

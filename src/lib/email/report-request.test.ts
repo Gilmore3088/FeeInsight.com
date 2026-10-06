@@ -113,7 +113,7 @@ describe("sendReportRequestNotifications", () => {
     expect(reply.reply_to).toBe("hello@bankfeeindex.com");
     expect(reply.subject).toBe("We received your request for Example Credit Union");
     expect(reply.text).toContain(
-      "We confirm your peer set within one business day and deliver the Competitive Fee Position Report within 48 hours of confirmation.",
+      "The institution report is paid. We reply within one business day with its scope and price; nothing is charged until you agree.",
     );
     expect(reply.html).toContain("Example Credit Union");
   });

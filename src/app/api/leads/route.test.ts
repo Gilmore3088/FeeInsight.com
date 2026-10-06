@@ -19,6 +19,15 @@ vi.mock("@/lib/email/report-request", () => ({
   sendContactRequestNotifications: vi.fn(),
 }));
 
+vi.mock("@/lib/email/benchmark-report", () => ({
+  sendBenchmarkReportNotifications: vi.fn(),
+}));
+
+vi.mock("@/lib/custom-report/quote-check", () => ({
+  checkInstitutionReport: vi.fn(() => Promise.resolve({ status: "unmatched", reason: "No match." })),
+  describeQuoteCheck: vi.fn(() => "Report check: No match."),
+}));
+
 vi.mock("@/lib/email/lead-capture", () => ({
   sendLeadCaptureNotifications: vi.fn(),
 }));
@@ -30,6 +39,7 @@ vi.mock("@/lib/email/resend", async (importOriginal) => ({
 
 import { sql } from "@/lib/data-store/connection";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
+import { sendBenchmarkReportNotifications } from "@/lib/email/benchmark-report";
 import {
   sendContactRequestNotifications,
   sendReportRequestNotifications,
@@ -40,6 +50,7 @@ const sqlMock = sql as unknown as ReturnType<typeof vi.fn>;
 const reportNotifyMock = sendReportRequestNotifications as unknown as ReturnType<typeof vi.fn>;
 const contactNotifyMock = sendContactRequestNotifications as unknown as ReturnType<typeof vi.fn>;
 const captureNotifyMock = sendLeadCaptureNotifications as unknown as ReturnType<typeof vi.fn>;
+const benchmarkNotifyMock = sendBenchmarkReportNotifications as unknown as ReturnType<typeof vi.fn>;
 const SENT = { status: "sent", providerId: "em_1" };
 
 function post(body: Record<string, unknown>) {
@@ -67,6 +78,45 @@ describe("POST /api/leads", () => {
     contactNotifyMock.mockResolvedValue({ notification: SENT, confirmation: SENT });
     captureNotifyMock.mockReset();
     captureNotifyMock.mockResolvedValue({ notification: SENT, confirmation: SENT });
+    benchmarkNotifyMock.mockReset();
+    benchmarkNotifyMock.mockResolvedValue({ notification: SENT, confirmation: SENT });
+  });
+
+  describe("free benchmark reports", () => {
+    it("sends the district report link from an email alone", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 50 }]);
+      const res = await post({ email: "vp@bank.example", source: "report_district", district: "12", src: "for-institutions" });
+      expect(res.status).toBe(200);
+      const insert = issued(1);
+      expect(insert.text).toContain("INSERT INTO leads");
+      expect(insert.values[4]).toBe("benchmark-report; scope=district-12; src=for-institutions");
+      expect(benchmarkNotifyMock).toHaveBeenCalledWith({
+        email: "vp@bank.example",
+        scope: { kind: "district", district: 12 },
+        src: "for-institutions",
+      });
+      expect(reportNotifyMock).not.toHaveBeenCalled();
+    });
+
+    it("sends the national report with no district", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 51 }]);
+      await post({ email: "vp@bank.example", source: "report_national" });
+      expect(benchmarkNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ scope: { kind: "national" } }));
+    });
+
+    it("rejects a district report without a real district", async () => {
+      const res = await post({ email: "vp@bank.example", source: "report_district", district: "13" });
+      expect(res.status).toBe(400);
+      expect(sqlMock).not.toHaveBeenCalled();
+      expect(benchmarkNotifyMock).not.toHaveBeenCalled();
+    });
+
+    it("folds a returning lead's free report into their row instead of a new request", async () => {
+      sqlMock.mockResolvedValueOnce([{ id: 15 }]).mockResolvedValue([]);
+      await post({ email: "vp@bank.example", source: "report_national" });
+      expect(issued(1).text).toContain("UPDATE leads SET");
+      expect(issued(2).text).toContain("UPDATE leads SET use_case = use_case || '; ' || ?");
+    });
   });
 
   it("inserts a new lead with its source", async () => {
@@ -120,7 +170,20 @@ describe("POST /api/leads", () => {
     expect(insert.text).toContain("INSERT INTO leads");
     expect(insert.text).toContain("RETURNING id");
     expect(insert.values).toContain("First National Bank Alaska");
-    expect(sqlMock.mock.calls.map((_, i) => issued(i).text).some((text) => text.includes("UPDATE leads"))).toBe(false);
+    const texts = sqlMock.mock.calls.map((_, i) => issued(i).text);
+    expect(texts.some((text) => text.includes("UPDATE leads") && text.includes("lower(email)"))).toBe(false);
+  });
+
+  it("records the report data check on the new row and in James's email only", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    const update = issued(2);
+    expect(update.text).toContain("UPDATE leads SET use_case");
+    expect(update.text).toContain("WHERE id = ?");
+    expect(update.values).toContain("Report check: No match.");
+    expect(update.values).toContain(42);
+    expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ quoteCheck: "Report check: No match." }));
   });
 
   it("sends the footer newsletter signup the monthly-index confirmation", async () => {
@@ -179,6 +242,7 @@ describe("POST /api/leads", () => {
       role: "VP Retail",
       institutionId: 4802,
       src: "profile",
+      quoteCheck: "Report check: No match.",
     });
   });
 

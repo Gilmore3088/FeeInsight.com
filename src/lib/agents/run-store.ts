@@ -754,7 +754,8 @@ async function executeAgenticStep(
               offTaxonomyRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               recheckRollbacks > 0 ||
-              sourceTakedowns > 0,
+              sourceTakedowns > 0 ||
+              (sourceCheck?.restored ?? 0) > 0,
           });
       const outlierNote =
         outlierRollbacks.length > 0
@@ -769,8 +770,8 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
           : "";
       const sourceNote =
-        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0
-          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}.`
+        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
+          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
           : "";
       const duplicateNote =
         duplicateCollapses.length > 0
@@ -818,6 +819,7 @@ async function executeAgenticStep(
           source_check_traced: sourceCheck?.traced ?? 0,
           source_check_relinked: sourceCheck?.relinked ?? 0,
           source_check_takedowns: sourceTakedowns,
+          source_check_restored: sourceCheck?.restored ?? 0,
           source_check_samples: (sourceCheck?.takedowns ?? []).slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
             institution_id: row.institutionId,

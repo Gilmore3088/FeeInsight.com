@@ -1,7 +1,7 @@
 import { getPublicStatsSummary } from "@/lib/public-stats";
 
 /**
- * "Data refreshed … · N verified fees". Uses the same de-duplicated count as every other
+ * "Data refreshed … · N published fee entries". Uses the same de-duplicated count as every other
  * public stat, so a page never shows two different totals for the same thing.
  */
 export async function DataFreshness() {
@@ -10,7 +10,7 @@ export async function DataFreshness() {
 
   return (
     <p className="text-[11px] text-[#6B6255]">
-      Data refreshed {summary.refreshedOn} &middot; {summary.observationsLabel} verified fees nationally
+      Data refreshed {summary.refreshedOn} &middot; {summary.observationsLabel} published fee entries nationally
     </p>
   );
 }

@@ -1,6 +1,8 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
+import { SITE_URL } from "@/lib/constants";
+import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/quote-check";
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
@@ -11,7 +13,10 @@ import {
 } from "@/lib/lead-capture";
 import {
   REPORT_SOURCE,
+  buildBenchmarkUseCase,
   buildReportUseCase,
+  isBenchmarkSource,
+  parseBenchmarkRequest,
   notifyForLead,
   parseInstitutionId,
   parseSrc,
@@ -41,8 +46,11 @@ async function handlePOST(request: NextRequest) {
 
     const source = cleanText(body.source) ?? DEFAULT_SOURCE;
     const placement = placementForSource(source);
+    const benchmark = isBenchmarkSource(source);
+    const benchmarkScope = parseBenchmarkRequest(source, body.district);
     const name =
-      cleanText(body.name) ?? (isEmailOnlySource(source) ? NEWSLETTER_PLACEHOLDER_NAME : null);
+      cleanText(body.name) ??
+      (isEmailOnlySource(source) || benchmark ? NEWSLETTER_PLACEHOLDER_NAME : null);
     const email = cleanText(body.email);
     const company = cleanText(body.company);
     const role = cleanText(body.role);
@@ -52,12 +60,18 @@ async function handlePOST(request: NextRequest) {
     const institutionName = placement
       ? cleanText(body.institutionName)?.slice(0, MAX_INSTITUTION_NAME_LENGTH) ?? null
       : null;
-    const src = source === REPORT_SOURCE ? parseSrc(body.src) : null;
+    const src = source === REPORT_SOURCE || benchmark ? parseSrc(body.src) : null;
     const useCase = placement
       ? buildCaptureAttribution(placement, institutionId, stateCode)
-      : source === REPORT_SOURCE
-        ? buildReportUseCase(cleanText(body.use_case), institutionId, src)
-        : cleanText(body.use_case);
+      : benchmarkScope
+        ? buildBenchmarkUseCase(benchmarkScope, src)
+        : source === REPORT_SOURCE
+          ? buildReportUseCase(cleanText(body.use_case), institutionId, src)
+          : cleanText(body.use_case);
+
+    if (benchmark && !benchmarkScope) {
+      return NextResponse.json({ error: "Pick a Fed district for the district report" }, { status: 400 });
+    }
 
     if (!name || !email) {
       return NextResponse.json(
@@ -103,9 +117,9 @@ async function handlePOST(request: NextRequest) {
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
         WHERE lower(email) = lower(${email})`;
-      if (placement && useCase) {
-        // Attribution accumulates too: a returning lead signing up from a new placement
-        // keeps its earlier use_case and gains this one.
+      if ((placement || benchmarkScope) && useCase) {
+        // Attribution accumulates too: a returning lead signing up from a new placement,
+        // or asking for another free report, keeps its earlier use_case and gains this one.
         await sql`
           UPDATE leads SET use_case = use_case || '; ' || ${useCase}
           WHERE lower(email) = lower(${email})
@@ -118,6 +132,24 @@ async function handlePOST(request: NextRequest) {
         VALUES (${name}, ${email}, ${company}, ${role}, ${useCase}, ${source})
         RETURNING id`;
       leadId = typeof inserted?.id === "number" ? inserted.id : null;
+    }
+
+    // An institution report is paid and quoted by James, so the requester gets nothing
+    // automatic. James's email and the lead row say whether we can build it from live data.
+    let quoteCheck: string | null = null;
+    if (source === REPORT_SOURCE) {
+      quoteCheck = describeQuoteCheck(
+        await checkInstitutionReport({ institutionId, institutionName: company }),
+        SITE_URL,
+      );
+      if (leadId !== null) {
+        await sql`
+          UPDATE leads SET use_case = CASE
+            WHEN use_case IS NULL OR use_case = '' THEN ${quoteCheck}
+            ELSE use_case || '; ' || ${quoteCheck}
+          END
+          WHERE id = ${leadId}`;
+      }
     }
 
     // Storage is done; email is best-effort and its status rides along for the client.
@@ -133,6 +165,8 @@ async function handlePOST(request: NextRequest) {
       src,
       stateCode,
       institutionName,
+      benchmarkScope,
+      quoteCheck,
     });
 
     return NextResponse.json(notifications ? { success: true, notifications } : { success: true });

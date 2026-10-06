@@ -20,14 +20,16 @@ export function pageTitle(section: string): string {
   return `${section} | ${SITE_NAME}`;
 }
 
-// The one commissioned product: one name, one offer, one turnaround, everywhere.
-// The report is free. No list value is shown for now (James, 2026-10-05).
+// The one commissioned product, described the same way everywhere. It is built for one
+// institution against named competitors, so it is priced on request and never promises a
+// delivery time. The free offer is the instant national and Fed district reports, which
+// need no one's time (James, 2026-10-05: "never reference 48 hours with a free report").
 export const REPORT_OFFER = {
   name: "Competitive Fee Position Report",
   priceUsd: 0,
-  priceLabel: "Free",
-  ctaLabel: "Get your free report",
-  turnaround: "delivered in 48 hours",
+  priceLabel: "Priced on request",
+  ctaLabel: "Get a free fee report",
+  nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
 } as const;
 // The public sample report (Reports/studio/sample + public/reports/sample-*) is offline
@@ -36,7 +38,8 @@ export const REPORT_OFFER = {
 // (next.config.ts), and the homepage previews and the Hamilton benchmark example
 // (rows copied from the sample) are hidden.
 export const SAMPLE_REPORT_LIVE = false;
-export const REPORT_OFFER_LINE = `${REPORT_OFFER.name} — free, ${REPORT_OFFER.turnaround}`;
+/** The free offer, in one line: the instant national and Fed district reports. */
+export const REPORT_OFFER_LINE = "National and Fed district fee reports — free, and ready in a minute";
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =

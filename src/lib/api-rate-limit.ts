@@ -11,6 +11,8 @@ export interface RateLimitResult {
   remaining: number;
   limit: number;
   reset: Date;
+  /** True when the reservation itself failed (database down), not when the allowance is used up. */
+  unavailable?: boolean;
 }
 
 function getMonthReset(): Date {
@@ -123,6 +125,7 @@ export async function checkRateLimitWithTier(
       remaining: 0,
       limit,
       reset: getMonthReset(),
+      unavailable: true,
     };
   }
 }

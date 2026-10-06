@@ -1,24 +1,31 @@
 "use client";
 
 import { Suspense, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Lock } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
-import { REPORT_OFFER } from "@/lib/constants";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 
 const LEADS_ENDPOINT = "/api/leads";
 const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
+const NATIONAL_REPORT_SOURCE = "report_national";
+const DISTRICT_REPORT_SOURCE = "report_district";
 const DEFAULT_SRC = "for-institutions";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 const SUCCESS_HEADLINE = "Request received.";
-const SUCCESS_PROMISE =
-  "We confirm your peer set within one business day; the report follows within 48 hours of confirmation.";
+const SUCCESS_PROMISE = "The institution report is paid. We reply within one business day with scope and price.";
 const CONFIRMATION_SENT = "A confirmation email is on its way to you now.";
 const CONFIRMATION_MISSING =
   "We couldn't send a confirmation email — we still have your request; expect an email from";
+const FREE_SUCCESS_HEADLINE = "Your report is ready.";
+const FREE_EMAIL_SENT = "We also emailed you the link.";
+const FREE_EMAIL_MISSING = "We couldn't email the link, so keep this page or bookmark the report.";
 const GENERIC_ERROR = "We couldn't send that request. Please try again or email us directly.";
 
 const INPUT_CLASS =
@@ -28,6 +35,13 @@ const INPUT_CLASS =
 const LABEL_CLASS = "block text-sm font-medium text-[#1A1815] mb-1";
 
 type Status = "idle" | "submitting" | "success" | "error";
+type ReportType = "national" | "district" | "institution";
+
+const REPORT_TYPES: { value: ReportType; title: string; detail: string; paid: boolean }[] = [
+  { value: "national", title: "National report", detail: "15 headline fees across the U.S. Email only.", paid: false },
+  { value: "district", title: "Fed district report", detail: "The same 15 fees for one Federal Reserve district, against the national median.", paid: false },
+  { value: "institution", title: "Your institution vs. competitors", detail: "Your own fees, line by line, against named competitors in your market.", paid: true },
+];
 type ConfirmationStatus = "sent" | "not_configured" | "failed" | "unknown";
 
 interface LeadsResponse {
@@ -46,15 +60,29 @@ interface Prefill {
   institutionId: number | null;
   institutionName: string;
   src: string;
+  reportType: ReportType;
+  district: number | null;
 }
 
 function readPrefill(params: URLSearchParams, defaultSrc: string): Prefill {
   const idRaw = Number(params.get("institution"));
   const srcRaw = (params.get("src") ?? "").trim();
+  const districtRaw = Number(params.get("district"));
+  const institutionName = (params.get("name") ?? "").trim();
+  const requested = params.get("report");
+  // A link that names an institution (a profile page or a hosted report) asks for its report.
+  const reportType: ReportType =
+    requested === "national" || requested === "district" || requested === "institution"
+      ? requested
+      : institutionName
+        ? "institution"
+        : "national";
   return {
     institutionId: Number.isInteger(idRaw) && idRaw > 0 ? idRaw : null,
-    institutionName: (params.get("name") ?? "").trim(),
+    institutionName,
     src: SRC_PATTERN.test(srcRaw) ? srcRaw : defaultSrc,
+    reportType,
+    district: isFedDistrict(districtRaw) ? districtRaw : null,
   };
 }
 
@@ -89,6 +117,8 @@ function RequestReportFormInner({
   const [institutionLocked, setInstitutionLocked] = useState(
     Boolean(prefill?.institutionName),
   );
+  const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? "national");
+  const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
 
   const src = prefill?.src ?? defaultSrc;
   const lockedInstitutionId = institutionLocked ? prefill?.institutionId ?? null : null;
@@ -99,6 +129,10 @@ function RequestReportFormInner({
     setErrorMessage(null);
 
     const formData = new FormData(event.currentTarget);
+    if (reportType !== "institution") {
+      await submitFreeReport(formData);
+      return;
+    }
     const payload = {
       name: String(formData.get("name") ?? "").trim(),
       email: String(formData.get("email") ?? "").trim(),
@@ -130,15 +164,51 @@ function RequestReportFormInner({
     }
   }
 
+  async function submitFreeReport(formData: FormData) {
+    const district = Number(formData.get("district"));
+    const scope: BenchmarkScope =
+      reportType === "district" ? { kind: "district", district } : { kind: "national" };
+    const payload = {
+      email: String(formData.get("email") ?? "").trim(),
+      source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
+      district: reportType === "district" ? district : undefined,
+      src,
+      [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
+    };
+    try {
+      const response = await fetch(LEADS_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await response.json().catch(() => null)) as LeadsResponse | null;
+      if (!response.ok) {
+        throw new Error(body?.error || GENERIC_ERROR);
+      }
+      trackEvent("request_report", { src, report: reportType });
+      setConfirmation(toConfirmationStatus(body));
+      setFreeReport(scope);
+      setStatus("success");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : GENERIC_ERROR);
+      setStatus("error");
+    }
+  }
+
+  if (status === "success" && freeReport) {
+    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} />;
+  }
   if (status === "success") {
     return <RequestReportSuccess contactEmail={contactEmail} confirmation={confirmation} />;
   }
+
+  const institution = reportType === "institution";
 
   return (
     <form
       onSubmit={handleSubmit}
       className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 space-y-4"
-      aria-label={`Request a ${REPORT_OFFER.name}`}
+      aria-label="Request a fee report"
     >
       <HoneypotField />
       {status === "error" && errorMessage && (
@@ -150,55 +220,77 @@ function RequestReportFormInner({
         </div>
       )}
 
-      <div>
-        <div className="mb-1 flex items-baseline justify-between gap-3">
-          <label htmlFor="report-institution" className={`${LABEL_CLASS} mb-0`}>
-            Institution
-          </label>
-          {institutionLocked && (
-            <button
-              type="button"
-              onClick={() => setInstitutionLocked(false)}
-              className="text-xs font-medium text-[#6B6255] underline underline-offset-2 hover:text-[#1A1815]"
+      <fieldset>
+        <legend className={LABEL_CLASS}>Which report?</legend>
+        <div className="space-y-2">
+          {REPORT_TYPES.map((option) => (
+            <label
+              key={option.value}
+              className={
+                "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm " +
+                (option.paid ? "border-dashed bg-[#F4EFE7] " : "bg-white ") +
+                (reportType === option.value ? "border-[#C44B2E] ring-1 ring-[#C44B2E]" : "border-[#D5CBBF]")
+              }
             >
-              Change
-            </button>
-          )}
+              <input
+                type="radio"
+                name="report-type"
+                value={option.value}
+                checked={reportType === option.value}
+                onChange={() => setReportType(option.value)}
+                className="mt-1 accent-[#C44B2E]"
+              />
+              <span className="min-w-0 flex-1">
+                <span className={"flex items-center gap-2 font-medium " + (option.paid ? "text-[#5A5347]" : "text-[#1A1815]")}>
+                  {option.paid && <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+                  {option.title}
+                  <span
+                    className={
+                      "ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+                      (option.paid ? "bg-[#EADFCB] text-[#7A5A1E]" : "bg-[#E3EFE8] text-[#2F6B4F]")
+                    }
+                  >
+                    {option.paid ? "Paid" : "Free, instant"}
+                  </span>
+                </span>
+                <span className="mt-0.5 block text-[13px] text-[#6B6255]">{option.detail}</span>
+              </span>
+            </label>
+          ))}
         </div>
-        <input
-          id="report-institution"
-          name="institution"
-          type="text"
-          required
-          readOnly={institutionLocked}
-          aria-readonly={institutionLocked}
-          defaultValue={prefill?.institutionName ?? ""}
-          autoComplete="organization"
-          placeholder="First National Bank"
-          className={INPUT_CLASS}
-        />
-      </div>
+      </fieldset>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {reportType === "district" && (
         <div>
-          <label htmlFor="report-name" className={LABEL_CLASS}>
-            Name
+          <label htmlFor="report-district" className={LABEL_CLASS}>
+            Fed district
           </label>
-          <input
-            id="report-name"
-            name="name"
-            type="text"
+          <select
+            id="report-district"
+            name="district"
             required
-            autoComplete="name"
+            defaultValue={prefill?.district ?? ""}
             className={INPUT_CLASS}
-          />
+          >
+            <option value="" disabled>
+              Choose a district
+            </option>
+            {Object.entries(DISTRICT_NAMES).map(([id, name]) => (
+              <option key={id} value={id}>
+                {id} · {name}
+              </option>
+            ))}
+          </select>
         </div>
+      )}
+
+      {!institution && (
         <div>
-          <label htmlFor="report-email" className={LABEL_CLASS}>
-            Work email
+          <label htmlFor="report-email-free" className={LABEL_CLASS}>
+            Email
           </label>
           <input
-            id="report-email"
+            id="report-email-free"
             name="email"
             type="email"
             required
@@ -206,32 +298,99 @@ function RequestReportFormInner({
             className={INPUT_CLASS}
           />
         </div>
-      </div>
+      )}
 
-      <div>
-        <label htmlFor="report-role" className={LABEL_CLASS}>
-          Role <span className="font-normal text-[#6B6255]">(optional)</span>
-        </label>
-        <input
-          id="report-role"
-          name="role"
-          type="text"
-          autoComplete="organization-title"
-          placeholder="VP Retail Banking"
-          className={INPUT_CLASS}
-        />
-      </div>
+      {institution && (
+        <>
+        <div>
+          <div className="mb-1 flex items-baseline justify-between gap-3">
+            <label htmlFor="report-institution" className={`${LABEL_CLASS} mb-0`}>
+              Institution
+            </label>
+            {institutionLocked && (
+              <button
+                type="button"
+                onClick={() => setInstitutionLocked(false)}
+                className="text-xs font-medium text-[#6B6255] underline underline-offset-2 hover:text-[#1A1815]"
+              >
+                Change
+              </button>
+            )}
+          </div>
+          <input
+            id="report-institution"
+            name="institution"
+            type="text"
+            required
+            readOnly={institutionLocked}
+            aria-readonly={institutionLocked}
+            defaultValue={prefill?.institutionName ?? ""}
+            autoComplete="organization"
+            placeholder="First National Bank"
+            className={INPUT_CLASS}
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="report-name" className={LABEL_CLASS}>
+              Name
+            </label>
+            <input
+              id="report-name"
+              name="name"
+              type="text"
+              required
+              autoComplete="name"
+              className={INPUT_CLASS}
+            />
+          </div>
+          <div>
+            <label htmlFor="report-email" className={LABEL_CLASS}>
+              Work email
+            </label>
+            <input
+              id="report-email"
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              className={INPUT_CLASS}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="report-role" className={LABEL_CLASS}>
+            Role <span className="font-normal text-[#6B6255]">(optional)</span>
+          </label>
+          <input
+            id="report-role"
+            name="role"
+            type="text"
+            autoComplete="organization-title"
+            placeholder="VP Retail Banking"
+            className={INPUT_CLASS}
+          />
+        </div>
+        </>
+      )}
 
       <button
         type="submit"
         disabled={status === "submitting"}
         className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
       >
-        {status === "submitting" ? "Sending…" : REPORT_OFFER.ctaLabel}
+        {status === "submitting"
+          ? "Sending…"
+          : institution
+            ? "Request your institution report"
+            : "Get the free report"}
       </button>
       <p className="text-xs leading-relaxed text-[#6B6255]">
-        It&apos;s free — no payment, no card. We confirm your peer set by email before any work
-        starts.
+        {institution
+          ? "A paid report. We reply within one business day with scope and price; nothing is charged until you agree."
+          : "Free, no card. The report opens right away and the link comes by email."}
       </p>
     </form>
   );
@@ -272,6 +431,30 @@ function RequestReportSuccess({
         </a>
         .
       </p>
+    </div>
+  );
+}
+
+function FreeReportSuccess({
+  scope,
+  confirmation,
+}: {
+  scope: BenchmarkScope;
+  confirmation: ConfirmationStatus;
+}) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 text-sm text-[#1A1815]"
+    >
+      <p className="font-semibold">{FREE_SUCCESS_HEADLINE}</p>
+      <p className="mt-2 text-[#5A5347]">{confirmation === "sent" ? FREE_EMAIL_SENT : FREE_EMAIL_MISSING}</p>
+      <Link
+        href={benchmarkReportPath(scope)}
+        className="mt-4 inline-flex rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25]"
+      >
+        Open your report
+      </Link>
     </div>
   );
 }
