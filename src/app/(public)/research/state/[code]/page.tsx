@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getNationalIndexCached } from "@/lib/data-store";
 import { isFeaturedFee } from "@/lib/fee-taxonomy";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
@@ -104,7 +103,7 @@ export default async function StateReportPage({ params }: PageProps) {
     getPublicStatsSummary(),
     getStateStatsCached(stateCode),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
-    getNationalIndexCached(),
+    getPublicNationalIndex(),
     loadCities(stateCode),
     // Context only: a failed read hides the exhibit rather than failing the report.
     getStateEconomicContextCached(stateCode, district ?? null).catch(() => EMPTY_ECONOMY),
