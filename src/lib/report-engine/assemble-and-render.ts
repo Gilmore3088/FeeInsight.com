@@ -133,7 +133,7 @@ export async function assembleAndRender(
             type: 'trend_analysis',
             title: 'Where Prices Cluster and Where They Spread',
             data: {
-              avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct,
+              median_iqr_spread_pct: payload.derived.median_iqr_spread_pct,
               commoditized_count: payload.derived.commoditized_count,
               total_priced_categories: payload.derived.total_priced_categories,
               tightest_spreads: payload.derived.tightest_spreads,
@@ -186,7 +186,7 @@ export async function assembleAndRender(
             type: 'findings',
             title: 'What to Watch',
             data: {
-              avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct,
+              median_iqr_spread_pct: payload.derived.median_iqr_spread_pct,
               bank_higher_count: payload.derived.bank_higher_count,
               total_institutions: payload.total_institutions,
             },
@@ -234,7 +234,7 @@ export async function assembleAndRender(
           editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: 'The Quarter in Figures — Executive Summary', data: { ...(payload.derived as unknown as Record<string, unknown>), total_institutions: payload.total_institutions } } });
         }
         if (diffResult.status === 'fulfilled') {
-          editorSections.push({ ...fee_differentiation, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Where Prices Cluster and Where They Spread', data: { avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct, commoditized_count: payload.derived.commoditized_count } } });
+          editorSections.push({ ...fee_differentiation, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Where Prices Cluster and Where They Spread', data: { median_iqr_spread_pct: payload.derived.median_iqr_spread_pct, commoditized_count: payload.derived.commoditized_count } } });
         }
         if (charterResult.status === 'fulfilled') {
           editorSections.push({ ...banks_vs_credit_unions, validation: passedValidation, input: { type: 'peer_comparison' as const, title: 'Banks and Credit Unions', data: { bank_higher_count: payload.derived.bank_higher_count, cu_higher_count: payload.derived.cu_higher_count } } });
@@ -246,7 +246,7 @@ export async function assembleAndRender(
           editorSections.push({ ...industry_blind_spot, validation: passedValidation, input: { type: 'findings' as const, title: 'Data Coverage', data: { categories_with_data_count: payload.derived.categories_with_data_count, total_categories: payload.categories.length } } });
         }
         if (futureResult.status === 'fulfilled') {
-          editorSections.push({ ...future_strategy, validation: passedValidation, input: { type: 'findings' as const, title: 'What to Watch', data: { avg_iqr_spread_pct: payload.derived.avg_iqr_spread_pct, bank_higher_count: payload.derived.bank_higher_count, total_institutions: payload.total_institutions } } });
+          editorSections.push({ ...future_strategy, validation: passedValidation, input: { type: 'findings' as const, title: 'What to Watch', data: { median_iqr_spread_pct: payload.derived.median_iqr_spread_pct, bank_higher_count: payload.derived.bank_higher_count, total_institutions: payload.total_institutions } } });
         }
 
         if (editorSections.length > 0) {

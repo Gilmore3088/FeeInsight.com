@@ -46,6 +46,8 @@ export interface NationalQuarterlySection {
 export interface DerivedAnalytics {
   // Ch1: Fee Differentiation analysis
   avg_iqr_spread_pct: number | null;
+  /** Median across priced categories of (P75 - P25) / median, in percent; a few very wide fees do not pull it. */
+  median_iqr_spread_pct: number | null;
   commoditized_count: number;
   total_priced_categories: number;
   tightest_spreads: Array<{ display_name: string; spread_pct: number; median: number }>;
@@ -133,6 +135,8 @@ export interface NationalQuarterlyPayload {
     theme_category: string;
     sentiment: string;
     summary: string;
+    /** Beige Book release, YYYYMM, so an older release is never read as current. */
+    release_code?: string;
   }>;
   // V3 derived analytics
   derived: DerivedAnalytics;
@@ -390,6 +394,9 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const avg_iqr_spread_pct = spreads.length > 0
     ? spreads.reduce((sum, s) => sum + s.spread_pct, 0) / spreads.length
     : null;
+  const median_iqr_spread_pct = sortedBySpreadAsc.length > 0
+    ? (sortedBySpreadAsc[Math.floor((sortedBySpreadAsc.length - 1) / 2)].spread_pct + sortedBySpreadAsc[Math.ceil((sortedBySpreadAsc.length - 1) / 2)].spread_pct) / 2
+    : null;
 
   // Bank vs CU comparison
   const comparableCategories = categories.filter(
@@ -429,6 +436,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
 
   const derived: DerivedAnalytics = {
     avg_iqr_spread_pct,
+    median_iqr_spread_pct,
     commoditized_count,
     total_priced_categories: spreads.length,
     tightest_spreads: sortedBySpreadAsc.slice(0, 5),
@@ -512,6 +520,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       theme_category: t.theme_category,
       sentiment: t.sentiment,
       summary: t.summary,
+      release_code: t.release_code,
     })),
     derived,
     regional,

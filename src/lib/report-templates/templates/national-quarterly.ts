@@ -120,6 +120,15 @@ function groupTable(rows: GroupRow[], groupLabel: string, caption: string): stri
   });
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** ", January 2026" from a YYYYMM release code; empty when unknown. */
+function releaseLabel(code: string | undefined): string {
+  const m = code ? /^(\d{4})(\d{2})$/.exec(code) : null;
+  const month = m ? MONTHS[Number(m[2]) - 1] : undefined;
+  return m && month ? `, ${month} ${m[1]}` : "";
+}
+
 function fmtPct(value: number | null): string {
   if (value === null) return "\u2014";
   return `${value.toFixed(1)}%`;
@@ -142,6 +151,8 @@ const APPENDIX_COLUMNS = [
 export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInput): string {
   const { data, narratives } = input;
   const d: DerivedAnalytics = data.derived;
+  // Payloads stored before median_iqr_spread_pct existed fall back to the mean.
+  const spreadPct = d.median_iqr_spread_pct ?? d.avg_iqr_spread_pct ?? null;
   // Payloads stored before the regional and income chapters lack these fields.
   const overdraftDistribution = data.overdraft_distribution ?? [];
   const regional = data.regional ?? { districts: [], sizes: [], states: [] };
@@ -247,11 +258,11 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
             : "FDIC and NCUA filings.",
         }
       : null,
-    d.avg_iqr_spread_pct !== null
+    spreadPct !== null
       ? {
-          number: `${d.avg_iqr_spread_pct.toFixed(0)}%`,
-          insight: "Average spread of the middle half",
-          supporting: `Across ${d.total_priced_categories} priced categories, as a share of each median.`,
+          number: `${spreadPct.toFixed(0)}%`,
+          insight: "Typical spread of the middle half",
+          supporting: `Median across ${d.total_priced_categories} priced categories of each fee's middle half as a share of its median.`,
         }
       : null,
   ].filter((f): f is { number: string; insight: string; supporting: string } => f !== null);
@@ -328,7 +339,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     const themeQuotes = data.beige_themes
       .map((t) => pullQuote(
         t.summary.slice(0, 250) + (t.summary.length > 250 ? "..." : ""),
-        `Federal Reserve Beige Book \u2014 ${t.district_name} (${t.theme_category.replace(/_/g, " ")})`
+        `Federal Reserve Beige Book${releaseLabel(t.release_code)} \u2014 ${t.district_name} (${t.theme_category.replace(/_/g, " ")})`
       ))
       .join("\n");
 
@@ -551,9 +562,9 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     chapterDivider("06", "What to Watch"),
     statCardRow([
       {
-        label: "Avg Price Spread",
-        value: d.avg_iqr_spread_pct !== null ? `${d.avg_iqr_spread_pct.toFixed(0)}%` : "\u2014",
-        source: "IQR as % of median",
+        label: "Typical price spread",
+        value: spreadPct !== null ? `${spreadPct.toFixed(0)}%` : "\u2014",
+        source: "middle half as % of median, median across fees",
       },
       {
         label: "Narrow middle half",

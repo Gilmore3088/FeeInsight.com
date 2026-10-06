@@ -41,6 +41,7 @@ const payload: NationalQuarterlyPayload = {
   beige_themes: [],
   derived: {
     avg_iqr_spread_pct: 40,
+    median_iqr_spread_pct: 35,
     commoditized_count: 1,
     total_priced_categories: 2,
     tightest_spreads: [],

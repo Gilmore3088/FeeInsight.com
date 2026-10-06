@@ -107,6 +107,7 @@ function makeMockPayload(
     ],
     derived: {
       avg_iqr_spread_pct: 42.3,
+      median_iqr_spread_pct: 38,
       commoditized_count: 7,
       total_priced_categories: 15,
       tightest_spreads: [],
