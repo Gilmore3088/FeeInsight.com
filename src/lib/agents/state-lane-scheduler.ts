@@ -11,6 +11,7 @@ import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -141,7 +142,8 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 /**
  * Steps an hourly backlog run takes: search banks that are due a free search and still
  * have no fee link (James, 2026-10-05: free discovery is never held to the monthly
- * cadence), fetch fee links found since their bank's last fetch, then re-read,
+ * cadence), fetch fee links found since their bank's last fetch or last fetched over a
+ * month ago (MAGELLAN_STALE_LINK_REFETCH_DAYS), then re-read,
  * re-extract, verify and publish the documents the state already has. Discovery's own
  * backoff (12 hours after a miss that may clear, a month or a quarter after a dead end)
  * keeps a bank from being searched more often than that. The paid find and
@@ -152,7 +154,7 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
 export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "classify", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
-  .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch newly found fee links", input: { ...step.input, new_links_only: true } } : step));
+  .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));
 
 export type StateLaneMode = "full" | "backlog";
 
@@ -331,6 +333,21 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            AND inst.rescue_status = 'rescued'
            AND inst.fee_schedule_url IS NOT NULL
            AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+      ) OR EXISTS (
+        -- A fee link last fetched over a month ago. Matches Magellan's backlog fetch
+        -- selection; a fetch, failed or not, stamps last_crawl_at, so a lane never loops on it.
+        SELECT 1
+          FROM institution_sources inst
+          LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND COALESCE(inst.status, 'active') = 'active'
+           AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+           AND (
+             profile.canonical_source_url IS NOT NULL
+             OR NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL
+           )
+           AND inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS})
       ) OR EXISTS (
         -- Raw rows Darwin has not decided under the current rules (the rows its
         -- verify step selects), so a large extraction drains hourly, not next month.

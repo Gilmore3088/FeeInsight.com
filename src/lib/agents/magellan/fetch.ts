@@ -22,6 +22,13 @@ type Fetcher = typeof fetch;
 
 export const MAGELLAN_FETCH_DEFAULT_LIMIT = 25;
 export const MAGELLAN_FETCH_MAX_LIMIT = 50;
+/**
+ * An hourly backlog run also re-fetches a fee link last fetched this many days ago, so a
+ * state's schedules stay current between full passes (Texas had 189 live links unfetched
+ * since April on 2026-10-06, failing its state report's 90-day freshness check). Fetching
+ * is free; changed text is read and extracted on the state's normal cadence.
+ */
+export const MAGELLAN_STALE_LINK_REFETCH_DAYS = 30;
 
 /** The fetch strategy recorded in the attempt log; bump the version when its behavior changes. */
 export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 1 } as const;
@@ -86,7 +93,10 @@ export interface RunMagellanFetchOptions {
   limit?: number;
   institutionId?: number;
   stateCode?: string;
-  /** Only banks whose fee link was found after their last fetch (hourly backlog runs). */
+  /**
+   * Only banks whose fee link was found after their last fetch, or was last fetched over
+   * MAGELLAN_STALE_LINK_REFETCH_DAYS ago (hourly backlog runs).
+   */
   newLinksOnly?: boolean;
   dryRun?: boolean;
   db?: SqlTag;
@@ -363,12 +373,12 @@ async function selectCandidates(
          OR (inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> '')
        )
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
-       -- A link discovery found after the last fetch is fetched at once, first, and is
-       -- all an hourly backlog run fetches.
+       -- A link discovery found after the last fetch is fetched at once and first. An
+       -- hourly backlog run fetches those and links last fetched over a month ago.
        AND (NOT ${newLinksOnly}::boolean OR (
          inst.rescue_status = 'rescued'
          AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
-       ))
+       ) OR inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS}))
        AND (
          inst.last_crawl_at IS NULL
          OR (inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at)
