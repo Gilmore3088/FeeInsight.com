@@ -281,6 +281,29 @@ describe("POST /api/leads", () => {
     expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ held: { district: 11 } }));
   });
 
+  it("records the institution a report request is about, so the pipeline can put it first", async () => {
+    vi.mocked(checkInstitutionReport).mockResolvedValueOnce({
+      status: "thin",
+      readiness: {} as never,
+      rule: null,
+      institutionId: 117,
+    });
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@bank.com", company: "Banner Bank", source: "report", institutionId: 117 });
+    const record = issued(3);
+    expect(record.text).toContain("SET quote_institution_id = ?");
+    expect(record.text).toContain("quote_institution_id IS NULL");
+    expect(record.values).toEqual([117, 42]);
+  });
+
+  it("records no institution when the request matched none", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "First National Bank", source: "report" });
+    expect(sqlMock.mock.calls.some((call) => String(call[0].join("?")).includes("quote_institution_id"))).toBe(false);
+  });
+
   it("does not hold a request it could not match; James checks it by hand", async () => {
     sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
     reportNotifyMock.mockResolvedValueOnce(SENT);

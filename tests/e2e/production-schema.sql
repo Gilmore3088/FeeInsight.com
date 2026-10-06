@@ -3007,3 +3007,96 @@ BEGIN
   END IF;
 END $$;
 
+-- Rate columns and the rate catalog (migration 20270110000006_percentage_fees.sql).
+ALTER TABLE public.raw_fee_observations
+  ADD COLUMN IF NOT EXISTS amount_kind text NOT NULL DEFAULT 'flat',
+  ADD COLUMN IF NOT EXISTS rate_percent numeric(7,4),
+  ADD COLUMN IF NOT EXISTS rate_min_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_max_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_basis text;
+
+ALTER TABLE public.verified_fee_observations
+  ADD COLUMN IF NOT EXISTS amount_kind text NOT NULL DEFAULT 'flat',
+  ADD COLUMN IF NOT EXISTS rate_percent numeric(7,4),
+  ADD COLUMN IF NOT EXISTS rate_min_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_max_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_basis text;
+
+ALTER TABLE public.published_fee_records
+  ADD COLUMN IF NOT EXISTS amount_kind text NOT NULL DEFAULT 'flat',
+  ADD COLUMN IF NOT EXISTS rate_percent numeric(7,4),
+  ADD COLUMN IF NOT EXISTS rate_min_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_max_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_basis text;
+
+DO $$
+DECLARE
+  tier text;
+BEGIN
+  FOREACH tier IN ARRAY ARRAY['raw_fee_observations', 'verified_fee_observations', 'published_fee_records'] LOOP
+    EXECUTE format(
+      $sql$ALTER TABLE public.%I ADD CONSTRAINT %I CHECK (
+        (amount_kind = 'flat' AND rate_percent IS NULL AND rate_min_amount IS NULL AND rate_max_amount IS NULL AND rate_basis IS NULL)
+        OR (amount_kind = 'percent' AND amount IS NULL AND rate_percent > 0 AND rate_percent <= 100
+            AND (rate_min_amount IS NULL OR rate_min_amount >= 0)
+            AND (rate_max_amount IS NULL OR rate_max_amount >= COALESCE(rate_min_amount, 0))
+            AND (rate_basis IS NULL OR rate_basis IN ('transaction', 'settlement', 'advance', 'balance_transferred', 'balance', 'loan_balance')))
+      ) NOT VALID$sql$,
+      tier,
+      tier || '_amount_kind_check'
+    );
+    EXECUTE format('ALTER TABLE public.%I VALIDATE CONSTRAINT %I', tier, tier || '_amount_kind_check');
+  END LOOP;
+END $$;
+
+CREATE OR REPLACE VIEW public.published_fee_rate_catalog
+WITH (security_invoker = true)
+AS
+SELECT
+  fp.fee_published_id AS id,
+  fp.fee_published_id,
+  fp.lineage_ref AS fee_verified_id,
+  fv.fee_raw_id,
+  fp.institution_id,
+  fp.fee_name,
+  fp.amount,
+  fp.frequency,
+  fr.conditions,
+  COALESCE(fp.extraction_confidence, fv.extraction_confidence, fr.extraction_confidence) AS extraction_confidence,
+  'approved'::text AS review_status,
+  COALESCE(fv.outlier_flags, '[]'::jsonb) AS validation_flags,
+  fp.canonical_fee_key AS fee_category,
+  fp.canonical_fee_key,
+  NULL::text AS fee_family,
+  NULL::text AS account_product_type,
+  false AS is_fee_cap,
+  fp.variant_type,
+  fp.coverage_tier,
+  COALESCE(fp.source_url, fv.source_url, fr.source_url) AS source_url,
+  fr.source,
+  COALESCE(fp.source_url, fv.source_url, fr.source_url) AS document_url,
+  COALESCE(fp.document_r2_key, fv.document_r2_key, fr.document_r2_key) AS document_r2_key,
+  fr.source_document_id,
+  COALESCE(fp.agent_event_id, fr.agent_event_id) AS agent_event_id,
+  COALESCE(fp.verified_by_agent_event_id, fv.verified_by_agent_event_id) AS verified_by_agent_event_id,
+  fp.published_by_adversarial_event_id,
+  fp.batch_id,
+  fp.published_at AS created_at,
+  fp.published_at AS updated_at,
+  fp.amount_kind,
+  fp.rate_percent,
+  fp.rate_min_amount,
+  fp.rate_max_amount,
+  fp.rate_basis
+FROM public.published_fee_records fp
+LEFT JOIN public.verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+LEFT JOIN public.raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+WHERE fp.rolled_back_at IS NULL
+  AND fp.amount_kind = 'percent'
+  AND fp.institution_id IN (
+    SELECT deep.institution_id
+      FROM public.published_fee_records deep
+     WHERE deep.rolled_back_at IS NULL
+     GROUP BY deep.institution_id
+    HAVING count(DISTINCT deep.canonical_fee_key) >= 3
+  );

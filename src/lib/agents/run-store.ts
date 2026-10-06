@@ -25,7 +25,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRows } from "@/lib/agents/knox/held-recheck";
+import { recheckHeldRates, recheckHeldRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -72,6 +72,8 @@ import {
 } from "./types";
 
 const ACTIVE_STATUSES = ["queued", "running", "cancel_requested"];
+/** Category-guard rollbacks per publish step; a larger guard change comes down over several steps. */
+const CATEGORY_GUARD_STEP_LIMIT = 100;
 const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "report", "manual_repair", "dry_run"] as const;
 const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
@@ -592,11 +594,18 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Held percentage fees in categories that publish rates go to Darwin as rate fees.
+      const rateRecheck = await recheckHeldRates(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin.`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
         detail: {
           held_recheck: heldRecheck,
+          held_rate_recheck: rateRecheck,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
@@ -608,6 +617,8 @@ async function executeAgenticStep(
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
+          lessons_loaded: extraction.lessonsLoaded,
+          lesson_refiles: extraction.lessonRefiles,
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
           institution_results: institutionResults(
@@ -785,6 +796,19 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A live fee whose own name contradicts its category (an ATM fee filed as a card's
+      // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
+      // a guard change takes effect without anyone starting the repair run by hand.
+      const categoryGuard = await runHamiltonCategoryGuard({
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        limit: CATEGORY_GUARD_STEP_LIMIT,
+        institutionId,
+        db: tx,
+      });
+      const categoryGuardRollbacks = categoryGuard.dryRun
+        ? Math.min(categoryGuard.failingFees, categoryGuard.limit)
+        : categoryGuard.rolledBackFees;
       // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
       // derivatives notice) come down before anything new publishes.
       const companionRetire = await rollBackRetiredCompanionFees(tx, {
@@ -863,6 +887,7 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               newerCopyRetired > 0 ||
@@ -879,6 +904,10 @@ async function executeAgenticStep(
       const offTaxonomyNote =
         offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
+          : "";
+      const categoryGuardNote =
+        categoryGuardRollbacks > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
           : "";
       const companionNote =
         companionRollbacks.length > 0
@@ -905,7 +934,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${companionNote}${newerCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -928,6 +957,17 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          category_guard_rollbacks: categoryGuardRollbacks,
+          category_guard_failing: categoryGuard.failingFees,
+          category_guard_version: categoryGuard.guardVersion,
+          category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({
+            fee_published_id: failure.feePublishedId,
+            institution_id: failure.institutionId,
+            canonical_fee_key: failure.canonicalFeeKey,
+            fee_name: failure.feeName,
+            amount: failure.amount,
+            code: failure.code,
           })),
           companion_retire_rollbacks: companionRollbacks.length,
           companion_retire_rejected_verified: companionRetire.rejectedVerified,
