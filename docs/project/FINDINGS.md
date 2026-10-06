@@ -1340,3 +1340,24 @@ and the snapshot's `published_fee_catalog` still lacks PR 215's 3-fee rule, so t
 one-fee peer banks would vanish under the real view.
 **Fix:** PR 278 appends its columns to the snapshot. Open: refresh the whole snapshot from prod,
 and give the test's peer banks 3 fees each so it runs under the real catalog rule.
+
+## 2026-10-06: Knox held every percentage fee, often under a sentence fragment
+**What happened:** with rate columns in place, Knox still wrote every rate as a held
+`knox_review:percentage` row with no amount, 1,023 of them in the four rate categories, many
+named by a fragment ("A 1% Currency Conversion Fee will be assessed on", "for customers").
+**Fix:** `src/lib/agents/knox/percent.ts`. A held rate in an allow-listed category whose rate
+traces with `checkRateAgainstSource` goes to Darwin as a rate fee, named from the category's own
+words; "up to" rates, interest rates, two-rate lines and out-of-range rates stay held. Held rows
+are re-read in place by `recheckHeldRates`. Knox v21 also reads the card's currency fee and
+coin counting under the other names banks give them. Answer keys: 20 rate reads, 18 keyed and 2
+real fees the keys leave out (0.2% currency conversion, 0.9% cross-border); flat gates and the
+live dry run (1,416 of 1,437 kept) unchanged. Dry run on the 1,001 held rows with their
+stored excerpts: 287 foreign transaction rates at 217 banks (median 1%), 106 late payment at 82
+(median 5%), 39 cash advance, 37 coin counting.
+**Still open:** 52 of 68 keyed rates still don't publish: about half are never read as a
+rate (prose, rates split across lines), and the rest are "up to", two-rate or interest lines;
+coin counting rows ("Coin Counting | 10% of total") fail the rate
+check because the row has no fee or charge word.
+**Lesson:** a new column is not a new fee until the extractor writes it; score the writer on the
+answer keys, not only on the held rows it was built from.
+
