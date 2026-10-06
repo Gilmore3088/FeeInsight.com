@@ -338,6 +338,12 @@ function clarify(question: ClarifyingQuestion, pageChange: AskResponse["pageChan
 }
 
 export function buildAskResponse(input: AskInput): AskResponse {
+  const response = respond(input);
+  const segment = input.research?.segment;
+  return segment ? { ...response, segment } : response;
+}
+
+function respond(input: AskInput): AskResponse {
   const { intent, research, memory } = input;
   if (!intent.feeCategory || !research) return clarify(feeQuestion());
   const fee = research.feeCategory;

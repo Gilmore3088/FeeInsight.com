@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAsk } from "./ask";
+import { buildAskResponse, parseAsk } from "./ask";
 import { buildFeeAnswer } from "./answer";
 import { evaluateFourRoles } from "./four-roles";
 import { buildSegmentResearch, parseSegment } from "./segment";
@@ -73,6 +73,15 @@ describe("segment answer", () => {
     expect(seg.band).toEqual({ p25: 16.25, median: 35, p75: 35.75, n: 6 });
     expect(seg).toMatchObject({ zeroCount: 1, withDailyCap: 1, problem: null });
     expect(seg.ownPosition).not.toBeNull();
+  });
+
+  it("hands the segment and its members to the page with the Ask response", () => {
+    const question = "talk to me about all 10B and up institutions for od fees";
+    const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });
+    const res = buildAskResponse({ question, intent: parseAsk(question), research: { ...overdraftResearch(), segment: seg }, memory: [] });
+    expect(res.segment?.members.map((m) => m.institutionName)).toEqual(seg.members.map((m) => m.institutionName));
+    const plain = buildAskResponse({ question: "overdraft", intent: parseAsk("overdraft"), research: overdraftResearch(), memory: [] });
+    expect(plain.segment).toBeUndefined();
   });
 
   it("leads the answer with the segment, names who charges what, and passes the four-roles check", () => {

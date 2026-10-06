@@ -539,6 +539,8 @@ export interface AskResponse {
   facts?: Fact[];
   /** The structured answer: headline, sourced claims, drivers, exhibit and question. */
   answer?: HamiltonAnswer;
+  /** The segment the question named, with its members, when it asked about one. */
+  segment?: SegmentResearch | null;
   /** The decision this exchange was logged to; send it back with the next question. */
   decisionId?: string;
 }
