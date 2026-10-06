@@ -1053,6 +1053,7 @@ async function executeAgenticStep(
           stored: result.stored,
           snapshot_date: result.snapshotDate,
           ...result.numbers,
+          agent_health: result.agentHealth ?? null,
         },
       };
     }

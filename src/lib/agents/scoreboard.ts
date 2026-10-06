@@ -1,6 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -177,6 +179,8 @@ export interface ScoreboardSnapshotResult {
   snapshotDate: string;
   numbers: ScoreboardNumbers;
   stored: boolean;
+  /** Per-agent health check (agent-health.ts); null when it could not be read. */
+  agentHealth?: AgentHealthReport | null;
 }
 
 /** Reads the six numbers and stores today's snapshot (one row per UTC day; reruns replace it). */
@@ -194,7 +198,14 @@ export async function runScoreboardSnapshot({
   const snapshotDate = now.toISOString().slice(0, 10);
   const numbers = await readScoreboardNumbers(db);
   const schemaReady = await scoreboardSchemaReady(db);
-  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false };
+  // The health check reads yesterday's snapshot, so it needs the scoreboard table too.
+  const agentHealth = schemaReady
+    ? await inSavepoint(db, (scope) => readAgentHealth(scope, snapshotDate)).catch((error) => {
+        console.error("readAgentHealth failed:", error);
+        return null;
+      })
+    : null;
+  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth };
   await db`
     INSERT INTO pipeline_scoreboard_snapshots (
       snapshot_date, agent_run_id,
@@ -212,7 +223,11 @@ export async function runScoreboardSnapshot({
       ${numbers.depth.median}, ${numbers.depth.liveInstitutions},
       ${numbers.accuracy?.precision ?? null}, ${numbers.accuracy?.recall ?? null}, ${numbers.accuracy?.scoreRunId ?? null},
       ${numbers.freshness.medianDays}, ${numbers.freshness.liveFees},
-      ${JSON.stringify({ right_document_window_days: numbers.rightDocument?.windowDays ?? null, accuracy_scored_at: numbers.accuracy?.scoredAt ?? null })}::jsonb
+      ${JSON.stringify({
+        right_document_window_days: numbers.rightDocument?.windowDays ?? null,
+        accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
+        ...(agentHealth ? { agent_health: agentHealth } : {}),
+      })}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
       agent_run_id = EXCLUDED.agent_run_id,
@@ -236,7 +251,7 @@ export async function runScoreboardSnapshot({
       detail = EXCLUDED.detail,
       updated_at = NOW()
   `;
-  return { schemaReady, snapshotDate, numbers, stored: true };
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth };
 }
 
 function pct(value: number | null | undefined): string {
@@ -259,5 +274,6 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
     : result.schemaReady
       ? `Atlas read the scoreboard (dry run, not stored)`
       : `Atlas read the scoreboard (not stored: the scoreboard migration is not applied yet)`;
-  return `${prefix}: ${parts.join(", ")}.`;
+  const health = result.agentHealth ? ` ${summarizeAgentHealth(result.agentHealth)}` : "";
+  return `${prefix}: ${parts.join(", ")}.${health}`;
 }

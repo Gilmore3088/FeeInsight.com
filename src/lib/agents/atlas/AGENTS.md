@@ -42,3 +42,24 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   `published_fee_catalog`). `stateExpertHints(stateCode)` gives Magellan/Rosetta a
   preferred strategy order; `hamilton/state-expert-summary.ts` gives the report engine
   the expert's summary. Darwin's peer check reads the peer levels.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores Atlas's numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. Each contract rule
+is tested by one number; a broken rule, or any number that moved more than 25% since
+yesterday, is named in the scoreboard step's summary.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Lane runs do not fail | `laneRunsFailed` (24 h) | 0 |
+| A state with work gets a turn at least every 90 minutes | `medianGapMinutes` | ≤ 90 |
+| Catch-up runs only start when there is work | `emptyBacklogRuns / backlogRuns` | ≤ 10% |
+| The backlog check counts only work a step will pick up | `phantomExtractTexts` | 0 |
+| Paid steps are not skipped while under budget | `paidStepsSkipped` (24 h) | 0 |
+| Spend stays inside the daily cap | `spendUsd` vs. the global `hard_daily_microusd` | ≤ cap |
+
+Also recorded, without a rule: `overdueLanes`, `queuedRuns`, `banksDueSearch`, `staleLinks`,
+`banksNotSourceChecked`. When the lane's backlog check or a step's selector changes, add or
+change the matching number here so the two can't drift apart unseen. Other agents add their own
+section to `agent-health.ts` with the same shape.
