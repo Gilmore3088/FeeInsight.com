@@ -1112,6 +1112,23 @@ name supersedes it instead of publishing beside it.
 **Lesson:** when a normalizer changes what an agent writes, every place that matches new rows
 to old ones must apply it too, or the change makes duplicates.
 
+## 2026-10-06: Knox held low-balance fees written as account rows or prose
+**What happened:** about 800 held lines at banks are low-balance charges Knox could not
+name: "Money Market Checking | $10.00 monthly for average balances below $1,000", "A club fee
+of $8.00 will be imposed every statement cycle if the balance ... falls below $3,000",
+"Average Daily Balance below $2,500 | $10.00/month", "MININUM BALANCE FEE ..... $5".
+**Cause:** the low-balance name pattern needed "minimum balance ... fee" in the name; a prose
+sentence names the fee after "a ... fee of $X", and the maintenance guard (correctly) refuses
+money market and club accounts as monthly maintenance.
+**Fix:** Knox v18 (rules 18) files them as `minimum_balance`, named by the bank's words and the
+condition, with the fee and condition in one sentence and the balance never read as the price.
+Gates rise (Texas 446 to 448, seven states 665 to 668, wrong reads 48 to 47). Read-only dry
+run: no sampled live fee changes; on the 11,851 held lines' excerpts, 67 more get a priced
+category. Some held prose still fails the shared check because the price comes before the
+name inside a sentence ("avoid the $20.00 monthly maintenance fee"); those stay held.
+**Lesson:** a guard that rightly refuses a category should send the row to the category that
+does fit, not leave it unclassified.
+
 ## 2026-10-06: Knox's held lines never got the newer rules
 **What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
 Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an

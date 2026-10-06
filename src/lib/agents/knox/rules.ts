@@ -222,6 +222,13 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "account_verification", pattern: /\baudit confirmations?\b/i },
   { key: "ira_administration", pattern: /\bIRA custodial\b/i },
   { key: "document_reproduction", pattern: /\b(document cop(?:y|ies)|copy fee)\b/i },
+  // v18: low-balance account rows ("Average Daily Balance below $2,500 | $10.00/month",
+  // "Low-balance fee", "MININUM BALANCE FEE", "Below minimum balance ..... $1.00").
+  {
+    key: "minimum_balance",
+    pattern:
+      /\b(?:minimum|mininum|minumum) balance\b.{0,30}\b(?:fee|charge)\b|\blow[- ]balance\b.{0,30}\b(?:fee|charge)\b|\bbelow (?:the )?minimum(?: daily| average)? balance\b|\b(?:average|avg\.?|minimum|min\.?) (?:daily |monthly |ledger |collected )?balance\s*\(?\s*(?:falls? |drops? |is )?(?:below|under|less than)\b|\bless than (?:an? )?(?:avg\.?|average|minimum) (?:daily |monthly )?balance\b|\b(?:fee|charge) charged if (?:balance )?falls? below\b/i,
+  },
 ];
 
 /**
@@ -240,7 +247,8 @@ export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth
  * threshold ("below $500"), a cap ("maximum of $175"), a rate base ("per $1,000").
  */
 const CONDITION_BEFORE =
-  /\b(below|above|over|under|less than|more than|greater than|at least|minimum(?: daily| average)?(?: balance| deposit)?(?: of)?|min\.?|maximum(?: fee)?(?: of)?|max\.?(?: fee)?|up to|exceeds?|exceeding|in excess of|negative|balances? of|deposits? of|totaling|first|cap of|limit of|between|per|and|or)\s*[-–(]?\s*$/i;
+  // v18: a comparison sign ("min. average daily balance <$2,500.00") is a condition too.
+  /(?:[<>≤≥]=?|&lt;|&gt;|\b(below|above|over|under|less than|more than|greater than|at least|minimum(?: daily| average)?(?: balance| deposit)?(?: of)?|min\.?|maximum(?: fee)?(?: of)?|max\.?(?: fee)?|up to|exceeds?|exceeding|in excess of|negative|balances? of|deposits? of|totaling|first|cap of|limit of|between|per|and|or))\s*[-–(]?\s*$/i;
 /**
  * Words just after an amount that make it a threshold, limit or deposit, not a price:
  * "$500 or more", "Money Orders ($1,000 Limit)", "($300 THRESHOLD, fee per item)",
@@ -295,6 +303,8 @@ export function classifyPatternKey(value: string): string | null {
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
     .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international")
+    // v18: "Non-Domestic Wire" is an international wire.
+    .replace(/\bnon[-\s]?domestic\b/gi, "international")
     // v16: "Int'l Wire Fee Out" and "Outgoing Wire Out of Country" are international
     // wires; one price for "domestic/int'l" stays domestic.
     .replace(/\bint'l\b\.?|\b(?:out of|outside(?: of)?)\s+(?:the\s+)?country\b/gi, (match, offset, whole: string) =>
@@ -443,7 +453,11 @@ export function maintenanceFromProse(segment: string, cells: string[] | null): E
   if (/\b(cards?|bill ?pay|safe deposit|box)\b/i.test(segment)) return null;
   const label = cells ? normalizeSegment(cells[0]) : "";
   const account = /\b(checking|account)\b/i.test(label) && !/\$/.test(label) && label.length <= 80 ? `${label} ` : "";
-  const feeName = `${account}Monthly service charge`;
+  // v18: named in the bank's own words ("monthly maintenance fee"), so the shared accuracy
+  // check finds the name on the line; a bare "service fee" keeps the generic name.
+  const ownWords = normalizeSegment(match[0].replace(/\$\s?[\d.,]+/g, " ")).toLowerCase();
+  const ownName = `${account}${ownWords.charAt(0).toUpperCase()}${ownWords.slice(1)}`;
+  const feeName = passesDarwinChecks("monthly_maintenance", ownName, amount) ? ownName : `${account}Monthly service charge`;
   if (!passesDarwinChecks("monthly_maintenance", feeName, amount)) return null;
   return {
     feeName,
@@ -468,13 +482,30 @@ const PER_MONTH_AFTER = /^\s*(?:\/\s*mo\b|\/\s*month\b|per month\b|a month\b|mon
 
 export function maintenanceFromAccountRow(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
   const label = normalizeSegment(segment.slice(0, firstAmount.start).replace(/\|/g, " "));
-  if (!CHECKING_ACCOUNT_LABEL.test(label) || OTHER_THAN_MAINTENANCE.test(label) || /\$|\d{3,}/.test(label)) return null;
+  if (!CHECKING_ACCOUNT_LABEL.test(label) || OTHER_THAN_MAINTENANCE.test(label) || /(?:^|\s)\$|\d{3,}/.test(label)) return null;
   if (label.split(" ").length > 8) return null;
-  if (!PER_MONTH_AFTER.test(segment.slice(firstAmount.end))) return null;
+  const after = segment.slice(firstAmount.end);
+  if (!PER_MONTH_AFTER.test(after)) return null;
   const amount = firstAmount.value;
   if (!(amount > 0)) return null;
-  const feeName = `${label.slice(0, 80)} Monthly service charge`;
-  if (!passesDarwinChecks("monthly_maintenance", feeName, amount)) return null;
+  let feeName = `${label.slice(0, 80)} Monthly service charge`;
+  if (!passesDarwinChecks("monthly_maintenance", feeName, amount)) {
+    // v18: "Money Market Checking | $10.00 monthly for average balances below $1,000" is
+    // the account's low-balance fee, named by the row's own condition.
+    const condition = after.split(CELL_SEPARATOR.trim())[0].match(BALANCE_BELOW_CLAUSE)?.[0];
+    if (!condition) return null;
+    feeName = `${label.slice(0, 80)} (${normalizeSegment(condition)})`;
+    if (!passesDarwinChecks("minimum_balance", feeName, amount)) return null;
+    return {
+      feeName,
+      amount,
+      frequency: "monthly",
+      canonicalHint: "minimum_balance",
+      confidence: confidenceFor(segment),
+      excerpt: segment,
+      waivable: true,
+    };
+  }
   return {
     feeName,
     amount,
@@ -483,6 +514,51 @@ export function maintenanceFromAccountRow(segment: string, firstAmount: AmountMa
     confidence: confidenceFor(segment),
     excerpt: segment,
     waivable: WAIVER_LANGUAGE.test(segment) || /\b(if|unless|avoid)\b/i.test(segment.slice(firstAmount.end)),
+  };
+}
+
+/** "average balances below $1,000", "balance falls below $7,500": the condition of a low-balance fee. */
+const BALANCE_BELOW_CLAUSE =
+  /\b(?:(?:average|avg\.?|minimum|min\.?|daily|monthly|ledger|collected|account|share)\s+){0,3}balances?\s+(?:(?:falls?|drops?|goes|is)\s+)?(?:below|under|less than)\s+\$\s?[\d,]+(?:\.\d{2})?/i;
+
+/**
+ * v18: a low-balance fee written as prose: "A club fee of $8.00 will be imposed every
+ * statement cycle if the balance in the account falls below $3,000.00", "If your balance
+ * falls below $750.00 ... we will impose a maintenance fee of $7.50", "$10/month service
+ * fee if balance falls below $7,500". Named by the fee's own words and the condition; the
+ * price is the figure the fee words name, never the balance.
+ */
+const FEE_OF_PRICE = /\b((?:[a-z]+[ -]){0,2}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
+const PRICE_THEN_FEE = /\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s*(?:\/\s*(?:month|mo)\b|per month\b|monthly\b)?\s*((?:[a-z]+[ -]){0,2}(?:fee|charge))\b/i;
+const BALANCE_FALLS_BELOW = /\b(?:if|when|whenever)\b[^.;|]{0,60}?\bbalances?\b[^.;|]{0,40}?\b(?:falls?|drops?|goes|is)\s+(?:below|under|less than)\s+\$\s?[\d,]+(?:\.\d{2})?/i;
+
+export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate | null {
+  // The fee and its condition share one sentence: "There is an initial setup fee of $25.
+  // The monthly minimum balance fee if ..." prices the setup fee, not the balance fee.
+  const sentence = segment.split(/(?<=[a-z0-9)][.;])\s+(?=[A-Z])/).find((part) => BALANCE_FALLS_BELOW.test(part));
+  if (!sentence) return null;
+  const condition = sentence.match(BALANCE_FALLS_BELOW);
+  if (!condition) return null;
+  const named = sentence.match(FEE_OF_PRICE);
+  const priced = named ? null : sentence.match(PRICE_THEN_FEE);
+  const words = named?.[1] ?? priced?.[2];
+  const amount = Number(named?.[2] ?? priced?.[1]);
+  if (!words || !(amount > 0)) return null;
+  // "a fee of": the fee words must say which fee it is.
+  const feeWords = normalizeSegment(words.replace(/^(?:a|an|the|this|that|one)\s+/i, ""));
+  if (!/[a-z]{3,}\s+(?:fee|charge)$/i.test(feeWords) && !/^(?:service|maintenance)\s/i.test(feeWords)) return null;
+  if (/\b(?:overdraft|nsf|returned|transfer|wire|atm|card|loan|statement|withdrawal|transaction|item|check|dormant|inactiv|set-?up|opening|initial|closing)/i.test(feeWords)) return null;
+  const clause = normalizeSegment(condition[0].replace(/^(?:if|when|whenever)\s+/i, "")).replace(/^(?:your|the)\s+/i, "");
+  const feeName = `${feeWords.charAt(0).toUpperCase()}${feeWords.slice(1)} (${clause})`;
+  if (!passesDarwinChecks("minimum_balance", feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment) ?? "monthly",
+    canonicalHint: "minimum_balance",
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
   };
 }
 
@@ -579,7 +655,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // A line no rule names by the words before its price may still state the account's
   // monthly service charge in prose, with the fee named after the price.
   if (!hint) {
-    const maintenance = maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount);
+    const maintenance =
+      maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount) ?? lowBalanceFeeFromProse(segment);
     if (maintenance) {
       result.candidates.push(maintenance);
       return result;

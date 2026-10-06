@@ -100,6 +100,18 @@ re-reads up to 300 held unclassified lines from the document's current text with
 (`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
 version. A categorized insert that meets a held row takes it over the same way.
 
+v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
+monthly with a balance condition that the maintenance guard keeps out (money market) is the
+account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
+and says it applies when the balance falls below a figure ("A club fee of $8.00 ... if the
+balance ... falls below $3,000") is a `minimum_balance` fee named by the fee's words and the
+condition; the fee and condition must share one sentence, and the price is never the balance.
+New name patterns cover "Average Daily Balance below", "Low-balance fee", "Below minimum
+balance" and misspelled "MININUM BALANCE FEE". A comparison sign ("< $2,500") makes a figure a
+condition. Prose maintenance fees keep the bank's own words ("Maintenance fee") so the shared
+check can trace them. "Non-Domestic Wire" is international. Gates: Texas 448 of 463 (v17: 446
+of 461), held out 43 of 49, seven states 668 of 715 (v17: 665 of 713).
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
