@@ -301,11 +301,70 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   };
 }
 
-/** The institution a free-text name refers to, only when exactly one name matches. */
-export async function findInstitutionIdByExactName(name: string): Promise<number | null> {
+const NAME_TOKEN_EXPANSIONS: Record<string, string> = {
+  fcu: "federal credit union",
+  cu: "credit union",
+  natl: "national",
+  nat: "national",
+  bk: "bank",
+  svgs: "savings",
+  sb: "savings bank",
+};
+const LEGAL_SUFFIXES = new Set(["na", "inc", "co", "corp", "company", "corporation", "ltd", "llc"]);
+const GENERIC_NAME_TOKENS = new Set([
+  "bank", "credit", "union", "federal", "national", "first", "savings", "trust", "the", "and", "of",
+  "community", "state", "citizens", "farmers", "merchants", "peoples", "security", "home", "american",
+]);
+
+/**
+ * Folds the ways people type an institution's name onto one form: case, punctuation,
+ * "&" vs "and", a leading "The", legal suffixes (N.A., Inc.) and common abbreviations
+ * (FCU, CU). "The First National Bank of Elk City, N.A." and "first national bank of elk city"
+ * normalize the same.
+ */
+export function normalizeInstitutionName(name: string): string {
+  const tokens = name
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/['’.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .flatMap((token) => (NAME_TOKEN_EXPANSIONS[token] ?? token).split(" "));
+  if (tokens[0] === "the") tokens.shift();
+  while (tokens.length > 1 && LEGAL_SUFFIXES.has(tokens[tokens.length - 1])) tokens.pop();
+  return tokens.join(" ");
+}
+
+/** The most distinctive word of a normalized name, used to narrow the lookup. */
+function distinctiveToken(normalized: string): string | null {
+  const tokens = normalized.split(" ").filter((t) => t.length >= 3);
+  const specific = tokens.filter((t) => !GENERIC_NAME_TOKENS.has(t));
+  const pool = specific.length > 0 ? specific : tokens;
+  return pool.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
+/**
+ * The institution a free-text name refers to, only when exactly one name matches: first
+ * exactly (ignoring case), then after normalizeInstitutionName on both sides. Two or more
+ * matches stay unmatched, so James looks it up rather than quoting the wrong institution.
+ */
+export async function findInstitutionIdByName(name: string): Promise<number | null> {
   const trimmed = name.trim();
   if (trimmed.length < 3) return null;
-  const rows = await sql<{ id: number }[]>`
+  const exact = await sql<{ id: number }[]>`
     SELECT id FROM institution_sources WHERE lower(institution_name) = lower(${trimmed}) LIMIT 2`;
-  return rows.length === 1 ? Number(rows[0].id) : null;
+  if (exact.length === 1) return Number(exact[0].id);
+  if (exact.length > 1) return null;
+
+  const wanted = normalizeInstitutionName(trimmed);
+  const token = distinctiveToken(wanted);
+  if (!token) return null;
+  const candidates = await sql<{ id: number; institution_name: string }[]>`
+    SELECT id, institution_name FROM institution_sources
+    WHERE institution_name ILIKE ${"%" + token + "%"}
+    LIMIT 2000`;
+  const matches = candidates.filter((row) => normalizeInstitutionName(row.institution_name) === wanted);
+  return matches.length === 1 ? Number(matches[0].id) : null;
 }
