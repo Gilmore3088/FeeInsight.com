@@ -1348,12 +1348,15 @@ named by a fragment ("A 1% Currency Conversion Fee will be assessed on", "for cu
 **Fix:** `src/lib/agents/knox/percent.ts`. A held rate in an allow-listed category whose rate
 traces with `checkRateAgainstSource` goes to Darwin as a rate fee, named from the category's own
 words; "up to" rates, interest rates, two-rate lines and out-of-range rates stay held. Held rows
-are re-read in place by `recheckHeldRates`. Answer keys: 11 rate reads, all correct (one is a
-real 0.2% currency conversion fee the key leaves out). Dry run on the 1,001 held rows with their
+are re-read in place by `recheckHeldRates`. Knox v20 also reads the card's currency fee and
+coin counting under the other names banks give them. Answer keys: 20 rate reads, 18 keyed and 2
+real fees the keys leave out (0.2% currency conversion, 0.9% cross-border); flat gates and the
+live dry run (1,416 of 1,437 kept) unchanged. Dry run on the 1,001 held rows with their
 stored excerpts: 287 foreign transaction rates at 217 banks (median 1%), 106 late payment at 82
 (median 5%), 39 cash advance, 37 coin counting.
-**Still open:** most keyed rates (57 of 68) are never held as percentages, so the rules miss
-them before this step; and coin counting rows ("Coin Counting | 10% of total") fail the rate
+**Still open:** 52 of 68 keyed rates still don't publish: about half are never read as a
+rate (prose, rates split across lines), and the rest are "up to", two-rate or interest lines;
+coin counting rows ("Coin Counting | 10% of total") fail the rate
 check because the row has no fee or charge word.
 **Lesson:** a new column is not a new fee until the extractor writes it; score the writer on the
 answer keys, not only on the held rows it was built from.
