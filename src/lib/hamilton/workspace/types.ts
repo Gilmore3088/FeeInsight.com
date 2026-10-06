@@ -519,6 +519,12 @@ export type DecisionEventKind =
   | "watch_tripped"
   | "status_changed";
 
+/** What would put a decided fee back on the Briefing. */
+export type WatchCondition =
+  | { kind: "competitor_change"; feeCategory: string; label: string }
+  | { kind: "peer_median_change"; feeCategory: string; baseline: number; thresholdPct: number; label: string }
+  | { kind: "rule_release"; feeCategory: string; label: string };
+
 export interface DecisionRecord {
   id: string;
   institutionId: number;
@@ -527,7 +533,7 @@ export interface DecisionRecord {
   status: DecisionStatus;
   chosenAmount: number | null;
   chosenBy: string | null;
-  watchConditions: string[];
+  watchConditions: WatchCondition[];
   createdAt: string;
   updatedAt: string;
 }
