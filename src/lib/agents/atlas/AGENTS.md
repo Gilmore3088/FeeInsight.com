@@ -59,7 +59,8 @@ yesterday, is named in the scoreboard step's summary.
 | Paid steps are not skipped while under budget | `paidStepsSkipped` (24 h) | 0 |
 | Spend stays inside the daily cap | `spendUsd` vs. the global `hard_daily_microusd` | ≤ cap |
 
-Also recorded, without a rule: `overdueLanes`, `queuedRuns`, `banksDueSearch`, `staleLinks`,
-`banksNotSourceChecked`. When the lane's backlog check or a step's selector changes, add or
-change the matching number here so the two can't drift apart unseen. Other agents add their own
-section to `agent-health.ts` with the same shape.
+Also recorded, without a rule: `laneRuns`, `backlogRuns`, `overdueLanes`, `queuedRuns`,
+`spendUsd`, `dailyCapUsd`, `banksDueSearch`, `staleLinks`. When the lane's backlog check or a
+step's selector changes, add or change the matching number here so the two can't drift apart
+unseen. Every agent has the same section in its own AGENTS.md; a new rule goes in that table and
+in `agent-health.ts` in the same PR.

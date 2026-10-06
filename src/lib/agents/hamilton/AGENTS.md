@@ -205,3 +205,17 @@ rules re-check), so a new rule reaches every state within hours.
 - Pro Hamilton may provide consulting workflows, but must label provisional-first analysis and verified-only benchmark/export data.
 - Internal Hamilton may expose broader operational context only behind admin/analyst access control.
 - Do not rely on free-text institution names as workspace identity.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+| Hamilton's spend stays inside its daily cap | `spendUsd` vs. `agent:hamilton` `hard_daily_microusd` | ≤ cap |
+
+Also recorded, without a rule: `stepsCompleted`, `liveFees`, `sourceChecks`, `banksNotSourceChecked` (banks whose newest live or source-check-taken-down fee the current source check has not seen).

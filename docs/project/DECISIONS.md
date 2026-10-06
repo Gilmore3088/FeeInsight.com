@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Every agent gets the same fixed daily health check, compared with yesterday.** James, about
+05:40 UTC ("a clear process to break this into manageable chunks that stay consistent so any new
+or change is easy to spot"; chose "Build it" on the Atlas audit thread). Each agent's AGENTS.md has
+a "Daily health check" table of rules, each tested by one number; `src/lib/agents/agent-health.ts`
+reads them read-only with the daily scoreboard step and stores them in
+`pipeline_scoreboard_snapshots.detail.agent_health`. The scoreboard step's summary names every
+broken rule and every number that moved more than 25% since yesterday. A change to an agent's
+selector or behaviour updates its table and the health check in the same PR.
+
 **Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
 incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
 scenario and implementation plan carries its provenance: sources with links to the banks' own
