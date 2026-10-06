@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Knox reads the same web page several times, and checks nothing he writes
+**What happened:** the Knox audit (read-only prod queries, 05:00-05:30 UTC) found 632 fee pages stored
+as 2 to 10 separate `source_documents`. Knox extracts every copy: 14,895 extra raw rows, of which Darwin
+dropped 9,782 as duplicates. 4,972 live fees at 430 banks come from an older copy of a page that has a
+newer one; 89 of them have a price the newest copy does not show. Separately, pass 2 specialists keep only
+rows that already pass Darwin's checks, so Darwin cannot catch them: 21% of their approved fees were
+pulled later (1,027 name not on the page, 738 wrong number) against 12% for the line rules. Accuracy:
+86.0% on 578 fees at 29 Texas answer-key banks (54% of each schedule found); 76 of 103 right in a national
+random sample of stored rows, 9 of 103 still wrong when the same lines are replayed through rules v11.
+**Cause:** Knox's "read each text once" and older-text retirement are keyed on one document, not on the
+page's address. Knox never runs `checkFeeAgainstSource` on his own rows.
+**Fix:** rules v12 (this PR) stops two misreads seen in the sample: a limit, threshold or refundable
+deposit after a price ("Money Orders ($1,000 Limit)") and a column label cell ("Fee Rush Card Fee |
+Amount $50") hiding the fee name. One document per page and a Knox self-check are open, waiting for James.
+**Lesson:** a dedupe or retirement rule must be keyed on what is really the same thing (the page), not on
+the row id that stored it. A specialist that pre-filters by the next agent's rules removes that agent's check.
+
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
 the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).

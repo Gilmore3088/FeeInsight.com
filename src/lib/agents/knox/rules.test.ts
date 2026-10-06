@@ -8,6 +8,23 @@ function fees(text: string): Array<[string, number, string]> {
 }
 
 describe("Knox extract.rules", () => {
+  it("v12 never reads a limit, threshold or refundable deposit as the fee", () => {
+    expect(fees("Money Orders ($1,000 Limit) Non-Customer ........................ $10.00")).toEqual([
+      ["Money Orders ( Limit) Non-Customer", 10, "money_order"],
+    ]);
+    expect(fees("COURTESY PAY ($300 THRESHOLD, FEE PER TRANS.) $ | 30.00")).toEqual([]);
+    expect(fees("Safe Deposit Box / $10.00 refundable key deposit on each box")).toEqual([]);
+    // "Limits may apply" after a real price is not a limit on that price.
+    expect(fees("Check Cashing (non customers) $5.00 Limits may apply").map(([, amount]) => amount)).toEqual([5]);
+  });
+
+  it("v12 reads past a column label cell to the fee's name (Corda CU)", () => {
+    expect(fees(["Fee Rush Card Fee | Amount $50*", "Fee Stop Payment Fee | Fee Amount $30 per item"].join("\n")).map(([, amount, key]) => [amount, key])).toEqual([
+      [50, "rush_card"],
+      [30, "stop_payment"],
+    ]);
+  });
+
   it("v11 joins a fee name split across lines in one column of a two-column PDF (Austin Bank)", () => {
     const text = [
       "Account Research | Government Reclamations (Paper/ACH)....$50.00",

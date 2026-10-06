@@ -219,8 +219,12 @@ export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth
  */
 const CONDITION_BEFORE =
   /\b(below|above|over|under|less than|more than|greater than|at least|minimum(?: daily| average)?(?: balance| deposit)?(?: of)?|min\.?|maximum(?: fee)?(?: of)?|max\.?(?: fee)?|up to|exceeds?|exceeding|in excess of|negative|balances? of|deposits? of|totaling|first|cap of|limit of|between|per|and|or)\s*[-–(]?\s*$/i;
-/** Words just after an amount that make it a threshold: "$500 or more". */
-const CONDITION_AFTER = /^(?:\+|\s*(?:or more|and more|or less|and less|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit))/i;
+/**
+ * Words just after an amount that make it a threshold, limit or deposit, not a price:
+ * "$500 or more", "Money Orders ($1,000 Limit)", "($300 THRESHOLD, fee per item)",
+ * "$10.00 refundable key deposit". "Limits may apply" after a price does not count.
+ */
+const CONDITION_AFTER = /^(?:\+|\s*(?:or more|and more|or less|and less|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit|limit\b|threshold\b|refundable\b))/i;
 
 export interface AmountMatch {
   value: number;
