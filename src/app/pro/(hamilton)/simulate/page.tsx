@@ -19,7 +19,6 @@ import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import {
   AuditPanel,
-  Callout,
   DistributionBars,
   Exhibit,
   LinkButton,
@@ -148,8 +147,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
         title={`Test any ${ws.feeName.toLowerCase()} price side by side`}
         dek={
           current != null
-            ? `Today you charge ${fmtMoney(current)}. Add the prices you want to test, including no fee at all. Hamilton shows where each would sit and what it does to fee income; it doesn't pick one.`
-            : `We haven't published a ${ws.feeName.toLowerCase()} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0. Add your current price below to change that.`
+            ? `Today you charge ${fmtMoney(current)}. See where each price would sit and what it does to fee income.`
+            : `No published ${ws.feeName.toLowerCase()} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
         }
         actions={<LinkButton href={researchHref}>Back to my fees</LinkButton>}
       />
@@ -171,8 +170,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
           prompt={question.q.prompt}
           why={
             question.name === "paid"
-              ? "With it, each price below shows a yearly fee income figure from your own volume instead of a change per 1,000 items."
-              : "With it, the yearly figures below count only the fees you actually keep."
+              ? "Turns the per-1,000 figures into your yearly fee income."
+              : "Counts only the fees you keep."
           }
           name={question.name}
           inputKind={question.q.inputKind === "percent" ? "percent" : "number"}
@@ -213,9 +212,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
           <input name="waiver" inputMode="decimal" defaultValue={params.waiver ?? (savedFigures?.waiverRate != null ? String(Math.round(savedFigures.waiverRate * 1000) / 10) : "")} className={inputClass} placeholder="For example 12" />
         </label>
         <p className="text-xs text-warm-600 md:col-span-4">
-          {savedFigures
-            ? "Filled in from the figures your team saved in My bank and data. Change them here to try other volumes; that doesn't change what's saved."
-            : "Figures typed here stay in this page's link. To keep them, upload them in My bank and data. Without them Hamilton shows the change per 1,000 items rather than guessing your volume."}
+          {savedFigures ? "From your saved figures. Changes here aren't saved." : "Not saved. Upload them in My bank and data to keep them."}
         </p>
       </form>
 
@@ -263,21 +260,9 @@ export default async function ModelPage({ searchParams }: PageProps) {
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Charge less</th>
+                <th scope="row" className="px-4 py-2.5 text-left font-normal">Peers charging less</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>{c.result.peersLess} of {c.result.n}</td>
-                ))}
-              </tr>
-              <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Charge the same</th>
-                {columns.map((c) => (
-                  <td key={c.label} className={cell}>{c.result.peersSame}</td>
-                ))}
-              </tr>
-              <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Charge more</th>
-                {columns.map((c) => (
-                  <td key={c.label} className={cell}>{c.result.peersMore}</td>
                 ))}
               </tr>
               <tr className={row}>
@@ -325,10 +310,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
             </tbody>
           </table>
         </div>
-        <Callout>
-          These figures hold volume steady. Customers may overdraw less, or move, when a price changes; Hamilton doesn&apos;t estimate that
-          from public data. Your own history of items charged and waived is the best guide.
-        </Callout>
+        <p className="text-xs text-warm-600">Volume is held steady at every price; Hamilton doesn&apos;t estimate how customers respond.</p>
       </MemoSection>
 
       {positionExhibit ? (

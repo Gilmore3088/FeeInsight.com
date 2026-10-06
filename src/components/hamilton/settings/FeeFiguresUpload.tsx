@@ -69,9 +69,8 @@ export function FeeFiguresUpload({ institutionId }: { institutionId: string | nu
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5">
       <p className="text-sm leading-relaxed text-warm-800">
-        Upload a spreadsheet of your fee income by line, with item counts, waivers or refunds, and affected accounts if you have
-        them. Hamilton shows what it read before using any of it, and your figures are never shown to anyone outside your
-        workspace.
+        A spreadsheet of fee income by line, with item counts and waivers if you have them. You see what Hamilton read
+        before anything is used, and it stays inside your workspace.
       </p>
       <form onSubmit={read} className="flex flex-wrap items-center gap-3">
         <input

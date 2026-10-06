@@ -16,6 +16,7 @@ import { COMPETITOR_MOVE_WINDOW_DAYS } from "@/lib/hamilton/workspace/research";
 import {
   AuditPanel,
   Callout,
+  More,
   DistributionBars,
   Exhibit,
   Figure,
@@ -146,6 +147,43 @@ function FilingExhibits({
   );
 }
 
+type RuleRow = { text: string; label: string; url: string | null };
+
+function RuleRows({ rules }: { rules: RuleRow[] }) {
+  return (
+    <ul className="flex flex-col gap-2 text-sm text-warm-800">
+      {rules.map((r) => (
+        <li key={r.text} className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-warm-200 pb-2">
+          <span className="min-w-0 flex-1">{r.text}</span>
+          {r.url ? (
+            <a href={r.url} className="text-terra-text underline" target="_blank" rel="noreferrer">
+              {r.label}
+            </a>
+          ) : (
+            <span className="text-warm-600">{r.label}</span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The first three rules, the rest on request. */
+function RuleList({ rules }: { rules: RuleRow[] }) {
+  const shown = rules.slice(0, 3);
+  const rest = rules.slice(3);
+  return (
+    <>
+      <RuleRows rules={shown} />
+      {rest.length > 0 ? (
+        <More label={`${rest.length} more ${rest.length === 1 ? "rule" : "rules"}`}>
+          <RuleRows rules={rest} />
+        </More>
+      ) : null}
+    </>
+  );
+}
+
 function LayerExhibit({ layer, ownAmount, feeName }: { layer: LayerSummary; ownAmount: number | null; feeName: string }) {
   const position = describePosition(layer, ownAmount);
   return (
@@ -246,8 +284,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
         dek={
           inst
             ? ws.ownAmount != null
-              ? `Your published ${ws.feeName.toLowerCase()} fee is ${fmtMoney(ws.ownAmount)}. Move between your market, your state, your Fed district, your peer group and the nation to see how the picture changes.`
-              : `We haven't published a ${ws.feeName.toLowerCase()} fee for ${inst.name} yet, so this shows the market without your position.`
+              ? `Your published fee is ${fmtMoney(ws.ownAmount)}.`
+              : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
             : "Choose your institution in Data to see your own position."
         }
         actions={
@@ -279,14 +317,14 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       ) : null}
 
       {hamiltonRead ? (
-        <MemoSection title="Hamilton's read" note="Built from the figures below; every line names its source.">
+        <MemoSection title="Hamilton's read">
           <AnswerView
             answer={hamiltonRead}
             {...(hamiltonRead.question?.fieldKey.endsWith(".annual_items")
               ? {
                   questionAction: "/pro/simulate",
                   questionName: "paid",
-                  questionWhy: "Your answer opens Try a price with yearly fee income worked out from your own volume.",
+                  questionWhy: "Opens Try a price with your yearly fee income.",
                   questionKeep: { fee: ws.fee, layer: layerKey, instId },
                 }
               : {})}
@@ -311,7 +349,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       {layer.key === "local" && ws.local ? (
         <MemoSection
           title="Who your customers can walk into"
-          note={`${ws.local.institutions} ${ws.local.institutions === 1 ? "institution has" : "institutions have"} ${ws.local.basis === "hq_city" ? `headquarters in ${ws.local.places.join("; ")}` : `branches in ${ws.local.places.join("; ")}`}. Listed: those that publish a ${ws.feeName.toLowerCase()} fee, largest deposits there first (FDIC Summary of Deposits, ${ws.local.sodYear}).`}
+          note={`${ws.local.institutions} ${ws.local.institutions === 1 ? "institution" : "institutions"} in your market, largest deposits first (FDIC Summary of Deposits, ${ws.local.sodYear}).`}
         >
           {localBanks.length > 0 ? (
             <div className="overflow-x-auto rounded-lg border border-warm-300 bg-warm-50">
@@ -353,7 +391,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       {inst?.stateCode && research ? (
         <MemoSection
           title={`Who changed this fee in ${inst.stateCode}`}
-          note={`Changes seen on published schedules in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, newest first.`}
+          note={`Last ${COMPETITOR_MOVE_WINDOW_DAYS} days, newest first.`}
         >
           {stateChanges.length > 0 ? (
             <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50 text-sm text-warm-800">
@@ -374,7 +412,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       {inst ? (
         <MemoSection
           title={`${inst.name} in the regulator filings`}
-          note={credit ? "From the NCUA 5300 call report every credit union files each quarter, and the CFPB complaint database." : "From the FDIC call report every bank files each quarter, and the CFPB complaint database."}
+          note={credit ? "NCUA 5300 call reports and CFPB complaints." : "FDIC call reports and CFPB complaints."}
         >
           <FilingExhibits own={own} national={national} revenueLine={research?.revenueLine ?? null} name={inst.name} credit={credit} />
           <div>
@@ -403,33 +441,20 @@ export default async function ResearchPage({ searchParams }: PageProps) {
         </MemoSection>
       ) : null}
 
-      <MemoSection title="The rules that apply" note="What a change to this fee would involve, whichever way it goes.">
+      <MemoSection title="The rules that apply">
         <Callout>
           {rules.noticeSummary.replace("An increase needs", "Raising it needs")} Lowering or removing a fee needs no advance notice.
         </Callout>
-        <ul className="flex flex-col gap-2 text-sm text-warm-800">
-          {(research && research.regulation.length > 0
-            ? research.regulation.map((f) => ({ text: f.text, label: f.source.label, url: f.source.url ?? null }))
-            : ruleItems.map((i) => ({ text: i.text, label: i.rule!.label, url: i.rule!.url }))
-          ).map((r) => (
-            <li key={r.text} className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-warm-200 pb-2">
-              <span className="min-w-0 flex-1">{r.text}</span>
-              {r.url ? (
-                <a href={r.url} className="text-terra-text underline" target="_blank" rel="noreferrer">
-                  {r.label}
-                </a>
-              ) : (
-                <span className="text-warm-600">{r.label}</span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <RuleList
+          rules={
+            research && research.regulation.length > 0
+              ? research.regulation.map((f) => ({ text: f.text, label: f.source.label, url: f.source.url ?? null }))
+              : ruleItems.map((i) => ({ text: i.text, label: i.rule!.label, url: i.rule!.url }))
+          }
+        />
         {articles.length > 0 ? (
-          <div className="mt-2">
-            <h3 className="text-base text-warm-900" style={SERIF}>
-              Recent regulatory news
-            </h3>
-            <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+          <More label={`Recent regulatory news (${articles.length})`}>
+            <ul className="flex flex-col gap-1.5 text-sm">
               {articles.map((a) => (
                 <li key={a.guid} className="flex flex-wrap gap-x-2">
                   <a href={a.link} target="_blank" rel="noreferrer" className="text-warm-900 underline decoration-warm-400">
@@ -442,7 +467,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
                 </li>
               ))}
             </ul>
-          </div>
+          </More>
         ) : null}
       </MemoSection>
     </MemoPage>

@@ -48,7 +48,7 @@ export default async function DeliverablePage({
       <MemoHeader
         kicker={`${deliverable.institutionName} · prepared ${longDate(deliverable.preparedOn)}`}
         title={deliverable.title}
-        dek={`Built from ${deliverable.decisionIds.length} ${deliverable.decisionIds.length === 1 ? "decision" : "decisions"}. It sets out options and their consequences; it states a price only where your team chose one.`}
+        dek={`Built from ${deliverable.decisionIds.length} ${deliverable.decisionIds.length === 1 ? "decision" : "decisions"}. Options and consequences; a price only where your team chose one.`}
         actions={
           <>
             <LinkButton href={backHref}>Back to your decisions</LinkButton>

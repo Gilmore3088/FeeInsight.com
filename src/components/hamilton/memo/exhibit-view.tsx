@@ -4,7 +4,7 @@
  * The engine returns data only (`HamiltonAnswer`, `Exhibit`); every chart decision lives here.
  */
 import type { ReactNode } from "react";
-import { Callout, QuestionCard, SERIF, fmtMoney } from "./memo";
+import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
 import type { Exhibit, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 
 export type ExhibitSpec = Exhibit;
@@ -325,6 +325,8 @@ export function FactList({ facts }: { facts: readonly Fact[] }) {
  * One Hamilton answer in the four roles: the Writer's headline, the Consultant's claims, the
  * Economist's drivers and question, and the Data Engineer's exhibit, with its evidence level.
  */
+const LEAD_CLAIMS = 2;
+
 export function AnswerView({
   answer,
   questionAction,
@@ -341,18 +343,26 @@ export function AnswerView({
   questionKeep?: Record<string, string | null | undefined>;
 }) {
   const q = answer.question;
+  // The chart and two lines carry the answer; the rest of the reasoning opens on request.
+  const lead = answer.claims.slice(0, LEAD_CLAIMS);
+  const rest = answer.claims.slice(LEAD_CLAIMS);
   return (
     <article className="flex flex-col gap-5">
       <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
         {answer.headline}
       </p>
-      {answer.claims.length > 0 ? <FactList facts={answer.claims} /> : null}
       {answer.exhibit ? <ExhibitView exhibit={answer.exhibit} /> : null}
-      {answer.drivers.length > 0 ? (
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What moves this</h3>
-          <FactList facts={answer.drivers} />
-        </section>
+      {lead.length > 0 ? <FactList facts={lead} /> : null}
+      {rest.length > 0 || answer.drivers.length > 0 ? (
+        <More label={answer.drivers.length > 0 ? "Why, and what moves this" : "The rest of the reasoning"}>
+          {rest.length > 0 ? <FactList facts={rest} /> : null}
+          {answer.drivers.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What moves this</h3>
+              <FactList facts={answer.drivers} />
+            </section>
+          ) : null}
+        </More>
       ) : null}
       {q && q.inputKind !== "file" ? (
         questionAction ? (

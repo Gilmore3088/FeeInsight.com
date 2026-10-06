@@ -65,7 +65,7 @@ export default async function MonitorPage({
       <MemoHeader
         kicker={selectedInstitution ? `What changed · ${selectedInstitution.name}` : "What changed"}
         title="All changes"
-        dek="Fee changes at the institutions you watch: published fee movements, newly verified fee schedules and moves by competitors, as they reach the index."
+        dek="Fee moves at the institutions you watch, as they reach the index."
         actions={<LinkButton href={refreshHref}>Refresh</LinkButton>}
       />
 
@@ -76,14 +76,14 @@ export default async function MonitorPage({
       {decisionBody ? (
         <MemoSection
           title="Your decisions"
-          note="Each fee question you take to a decision, the price your team chose, and the changes Hamilton watches for it."
+          note="What your team chose, and what Hamilton is watching."
         >
           <DecisionLedger ledger={decisionBody.ledger} decisions={decisionBody.decisions} institutionId={selectedId} />
         </MemoSection>
       ) : null}
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <MemoSection title="Newest first" note="Each change links to where you can look into it further.">
+        <MemoSection title="Newest first">
           <SignalFeed
             signals={data.signalFeed}
             topAlert={data.topAlert}

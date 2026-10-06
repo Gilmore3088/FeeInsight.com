@@ -532,6 +532,22 @@ export function QuarterLines({
   );
 }
 
+/**
+ * Detail a reader can open: the reasoning, the full list, the long caption. Keeps each screen to
+ * its headline, its numbers and its chart.
+ */
+export function More({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="group text-sm text-warm-800">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-terra-text hover:underline">
+        <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span>
+        {label}
+      </summary>
+      <div className="mt-3 flex flex-col gap-3">{children}</div>
+    </details>
+  );
+}
+
 export function Callout({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-md border-l-2 border-terra bg-terra-soft px-4 py-3 text-sm leading-relaxed text-warm-800">

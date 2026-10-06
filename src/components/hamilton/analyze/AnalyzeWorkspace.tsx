@@ -19,7 +19,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { StructuredAsk } from "./StructuredAsk";
-import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
+import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
 
@@ -348,7 +348,7 @@ export function AnalyzeWorkspace({
           <MemoHeader
             kicker="Ask Hamilton"
             title={instName ? `Ask anything about ${instName}'s fees` : "Ask anything about your fees and your market"}
-            dek="Hamilton answers from published fee schedules and regulator filings, shows its evidence and how it checked every figure. It doesn't tell you what to charge."
+            dek="Answers from published fee schedules and regulator filings, with every figure checked."
           />
           <MemoSection title="Questions bankers start with">
             <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
@@ -373,7 +373,7 @@ export function AnalyzeWorkspace({
       )}
 
       {askedQuestion ? (
-        <MemoSection title="The figures" note="From the Hamilton engine: published fees, filings and the economy, each with its source.">
+        <MemoSection title="The figures">
           <StructuredAsk
             question={askedQuestion}
             institutionId={instId}
@@ -399,13 +399,32 @@ export function AnalyzeWorkspace({
             <p className="text-2xl leading-snug text-warm-900 sm:text-[1.7rem]" style={SERIF}>
               {renderInline(view.lead)}
             </p>
-            {view.paragraphs.map((para, i) => (
+            {view.paragraphs.slice(0, 1).map((para, i) => (
               <p key={i} className="text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
                 {renderInline(para)}
               </p>
             ))}
-            {shown.whatThisMeans ? (
-              <p className="text-[17px] leading-relaxed text-warm-800">{renderInline(shown.whatThisMeans)}</p>
+            {view.paragraphs.length > 1 || shown.whatThisMeans || shown.whyItMatters.length > 0 ? (
+              <More label="Read the full answer">
+                {view.paragraphs.slice(1).map((para, i) => (
+                  <p key={i} className="text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
+                    {renderInline(para)}
+                  </p>
+                ))}
+                {shown.whatThisMeans ? (
+                  <p className="text-[17px] leading-relaxed text-warm-800">{renderInline(shown.whatThisMeans)}</p>
+                ) : null}
+                {shown.whyItMatters.length > 0 ? (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Why it matters</h3>
+                    <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] text-warm-800">
+                      {shown.whyItMatters.map((item, i) => (
+                        <li key={i}>{renderInline(item)}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </More>
             ) : null}
           </article>
 
@@ -416,15 +435,6 @@ export function AnalyzeWorkspace({
             </Callout>
           ) : null}
 
-          {shown.whyItMatters.length > 0 ? (
-            <MemoSection title="Why it matters">
-              <ul className="flex max-w-[68ch] list-disc flex-col gap-2 pl-5 text-warm-800">
-                {shown.whyItMatters.map((item, i) => (
-                  <li key={i}>{renderInline(item)}</li>
-                ))}
-              </ul>
-            </MemoSection>
-          ) : null}
 
           {shown.evidence.length > 0 ? (
             <MemoSection title="The evidence">

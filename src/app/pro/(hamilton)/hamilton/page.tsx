@@ -132,7 +132,7 @@ export default async function HamiltonHomePage({
         title={briefing ? briefing.institutionName : "Your briefing"}
         dek={
           briefing
-            ? `Hamilton read your ${briefing.feesReviewed} published fees against ${briefing.peerLabel}. Observations, not instructions: open any one to look closer or try a price.`
+            ? `${briefing.feesReviewed} published fees, read against ${briefing.peerLabel}.`
             : "Choose your bank and Hamilton reads its published fees against its market every month."
         }
       />
@@ -146,10 +146,8 @@ export default async function HamiltonHomePage({
       ) : briefing && trail && briefing.feesReviewed > 0 ? (
         <div className="flex flex-col gap-4">
           <Callout>
-            Nothing stood out this month. None of your {briefing.feesReviewed} published fees is in the top or bottom{" "}
-            {POSITION_EXTREME_PCT}% of its peer group, no institution in your state changed a fee you charge in the last{" "}
-            {COMPETITOR_MOVE_WINDOW_DAYS} days, and your service charge income moved less than {REVENUE_SHIFT_PCT}% from a
-            year earlier.
+            Nothing stood out this month: no fee in its peer group&apos;s top or bottom {POSITION_EXTREME_PCT}%, no state
+            competitor changes in {COMPETITOR_MOVE_WINDOW_DAYS} days, and fee income within {REVENUE_SHIFT_PCT}% of last year.
           </Callout>
           <AuditPanel trail={trail} />
         </div>

@@ -132,8 +132,8 @@ export default async function SettingsPage({
         title="My bank and data"
         dek={
           selectedInstitution
-            ? `Hamilton is working on ${selectedInstitution.name}. Change the bank, the peer groups you compare against, and who on your team can see this workspace.`
-            : "Pick your bank so Hamilton can compare your fees with your peers. You can also set up peer groups and give your team access."
+            ? `Hamilton is working on ${selectedInstitution.name}.`
+            : "Pick your bank so Hamilton can compare your fees with your peers."
         }
         actions={
           <>
@@ -150,7 +150,7 @@ export default async function SettingsPage({
         title="Your bank"
         note={
           selectedInstitution
-            ? "This month, My fees, Try a price, Reports and All changes all start from this bank."
+            ? "Every screen starts from this bank."
             : "Choose your bank so Hamilton can compare your fees with your peers."
         }
       >
@@ -167,7 +167,7 @@ export default async function SettingsPage({
       <MemoSection
         id="your-figures"
         title="Your own figures"
-        note="Fee income, item counts and waivers from your own books turn Hamilton's estimates into figures for your institution."
+        note="Turns Hamilton's estimates into your own numbers."
       >
         <FeeFiguresUpload institutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
       </MemoSection>
@@ -175,7 +175,7 @@ export default async function SettingsPage({
       <MemoSection
         id="peer-sets"
         title="Peer groups"
-        note="A peer group sets which institutions your fees are compared with in Try a price and Reports."
+        note="Who your fees are compared with."
       >
         <div className={`${panel} scroll-mt-24`}>
           <PeerSetManager initialPeerSets={peerSets} />
@@ -185,7 +185,7 @@ export default async function SettingsPage({
       <MemoSection
         id="workspace-access"
         title="Team access"
-        note="Colleagues you add here see the same bank, peer groups and saved work."
+        note="Colleagues see the same bank and saved work."
       >
         <div className={`${panel} scroll-mt-24`}>
           <WorkspaceAccessManager

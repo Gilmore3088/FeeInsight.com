@@ -27,9 +27,6 @@ export function WorthYourAttention({
       <h2 className="text-2xl text-warm-900 sm:text-3xl" style={SERIF}>
         I found {count} worth your attention
       </h2>
-      <p className="mt-1 text-sm text-warm-600">
-        Overdraft first, then what stood out against your peers and your state this month. Whether it matters depends on your goals; open one to look closer.
-      </p>
       <ol className="mt-5 flex flex-col">
         {observations.map((o, i) => (
           <li key={o.id} className="grid gap-x-8 gap-y-2 border-t border-warm-300 py-5 md:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)]">
