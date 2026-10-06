@@ -319,7 +319,6 @@ export async function takeDownUntraceableFees(
           costMicrousd: 0,
           runId: options.runId,
           detail: { live_fees_checked: counts.checked, relinked: counts.relinked, taken_down: counts.takenDown, restored: counts.restored },
-          foldIntoPlaybook: false,
         });
       }
       await scope`
