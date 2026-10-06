@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminNav, AdminNavInline } from "./admin-nav";
+import { AdminNav, AdminNavInline, AdminRoomTabs } from "./admin-nav";
 
 const navigationState = vi.hoisted(() => ({
   pathname: "/admin/states",
@@ -27,23 +27,44 @@ afterEach(() => {
   navigationState.pathname = "/admin/states";
 });
 
-describe("AdminNav", () => {
-  it("labels Atlas subviews by operator task instead of repeating Atlas", () => {
-    render(<AdminNav badges={{ trustPending: 3 }} />);
+describe("AdminRoomTabs", () => {
+  it("lists the six rooms and marks the one you are in", () => {
+    render(<AdminRoomTabs badges={{ knoxPending: 4 }} />);
+    const nav = screen.getByRole("navigation", { name: "Admin rooms" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.map((link) => link.textContent?.replace(/\d+/g, ""))).toEqual([
+      "Today", "Agents", "Data", "Customers", "Publishing", "Controls",
+    ]);
+    expect(within(nav).getByRole("link", { name: /Agents/ })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: /Agents/ })).toHaveTextContent("4");
+  });
+});
 
-    expect(screen.getByText("State Lanes")).toBeInTheDocument();
-    expect(screen.getByText("State queues")).toBeInTheDocument();
-    expect(screen.getByText("Trust Review")).toBeInTheDocument();
-    expect(screen.getByText("Source review")).toBeInTheDocument();
-    expect(screen.getByText("Atlas")).toBeInTheDocument();
-    expect(screen.queryByText("Atlas Lanes")).not.toBeInTheDocument();
-    expect(screen.queryByText("Atlas Trust")).not.toBeInTheDocument();
+describe("AdminNav", () => {
+  it("shows only the current room's screens", () => {
+    render(<AdminNav badges={{ trustPending: 3 }} />);
+    expect(screen.getByText("State lanes")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /State lanes/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText("Leads")).not.toBeInTheDocument();
   });
 
-  it("uses the same clearer labels in the compact nav", () => {
-    render(<AdminNavInline />);
+  it("follows you into another room", () => {
+    navigationState.pathname = "/admin/quality";
+    render(<AdminNav badges={{ trustPending: 3 }} />);
+    expect(screen.getByRole("link", { name: /Trust review/ })).toHaveTextContent("3");
+    expect(screen.queryByText("State lanes")).not.toBeInTheDocument();
+  });
+});
 
-    expect(screen.getByRole("link", { name: /State Lanes/ })).toHaveAttribute("href", "/admin/states");
-    expect(screen.getByRole("link", { name: /Trust Review/ })).toHaveAttribute("href", "/admin/quality");
+describe("AdminNavInline", () => {
+  it("uses the same screens on a phone", () => {
+    render(<AdminNavInline />);
+    expect(screen.getByRole("link", { name: /State lanes/ })).toHaveAttribute("href", "/admin/states");
+  });
+
+  it("hides when the room has a single screen", () => {
+    navigationState.pathname = "/admin";
+    const { container } = render(<AdminNavInline />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
