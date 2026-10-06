@@ -10,6 +10,7 @@ import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/b
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
+import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
 
 const LEADS_ENDPOINT = "/api/leads";
 const REPORT_USE_CASE = "competitive-fee-position-report";
@@ -120,6 +121,8 @@ function RequestReportFormInner({
   );
   const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? "national");
   const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
+  const [pickedInstitution, setPickedInstitution] = useState<PickedInstitution | null>(null);
+  const [reportState, setReportState] = useState("");
 
   const src = prefill?.src ?? defaultSrc;
   const lockedInstitutionId = institutionLocked ? prefill?.institutionId ?? null : null;
@@ -143,7 +146,7 @@ function RequestReportFormInner({
       competitors: String(formData.get("competitors") ?? "").trim() || null,
       use_case: REPORT_USE_CASE,
       source: REPORT_SOURCE,
-      institutionId: lockedInstitutionId,
+      institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
@@ -320,17 +323,16 @@ function RequestReportFormInner({
               </button>
             )}
           </div>
-          <input
+          <InstitutionCombobox
             id="report-institution"
             name="institution"
-            type="text"
-            required
             readOnly={institutionLocked}
-            aria-readonly={institutionLocked}
             defaultValue={prefill?.institutionName ?? ""}
-            autoComplete="organization"
-            placeholder="First National Bank"
             className={INPUT_CLASS}
+            onPick={(picked) => {
+              setPickedInstitution(picked);
+              if (picked?.stateCode && !reportState) setReportState(picked.stateCode);
+            }}
           />
         </div>
 
@@ -382,7 +384,13 @@ function RequestReportFormInner({
             <label htmlFor="report-state" className={LABEL_CLASS}>
               State <span className="font-normal text-[#6B6255]">(optional)</span>
             </label>
-            <select id="report-state" name="state" defaultValue="" className={INPUT_CLASS}>
+            <select
+              id="report-state"
+              name="state"
+              value={reportState}
+              onChange={(event) => setReportState(event.target.value)}
+              className={INPUT_CLASS}
+            >
               <option value="">Select</option>
               {STATE_CODES.map((code) => (
                 <option key={code} value={code}>
