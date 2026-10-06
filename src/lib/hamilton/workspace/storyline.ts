@@ -373,7 +373,7 @@ export function storylineKind(research: FeeResearch, intent: StoryIntent): Story
 
 const ORDER: Record<StorylineKind, string[]> = {
   position: ["position", "local", "archetype", "structure", "money", "changes"],
-  segment: ["segment", "largest", "archetype", "structure", "position", "money"],
+  segment: ["segment", "archetype", "structure", "changes", "position", "money"],
   price_test: ["position", "money", "archetype", "local", "changes"],
   board_decision: ["position", "money", "archetype", "changes", "local", "structure"],
   structure: ["structure", "archetype", "position", "local", "changes"],
@@ -456,21 +456,116 @@ function financeLens(research: FeeResearch, answer: HamiltonAnswer): Fact[] {
   return [...money, ...rules].slice(0, 4);
 }
 
-function marketLens(research: FeeResearch, story: Piece[], name: string): Fact[] {
+/** The group a customer would compare the bank against: the segment asked about, the local market, or peers. */
+function customerGroup(research: FeeResearch): { label: string; members: { name: string; amount: number }[]; source: SourceRef } | null {
+  const seg = research.segment;
+  if (seg && seg.problem === null && seg.members.length > 0) {
+    return { label: seg.segment.label, members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount })), source: seg.source };
+  }
+  const local = research.localCompetitors ?? [];
+  if (local.length > 0) {
+    return {
+      label: "competitors in your market",
+      members: local.map((p) => ({ name: p.institutionName, amount: p.amount })),
+      source: research.localMarket?.source ?? feeSource(research),
+    };
+  }
+  if (research.peers.length >= MIN_PEERS_FOR_POSITION) {
+    return { label: "peers", members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount })), source: feeSource(research) };
+  }
+  return null;
+}
+
+function names(list: { name: string }[], max = 3): string {
+  const shown = list.slice(0, max).map((m) => m.name);
+  const more = list.length - shown.length;
+  if (more > 0) return `${shown.join(", ")} and ${count(more)} more`;
+  return shown.length <= 2 ? shown.join(" and ") : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+}
+
+/**
+ * What the exhibits mean for positioning, messaging and competitive response. Each line
+ * reads the figures for a product or marketing reader rather than restating an exhibit,
+ * and none says what to charge.
+ */
+function marketLens(research: FeeResearch, name: string): Fact[] {
   const out: Fact[] = [];
-  for (const piece of story) {
-    if (["local", "archetype", "segment", "largest", "structure"].includes(piece.key)) {
-      const source = piece.exhibit.sources[0] ?? feeSource(research);
-      out.push({ text: piece.actionTitle, source, sampleSize: sampleOf(piece.exhibit) });
-      if (piece.takeaway) out.push(piece.takeaway);
+  const current = research.current;
+  const group = customerGroup(research);
+
+  // Positioning: what a customer comparing side by side would see, by name.
+  if (group && current !== null) {
+    const cheaper = group.members.filter((m) => m.amount < current).sort((a, b) => a.amount - b.amount);
+    const dearer = group.members.filter((m) => m.amount > current);
+    const n = group.members.length;
+    if (cheaper.length === 0) {
+      out.push({
+        text: `None of the ${count(n)} ${group.label} undercut your ${money(current)}, so price is a point you can make rather than one made against you.`,
+        source: group.source,
+        sampleSize: n,
+      });
+    } else {
+      out.push({
+        text: `Side by side, ${count(cheaper.length)} of the ${count(n)} charge less than your ${money(current)}, led by ${names(cheaper.map((m) => ({ name: `${m.name} (${money(m.amount)})` })), 2)}.`,
+        source: group.source,
+        sampleSize: n,
+      });
+      if (dearer.length === 0) {
+        out.push({
+          text: `No one in that group charges more than your ${money(current)}, so a price comparison works against you everywhere it is made.`,
+          source: group.source,
+          sampleSize: n,
+        });
+      }
     }
   }
-  const events = recentEvents(research).slice(0, 2);
-  for (const e of events) {
+
+  // Messaging: the price contrast customers meet, from the pricing groups.
+  if (group && current !== null && (research.feeCategory === "overdraft" || research.feeCategory === "nsf")) {
+    const free = group.members.filter((m) => m.amount === 0);
+    const own = archetypeOf(current);
+    if (free.length > 0 && own !== "zero_od") {
+      out.push({
+        text: `${count(free.length)} of them ${free.length === 1 ? "publishes" : "publish"} a $0 ${name} fee (${names(free, 2)}), the claim your ${money(current)} competes against.`,
+        source: group.source,
+        sampleSize: group.members.length,
+      });
+    }
+  }
+
+  // Structure: how the lower-cost alternative is priced, not only the fee itself.
+  const set = research.structure;
+  if (set) {
+    const others = set.rows.filter((r) => !r.own);
+    const ownRow = set.rows.find((r) => r.own);
+    const withTransfer = others.filter((r) => r.values.od_protection_transfer !== undefined);
+    if (others.length >= MIN_PEERS_FOR_POSITION && withTransfer.length > 0) {
+      const ownTransfer = ownRow?.values.od_protection_transfer;
+      const transfers = withTransfer.map((r) => r.values.od_protection_transfer).sort((a, b) => a - b);
+      const typical = transfers[Math.floor(transfers.length / 2)];
+      out.push({
+        text:
+          ownTransfer !== undefined
+            ? `Your ${money(ownTransfer)} transfer fee is the cheaper path you can point customers to; ${count(withTransfer.length)} of ${count(others.length)} in the group price one, typically ${money(typical)}.`
+            : `${count(withTransfer.length)} of ${count(others.length)} in the group price a transfer from savings, typically ${money(typical)}; your schedule in the index shows none.`,
+        source: { ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null },
+        sampleSize: others.length,
+      });
+    }
+  }
+
+  // Competitive response: which way the market is moving, and who moved last.
+  const events = recentEvents(research);
+  const state = stateName(research);
+  if (events.length > 0 && state) {
+    const cuts = events.filter((e) => (e.to as number) < (e.from as number)).length;
+    const rises = events.length - cuts;
+    const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
+    const last = events[0];
     out.push({
-      text: `${e.institutionName} moved its ${name} fee from ${money(e.from as number)} to ${money(e.to as number)}, seen ${longDate(e.date)}.`,
-      source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: e.date },
-      sampleSize: 1,
+      text: `In ${state}, the last ${CHANGE_WINDOW_DAYS} days brought ${plural(cuts, "cut", "cuts")} and ${plural(rises, "increase", "increases")} to this fee. The latest was ${last.institutionName}, ${money(last.from as number)} to ${money(last.to as number)}, on ${longDate(last.date)}.`,
+      source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: last.date },
+      sampleSize: events.length,
     });
   }
   return out.slice(0, 5);
@@ -576,7 +671,7 @@ export function buildStoryline(research: FeeResearch, answer: HamiltonAnswer, in
     complication: complication(research, name),
     keyFigures: keyFigures(research, name),
     exhibits,
-    lenses: { finance: financeLens(research, answer), market: marketLens(research, chosen, name) },
+    lenses: { finance: financeLens(research, answer), market: marketLens(research, name) },
     defaultView: kind === "price_test" || kind === "board_decision" ? "finance" : "market",
     options: options(research, kind, intent, name),
     watch: watch(research, name),
