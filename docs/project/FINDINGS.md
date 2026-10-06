@@ -59,6 +59,10 @@ never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and
 it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
 the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
 foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows waited on someone starting the admin category guard repair run, so every publish step now runs the category guard itself (up to 100 rollbacks a step, PR after 280).
+The first step (17:56 UTC, run 1787) rolled back 42: the 29 flat foreign fees plus 13 that
+failed older rules no repair run had applied since 06:18 (night deposit bag purchases, foreign
+returned items, an overdraft loan's annual fee). One of the 13 was wrong: "Foreign Owned ATM
+Fees" read as a bank's own ATM; guard v12 lets "foreign-owned ATM" through as non-network.
 **Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
 under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
 
