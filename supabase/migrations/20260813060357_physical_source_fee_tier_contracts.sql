@@ -1,3 +1,12 @@
+-- Changes the legacy tables (crawl_targets and friends) production had before
+-- 2026-08-13. A database built from the preview baseline in 20260406_report_jobs.sql
+-- already has the current schema and no legacy tables, so it skips this file.
+DO $legacy_guard$
+BEGIN
+  IF to_regclass('public.crawl_targets') IS NULL AND to_regclass('public.institution_sources') IS NOT NULL THEN
+    RETURN;
+  END IF;
+  EXECUTE $migration$
 -- Convert the active source/document/fee-tier semantic contracts from
 -- compatibility views over crawler-era tables into the physical storage
 -- tables themselves.
@@ -608,3 +617,7 @@ COMMENT ON FUNCTION public.promote_to_tier3(bigint, uuid, text) IS
   'Adversarial publish gate from verified_fee_observations to published_fee_records.';
 COMMENT ON FUNCTION public.lineage_graph(bigint) IS
   'Returns the published/verified/raw fee lineage graph using semantic physical tier tables.';
+
+$migration$;
+END
+$legacy_guard$;

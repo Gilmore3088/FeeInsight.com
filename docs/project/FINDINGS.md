@@ -475,3 +475,14 @@ five minutes and finishes about two, so about 20 lane runs (roughly 50 minutes o
 queued ahead of any new report run. Read-only check at 03:08 UTC: 17 lane runs queued ahead of the two
 report runs.
 **Fix:** same PR: the tick takes queued report runs before pipeline runs; the rest keeps its order.
+
+## 2026-10-06: Supabase Preview failed on every migration PR
+**What happened:** the Supabase Preview check failed on every PR that added a migration (173, 189, 196)
+with `relation "agent_run_results" does not exist`.
+**Cause:** a preview branch builds a fresh database from `supabase/migrations/`, but production's first
+tables were created before that history began. A local replay on an empty Postgres failed in 41 of 77 files.
+**Fix:** PR 196 (James approved editing applied files): the oldest file opens with the public schema
+dumped from production on 2026-10-04, run only on a database without `institution_sources`; the eight
+files that rewrote pre-2026-08-13 legacy tables skip themselves on such a database. The full history now
+replays on an empty database. Production never re-runs applied versions, so nothing changes there.
+Details in `docs/runbooks/supabase-migration-baseline.md`.
