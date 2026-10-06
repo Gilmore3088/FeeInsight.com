@@ -1,19 +1,28 @@
-What each part of a profile means, and how to get an email when a fee changes.
+What the state page shows, and the institution profiles behind it.
 
 WATCHERS · 1 OF 3
 
-How to read an institution's fee profile
-========================================
+How to read your state's fee numbers
+====================================
 
-Every bank and credit union we track has a free public profile built from its own published fee schedule. Here's what to look at.
+You signed up to follow fees in your state. Every number on the state page comes from the published fee schedules of the banks and credit unions there. Here's what to look at.
 
 
-[ READING A PROFILE ]
+[ READING THE STATE PAGE ]
+- The median: the middle price among institutions in the state that publish the fee.
+- The middle half: the 25th to 75th percentile, where most institutions price.
+- Institutions behind it: how many schedules each number rests on. A small count means read it as a hint, not a verdict.
+
+Find your state's page: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch
+Free, no login.
+
+
+[ THEN LOOK AT A SINGLE INSTITUTION ]
 - The fee table: each fee next to the national median.
 - Source: the published document and the date we read it.
 - Coverage: how many of the 15 headline fees the schedule publishes. A missing fee isn't a $0 fee.
 
-Want an email when a fee changes? Create a free account and save the institution: find it here (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch). Saved institutions get a change alert when a fee you follow is published or changes.
+Want an email when a fee changes? Create a free account and save the institution: find it here (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch).
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
@@ -22,5 +31,4 @@ Founder, Fee Insight · publisher of the Bank Fee Index
 Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}
