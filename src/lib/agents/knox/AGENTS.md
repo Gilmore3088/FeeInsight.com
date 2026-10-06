@@ -163,6 +163,21 @@ v21 (rules 21) reads more of those rate lines: the card's currency fee under its
 it ("Cash Advance | 3% of each advance ($5.00 minimum)"). Flat gates and the live dry run are
 unchanged; on the answer keys Knox reads 20 rates, 18 keyed and 2 real fees the keys leave out.
 
+v22 (rules 22, family experts +1) reads the overdraft layouts that left several of the largest
+banks with a stored overdraft fee that was never live:
+- a fee charged to customers in a sentence ("Customers are charged a fee of $30 each time an
+  overdraft transaction is paid"), even after a question that names it;
+- one-line PDF dot-leader schedules: a period inside a leader no longer ends a sentence, and
+  a leader row ends after its price ("Overdrafts fee (per item)……………$36");
+- a long description row whose only other cell is its price ("Overdraft Fee Assessed when ...
+  per day. | $36.00"), named by the row's title. The shared check reads the same row the same
+  way;
+- a row's price cell repeating the price in the same cell is not a second fee;
+- "Overdrafts Returned" is NSF, and "Maximum daily Overdraft ... fees" is the daily cap.
+
+Answer keys: Texas 454 of 468 (main 452 of 467), held out 45 of 50 (43 of 49), seven states
+674 of 720 (673 of 719). Live dry run: 1,414 of 1,437 kept, the same fees as main.
+
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
 (lowercase, letters only) that the category guards rejected under one category at 2 or more banks

@@ -1423,6 +1423,28 @@ reads change, so no live fee is taken down.
 **Lesson:** an agent that writes corrections to a shared store must also read them, or the same
 mistake comes back with the next rule change.
 
+## 2026-10-06: Large banks' schedules priced an overdraft fee Knox never read
+**What happened:** the largest-banks thread found 11 banks whose stored schedules price an
+overdraft fee that isn't live. Run on the overdraft lines of 10 of them, today's rules read 4
+correctly (Santander, First Merchants, Enterprise, Navy Federal). ESL's fee depends on the item's
+size and its tier table was not in the lines checked. The misses:
+- a fee stated in a sentence to "customers" (OceanFirst);
+- one-line PDF dot-leader schedules, split mid-leader so the name lost its price (Glacier,
+  United);
+- a long description row with its price in the last cell (Dollar Bank);
+- a long conditional name (Mechanics);
+- a two-column table (Trustmark).
+
+The re-read queue was also broken: see "Knox kept reading older copies of a page".
+**Fix:** Knox v22 (`src/lib/agents/knox/rules.ts`, `families.ts`) and the shared check's long
+rows (`src/lib/custom-report/source-check.ts`). Run on the same lines, v22 reads 9 of the 10.
+Answer keys rise slightly (Texas 454 of 468 from 452 of 467; seven states 674 of 720 from 673 of
+719), and the live dry run keeps the same 1,414 of 1,437 fees.
+**Still open:** Trustmark's two-column table ("Overdrafts (OD)" above "• Personal | $36.00"). The
+specialists don't pair a heading with a row whose own cell is an account type.
+**Lesson:** score a rule change on the specific banks a report depends on, not only on the
+answer keys; the answer keys had none of these layouts.
+
 
 ## 2026-10-06: Knox kept reading older copies of a page
 **What happened:** Magellan marks one current document per page (`superseded_by_id`, PR 265),
