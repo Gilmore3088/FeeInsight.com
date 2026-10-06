@@ -13,9 +13,9 @@ describe("StateReportGrid", () => {
   it("labels each state with its best market's progress toward a full comparison", () => {
     render(<StateReportGrid states={[]} readiness={[NY_CU, NY_BANK]} />);
     const ny = screen.getByRole("link", { name: /New York fee report/ });
-    expect(ny.textContent).toContain("11/15");
-    expect(ny.getAttribute("aria-label")).toContain("credit unions 11 of 15 needed");
-    expect(ny.getAttribute("aria-label")).toContain("banks 4 of 15 needed");
+    expect(ny.textContent).toContain("11/16");
+    expect(ny.getAttribute("aria-label")).toContain("credit unions 11 of 16 needed");
+    expect(ny.getAttribute("aria-label")).toContain("banks 4 of 16 needed");
     expect(screen.getByRole("link", { name: /Ohio fee report/ }).textContent).toContain("—");
   });
 
