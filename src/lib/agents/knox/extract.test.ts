@@ -90,6 +90,29 @@ describe("Knox agentic extraction", () => {
     expect(JSON.stringify(db.mock.calls)).not.toContain("No fee for e-statements");
   });
 
+  it("records shadow calibrated confidence and the text's layout without changing the stored confidence", async () => {
+    const db = createDbMock([textArtifact]);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
+    db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (templateText(strings).includes("FROM published_fee_records fp")) {
+        return Promise.resolve([{ strategy: "extract.rules", canonical_fee_key: "overdraft", published: 100, live: 10 }]);
+      }
+      return base(strings, ...values);
+    }) as never);
+
+    const result = await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
+
+    expect(result).toMatchObject({ calibrationGroups: 1, calibratedBelowPublishFloor: 1 });
+    expect(result.layouts).toEqual({ "plain/short": { documents: 1, thin: 0 } });
+    const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
+    const overdraft = inserts.find((call) => String(call[10]).includes("canonical_hint=overdraft"))!;
+    expect(String(overdraft[10])).toMatch(/calibrated_confidence=0\.2\d;/);
+    expect(Number(overdraft[5])).toBeGreaterThanOrEqual(0.8);
+    const maintenance = inserts.find((call) => String(call[10]).includes("canonical_hint=monthly_maintenance"))!;
+    // No survival history for the category: the formula's value, unchanged.
+    expect(String(maintenance[10])).toContain(`calibrated_confidence=${Number(maintenance[5]).toFixed(2)};`);
+  });
+
   it("sends free fees to Darwin and holds ranges for review", async () => {
     const db = createDbMock([
       { ...textArtifact, normalized_text: ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n") },

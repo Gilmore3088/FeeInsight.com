@@ -10,6 +10,8 @@ import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
+import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
+import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
@@ -109,6 +111,11 @@ export interface RunKnoxExtractResult {
   /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
   lessonsLoaded: number;
   lessonRefiles: Record<string, number>;
+  /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
+  calibrationGroups: number;
+  calibratedBelowPublishFloor: number;
+  /** Texts by layout signature, with how many read thin (`layout-signature.ts`). */
+  layouts: Record<string, LayoutYield>;
   outcomes: Partial<Record<AttemptOutcome, number>>;
   results: KnoxExtractDocumentResult[];
 }
@@ -280,6 +287,8 @@ export async function insertCandidate(
     extraFlags?: string[];
     /** How the fee was read, for the `conditions` audit text. */
     method?: string;
+    /** Shadow calibrated confidence (`calibration.ts`), recorded in the audit text only. */
+    calibratedConfidence?: number;
   },
 ): Promise<boolean> {
   const documentTextId = Number(options.row.document_text_id);
@@ -297,6 +306,7 @@ export async function insertCandidate(
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
+    (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
   // The dedupe index is (document, fee name, amount), so a line an older version held
   // as unclassified would block this fee forever. A held row with no category takes the
@@ -632,6 +642,9 @@ export async function runKnoxExtract(
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
+  const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
+  let calibratedBelowPublishFloor = 0;
+  const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
 
   const results: KnoxExtractDocumentResult[] = [];
   let skippedKnownInputs = 0;
@@ -654,7 +667,7 @@ export async function runKnoxExtract(
     const { held, rates, runs } = free;
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
-    const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons));
+    const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons, Number(row.institution_id)));
     const candidates = lessoned.map((entry) => entry.candidate);
     const lessonFlags = new Map(lessoned.filter((entry) => entry.lessonFlag).map((entry) => [entry.candidate, entry.lessonFlag!]));
     for (const flag of lessonFlags.values()) lessonRefiles[flag] = (lessonRefiles[flag] ?? 0) + 1;
@@ -665,7 +678,20 @@ export async function runKnoxExtract(
       retiredOlderRows += await retireRowsFromOlderText(db, row);
       for (const candidate of candidates) {
         const lessonFlag = lessonFlags.get(candidate);
-        if (await insertCandidate(db, { runId: options.runId, row, candidate, extraFlags: lessonFlag ? [lessonFlag] : [] })) inserted += 1;
+        const calibrated = calibratedConfidence(
+          candidate.confidence,
+          calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
+        );
+        if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
+        if (
+          await insertCandidate(db, {
+            runId: options.runId,
+            row,
+            candidate,
+            extraFlags: lessonFlag ? [lessonFlag] : [],
+            calibratedConfidence: calibrated,
+          })
+        ) inserted += 1;
       }
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
@@ -677,6 +703,8 @@ export async function runKnoxExtract(
         }
       }
     }
+    const layout = layoutSignature(row.normalized_text);
+    layoutReads.push({ ...layout, found: candidates.length });
     const attemptOutcome = extractionOutcome(candidates.length, playbook.expectedFeeCount);
     results.push({
       documentTextId: Number(row.document_text_id),
@@ -735,6 +763,8 @@ export async function runKnoxExtract(
           rules_found: runs.find((entry) => entry.pass === 1)?.found ?? 0,
           specialists: Object.fromEntries(runs.filter((entry) => entry.pass === 2).map((entry) => [entry.strategy, entry.added])),
           expected_fee_count: playbook.expectedFeeCount,
+          layout: layout.signature,
+          price_lines: layout.priceLines,
           router: decision.reason,
         },
       });
@@ -760,6 +790,9 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
+    calibrationGroups: calibration.size,
+    calibratedBelowPublishFloor,
+    layouts: thinLayouts(layoutReads),
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     results,
   };
