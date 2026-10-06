@@ -25,6 +25,8 @@ export type AnalyticsEvent =
   | "hosted_report_view"
   /** A free national or district benchmark report was opened. */
   | "benchmark_report_view"
+  /** A private institution report link (/market-report/[token]) opened. */
+  | "market_report_view"
   | "hosted_report_request"
   | "contact_sales"
   | "fee_alert_save"
