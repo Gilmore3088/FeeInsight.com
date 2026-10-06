@@ -177,11 +177,54 @@ export interface ClarifyingQuestion {
   fieldKey: string;
 }
 
-/** Given only on an explicit ask, and always with the objective it assumed. */
+export type AskObjective = "revenue" | "customer_treatment" | "competitive_position";
+
+/** Given only on an explicit ask, after the reader picks an objective, and always naming it. */
 export interface HamiltonOpinion {
   opinion: string;
-  assumedObjective: string;
+  assumedObjective: AskObjective;
   scenariosCompared: number[];
+}
+
+export type AskResponseKind =
+  | "research"
+  | "scenario"
+  | "saved_fact"
+  | "deliverable_draft"
+  | "opinion"
+  | "clarifying_question";
+
+/** Which screen the answer opens, and what it puts there. */
+export type AskPageChange =
+  | { screen: "research"; feeCategory: string; section?: "position" | "competitors" | "changes" | "regulation" | "economy" }
+  | { screen: "model"; feeCategory: string; tested: number[] }
+  | { screen: "plan"; feeCategory: string; chosen: number }
+  | { screen: "reports"; deliverable: DeliverableKind; decisionIds: string[] }
+  | { screen: "data"; fieldKey: string }
+  | { screen: "none" };
+
+/**
+ * What the Ask bar returns: one short answer plus the page change that shows the work.
+ * An opinion comes back only when the request carried an objective; otherwise Hamilton
+ * returns a clarifying question asking which objective to assume.
+ */
+export interface AskResponse {
+  kind: AskResponseKind;
+  shortAnswer: string;
+  pageChange: AskPageChange;
+  savedFact?: MemoryFact;
+  question?: ClarifyingQuestion;
+  opinion?: HamiltonOpinion;
+  scenario?: Scenario;
+  facts?: Fact[];
+}
+
+export interface AskRequest {
+  institutionId: number;
+  question: string;
+  /** Set when the reader has picked one; required before Hamilton gives an opinion. */
+  objective?: AskObjective;
+  decisionId?: string;
 }
 
 export type DecisionStatus = "researching" | "modeling" | "decided" | "implementing" | "monitoring" | "closed";
