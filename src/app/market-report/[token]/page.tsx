@@ -13,6 +13,7 @@ import { analyzeMarket, MIN_LOCAL_PEERS_PER_LINE, type LinePosition, type Report
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { verifyReportToken } from "@/lib/custom-report/link";
 import { getCustomReportMarketDataCached } from "@/lib/data-store/public-cached-reads";
+import { TrackView } from "@/components/track-view";
 import { PrintButton } from "./print-button";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,8 @@ const POSITION_CLASS: Record<LinePosition, string> = {
   free: "bg-[#E8EEF6] text-[#2F5585]",
 };
 
-function bookingHref(institutionName: string): string {
+// No booking tool yet, so the page offers email under its real name, never "book".
+function contactHref(institutionName: string): string {
   return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Competitive Fee Position Report — ${institutionName}`)}`;
 }
 
@@ -78,6 +80,10 @@ export default async function MarketReportPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
+      <TrackView
+        event="market_report_view"
+        eventProps={{ institution_id: verified.institutionId, ready: analysis.readiness.ready ? "yes" : "no" }}
+      />
       <ReportChrome preparedFor={name} />
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-10">
         <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
@@ -95,10 +101,10 @@ export default async function MarketReportPage({ params }: PageProps) {
           <div className="flex flex-wrap gap-3 print:hidden">
             <PrintButton className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]" />
             <a
-              href={bookingHref(name)}
+              href={contactHref(name)}
               className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
             >
-              Book 15 minutes
+              Email us about this report
             </a>
           </div>
         </section>
@@ -109,9 +115,9 @@ export default async function MarketReportPage({ params }: PageProps) {
               This market is being refreshed
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">
-              {analysis.readiness.reason} We only show a comparison when the local data supports it. We will email you
-              when it is back; questions to{" "}
-              <a href={bookingHref(name)} className="underline">
+              {analysis.readiness.reason} We only show a comparison when the local data supports it. Questions
+              to{" "}
+              <a href={contactHref(name)} className="underline">
                 {CONTACT_EMAIL}
               </a>
               .
@@ -266,7 +272,7 @@ export default async function MarketReportPage({ params }: PageProps) {
               </ul>
               <p className="mt-3">
                 If a figure does not match your current schedule, reply to{" "}
-                <a href={bookingHref(name)} className="underline">
+                <a href={contactHref(name)} className="underline">
                   {CONTACT_EMAIL}
                 </a>{" "}
                 and we will correct it. This link resolves until {DATE.format(verified.expiresOn)}.

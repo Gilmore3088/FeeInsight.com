@@ -29,4 +29,22 @@ describe("Pro welcome email", () => {
     const result = await sendProWelcomeEmail({ email: "a@b.com", name: null });
     expect(result).toEqual({ status: "failed", error: "network" });
   });
+
+  it("alerts James when the welcome email doesn't go out", async () => {
+    sendMock
+      .mockResolvedValueOnce({ status: "failed", error: "Resend 500" })
+      .mockResolvedValueOnce({ status: "sent", providerId: "alert_1" });
+    await sendProWelcomeEmail({ email: "a@b.com", name: "Pat" });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+    const [alert, label] = sendMock.mock.calls[1] as [{ subject: string; text: string }, string];
+    expect(label).toBe("the lead alert");
+    expect(alert.subject).toBe("Pro welcome email failed: a@b.com");
+    expect(alert.text).toContain("Resend 500");
+  });
+
+  it("sends no alert when the welcome email went out", async () => {
+    sendMock.mockResolvedValueOnce({ status: "sent", providerId: "em_1" });
+    await sendProWelcomeEmail({ email: "a@b.com", name: "Pat" });
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
 });

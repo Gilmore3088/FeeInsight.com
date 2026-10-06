@@ -62,6 +62,7 @@ export interface CronTickBudgetDecision {
   reasonCode?: BudgetBlockReason;
   policyId?: number;
   message?: string;
+  /** Runs this tick that may take paid steps (each up to maxStepsPerRun of them). */
   maxRuns?: number;
   maxStepsPerRun?: number;
   maxProviderCalls?: number;
@@ -352,7 +353,6 @@ export async function assertCronTickBudgetAllowed(
   try {
     const policies = await loadPolicies([key]);
     const policy = ensurePolicyConfigured(policies.get(key), key);
-    const estimatedCalls = request.requestedRunLimit * request.requestedMaxStepsPerRun;
     const callCap = policy.max_provider_calls_per_tick;
     if (callCap === null) {
       throw new ProviderBudgetBlockedError(
@@ -361,14 +361,6 @@ export async function assertCronTickBudgetAllowed(
         policy,
       );
     }
-    if (estimatedCalls > callCap) {
-      throw new ProviderBudgetBlockedError(
-        "budget_tick_cap_exhausted",
-        `Cron tick requested ${estimatedCalls} possible provider calls, above cap ${callCap}.`,
-        policy,
-      );
-    }
-
     const costCap = toNumber(policy.max_estimated_cost_per_tick_microusd);
     if (costCap === null) {
       throw new ProviderBudgetBlockedError(
@@ -377,11 +369,21 @@ export async function assertCronTickBudgetAllowed(
         policy,
       );
     }
-    const estimatedCost = estimatedCalls * defaultProviderStepEstimateMicrousd();
-    if (estimatedCost > costCap) {
+
+    // A tick may ask for more runs than the caps cover; only that many runs get to take
+    // paid steps (each run takes at most maxStepsPerRun of them). Refusing the whole
+    // tick instead skipped every queued paid pass whenever runs x steps exceeded the cap.
+    const steps = Math.max(request.requestedMaxStepsPerRun, 1);
+    const stepEstimate = defaultProviderStepEstimateMicrousd();
+    const providerRuns = Math.min(
+      request.requestedRunLimit,
+      Math.floor(callCap / steps),
+      stepEstimate > 0 ? Math.floor(costCap / (steps * stepEstimate)) : request.requestedRunLimit,
+    );
+    if (providerRuns < 1) {
       throw new ProviderBudgetBlockedError(
         "budget_tick_cap_exhausted",
-        `Cron tick estimated spend ${estimatedCost} microusd exceeds cap ${costCap}.`,
+        `Cron tick needs room for ${steps} provider calls (${steps * stepEstimate} microusd) per run; caps are ${callCap} calls and ${costCap} microusd.`,
         policy,
       );
     }
@@ -391,7 +393,7 @@ export async function assertCronTickBudgetAllowed(
     return {
       allowed: true,
       policyId: policy.id,
-      maxRuns: request.requestedRunLimit,
+      maxRuns: providerRuns,
       maxStepsPerRun: request.requestedMaxStepsPerRun,
       maxProviderCalls: callCap,
       maxEstimatedMicrousd: costCap,

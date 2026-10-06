@@ -11,6 +11,7 @@ import {
   sendResendEmail,
   type EmailDeliveryResult,
 } from "./resend";
+import { getSubscriptionTokenSecret, subscriptionPageUrl } from "./subscription-token";
 
 export interface LeadNotificationOutcome {
   /** Internal heads-up delivered to CONTACT_EMAIL. */
@@ -113,6 +114,16 @@ export function renderLeadEmailText(content: LeadEmailContent) {
  * Sends the internal notification and the requester auto-reply. Both share the
  * same not_configured guard so a missing From address is reported once per message.
  */
+/**
+ * Opt-in lines for a request confirmation. A request is not consent to email, so the
+ * requester joins the email list (and MailerLite) only after clicking this confirm link.
+ */
+export function emailOptInLines(email: string): string[] {
+  const secret = getSubscriptionTokenSecret();
+  if (!secret) return [];
+  return ["", `Want ${SITE_NAME}'s fee updates by email? Confirm your address: ${subscriptionPageUrl("confirm", email, secret)}`];
+}
+
 export async function sendLeadNotificationPair(input: {
   requesterEmail: string;
   notification: LeadEmailContent;

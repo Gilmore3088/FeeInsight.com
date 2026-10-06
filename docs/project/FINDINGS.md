@@ -24,6 +24,62 @@ the registry scheduler re-pulls succeeded quarters recorded under an older parse
 (`REGISTRY_PARSER_VERSIONS`), as ordinary visible runs, newest first.
 **Lesson:** when a parser learns a new field, bump its version so history fills in through runs.
 
+## 2026-10-06: Supabase Preview fails on any PR that adds a migration
+**What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
+`main` preview branch shows the same status. The preview log stops at
+`20260408_enable_rls_all_tables.sql`: relation "agent_run_results" does not exist.
+**Cause:** a preview branch replays every file in `supabase/migrations/` on an empty database. The
+third file alters tables that later files (or hand-run SQL) created, so history cannot replay from
+scratch. Prod is unaffected: it only runs files newer than its recorded history.
+**Fix:** none yet. Treat this check as not a signal for migration PRs until the old files can be
+replayed (or the preview is turned off); judge a migration by reading it against prod's schema.
+**Lesson:** a migration history must replay on an empty database for preview branches to work.
+
+## 2026-10-06: Fed districts are assigned by headquarters state, not by county
+**What happened:** the St. Louis district report covered only Missouri and Arkansas: 415
+institutions monitored, 113 with published fees, and 11 of the 15 headline fees had the 20
+institutions a median needs (live read of `institution_sources` and `published_fee_catalog`,
+23:40 UTC Oct 5). The real Eighth District also covers parts of Illinois, Indiana, Kentucky,
+Mississippi and Tennessee.
+**Cause:** `fed_district` comes from `STATE_TO_DISTRICT` in `src/lib/fed-districts.ts`, one
+district per headquarters state. States split between districts go wholly to one district.
+**Fix:** not fixed. PR 166's methodology section says districts are assigned by headquarters
+state. A county-level assignment would need county FIPS on each institution.
+**Lesson:** when a report names a Fed district, say which states it covers, and expect thin
+coverage in districts whose split states went elsewhere.
+
+## 2026-10-06: Knox said "no fees" while Darwin checked two
+**What happened:** at 01:00 UTC the live board showed Evergreen Federal Bank (OR) as "Found no
+fees in the document" in Knox and "Checked 2 fees: all passed" in Darwin, in the same run (1239).
+**Cause:** a reporting gap, not bad data. From that one document (16915) Knox wrote six rows: two
+free fees with a category (e-statements, notary, $0), which go to Darwin, and four unclassified
+lines held for review. Knox's `inserted` count only covers priced fees, so its step said 0. Darwin
+checked exactly the two free rows (raw 204906, 204907). Oregon Coast Bank's "no fees" was true:
+its page (16916) is a checking product page with no fee lines, and Knox wrote nothing.
+**Fix:** Knox reports `freeInserted` and `heldInserted` per document and `freeFees` per step; the
+board counts free fees as pulled and says how many lines were held for review.
+**Lesson:** a count shown next to another agent's count must include every row that agent hands on.
+
+## 2026-10-05: Rosetta kept re-downloading dead links, and the live board miscounted
+**What happened:** James's screen recording of /admin/live (22:36 UTC) showed banks failing in
+Rosetta with "page not found" that had no working document, the same bank more than once, and
+counts that disagreed between Knox, Darwin and Hamilton. Prod (read-only, 22:40 UTC): Rosetta
+logged 1,677 read 404s on 247 documents in 24 hours (LINKBANK's two old copies 9 and 10 times
+each). 480 of the 572 unread "success" documents had a newer download for the same bank.
+**Cause:** Rosetta picked any `source_documents` row with status `success`, including old
+February-April rows with no vault copy whose bank Magellan had since failed to download (404).
+It fetched the dead link, sent the bank back to Magellan, and picked the same row again next
+pass, because 404 is not a permanent outcome. On the board, Darwin's and Hamilton's per-bank
+counts came from the step's first ten fee rows (`sample_results`), not its real totals (one
+Darwin step checked 74 fees but the board saw 10), and a bank with several documents showed once
+per document.
+**Fix:** PR 155. Rosetta reads only a bank's current document and skips a no-copy row whose
+link already returned 404/410; Rosetta's "banks in line" uses the same rule (1,408 to 640). Fee
+steps record `institution_results` with every bank's real totals; each board column shows a bank
+once; "On the site" shows the bank's live fee total.
+**Lesson:** a picker over a history table must say which row is current. Board numbers must come
+from totals, never from a sample written for debugging.
+
 ## 2026-10-05: Credit union capital ratio shown as about 1,100%
 **What happened:** Pro institution pages, the API and Hamilton's briefings showed credit union
 "Tier 1 capital ratio" around 1,100% (a $1.1B credit union showed 1,090 for Q2 2026). The NCUA
@@ -68,6 +124,55 @@ was publishing; the overdraft page also computed its own median over raw rows wi
 public page reads, plus one per-institution population for the chart.
 **Lesson:** a public figure has one reader. New public pages read the snapshot, never their own
 aggregate or cache, and say what the number measures and when it was taken.
+
+## 2026-10-06: Banks showing several different overdraft or NSF fees
+**What happened:** James saw Siskiyou FCU and University FCU with three different fees each on
+the national index. Read-only queries at 00:50 UTC Oct 6: 82 banks have more than one live
+overdraft amount and 218 have more than one NSF amount.
+**Cause:** mostly different fees filed under one category: savings or loan overdraft protection,
+collection and recurring charges, balance thresholds ("cushion before overdraft fee $50") as
+overdraft; third-party, foreign, self-to-self, card re-activation and returned loan payments as
+NSF (106 live rows). The rest are real variants on the bank's page (18/65 or business accounts,
+ATM vs check, tiers by item amount), stale page versions are rare (9 of 2,832 fees from an older
+copy of a page lost their price), and "University Federal Credit Union" is two credit unions (ME
+and CA). Siskiyou now has one live $14 overdraft; its $25 and $30 rows came down at 18:38 Oct 5.
+UCU California prints NSF $14 for personal and $30 for organizational accounts; Knox does not yet
+tag the business section, so both count.
+**Fix:** category guard v6 rejects those names (PR on `claude/state-accuracy-95-0psznq`); the
+admin catalog shows the value the index counts (highest overdraft tier) with the range below.
+Live rows come down with /admin/atlas/details > Misfiled fees.
+**Lesson:** more than one live amount per bank and category is a signal to check, not an error
+by itself; read the names before assuming duplicates.
+
+## 2026-10-05: Big Texas banks stuck behind bad links
+**What happened:** of the 14 largest banks in Texas National Bank of Jacksonville's five counties,
+only 5 had a live overdraft fee. Read-only queries at 23:50 UTC showed four different gaps:
+- Southside Bank's link is "southside.com/404", left by the old crawler and failed since April.
+- Chase's link is a 2021 investor news release, which reads fine but is not its fee schedule.
+- Texas Bank and Trust prints overdraft as an item-amount tier table ("$20.01 - $30.00: $20.00
+  fee") under "Overdraft Item Fee: based on item amount"; Knox reads the tiers as ranges.
+- Austin Bank's fee card is a two-column PDF; the overdraft name wraps over three lines of the
+  right column, so Knox pairs the wrong words with the prices.
+**Cause:** discovery only searches banks with no link, so a dead link the old crawler stored
+(121 banks, 20 in Texas, with no live fee) waits for the fetch queue, and nothing ruled out a news
+article. The tier table and the two-column PDF are Knox layouts it does not read yet.
+**Fix:** discovery now also searches a link whose last document failed, untouched for 30 days,
+with no live fee; the fee-page check rejects news, press and investor-relations articles (PR 165).
+The two Knox layouts are not fixed yet: changing Knox re-checks every live Knox fee, so it needs a
+dry run first.
+**Lesson:** a stored link is not a found page; check that it ever produced a live fee.
+
+## 2026-10-05: Deposit bag prices published as night deposit fees
+**What happened:** the Pro page showed Texas National Bank of Jacksonville's night deposit fee as
+$3.00; the source line is "Zipper Bags $3.00", a supply the bank sells. A read-only query at 23:45
+UTC found 262 of 339 live night deposit fees (189 institutions, 14 in Texas) are bag prices.
+**Cause:** Knox's rule files "deposit bags" and "zipper bags" under night deposit (on purpose, so
+the line is recognized), and no category guard covered night deposit, so Darwin and Hamilton let
+them through.
+**Fix:** the category guard (v5) now rejects bag and supply prices under night deposit, keeping lost
+or replaced keys, bag rentals and per-month charges. New rows stop at Darwin; live ones come down
+with /admin/atlas/details > Misfiled fees (dry run first).
+**Lesson:** a Knox pattern that recognizes a non-fee line needs a guard rule that rejects it.
 
 ## 2026-10-05: Shutdown months stored as 0 in economic series
 **What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
@@ -214,3 +319,42 @@ it was a repair result.
 run on code with no state-expert step.
 **Fix:** PR 84 (merged 18:02) counts only full passes that include a state-expert step.
 **Lesson:** a cadence change must say how it treats passes that ran before it.
+
+## 2026-10-06: Paid passes skipped after the tick got bigger
+**What happened:** from 22:26 UTC on Oct 5 to 00:22 UTC on Oct 6, 13 paid passes (discover-paid,
+read-paid, extract-paid) were recorded as skipped, and the Crew page showed "4 agent ticks were
+blocked in the last hour".
+**Cause:** PR 149 raised the tick to 10 runs x 10 steps. The budget check treated that as 100
+possible paid calls against the tick policy's cap of 30 and refused paid steps for the whole tick,
+and a refused paid step is skipped for good.
+**Fix:** PR for this finding: the check now gives paid steps to only as many runs as the cap covers
+(3 at 30 calls and 10 steps); the other runs do free steps and leave their paid step queued.
+**Lesson:** a change to tick size must be checked against the tick budget policy.
+
+## 2026-10-06: Preview builds logged false "missing_key" thesis failures
+**What happened:** the Crew page reported 3 of 5 `pro.thesis` steps failing with `missing_key`
+while production theses succeeded.
+**Cause (inferred from timing, not traced to a deployment):** preview deployments and builds use the
+production database but have no `ANTHROPIC_API_KEY`, and rendering the Hamilton page there logged a
+failed thesis to the shared run ledger.
+**Fix:** same PR: without a key outside production the thesis is not attempted or logged.
+Production still logs a missing key.
+**Lesson:** anything a preview writes to the shared ledger shows on the production Crew page.
+
+## 2026-10-06: Fee catalog chart counted rows and could not be traced
+**What happened:** James saw the NSF and overdraft charts run out to $60 and $65 with nothing
+there, and could not find who sat in the $50 to $55 bar. The page showed ten "recent changes",
+some repeated, and no way to list institutions by amount.
+**Cause:** the admin chart counted fee rows, not institutions, and drew a fixed 12 bars that could
+run past the highest value. The stat cards called the row count "Institutions". The change list
+held old-pipeline rows that compared one bank's tiers with each other. Of the 13 live overdraft and NSF rows at
+$45 or more, 9 were wrong: safe deposit box sizes, an international wire, a check printing line,
+a "$50 maximum per day" cap, a "$50 or less" threshold and a two-column misread (Hawaii Community FCU
+charges $25).
+**Fix:** same PR: the chart counts each institution once at its counted value, ends at the data,
+and each bar opens the Institutions tab filtered to its amounts. The table has an amount range,
+one-click common amounts, the fee's name and a link to the bank's schedule. The change list keeps
+one row per price move whose new price is still live. Category guard v7 rejects box sizes, wires,
+check printing, annual fees and thresholds under overdraft and NSF (12 live rows).
+**Still open:** a cap read instead of the per-item price (Bath State Bank) and two-column misreads
+need Knox fixes.

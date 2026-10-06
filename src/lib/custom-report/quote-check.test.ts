@@ -14,7 +14,7 @@ describe("describeQuoteCheck", () => {
   it("gives James the private link only when the report is buildable", () => {
     const line = describeQuoteCheck({ status: "ready", readiness, path: "/market-report/abc" }, "https://feeinsight.com/");
     expect(line).toBe(
-      "Report check: ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Private report link to send after they agree: https://feeinsight.com/market-report/abc",
+      "Report check: ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Private report link to send after they agree (works for 90 days): https://feeinsight.com/market-report/abc",
     );
   });
 

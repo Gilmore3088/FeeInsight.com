@@ -1,6 +1,6 @@
 import { findInstitutionIdByExactName, getCustomReportMarketData } from "@/lib/data-store/custom-report-market";
 import { analyzeMarket, type ReadinessResult } from "./analysis";
-import { createReportToken, reportPath } from "./link";
+import { LINK_LIFETIME_DAYS, createReportToken, reportPath } from "./link";
 
 /**
  * What James sees when an institution report is requested: whether we can build that
@@ -49,6 +49,8 @@ export function describeQuoteCheck(check: QuoteCheck, siteUrl: string): string {
   if (check.status === "thin") {
     return `Report check: not ready to quote (${counts}). ${r.reason ?? "Local data is too thin."}`.trim();
   }
-  const link = check.path ? ` Private report link to send after they agree: ${siteUrl.replace(/\/$/, "")}${check.path}` : "";
+  const link = check.path
+    ? ` Private report link to send after they agree (works for ${LINK_LIFETIME_DAYS} days): ${siteUrl.replace(/\/$/, "")}${check.path}`
+    : " No private link: CUSTOM_REPORT_LINK_SECRET is not set.";
   return `Report check: ready to quote (${counts}).${link}`;
 }

@@ -1,7 +1,7 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getFeeCategoryDetail } from "@/lib/data-store";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { getPublicCategorySummaries } from "@/lib/public-stats";
 import { getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, canExportData } from "@/lib/access";
@@ -98,7 +98,7 @@ async function handleGET(request: NextRequest) {
 
   // All categories summary; the free tier gets the spotlight categories only.
   const spotlight = new Set(getSpotlightCategories());
-  const summaries = (await getCachedFeeCategorySummaries()).filter(
+  const summaries = (await getPublicCategorySummaries()).filter(
     (s) => paid || spotlight.has(s.fee_category),
   );
 

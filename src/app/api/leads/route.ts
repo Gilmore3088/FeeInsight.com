@@ -91,10 +91,16 @@ async function handlePOST(request: NextRequest) {
     // with its own created_at and status, even from an email we already know. Folding it
     // into an older row hid it: the row kept its old date and company, so it never
     // showed up as a new request in /admin/leads.
-    const [existing] = await sql`SELECT id FROM leads WHERE lower(email) = lower(${email})`;
+    // A signup folds into the newest signup row for this email. Request rows are never
+    // touched by a signup: appending capture sources to them changed their history and
+    // could reopen an answered request.
+    const known = await sql<{ id: number; source: string | null }[]>`
+      SELECT id, source FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
+    const existing = isRequestLead(source) ? undefined : known.find((row) => !isRequestLead(row.source));
     let leadId: number | null = null;
 
-    if (existing && !isRequestLead(source)) {
+    if (existing) {
+      leadId = typeof existing.id === "number" ? existing.id : null;
       // Fill gaps only: never overwrite a qualified lead's name/company/role/use_case,
       // and never let the newsletter placeholder replace a real name. Sources accumulate
       // as a comma-separated list (exact-member match, so "report" is not hidden by
@@ -116,13 +122,13 @@ async function handlePOST(request: NextRequest) {
             ELSE source || ',' || ${source}
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
-        WHERE lower(email) = lower(${email})`;
+        WHERE id = ${existing.id}`;
       if ((placement || benchmarkScope) && useCase) {
         // Attribution accumulates too: a returning lead signing up from a new placement,
         // or asking for another free report, keeps its earlier use_case and gains this one.
         await sql`
           UPDATE leads SET use_case = use_case || '; ' || ${useCase}
-          WHERE lower(email) = lower(${email})
+          WHERE id = ${existing.id}
             AND use_case IS NOT NULL
             AND position(${useCase} in use_case) = 0`;
       }

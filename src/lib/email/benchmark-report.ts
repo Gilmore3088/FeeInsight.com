@@ -5,7 +5,7 @@
  */
 import { SITE_URL } from "@/lib/constants";
 import { benchmarkReportPath, benchmarkReportTitle, type BenchmarkScope } from "@/lib/benchmark-report";
-import { adminLeadsUrl, sendLeadNotificationPair, type LeadNotificationOutcome } from "./lead-notification";
+import { adminLeadsUrl, emailOptInLines, sendLeadNotificationPair, type LeadNotificationOutcome } from "./lead-notification";
 
 export interface BenchmarkReportEmailInput {
   email: string;
@@ -40,6 +40,7 @@ export async function sendBenchmarkReportNotifications(
         `Here is your ${title}: the median and typical range for the 15 headline fees, from each institution's own published fee schedule.`,
         "",
         "Want to see where your own institution stands against its competitors? That is the institution report, linked at the end of this one.",
+        ...emailOptInLines(input.email),
       ],
       cta: { label: "Open your report", href: url },
     },

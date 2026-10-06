@@ -4,7 +4,10 @@ Rosetta owns source text normalization.
 
 ## Authority
 
-- Rosetta reads `source_documents`.
+- Rosetta reads `source_documents`, and only each bank's current document: a newer download
+  replaces an older one, and a newer failed download replaces an older one we hold no vault
+  copy of. A document with no vault copy whose link already returned 404/410 is not
+  downloaded again; the first 404 sends the bank back to Magellan.
 - Rosetta writes normalized text artifacts to `agent_source_texts`.
 - Rosetta may classify unreadable, scanned, truncated, or unsupported source documents for manual/OCR follow-up.
 

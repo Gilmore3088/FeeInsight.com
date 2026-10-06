@@ -158,7 +158,7 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   const keywordMatches = FEE_CONTENT_KEYWORDS.filter((keyword) => body.includes(keyword)).length;
   // Fee words in a footer ("Fee Schedule | Truth in Savings") are not a fee page: the page
   // must actually list fees with amounts, or at least not clearly fail the fee-page check.
-  const page = scoreFeePage(htmlToScoringText(rawBody));
+  const page = scoreFeePage(htmlToScoringText(rawBody), candidate.url);
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody };
   }

@@ -32,6 +32,7 @@ import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scorebo
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
+import { tallyByInstitution, type Sample } from "./flow-model";
 import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
@@ -57,6 +58,14 @@ const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "repo
 const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
 type SqlTag = typeof sql;
+
+/**
+ * Every institution's totals for a fee step, so the live board's counts are the step's real
+ * numbers rather than whatever fell into the ten sample rows. Capped to keep events small.
+ */
+function institutionResults(stepKey: string, rows: Sample[]) {
+  return tallyByInstitution(stepKey, rows).slice(0, 50);
+}
 
 /** A completed run's summary is what its steps actually reported, never stock text. */
 export async function completedRunSummary(db: SqlTag, runId: number, completed: number, total: number): Promise<string> {
@@ -528,12 +537,13 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped).`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped).`,
         detail: {
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
+          inserted_free_fees: extraction.freeFees,
           skipped_fee_candidates: extraction.skippedFees,
           held_for_review: extraction.heldForReview,
           replaced_older_rows: extraction.retiredOlderRows,
@@ -542,6 +552,15 @@ async function executeAgenticStep(
           learning_log: extraction.learning,
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
+          institution_results: institutionResults(
+            "extract",
+            extraction.results.map((result) => ({
+              institution_id: result.institutionId,
+              inserted: result.inserted,
+              free_inserted: result.freeInserted,
+              held_inserted: result.heldInserted,
+            })),
+          ),
           sample_results: extraction.results.slice(0, 10).map((result) => ({
             document_text_id: result.documentTextId,
             source_document_id: result.sourceDocumentId,
@@ -549,6 +568,8 @@ async function executeAgenticStep(
             source_url: result.sourceUrl,
             extracted: result.extracted,
             inserted: result.inserted,
+            free_inserted: result.freeInserted,
+            held_inserted: result.heldInserted,
             skipped: result.skipped,
             sample_candidates: result.candidates.slice(0, 5).map((candidate) => ({
               fee_name: candidate.feeName,
@@ -586,6 +607,10 @@ async function executeAgenticStep(
           learning_log: verification.learning,
           verify_limit: verification.limit,
           dry_run: verification.dryRun,
+          institution_results: institutionResults(
+            "classify",
+            verification.results.map((result) => ({ institution_id: result.institutionId, status: result.status, reason: result.reason })),
+          ),
           sample_results: verification.results.slice(0, 10).map((result) => ({
             fee_raw_id: result.feeRawId,
             institution_id: result.institutionId,
@@ -837,6 +862,10 @@ async function executeAgenticStep(
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,
           index_categories: indexRefresh?.categories ?? 0,
+          institution_results: institutionResults(
+            "publish",
+            published.results.map((result) => ({ institution_id: result.institutionId, status: result.status, reason: result.reason })),
+          ),
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
             institution_id: result.institutionId,
@@ -1687,7 +1716,13 @@ async function providerStepGate(
 
 export async function executeAgentRun(
   runId: number,
-  options: { maxSteps?: number; allowProviderSteps?: boolean; deadlineAt?: number } = {},
+  options: {
+    maxSteps?: number;
+    allowProviderSteps?: boolean;
+    deadlineAt?: number;
+    /** Leave a paid step queued for a later tick instead of running or skipping it. */
+    deferProviderSteps?: boolean;
+  } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
     return {
@@ -1749,6 +1784,15 @@ export async function executeAgentRun(
     // stop to be clear and the caller to have provider budget for this tick.
     const nextStepKey = await peekNextQueuedStepKey(runId);
     if (nextStepKey && isProviderStep(nextStepKey)) {
+      if (options.deferProviderSteps) {
+        return {
+          runId,
+          status: lastResult?.status ?? existing.status,
+          terminal: false,
+          executedSteps,
+          message: "Paid step left queued for a later tick (this tick's paid-run cap is used).",
+        };
+      }
       const gate = await providerStepGate(options.allowProviderSteps ?? true);
       if (!gate.allowed) {
         // A paid pass is optional: when the budget or the stop blocks it, record it as
@@ -1832,6 +1876,7 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId = null,
   maxProviderCallsPerRun = null,
   maxEstimatedCostMicrousd = null,
+  providerRunLimit = null,
   deadlineAt,
 }: {
   runLimit?: number;
@@ -1840,6 +1885,11 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
+  /**
+   * Runs that may take paid steps this tick; later runs do only free steps and leave
+   * their next paid step queued. Null means every run may.
+   */
+  providerRunLimit?: number | null;
   /** Epoch ms after which no new step or run starts (the first run still gets its first step). */
   deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
@@ -1875,6 +1925,7 @@ export async function executeQueuedAgentRuns({
   // holding theirs), which starved the shared database and slowed the public site and
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
+  let providerRuns = 0;
   for (const row of rows) {
     // The first run always gets a step; later runs start only before the deadline, so
     // a larger run limit fills the tick's time budget without running past it.
@@ -1890,7 +1941,16 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt }));
+    const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
+    if (providerSlot) providerRuns += 1;
+    results.push(
+      await executeAgentRun(runId, {
+        maxSteps: maxStepsPerRun,
+        allowProviderSteps,
+        deadlineAt,
+        deferProviderSteps: allowProviderSteps && !providerSlot,
+      }),
+    );
   }
   return { selected: rows.length, results };
 }

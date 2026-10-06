@@ -1,5 +1,5 @@
 import { CheckCircle2 } from "lucide-react";
-import { CONTACT_EMAIL } from "@/lib/constants";
+import { CONTACT_EMAIL, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 import { RequestReportForm } from "./request-report-form";
 
 
@@ -41,7 +41,8 @@ export function ReportOfferSection() {
                 </li>
               ))}
             </ul>
-            <ProofExcerpt />
+            {/* Rows copied from the sample, which is offline until re-rendered from source-checked data. */}
+            {SAMPLE_REPORT_LIVE && <ProofExcerpt />}
           </div>
           <RequestReportForm contactEmail={CONTACT_EMAIL} />
         </div>
