@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { recordFeedback, feedbackSchemaReady, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 import { buildFactBundle, allowedNumbers, pickSpotlightState, readNational, readSpotlightStates, unbackedNumbers, type FeeStat } from "./facts";
-import { copyProblems, copyText, renderEmail, writerPrompt, type EmailCopy } from "./email";
+import { copyProblems, copyText, renderEmail, withMailingAddress, writerPrompt, type EmailCopy } from "./email";
 import {
   CAMPAIGN_NAME_PREFIX,
   campaignName,
@@ -17,10 +17,12 @@ import {
 import {
   activeSubscriberCount,
   createAbDraft,
+  getDraftContent,
   listCampaigns,
   mailerLiteConfigured,
   marketingGroupId,
   sendCampaignNow,
+  updateAbDraftHtml,
   type AgentCampaign,
   type FetchLike,
 } from "./mailerlite-campaigns";
@@ -36,7 +38,6 @@ type SqlTag = typeof sql;
  * "publish", about_strategy "marketing.<format>". Nothing is ever sent without approval.
  */
 
-export const MAILING_ADDRESS_PLACEHOLDER = "[Fee Insight mailing address]";
 export const writerModel = () => process.env.MARKETING_WRITER_MODEL?.trim() || "claude-sonnet-5-5";
 
 export function mailingAddress(): string | null {
@@ -323,7 +324,7 @@ export async function runMarketingWrite({
         result.failures.push({ format, reason: `rejected twice: ${written.problems.join("; ")}` });
         continue;
       }
-      const html = renderEmail(written.copy, bundle, format, mailingAddress() ?? MAILING_ADDRESS_PLACEHOLDER);
+      const html = renderEmail(written.copy, bundle, format, mailingAddress());
       const draft: AgentCampaign = await createAbDraft(
         {
           name: campaignName(month, format, written.copy.headline.slice(0, 60)),
@@ -372,7 +373,8 @@ export interface SendResult {
 /** Sends the month's drafts. Called only from the run James starts by approving the month. */
 export async function runMarketingSend({ month, fetcher }: { month: string; fetcher?: FetchLike }): Promise<SendResult> {
   const result: SendResult = { month, sent: [], failures: [], refused: null };
-  if (!mailingAddress()) {
+  const address = mailingAddress();
+  if (!address) {
     return { ...result, refused: "MARKETING_MAILING_ADDRESS is not set; marketing email needs a postal address in the footer." };
   }
   if (!mailerLiteConfigured()) return { ...result, refused: "MAILERLITE_API_KEY is not set." };
@@ -380,6 +382,14 @@ export async function runMarketingSend({ month, fetcher }: { month: string; fetc
   if (!drafts.length) return { ...result, refused: `No ${month} drafts to send.` };
   for (const draft of drafts) {
     try {
+      // Drafts written before the address was set leave that footer line out; add it before sending.
+      const content = await getDraftContent(draft.id, fetcher);
+      const html = withMailingAddress(content.html, address);
+      if (!html) {
+        result.failures.push({ campaignId: draft.id, reason: "no unsubscribe link to put the mailing address beside; not sent" });
+        continue;
+      }
+      if (html !== content.html) await updateAbDraftHtml(draft.id, content, html, fetcher);
       await sendCampaignNow(draft.id, fetcher);
       result.sent.push({ campaignId: draft.id, name: draft.name });
     } catch (error) {

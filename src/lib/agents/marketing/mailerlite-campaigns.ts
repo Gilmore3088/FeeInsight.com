@@ -160,6 +160,67 @@ export async function getCampaign(id: string, fetcher?: FetchLike): Promise<Agen
   return toAgentCampaign(body.data);
 }
 
+export interface DraftContent {
+  name: string;
+  subjects: string[];
+  html: string;
+  groupIds: string[];
+  settings: Record<string, unknown>;
+}
+
+/** A draft's html, subjects and audience, so the send step can finish its footer. */
+export async function getDraftContent(id: string, fetcher?: FetchLike): Promise<DraftContent> {
+  const body = await call<{
+    data: RawCampaign & {
+      emails?: Array<RawEmail & { content?: string }>;
+      filter?: Array<Array<{ args?: unknown[] }>>;
+      settings?: Record<string, unknown>;
+    };
+  }>(`campaigns/${encodeURIComponent(id)}`, {}, fetcher);
+  const raw = body.data;
+  const groupArg = raw.filter?.[0]?.[0]?.args?.[1];
+  return {
+    name: raw.name,
+    subjects: (raw.emails ?? []).map((email) => email.subject ?? "").filter(Boolean),
+    html: raw.emails?.[0]?.content ?? "",
+    groupIds: Array.isArray(groupArg) ? groupArg.map(String) : [],
+    settings: raw.settings ?? {},
+  };
+}
+
+/** Replaces an A/B draft's html (both variants share it), keeping its subjects, audience and test settings. */
+export async function updateAbDraftHtml(id: string, draft: DraftContent, html: string, fetcher?: FetchLike): Promise<void> {
+  const [subjectA, subjectB] = draft.subjects;
+  const s = draft.settings;
+  await call(
+    `campaigns/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name: draft.name,
+        type: "ab",
+        groups: draft.groupIds,
+        emails: [{
+          subject: subjectA,
+          from_name: MARKETING_SENDER.fromName,
+          from: MARKETING_SENDER.from,
+          reply_to: MARKETING_SENDER.replyTo,
+          content: html,
+        }],
+        ab_settings: {
+          test_type: s.test_type ?? "subject",
+          select_winner_by: s.select_winner_by ?? "c",
+          after_time_amount: s.after_time_amount ?? 4,
+          after_time_unit: s.after_time_unit ?? "h",
+          test_split: s.test_split ?? 20,
+          b_value: { subject: subjectB },
+        },
+      }),
+    },
+    fetcher,
+  );
+}
+
 /** Sends a draft now. Only the approval run calls this. */
 export async function sendCampaignNow(id: string, fetcher?: FetchLike): Promise<void> {
   await call(`campaigns/${encodeURIComponent(id)}/schedule`, { method: "POST", body: JSON.stringify({ delivery: "instant" }) }, fetcher);

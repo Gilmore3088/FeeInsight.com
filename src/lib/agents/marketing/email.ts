@@ -90,8 +90,12 @@ function link(path: string, month: string, format: string, text: string): string
 const paragraphs = (text: string) =>
   text.split(/\n{2,}/).map((p) => `<p style="font-size:16px;line-height:1.55;margin:0 0 14px 0;">${esc(p.trim())}</p>`).join("");
 
-/** The full email in the Fee Insight layout: Fee Insight alone in the header, the product named once in the footer. */
-export function renderEmail(copy: EmailCopy, bundle: FactBundle, format: MarketingFormatKey, mailingAddress: string): string {
+/**
+ * The full email in the Fee Insight layout: Fee Insight alone in the header, the product named once in the footer.
+ * Without a mailing address the footer simply leaves that line out, so drafts can be reviewed and shown;
+ * the send step adds the address (`withMailingAddress`) before anything goes out.
+ */
+export function renderEmail(copy: EmailCopy, bundle: FactBundle, format: MarketingFormatKey, mailingAddress: string | null): string {
   const table = renderTable(copy.table, bundle);
   const sources = `National figures as of ${esc(bundle.asOf)}, from ${bundle.liveFees.toLocaleString("en-US")} live fees across ${bundle.liveInstitutions.toLocaleString("en-US")} institutions. The middle half is the 25th to 75th percentile.`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(copy.headline)}</title></head>
@@ -118,12 +122,24 @@ ${copy.sections.map((s) => `<h2 style="font-family:Georgia,'Times New Roman',ser
 <tr><td style="background:#f6f3ec;padding:20px 32px;font-size:12px;line-height:1.6;color:#5a5a5a;border-top:1px solid #e6e0d4;">
 ${esc(SITE_NAME)} · <a href="https://feeinsight.com" style="color:#5a5a5a;">feeinsight.com</a> · hello@bankfeeindex.com<br>
 Data from the ${esc(PRODUCT_NAME)}, read from each institution's own published fee schedule.<br>
-${esc(mailingAddress)}<br>
-<a href="{$unsubscribe}" style="color:#5a5a5a;">Unsubscribe</a>
+${mailingAddress ? `${esc(mailingAddress)}<br>\n` : ""}<a href="{$unsubscribe}" style="color:#5a5a5a;">Unsubscribe</a>
 </td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
+}
+
+/**
+ * The email with the postal address in its footer, just before the unsubscribe link.
+ * Returns the html unchanged when the address is already there, and null when there is
+ * no unsubscribe link to anchor it to (the send step then refuses that email).
+ */
+export function withMailingAddress(html: string, mailingAddress: string): string | null {
+  const line = esc(mailingAddress);
+  if (html.includes(line)) return html;
+  const unsubscribe = html.match(/<a\b[^>]*\{\$unsubscribe\}/);
+  if (!unsubscribe || unsubscribe.index === undefined) return null;
+  return `${html.slice(0, unsubscribe.index)}${line}<br>\n${html.slice(unsubscribe.index)}`;
 }
 
 /** The writer's instructions. Numbers may only come from the bundle; the step checks that. */

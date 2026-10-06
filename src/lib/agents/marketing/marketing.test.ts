@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { allowedNumbers, pickSpotlightState, unbackedNumbers, type FactBundle } from "./facts";
-import { copyProblems, renderEmail, type EmailCopy } from "./email";
+import { copyProblems, renderEmail, withMailingAddress, type EmailCopy } from "./email";
 import { campaignName, parseCampaignName, planMonth, scoreCampaign, type CampaignResult, FORMAT_COOLDOWN_MONTHS } from "./formats";
 import { createAbDraft, toAgentCampaign } from "./mailerlite-campaigns";
 import { lessonsFrom, runMarketingSend, summarizeWrite } from "./monthly";
@@ -100,6 +100,15 @@ describe("copy checks", () => {
     expect(html).toContain("PO Box 1, Town, ST 00000");
     expect(html).toContain("{$unsubscribe}");
   });
+
+  it("drafts cleanly without an address, and the send step can add it later", () => {
+    const html = renderEmail(copy, bundle, "market_move", null);
+    expect(html).not.toMatch(/mailing address/i);
+    const withAddress = withMailingAddress(html, "PO Box 1, Town, ST 00000");
+    expect(withAddress).toMatch(/PO Box 1, Town, ST 00000<br>\n<a href="\{\$unsubscribe\}"/);
+    expect(withMailingAddress(withAddress!, "PO Box 1, Town, ST 00000")).toBe(withAddress);
+    expect(withMailingAddress("<p>no link</p>", "PO Box 1")).toBeNull();
+  });
 });
 
 describe("MailerLite", () => {
@@ -124,6 +133,37 @@ describe("MailerLite", () => {
     const result = await runMarketingSend({ month: "2026-11", fetcher });
     expect(result.refused).toMatch(/MARKETING_MAILING_ADDRESS/);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("adds the address to a draft's footer before sending it", async () => {
+    process.env.MAILERLITE_API_KEY = "test-key";
+    process.env.MARKETING_MAILING_ADDRESS = "PO Box 1, Town, ST 00000";
+    const draftHtml = renderEmail(copy, bundle, "market_move", null);
+    const raw = {
+      id: "7",
+      name: "FI Agent 2026-11 · market_move · x",
+      status: "draft",
+      type: "ab",
+      emails: [{ subject: "A", content: draftHtml }, { subject: "B", content: draftHtml }],
+      filter: [[{ operator: "in_any", args: ["groups", ["42"]] }]],
+      settings: { test_split: 20 },
+    };
+    const calls: Array<{ url: string; method: string; body: string }> = [];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: String(init?.body ?? "") });
+      if (url.includes("filter[status]=draft")) return new Response(JSON.stringify({ data: [raw], meta: { last_page: 1 } }));
+      if (url.endsWith("/schedule")) return new Response(JSON.stringify({ data: {} }));
+      return new Response(JSON.stringify({ data: raw }));
+    });
+    const result = await runMarketingSend({ month: "2026-11", fetcher });
+    delete process.env.MARKETING_MAILING_ADDRESS;
+    expect(result.sent).toHaveLength(1);
+    const put = calls.find((c) => c.method === "PUT");
+    const body = JSON.parse(put!.body);
+    expect(body.emails[0].content).toContain("PO Box 1, Town, ST 00000");
+    expect(body.groups).toEqual(["42"]);
+    expect(body.ab_settings.b_value.subject).toBe("B");
+    expect(calls.findIndex((c) => c.method === "PUT")).toBeLessThan(calls.findIndex((c) => c.url.endsWith("/schedule")));
   });
 
   it("reads sent stats from a campaign", () => {

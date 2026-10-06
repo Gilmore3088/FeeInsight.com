@@ -21,6 +21,8 @@ MailerLite: planning, writing, A/B testing, scoring and learning. It never sends
    email becomes an A/B subject-test draft in MailerLite. A month already drafted is skipped.
 3. `marketing-send` (free): only from `/api/admin/marketing/approve`, when James approves the
    month at `/admin/customers/marketing`. Refused while `MARKETING_MAILING_ADDRESS` is unset.
+   Drafts are written whether or not the address is set (the footer leaves that line out, so
+   James can review and show them); before each send the step puts the address in the footer.
 
 ## Rules
 
