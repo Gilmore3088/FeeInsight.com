@@ -7,9 +7,11 @@
  * Decision support only: nothing here says to raise, lower or drop a fee.
  */
 
-import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+
+export { proseFeeName };
 import type {
   ClarifyingQuestion,
   EconomicBackdrop,
@@ -34,15 +36,6 @@ const MAX_COMPETITORS = 12;
 
 const FEE_SOURCE_LABEL = "Bank Fee Index, published fee schedules";
 
-/** "Overdraft (OD)" -> "overdraft"; "NSF / Returned Item" -> "NSF / returned item". */
-export function proseFeeName(feeCategory: string): string {
-  return getDisplayName(feeCategory)
-    .replace(/\s*\([^)]*\)\s*/g, " ")
-    .trim()
-    .split(/\s+/)
-    .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()))
-    .join(" ");
-}
 
 function money(n: number): string {
   return formatFeeAmount(n) ?? `$${n}`;
