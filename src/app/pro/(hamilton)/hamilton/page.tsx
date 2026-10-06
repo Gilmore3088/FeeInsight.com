@@ -2,77 +2,20 @@ import { Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import type { Metadata } from "next";
-import {
-  fetchCacheableHomeBriefing,
-  fetchHomeBriefingData,
-  fetchHomeBriefingSignals,
-  HomeBriefingUnavailableError,
-  type HomeBriefingData,
-  type HomeBriefingSignals,
-} from "@/lib/hamilton/home-data";
+import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilton/home-data";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import {
-  fetchInstitutionPositioning,
-  type InstitutionPositioning,
-} from "@/lib/hamilton/institution-position";
+import { fetchInstitutionPositioning, type InstitutionPositioning } from "@/lib/hamilton/institution-position";
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
-import { getHamiltonWritingStatus, type HamiltonWritingStatus } from "@/lib/hamilton/writing-status";
-import { PositionOverview } from "@/components/hamilton/benchmark/PositionOverview";
-import { NationalSnapshot } from "@/components/hamilton/benchmark/NationalSnapshot";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
-import { HamiltonBriefing } from "@/components/hamilton/benchmark/HamiltonBriefing";
-import { fetchStateContext } from "@/lib/hamilton/expert-context";
-import { getStateEconomicContextCached } from "@/lib/data-store/public-cached-reads";
-import { DISTRICT_NAMES } from "@/lib/fed-districts";
-import { briefingAuditTrail, buildBriefingObservations } from "@/lib/hamilton/briefing-observations";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
+import { briefingAuditTrail, buildBriefingObservations } from "@/lib/hamilton/briefing-observations";
+import { Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
 export const dynamic = "force-dynamic";
 
-const EMPTY_BRIEFING: HomeBriefingData = {
-  thesis: null,
-  confidence: "low",
-  positioning: [],
-  spotlightCount: 0,
-  totalInstitutions: 0,
-};
-
-const getCachedHomeBriefing = unstable_cache(
-  fetchCacheableHomeBriefing,
-  ["hamilton-home-briefing"],
-  { revalidate: 86400 },
-);
-
-/** The fee data without the AI thesis; throws on an empty index so an outage is never cached. */
-const getCachedNationalBriefing = unstable_cache(
-  async () => {
-    const data = await fetchHomeBriefingData({ includeThesis: false });
-    if (data.positioning.length === 0) throw new HomeBriefingUnavailableError("fee index unavailable");
-    return data;
-  },
-  ["hamilton-home-national"],
-  { revalidate: 3600 },
-);
-
-/** A cheap policy read, so a switched-off Hamilton isn't re-attempted (and logged) on every view. */
-const getCachedWritingStatus = unstable_cache(
-  getHamiltonWritingStatus,
-  ["hamilton-writing-status"],
-  { revalidate: 300 },
-);
-
-async function loadBriefing(writing: HamiltonWritingStatus): Promise<HomeBriefingData> {
-  if (writing.available) {
-    try {
-      return await getCachedHomeBriefing();
-    } catch {
-      // Thesis or index failed; fall through to the fee data alone.
-    }
-  }
-  return getCachedNationalBriefing().catch(() => EMPTY_BRIEFING);
-}
+export const metadata: Metadata = { title: "Briefing" };
 
 /** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
 const getCachedInstitutionPositioning = unstable_cache(
@@ -91,18 +34,6 @@ async function loadInstitutionPositioning(
   } catch {
     return { positioning: null, unavailable: true };
   }
-}
-
-/** State medians, regulator and expert: slow-moving, so cached for hours. */
-const getCachedStateContext = unstable_cache(fetchStateContext, ["hamilton-expert-state"], { revalidate: 21600 });
-
-export const metadata: Metadata = { title: "Briefing" };
-
-interface HamiltonHomePageProps {
-  searchParams: Promise<{
-    instId?: string;
-    intent?: string;
-  }>;
 }
 
 function ChangesSkeleton() {
@@ -155,96 +86,33 @@ async function resolveSelectedInstitutionId(
   }
 }
 
-export default async function HamiltonHomePage({ searchParams }: HamiltonHomePageProps) {
+/**
+ * Briefing: one memo. The fees worth a look this month (overdraft first), what changed, and how
+ * it was built. Deterministic: no model call on this page.
+ */
+export default async function HamiltonHomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ instId?: string; intent?: string }>;
+}) {
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
-  const isAdmin = user?.role === "admin" || user?.role === "analyst";
-  const writing = await getCachedWritingStatus().catch(
-    (): HamiltonWritingStatus => ({ available: true, blockingPolicies: [] }),
-  );
-  const [data, selectedInstitutionId] = await Promise.all([
-    loadBriefing(writing),
-    resolveSelectedInstitutionId(user, params),
-  ]);
-  const { positioning, unavailable: positioningUnavailable } =
-    await loadInstitutionPositioning(selectedInstitutionId);
-
-  // Economy, Beige Book and regulator news come from the same reader as the public state reports.
-  const [state, economy] = await Promise.all([
-    positioning?.stateCode ? getCachedStateContext(positioning.stateCode).catch(() => null) : null,
-    positioning?.stateCode
-      ? getStateEconomicContextCached(positioning.stateCode, positioning.fedDistrict ?? null).catch(() => null)
-      : null,
-  ]);
-  const districtName = positioning?.fedDistrict ? DISTRICT_NAMES[positioning.fedDistrict] ?? null : null;
-
-  const topCategory = positioning?.topGap?.feeCategory ?? null;
-  const researchHref = hrefWithInstitutionContext(
-    topCategory ? `/pro/research?fee=${encodeURIComponent(topCategory)}` : "/pro/research",
-    selectedInstitutionId,
-  );
+  const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
+  const { positioning, unavailable } = await loadInstitutionPositioning(selectedInstitutionId);
   const observations = buildBriefingObservations(positioning);
-  const reportsHref = hrefWithInstitutionContext("/pro/reports?intent=executive-briefing", selectedInstitutionId);
-  const analyzeHref = hrefWithInstitutionContext("/pro/analyze", selectedInstitutionId);
-  const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
+  const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--hamilton-on-surface)" }}>
-            Briefing
-          </h1>
-          <p className="mt-0.5 text-balance text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-            {positioning
-              ? `${positioning.institutionName} compared with ${positioning.benchmarkLabel}`
-              : "How fees compare with peers and the nation"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={reportsHref}
-            className="rounded-lg border px-3.5 py-2 text-sm font-medium no-underline"
-            style={{
-              borderColor: "var(--hamilton-outline-variant)",
-              backgroundColor: "var(--hamilton-surface-container-lowest)",
-              color: "var(--hamilton-on-surface)",
-            }}
-          >
-            Build a report
-          </Link>
-          <Link
-            href={researchHref}
-            className="rounded-lg px-3.5 py-2 text-sm font-medium text-white no-underline"
-            style={{ background: "var(--hamilton-gradient-cta)" }}
-          >
-            Open research
-          </Link>
-        </div>
-      </header>
-
-      {!positioning && !positioningUnavailable && (
-        <section
-          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border p-5"
-          style={{ borderColor: "var(--hamilton-outline-variant)", backgroundColor: "var(--hamilton-surface-container-lowest)" }}
-        >
-          <div>
-            <h2 className="text-balance text-base font-semibold" style={{ color: "var(--hamilton-on-surface)" }}>
-              See where your fees sit against your peers
-            </h2>
-            <p className="mt-0.5 text-pretty text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-              Choose your institution and every published fee is drawn against its peer group.
-            </p>
-          </div>
-          <Link
-            href={settingsHref}
-            className="rounded-lg px-3.5 py-2 text-sm font-medium text-white no-underline"
-            style={{ background: "var(--hamilton-gradient-cta)" }}
-          >
-            Choose institution
-          </Link>
-        </section>
-      )}
+    <MemoPage>
+      <MemoHeader
+        kicker={`Briefing · ${month}`}
+        title={positioning ? positioning.institutionName : "Your briefing"}
+        dek={
+          positioning
+            ? `Your published fees against ${positioning.benchmarkLabel}. Observations, not instructions: open any one to research it or model a price.`
+            : "Choose your bank and Hamilton reads its published fees against its market every month."
+        }
+      />
 
       {positioning && observations.length > 0 ? (
         <WorthYourAttention
@@ -252,37 +120,26 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
           institutionId={selectedInstitutionId}
           trail={briefingAuditTrail(positioning)}
         />
-      ) : null}
-
-      <HamiltonBriefing
-        thesis={data.thesis}
-        blockingPolicies={writing.blockingPolicies}
-        isAdmin={isAdmin}
-        analyzeHref={analyzeHref}
-        positioning={positioning}
-        state={state}
-        economy={economy}
-        districtName={districtName}
-      />
+      ) : unavailable ? (
+        <p role="status" className="text-sm text-terra-text">
+          Your briefing couldn&apos;t load just now. <Link href="/pro/hamilton" className="underline">Try again</Link>
+        </p>
+      ) : positioning ? (
+        <Callout>
+          We don&apos;t have enough of {positioning.institutionName}&apos;s published fees to compare yet. Research still shows
+          the market for any fee.
+        </Callout>
+      ) : (
+        <div>
+          <LinkButton href={hrefWithInstitutionContext("/pro/settings", selectedInstitutionId)} primary>
+            Choose your bank
+          </LinkButton>
+        </div>
+      )}
 
       <Suspense fallback={<ChangesSkeleton />}>
         <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
       </Suspense>
-
-      {positioning ? (
-        <PositionOverview positioning={positioning} state={state} showHeadline={false} />
-      ) : positioningUnavailable ? (
-        <p role="status" className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-          Your institution&apos;s position couldn&apos;t load just now.{" "}
-          <Link href="/pro/hamilton" className="underline">Try again</Link>
-        </p>
-      ) : null}
-
-      <NationalSnapshot
-        entries={data.positioning}
-        totalInstitutions={data.totalInstitutions}
-        selectedInstitutionId={selectedInstitutionId}
-      />
-    </div>
+    </MemoPage>
   );
 }

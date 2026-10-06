@@ -23,8 +23,7 @@ export function WorthYourAttention({
   const count = COUNT_WORDS[observations.length] ?? `${observations.length} things`;
   return (
     <section className="rounded-lg border border-warm-300 bg-warm-50 p-6 text-warm-800">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">This month</p>
-      <h2 className="mt-1 text-2xl text-warm-900 sm:text-3xl" style={SERIF}>
+      <h2 className="text-2xl text-warm-900 sm:text-3xl" style={SERIF}>
         I found {count} worth your attention
       </h2>
       <p className="mt-1 text-sm text-warm-600">

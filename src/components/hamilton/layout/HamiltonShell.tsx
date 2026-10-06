@@ -4,25 +4,8 @@ import Link from "next/link";
 import type { User } from "@/lib/auth";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import { HamiltonTopNav } from "./HamiltonTopNav";
-import { HamiltonContextBar } from "./HamiltonContextBar";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
-import { HamiltonLeftRail } from "./HamiltonLeftRail";
 import { HamiltonAskDock } from "./HamiltonAskDock";
-
-interface SavedAnalysis {
-  id: string;
-  title: string;
-  analysis_focus: string;
-  institution_id: string | null;
-  updated_at: string;
-}
-
-interface RecentScenario {
-  id: string;
-  fee_category: string;
-  institution_id: string | null;
-  updated_at: string;
-}
 
 interface HamiltonShellProps {
   user: User;
@@ -46,17 +29,14 @@ interface HamiltonShellProps {
   };
   selectedInstitutionId?: string | null;
   activeHref: string;
-  savedAnalyses?: SavedAnalysis[];
-  recentScenarios?: RecentScenario[];
-  pinnedInstitutions?: Array<{ id: string; name: string }>;
-  peerSets?: Array<{ id: number; name: string }>;
   children: React.ReactNode;
 }
 
 /**
- * HamiltonShell - Client component (owns left rail collapse state).
+ * HamiltonShell - Client component.
  * Outer shell wrapper applying .hamilton-shell CSS isolation boundary.
- * Composes: admin bar, HamiltonTopNav, HamiltonContextBar, HamiltonLeftRail, main content and the Ask dock.
+ * Composes: admin bar (admins only), the one header, the page, and the docked Ask bar.
+ * No sidebar and no second bar: James wants the simplicity of the living-memo samples.
  * Per D-13, ARCH-01: .hamilton-shell class scopes all editorial design tokens.
  * Per D-10: admin mode bar shown only to admin/analyst users.
  */
@@ -67,16 +47,11 @@ export function HamiltonShell({
   institutionContext,
   selectedInstitutionId,
   activeHref,
-  savedAnalyses,
-  recentScenarios,
-  pinnedInstitutions,
-  peerSets,
   children,
 }: HamiltonShellProps) {
   return (
     <div
-      className="hamilton-shell min-h-screen"
-      style={{ backgroundColor: "var(--hamilton-surface)" }}
+      className="hamilton-shell min-h-screen bg-warm-100"
     >
       {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
       {isAdmin && (
@@ -103,31 +78,17 @@ export function HamiltonShell({
         </div>
       )}
 
-      {/* Top navigation */}
+      {/* The one header: wordmark, six screens, the bank, an account menu */}
       <HamiltonTopNav
         isAdmin={isAdmin && !viewAsCustomer}
         activeHref={activeHref}
         user={user}
         selectedInstitutionId={selectedInstitutionId}
+        institutionName={institutionContext.name}
+        makeDefaultHref={institutionContext.makeDefaultHref ?? null}
       />
 
-      {/* Institution context bar */}
-      <HamiltonContextBar
-        institutionContext={institutionContext}
-        selectedInstitutionId={selectedInstitutionId}
-      />
-
-      {/* Two-column layout: left rail + main content */}
-      <div className="relative flex" style={{ minHeight: "calc(100vh - 120px)" }}>
-        <HamiltonLeftRail
-          savedAnalyses={savedAnalyses}
-          recentScenarios={recentScenarios}
-          pinnedInstitutions={pinnedInstitutions}
-          peerSets={peerSets}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-        <main className="min-w-0 flex-1 px-4 pb-28 pt-14 sm:px-6 lg:px-10 lg:pb-28 lg:pt-8">{children}</main>
-      </div>
+      <main className="mx-auto min-w-0 max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:pt-10">{children}</main>
 
       {/* Ask Hamilton, docked on every screen */}
       <HamiltonAskDock selectedInstitutionId={selectedInstitutionId} />

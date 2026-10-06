@@ -5,11 +5,16 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { HAMILTON_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { SITE_NAME } from "@/lib/constants";
 
 interface HamiltonTopNavProps {
   isAdmin: boolean;
   activeHref: string;
   selectedInstitutionId?: string | null;
+  /** The bank every screen is working on; null until one is chosen. */
+  institutionName?: string | null;
+  /** Set when a bank is only being browsed: the link that makes it the user's bank. */
+  makeDefaultHref?: string | null;
   user: {
     display_name: string;
     email: string | null;
@@ -18,204 +23,137 @@ interface HamiltonTopNavProps {
 }
 
 /**
- * HamiltonTopNav — Client component.
- * Renders the horizontal nav bar with Hamilton wordmark, 6 nav items, and avatar dropdown.
- * Uses usePathname() for live client-side active state; activeHref provides
- * the server-rendered initial active state so the correct item is highlighted
- * in the initial HTML without waiting for client JS (satisfies SC-2).
- * Nav items sourced from HAMILTON_NAV single source of truth (D-16, superseded
- * 2026-04-17 by UX audit H-4 — labels updated, lookups via that constant).
- * Per D-02: Settings link only in avatar dropdown, not in main nav.
+ * The one header Hamilton has (James, 2026-10-06: one nav, nothing else around the page).
+ * Wordmark, the six workspace screens, the bank being worked on, and an account menu that holds
+ * everything else: reference pages, Admin for admins, and sign out.
  */
-export function HamiltonTopNav({ isAdmin, activeHref, selectedInstitutionId, user }: HamiltonTopNavProps) {
+export function HamiltonTopNav({
+  isAdmin,
+  activeHref,
+  selectedInstitutionId,
+  institutionName = null,
+  makeDefaultHref = null,
+  user,
+}: HamiltonTopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentPath = pathname || activeHref;
   const activeInstitutionId = searchParams.get("instId") ?? selectedInstitutionId;
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  function isActive(href: string): boolean {
-    return currentPath === href || currentPath.startsWith(href + "/");
-  }
-
-  function getInitials(name: string): string {
-    return name
-      .split(" ")
-      .map((part) => part[0] ?? "")
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  }
+  const isActive = (href: string) => currentPath === href || currentPath.startsWith(href + "/");
+  const initials = user.display_name
+    .split(" ")
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     }
-    if (dropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [dropdownOpen]);
+    if (menuOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  const withBank = (href: string) => hrefWithInstitutionContext(href, activeInstitutionId);
 
   return (
-    <header
-      className="sticky top-0 z-40 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2 sm:px-6"
-      style={{
-        backgroundColor: "var(--hamilton-surface)",
-        borderBottom: "1px solid var(--hamilton-border)",
-        minHeight: "56px",
-      }}
-    >
-      {/* Hamilton wordmark */}
-      <span
-        className="min-w-0 shrink-0 text-xl font-bold tracking-tight select-none"
-        style={{
-          fontFamily: "var(--hamilton-font-serif)",
-          color: "var(--hamilton-text-primary)",
-        }}
-      >
-        Hamil<span style={{ color: "var(--hamilton-accent)" }}>ton</span>
-      </span>
+    <header className="sticky top-0 z-40 border-b border-warm-300 bg-warm-100/95 backdrop-blur print:hidden">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+        <Link href={withBank("/pro/hamilton")} className="flex items-baseline gap-2 no-underline">
+          <span className="text-2xl text-warm-900" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+            Hamilton
+          </span>
+          <span className="hidden text-[11px] uppercase tracking-[0.14em] text-warm-600 sm:inline">{SITE_NAME}</span>
+        </Link>
 
-      {/* Nav items */}
-      <nav
-        className="order-3 flex w-full min-w-0 flex-wrap items-center gap-1 pb-0.5 md:order-none md:w-auto md:flex-nowrap md:pb-0"
-        aria-label="Hamilton workspace"
-      >
-        {HAMILTON_NAV.map((item) => {
-          if (item.label === "Admin" && !isAdmin) return null;
-
-          const active = isActive(item.href);
-
-          return (
-            <Link
-              key={item.href}
-              href={hrefWithInstitutionContext(item.href, activeInstitutionId)}
-              className="shrink-0 rounded px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wide no-underline transition-colors sm:px-3 sm:text-xs"
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                color: active
-                  ? "var(--hamilton-text-primary)"
-                  : "var(--hamilton-text-secondary)",
-                borderBottom: active
-                  ? "2px solid var(--hamilton-accent)"
-                  : "2px solid transparent",
-              }}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-        <details className="group relative shrink-0">
-          <summary
-            className="cursor-pointer list-none rounded px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wide sm:px-3 sm:text-xs"
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              color: HAMILTON_REFERENCE_NAV.some((item) => isActive(item.href))
-                ? "var(--hamilton-text-primary)"
-                : "var(--hamilton-text-secondary)",
-            }}
-          >
-            Reference <span aria-hidden="true">▾</span>
-          </summary>
-          <div
-            className="absolute left-0 z-50 mt-1 w-64 rounded-lg py-1 shadow-lg"
-            style={{ backgroundColor: "var(--hamilton-surface)", border: "1px solid var(--hamilton-border)" }}
-          >
-            {HAMILTON_REFERENCE_NAV.map((item) => (
+        <nav aria-label="Hamilton" className="order-3 flex w-full gap-1 overflow-x-auto md:order-none md:w-auto">
+          {HAMILTON_NAV.filter((item) => item.label !== "Admin").map((item) => {
+            const active = isActive(item.href);
+            return (
               <Link
                 key={item.href}
-                href={hrefWithInstitutionContext(item.href, activeInstitutionId)}
-                className="block px-4 py-2 no-underline hover:opacity-80"
-                aria-current={isActive(item.href) ? "page" : undefined}
+                href={withBank(item.href)}
+                aria-current={active ? "page" : undefined}
+                className={
+                  "shrink-0 border-b-2 px-2.5 py-1.5 text-sm no-underline transition-colors " +
+                  (active ? "border-terra font-medium text-warm-900" : "border-transparent text-warm-700 hover:text-warm-900")
+                }
               >
-                <span className="block text-sm font-medium" style={{ color: "var(--hamilton-text-primary)" }}>
-                  {item.label}
-                </span>
-                <span className="block text-xs" style={{ color: "var(--hamilton-text-secondary)" }}>
-                  {item.description}
-                </span>
+                {item.label}
               </Link>
-            ))}
-          </div>
-        </details>
-      </nav>
+            );
+          })}
+        </nav>
 
-      {/* Avatar dropdown */}
-      <div className="relative shrink-0" ref={dropdownRef}>
-        <button
-          type="button"
-          onClick={() => setDropdownOpen((prev) => !prev)}
-          className="flex items-center justify-center rounded-full text-white text-xs font-bold select-none cursor-pointer border-0 outline-none focus:ring-2"
-          style={{
-            width: "32px",
-            height: "32px",
-            backgroundColor: "var(--hamilton-accent)",
-          }}
-          aria-label="User menu"
-          aria-expanded={dropdownOpen}
-        >
-          {getInitials(user.display_name)}
-        </button>
-
-        {dropdownOpen && (
-          <div
-            className="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-50"
-            style={{
-              backgroundColor: "var(--hamilton-surface)",
-              border: "1px solid var(--hamilton-border)",
-              top: "100%",
-            }}
-          >
-            {/* User info */}
-            <div className="px-4 py-3 border-b" style={{ borderColor: "var(--hamilton-border)" }}>
-              <p
-                className="text-sm font-semibold truncate"
-                style={{ color: "var(--hamilton-text-primary)" }}
-              >
-                {user.display_name}
-              </p>
-              {user.email && (
-                <p
-                  className="text-xs truncate mt-0.5"
-                  style={{ color: "var(--hamilton-text-secondary)" }}
-                >
-                  {user.email}
-                </p>
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          {institutionName ? (
+            <span className="flex min-w-0 items-baseline gap-2 text-sm">
+              <span className="truncate font-medium text-warm-900" title={institutionName}>
+                {institutionName}
+              </span>
+              {makeDefaultHref ? (
+                <Link href={makeDefaultHref} className="shrink-0 text-xs text-terra-text no-underline hover:underline">
+                  Make this my bank
+                </Link>
+              ) : (
+                <Link href={withBank("/pro/settings")} className="shrink-0 text-xs text-terra-text no-underline hover:underline">
+                  Change
+                </Link>
               )}
-            </div>
+            </span>
+          ) : (
+            <Link href="/pro/settings" className="text-sm font-medium text-terra-text no-underline hover:underline">
+              Choose your bank
+            </Link>
+          )}
 
-            {/* Settings link */}
-            <div className="py-1">
-              <Link
-                href={hrefWithInstitutionContext("/pro/settings", activeInstitutionId)}
-                className="flex items-center px-4 py-2 text-sm no-underline transition-colors hover:opacity-80"
-                style={{ color: "var(--hamilton-text-primary)" }}
-                onClick={() => setDropdownOpen(false)}
-              >
-                Settings
-              </Link>
-            </div>
-
-            {/* Sign out */}
-            <div className="border-t py-1" style={{ borderColor: "var(--hamilton-border)" }}>
-              <form action="/api/auth/logout" method="POST">
-                <button
-                  type="submit"
-                  className="w-full text-left px-4 py-2 text-sm transition-colors hover:opacity-80 border-0 bg-transparent cursor-pointer"
-                  style={{ color: "var(--hamilton-text-secondary)" }}
-                >
-                  Sign Out
-                </button>
-              </form>
-            </div>
+          <div className="relative shrink-0" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-warm-900 text-xs font-semibold text-warm-ink-50"
+              aria-label="Account menu"
+              aria-expanded={menuOpen}
+            >
+              {initials}
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-warm-300 bg-warm-50 py-1 text-sm shadow-lg">
+                <div className="border-b border-warm-200 px-4 py-3">
+                  <p className="truncate font-medium text-warm-900">{user.display_name}</p>
+                  {user.email ? <p className="truncate text-xs text-warm-600">{user.email}</p> : null}
+                </div>
+                <p className="px-4 pb-1 pt-3 text-[11px] uppercase tracking-[0.1em] text-warm-600">Reference</p>
+                {HAMILTON_REFERENCE_NAV.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={withBank(item.href)}
+                    onClick={() => setMenuOpen(false)}
+                    className="block px-4 py-1.5 text-warm-800 no-underline hover:bg-warm-150"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+                <div className="mt-1 border-t border-warm-200 py-1">
+                  {isAdmin ? (
+                    <Link href="/admin" className="block px-4 py-1.5 text-warm-800 no-underline hover:bg-warm-150">
+                      Admin
+                    </Link>
+                  ) : null}
+                  <form action="/api/auth/logout" method="POST">
+                    <button type="submit" className="w-full px-4 py-1.5 text-left text-warm-700 hover:bg-warm-150">
+                      Sign out
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ) : null}
           </div>
-        )}
+        </div>
       </div>
     </header>
   );

@@ -90,6 +90,13 @@ describe("buildBriefingObservations", () => {
     expect(onlyThin[0].detail).toMatch(/small group, so read with care/);
   });
 
+  it("always leads with overdraft when the bank publishes it", () => {
+    const od = entry("overdraft", 30, 30);
+    const obs = buildBriefingObservations({ ...positioning, entries: [...positioning.entries, od] } as InstitutionPositioning);
+    expect(obs.map((o) => o.feeCategory)).toEqual(["overdraft", "b", "c"]);
+    expect(obs[0].detail).toMatch(/^At the median of your peer group/);
+  });
+
   it("strips the abbreviation from display names", () => {
     expect(plainFeeName("Overdraft (OD)")).toBe("Overdraft");
   });

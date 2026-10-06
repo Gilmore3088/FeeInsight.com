@@ -64,6 +64,14 @@ function gapSize(entry: InstitutionPositionEntry): number {
   return entry.gapPct === null ? 0 : Math.abs(entry.gapPct);
 }
 
+/** The largest gaps, but never without overdraft (Hamilton's flagship fee) when the bank publishes it. */
+function keepOverdraft(entries: InstitutionPositionEntry[], max: number): InstitutionPositionEntry[] {
+  const top = entries.slice(0, max);
+  const overdraft = entries.find((e) => e.feeCategory === "overdraft");
+  if (!overdraft || top.includes(overdraft)) return top;
+  return [...top.slice(0, max - 1), overdraft];
+}
+
 export function buildInstitutionPositioning(params: {
   institutionId: number;
   institutionName: string;
@@ -104,7 +112,7 @@ export function buildInstitutionPositioning(params: {
     benchmarkSource: params.benchmarkSource,
     stateCode: params.stateCode ?? null,
     fedDistrict: params.fedDistrict ?? null,
-    entries: entries.slice(0, MAX_POSITION_ROWS),
+    entries: keepOverdraft(entries, MAX_POSITION_ROWS),
     ownFeeCount: params.ownValues.size,
     topGap,
     priority: topGap ? gapPriority(topGap.gapPct) : null,
