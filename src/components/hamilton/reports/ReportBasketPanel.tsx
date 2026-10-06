@@ -1,6 +1,7 @@
 "use client";
 
 import { removeFromBasket, type ReportBasketItem } from "@/lib/hamilton/report-basket";
+import { SERIF } from "@/components/hamilton/memo/memo";
 
 const SOURCE_LABELS: Record<ReportBasketItem["source"], string> = {
   Position: "Position",
@@ -10,54 +11,35 @@ const SOURCE_LABELS: Record<ReportBasketItem["source"], string> = {
 
 /**
  * The findings and tests a user added from Position, Ask and Test, shown on
- * the Report page with one action: build the board brief from them.
+ * the Report page with one action: write the board report from them.
  */
 export function ReportBasketPanel({ items, onBuild }: { items: ReportBasketItem[]; onBuild: () => void }) {
   return (
-    <section
-      aria-label="Your report basket"
-      className="mb-10 rounded-xl border p-5"
-      style={{
-        borderColor: "var(--hamilton-primary)",
-        backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-      }}
-    >
+    <section aria-label="Findings saved for your report" className="rounded-lg border border-warm-300 bg-warm-50 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-base font-semibold text-balance" style={{ color: "var(--hamilton-text-primary)" }}>
-          {items.length === 1 ? "1 finding ready for your brief" : `${items.length} findings ready for your brief`}
+        <h2 className="text-xl text-warm-900" style={SERIF}>
+          {items.length === 1 ? "1 finding saved for your report" : `${items.length} findings saved for your report`}
         </h2>
         <button
           type="button"
           onClick={onBuild}
-          className="burnished-cta px-5 py-2.5 rounded text-[10px] uppercase tracking-widest font-bold text-white"
+          className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark"
         >
-          Build the brief from these
+          Write the report from these
         </button>
       </div>
-      <ul className="mt-4 divide-y" style={{ borderColor: "var(--hamilton-border)" }}>
+      <ul className="mt-3 divide-y divide-warm-200">
         {items.map((item) => (
-          <li key={item.id} className="flex items-start justify-between gap-4 py-3" style={{ borderColor: "var(--hamilton-border)" }}>
+          <li key={item.id} className="flex items-start justify-between gap-4 py-3">
             <div className="min-w-0">
-              <span
-                className="mr-2 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-                style={{ backgroundColor: "var(--hamilton-accent-subtle)", color: "var(--hamilton-text-accent)" }}
-              >
-                {SOURCE_LABELS[item.source]}
-              </span>
-              <span className="text-sm text-pretty" style={{ color: "var(--hamilton-text-primary)" }}>
-                {item.title}
-              </span>
-              {item.detail && (
-                <p className="mt-1 line-clamp-2 text-xs text-pretty" style={{ color: "var(--hamilton-text-secondary)" }}>
-                  {item.detail}
-                </p>
-              )}
+              <p className="text-sm text-pretty text-warm-900">{item.title}</p>
+              {item.detail && <p className="mt-1 line-clamp-2 text-xs text-pretty text-warm-700">{item.detail}</p>}
+              <p className="mt-1 text-xs text-warm-600">From {SOURCE_LABELS[item.source]}</p>
             </div>
             <button
               type="button"
               onClick={() => removeFromBasket(item.id)}
-              className="shrink-0 text-xs underline-offset-2 hover:underline"
-              style={{ color: "var(--hamilton-text-tertiary)" }}
+              className="shrink-0 text-xs text-warm-600 underline-offset-2 hover:text-warm-900 hover:underline"
               aria-label={`Remove ${item.title} from the report`}
             >
               Remove

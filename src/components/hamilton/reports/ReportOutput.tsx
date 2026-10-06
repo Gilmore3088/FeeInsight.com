@@ -1,7 +1,8 @@
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
+import { SERIF } from "@/components/hamilton/memo/memo";
 import { ReportSection } from "./ReportSection";
 import { StatCalloutBox } from "./StatCalloutBox";
-import { evidencePolicyLabel, reportTypeLabel } from "./report-labels";
+import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 interface ReportOutputProps {
   report: ReportSummaryResponse;
@@ -9,190 +10,105 @@ interface ReportOutputProps {
   artifactMetadata?: ReportArtifactMetadata | null;
 }
 
-
+const body = "text-base leading-relaxed text-pretty text-warm-800";
 
 export function ReportOutput({ report, reportType, artifactMetadata }: ReportOutputProps) {
   const typeLabel = reportTypeLabel(reportType);
+  const h = REPORT_SECTION_HEADINGS;
 
   return (
-    <article className="max-w-3xl mx-auto px-4 pb-16">
-      {/* Report header */}
-      <header
-        className="pt-8 pb-8 border-b"
-        style={{ borderColor: "var(--hamilton-border)" }}
-      >
-        {/* Report type badge */}
-        <span
-          className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded mb-4"
-          style={{
-            backgroundColor: "var(--hamilton-accent-subtle)",
-            color: "var(--hamilton-text-accent)",
-          }}
-        >
-          {typeLabel}
-        </span>
-
-        <h1
-          className="text-3xl font-bold leading-tight mb-3"
-          style={{
-            fontFamily: "var(--hamilton-font-serif)",
-            color: "var(--hamilton-text-primary)",
-          }}
-        >
+    <article className="rounded-lg border border-warm-300 bg-warm-50 px-5 pb-4 sm:px-8">
+      <header className="border-b border-warm-300 pb-6 pt-7">
+        <p className="text-sm font-medium text-terra-text">{typeLabel}</p>
+        <h2 className="mt-1.5 text-3xl leading-tight text-warm-900" style={SERIF}>
           {report.title}
-        </h1>
-
-        {/* Read-only notice */}
-        <p
-          className="text-[11px]"
-          style={{ color: "var(--hamilton-text-tertiary)" }}
-        >
-          This report is read-only. Use Export PDF to save.
-        </p>
+        </h2>
+        <p className="mt-2 text-xs text-warm-600">This report can&apos;t be edited here. Download the PDF to keep or share a copy.</p>
 
         {artifactMetadata && (
-          <div
-            className="mt-4 grid grid-cols-1 gap-2 rounded-md border p-3 text-[11px] sm:grid-cols-3"
-            style={{
-              borderColor: "var(--hamilton-border)",
-              backgroundColor: "var(--hamilton-surface-elevated)",
-              color: "var(--hamilton-text-secondary)",
-            }}
-          >
-            <span>
-              <strong style={{ color: "var(--hamilton-text-primary)" }}>
-                {evidencePolicyLabel(artifactMetadata.evidencePolicy)}
-              </strong>
-            </span>
-            <span>
-              Peer group: {artifactMetadata.peerBaselineLabel ?? "Not recorded"}
-            </span>
-            <span>
+          <p className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-700">
+            <span className="font-medium text-warm-900">{evidencePolicyLabel(artifactMetadata.evidencePolicy)}</span>
+            <span aria-hidden="true">·</span>
+            <span>Peer group: {artifactMetadata.peerBaselineLabel ?? "Not recorded"}</span>
+            <span aria-hidden="true">·</span>
+            <span className="[font-variant-numeric:tabular-nums]">
               {artifactMetadata.selectedFeeDeltaCount} {artifactMetadata.selectedFeeDeltaCount === 1 ? "fee" : "fees"} compared with peers
             </span>
-          </div>
+          </p>
         )}
       </header>
 
-      {/* Executive Summary */}
-      <ReportSection heading="Executive Summary">
-        {report.executiveSummary.map((paragraph, i) => (
-          <p
-            key={i}
-            className="text-[15px] leading-relaxed mb-4 last:mb-0"
-            style={{ color: "var(--hamilton-text-primary)" }}
-          >
-            {paragraph}
-          </p>
-        ))}
-      </ReportSection>
-
-      {/* Findings the reader carried in from Position, Ask and Test */}
-      {report.addedFindings && report.addedFindings.length > 0 && (
-        <ReportSection heading="Findings You Added">
-          <ul className="space-y-4">
-            {report.addedFindings.map((finding, i) => (
-              <li key={i} className="border-l-2 pl-4" style={{ borderColor: "var(--hamilton-primary)" }}>
-                <p className="text-[15px] font-semibold text-pretty" style={{ color: "var(--hamilton-text-primary)" }}>
-                  {finding.title}
-                </p>
-                {finding.detail && (
-                  <p className="mt-1 text-sm leading-relaxed text-pretty" style={{ color: "var(--hamilton-text-secondary)" }}>
-                    {finding.detail}
-                  </p>
-                )}
-                <p className="mt-1 text-[11px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                  From {finding.source}
-                </p>
-              </li>
-            ))}
-          </ul>
+      <div className="max-w-3xl">
+        <ReportSection heading={h.summary}>
+          {report.executiveSummary.map((paragraph, i) => (
+            <p key={i} className={`${body} mb-4 last:mb-0`}>
+              {paragraph}
+            </p>
+          ))}
         </ReportSection>
-      )}
 
-      {/* Current vs Proposed Snapshot — only if scenario data present */}
-      {report.snapshot.length > 0 && (
-        <ReportSection heading="Current vs Proposed Snapshot">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {report.snapshot.map((item, i) => (
-              <StatCalloutBox
-                key={i}
-                label={item.label}
-                current={item.current}
-                proposed={item.proposed}
-              />
-            ))}
-          </div>
+        {/* Findings the reader carried in from Position, Ask and Test */}
+        {report.addedFindings && report.addedFindings.length > 0 && (
+          <ReportSection heading={h.addedFindings}>
+            <ul className="space-y-4">
+              {report.addedFindings.map((finding, i) => (
+                <li key={i} className="border-l-2 border-terra pl-4">
+                  <p className="text-base font-medium text-pretty text-warm-900">{finding.title}</p>
+                  {finding.detail && <p className="mt-1 text-sm leading-relaxed text-pretty text-warm-700">{finding.detail}</p>}
+                  <p className="mt-1 text-xs text-warm-600">From {finding.source}</p>
+                </li>
+              ))}
+            </ul>
+          </ReportSection>
+        )}
+
+        {/* Today vs tested price — only if scenario data present */}
+        {report.snapshot.length > 0 && (
+          <ReportSection heading={h.snapshot}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {report.snapshot.map((item, i) => (
+                <StatCalloutBox key={i} label={item.label} current={item.current} proposed={item.proposed} />
+              ))}
+            </div>
+          </ReportSection>
+        )}
+
+        <ReportSection heading={h.rationale}>
+          <p className={body}>{report.strategicRationale}</p>
         </ReportSection>
-      )}
 
-      {/* Strategic Rationale */}
-      <ReportSection heading="Strategic Rationale">
-        <p
-          className="text-[15px] leading-relaxed"
-          style={{ color: "var(--hamilton-text-primary)" }}
-        >
-          {report.strategicRationale}
-        </p>
-      </ReportSection>
-
-      {/* Tradeoff Summary */}
-      {report.tradeoffs.length > 0 && (
-        <ReportSection heading="Tradeoff Summary">
-          <div className="grid grid-cols-2 gap-4">
-            {report.tradeoffs.map((item, i) => (
-              <div
-                key={i}
-                className="hamilton-card p-4"
-                style={{ backgroundColor: "var(--hamilton-surface-elevated)" }}
-              >
-                <div
-                  className="text-[11px] font-semibold uppercase tracking-wider mb-2"
-                  style={{ color: "var(--hamilton-text-secondary)" }}
-                >
-                  {item.label}
+        {report.tradeoffs.length > 0 && (
+          <ReportSection heading={h.tradeoffs}>
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {report.tradeoffs.map((item, i) => (
+                <div key={i} className="min-w-0 rounded-lg border border-warm-300 bg-warm-100 p-4">
+                  <dt className="mb-1 text-sm text-pretty text-warm-700">{item.label}</dt>
+                  <dd className="text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+                    {item.value}
+                  </dd>
                 </div>
-                <div
-                  className="text-base font-semibold tabular-nums"
-                  style={{ color: "var(--hamilton-text-primary)" }}
-                >
-                  {item.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        </ReportSection>
-      )}
+              ))}
+            </dl>
+          </ReportSection>
+        )}
 
-      {/* Recommended Position */}
-      <ReportSection heading="Recommended Position">
-        <p
-          className="text-[15px] leading-relaxed"
-          style={{ color: "var(--hamilton-text-primary)" }}
-        >
-          {report.recommendation}
-        </p>
-      </ReportSection>
-
-      {/* Implementation Notes */}
-      {report.implementationNotes.length > 0 && (
-        <ReportSection heading="Implementation Notes">
-          <ul className="space-y-2">
-            {report.implementationNotes.map((note, i) => (
-              <li
-                key={i}
-                className="text-[15px] leading-relaxed flex items-start gap-2"
-                style={{ color: "var(--hamilton-text-secondary)" }}
-              >
-                <span style={{ color: "var(--hamilton-accent)" }} aria-hidden="true">
-                  —
-                </span>
-                {note}
-              </li>
-            ))}
-          </ul>
+        <ReportSection heading={h.position}>
+          <p className={body}>{report.recommendation}</p>
+          <p className="mt-3 text-xs text-warm-600">Hamilton lays out the evidence; the decision rests with management.</p>
         </ReportSection>
-      )}
+
+        {report.implementationNotes.length > 0 && (
+          <ReportSection heading={h.implementation}>
+            <ul className="list-disc space-y-2 pl-5 marker:text-terra">
+              {report.implementationNotes.map((note, i) => (
+                <li key={i} className="text-base leading-relaxed text-pretty text-warm-800">
+                  {note}
+                </li>
+              ))}
+            </ul>
+          </ReportSection>
+        )}
+      </div>
     </article>
   );
 }

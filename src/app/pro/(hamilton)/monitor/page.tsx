@@ -1,17 +1,26 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { fetchMonitorPageData } from "@/lib/hamilton/monitor-data";
+import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { fetchMonitorPageData, type MonitorPageData } from "@/lib/hamilton/monitor-data";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { StatusStrip } from "@/components/hamilton/monitor/StatusStrip";
 import { SignalFeed } from "@/components/hamilton/monitor/SignalFeed";
 import { WatchlistPanel } from "@/components/hamilton/monitor/WatchlistPanel";
+import { LinkButton, MemoHeader, MemoPage, MemoSection } from "@/components/hamilton/memo/memo";
 
-export const metadata: Metadata = { title: "Monitor" };
+export const metadata: Metadata = { title: "All changes" };
 
 // No ISR — fresh signal data on every page load
 export const dynamic = "force-dynamic";
+
+/** One plain sentence on today's count, in place of a status dashboard. */
+function todaySummary(status: MonitorPageData["status"]): string {
+  const changes = status.newSignals === 1 ? "1 new change" : `${status.newSignals} new changes`;
+  if (status.highPriorityAlerts === 0) return `${changes} today.`;
+  const alerts =
+    status.highPriorityAlerts === 1 ? "1 open alert is" : `${status.highPriorityAlerts} open alerts are`;
+  return `${changes} today; ${alerts} marked high priority.`;
+}
 
 export default async function MonitorPage({
   searchParams,
@@ -37,126 +46,45 @@ export default async function MonitorPage({
     selectedInstitutionId: selectedInstitution?.id ?? null,
   });
 
+  const selectedId = selectedInstitution ? String(selectedInstitution.id) : null;
+  const refreshHref = hrefWithInstitutionContext("/pro/monitor", selectedId);
+  // Server-rendered snapshot: say when, and offer a refresh (nothing polls).
+  const updatedAt = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+  });
+
   return (
-    <>
-      {/* Status strip — full width above content */}
-      <StatusStrip status={data.status} />
+    <MemoPage>
+      <MemoHeader
+        kicker={selectedInstitution ? `What changed · ${selectedInstitution.name}` : "What changed"}
+        title="All changes"
+        dek="Fee changes at the institutions you watch: published fee movements, newly verified fee schedules and moves by competitors, as they reach the index."
+        actions={<LinkButton href={refreshHref}>Refresh</LinkButton>}
+      />
 
-      {/* Page content. HamiltonShell already provides the main landmark. */}
-      <div
-        className="@container"
-        style={{
-          backgroundColor: "var(--hamilton-surface)",
-          minHeight: "calc(100vh - 57px)",
-        }}
-      >
-        {/* Page header */}
-        <header style={{ marginBottom: "3rem" }}>
-          <h1
-            className="font-headline"
-            style={{
-              fontFamily: "var(--hamilton-font-serif)",
-              fontSize: "3rem",
-              fontStyle: "italic",
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--hamilton-on-surface)",
-              marginBottom: "0.5rem",
-              lineHeight: 1.1,
-            }}
-          >
-            Monitor
-          </h1>
-          <p
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "1.125rem",
-              color: "var(--hamilton-secondary, #5f5e5e)",
-              maxWidth: "42rem",
-              lineHeight: 1.5,
-            }}
-          >
-            Fee changes at the institutions you watch: published fee movements,
-            newly verified schedules and competitor signals, as they reach the index.
-          </p>
-          <p
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.8125rem",
-              color: "var(--hamilton-text-tertiary)",
-              maxWidth: "42rem",
-              lineHeight: 1.5,
-              marginTop: "0.75rem",
-            }}
-          >
-            {data.monitoringScope.label}
-          </p>
-        </header>
+      <p className="-mt-4 text-sm text-warm-600">
+        {data.monitoringScope.label} {todaySummary(data.status)} Updated {updatedAt} ET.
+      </p>
 
-        {/* 12-col grid: feed (7) + sidebar (5) — collapses to single column below @3xl */}
-        <div className="grid grid-cols-1 gap-8 @3xl:grid-cols-[7fr_5fr] @3xl:gap-12">
-          {/* Center column: signal feed */}
-          <section>
-            {/* Feed header row */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: "1rem",
-              }}
-            >
-              <h2
-                style={{
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.625rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.2em",
-                  color: "var(--hamilton-text-tertiary)",
-                  fontWeight: 600,
-                }}
-              >
-                Insight Timeline
-              </h2>
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  fontSize: "0.625rem",
-                  fontFamily: "var(--hamilton-font-sans)",
-                  color: "var(--hamilton-primary)",
-                  fontWeight: 600,
-                  letterSpacing: "0.05em",
-                }}
-              >
-                {/* Server-rendered snapshot: say when, and offer a refresh (nothing polls). */}
-                Updated {new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
-                <Link href={selectedInstitution ? `/pro/monitor?instId=${selectedInstitution.id}` : "/pro/monitor"} style={{ textDecoration: "underline" }}>
-                  Refresh
-                </Link>
-              </span>
-            </div>
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <MemoSection title="Newest first" note="Each change links to where you can look into it further.">
+          <SignalFeed
+            signals={data.signalFeed}
+            topAlert={data.topAlert}
+            selectedInstitutionId={selectedId}
+          />
+        </MemoSection>
 
-            <SignalFeed
-              signals={data.signalFeed}
-              topAlert={data.topAlert}
-              selectedInstitutionId={selectedInstitution?.id.toString() ?? null}
-            />
-          </section>
-
-          {/* Right sidebar */}
-          <aside>
-            <WatchlistPanel
-              entries={data.watchlist}
-              refreshJobs={data.refreshJobs}
-              selectedInstitution={selectedInstitution}
-            />
-          </aside>
-        </div>
+        <aside aria-label="Institutions you watch">
+          <WatchlistPanel
+            entries={data.watchlist}
+            refreshJobs={data.refreshJobs}
+            selectedInstitution={selectedInstitution}
+          />
+        </aside>
       </div>
-
-      {/* Floating chat overlay — fixed position */}
-    </>
+    </MemoPage>
   );
 }

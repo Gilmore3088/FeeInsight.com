@@ -15,7 +15,7 @@ import {
 } from "@react-pdf/renderer";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
-import { evidencePolicyLabel, reportTypeLabel } from "./report-labels";
+import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -234,7 +234,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
 
         {/* Executive Summary */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>Executive Summary</Text>
+          <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.summary}</Text>
           {report.executiveSummary.map((para, i) => (
             <Text key={i} style={styles.paragraph}>
               {para}
@@ -245,7 +245,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
         {/* Findings the reader added from Position, Ask and Test */}
         {report.addedFindings && report.addedFindings.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Findings You Added</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.addedFindings}</Text>
             {report.addedFindings.map((finding, i) => (
               <View key={i} wrap={false}>
                 <Text style={styles.paragraph}>
@@ -260,7 +260,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
         {/* Snapshot — only if scenario data present */}
         {report.snapshot.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Current vs Proposed Snapshot</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.snapshot}</Text>
             <View style={styles.statCalloutGrid}>
               {report.snapshot.map((item, i) => (
                 <View key={i} style={styles.statCalloutBox}>
@@ -278,14 +278,14 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
 
         {/* Strategic Rationale */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>Strategic Rationale</Text>
+          <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.rationale}</Text>
           <Text style={styles.paragraph}>{report.strategicRationale}</Text>
         </View>
 
         {/* Tradeoff Summary */}
         {report.tradeoffs.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Tradeoff Summary</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.tradeoffs}</Text>
             <View style={styles.tradeoffGrid}>
               {report.tradeoffs.map((item, i) => (
                 <View key={i} style={styles.tradeoffItem}>
@@ -297,16 +297,16 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           </View>
         )}
 
-        {/* Recommended Position */}
+        {/* Position for management to weigh */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>Recommended Position</Text>
+          <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.position}</Text>
           <Text style={styles.paragraph}>{report.recommendation}</Text>
         </View>
 
         {/* Implementation Notes */}
         {report.implementationNotes.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Implementation Notes</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.implementation}</Text>
             {report.implementationNotes.map((note, i) => (
               <Text key={i} style={styles.noteItem}>
                 — {note}

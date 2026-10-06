@@ -26,3 +26,17 @@ export function evidencePolicyLabel(policy: ReportArtifactMetadata["evidencePoli
   if (policy === "source-diligence") return "Built for source review";
   return "Includes fees still in review";
 }
+
+/**
+ * Section headings shared by the on-screen report and its PDF, in plain banker language.
+ * Hamilton shows the evidence; it never recommends a price, so no heading says it does.
+ */
+export const REPORT_SECTION_HEADINGS = {
+  summary: "Summary",
+  addedFindings: "Findings you added",
+  snapshot: "Today and the price being tested",
+  rationale: "Why it matters",
+  tradeoffs: "What each choice trades off",
+  position: "For management to weigh",
+  implementation: "If management makes a change",
+} as const;
