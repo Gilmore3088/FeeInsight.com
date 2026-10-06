@@ -6,6 +6,8 @@
  *
  * Plain fetch, no SDK. Never throws into request paths.
  */
+import { ensureStateGroup } from "@/lib/agents/marketing/mailerlite-campaigns";
+
 const MAILERLITE_SUBSCRIBERS_ENDPOINT = "https://connect.mailerlite.com/api/subscribers";
 
 export type MailerLiteSyncResult =
@@ -18,6 +20,8 @@ export interface MailerLiteLeadInput {
   subscribed: boolean;
   /** Comma-separated lead sources, stored on a MailerLite custom field when configured. */
   source?: string | null;
+  /** Two-letter state the reader chose; they also join that state's group for its monthly edition. */
+  state?: string | null;
 }
 
 export function isMailerLiteSyncEnabled() {
@@ -41,14 +45,15 @@ export function mailerLiteGroupForSource(source?: string | null): string {
   return env("MAILERLITE_GROUP_ID");
 }
 
-export function buildMailerLitePayload(input: MailerLiteLeadInput) {
+export function buildMailerLitePayload(input: MailerLiteLeadInput, stateGroupId?: string | null) {
   const groupId = mailerLiteGroupForSource(input.source);
   const sourceField = (process.env.MAILERLITE_SOURCE_FIELD || "").trim();
   const payload: Record<string, unknown> = {
     email: input.email,
     status: input.subscribed ? "active" : "unsubscribed",
   };
-  if (input.subscribed && groupId) payload.groups = [groupId];
+  const groups = [groupId, stateGroupId].filter((id): id is string => Boolean(id));
+  if (input.subscribed && groups.length) payload.groups = groups;
   if (sourceField && input.source) payload.fields = { [sourceField]: input.source };
   return payload;
 }
@@ -59,6 +64,10 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
     return { status: "disabled", reason: "MAILERLITE_SYNC_ENABLED is not true or MAILERLITE_API_KEY is missing." };
   }
   try {
+    // A state group that can't be found or made shouldn't block the signup itself.
+    const stateGroupId = input.subscribed && input.state
+      ? await ensureStateGroup(input.state).catch(() => null)
+      : null;
     const response = await fetch(process.env.MAILERLITE_SUBSCRIBERS_ENDPOINT || MAILERLITE_SUBSCRIBERS_ENDPOINT, {
       method: "POST",
       headers: {
@@ -66,7 +75,7 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify(buildMailerLitePayload(input)),
+      body: JSON.stringify(buildMailerLitePayload(input, stateGroupId)),
     });
     const body = (await response.json().catch(() => null)) as {
       data?: { id?: unknown };

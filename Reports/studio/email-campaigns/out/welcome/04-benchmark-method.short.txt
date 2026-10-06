@@ -6,11 +6,9 @@ Benchmark any fee schedule in 30 minutes
 2. Compare like with like. Same fee, same channel, same conditions. A branch price against an online price isn't a comparison.
 3. Place yourself by percentile. Sort the peers' prices. Below the 25th percentile is low; above the 75th is high.
 4. Flag outliers with one rule. A fee is an outlier if it's more than 2× the peer median, or more than 1.5× the interquartile range above the 75th percentile. Outliers get a written reason or a review.
-[ MISTAKES WE SEE CONSTANTLY ]
 
 Full email with tables and charts: {$url}
 
 --
 Fee Insight · feeinsight.com · reply with questions
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}
