@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: The live board showed a Darwin backlog that did not exist
+**What happened:** /admin/live showed 2,838 banks waiting at Darwin (04:30 UTC, read-only query on prod).
+Every one of the 18,843 Knox rows behind that number already had a Darwin decision under the current
+rules (`verify.rules` v3): 9,756 duplicates of a fee verified in the same batch, 5,322 rejected for
+category mismatch, 2,374 held as outside the category's range, 1,391 held as peer outliers. Zero rows
+were unchecked. Darwin's classify step ran 523 times in 24 hours with a median of 0.9 s (p90 8.2 s);
+its queue wait (median 329 s) matched Knox's and Hamilton's.
+**Cause:** the board's Darwin count (`getFlowWaiting` in `src/lib/agents/flow.ts`) counted every raw
+row missing from `verified_fee_observations`. Rejected, held and duplicate rows never get there, so
+they counted as waiting forever.
+**Fix:** this PR: the count skips rows that already have a `verify.rules` attempt at the current version,
+the same test Darwin's own batch query uses.
+**Lesson:** a "waiting" count must use the stage's own done-marker (its `pipeline_attempts` row), not
+"missing from the next table", or every rejection reads as backlog.
+
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
 the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
