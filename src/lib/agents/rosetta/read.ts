@@ -667,7 +667,7 @@ async function readCandidate(
     rows: SourceTableRow[],
     firstOutcome: AttemptOutcome | null = null,
   ) => {
-    const pageCheck = ctx.checkPage ? scoreFeePage(normalizedText) : null;
+    const pageCheck = ctx.checkPage ? scoreFeePage(normalizedText, base.sourceUrl) : null;
     const wrong = pageCheck?.verdict === "wrong_document";
     const followUp = base.followUps[base.followUps.length - 1];
     if (firstOutcome && followUp && wrong) followUp.outcome = "wrong_document";
