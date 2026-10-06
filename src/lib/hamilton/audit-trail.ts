@@ -4,8 +4,7 @@
  * every assumption, and whether it rests on market data or the bank's own figures. Built from data
  * the page already read; it never adds a figure of its own.
  */
-import type { FeeEvidenceRow } from "@/lib/data-store/fee-research";
-import type { LocalMarketInfo } from "./workspace/types";
+import type { LocalMarketInfo, OwnFeeRow } from "./workspace/types";
 import type { LayerSummary } from "./research-layers";
 import { WORKSPACE_ENGINE_VERSION, type Provenance } from "./workspace/types";
 
@@ -22,7 +21,7 @@ export interface AuditTrail {
   method: string[];
   assumptions: string[];
   /** The bank's own published rows behind "your fee", each traceable to its schedule. */
-  ownFeeRows: FeeEvidenceRow[];
+  ownFeeRows: OwnFeeRow[];
   /** Figures the bank gave Hamilton, with who gave each one and when. */
   clientFacts: AuditClientFact[];
   /** The peer group the comparison rests on and how many institutions are in it. */
@@ -62,7 +61,7 @@ export function buildAuditTrail(input: {
   layerDates: readonly (string | null)[];
   /** More layers a deliverable compares against, each listed as its own source. */
   extraLayers?: { layer: LayerSummary; dates: readonly (string | null)[] }[];
-  ownFeeRows: FeeEvidenceRow[];
+  ownFeeRows: OwnFeeRow[];
   local?: Pick<LocalMarketInfo, "basis" | "places" | "sodYear"> | null;
   callReport?: { quarter: string; source: string } | null;
   complaints?: boolean;
@@ -94,7 +93,7 @@ export function buildAuditTrail(input: {
       label: `Your ${input.feeName.toLowerCase()} fee`,
       detail: `${input.ownFeeRows.length} published ${input.ownFeeRows.length === 1 ? "line" : "lines"} from your own fee schedule (listed below).`,
       asOf: dateOnly(latest),
-      href: input.ownFeeRows.find((r) => r.sourceUrl)?.sourceUrl ?? null,
+      href: input.ownFeeRows.map((r) => r.documentUrl ?? r.sourceUrl).find(Boolean) ?? null,
     });
   }
   if (input.local) {
@@ -186,7 +185,7 @@ function factLabel(fieldKey: string): string {
  */
 export function provenanceToTrail(
   provenance: Provenance,
-  opts: { method?: string[]; ownFeeRows?: FeeEvidenceRow[]; extraAssumptions?: string[] } = {},
+  opts: { method?: string[]; ownFeeRows?: OwnFeeRow[]; extraAssumptions?: string[] } = {},
 ): AuditTrail {
   const clientFacts: AuditClientFact[] = provenance.clientFacts.map((f) => ({
     label: factLabel(f.fieldKey),

@@ -1,7 +1,6 @@
 // Auth-gated, renders live DB-backed data at request time; not statically prerendered.
 export const dynamic = "force-dynamic";
 
-import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -10,11 +9,10 @@ import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data"
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
-import { getRevenueTrend, type RevenueSnapshot } from "@/lib/data-store/call-reports";
-import type { FeeResearch, InstitutionFinancials } from "@/lib/hamilton/workspace/types";
+import type { FeeResearch, InstitutionFinancials, MarketIncome } from "@/lib/hamilton/workspace/types";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
 import { getArticles } from "@/lib/data-store/news";
-import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch } from "@/lib/hamilton/workspace/research";
+import { COMPETITOR_MOVE_WINDOW_DAYS } from "@/lib/hamilton/workspace/research";
 import {
   AuditPanel,
   Callout,
@@ -44,13 +42,6 @@ function researchHref(p: { fee: string; layer: string }, instId: string | null) 
   return hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(p.fee)}&layer=${p.layer}`, instId);
 }
 
-// National income changes quarterly and the sum over every filer takes a moment, so keep it a few hours.
-const getCachedNationalTrend = unstable_cache(
-  async () => (await getRevenueTrend(8).catch(() => ({ quarters: [] as RevenueSnapshot[] }))).quarters,
-  ["hamilton-research-national-income-v1"],
-  { revalidate: 6 * 60 * 60 },
-);
-
 function fmtYoy(pct: number | null, against = "the same quarter a year earlier"): string {
   if (pct == null) return `No ${against.replace(/^the /, "")} on file to compare`;
   if (pct === 0) return `Level with ${against}`;
@@ -69,7 +60,7 @@ function FilingExhibits({
   credit,
 }: {
   own: InstitutionFinancials | null;
-  national: RevenueSnapshot[];
+  national: MarketIncome[];
   revenueLine: FeeResearch["revenueLine"];
   name: string;
   credit: boolean;
@@ -82,8 +73,8 @@ function FilingExhibits({
   const natOldest = [...national].reverse();
   const natLatest = national[0] ?? null;
   const natPrior = natLatest ? national.find((q) => q.quarter === `${Number(natLatest.quarter.slice(0, 4)) - 1}${natLatest.quarter.slice(4)}`) : null;
-  const groupNow = natLatest ? (credit ? natLatest.cu_service_charges : natLatest.bank_service_charges) : null;
-  const groupPrior = natPrior ? (credit ? natPrior.cu_service_charges : natPrior.bank_service_charges) : null;
+  const groupNow = natLatest ? (credit ? natLatest.creditUnions : natLatest.banks) : null;
+  const groupPrior = natPrior ? (credit ? natPrior.creditUnions : natPrior.banks) : null;
   const groupYoy = groupNow != null && groupPrior ? Math.round(((groupNow - groupPrior) / groupPrior) * 1000) / 10 : null;
   return (
     <>
@@ -129,21 +120,21 @@ function FilingExhibits({
         <p className="text-sm text-warm-700">No call report figures on file for {name} yet.</p>
       )}
       {natLatest ? (
-        <Exhibit number={3} title="Service charges on deposit accounts, every filer in the country" source="FDIC call reports and NCUA 5300 reports, all filers on file. Credit union year-to-date filings are split into quarters.">
+        <Exhibit number={3} title="Service charges on deposit accounts, every filer in the country" source={`${natLatest.sourceRef.label}. Credit union year-to-date filings are split into quarters.`}>
           <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
             <QuarterLines
               quarters={natOldest.map((q) => q.quarter)}
               series={[
-                { label: `All ${kind}`, values: natOldest.map((q) => (credit ? q.cu_service_charges : q.bank_service_charges)), own: true },
-                { label: `All ${credit ? "banks" : "credit unions"}`, values: natOldest.map((q) => (credit ? q.bank_service_charges : q.cu_service_charges)) },
+                { label: `All ${kind}`, values: natOldest.map((q) => (credit ? q.creditUnions : q.banks) / 1000), own: true },
+                { label: `All ${credit ? "banks" : "credit unions"}`, values: natOldest.map((q) => (credit ? q.banks : q.creditUnions) / 1000) },
               ]}
             />
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-              <Figure label={`All ${kind}, ${quarterLabel(natLatest.quarter)}`} value={fmtFiledThousands(groupNow ?? 0)} note={fmtYoy(groupYoy)} />
+              <Figure label={`All ${kind}, ${quarterLabel(natLatest.quarter)}`} value={fmtFiledThousands((groupNow ?? 0) / 1000)} note={fmtYoy(groupYoy)} />
               <Figure
                 label="Banks and credit unions together"
-                value={fmtFiledThousands(natLatest.total_service_charges)}
-                note={`${natLatest.total_institutions.toLocaleString("en-US")} filers; ${fmtYoy(natLatest.yoy_change_pct).toLowerCase()}`}
+                value={fmtFiledThousands(natLatest.total / 1000)}
+                note={`${natLatest.institutions.toLocaleString("en-US")} filers; ${fmtYoy(natLatest.yoyPct).toLowerCase()}`}
               />
             </div>
           </div>
@@ -199,11 +190,11 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   const layerKey = parseLayer(params.layer ?? (ws.layers.some((l) => l.key === "local") ? "local" : "state"));
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
-  const [national, complaints, articles, research] = await Promise.all([
-    inst ? getCachedNationalTrend() : [],
+  const research = ws.research;
+  const national = research?.nationalIncomeSeries ?? [];
+  const [complaints, articles] = await Promise.all([
     inst ? getInstitutionComplaintProfile(inst.id).catch(() => null) : null,
     getArticles({ topic: OVERDRAFT_FAMILY.has(ws.fee) ? "overdraft" : "fees_pricing", limit: 5 }).catch(() => []),
-    inst ? getFeeResearch(inst.id, ws.fee).catch(() => null) : null,
   ]);
   const stateChanges = research?.recentChanges ?? [];
 

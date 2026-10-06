@@ -47,6 +47,7 @@ the price of deposit bags the bank sells, filed under `night_deposit`.
 near a fee name into that category.
 **Fix:** none yet; reported to Improving Hamilton for whoever owns Knox and Darwin.
 **Lesson:** a headline fee should be checked against its row's fee name before it leads a page.
+
 ## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
 **What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
 our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
@@ -152,6 +153,7 @@ the URL as rejected and marks the bank due a search (`failure_reason = 'magellan
 is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
 **Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
 loop on a dead address is a silent failure.
+
 ## 2026-10-06: Slow bank sites were cut off at the same point on every discovery search
 **What happened:** the Magellan audit (read-only, 6 Oct) counted 513 active banks with a website and no
 fee link whose last free search ended `retry_after` because the `discover` step ran out of time partway
@@ -833,6 +835,7 @@ records the guard version with each decision and re-selects a category rejection
 version rises (now v9, which also adds a minimum-balance rule). Other decided rows stay closed, so
 `duplicate_in_batch` rows are never re-verified.
 **Lesson:** a "bump to re-check" version constant needs a test that the re-check really happens.
+
 ## 2026-10-06: Rosetta rejected fee pages whose fees load by script
 **What happened:** the Rosetta audit compared stored text with 91 Texas fee schedules read
 independently. Two of them (atfcu.org/fees, firstcommand.com/.../fees/) were real schedules that

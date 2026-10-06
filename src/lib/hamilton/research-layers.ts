@@ -7,7 +7,7 @@
  */
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { median, peerPosition, quantile } from "./fee-scenario";
-import type { LocalMarketInfo, MarketLayer, MarketLayerScope } from "./workspace/types";
+import type { LocalMarketInfo, MarketLayer, MarketLayerScope, PeerValue } from "./workspace/types";
 
 export const LAYER_KEYS = ["local", "state", "district", "peers", "national"] as const;
 export type LayerKey = (typeof LAYER_KEYS)[number];
@@ -29,6 +29,8 @@ export interface LayerSummary {
   amounts: number[];
   /** Newest publish date among the layer's institutions, from the engine. */
   asOf?: string | null;
+  /** The institutions behind the layer, lowest amount first, from the engine (the CSV's rows). */
+  members?: PeerValue[];
 }
 
 export function parseLayer(value: string | undefined | null): LayerKey {
@@ -100,7 +102,7 @@ export function layersFromEngine(
   local: LocalMarketInfo | null,
 ): LayerSummary[] {
   return layers
-    .map((l) => ({ ...summarizeLayer(ENGINE_KEYS[l.scope], labelFor(l), scopeFor(l, local), l.amounts, ownAmount), asOf: l.asOf }))
+    .map((l) => ({ ...summarizeLayer(ENGINE_KEYS[l.scope], labelFor(l), scopeFor(l, local), l.amounts, ownAmount), asOf: l.asOf, members: l.members }))
     .sort((a, b) => LAYER_KEYS.indexOf(a.key) - LAYER_KEYS.indexOf(b.key));
 }
 

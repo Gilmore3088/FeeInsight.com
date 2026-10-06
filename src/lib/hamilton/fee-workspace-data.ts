@@ -5,14 +5,13 @@
  * source. Missing pieces come back empty rather than failing the page.
  */
 import { getInstitutionFeeValues } from "@/lib/data-store/fee-index";
-import { getInstitutionFeeEvidence, type FeeEvidenceRow } from "@/lib/data-store/fee-research";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { plainFeeName } from "./briefing-observations";
 import type { HamiltonSelectedInstitutionContext } from "./institution-context";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import { layersFromEngine, summarizeLayer, type LayerSummary } from "./research-layers";
 import { getFeeResearch } from "./workspace/research";
-import type { FeeResearch, LocalMarketInfo, PeerValue } from "./workspace/types";
+import type { FeeResearch, LocalMarketInfo, OwnFeeRow, PeerValue } from "./workspace/types";
 
 /** Fees Hamilton leads with, in this order, when the bank publishes them. */
 export const FEATURED_FEES = [
@@ -44,7 +43,7 @@ export interface FeeWorkspace {
   local: WorkspaceLocal | null;
   layers: LayerSummary[];
   /** The bank's own published rows for the fee, for the audit trail. */
-  ownFeeRows: FeeEvidenceRow[];
+  ownFeeRows: OwnFeeRow[];
   /** Set when a read failed, so the page can say so instead of showing zeros. */
   unavailable: string[];
 }
@@ -84,20 +83,13 @@ export async function loadFeeWorkspace(params: {
   const fee = params.fee && /^[a-z0-9_]+$/.test(params.fee) ? params.fee : (ownFees[0]?.category ?? "overdraft");
   const ownAmount = ownValues.get(fee) ?? null;
 
-  const [research, ownFeeRows] = await Promise.all([
-    institution
-      ? getFeeResearch(institution.id, fee).catch(() => {
-          unavailable.push("market fees");
-          return null;
-        })
-      : null,
-    institution && ownAmount != null
-      ? getInstitutionFeeEvidence(institution.id, fee).catch(() => {
-          unavailable.push("your fee's source lines");
-          return [] as FeeEvidenceRow[];
-        })
-      : ([] as FeeEvidenceRow[]),
-  ]);
+  const research = institution
+    ? await getFeeResearch(institution.id, fee).catch(() => {
+        unavailable.push("market fees");
+        return null;
+      })
+    : null;
+  const ownFeeRows = research?.ownRows ?? [];
 
   const local: WorkspaceLocal | null =
     research?.localMarket ? { ...research.localMarket, competitors: research.localCompetitors ?? [] } : null;
@@ -108,7 +100,8 @@ export async function loadFeeWorkspace(params: {
   return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, research, local, layers, ownFeeRows, unavailable };
 }
 
-/** The layer's newest publish date, for the trail's "as of". */
+/** Every member's publish date, so the trail's "as of" spans oldest to newest; the engine's date otherwise. */
 export function layerDates(_ws: FeeWorkspace, layer: LayerSummary): (string | null)[] {
-  return [layer.asOf ?? null];
+  const dates = (layer.members ?? []).map((m) => m.publishedAt);
+  return dates.some(Boolean) ? dates : [layer.asOf ?? null];
 }

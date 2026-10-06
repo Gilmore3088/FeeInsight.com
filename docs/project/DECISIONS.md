@@ -18,6 +18,7 @@ regulatory work a figure has to be defensible. Each Briefing, Research, Model an
 lines link to its schedule with their publish date and verification record, and a CSV lists every
 institution behind a comparison with its source. The CEO one-pager and committee packet carry the
 same panel as an appendix. Built in PR 89; the stored audit record belongs to the Hamilton engine.
+
 **Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
 abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
 Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges

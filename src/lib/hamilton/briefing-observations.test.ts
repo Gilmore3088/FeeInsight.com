@@ -34,6 +34,8 @@ const research = (current: number | null, amounts: number[]): FeeResearch => ({
   institutionFinancials: null,
   regulation: [],
   localMarket: null,
+  ownRows: [],
+  nationalIncomeSeries: [],
   current,
   peerLabel: "Texas community banks",
   peers: amounts.map((amount, i) => ({ institutionId: i + 2, institutionName: `P${i}`, amount, stateCode: "TX", sourceDocumentIds: [], documentUrls: [], publishedAt: null })),

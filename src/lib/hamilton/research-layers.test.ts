@@ -13,6 +13,7 @@ const layer = (scope: MarketLayer["scope"], label: string, amounts: number[]): M
   position: null,
   amounts,
   bands: [],
+  members: [],
   asOf: "2026-10-01",
   source: { label: "published_fee_catalog" },
 });
@@ -44,6 +45,12 @@ describe("layersFromEngine", () => {
     expect(state.zeroCount).toBe(1);
     expect(state.position).toEqual({ more: 0, same: 1, less: 2 });
     expect(describePosition(state, 35)).toBe("2 of 3 charge less, 1 charge the same, 0 charge more");
+  });
+
+  it("carries the engine's member list for the CSV", () => {
+    const member = { institutionId: 7, institutionName: "Lone Star Bank", amount: 30, stateCode: "TX", sourceDocumentIds: [3], documentUrls: ["https://lonestar.example/fees.pdf"], publishedAt: "2026-09-30" };
+    const layers = layersFromEngine([{ ...layer("state", "Texas", [30]), members: [member] }], 35, null);
+    expect(layers[0].members).toEqual([member]);
   });
 
   it("marks thin layers and has no position without the bank's amount", () => {

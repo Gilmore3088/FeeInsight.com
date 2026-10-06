@@ -1,6 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getCategoryPeerAmounts, type PeerAmount } from "@/lib/data-store/fee-research";
 import { loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { parseLayer } from "@/lib/hamilton/research-layers";
 
@@ -10,19 +9,6 @@ function csvCell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-/**
- * The institutions in a non-local layer. The engine returns each layer's amounts but not who they
- * belong to, so this reads the same approved catalog values and applies the same layer rule; the
- * file says how many rows the screen counted so a mismatch shows.
- */
-function inLayer(key: string, inst: { id: number; stateCode: string | null; fedDistrict: number | null; charterType: string | null; assetTier: string | null }, p: PeerAmount): boolean {
-  if (p.institutionId === inst.id) return false;
-  if (key === "state") return p.stateCode === inst.stateCode;
-  if (key === "district") return p.fedDistrict === inst.fedDistrict;
-  if (key === "peers") return p.charterType === inst.charterType && p.assetTier === inst.assetTier;
-  return true;
 }
 
 /**
@@ -50,14 +36,12 @@ export async function GET(request: Request) {
         [csvCell(c.institutionName), csvCell(c.marketDeposits), c.amount, csvCell(c.publishedAt?.slice(0, 10)), csvCell(c.documentUrls[0]), ws.local.sodYear].join(","),
       );
     }
-  } else if (ws.institution) {
-    const inst = ws.institution;
-    const rows = (await getCategoryPeerAmounts(ws.fee).catch(() => [] as PeerAmount[])).filter((p) => inLayer(layer.key, inst, p));
-    lines.push(["institution", "state", "charter", "fed_district", "asset_tier", `${ws.fee}_amount`, "published_at", "source_url"].join(","));
+  } else {
+    // The engine's own list for the layer, so the file holds exactly the institutions the screen counted.
+    const rows = layer.members ?? [];
+    lines.push(["institution", "state", `${ws.fee}_amount`, "published_at", "source_url"].join(","));
     for (const p of rows) {
-      lines.push(
-        [csvCell(p.name), csvCell(p.stateCode), csvCell(p.charterType), csvCell(p.fedDistrict), csvCell(p.assetTier), p.amount, csvCell(p.publishedAt?.slice(0, 10)), csvCell(p.sourceUrl)].join(","),
-      );
+      lines.push([csvCell(p.institutionName), csvCell(p.stateCode), p.amount, csvCell(p.publishedAt?.slice(0, 10)), csvCell(p.documentUrls[0])].join(","));
     }
     if (rows.length !== layer.n) lines.push(csvCell(`Note: the screen counted ${layer.n} institutions; this file lists ${rows.length}.`));
   }

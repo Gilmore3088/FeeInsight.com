@@ -608,17 +608,17 @@ export function AuditPanel({
             <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Your published fee lines</h3>
             <ul className="mt-2 flex flex-col gap-1">
               {trail.ownFeeRows.map((r, i) => (
-                <li key={`${r.feeName}-${i}`} className="flex flex-wrap justify-between gap-x-3">
+                <li key={`${r.id}-${i}`} className="flex flex-wrap justify-between gap-x-3">
                   <span className="min-w-0">
                     {r.feeName}: {fmtMoney(r.amount)}
                   </span>
                   <span className="text-warm-600">
                     {r.publishedAt ? `Published ${longDateOrRange(r.publishedAt.slice(0, 10))}` : "Publish date not recorded"}
                     {r.verifiedByEventId ? <span title={`Verification record ${r.verifiedByEventId}`}> · Verified against the schedule</span> : null}
-                    {r.sourceUrl ? (
+                    {r.documentUrl || r.sourceUrl ? (
                       <>
                         {" · "}
-                        <a href={r.sourceUrl} target="_blank" rel="noreferrer" className="text-terra-text underline">
+                        <a href={r.documentUrl || r.sourceUrl || undefined} target="_blank" rel="noreferrer" className="text-terra-text underline">
                           Your schedule
                         </a>
                       </>

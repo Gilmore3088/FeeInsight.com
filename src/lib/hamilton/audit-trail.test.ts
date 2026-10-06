@@ -11,7 +11,7 @@ describe("buildAuditTrail", () => {
       feeName: "Overdraft",
       layer,
       layerDates: ["2026-10-01T03:00:00Z", null, "2026-09-12T00:00:00Z"],
-      ownFeeRows: [{ feeName: "Overdraft", amount: 30, sourceUrl: "https://bank.example/fees.pdf", publishedAt: "2026-10-02T00:00:00Z", verifiedByEventId: "7" }],
+      ownFeeRows: [{ id: 1, feeName: "Overdraft", amount: 30, sourceDocumentId: 9, documentUrl: "https://bank.example/fees.pdf", sourceUrl: "https://bank.example/fees", publishedAt: "2026-10-02T00:00:00Z", verifiedByEventId: "7" }],
       local: { basis: "branch_counties", places: ["Travis County, TX", "Hays County, TX"], sodYear: 2025 },
       clientFigures: { paidItems: null, waiverRate: null },
       now: new Date("2026-10-06T00:00:00Z"),
