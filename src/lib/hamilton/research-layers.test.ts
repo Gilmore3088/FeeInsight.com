@@ -1,34 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { buildLayers, describePosition, parseLayer } from "./research-layers";
+import { describePosition, layersFromEngine, parseLayer } from "./research-layers";
 import { plainFeeName } from "./briefing-observations";
-import type { PeerAmount } from "@/lib/data-store/fee-research";
+import type { MarketLayer } from "./workspace/types";
 
-const peer = (id: number, amount: number, over: Partial<PeerAmount> = {}): PeerAmount => ({
-  institutionId: id,
-  name: `I${id}`,
-  stateCode: "TX",
-  charterType: "bank",
-  fedDistrict: 11,
-  assetTier: "community",
-  amount,
-  sourceUrl: null,
-  publishedAt: null,
-  ...over,
+const layer = (scope: MarketLayer["scope"], label: string, amounts: number[]): MarketLayer => ({
+  scope,
+  label,
+  n: amounts.length,
+  p25: null,
+  median: null,
+  p75: null,
+  position: null,
+  amounts,
+  bands: [],
+  asOf: "2026-10-01",
+  source: { label: "published_fee_catalog" },
 });
 
-const self = { id: 1, stateCode: "TX", charterType: "bank", fedDistrict: 11, assetTier: "community" };
-
-describe("buildLayers", () => {
-  const peers = [
-    peer(1, 35),
-    peer(2, 0),
-    peer(3, 30),
-    peer(4, 35, { stateCode: "OK", fedDistrict: 10 }),
-    peer(5, 25, { charterType: "credit_union" }),
+describe("layersFromEngine", () => {
+  const engine = [
+    layer("national", "National", [0, 25, 30, 35]),
+    layer("charter_size", "Banks, $100M to $1B in assets", [0, 30, 35]),
+    layer("state", "Texas", [0, 30, 35]),
+    layer("fed_district", "Fed district 11 (Dallas)", [0, 30, 35]),
+    layer("local", "Local market (Travis County, TX)", [32, 35]),
   ];
+  const local = { basis: "branch_counties" as const, places: ["Travis County, TX"], sodYear: 2025, institutions: 40, source: { label: "SOD" } };
 
-  it("builds every layer from one read and leaves the bank out of its own comparison", () => {
-    const layers = buildLayers(self, peers, 35, [32, 35]);
+  it("orders layers nearest first and keeps the engine's amounts and dates", () => {
+    const layers = layersFromEngine(engine, 35, local);
     expect(layers.map((l) => [l.key, l.n])).toEqual([
       ["local", 2],
       ["state", 3],
@@ -36,17 +36,20 @@ describe("buildLayers", () => {
       ["peers", 3],
       ["national", 4],
     ]);
-    const state = layers.find((l) => l.key === "state")!;
+    expect(layers[0].scope).toBe("Institutions with branches in Travis County, TX");
+    expect(layers[3].label).toBe("Peer group");
+    expect(layers[3].scope).toBe("Banks, $100M to $1B in assets, nationwide");
+    expect(layers[1].asOf).toBe("2026-10-01");
+    const state = layers[1];
     expect(state.zeroCount).toBe(1);
-    expect(state.position).toEqual({ more: 0, same: 0, less: 3 });
-    expect(describePosition(state, 35)).toBe("3 of 3 charge less, 0 charge more");
+    expect(state.position).toEqual({ more: 0, same: 1, less: 2 });
+    expect(describePosition(state, 35)).toBe("2 of 3 charge less, 1 charge the same, 0 charge more");
   });
 
-  it("skips the local layer without branch data and marks thin layers", () => {
-    const layers = buildLayers(self, peers, null, null);
-    expect(layers[0].key).toBe("state");
-    expect(layers[0].thin).toBe(true);
-    expect(layers[0].position).toBeNull();
+  it("marks thin layers and has no position without the bank's amount", () => {
+    const layers = layersFromEngine(engine, null, null);
+    expect(layers[1].thin).toBe(true);
+    expect(layers[1].position).toBeNull();
   });
 
   it("defaults an unknown layer to state", () => {

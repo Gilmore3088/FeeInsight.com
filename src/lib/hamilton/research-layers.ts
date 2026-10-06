@@ -1,39 +1,16 @@
 /**
  * The market layers Hamilton's Research and Model screens move across: the bank's own local
  * market, its state, its Fed district, its peer group (charter and asset size) and the nation.
- * Built from one national read of a fee's per-institution values, so switching layers costs no
- * extra queries. Descriptive only: positions and spreads, never a suggested price.
+ * Every layer comes from the Hamilton engine (`getFeeResearch(...).layers`), so the screens and
+ * the engine show the same institutions. Descriptive only: positions and spreads, never a
+ * suggested price.
  */
-import type { PeerAmount } from "@/lib/data-store/fee-research";
-import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
-import { STATE_NAMES } from "@/lib/us-states";
 import { median, peerPosition, quantile } from "./fee-scenario";
-
-/** Asset ranges in plain words, for both tier vocabularies. */
-const TIER_RANGES: Record<string, string> = {
-  community_small: "under $300M",
-  community_mid: "$300M to $1B",
-  community_large: "$1B to $10B",
-  regional: "$10B to $50B",
-  large_regional: "$50B to $250B",
-  super_regional: "over $250B",
-  micro: "under $100M",
-  community: "$100M to $1B",
-  midsize: "$1B to $10B",
-  mega: "over $250B",
-};
+import type { LocalMarketInfo, MarketLayer, MarketLayerScope } from "./workspace/types";
 
 export const LAYER_KEYS = ["local", "state", "district", "peers", "national"] as const;
 export type LayerKey = (typeof LAYER_KEYS)[number];
-
-export interface LayerInstitution {
-  id: number;
-  stateCode: string | null;
-  charterType: string | null;
-  fedDistrict: number | null;
-  assetTier: string | null;
-}
 
 export interface LayerSummary {
   key: LayerKey;
@@ -50,18 +27,12 @@ export interface LayerSummary {
   /** True when the layer has too few institutions for a median we'd publish. */
   thin: boolean;
   amounts: number[];
+  /** Newest publish date among the layer's institutions, from the engine. */
+  asOf?: string | null;
 }
 
 export function parseLayer(value: string | undefined | null): LayerKey {
   return (LAYER_KEYS as readonly string[]).includes(value ?? "") ? (value as LayerKey) : "state";
-}
-
-function charterWord(charter: string | null): string {
-  return charter === "credit_union" ? "credit unions" : "banks";
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function summarizeLayer(
@@ -88,64 +59,49 @@ export function summarizeLayer(
   };
 }
 
-/** Whether a peer belongs to a non-local layer for this institution (local comes from branch data). */
-export function inLayer(key: LayerKey, institution: LayerInstitution, p: PeerAmount): boolean {
-  switch (key) {
+const ENGINE_KEYS: Record<MarketLayerScope, LayerKey> = {
+  local: "local",
+  state: "state",
+  fed_district: "district",
+  charter_size: "peers",
+  national: "national",
+};
+
+function scopeFor(layer: MarketLayer, local: LocalMarketInfo | null): string {
+  switch (layer.scope) {
+    case "local":
+      return local?.basis === "hq_city"
+        ? `Institutions headquartered in ${local.places.join("; ")}`
+        : `Institutions with branches in ${local?.places.join("; ") ?? "your counties"}`;
     case "state":
-      return p.stateCode === institution.stateCode;
-    case "district":
-      return p.fedDistrict === institution.fedDistrict;
-    case "peers":
-      return p.charterType === institution.charterType && p.assetTier === institution.assetTier;
-    case "national":
-      return true;
+      return `Banks and credit unions headquartered in ${layer.label}`;
+    case "fed_district":
+      return `Banks and credit unions in ${layer.label}`;
+    case "charter_size":
+      return `${layer.label}, nationwide`;
     default:
-      return false;
+      return "Every institution with this fee published";
   }
 }
 
+function labelFor(layer: MarketLayer): string {
+  if (layer.scope === "local") return "Your market";
+  if (layer.scope === "charter_size") return "Peer group";
+  return layer.label;
+}
+
 /**
- * Every non-local layer for one fee. `peers` is the national read; the bank itself is left out of
- * its own comparison. `localAmounts` comes from the local market reader (banks in its counties).
+ * The engine's market layers as the screens show them, nearest first: your market, state, Fed
+ * district, peer group, nation. The bank's own amount is never in its own comparison.
  */
-export function buildLayers(
-  institution: LayerInstitution,
-  peers: readonly PeerAmount[],
+export function layersFromEngine(
+  layers: readonly MarketLayer[],
   ownAmount: number | null,
-  localAmounts: number[] | null,
+  local: LocalMarketInfo | null,
 ): LayerSummary[] {
-  const others = peers.filter((p) => p.institutionId !== institution.id);
-  const pick = (key: LayerKey) => others.filter((p) => inLayer(key, institution, p)).map((p) => p.amount);
-  const layers: LayerSummary[] = [];
-  if (localAmounts) {
-    layers.push(summarizeLayer("local", "Your market", "Banks with branches in your counties", localAmounts, ownAmount));
-  }
-  if (institution.stateCode) {
-    const name = STATE_NAMES[institution.stateCode] ?? institution.stateCode;
-    layers.push(
-      summarizeLayer("state", name, `Banks and credit unions headquartered in ${name}`, pick("state"), ownAmount),
-    );
-  }
-  if (institution.fedDistrict != null) {
-    const name = DISTRICT_NAMES[institution.fedDistrict] ?? `District ${institution.fedDistrict}`;
-    layers.push(
-      summarizeLayer("district", `${name} district`, `Institutions in the Federal Reserve Bank of ${name} district`, pick("district"), ownAmount),
-    );
-  }
-  if (institution.charterType && institution.assetTier) {
-    const tier = TIER_RANGES[institution.assetTier] ?? FDIC_TIER_LABELS[institution.assetTier] ?? institution.assetTier;
-    layers.push(
-      summarizeLayer(
-        "peers",
-        "Peer group",
-        `${capitalize(charterWord(institution.charterType))} with ${tier} in assets, nationwide`,
-        pick("peers"),
-        ownAmount,
-      ),
-    );
-  }
-  layers.push(summarizeLayer("national", "National", "Every institution with this fee published", pick("national"), ownAmount));
-  return layers;
+  return layers
+    .map((l) => ({ ...summarizeLayer(ENGINE_KEYS[l.scope], labelFor(l), scopeFor(l, local), l.amounts, ownAmount), asOf: l.asOf }))
+    .sort((a, b) => LAYER_KEYS.indexOf(a.key) - LAYER_KEYS.indexOf(b.key));
 }
 
 /** "above 31 of 48" style sentence for a layer, without judging whether that's good or bad. */

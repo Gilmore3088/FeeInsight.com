@@ -1,23 +1,18 @@
 /**
  * Everything the Research and Model screens need for one bank and one fee, read once: the bank's
- * own published fees, every institution's value for the fee, the bank's local market, and the
- * layer summaries built from them. Missing pieces come back null rather than failing the page.
+ * own published fees and the Hamilton engine's research for the fee (every market layer, the
+ * local market and its named competitors, filings and rules), so each figure on screen has one
+ * source. Missing pieces come back empty rather than failing the page.
  */
-import { unstable_cache } from "next/cache";
 import { getInstitutionFeeValues } from "@/lib/data-store/fee-index";
-import {
-  getCategoryPeerAmounts,
-  getInstitutionFeeEvidence,
-  getLocalMarketBanks,
-  type FeeEvidenceRow,
-  type LocalMarket,
-  type PeerAmount,
-} from "@/lib/data-store/fee-research";
+import { getInstitutionFeeEvidence, type FeeEvidenceRow } from "@/lib/data-store/fee-research";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { plainFeeName } from "./briefing-observations";
 import type { HamiltonSelectedInstitutionContext } from "./institution-context";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { buildLayers, inLayer, type LayerInstitution, type LayerSummary } from "./research-layers";
+import { layersFromEngine, summarizeLayer, type LayerSummary } from "./research-layers";
+import { getFeeResearch } from "./workspace/research";
+import type { FeeResearch, LocalMarketInfo, PeerValue } from "./workspace/types";
 
 /** Fees Hamilton leads with, in this order, when the bank publishes them. */
 export const FEATURED_FEES = [
@@ -31,12 +26,11 @@ export const FEATURED_FEES = [
   "paper_statement",
 ] as const;
 
-/** One national read per fee, shared across banks for an hour. */
-const getCachedPeerAmounts = unstable_cache(
-  (category: string) => getCategoryPeerAmounts(category),
-  ["hamilton-fee-peer-amounts"],
-  { revalidate: 3600 },
-);
+/** The bank's local market as the engine draws it, with the competitors that publish this fee. */
+export interface WorkspaceLocal extends LocalMarketInfo {
+  /** Largest market deposits first; deposits are null for credit unions outside the Summary of Deposits. */
+  competitors: PeerValue[];
+}
 
 export interface FeeWorkspace {
   institution: HamiltonSelectedInstitutionContext | null;
@@ -45,8 +39,9 @@ export interface FeeWorkspace {
   fee: string;
   feeName: string;
   ownAmount: number | null;
-  peers: PeerAmount[];
-  local: LocalMarket | null;
+  /** The engine's research for this fee; null without an institution or when it couldn't load. */
+  research: FeeResearch | null;
+  local: WorkspaceLocal | null;
   layers: LayerSummary[];
   /** The bank's own published rows for the fee, for the audit trail. */
   ownFeeRows: FeeEvidenceRow[];
@@ -89,14 +84,10 @@ export async function loadFeeWorkspace(params: {
   const fee = params.fee && /^[a-z0-9_]+$/.test(params.fee) ? params.fee : (ownFees[0]?.category ?? "overdraft");
   const ownAmount = ownValues.get(fee) ?? null;
 
-  const [peers, local, ownFeeRows] = await Promise.all([
-    getCachedPeerAmounts(fee).catch(() => {
-      unavailable.push("market fees");
-      return [] as PeerAmount[];
-    }),
+  const [research, ownFeeRows] = await Promise.all([
     institution
-      ? getLocalMarketBanks(institution.id, fee).catch(() => {
-          unavailable.push("your local market");
+      ? getFeeResearch(institution.id, fee).catch(() => {
+          unavailable.push("market fees");
           return null;
         })
       : null,
@@ -108,44 +99,16 @@ export async function loadFeeWorkspace(params: {
       : ([] as FeeEvidenceRow[]),
   ]);
 
-  const localAmounts = local
-    ? local.banks.filter((b) => !b.isSelf && b.feeAmount != null).map((b) => b.feeAmount as number)
-    : null;
+  const local: WorkspaceLocal | null =
+    research?.localMarket ? { ...research.localMarket, competitors: research.localCompetitors ?? [] } : null;
+  const layers = research
+    ? layersFromEngine(research.layers, ownAmount, research.localMarket)
+    : [summarizeLayer("national", "National", "Every institution with this fee published", [], null)];
 
-  const layers = institution
-    ? buildLayers(
-        {
-          id: institution.id,
-          stateCode: institution.stateCode,
-          charterType: institution.charterType,
-          fedDistrict: institution.fedDistrict,
-          assetTier: institution.assetTier,
-        },
-        peers,
-        ownAmount,
-        localAmounts,
-      )
-    : buildLayers({ id: -1, stateCode: null, charterType: null, fedDistrict: null, assetTier: null }, peers, null, null);
-
-  return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, peers, local, layers, ownFeeRows, unavailable };
+  return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, research, local, layers, ownFeeRows, unavailable };
 }
 
-/** Publish dates of the institutions in one layer, for the trail's "as of" range. */
-export function layerDates(ws: FeeWorkspace, layer: LayerSummary): (string | null)[] {
-  if (layer.key === "local") return [];
-  return layerPeers(ws, layer).map((p) => p.publishedAt);
-}
-
-/** The institutions behind a non-local layer (the bank itself left out), matching buildLayers. */
-export function layerPeers(ws: FeeWorkspace, layer: LayerSummary): PeerAmount[] {
-  const inst = ws.institution;
-  if (!inst) return layer.key === "national" ? ws.peers : [];
-  const self: LayerInstitution = {
-    id: inst.id,
-    stateCode: inst.stateCode,
-    charterType: inst.charterType,
-    fedDistrict: inst.fedDistrict,
-    assetTier: inst.assetTier,
-  };
-  return ws.peers.filter((p) => p.institutionId !== inst.id && inLayer(layer.key, self, p));
+/** The layer's newest publish date, for the trail's "as of". */
+export function layerDates(_ws: FeeWorkspace, layer: LayerSummary): (string | null)[] {
+  return [layer.asOf ?? null];
 }

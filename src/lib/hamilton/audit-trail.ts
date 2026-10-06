@@ -4,7 +4,8 @@
  * every assumption, and whether it rests on market data or the bank's own figures. Built from data
  * the page already read; it never adds a figure of its own.
  */
-import type { FeeEvidenceRow, LocalMarket } from "@/lib/data-store/fee-research";
+import type { FeeEvidenceRow } from "@/lib/data-store/fee-research";
+import type { LocalMarketInfo } from "./workspace/types";
 import type { LayerSummary } from "./research-layers";
 import { WORKSPACE_ENGINE_VERSION, type Provenance } from "./workspace/types";
 
@@ -62,7 +63,7 @@ export function buildAuditTrail(input: {
   /** More layers a deliverable compares against, each listed as its own source. */
   extraLayers?: { layer: LayerSummary; dates: readonly (string | null)[] }[];
   ownFeeRows: FeeEvidenceRow[];
-  local?: LocalMarket | null;
+  local?: Pick<LocalMarketInfo, "basis" | "places" | "sodYear"> | null;
   callReport?: { quarter: string; source: string } | null;
   complaints?: boolean;
   /** Fee changes seen on published schedules in the bank's state (the engine's change feed). */
@@ -99,8 +100,11 @@ export function buildAuditTrail(input: {
   if (input.local) {
     sources.push({
       label: "Local market",
-      detail: `Branch deposits in your ${input.local.countyCount} ${input.local.countyCount === 1 ? "county" : "counties"}, FDIC Summary of Deposits.`,
-      asOf: `June 30, ${input.local.year}`,
+      detail:
+        input.local.basis === "hq_city"
+          ? `Institutions headquartered in ${input.local.places.join("; ")}. Your institution isn't in the FDIC Summary of Deposits, so the market is your headquarters city.`
+          : `Institutions with branches in ${input.local.places.join("; ")}, by deposits held there. FDIC Summary of Deposits.`,
+      asOf: `June 30, ${input.local.sodYear}`,
       href: "https://www.fdic.gov/resources/data-tools/summary-of-deposits",
     });
   }

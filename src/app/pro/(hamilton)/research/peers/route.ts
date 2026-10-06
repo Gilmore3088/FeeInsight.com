@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { layerPeers, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { getCategoryPeerAmounts, type PeerAmount } from "@/lib/data-store/fee-research";
+import { loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { parseLayer } from "@/lib/hamilton/research-layers";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,19 @@ function csvCell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/**
+ * The institutions in a non-local layer. The engine returns each layer's amounts but not who they
+ * belong to, so this reads the same approved catalog values and applies the same layer rule; the
+ * file says how many rows the screen counted so a mismatch shows.
+ */
+function inLayer(key: string, inst: { id: number; stateCode: string | null; fedDistrict: number | null; charterType: string | null; assetTier: string | null }, p: PeerAmount): boolean {
+  if (p.institutionId === inst.id) return false;
+  if (key === "state") return p.stateCode === inst.stateCode;
+  if (key === "district") return p.fedDistrict === inst.fedDistrict;
+  if (key === "peers") return p.charterType === inst.charterType && p.assetTier === inst.assetTier;
+  return true;
 }
 
 /**
@@ -30,17 +44,22 @@ export async function GET(request: Request) {
 
   const lines: string[] = [];
   if (layer.key === "local" && ws.local) {
-    lines.push(["institution", "deposit_share_pct", `${ws.fee}_amount`, "sod_year"].join(","));
-    for (const b of ws.local.banks) {
-      lines.push([csvCell(b.name), (b.share * 100).toFixed(2), csvCell(b.feeAmount), ws.local.year].join(","));
+    lines.push(["institution", "deposits_in_market_usd", `${ws.fee}_amount`, "published_at", "source_url", "sod_year"].join(","));
+    for (const c of ws.local.competitors) {
+      lines.push(
+        [csvCell(c.institutionName), csvCell(c.marketDeposits), c.amount, csvCell(c.publishedAt?.slice(0, 10)), csvCell(c.documentUrls[0]), ws.local.sodYear].join(","),
+      );
     }
-  } else {
+  } else if (ws.institution) {
+    const inst = ws.institution;
+    const rows = (await getCategoryPeerAmounts(ws.fee).catch(() => [] as PeerAmount[])).filter((p) => inLayer(layer.key, inst, p));
     lines.push(["institution", "state", "charter", "fed_district", "asset_tier", `${ws.fee}_amount`, "published_at", "source_url"].join(","));
-    for (const p of layerPeers(ws, layer)) {
+    for (const p of rows) {
       lines.push(
         [csvCell(p.name), csvCell(p.stateCode), csvCell(p.charterType), csvCell(p.fedDistrict), csvCell(p.assetTier), p.amount, csvCell(p.publishedAt?.slice(0, 10)), csvCell(p.sourceUrl)].join(","),
       );
     }
+    if (rows.length !== layer.n) lines.push(csvCell(`Note: the screen counted ${layer.n} institutions; this file lists ${rows.length}.`));
   }
 
   const filename = `hamilton-${ws.fee}-${layer.key}-${new Date().toISOString().slice(0, 10)}.csv`;

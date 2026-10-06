@@ -76,6 +76,9 @@ function FilingExhibits({
 }) {
   const kind = credit ? "credit unions" : "banks";
   const ownOldest = own ? [...own.quarters].reverse() : [];
+  const peer = own?.peerMedian ?? null;
+  const peerByQuarter = new Map((peer?.quarters ?? []).map((q) => [q.quarterEnd, q.amount]));
+  const peerLatest = own && peer ? (peer.quarters.find((q) => q.quarterEnd === own.quarterEnd && q.amount > 0) ?? null) : null;
   const natOldest = [...national].reverse();
   const natLatest = national[0] ?? null;
   const natPrior = natLatest ? national.find((q) => q.quarter === `${Number(natLatest.quarter.slice(0, 4)) - 1}${natLatest.quarter.slice(4)}`) : null;
@@ -85,14 +88,30 @@ function FilingExhibits({
   return (
     <>
       {own && own.quarters.length > 0 ? (
-        <Exhibit number={2} title={`${name}'s fee income each quarter`} source={`${own.sourceRef.label}. Each quarter stands alone; credit union year-to-date filings are split into quarters.`}>
+        <Exhibit
+          number={2}
+          title={peer ? `${name}'s fee income each quarter, against its peers` : `${name}'s fee income each quarter`}
+          source={`${own.sourceRef.label}${peer ? `; peer median from every filer that is ${peer.label.charAt(0).toLowerCase()}${peer.label.slice(1)}` : ""}. Each quarter stands alone; credit union year-to-date filings are split into quarters.`}
+        >
           <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
             <QuarterLines
               quarters={ownOldest.map((q) => quarterOf(q.quarterEnd))}
-              series={[{ label: own.label, values: ownOldest.map((q) => q.amount / 1000), own: true }]}
+              series={[
+                { label: name, values: ownOldest.map((q) => q.amount / 1000), own: true },
+                ...(peer
+                  ? [{ label: `Median of ${peer.label.charAt(0).toLowerCase()}${peer.label.slice(1)}`, values: ownOldest.map((q) => { const m = peerByQuarter.get(q.quarterEnd); return m == null ? null : m / 1000; }) }]
+                  : []),
+              ]}
             />
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
               <Figure label={`Latest quarter, ${quarterLabel(quarterOf(own.quarterEnd))}`} value={fmtFiledThousands(own.quarters[0].amount / 1000)} />
+              {peerLatest ? (
+                <Figure
+                  label="Peer median, same quarter"
+                  value={fmtFiledThousands(peerLatest.amount / 1000)}
+                  note={`${peerLatest.institutions.toLocaleString("en-US")} filers; you're at ${(own.quarters[0].amount / peerLatest.amount).toFixed(1)}× the median`}
+                />
+              ) : null}
               {own.latestTtm != null ? (
                 <Figure label="Last four quarters" value={fmtFiledThousands(own.latestTtm / 1000)} note={fmtYoy(own.yoyPct, "the four quarters before")} />
               ) : null}
@@ -223,7 +242,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       : null,
   });
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
-  const localBanks = ws.local?.banks ?? [];
+  const localBanks = ws.local?.competitors ?? [];
 
   return (
     <MemoPage>
@@ -281,34 +300,43 @@ export default async function ResearchPage({ searchParams }: PageProps) {
 
       {layer.key === "local" && ws.local ? (
         <MemoSection
-          title="The banks your customers can walk into"
-          note={`Banks with branches in your ${ws.local.countyCount} ${ws.local.countyCount === 1 ? "county" : "counties"}, by deposits held there (FDIC Summary of Deposits, ${ws.local.year}). Credit unions don't report branch deposits, so they aren't listed.`}
+          title="Who your customers can walk into"
+          note={`${ws.local.institutions} ${ws.local.institutions === 1 ? "institution has" : "institutions have"} ${ws.local.basis === "hq_city" ? `headquarters in ${ws.local.places.join("; ")}` : `branches in ${ws.local.places.join("; ")}`}. Listed: those that publish a ${ws.feeName.toLowerCase()} fee, largest deposits there first (FDIC Summary of Deposits, ${ws.local.sodYear}).`}
         >
-          <div className="overflow-x-auto rounded-lg border border-warm-300 bg-warm-50">
-            <table className="w-full min-w-[32rem] text-sm">
-              <thead>
-                <tr className="border-b border-warm-300 text-left text-xs uppercase tracking-[0.08em] text-warm-600">
-                  <th className="px-4 py-2 font-medium">Institution</th>
-                  <th className="px-4 py-2 text-right font-medium">Deposit share</th>
-                  <th className="px-4 py-2 text-right font-medium">{ws.feeName}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {localBanks.map((b) => (
-                  <tr key={`${b.institutionId}-${b.name}`} className={"border-b border-warm-200 last:border-0 " + (b.isSelf ? "bg-terra-soft" : "")}>
-                    <td className="px-4 py-2 text-warm-900">
-                      {b.name}
-                      {b.isSelf ? <span className="ml-2 text-xs text-terra-text">You</span> : null}
-                    </td>
-                    <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-700">{(b.share * 100).toFixed(1)}%</td>
-                    <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">
-                      {b.feeAmount != null ? fmtMoney(b.feeAmount) : <span className="text-warm-600">Not read yet</span>}
-                    </td>
+          {localBanks.length > 0 ? (
+            <div className="overflow-x-auto rounded-lg border border-warm-300 bg-warm-50">
+              <table className="w-full min-w-[32rem] text-sm">
+                <thead>
+                  <tr className="border-b border-warm-300 text-left text-xs uppercase tracking-[0.08em] text-warm-600">
+                    <th className="px-4 py-2 font-medium">Institution</th>
+                    <th className="px-4 py-2 text-right font-medium">Deposits in your market</th>
+                    <th className="px-4 py-2 text-right font-medium">{ws.feeName}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {localBanks.map((b) => (
+                    <tr key={b.institutionId} className="border-b border-warm-200 last:border-0">
+                      <td className="px-4 py-2 text-warm-900">
+                        {b.documentUrls[0] ? (
+                          <a href={b.documentUrls[0]} target="_blank" rel="noreferrer" className="underline decoration-warm-400">
+                            {b.institutionName}
+                          </a>
+                        ) : (
+                          b.institutionName
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-700">
+                        {b.marketDeposits != null ? fmtFiledThousands(b.marketDeposits / 1000) : <span className="text-warm-600">Not in the Summary of Deposits</span>}
+                      </td>
+                      <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">{fmtMoney(b.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-warm-700">No institution in your market publishes a {ws.feeName.toLowerCase()} fee we&apos;ve verified yet.</p>
+          )}
         </MemoSection>
       ) : null}
 
