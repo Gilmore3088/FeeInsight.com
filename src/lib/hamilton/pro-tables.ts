@@ -21,6 +21,7 @@
  */
 
 import { sql } from "@/lib/data-store/connection";
+import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { HamiltonPeerIndexSource } from "@/lib/hamilton/peer-index";
@@ -206,6 +207,7 @@ export async function saveHamiltonReport(params: {
       )
     RETURNING id
   `;
+  await trackFirstHamiltonUse(params.userId, "report");
   return rows[0].id as string;
 }
 

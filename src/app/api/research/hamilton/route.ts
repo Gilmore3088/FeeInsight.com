@@ -35,6 +35,7 @@ import {
   type HamiltonRequestContract,
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
+import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 
 export const maxDuration = 300;
 
@@ -263,6 +264,7 @@ async function handlePOST(request: Request) {
           outputTokens,
           costCents,
         );
+        if (user) await trackFirstHamiltonUse(user.id, "question");
       } catch {
         // Non-critical — don't fail the response
       }
@@ -318,6 +320,7 @@ async function handlePOST(request: Request) {
             outputTokens,
             costCents
           );
+          if (user) await trackFirstHamiltonUse(user.id, "question");
         } catch {
           // Non-critical — don't fail the response
         }

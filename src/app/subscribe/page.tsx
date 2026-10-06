@@ -8,6 +8,7 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { SITE_NAME } from "@/lib/constants";
@@ -40,6 +41,8 @@ interface SubscribeSearchParams {
   plan?: string;
   /** "1" right after signup: start checkout for ?plan= without another click. */
   checkout?: string;
+  /** Why /pro sent the reader here (src/lib/subscribe-reason.ts). */
+  reason?: string;
 }
 
 function buildSubscribeReturnPath(options: {
@@ -78,6 +81,7 @@ export default async function SubscribePage({
   }
 
   const isLoggedIn = !!user;
+  const reasonLine = subscribeReasonLine(params.reason, SITE_NAME);
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
   const autoStartPlan = isLoggedIn && checkoutRequested ? requestedPlan : null;
   const pendingInvitations =
@@ -100,6 +104,11 @@ export default async function SubscribePage({
       <main id="main-content">
 
       <div className="mx-auto max-w-5xl px-6 py-14">
+        {reasonLine && (
+          <p role="status" className="mb-6 rounded-xl border border-[#E8DFD1] bg-white px-4 py-3 text-sm text-[#1A1815]">
+            {reasonLine}
+          </p>
+        )}
         {inviteMode && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>

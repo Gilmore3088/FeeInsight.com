@@ -14,6 +14,7 @@ import {
   shouldPersistUrlInstitutionSelection,
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
+import { subscribeReason } from "@/lib/subscribe-reason";
 
 export const metadata: Metadata = {
   title: {
@@ -51,7 +52,7 @@ async function HamiltonLayoutInner({
 
   if (!user || !canAccessPremium(user)) {
     // The /pro layout normally handles this first; never render a dead-end gate here.
-    redirect("/subscribe?from=%2Fpro%2Fhamilton");
+    redirect(`/subscribe?from=%2Fpro%2Fhamilton&reason=${user ? subscribeReason(user) : "pro_required"}`);
   }
 
   const isAdmin = user.role === "admin" || user.role === "analyst";
