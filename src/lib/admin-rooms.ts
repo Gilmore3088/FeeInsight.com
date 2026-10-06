@@ -58,6 +58,7 @@ export const ROOMS: Room[] = [
         activePrefixes: ["/admin/review", "/admin/agents/knox"],
       },
       { href: "/admin/darwin", label: "Darwin", role: "4 Verify" },
+      { href: "/admin/agents/learning", label: "Learning", role: "Which methods work" },
       { href: "/admin/agents/health", label: "Health", role: "Per-agent health tiles" },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back" },
       { href: "/admin/agents/replay", label: "Replay", role: "Re-run a past step" },
@@ -96,7 +97,7 @@ export const ROOMS: Room[] = [
     question: "Who asked, who got a reply, and who is close to paying?",
     href: "/admin/customers",
     pages: [
-      { href: "/admin/customers", label: "Overview", role: "Leads by stage", exact: true },
+      { href: "/admin/customers", label: "Overview", role: "Leads, Pro accounts", exact: true },
       { href: "/admin/leads", label: "Leads", role: "Every request", activePrefixes: ["/admin/hamilton/leads"] },
       { href: "/admin/api-keys", label: "API keys", role: "Invited partners" },
       { href: "/admin/hamilton/research/usage", label: "Hamilton usage", role: "Who asked Hamilton", activePrefixes: ["/admin/research/usage"] },
@@ -172,4 +173,40 @@ export function findRoomPage(pathname: string): { room: Room; page: RoomPage } |
 /** The room a path belongs to; anything unmapped under /admin falls back to Today. */
 export function roomForPath(pathname: string): Room {
   return findRoomPage(pathname)?.room ?? ROOMS[0];
+}
+
+export interface ScreenMatch {
+  href: string;
+  label: string;
+  room: string;
+}
+
+/** Screens whose name, purpose or room contains the query, for the ⌘K search. Name matches rank first. */
+export function searchScreens(query: string, limit = 6): ScreenMatch[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const scored: Array<ScreenMatch & { score: number; order: number }> = [];
+  let order = 0;
+  for (const room of ROOMS) {
+    for (const page of room.pages) {
+      order += 1;
+      if (scored.some((match) => match.href === page.href)) continue;
+      const label = page.href === room.href ? room.label : page.label;
+      const name = label.toLowerCase();
+      const score = name === needle
+        ? 0
+        : name.startsWith(needle)
+          ? 1
+          : name.includes(needle)
+            ? 2
+            : `${page.label} ${page.role} ${room.label}`.toLowerCase().includes(needle)
+              ? 3
+              : -1;
+      if (score >= 0) scored.push({ href: page.href, label, room: room.label, score, order });
+    }
+  }
+  return scored
+    .sort((a, b) => a.score - b.score || a.order - b.order)
+    .slice(0, limit)
+    .map(({ href, label, room }) => ({ href, label, room }));
 }

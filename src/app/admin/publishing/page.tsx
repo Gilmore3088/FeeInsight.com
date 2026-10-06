@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { getReportFreshness, type ReportFreshness } from "@/lib/data-store/feed-freshness";
 import { buildPublishingCalendar, type Audience } from "@/lib/console/publishing-calendar";
+import { getSentEmailLog, type SentEmailLog } from "@/lib/email/resend-log";
 import { RoomHeader, RoomScreens, Unreadable } from "../room-hub";
 
 const AUDIENCE_TONE: Record<Audience, string> = {
@@ -22,12 +23,13 @@ function lastLine(lastAt: string | null, status: string | null): { text: string;
 /** The Publishing room: what goes out, to whom, when it last went and when it's next due. */
 export default async function PublishingRoomPage() {
   await requireAuth("view");
-  let reports: ReportFreshness[] | null = null;
-  try {
-    reports = await getReportFreshness();
-  } catch (error) {
-    console.error("Publishing room report freshness failed", error);
-  }
+  const [reports, emails] = await Promise.all([
+    getReportFreshness().catch((error): ReportFreshness[] | null => {
+      console.error("Publishing room report freshness failed", error);
+      return null;
+    }),
+    getSentEmailLog(),
+  ]);
   const calendar = reports ? buildPublishingCalendar(reports) : [];
   const library = reports?.find((report) => report.key === "published_reports");
   const proReports = reports?.find((report) => report.key === "hamilton_reports");
@@ -108,7 +110,63 @@ export default async function PublishingRoomPage() {
         </>
       )}
 
+      <EmailLog log={emails} />
+
       <RoomScreens room="publishing" />
     </div>
+  );
+}
+
+const EVENT_TONE: Record<string, string> = {
+  delivered: "text-emerald-700 dark:text-emerald-400",
+  opened: "text-emerald-700 dark:text-emerald-400",
+  clicked: "text-emerald-700 dark:text-emerald-400",
+  bounced: "text-red-700 dark:text-red-400",
+  complained: "text-red-700 dark:text-red-400",
+  failed: "text-red-700 dark:text-red-400",
+};
+
+function EmailLog({ log }: { log: SentEmailLog }) {
+  return (
+    <section aria-label="Emails sent">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="admin-section-title">Emails sent</p>
+        <p className="text-xs text-gray-500">Latest 25, read live from Resend</p>
+      </div>
+      {log.status !== "ok" ? (
+        <p role="status" className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+          The email log could not be read. {log.reason}
+        </p>
+      ) : log.emails.length === 0 ? (
+        <p className="mt-2 text-sm text-gray-500">Resend has no sent emails on record.</p>
+      ) : (
+        <div className="admin-card mt-2 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-sm">
+            <thead>
+              <tr className="border-b border-black/[0.06] text-left text-[11px] uppercase tracking-wide text-gray-500 dark:border-white/[0.06]">
+                <th className="px-4 py-2 font-semibold">Subject</th>
+                <th className="px-4 py-2 font-semibold">To</th>
+                <th className="px-4 py-2 font-semibold">Status</th>
+                <th className="px-4 py-2 font-semibold">Sent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {log.emails.map((email) => (
+                <tr key={email.id} className="border-b border-black/[0.04] last:border-0 dark:border-white/[0.04]">
+                  <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">{email.subject || "(no subject)"}</td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">{email.to.join(", ")}</td>
+                  <td className={`px-4 py-2.5 capitalize ${EVENT_TONE[email.lastEvent ?? ""] ?? "text-gray-600 dark:text-gray-300"}`}>
+                    {email.lastEvent?.replace(/_/g, " ") ?? "Unknown"}
+                  </td>
+                  <td className="px-4 py-2.5 tabular-nums text-gray-600 dark:text-gray-300">
+                    {email.createdAt ? formatAdminDateTime(email.createdAt) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
