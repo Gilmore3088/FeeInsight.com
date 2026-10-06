@@ -18,6 +18,13 @@ report I've ever seen". Each report shows key findings, headline-fee ranges, the
 national, banks vs credit unions, and a locked "your institution" section that leads to the paid
 report.
 
+**No booking tool and no paid tools before the first sale; James emails clients directly.**
+James, 00:57 UTC Oct 6 ("I don't need to book 15 minutes to talk to somebody ... I can just
+email them"). He uses Outlook and is already paying for several small services with no revenue
+yet. Pages offer an email link, never a scheduler; PR 178 changed the private report page's
+"Book 15 minutes" button to "Email us about this report". Any new paid service waits until a
+report has sold.
+
 ## 2026-10-05
 
 **The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
