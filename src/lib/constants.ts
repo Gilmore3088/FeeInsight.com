@@ -45,5 +45,5 @@ export const REPORT_OFFER_LINE = "National and Fed district fee reports — free
 export const HAMILTON_CANONICAL =
   `Hamilton is the ${SITE_NAME} Pro workspace: research, model and report your fee position ` +
   "against a verified market, from your own counties to the nation.";
-export const HAMILTON_MODES = ["Briefing", "Research", "Model", "Reports", "Watch"] as const;
+export const HAMILTON_MODES = ["This month", "My fees", "Try a price", "Reports"] as const;
 export type HamiltonMode = (typeof HAMILTON_MODES)[number];

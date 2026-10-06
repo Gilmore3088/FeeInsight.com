@@ -28,13 +28,13 @@ describe("HamiltonLeftRail primary actions", () => {
     );
   });
 
-  it("routes the Briefing's primary action to Research with institution context", () => {
+  it("routes This month's primary action to My fees with institution context", () => {
     navigationState.pathname = "/pro/hamilton";
     navigationState.searchParams = new URLSearchParams("");
 
     render(<HamiltonLeftRail selectedInstitutionId="8109" />);
 
-    expect(screen.getByRole("link", { name: /research a fee/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /look at my fees/i })).toHaveAttribute(
       "href",
       "/pro/research?instId=8109",
     );

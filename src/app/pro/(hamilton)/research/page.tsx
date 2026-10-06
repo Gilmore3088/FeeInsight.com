@@ -27,7 +27,7 @@ import {
   fmtMoney,
 } from "@/components/hamilton/memo/memo";
 
-export const metadata: Metadata = { title: "Research" };
+export const metadata: Metadata = { title: "My fees" };
 
 interface PageProps {
   searchParams: Promise<{ fee?: string; layer?: string; instId?: string; prompt?: string }>;
@@ -130,7 +130,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   return (
     <MemoPage>
       <MemoHeader
-        kicker={`Research · ${ws.feeName}`}
+        kicker={`My fees · ${ws.feeName}`}
         title={inst ? `Where ${inst.name} sits on ${ws.feeName.toLowerCase()}` : `${ws.feeName} across the market`}
         dek={
           inst
@@ -143,7 +143,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           <>
             <LinkButton href={askHref}>Ask about this</LinkButton>
             <LinkButton href={modelHref} primary>
-              Model a price
+              Try a price
             </LinkButton>
           </>
         }

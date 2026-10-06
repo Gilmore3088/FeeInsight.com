@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { HAMILTON_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
+import { HAMILTON_ACCOUNT_NAV, HAMILTON_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { SITE_NAME } from "@/lib/constants";
 
@@ -24,7 +24,7 @@ interface HamiltonTopNavProps {
 
 /**
  * The one header Hamilton has (James, 2026-10-06: one nav, nothing else around the page).
- * Wordmark, the six workspace screens, the bank being worked on, and an account menu that holds
+ * Wordmark, the four tabs, the bank being worked on, and an account menu that holds
  * everything else: reference pages, Admin for admins, and sign out.
  */
 export function HamiltonTopNav({
@@ -126,6 +126,18 @@ export function HamiltonTopNav({
                 <div className="border-b border-warm-200 px-4 py-3">
                   <p className="truncate font-medium text-warm-900">{user.display_name}</p>
                   {user.email ? <p className="truncate text-xs text-warm-600">{user.email}</p> : null}
+                </div>
+                <div className="border-b border-warm-200 py-1">
+                  {HAMILTON_ACCOUNT_NAV.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={withBank(item.href)}
+                      onClick={() => setMenuOpen(false)}
+                      className="block px-4 py-1.5 text-warm-800 no-underline hover:bg-warm-150"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
                 </div>
                 <p className="px-4 pb-1 pt-3 text-[11px] uppercase tracking-[0.1em] text-warm-600">Reference</p>
                 {HAMILTON_REFERENCE_NAV.map((item) => (

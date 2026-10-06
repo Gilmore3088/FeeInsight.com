@@ -24,21 +24,13 @@ describe("HAMILTON_BASE", () => {
 });
 
 describe("HAMILTON_NAV", () => {
-  it("has exactly 7 entries", () => {
-    expect(HAMILTON_NAV).toHaveLength(7);
+  it("has exactly 5 entries (four tabs plus Admin, which lives in the account menu)", () => {
+    expect(HAMILTON_NAV).toHaveLength(5);
   });
 
-  it("has exact labels in order: Briefing, Research, Model, Reports, Watch, Data, Admin", () => {
+  it("has exact labels in order: This month, My fees, Try a price, Reports, Admin", () => {
     const labels = HAMILTON_NAV.map((item) => item.label);
-    expect(labels).toEqual([
-      "Briefing",
-      "Research",
-      "Model",
-      "Reports",
-      "Watch",
-      "Data",
-      "Admin",
-    ]);
+    expect(labels).toEqual(["This month", "My fees", "Try a price", "Reports", "Admin"]);
   });
 
   it("all hrefs are unique (no duplicates)", () => {
@@ -79,11 +71,10 @@ describe("LEFT_RAIL_CONFIG", () => {
   });
 
   it("routes primary actions to the matching Hamilton workflow", () => {
-    expect(getPrimaryActionHref("Briefing")).toBe("/pro/research");
-    expect(getPrimaryActionHref("Research")).toBe("/pro/simulate");
-    expect(getPrimaryActionHref("Model")).toBe("/pro/reports");
+    expect(getPrimaryActionHref("This month")).toBe("/pro/research");
+    expect(getPrimaryActionHref("My fees")).toBe("/pro/simulate");
+    expect(getPrimaryActionHref("Try a price")).toBe("/pro/reports");
     expect(getPrimaryActionHref("Reports")).toBe("/pro/reports?intent=executive-briefing");
-    expect(getPrimaryActionHref("Watch")).toBe("/pro/analyze");
     expect(getPrimaryActionHref("Admin")).toBe("/admin");
     expect(Object.keys(PRIMARY_ACTION_HREF).sort()).toEqual(
       HAMILTON_NAV.map((item) => item.label).sort(),
@@ -93,26 +84,19 @@ describe("LEFT_RAIL_CONFIG", () => {
 
 describe("CTA_HIERARCHY", () => {
   it("has entries for the workspace screens and the Ask answer screen", () => {
-    const expectedKeys = [
-      "Analyze",
-      "Briefing",
-      "Research",
-      "Model",
-      "Reports",
-      "Watch",
-    ];
+    const expectedKeys = ["Analyze", "This month", "My fees", "Try a price", "Reports"];
     for (const key of expectedKeys) {
       expect(CTA_HIERARCHY).toHaveProperty(key);
     }
     expect(CTA_HIERARCHY).not.toHaveProperty("Admin");
   });
 
-  it("Analyze primary CTA is 'Model a Price'", () => {
-    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Model a Price");
+  it("Analyze primary CTA is 'Try a Price'", () => {
+    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Try a Price");
   });
 
-  it("Model primary CTA is 'Plan the Change'", () => {
-    expect(CTA_HIERARCHY["Model"].primary).toBe("Plan the Change");
+  it("Try a price primary CTA is 'Plan the Change'", () => {
+    expect(CTA_HIERARCHY["Try a price"].primary).toBe("Plan the Change");
   });
 
   it("Reports primary CTA is 'Generate Brief'", () => {
@@ -171,14 +155,16 @@ describe("no Sovereign branding (D-05)", () => {
 });
 
 describe("labels open the screen of the same name", () => {
-  it("Briefing opens /pro/hamilton and each screen keeps its old URL", () => {
+  it("This month opens /pro/hamilton and each screen keeps its old URL", () => {
     const byLabel = Object.fromEntries(HAMILTON_NAV.map((item) => [item.label, item.href]));
-    expect(byLabel.Briefing).toBe("/pro/hamilton");
-    expect(byLabel.Research).toBe("/pro/research");
-    expect(byLabel.Model).toBe("/pro/simulate");
+    expect(byLabel["This month"]).toBe("/pro/hamilton");
+    expect(byLabel["My fees"]).toBe("/pro/research");
+    expect(byLabel["Try a price"]).toBe("/pro/simulate");
     expect(byLabel.Reports).toBe("/pro/reports");
-    expect(byLabel.Watch).toBe("/pro/monitor");
-    expect(byLabel.Data).toBe("/pro/settings");
+  });
+
+  it("keeps no more than four tabs a client sees", () => {
+    expect(HAMILTON_NAV.filter((item) => item.label !== "Admin")).toHaveLength(4);
   });
 
   it("reference pages stay inside Pro", () => {

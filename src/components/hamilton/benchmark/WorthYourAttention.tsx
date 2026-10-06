@@ -42,13 +42,13 @@ export function WorthYourAttention({
                 href={hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
                 className="text-terra-text underline"
               >
-                Research
+                Look closer
               </Link>
               <Link
                 href={hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(o.feeCategory)}`, institutionId)}
                 className="text-terra-text underline"
               >
-                Model a price
+                Try a price
               </Link>
             </span>
           </li>

@@ -254,7 +254,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
         kicker={`If management chooses · ${ws.feeName}`}
         title={move}
         dek="What the change takes once it's decided: approvals, customer notice, systems and the checks after launch."
-        actions={<LinkButton href={modelHref}>Back to the model</LinkButton>}
+        actions={<LinkButton href={modelHref}>Back to the prices</LinkButton>}
       />
       <MemoSection title="Timing">
         {timing}

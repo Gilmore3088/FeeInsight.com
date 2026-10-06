@@ -68,7 +68,7 @@ export function HamiltonLeftRail({
     ? hrefWithInstitutionContext(getPrimaryActionHref(currentScreen), activeInstitutionId)
     : null;
 
-  const isSimulateScreen = currentScreen === "Model";
+  const isSimulateScreen = currentScreen === "Try a price";
   const withCurrentContext = (href: string) =>
     hrefWithInstitutionContext(href, activeInstitutionId);
   const hrefForSavedAnalysis = (analysis: SavedAnalysis) =>

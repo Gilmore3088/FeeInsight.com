@@ -27,7 +27,7 @@ import {
   fmtSignedPrice,
 } from "@/components/hamilton/memo/memo";
 
-export const metadata: Metadata = { title: "Model" };
+export const metadata: Metadata = { title: "Try a price" };
 
 interface PageProps {
   searchParams: Promise<{
@@ -127,14 +127,14 @@ export default async function ModelPage({ searchParams }: PageProps) {
   return (
     <MemoPage>
       <MemoHeader
-        kicker={`Model · ${ws.feeName}`}
+        kicker={`Try a price · ${ws.feeName}`}
         title={`Test any ${ws.feeName.toLowerCase()} price side by side`}
         dek={
           current != null
             ? `Today you charge ${fmtMoney(current)}. Add the prices you want to test, including no fee at all. Hamilton shows where each would sit and what it does to fee income; it doesn't pick one.`
             : `We haven't published a ${ws.feeName.toLowerCase()} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0. Add your current price below to change that.`
         }
-        actions={<LinkButton href={researchHref}>Back to research</LinkButton>}
+        actions={<LinkButton href={researchHref}>Back to my fees</LinkButton>}
       />
 
       {ws.ownFees.length > 0 ? (

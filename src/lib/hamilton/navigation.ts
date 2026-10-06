@@ -2,8 +2,9 @@
  * Hamilton Navigation — Single source of truth.
  * Top nav labels, left rail structure, CTA hierarchy, and label constants.
  *
- * Label set: Briefing | Research | Model | Reports | Watch | Data | Admin (HAMILTON_MODES in
- * constants.ts carries the first five for public copy). Hamilton is a neutral research and
+ * Label set: This month | My fees | Try a price | Reports, in a banker's words (HAMILTON_MODES in
+ * constants.ts carries them for public copy). Changes to watch live in This month; the bank and its
+ * data, Reference pages and Admin live in the account menu. Hamilton is a neutral research and
  * modeling workspace (docs/project/DECISIONS.md, 2026-10-05): research, compare, model any
  * price, then plan and report. Ask Hamilton is a bar on every screen rather than a nav item;
  * its answers open in /pro/analyze. Each label's screen uses the same word in its metadata title.
@@ -14,19 +15,25 @@
  *   - 2026-04-17 UX audit H-4 superseded D-16 with job-oriented labels (Option A).
  *   - 2026-08-17 executive-panel audit F8: one list of mode names across public copy and the workspace.
  *   - 2026-10-05 James: Briefing | Research | Model | Reports | Watch | Data, with a docked Ask bar.
+ *   - 2026-10-06 James: too many tabs, and "a banker doesn't wake up wanting to model or watch".
+ *     Four tabs in plain words; Watch folds into This month, Data and Admin into the account menu.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
 export const HAMILTON_BASE = "/pro" as const;
 
 export const HAMILTON_NAV = [
-  { label: "Briefing", href: `${HAMILTON_BASE}/hamilton` },
-  { label: "Research", href: `${HAMILTON_BASE}/research` },
-  { label: "Model",    href: `${HAMILTON_BASE}/simulate` },
-  { label: "Reports",  href: `${HAMILTON_BASE}/reports`  },
-  { label: "Watch",    href: `${HAMILTON_BASE}/monitor`  },
-  { label: "Data",     href: `${HAMILTON_BASE}/settings` },
-  { label: "Admin",    href: "/admin"                    },
+  { label: "This month",  href: `${HAMILTON_BASE}/hamilton` },
+  { label: "My fees",     href: `${HAMILTON_BASE}/research` },
+  { label: "Try a price", href: `${HAMILTON_BASE}/simulate` },
+  { label: "Reports",     href: `${HAMILTON_BASE}/reports`  },
+  { label: "Admin",       href: "/admin"                    },
+] as const;
+
+/** Account menu: the bank and its data, and what changed, outside the four tabs. */
+export const HAMILTON_ACCOUNT_NAV = [
+  { label: "My bank and data", href: `${HAMILTON_BASE}/settings` },
+  { label: "All changes",      href: `${HAMILTON_BASE}/monitor`  },
 ] as const;
 
 export type HamiltonScreen = (typeof HAMILTON_NAV)[number]["label"];
@@ -45,25 +52,21 @@ export const LEFT_RAIL_CONFIG: Record<HamiltonScreen, {
   primaryAction: string;
   sections: string[];
 }> = {
-  "Briefing": { primaryAction: "Research a Fee",  sections: ["Saved Analyses", "Recent Work", "Pinned Institutions"] },
-  "Research": { primaryAction: "Model a Price",   sections: ["Saved Analyses", "Recent Work"] },
-  "Model":    { primaryAction: "Build a Report",  sections: ["Scenarios", "Saved Analyses"] },
-  "Reports":  { primaryAction: "Generate Brief",  sections: ["Your Reports", "Templates"] },
-  "Watch":    { primaryAction: "Ask Hamilton",    sections: ["Watchlist", "Signal Feed"] },
-  "Data":     { primaryAction: "",                sections: [] },
-  "Admin":    { primaryAction: "",                sections: [] },
+  "This month":  { primaryAction: "Look at My Fees", sections: ["Saved Analyses", "Recent Work", "Pinned Institutions"] },
+  "My fees":     { primaryAction: "Try a Price",     sections: ["Saved Analyses", "Recent Work"] },
+  "Try a price": { primaryAction: "Build a Report",  sections: ["Scenarios", "Saved Analyses"] },
+  "Reports":     { primaryAction: "Generate Brief",  sections: ["Your Reports", "Templates"] },
+  "Admin":       { primaryAction: "",                sections: [] },
 } as const;
 
 export const PRIMARY_ACTION_HREF: Record<HamiltonScreen, string> = {
-  "Briefing": "/pro/research",
-  "Research": "/pro/simulate",
-  "Model":    "/pro/reports",
+  "This month":  "/pro/research",
+  "My fees":     "/pro/simulate",
+  "Try a price": "/pro/reports",
   // Opens the builder with the executive brief template already chosen,
   // not the page the user is already on.
-  "Reports":  "/pro/reports?intent=executive-briefing",
-  "Watch":    "/pro/analyze",
-  "Data":     "/pro/settings",
-  "Admin":    "/admin",
+  "Reports":     "/pro/reports?intent=executive-briefing",
+  "Admin":       "/admin",
 } as const;
 
 export function getPrimaryActionHref(screen: HamiltonScreen): string {
@@ -71,16 +74,15 @@ export function getPrimaryActionHref(screen: HamiltonScreen): string {
 }
 
 /** CTA hierarchy per screen (per 09-copy-and-ux-rules.md). "Analyze" is where Ask answers open. */
-export const CTA_HIERARCHY: Record<Exclude<HamiltonScreen, "Admin" | "Data"> | "Analyze", {
+export const CTA_HIERARCHY: Record<Exclude<HamiltonScreen, "Admin"> | "Analyze", {
   primary: string;
   secondary: string[];
 }> = {
-  "Analyze":  { primary: "Model a Price",   secondary: ["Show the Market", "View Risk Drivers"] },
-  "Briefing": { primary: "Research a Fee",  secondary: [] },
-  "Research": { primary: "Model a Price",   secondary: [] },
-  "Model":    { primary: "Plan the Change", secondary: [] },
-  "Reports":  { primary: "Generate Brief",  secondary: [] },
-  "Watch":    { primary: "Ask Hamilton",    secondary: ["Model a Price"] },
+  "Analyze":     { primary: "Try a Price",     secondary: ["Show the Market", "View Risk Drivers"] },
+  "This month":  { primary: "Look at My Fees", secondary: [] },
+  "My fees":     { primary: "Try a Price",     secondary: [] },
+  "Try a price": { primary: "Plan the Change", secondary: [] },
+  "Reports":     { primary: "Generate Brief",  secondary: [] },
 } as const;
 
 /** Analysis Focus tabs — used inside Analyze screen (per 02-navigation doc) */

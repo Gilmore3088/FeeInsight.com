@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   Activity,
   BarChart3,
-  Bell,
   FileText,
   MessageSquare,
   Users,
@@ -28,24 +27,24 @@ interface ModeCard {
 /** What you do inside Hamilton, one card per mode. Not sibling tools. */
 const MODE_CARDS: ModeCard[] = [
   {
-    mode: "Briefing",
+    mode: "This month",
     icon: MessageSquare,
     body:
-      "Hamilton opens with the few things worth your attention: the fees where you sit furthest " +
-      "from your market, and what changed since you last looked. Observations, not instructions.",
+      "Hamilton opens with the few fees worth your attention, overdraft first, and what changed in " +
+      "your market since you last looked. Observations, not instructions.",
   },
   {
-    mode: "Research",
+    mode: "My fees",
     icon: Users,
     body:
-      "Move from your own counties to your state, your Fed district, your peer group and the nation " +
-      "for any fee, with the banks your customers can walk into named and the rules that apply.",
+      "See any of your fees against your own counties, your state, your Fed district, your peer group " +
+      "and the nation, with the banks your customers can walk into named and the rules that apply.",
   },
   {
-    mode: "Model",
+    mode: "Try a price",
     icon: Activity,
     body:
-      "Test any price side by side, including no fee at all: where each would sit, what it does to " +
+      "Put any prices side by side, including no fee at all: where each would sit, what it does to " +
       "fee income from your own figures, and the notice it needs. Hamilton doesn't pick one.",
   },
   {
@@ -54,13 +53,6 @@ const MODE_CARDS: ModeCard[] = [
     body:
       "Turn a decision into a CEO one-pager or a pricing committee packet, or build a board-ready " +
       "brief with every figure cited to its source document.",
-  },
-  {
-    mode: "Watch",
-    icon: Bell,
-    body:
-      "Every schedule in your market is rechecked on a rolling calendar. When a competitor " +
-      "publishes a new fee, you know the day the index picks it up, not at next year's survey.",
   },
 ];
 

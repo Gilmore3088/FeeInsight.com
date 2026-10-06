@@ -15,7 +15,7 @@ import { Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Briefing" };
+export const metadata: Metadata = { title: "This month" };
 
 /** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
 const getCachedInstitutionPositioning = unstable_cache(
@@ -105,11 +105,11 @@ export default async function HamiltonHomePage({
   return (
     <MemoPage>
       <MemoHeader
-        kicker={`Briefing · ${month}`}
+        kicker={`This month · ${month}`}
         title={positioning ? positioning.institutionName : "Your briefing"}
         dek={
           positioning
-            ? `Your published fees against ${positioning.benchmarkLabel}. Observations, not instructions: open any one to research it or model a price.`
+            ? `Your published fees against ${positioning.benchmarkLabel}. Observations, not instructions: open any one to look closer or try a price.`
             : "Choose your bank and Hamilton reads its published fees against its market every month."
         }
       />
