@@ -92,7 +92,7 @@ export default async function AboutPage() {
             { value: summary.institutionsLabel, label: "Institutions with verified fees" },
             { value: summary.observationsLabel, label: "Verified fees" },
             { value: summary.categoriesLabel, label: "Fee categories" },
-            { value: summary.statesLabel, label: "States & territories" },
+            { value: summary.statesLabel, label: "States" },
           ].map((stat) => (
             <div
               key={stat.label}
