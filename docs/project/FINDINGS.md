@@ -13,6 +13,22 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Atlas took states in waiting order, not where the work was
+**What happened:** after PR 204, a state's median gap between runs was still 135 minutes (live,
+13:20 UTC, last 6 h). Every lane's `priority_score` was 0, so Atlas picked whichever lane had
+waited longest. Texas (196 banks due a search, 181 not source-checked) waited as long as
+Vermont. The daily-pass rule counted 2,024 dead-end banks, which kept 23 states on daily paid
+passes that could never turn off. The state experts ranked finder strategies (Texas: site crawl
+80%, sitemap 0 of 23), but nothing read the ranking.
+**Cause:** `priority_score` was never written, and the daily rule counted every bank missing a
+link. `stateExpertHints` had no caller.
+**Fix:** the Atlas gaps PR. The hourly sync scores each lane by its banks with open work or a
+recent error, and due lanes run highest first; a lane 3 h overdue goes first. Only findable
+banks count toward the daily rule, which leaves 5 daily states. Magellan runs each state's best
+finders first. Launches go from 2 to 3 per tick.
+**Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
+("Magellan uses the hints") needs a caller and a test.
+
 ## 2026-10-06: Right price, wrong category is most of what keeps states under 95%
 **What happened:** after source check v3 finished every bank (10:25 UTC), Texas measured 96.7%
 (145 of 150 live fees, hand-checked) but the seven answer-key states stayed at 93.8% (393 of 419,

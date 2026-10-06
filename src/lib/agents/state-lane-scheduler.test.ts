@@ -24,6 +24,8 @@ import {
   STATE_LANE_DOCUMENT_BATCH_BY_STATE,
   STATE_LANE_STEPS,
   laneIdempotencyKey,
+  refreshLanePriorities,
+  STATE_LANE_STARVATION_HOURS,
   nextDayStart,
   nextMonthStart,
   quarterWindowKey,
@@ -269,7 +271,7 @@ describe("state lane scheduler", () => {
   it("counts only full passes that ran the state expert toward this month", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true });
     await stateLaneCadence("PA");
-    const query = templateText(sqlMock.mock.calls[0][0]);
+    const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("full_this_month"));
     expect(query).toContain("step.step_key = 'state-expert'");
   });
 
@@ -340,5 +342,29 @@ describe("state lane scheduler", () => {
     expect(laneIdempotencyKey("VT", "backlog", null, at)).toBe("atlas:state-lane-backlog:VT:2026-11-15T13");
     expect(nextMonthStart(new Date("2026-12-31T23:00:00Z")).toISOString()).toBe("2027-01-01T00:00:00.000Z");
     expect(quarterWindowKey(new Date("2027-01-01T00:00:00Z"))).toBe("2027-Q1");
+  });
+
+  it("counts only banks a search can still find toward the daily-pass rule", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true });
+    await stateLaneCadence("TX");
+    const fragments = sqlMock.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(fragments).toContain("NOT IN ('dead', 'needs_human')");
+    expect(fragments).toContain("website_url");
+  });
+
+  it("scores each lane by banks with open work or a recent error", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 7 })));
+    await expect(refreshLanePriorities()).resolves.toBe(7);
+    const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("SET priority_score"));
+    for (const part of ["due_search", "stale", "unchecked", "takedowns"]) expect(query).toContain(part);
+  });
+
+  it("runs the busiest due lanes first but never starves an overdue one", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve([]));
+    withTransactionMock.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(sqlMock));
+    await scheduleDueStateLaneRuns({ now: new Date("2026-10-06T13:30:00Z") });
+    const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("FOR UPDATE SKIP LOCKED"));
+    expect(query).toMatch(/ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+priority_score DESC/);
+    expect(STATE_LANE_STARVATION_HOURS).toBe(3);
   });
 });

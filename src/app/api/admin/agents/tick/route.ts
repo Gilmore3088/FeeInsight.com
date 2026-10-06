@@ -6,7 +6,7 @@ import {
   hasQueuedProviderSteps,
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
-import { scheduleDueStateLaneRuns } from "@/lib/agents/state-lane-scheduler";
+import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
@@ -89,7 +89,7 @@ async function handleGET(request: NextRequest) {
 
   const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), DEFAULT_RUN_LIMIT, 10);
   const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 10);
-  const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), 2, 10);
+  const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), STATE_LANE_LIMIT_PER_TICK, 10);
 
   // Recover steps a killed invocation left running before selecting new work.
   const reaped = await reapStaleAgentSteps();
