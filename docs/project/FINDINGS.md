@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
+**What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
+MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
+Reading each of the 25 misses against the bank's own text: about 13 are real fees the key left out
+or mapped elsewhere (a $10 late fee, a loan modification fee, a lien release, a replacement card),
+and the rest are wrong. Two of the wrong ones are a shared-rule gap seen across all live rows: loan
+late fees filed as overdraft (3 live: "Overdraft Loan Late Fee", "Late Payment fee (Overdraft
+L-O-C)", "Loan Late Fee ... Overdraft") and "Int’l Wire Fee Out" filed as a domestic wire (2 live,
+read before Knox v16 learned "Int'l").
+**Fix:** category guard v13 fails a late fee filed as overdraft and an "Int'l" wire filed as domestic
+(one price for "Domestic & Int'l" stays domestic), and Darwin re-files both. Knox v23 files a late
+fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
+5; Hamilton's publish step takes them down.
+**Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
+
 ## 2026-10-06: A fee document dated 2019 counted as a finished link
 **What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
 links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
