@@ -374,4 +374,4 @@ table reader paired a fee name with a value cell that named a fee of its own (a 
 earlier price or rate on the line is that fee's cap, and is read as a daily cap when it says "per
 day"; a lone "$10.00 maximum" stays the fee's own price. A value cell a rule names on its own is
 left to the line rules. Read-only check at 02:25 UTC Oct 6: 8 live fees came from a "$X maximum"
-figure; the version bump re-checks them and the 5 that follow an earlier price will stop reproducing.
+figure; the version bump re-checks them and the 4 that follow an earlier price or rate will stop reproducing.
