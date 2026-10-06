@@ -22,6 +22,7 @@ describe("dailyFeeLimits", () => {
     [" Fees for overdrafts will be charged per item or represented item and will be limited to five items each business day", 5, "overdraft"],
     ["Maximum of two (2) paid or returned fees per day per account", 2, "both"],
     [" We will charge you up to a maximum of 3 Overdraft Fees per business day per transaction that results", 3, "overdraft"],
+    ["You can only be assessed one overdraft fee per day per account.", 1, "overdraft"],
   ])("reads %j", (text, count, scope) => {
     expect(one(text)).toEqual([{ count, scope }]);
   });
@@ -37,6 +38,7 @@ describe("dailyFeeLimits", () => {
     ["16) Limit two per day per member"],
     ["Overdraft fee $35 per item, maximum of $105 per day"],
     ["Overdraft Fee | $36.00 per item"],
+    ["Overdraft fees only apply to items over $5 paid in a single business day"],
   ])("reads no limit in %j", (text) => {
     expect(one(text)).toEqual([]);
   });

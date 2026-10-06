@@ -24,7 +24,7 @@ const NUMBER_WORDS: Record<string, number> = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12,
 };
 const NUMBER = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join("|")})`;
-const LIMIT_WORDS = "max(?:imum)?|limit(?:s|ed)?|no more than|not more than|up to|capped at|cap of|at most";
+const LIMIT_WORDS = "max(?:imum)?|limit(?:s|ed)?|no more than|not more than|up to|capped at|cap of|at most|only";
 const DAY = "(?:per|a|each|in (?:a|one|any)|on any)\\s+(?:single\\s+)?(?:business\\s+|calendar\\s+|banking\\s+)?day\\b";
 /**
  * Limit wording, then the count, then "per day", with only words between them (no other
