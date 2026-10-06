@@ -1687,7 +1687,13 @@ async function providerStepGate(
 
 export async function executeAgentRun(
   runId: number,
-  options: { maxSteps?: number; allowProviderSteps?: boolean; deadlineAt?: number } = {},
+  options: {
+    maxSteps?: number;
+    allowProviderSteps?: boolean;
+    deadlineAt?: number;
+    /** Leave a paid step queued for a later tick instead of running or skipping it. */
+    deferProviderSteps?: boolean;
+  } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
     return {
@@ -1749,6 +1755,15 @@ export async function executeAgentRun(
     // stop to be clear and the caller to have provider budget for this tick.
     const nextStepKey = await peekNextQueuedStepKey(runId);
     if (nextStepKey && isProviderStep(nextStepKey)) {
+      if (options.deferProviderSteps) {
+        return {
+          runId,
+          status: lastResult?.status ?? existing.status,
+          terminal: false,
+          executedSteps,
+          message: "Paid step left queued for a later tick (this tick's paid-run cap is used).",
+        };
+      }
       const gate = await providerStepGate(options.allowProviderSteps ?? true);
       if (!gate.allowed) {
         // A paid pass is optional: when the budget or the stop blocks it, record it as
@@ -1832,6 +1847,7 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId = null,
   maxProviderCallsPerRun = null,
   maxEstimatedCostMicrousd = null,
+  providerRunLimit = null,
   deadlineAt,
 }: {
   runLimit?: number;
@@ -1840,6 +1856,11 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
+  /**
+   * Runs that may take paid steps this tick; later runs do only free steps and leave
+   * their next paid step queued. Null means every run may.
+   */
+  providerRunLimit?: number | null;
   /** Epoch ms after which no new step or run starts (the first run still gets its first step). */
   deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
@@ -1875,6 +1896,7 @@ export async function executeQueuedAgentRuns({
   // holding theirs), which starved the shared database and slowed the public site and
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
+  let providerRuns = 0;
   for (const row of rows) {
     // The first run always gets a step; later runs start only before the deadline, so
     // a larger run limit fills the tick's time budget without running past it.
@@ -1890,7 +1912,16 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt }));
+    const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
+    if (providerSlot) providerRuns += 1;
+    results.push(
+      await executeAgentRun(runId, {
+        maxSteps: maxStepsPerRun,
+        allowProviderSteps,
+        deadlineAt,
+        deferProviderSteps: allowProviderSteps && !providerSlot,
+      }),
+    );
   }
   return { selected: rows.length, results };
 }

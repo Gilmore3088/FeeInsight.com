@@ -233,3 +233,24 @@ it was a repair result.
 run on code with no state-expert step.
 **Fix:** PR 84 (merged 18:02) counts only full passes that include a state-expert step.
 **Lesson:** a cadence change must say how it treats passes that ran before it.
+
+## 2026-10-06: Paid passes skipped after the tick got bigger
+**What happened:** from 22:26 UTC on Oct 5 to 00:22 UTC on Oct 6, 13 paid passes (discover-paid,
+read-paid, extract-paid) were recorded as skipped, and the Crew page showed "4 agent ticks were
+blocked in the last hour".
+**Cause:** PR 149 raised the tick to 10 runs x 10 steps. The budget check treated that as 100
+possible paid calls against the tick policy's cap of 30 and refused paid steps for the whole tick,
+and a refused paid step is skipped for good.
+**Fix:** PR for this finding: the check now gives paid steps to only as many runs as the cap covers
+(3 at 30 calls and 10 steps); the other runs do free steps and leave their paid step queued.
+**Lesson:** a change to tick size must be checked against the tick budget policy.
+
+## 2026-10-06: Preview builds logged false "missing_key" thesis failures
+**What happened:** the Crew page reported 3 of 5 `pro.thesis` steps failing with `missing_key`
+while production theses succeeded.
+**Cause (inferred from timing, not traced to a deployment):** preview deployments and builds use the
+production database but have no `ANTHROPIC_API_KEY`, and rendering the Hamilton page there logged a
+failed thesis to the shared run ledger.
+**Fix:** same PR: without a key outside production the thesis is not attempted or logged.
+Production still logs a missing key.
+**Lesson:** anything a preview writes to the shared ledger shows on the production Crew page.

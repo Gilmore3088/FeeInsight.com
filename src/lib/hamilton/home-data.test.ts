@@ -25,6 +25,11 @@ vi.mock("@/lib/agents/run-store", () => ({
   recordProRequest: vi.fn().mockResolvedValue(null),
 }));
 
+const hasAnthropicApiKeyMock = vi.fn(() => true);
+vi.mock("@/lib/ai-provider", () => ({
+  hasAnthropicApiKey: () => hasAnthropicApiKeyMock(),
+}));
+
 describe("Hamilton home signal data", () => {
   beforeEach(() => {
     sqlCalls.length = 0;
@@ -169,5 +174,56 @@ describe("fetchCacheableHomeBriefing", () => {
       summary: "Thesis generation failed (budget_blocked).",
       detail: expect.objectContaining({ error_type: "budget_blocked", error: expect.stringContaining(reason) }),
     }));
+  });
+
+  it("does not log a failed thesis from a preview deployment that has no API key", async () => {
+    const feeIndex = await import("@/lib/data-store/fee-index");
+    const generate = await import("./generate");
+    const runStore = await import("@/lib/agents/run-store");
+    vi.mocked(runStore.recordProRequest).mockClear();
+    vi.mocked(generate.generateGlobalThesis).mockClear();
+    vi.mocked(feeIndex.getNationalIndexCached).mockResolvedValue([
+      { fee_category: "overdraft", institution_count: 30, median_amount: 30, p25_amount: 25, p75_amount: 35, maturity_tier: "strong" },
+    ] as never);
+    vi.mocked(feeIndex.getSourcedInstitutionCount).mockResolvedValue(30);
+    hasAnthropicApiKeyMock.mockReturnValue(false);
+    vi.stubEnv("VERCEL_ENV", "preview");
+    try {
+      const { fetchHomeBriefingData } = await import("./home-data");
+      const data = await fetchHomeBriefingData();
+      expect(data.thesis).toBeNull();
+      expect(generate.generateGlobalThesis).not.toHaveBeenCalled();
+      expect(runStore.recordProRequest).not.toHaveBeenCalled();
+    } finally {
+      hasAnthropicApiKeyMock.mockReturnValue(true);
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("still logs a missing API key in production", async () => {
+    const feeIndex = await import("@/lib/data-store/fee-index");
+    const generate = await import("./generate");
+    const runStore = await import("@/lib/agents/run-store");
+    vi.mocked(runStore.recordProRequest).mockClear();
+    vi.mocked(feeIndex.getNationalIndexCached).mockResolvedValue([
+      { fee_category: "overdraft", institution_count: 30, median_amount: 30, p25_amount: 25, p75_amount: 35, maturity_tier: "strong" },
+    ] as never);
+    vi.mocked(feeIndex.getSourcedInstitutionCount).mockResolvedValue(30);
+    vi.mocked(generate.generateGlobalThesis).mockRejectedValue(
+      new Error("Hamilton thesis generation: AI service not configured. Set ANTHROPIC_API_KEY."),
+    );
+    hasAnthropicApiKeyMock.mockReturnValue(false);
+    vi.stubEnv("VERCEL_ENV", "production");
+    try {
+      const { fetchHomeBriefingData } = await import("./home-data");
+      await fetchHomeBriefingData();
+      expect(runStore.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({
+        status: "failed",
+        summary: "Thesis generation failed (missing_key).",
+      }));
+    } finally {
+      hasAnthropicApiKeyMock.mockReturnValue(true);
+      vi.unstubAllEnvs();
+    }
   });
 });
