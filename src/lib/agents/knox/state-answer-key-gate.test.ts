@@ -12,17 +12,17 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * show how Texas-tuned rules carry to other states. Floors are today's counts per state; raise
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
-// v16 counts only reads that pass Knox's self-check; main at v15 scored 657 right / 51 wrong
-// on that basis.
+// Since v17 the gate counts only reads that pass Knox's self-check; main at v16 scored 659
+// right / 48 wrong on that basis.
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 114, wrong: 9 },
+  CA: { right: 115, wrong: 8 },
   FL: { right: 95, wrong: 7 },
   GA: { right: 141, wrong: 12 },
   IL: { right: 84, wrong: 7 },
-  MI: { right: 101, wrong: 0 },
-  MN: { right: 85, wrong: 8 },
-  NY: { right: 38, wrong: 8 },
-  all: { right: 658, wrong: 51 },
+  MI: { right: 102, wrong: 0 },
+  MN: { right: 85, wrong: 7 },
+  NY: { right: 38, wrong: 7 },
+  all: { right: 660, wrong: 48 },
 };
 
 const fixture = JSON.parse(

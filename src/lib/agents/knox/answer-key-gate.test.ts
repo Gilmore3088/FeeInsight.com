@@ -15,10 +15,10 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * same PR. When it trades a right fee for something worth more, say so in the PR and lower
  * the floor there; never lower it silently.
  */
-// v16 counts only reads that pass Knox's self-check (the shared accuracy check Darwin
-// applies before publishing). Main at v15 scored 443 right / 16 wrong on that same basis.
+// Since v17 the gate counts only reads that pass Knox's self-check (the shared accuracy
+// check Darwin applies before publishing). Main at v16 scored 444 right / 15 wrong on that basis.
 const FLOORS = {
-  all: { right: 443, wrong: 16 },
+  all: { right: 444, wrong: 15 },
   holdout: { right: 43, wrong: 6 },
 };
 

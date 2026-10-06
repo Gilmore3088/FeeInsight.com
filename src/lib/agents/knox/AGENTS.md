@@ -67,14 +67,21 @@ cutoff, account activity printouts and a debit card's own monthly charge have no
 category (the keys file them as unmapped), so Knox still leaves them out. A rules
 change scores both gates; a fix that helps Texas and hurts another state fails.
 
-v16 (rules 16) adds Knox's self-check: every free find, and every $0 row, is checked against
+v16 (rules 16) fixes the category errors found in the live seven-state and Texas measures:
+"Int'l" and "out of country" wires are international (a "domestic/int'l" price stays
+domestic), "International Wire Out" is outgoing, checkbook balancing is account research
+rather than check printing, and a name that opens with NSF is NSF when only a condition
+mentions an overdraft ("NSF Fee (fee applies when overdraft is created)"); a combined
+"NSF/Overdraft" fee stays overdraft. At v16: Texas 461 of 478; seven states 683 right, 55 wrong.
+
+v17 (rules 17) adds Knox's self-check: every free find, and every $0 row, is checked against
 its text with the shared accuracy check (`checkFeeAgainstSource`, the rule Darwin applies
 before publishing). A find that doesn't trace is held for review as `untraced`
 (`knox_review:untraced`) instead of going to Darwin, where it would be rejected as
 `not_in_source`; a later specialist that reads the same fee under a traceable name keeps it.
-Each specialist run records `self_check_failed`. Since v16 the gates count only reads that
-pass the self-check, which is what can be published: Texas 443 of 459 (main at v15 scored 443
-of 459 on that basis), held out 43 of 49; seven states 658 of 709 (main: 657 of 708). The held
+Each specialist run records `self_check_failed`. Since v17 the gates count only reads that
+pass the self-check, which is what can be published: Texas 444 of 459 (main at v16 scored 444
+of 459 on that basis), held out 43 of 49; seven states 660 of 708 (main: 659 of 707). The held
 `untraced` rows show where the shared check can't yet read a layout (a price on the line
 after a dot leader, FREE/NONE on a flattened line, a note line between name and price).
 

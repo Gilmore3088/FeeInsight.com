@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Right price, wrong category is most of what keeps states under 95%
+**What happened:** after source check v3 finished every bank (10:25 UTC), Texas measured 96.7%
+(145 of 150 live fees, hand-checked) but the seven answer-key states stayed at 93.8% (393 of 419,
+`/mnt/project-files/accuracy/states-live-misses-2026-10-06-1320.csv`). 25 of the 26 misses had the
+right price. About 9 of them are the answer key's own gaps (a fee keyed "unmapped" or under the
+row next to it), about 9 are taxonomy calls (returned item: NSF or deposited item), and 8 are real.
+**Cause:** the source check confirms a fee's name and price in the schedule, never its category.
+Three Knox name rules filed real fees wrongly: "Int'l"/"out of country" wires as domestic,
+"Checkbook Balancing" as check printing, and "NSF Fee (applies when overdraft...)" as overdraft.
+**Fix:** Knox rules v16 (this PR). Read-only dry run over the 2,073 live fee names those rules can
+touch: 62 live fees change rule category; 21 of them are live under the wrong category today
+(6 wires, 12 checkbook balancing, 3 NSF), and the other 41 already sit in the right one. No live
+fee moves to a worse category. Answer-key gates: seven states 681 to 683 right and 58 to 55 wrong;
+Texas 460 to 461 right and 18 to 17 wrong.
+**Lesson:** a price check cannot catch category errors. Measure category separately, and fix the
+answer key when it is the thing that is wrong before counting a miss.
+
 ## 2026-10-06: James's request email carried the paid report link
 **What happened:** the funnel re-audit found the report check line in James's request email and in
 `leads.use_case` included the live private report URL. That email's Reply-To is the requester, so a
@@ -996,10 +1013,10 @@ under the new one; a ban written by a judgment the code no longer makes outlives
 **What happened:** the Knox audit found Knox never checked its own reads against the line they
 came from; only the paid pass did. Darwin rejects such reads as `not_in_source` (PR 200), so
 they reached the raw tier and died there, and a fee read twice could keep the untraceable name.
-**Fix:** same PR (Knox v16): the free team runs `checkFeeAgainstSource` on every find and $0 row.
+**Fix:** same PR (Knox v17): the free team runs `checkFeeAgainstSource` on every find and $0 row.
 Untraceable ones are held for review as `untraced`, and a traceable reading of the same fee wins.
-On the answer keys, counted the way Darwin publishes, v16 matches or beats main (Texas 443 right
-/ 16 wrong both; seven states 658 / 51 against 657 / 51). Dry run on 117 sampled live documents:
+On the answer keys, counted the way Darwin publishes, v17 matches or beats main's v16 (Texas 444
+right / 15 wrong both; seven states 660 / 48 against 659 / 48). Dry run on 117 sampled live documents:
 the rules re-check would keep 1,413 of 1,437 live fees against 1,416 today. The 3 that come down
 are a $5 business counter-check price read as consumer (document 12657) and two safe deposit
 fees at document 10091 that are live under shifted names ("Drill box fee" at $25, a
