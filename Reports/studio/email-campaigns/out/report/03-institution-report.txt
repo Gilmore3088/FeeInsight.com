@@ -1,0 +1,30 @@
+The one report we build by hand. Tell us your institution and we'll quote it.
+
+BANK FEE INDEX · 3 OF 3
+
+Your institution against the competitors you name
+=================================================
+
+The free reports show the market. The institution report shows where you stand in it.
+
+
+[ WHAT'S IN IT ]
+- Your headline fees against your local competitors, fee by fee.
+- The competitors you name, side by side with you.
+- Fees well above or below the local market, flagged.
+- Every figure taken from the competitor's own published fee schedule.
+
+Request your institution report: https://feeinsight.com/for-institutions?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=institution-report#report
+We check that your market has enough published data, then reply with scope and price.
+
+Or just reply with your institution's name.
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+[Fee Insight mailing address]
+Unsubscribe: {$unsubscribe}

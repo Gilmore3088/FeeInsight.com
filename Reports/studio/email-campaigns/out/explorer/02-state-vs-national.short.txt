@@ -1,8 +1,10 @@
-National medians to hold your state up against.
+Hold your state up against the national line.
 
 Hold your state up against the national line
+Find your state's report: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=state-vs-national
+Free, no login. The national numbers are in the national report (https://feeinsight.com/reports/benchmark/national?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=state-vs-national).
 [ READ SMALL SAMPLES CAREFULLY ]
-In smaller states a median can rest on a handful of institutions. Check the n on the state page. Under 10, treat the number as a signal, not a verdict.
+In smaller states a median can rest on a handful of institutions. Check how many institutions stand behind each number before you treat it as a verdict.
 
 Full email with tables and charts: {$url}
 
