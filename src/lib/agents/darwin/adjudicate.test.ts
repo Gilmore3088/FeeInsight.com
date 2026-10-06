@@ -27,7 +27,8 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
     if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     return Promise.resolve([]);
   }) as DbMock;
-  db.unsafe = vi.fn(() => Promise.resolve(rows));
+  // The release review's candidates come first; these tests have none.
+  db.unsafe = vi.fn((query: string) => Promise.resolve(query.includes("rel.detail->>'verdict' = 'review'") ? [] : rows));
   return db;
 }
 

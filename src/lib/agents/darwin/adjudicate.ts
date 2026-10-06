@@ -16,6 +16,7 @@ import {
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 import { DARWIN_CATEGORY_MODEL_STRATEGY } from "./category-model";
+import { runDarwinReleaseReview } from "./release-review";
 import { rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
@@ -237,21 +238,37 @@ export async function runDarwinAdjudicate(
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
   const result = emptyPaidPassResult(dryRun);
-  const calls = Math.min(Math.max(Math.floor(Number(options.limit) || PAID_PASS_ITEMS_PER_RUN), 1), PAID_PASS_ITEMS_PER_RUN);
+  let calls = Math.min(Math.max(Math.floor(Number(options.limit) || PAID_PASS_ITEMS_PER_RUN), 1), PAID_PASS_ITEMS_PER_RUN);
   if (!(await learningSchemaReady(db))) return result;
+
+  // Held fees waiting on their release review (release-review.ts) go first, from the same call budget.
+  const review = await runDarwinReleaseReview({ ...options, db, calls });
+  result.selected += review.selected;
+  result.processed += review.processed;
+  result.succeeded += review.succeeded;
+  result.failed += review.failed;
+  result.costMicrousd += review.costMicrousd;
+  result.results.push(...review.results.slice(0, 10).map((entry) => ({ ...entry, pass: "release_review" })));
+  if (review.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = review.budgetReason;
+    return result;
+  }
+  calls -= review.calls;
+  if (calls <= 0) return result;
 
   // Rejects are re-checked in code (the guard must accept the model's category), so scan extra.
   const candidates = (await selectCandidates(db, calls * FEES_PER_CALL * 2, options.stateCode))
     .filter(qualifies)
     .slice(0, calls * FEES_PER_CALL);
-  result.selected = candidates.length;
+  result.selected += candidates.length;
   if (dryRun) {
-    result.results = candidates.slice(0, 50).map((candidate) => ({
+    result.results.push(...candidates.slice(0, 50).map((candidate) => ({
       fee_raw_id: candidate.feeRawId,
       knox_key: candidate.knoxKey,
       suggested_key: candidate.suggestedKey,
       decision: candidate.decision,
-    }));
+    })));
     return result;
   }
 

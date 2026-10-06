@@ -328,7 +328,7 @@ export function classifyPatternKey(value: string): string | null {
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
   // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/
   // Foreign Transaction Fee" names the card and stays one.
-  if (key === "card_foreign_txn" && /\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b|\bforeign ATMs?\b/i.test(text)) {
+  if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
   // Credit card fees are lending fees, not deposit-account card fees.

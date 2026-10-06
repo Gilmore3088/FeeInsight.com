@@ -7,6 +7,9 @@ import {
   getSubscriptionTokenSecret,
   isSubscriptionAction,
   normalizeSubscriptionEmail,
+  READER_COOKIE,
+  READER_COOKIE_MAX_AGE_SECONDS,
+  signReaderCookie,
   verifySubscriptionToken,
   type SubscriptionAction,
 } from "@/lib/email/subscription-token";
@@ -42,7 +45,7 @@ async function applySubscriptionAction(action: SubscriptionAction, email: string
   if (action === "confirm") {
     // A state chosen on the confirm page rides on use_case like the capture forms' state.
     const stateTag = state ? `state=${state}` : null;
-    return sql<{ source: string; use_case: string | null }[]>`
+    return sql<{ source: string; use_case: string | null; created_at?: string | Date | null }[]>`
       UPDATE leads SET
         email_confirmed_at = COALESCE(email_confirmed_at, now()),
         email_unsubscribed_at = NULL,
@@ -57,12 +60,17 @@ async function applySubscriptionAction(action: SubscriptionAction, email: string
           ELSE use_case || '; ' || ${stateTag}
         END
       WHERE lower(email) = ${email}
-      RETURNING source, use_case`;
+      RETURNING source, use_case, created_at`;
   }
   return sql<{ source: string; use_case: string | null }[]>`
     UPDATE leads SET email_unsubscribed_at = now()
     WHERE lower(email) = ${email}
     RETURNING source, use_case`;
+}
+
+function latestState(rows: { use_case: string | null; created_at?: string | Date | null }[]): string | null {
+  const time = (row: { created_at?: string | Date | null }) => (row.created_at ? new Date(row.created_at).getTime() || 0 : 0);
+  return [...rows].sort((a, b) => time(b) - time(a)).map((row) => stateFromUseCase(row.use_case)).find(Boolean) ?? null;
 }
 
 async function handlePOST(request: NextRequest) {
@@ -78,7 +86,8 @@ async function handlePOST(request: NextRequest) {
   }
 
   try {
-    const rows = await applySubscriptionAction(input.action, email, parseStateCode(input.state));
+    const pickedState = parseStateCode(input.state);
+    const rows = await applySubscriptionAction(input.action, email, pickedState);
     if (rows.length === 0) {
       return NextResponse.json({ error: "No signup found for this address" }, { status: 404 });
     }
@@ -88,12 +97,28 @@ async function handlePOST(request: NextRequest) {
       subscribed: input.action === "confirm",
       // Every row's sources, so the highest-intent group wins whichever row Postgres returns first.
       source: rows.map((row) => row.source).filter(Boolean).join(",") || null,
-      state: rows.map((row) => stateFromUseCase(row.use_case)).find(Boolean) ?? null,
+      // The state picked on the confirm page wins; otherwise the newest row's latest choice.
+      state: pickedState ?? latestState(rows),
+      // A fresh double opt-in may bring back an address that unsubscribed earlier.
+      ...(input.action === "confirm" ? { reconfirmed: true } : {}),
     });
     if (sync.status === "failed") {
       console.error("[api/leads/subscription] MailerLite sync failed", { action: input.action, error: sync.error });
     }
-    return NextResponse.json({ success: true, action: input.action });
+    const response = NextResponse.json({ success: true, action: input.action });
+    // Remember a confirmed reader so free report forms don't ask for the email again.
+    if (input.action === "confirm") {
+      response.cookies.set(READER_COOKIE, signReaderCookie(email, secret), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: READER_COOKIE_MAX_AGE_SECONDS,
+      });
+    } else {
+      response.cookies.delete(READER_COOKIE);
+    }
+    return response;
   } catch (error) {
     console.error("[api/leads/subscription] update failed", {
       action: input.action,

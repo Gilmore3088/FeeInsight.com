@@ -130,11 +130,13 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // A card's foreign transaction fee. "ATM Foreign Transaction Fee" is what a customer
   // pays at another bank's ATM (a "foreign ATM"); a wire, a foreign currency or check
   // service and a neighbouring cell joined into the name ("... | Premium Checking Low
-  // Balance Fee", "... : WIRE TRANSFERS") are other fees. A sentence is not a fee name.
+  // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
+  // names the card. A rate's name is often a sentence ("you will be charged a foreign
+  // transaction fee of"), so sentences are checked only on dollar amounts (below).
   card_foreign_txn: {
     include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b)/i,
     exclude:
-      /(\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|foreign atm|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\b(will|may) be (assessed|charged)\b|\bmany\b|domestic)/i,
+      /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
   },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
@@ -155,7 +157,8 @@ export const CATEGORY_GUARD_VERSION = 11;
  * amount, so this never touches it.
  */
 const RATE_CATEGORIES: ReadonlySet<string> = new Set(["card_foreign_txn"]);
-const RATE_IN_NAME = /(\d\s*%|percent|\brates?\b)/i;
+// "Currency conversion fees will be assessed when ..." quotes a rate stated elsewhere.
+const RATE_IN_NAME = /(\d\s*%|percent|\brates?\b|\b(will|may) be (assessed|charged)\b)/i;
 const RATE_IN_CONDITIONS = /(\d\s*%|percent)/i;
 
 function statesRate(
@@ -189,7 +192,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "deposited_item_return", when: /deposit/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl)/i, unless: /domestic/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
-  { from: "card_foreign_txn", to: "atm_non_network", when: /(\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|foreign atm)/i },
+  { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
 /** The category a fee belongs in: its own, or the one its name re-files it to. */

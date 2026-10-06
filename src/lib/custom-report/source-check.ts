@@ -6,7 +6,10 @@
  * balance band, and sit under wording of the fee's category. A row is a line, plus the
  * next short lines when the price sits under the name ("Overnight Courier Service" /
  * "$50.00" / "/Item"). When one line carries several fees, each price belongs to the words
- * since the previous price. Anything else is dropped rather than shown with a value we can't
+ * since the previous price. A daily cap (`od_daily_cap`, `nsf_daily_cap`) is the opposite
+ * case: its figure is the limit on the fee's own row ("$20.00 | Per Item | Maximum of $120.00
+ * per day", "$30.00 (max $180.00 daily)"), so it must sit after cap wording and before "per
+ * day" or "daily". Anything else is dropped rather than shown with a value we can't
  * point to.
  */
 
@@ -56,6 +59,12 @@ const QUALIFIER_LINE = /^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)
 const TRAILING_LEADER = /(?:\.\s?){3,}\s*$|…\s*$/;
 /** A price that opens a line, with its unit ("$20.00", "$5 each", "FREE"). */
 const LEADING_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|free\b|none\b|no charge|n\/c)(?:\s*(?:per|each|\/)\s*[a-z]*)?/i;
+/** Categories whose value is a daily limit on another fee, not a price. */
+export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap", "nsf_daily_cap"]);
+/** Words that make a name a cap; the row names the fee, not the cap. */
+const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
+const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
+const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
@@ -199,6 +208,20 @@ function leaderRow(lines: string[], index: number): string | null {
   return TRAILING_LEADER.test(tail) && /[a-z]{3,}/i.test(tail) && opening ? `${tail.trim()} | ${opening[0].trim()}` : null;
 }
 
+/**
+ * A daily cap is stated on the fee's row: the amount follows cap wording ("Maximum of",
+ * "max", "up to", "not to exceed") or "daily", and is followed by "per day" or "daily"
+ * ("$30.00 (max $180.00 daily)"; "Daily maximum $120 per day"). Exported for tests.
+ */
+export function statesDailyCap(line: string, amount: number): boolean {
+  return moneyTokens(line).some((t) => {
+    if (Math.abs(t.value - amount) >= 0.005) return false;
+    const before = line.slice(Math.max(0, t.start - 40), t.start);
+    const after = line.slice(t.end, t.end + 30);
+    return DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before));
+  });
+}
+
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
 function feeRow(lines: string[], index: number): string {
   const line = lines[index];
@@ -248,17 +271,34 @@ function cachedSourceLines(text: string): string[] {
 /**
  * Pure: is this published fee stated in its source text? Returns the source line that
  * carries it, or the first reason it is not traceable. `categoryPattern` is the report
- * line's include regex (Postgres word anchors \m \M are accepted).
+ * line's include regex (Postgres word anchors \m \M are accepted). A fee in a daily cap
+ * category (`canonicalFeeKey` in DAILY_CAP_CATEGORIES) that does not trace as a price is
+ * read once more as a cap on its fee's row, so the cap can only gain a trace, never lose one.
  */
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
+  canonicalFeeKey?: string | null,
+): SourceCheckResult {
+  const asPrice = checkAgainstLines(text, feeName, amount, categoryPattern, false);
+  if (asPrice.ok || !canonicalFeeKey || !DAILY_CAP_CATEGORIES.has(canonicalFeeKey)) return asPrice;
+  const asCap = checkAgainstLines(text, feeName, amount, categoryPattern, true);
+  return asCap.ok ? asCap : asPrice;
+}
+
+function checkAgainstLines(
+  text: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  dailyCap: boolean,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
   const lines = cachedSourceLines(text);
-  const stems = nameStems(feeName);
+  // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
+  const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
   const rounded = Math.round(amount * 100) / 100;
 
@@ -289,11 +329,13 @@ export function checkFeeAgainstSource(
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     let row = feeRow(lines, i);
-    let amountProblem = statesAmount(row, rounded, stems);
+    let amountProblem = dailyCap
+      ? statesDailyCap(row, rounded) ? null : "amount_not_the_fee"
+      : statesAmount(row, rounded, stems);
     // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
     // tier's price, not a band standing in for the whole fee.
     if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;
-    const leader = leaderRow(lines, i);
+    const leader = dailyCap ? null : leaderRow(lines, i);
     if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
       row = leader;
       amountProblem = null;
@@ -303,6 +345,60 @@ export function checkFeeAgainstSource(
       continue;
     }
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
+    if (!category.test(context)) {
+      best = "category_not_in_text";
+      continue;
+    }
+    return { ok: true, sourceLine: row.slice(0, 240) };
+  }
+  return { ok: false, reason: best };
+}
+
+/** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.
+ * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
+const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
+const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
+
+/**
+ * Pure: is this percentage fee stated in its source text? The rate's twin of
+ * `checkFeeAgainstSource`: one row has to name the fee, state the rate as a percent, say it
+ * is a fee or charge, and not be an interest or dividend rate. The rate never stands in for
+ * a dollar amount, so a "1%" row never confirms a $1.00 fee or the reverse.
+ */
+export function checkRateAgainstSource(
+  text: string | null | undefined,
+  feeName: string,
+  ratePercent: number,
+  categoryPattern: string,
+): SourceCheckResult {
+  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  const lines = cachedSourceLines(text);
+  const stems = nameStems(feeName);
+  const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
+  let best: SourceCheckFailure = "name_not_in_text";
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!namesFee(lines[i], stems)) continue;
+    // The rate may sit on the line under the name ("Foreign Transaction Fee" / "1.10%").
+    const next = lines[i + 1] ?? "";
+    const row = lines[i].match(RATE) || next.length > PRICE_BELOW_MAX_LENGTH ? lines[i] : `${lines[i]} | ${next}`;
+    // When one row states several rates ("Cash Advance 3.0% ... Foreign Transaction 1.0%"),
+    // each rate belongs to the words since the previous rate, as prices do.
+    const rates = [...row.matchAll(RATE)].map((match) => ({ value: Number(match[1]), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+    const own = rates.filter(
+      (rate, k) => rates.length === 1 || stemCount(row.slice(k === 0 ? 0 : rates[k - 1].end, rate.start), stems) > 0,
+    );
+    if (!own.some((rate) => Math.abs(rate.value - ratePercent) < 0.00005)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
+    // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
+    // Counting | 10% of total"); interest wording is judged on the row itself.
+    const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
+    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
     if (!category.test(context)) {
       best = "category_not_in_text";
       continue;

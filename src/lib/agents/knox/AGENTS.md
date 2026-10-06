@@ -128,9 +128,9 @@ prose ("$30.00 | ... unless you opt in") is never named by that prose. The share
 reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
 
 v20 (rules 20) files "ATM Foreign Transaction Fee" (and "ATM – Foreign Transaction", "Debit ATM
-Foreign Transaction", "foreign ATM") as `atm_non_network`: it is what a customer pays at another
-bank's ATM, not a card's foreign transaction fee. "ATM/Debit Card International/Foreign
-Transaction Fee" names the card and is unchanged.
+Foreign Transaction") as `atm_non_network`: it is what a customer pays at another bank's ATM, not
+a card's foreign transaction fee. "ATM/Debit Card International/Foreign Transaction Fee" and
+"Debit/ATM Foreign Transaction" name the card and are unchanged.
 
 ## Extraction Passes
 

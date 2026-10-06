@@ -142,6 +142,10 @@ describe("checkFeeCategory", () => {
       "International Service Assessment (ISA)",
       "ATM/Debit Card International/Foreign Transaction Fee",
       "Foreign Transaction Fee - VISA Signature",
+      // Rates' names: a sentence, and a card that also works at ATMs.
+      "In addition, you will be charged a foreign transaction fee of",
+      "Debit/ATM Foreign Transaction (C/B fee) of",
+      "Foreign ATM / Debit Card Transaction Fee | Up to",
     ]) {
       expect(checkFeeCategory("card_foreign_txn", name).ok).toBe(true);
     }
@@ -154,7 +158,6 @@ describe("checkFeeCategory", () => {
       "Foreign Currency Cash Exchange",
       "Foreign Currency Ordered",
       "Foreign Transactions, Currency or Checks",
-      "Currency conversion fees will be assessed when ATM transactions take",
       "36. Many Canadian credit cards charge a foreign transaction fee of 2.5%, which equals",
     ]) {
       expect(checkFeeCategory("card_foreign_txn", name).ok).toBe(false);
@@ -168,6 +171,9 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("card_foreign_txn", percentName, { amount: "7.00" })).toMatchObject({ ok: false, code: "rate_as_amount" });
     expect(checkFeeCategory("card_foreign_txn", percentName, { amount: null }).ok).toBe(true);
     expect(checkFeeCategory("card_foreign_txn", "VISA Exchange Rate", { amount: 1 }).ok).toBe(false);
+    const sentence = "Currency conversion fees will be assessed when ATM transactions take";
+    expect(checkFeeCategory("card_foreign_txn", sentence, { amount: 0 }).ok).toBe(false);
+    expect(checkFeeCategory("card_foreign_txn", sentence, { amount: null }).ok).toBe(true);
     expect(checkFeeCategory("card_foreign_txn", "Foreign Transaction", { amount: 2, conditions: "2.00% of transaction." }).ok).toBe(false);
     expect(checkFeeCategory("card_foreign_txn", "Debit Card International Transaction", { amount: 5, conditions: null }).ok).toBe(true);
     expect(checkFeeCategory("card_foreign_txn", "Foreign Transaction Fee", { amount: 0, conditions: "No foreign transaction fees apply" }).ok).toBe(true);

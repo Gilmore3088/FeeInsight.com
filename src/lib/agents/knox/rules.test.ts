@@ -527,6 +527,7 @@ describe("Knox extract.rules", () => {
     expect(classifyPatternKey("Debit ATM Foreign Transaction Fee")).toBe("atm_non_network");
     expect(classifyPatternKey("ATM foreign transaction-non owned Chessie ATM")).toBe("atm_non_network");
     expect(classifyPatternKey("Debit Card International Transaction Fee")).toBe("card_foreign_txn");
+    expect(classifyPatternKey("Debit/ATM Foreign Transaction (C/B fee) of")).toBe("card_foreign_txn");
     expect(classifyPatternKey("Foreign Transaction Fee")).toBe("card_foreign_txn");
   });
 

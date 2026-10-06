@@ -457,13 +457,22 @@ const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "nsf
 async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: AskSegment): Promise<SegmentResearch> {
   const current = base.ownValues.get(feeCategory) ?? null;
   try {
-    const { institutionsInSegment, ownInSegment, values, caps } = await getSegmentFeeValues(
+    const { institutionsInSegment, ownInSegment, values, caps, limits } = await getSegmentFeeValues(
       segment,
       feeCategory,
       DAILY_CAP[feeCategory] ?? null,
       base.institutionId,
     );
-    const members = values.map((v) => ({ ...toPeerValue(v), totalAssets: v.total_assets, charterType: v.charter_type, dailyCap: caps.get(v.institution_id) ?? null }));
+    const members = values.map((v) => {
+      const limit = limits.get(v.institution_id);
+      return {
+        ...toPeerValue(v),
+        totalAssets: v.total_assets,
+        charterType: v.charter_type,
+        dailyCap: caps.get(v.institution_id) ?? null,
+        dailyFeeLimit: limit ? { count: limit.count, line: limit.line } : null,
+      };
+    });
     return buildSegmentResearch({ segment, feeCategory, institutionsInSegment, members, current, ownInSegment });
   } catch (error) {
     console.error("[hamilton-research] segment read failed", { segment: segment.label, error });

@@ -6,7 +6,7 @@
  *
  * Plain fetch, no SDK. Never throws into request paths.
  */
-import { ensureStateGroup } from "@/lib/agents/marketing/mailerlite-campaigns";
+import { listStateGroups, stateGroupName } from "@/lib/agents/marketing/mailerlite-campaigns";
 
 const MAILERLITE_SUBSCRIBERS_ENDPOINT = "https://connect.mailerlite.com/api/subscribers";
 
@@ -20,8 +20,17 @@ export interface MailerLiteLeadInput {
   subscribed: boolean;
   /** Comma-separated lead sources, stored on a MailerLite custom field when configured. */
   source?: string | null;
-  /** Two-letter state the reader chose; they also join that state's group for its monthly edition. */
+  /**
+   * Two-letter state the reader chose; they join that state's group for its monthly edition
+   * and leave any other state group. Null leaves their state group as it is.
+   */
   state?: string | null;
+  /**
+   * True only right after the reader clicked a confirm link. MailerLite keeps an address that
+   * unsubscribed earlier unsubscribed unless the upsert says to resubscribe it, and only a
+   * fresh double opt-in may do that.
+   */
+  reconfirmed?: boolean;
 }
 
 export function isMailerLiteSyncEnabled() {
@@ -54,8 +63,38 @@ export function buildMailerLitePayload(input: MailerLiteLeadInput, stateGroupId?
   };
   const groups = [groupId, stateGroupId].filter((id): id is string => Boolean(id));
   if (input.subscribed && groups.length) payload.groups = groups;
+  if (input.subscribed && input.reconfirmed) payload.resubscribe = true;
   if (sourceField && input.source) payload.fields = { [sourceField]: input.source };
   return payload;
+}
+
+function apiBase() {
+  return (process.env.MAILERLITE_SUBSCRIBERS_ENDPOINT || MAILERLITE_SUBSCRIBERS_ENDPOINT).replace(/\/subscribers\/?$/, "");
+}
+
+function authHeaders() {
+  return {
+    Authorization: `Bearer ${(process.env.MAILERLITE_API_KEY || "").trim()}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+/** The chosen state's group (made the first time) and every other state group. */
+async function stateGroups(state: string): Promise<{ target: string; others: string[] }> {
+  const all = await listStateGroups();
+  let target = all.find((group) => group.stateCode === state)?.groupId ?? null;
+  if (!target) {
+    const response = await fetch(`${apiBase()}/groups`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ name: stateGroupName(state) }),
+    });
+    const body = (await response.json().catch(() => null)) as { data?: { id?: unknown } } | null;
+    if (!response.ok || body?.data?.id === undefined) throw new Error(`MailerLite group create failed: HTTP ${response.status}`);
+    target = String(body.data.id);
+  }
+  return { target, others: all.filter((group) => group.groupId !== target).map((group) => group.groupId) };
 }
 
 /** Upserts the subscriber (MailerLite's POST /subscribers is create-or-update). */
@@ -65,28 +104,41 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
   }
   try {
     // A state group that can't be found or made shouldn't block the signup itself.
-    const stateGroupId = input.subscribed && input.state
-      ? await ensureStateGroup(input.state).catch(() => null)
+    const state = input.subscribed && input.state
+      ? await stateGroups(input.state).catch(() => null)
       : null;
     const response = await fetch(process.env.MAILERLITE_SUBSCRIBERS_ENDPOINT || MAILERLITE_SUBSCRIBERS_ENDPOINT, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${(process.env.MAILERLITE_API_KEY || "").trim()}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(buildMailerLitePayload(input, stateGroupId)),
+      headers: authHeaders(),
+      body: JSON.stringify(buildMailerLitePayload(input, state?.target ?? null)),
     });
     const body = (await response.json().catch(() => null)) as {
-      data?: { id?: unknown };
+      data?: { id?: unknown; status?: unknown; groups?: Array<{ id?: unknown; name?: unknown }> };
       message?: unknown;
     } | null;
     if (!response.ok) {
       const message = typeof body?.message === "string" ? body.message : `HTTP ${response.status}`;
       return { status: "failed", error: `MailerLite sync failed: ${message}` };
     }
-    const id = body?.data?.id;
-    return { status: "synced", subscriberId: typeof id === "string" ? id : null };
+    const id = typeof body?.data?.id === "string" || typeof body?.data?.id === "number" ? String(body.data.id) : null;
+    // MailerLite answers 200 even when it keeps the old status, so check what it stored.
+    const stored = typeof body?.data?.status === "string" ? body.data.status : null;
+    const wanted = input.subscribed ? "active" : "unsubscribed";
+    if (stored && stored !== wanted) {
+      return { status: "failed", error: `MailerLite kept this subscriber as "${stored}" instead of "${wanted}".` };
+    }
+    // A reader belongs to the one state they picked last: leave every other state group.
+    if (id && state) {
+      // The upsert answers with the subscriber's groups; when it does, only those are touched.
+      const joined = Array.isArray(body?.data?.groups)
+        ? new Set(body.data.groups.map((group) => String(group.id)))
+        : null;
+      const leave = joined ? state.others.filter((groupId) => joined.has(groupId)) : state.others;
+      await Promise.all(leave.map((groupId) =>
+        fetch(`${apiBase()}/subscribers/${id}/groups/${groupId}`, { method: "DELETE", headers: authHeaders() }).catch(() => null),
+      ));
+    }
+    return { status: "synced", subscriberId: id };
   } catch (error) {
     return {
       status: "failed",
