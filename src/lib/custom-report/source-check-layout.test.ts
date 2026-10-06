@@ -112,6 +112,19 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(text, "Paid overdraft item daily maximum", 175, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(text, "Paid overdraft item", 175, ".").ok).toBe(false);
   });
+
+  it("reads a price line that carries a lowercase note about the price (Ent Courtesy Pay)", () => {
+    const text = "Courtesy Pay\n$30.00 | everyday debit card transactions and ATM withdrawals are not covered unless you opt in";
+    expect(checkFeeAgainstSource(text, "Courtesy Pay", 30, ".").ok).toBe(true);
+    // A long price line that names another fee is still that fee's row.
+    expect(checkFeeAgainstSource("Incoming\n$30.00 | Outgoing domestic wires sent through the branch", "Incoming", 30, ".").ok).toBe(false);
+  });
+
+  it("reads a tier named by its own band, never a band standing in for the whole fee", () => {
+    const text = "Overdraft Item Fee: based on item amount\n$10.01 - $20.00: $10.00 fee";
+    expect(checkFeeAgainstSource(text, "Overdraft Item Fee (items $10.01 - $20.00)", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdraft | Negative $25 or less | $5", "Overdraft", 5, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+  });
 });
 
 describe("checkFeeAgainstSource daily caps", () => {

@@ -1155,6 +1155,23 @@ name supersedes it instead of publishing beside it.
 **Lesson:** when a normalizer changes what an agent writes, every place that matches new rows
 to old ones must apply it too, or the change makes duplicates.
 
+## 2026-10-06: Knox held low-balance fees written as account rows or prose
+**What happened:** about 800 held lines mention a balance condition, and many are low-balance
+charges Knox could not name: "Money Market Checking | $10.00 monthly for average balances below $1,000", "A club fee
+of $8.00 will be imposed every statement cycle if the balance ... falls below $3,000",
+"Average Daily Balance below $2,500 | $10.00/month", "MININUM BALANCE FEE ..... $5".
+**Cause:** the low-balance name pattern needed "minimum balance ... fee" in the name; a prose
+sentence names the fee after "a ... fee of $X", and the maintenance guard (correctly) refuses
+money market and club accounts as monthly maintenance.
+**Fix:** Knox v18 (rules 18) files them as `minimum_balance`, named by the bank's words and the
+condition, with the fee and condition in one sentence and the balance never read as the price.
+Gates rise (Texas 446 to 448, seven states 665 to 668, wrong reads 48 to 47). Read-only dry
+run: no sampled live fee changes; on the 11,851 held lines' excerpts, 67 more get a priced
+category. Some held prose still fails the shared check because the price comes before the
+name inside a sentence ("avoid the $20.00 monthly maintenance fee"); those stay held.
+**Lesson:** a guard that rightly refuses a category should send the row to the category that
+does fit, not leave it unclassified.
+
 ## 2026-10-06: Knox's held lines never got the newer rules
 **What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
 Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an
@@ -1188,6 +1205,35 @@ on them, 1 PDF for the paid pass now. A new text replaces the old only when it l
 many fees, so no live fee is taken down by the re-read itself.
 **Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
 
+
+## 2026-10-06: Large banks' overdraft fees were missed, misfiled or misnamed
+**What happened:** a check of large banks' overdraft fees found Knox missing or mangling them:
+"Overdrafts Paid" and "Overdrafts (OD)" (Enterprise, United Bank VA, Trustmark) were not read;
+"Insufficient Funds Fee – Item Paid" (Santander) was filed as NSF; "We charge a fee of $37.00
+each time we pay an overdraft" (First Merchants) was named "We charge a fee of"; Navy Federal's
+$20 went live as "†Standard Practices and Fees: We will charge a fee of" and the rules re-check
+took it down; a dot-leader row gave the next fee the first price's terms as its name (Glacier,
+Mechanics); ESL's fee cards tiered "based on the value of the item" were not read; and Ent's
+"Courtesy Pay" / "$30.00 | everyday debit card transactions ..." failed the shared check because
+a price line under a name had to be 40 characters or less.
+**Cause:** the overdraft rule matched only the singular; nothing read a paid item as an
+overdraft; a sentence-form fee took its name from the words before the price; the second price
+on a line took every word since the first price; the shared check treated a long price line as
+another row, and rejected every tier, even one named by its own band.
+**Fix:** Knox v19 (rules 19). The plural names the fee only when it opens the name or a fee word
+follows ("transfer to cover overdrafts" and "overdrafts up to $500" stay out); a paid
+insufficient-funds item is overdraft; a sentence-form fee is named by what it charges for
+("Overdraft fee (each time we pay an overdraft)"), with "one per day" kept in the name since the
+daily-cap categories hold dollars; a lowercase run before a title is the earlier price's terms;
+fee cards tiered by item value are read per tier. The shared check reads a price line whose
+first cell is the price and the rest a lowercase note, and accepts a tier whose name carries its
+own band (balance bands without one stay `tiered_fee`). Gates unchanged (Texas 452 of 467, seven
+states 673 of 720); live dry run 1,416 of 1,437 kept, same as v18; old vs new check on the
+704-fee live sample and the 94 takedowns: no change. Held lines: 8 more overdraft reads, all
+correct. The overdraft guard (accuracy thread) still rejects "Item Paid", so Santander waits on it.
+**Lesson:** a rule written from one bank's wording misses the same fee in a plural or a
+sentence; test new rules on the held lines before trusting them.
+
 ## 2026-10-06: a paid report could open blank
 **What happened:** the private institution report is recomputed from live data on every view.
 The readiness check runs at quote and at checkout, but a market that thinned out after payment
@@ -1196,3 +1242,24 @@ showed the buyer "This market is being refreshed" with no numbers (value funnel 
 starts; `loadMarketReport` (`src/lib/custom-report/report-data.ts`) serves that saved copy, dated,
 when the live market no longer passes.
 **Lesson:** what a customer paid for has to be stored, not recomputed.
+
+## 2026-10-06: Fees a bank removed from its page stayed live
+**What happened:** the Hamilton publish audit found live fees read from an older copy of a page when
+Magellan had since fetched a newer, different copy. The source check reads each document's own text,
+so a fee that disappeared from the newer copy still traced to the older copy and stayed live. Read-only
+count at 13:25 UTC: 12,924 live fees in 1,103 older documents at 965 banks have a newer copy Rosetta
+read.
+**Cause:** each changed fetch is a new `source_documents` row, and nothing compared a live fee against
+the newest copy of its page (AGENTS.md listed this as not built).
+**Fix:** same PR: `hamilton/newer-copy-retire.ts` checks a batch of older documents per publish step
+against their newest copy and retires a fee only when its line is gone, with a restore path. A first
+version that trusted the shared reader alone would have retired 45 fees; every one sampled was still on
+the page, flattened differently (rows glued together, the price column lost, a stray quote mark). The
+check now also looks for the fee's words anywhere in the newer copy. Dry run over all 1,103 documents:
+12,652 fees still stated, 265 still named but not read at their price (kept), 1 retired ("Escheating to
+State $2", replaced on the page by a $5 dormant letter fee), and 169 newer copies not recognizably the
+same schedule (a navigation page among them), which retire nothing.
+**Lesson:** a newer copy of a page is often a worse rendering of the same schedule. Comparing two
+copies with a line reader measures the renderer, not the bank; a line is gone only when its words are.
+Open for Knox and Magellan: about half of these newer copies have no Knox read yet (446 of 969 had
+any raw rows at 13:22 UTC), so price changes in them do not publish.
