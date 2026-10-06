@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { attemptAlerts, stepAlerts } from "./failure-alerts";
+import { attemptAlerts, sourceCheckCoverageAlert, stepAlerts } from "./failure-alerts";
 
 describe("failure alerts", () => {
   it("flags a strategy whose attempts mostly error, with the reason (2026-10-05 OCR outage)", () => {
@@ -30,5 +30,17 @@ describe("failure alerts", () => {
     ]);
     expect(alerts.map((alert) => alert.key)).toEqual(["step:read"]);
     expect(alerts[0].message).toContain("Database connection timed out");
+  });
+
+  it("flags every state with live fees left unchecked against the bank's schedule (2026-10-06)", () => {
+    const alerts = sourceCheckCoverageAlert([
+      { state_code: "NY", institutions: 40 },
+      { state_code: "TX", institutions: 3 },
+    ]);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].key).toBe("coverage:source_check");
+    expect(alerts[0].message).toContain("43 institutions in 2 states");
+    expect(alerts[0].message).toContain("NY 40, TX 3");
+    expect(sourceCheckCoverageAlert([])).toEqual([]);
   });
 });
