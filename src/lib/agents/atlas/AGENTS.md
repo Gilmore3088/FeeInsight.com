@@ -38,7 +38,7 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   `needs_human`). Dead ends wait for the quarterly re-check instead. A state also stays daily
   while it has paid-find targets (`paid_find_due`, the same banks Magellan's paid find picks
   this month) or banks with no website still due Magellan's website search
-  (`website_find_due`, counted once `discover.website_search` has run anywhere). Those steps
+  (`website_find_due`, the same rows `magellan/website-find.ts` picks). Both run in the paid step,
   run only on the daily full pass, and the paid caps still bound their spend.
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of

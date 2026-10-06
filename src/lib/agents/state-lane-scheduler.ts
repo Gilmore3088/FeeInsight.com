@@ -14,6 +14,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-ch
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
+import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -61,14 +62,12 @@ export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; 
  * falls back to the monthly refresh on its own. Only banks a search can still find count
  * (James, 2026-10-06): a website on file, not offline or manual-review, and not a dead end
  * (`dead` / `needs_human`, which the quarterly re-check searches again). Counting dead ends
- * kept 23 states on daily paid passes that could never turn off; with this rule 5 do.
+ * kept 23 states on daily paid passes that could never turn off; on this count alone 5 do.
  * A state also stays daily while Magellan's paid steps have banks due this month: dead-end
  * banks the paid find has not tried (`discover-paid`), and institutions with no website the
  * website search has not tried. Both are monthly per bank, so the rule turns off on its own,
  * and the paid caps still bound the spend.
  */
-/** Magellan's no-website search (PR 261); counted before it ships so the lane is ready for it. */
-export const WEBSITE_FIND_STRATEGY_NAME = "discover.website_search";
 export const DAILY_FULL_PASS_MISSING_LINKS = 50;
 
 export type StateLaneRecheck = "quarterly";
@@ -669,8 +668,8 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
                   AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
              ) < 2
         ) AS paid_find_due,
-        -- Institutions with no website the website search has not tried this month. Counted
-        -- only once that search has run somewhere, so no state stays daily before it ships.
+        -- Mirrors magellan/website-find.ts selectRows: institutions with no website the
+        -- website search has not tried this month.
         (
           SELECT count(*)::int FROM public.institution_sources inst
             LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
@@ -684,13 +683,9 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
                SELECT 1 FROM public.pipeline_attempts pa
                 WHERE pa.institution_id = inst.id
                   AND pa.stage = 'discover'
-                  AND pa.strategy = ${WEBSITE_FIND_STRATEGY_NAME}
+                  AND pa.strategy = ${WEBSITE_FIND_STRATEGY.strategy}
                   AND pa.created_at >= date_trunc('month', NOW())
                   AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
-             )
-             AND EXISTS (
-               SELECT 1 FROM public.pipeline_attempts shipped
-                WHERE shipped.strategy = ${WEBSITE_FIND_STRATEGY_NAME}
              )
         ) AS website_find_due,
         EXISTS (
