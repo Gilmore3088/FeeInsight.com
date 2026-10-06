@@ -13,7 +13,7 @@ const API_ACCESS_CTA = "Contact us about API access";
 export const metadata: Metadata = {
   title: "API Documentation",
   description:
-    `REST API for accessing bank and credit union fee benchmarking data. JSON endpoints are available with optional manual API keys; CSV exports require a signed-in ${PRO_LABEL} seat.`,
+    `REST API for accessing bank and credit union fee benchmarking data. Access is by invitation: every request needs an API key that Fee Insight issues by hand.`,
 };
 
 /* ---------- small reusable pieces ---------- */
@@ -325,7 +325,7 @@ export default async function ApiDocsPage() {
       <SectionHeading id="authentication">Authentication</SectionHeading>
       <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
         <p className="text-[13px] text-[#6B6255]">
-          JSON endpoints can be called without credentials and are rate-limited on the free tier. If Fee Insight manually issues an API key for your workspace, pass it in the{" "}
+          Every request needs an API key. Fee Insight issues keys by hand to invited partners. Pass yours in the{" "}
           <code className="rounded bg-[#E8DFD1]/40 px-1 text-[12px]">Authorization</code>{" "}
           header as a Bearer token, or as an{" "}
           <code className="rounded bg-[#E8DFD1]/40 px-1 text-[12px]">api_key</code>{" "}
@@ -347,12 +347,12 @@ export default async function ApiDocsPage() {
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
       <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
         <p className="text-[13px] text-[#6B6255]">
-          Rate limits are enforced per API key when present and by anonymous request source otherwise. Current window information is returned in response headers.
+          Each API key gets one monthly allowance shared across all endpoints. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />
           <ResponseField name="X-RateLimit-Remaining" type="header" note="Requests remaining" />
-          <ResponseField name="X-RateLimit-Reset" type="header" note="UTC epoch timestamp when the window resets" />
+          <ResponseField name="X-RateLimit-Reset" type="header" note="ISO 8601 UTC time when the monthly window resets" />
         </div>
         <div className="mt-4 overflow-hidden rounded-lg border border-[#E8DFD1]/60">
           <table className="w-full text-left text-[13px]">
@@ -364,11 +364,6 @@ export default async function ApiDocsPage() {
               </tr>
             </thead>
             <tbody className="text-[#5A5347]">
-              <tr className="border-t border-[#E8DFD1]/60">
-                <td className="px-4 py-2">Free</td>
-                <td className="px-4 py-2">100 requests</td>
-                <td className="px-4 py-2">10/min</td>
-              </tr>
               <tr className="border-t border-[#E8DFD1]/60">
                 <td className="px-4 py-2 font-medium">{PRO_LABEL} key</td>
                 <td className="px-4 py-2">10,000 requests</td>
@@ -392,7 +387,7 @@ export default async function ApiDocsPage() {
           method="GET"
           path="/fees"
           summary="List all fee categories"
-          description={`Returns all ${categoriesLabel} fee categories with national median, P25/P75 percentiles, min/max, and institution counts. Free tier returns 6 spotlight categories.`}
+          description={`Returns all ${categoriesLabel} fee categories with national median, P25/P75 percentiles, min/max, and institution counts.`}
           params={[
             {
               name: "format",
@@ -649,18 +644,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       {/* ---- PRICING ---- */}
       <SectionHeading id="pricing">API Pricing</SectionHeading>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <TierCard
-          name="Free"
-          price="$0"
-          features={[
-            "100 requests/month",
-            "6 spotlight categories",
-            "National medians only",
-            "JSON responses",
-          ]}
-          cta="Get started -- no card required"
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
         <TierCard
           name={PRO_LABEL}
           price={`${MONTHLY_PRICE_LABEL}/mo per seat`}
@@ -717,7 +701,6 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           <li>
             <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}
             Categories are organized into 4 tiers: spotlight, core, extended, and comprehensive.
-            The Free API tier returns only spotlight categories.
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Coverage.</span>{" "}
