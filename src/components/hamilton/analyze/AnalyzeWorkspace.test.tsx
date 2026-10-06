@@ -51,3 +51,26 @@ describe("AnalyzeWorkspace send button", () => {
     expect(render()).not.toContain("animate-spin");
   });
 });
+
+describe("Ask Hamilton helpers", () => {
+  it("says plainly when the preview has no AI key", async () => {
+    const { askErrorMessage } = await import("./AnalyzeWorkspace");
+    expect(askErrorMessage(new Error('{"error":"AI service not configured. Set ANTHROPIC_API_KEY."}'))).toMatch(/preview copy/);
+    expect(askErrorMessage(new Error("boom"))).toMatch(/couldn't finish/);
+  });
+
+  it("names the lookups an answer used", async () => {
+    const { lookupsUsed } = await import("./AnalyzeWorkspace");
+    expect(lookupsUsed([{ type: "text" }, { type: "tool-getPeerFees" }, { type: "tool-search_complaints" }, { type: "tool-getPeerFees" }])).toEqual([
+      "peer fees",
+      "complaints",
+    ]);
+  });
+
+  it("never shows lens tabs or the old recommendation hint", () => {
+    chat.status = "ready";
+    const html = render();
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toMatch(/recommendations, use Simulate/);
+  });
+});

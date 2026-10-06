@@ -12,7 +12,7 @@ import {
   shouldPersistUrlInstitutionSelection,
 } from "@/lib/hamilton/artifact-context";
 
-export const metadata: Metadata = { title: "Analyze" };
+export const metadata: Metadata = { title: "Ask Hamilton" };
 
 /**
  * AnalyzePage — Server component that gates and hydrates the Analyze workspace.

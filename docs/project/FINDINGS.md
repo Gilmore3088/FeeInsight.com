@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Ask Hamilton failed on the preview and saved an empty answer
+**What happened:** At 03:01 UTC James asked a question on the PR 89 preview. The route audit
+(`api_route_audit_events`) shows `/api/research/hamilton` answered 503 in 160 ms, and
+`ai_api_usage_events` shows no provider call. The page showed a red error and an empty
+"Hamilton's view" card, and it said "Analysis saved to workspace".
+**Cause:** Vercel preview deployments have no `ANTHROPIC_API_KEY`, so the route stops before any model
+call. The page's `onFinish` ran on the failed reply and saved an empty analysis, and its error text
+didn't say why.
+**Fix:** PR 89 ignores failed or empty replies (no answer shown, nothing saved) and says plainly when
+the AI isn't switched on for a preview. The Ask screen was rebuilt as a memo. A preview still can't
+answer questions; feeinsight.com can.
+**Lesson:** Test paid-model screens on production, or add a preview-scoped key in Vercel if James
+wants previews to answer. Never save or show a reply the stream marked as an error.
+
 ## 2026-10-06: A paid user could be offered checkout a second time
 **What happened:** the full funnel audit (finding 9) traced a path where someone who had just paid
 opened a Pro page before Stripe's webhook marked them active. The Pro gate sent them to
