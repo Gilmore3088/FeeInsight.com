@@ -12,6 +12,8 @@ import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
+import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
+import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -60,7 +62,13 @@ export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; 
  * (James, 2026-10-06): a website on file, not offline or manual-review, and not a dead end
  * (`dead` / `needs_human`, which the quarterly re-check searches again). Counting dead ends
  * kept 23 states on daily paid passes that could never turn off; with this rule 5 do.
+ * A state also stays daily while Magellan's paid steps have banks due this month: dead-end
+ * banks the paid find has not tried (`discover-paid`), and institutions with no website the
+ * website search has not tried. Both are monthly per bank, so the rule turns off on its own,
+ * and the paid caps still bound the spend.
  */
+/** Magellan's no-website search (PR 261); counted before it ships so the lane is ready for it. */
+export const WEBSITE_FIND_STRATEGY_NAME = "discover.website_search";
 export const DAILY_FULL_PASS_MISSING_LINKS = 50;
 
 export type StateLaneRecheck = "quarterly";
@@ -599,6 +607,8 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
       full_today: boolean;
       recheck_this_quarter: boolean;
       missing_links: number;
+      paid_find_due: number;
+      website_find_due: number;
     }[]>`
       SELECT
         EXISTS (
@@ -631,6 +641,58 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
              AND ${findableBankSql()}
         ) AS missing_links,
+        -- Mirrors magellan/paid-find.ts selectBanks: dead-end banks the paid pick or paid
+        -- web search has not tried this month after every free finder ran.
+        (
+          SELECT count(*)::int FROM public.institution_sources inst
+            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+           WHERE upper(btrim(inst.state_code)) = ${stateCode}
+             AND COALESCE(inst.status, 'active') = 'active'
+             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+             AND NULLIF(btrim(inst.website_url), '') IS NOT NULL
+             AND inst.rescue_status = 'dead'
+             AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+             AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+             AND COALESCE(profile.locked_by_correction, false) = false
+             AND EXISTS (
+               SELECT 1 FROM public.pipeline_attempts pa
+                WHERE pa.institution_id = inst.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION })}::jsonb
+             )
+             AND (
+               SELECT count(DISTINCT pa.strategy) FROM public.pipeline_attempts pa
+                WHERE pa.institution_id = inst.id
+                  AND pa.stage = 'discover'
+                  AND pa.strategy IN (${PAID_PICK_STRATEGY.strategy}, ${PAID_FIND_STRATEGY.strategy})
+                  AND pa.created_at >= date_trunc('month', NOW())
+                  AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
+             ) < 2
+        ) AS paid_find_due,
+        -- Institutions with no website the website search has not tried this month. Counted
+        -- only once that search has run somewhere, so no state stays daily before it ships.
+        (
+          SELECT count(*)::int FROM public.institution_sources inst
+            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+           WHERE upper(btrim(inst.state_code)) = ${stateCode}
+             AND COALESCE(inst.status, 'active') = 'active'
+             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+             AND NULLIF(btrim(inst.website_url), '') IS NULL
+             AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+             AND COALESCE(profile.locked_by_correction, false) = false
+             AND NOT EXISTS (
+               SELECT 1 FROM public.pipeline_attempts pa
+                WHERE pa.institution_id = inst.id
+                  AND pa.stage = 'discover'
+                  AND pa.strategy = ${WEBSITE_FIND_STRATEGY_NAME}
+                  AND pa.created_at >= date_trunc('month', NOW())
+                  AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
+             )
+             AND EXISTS (
+               SELECT 1 FROM public.pipeline_attempts shipped
+                WHERE shipped.strategy = ${WEBSITE_FIND_STRATEGY_NAME}
+             )
+        ) AS website_find_due,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
            WHERE run.run_kind = 'workflow_lane'
@@ -641,7 +703,9 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
         ) AS recheck_this_quarter
     `;
-    const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS;
+    const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS
+      || Number(row?.paid_find_due ?? 0) > 0
+      || Number(row?.website_find_due ?? 0) > 0;
     return {
       fullDue: daily ? !row?.full_today : !row?.full_this_month,
       recheckDue: !row?.recheck_this_quarter,

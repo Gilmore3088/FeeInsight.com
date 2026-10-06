@@ -35,7 +35,11 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - A state runs daily full passes instead of monthly while more than
   `DAILY_FULL_PASS_MISSING_LINKS` (50) of its banks have no fee link and a search can still
   find them (website on file, not offline or manual-review, last search not `dead` or
-  `needs_human`). Dead ends wait for the quarterly re-check instead.
+  `needs_human`). Dead ends wait for the quarterly re-check instead. A state also stays daily
+  while it has paid-find targets (`paid_find_due`, the same banks Magellan's paid find picks
+  this month) or banks with no website still due Magellan's website search
+  (`website_find_due`, counted once `discover.website_search` has run anywhere). Those steps
+  run only on the daily full pass, and the paid caps still bound their spend.
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
   banks in the state with open work or a recent error: due a search, a fee link not fetched

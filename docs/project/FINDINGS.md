@@ -24,7 +24,9 @@ passes that could never turn off. The state experts ranked finder strategies (Te
 link. `stateExpertHints` had no caller.
 **Fix:** the Atlas gaps PR. The hourly sync scores each lane by its banks with open work or a
 recent error, and due lanes run highest first; a lane 3 h overdue goes first. Only findable
-banks count toward the daily rule, which leaves 5 daily states. Magellan runs each state's best
+banks count toward the daily rule (5 states on that count alone: TX, IL, MN, IA, MO), and a
+state with paid-find or no-website targets stays daily so the paid steps still run (live
+13:45 UTC: 51 states have paid-find targets, 459 banks). Magellan runs each state's best
 finders first. Launches go from 2 to 3 per tick.
 **Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
 ("Magellan uses the hints") needs a caller and a test.

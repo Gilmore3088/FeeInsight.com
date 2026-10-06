@@ -55,12 +55,16 @@ function mockCadence({
   backlog = false,
   fullToday = fullThisMonth,
   missingLinks = 0,
+  paidFindDue = 0,
+  websiteFindDue = 0,
 }: {
   fullThisMonth: boolean;
   recheckThisQuarter: boolean;
   backlog?: boolean;
   fullToday?: boolean;
   missingLinks?: number;
+  paidFindDue?: number;
+  websiteFindDue?: number;
 }) {
   sqlMock.mockImplementation((strings: TemplateStringsArray) => {
     const text = templateText(strings);
@@ -70,6 +74,8 @@ function mockCadence({
         full_today: fullToday,
         recheck_this_quarter: recheckThisQuarter,
         missing_links: missingLinks,
+        paid_find_due: paidFindDue,
+        website_find_due: websiteFindDue,
       }]);
     }
     if (text.includes("AS backlog")) return Promise.resolve([{ backlog }]);
@@ -366,5 +372,20 @@ describe("state lane scheduler", () => {
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("FOR UPDATE SKIP LOCKED"));
     expect(query).toMatch(/ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+priority_score DESC/);
     expect(STATE_LANE_STARVATION_HOURS).toBe(3);
+  });
+
+  it("keeps a state on daily passes while Magellan's paid steps have banks due this month", async () => {
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4, paidFindDue: 18 });
+    await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: true, daily: true });
+
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4, websiteFindDue: 5 });
+    await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: true, daily: true });
+
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4 });
+    await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: false, daily: false });
+
+    const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("full_this_month"));
+    expect(query).toContain("AS paid_find_due");
+    expect(query).toContain("AS website_find_due");
   });
 });

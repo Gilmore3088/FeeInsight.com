@@ -117,7 +117,9 @@ report has sold.
 13:20 UTC ("i need you to close all those gaps with the agents", on the agent audits). Each
 state lane is ranked by its banks with open work or a recent error, and the busiest due lane
 goes first. A state stays on daily full passes only while more than 50 of its banks still have
-no link and could be found by a search. Dead ends wait for the quarterly re-check.
+no link and could be found by a search. Dead ends wait for the quarterly re-check. A state with
+paid-find targets or banks with no website still due a website search also stays daily, so
+those paid steps keep running inside the paid caps (coordinator, 13:39 UTC).
 
 ## 2026-10-05
 
