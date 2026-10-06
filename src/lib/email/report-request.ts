@@ -18,6 +18,8 @@ export interface ReportRequestNotificationInput {
   role: string | null;
   institutionId: number | null;
   src: string | null;
+  /** Whether we can build this institution's report from live data; James's email only. */
+  quoteCheck?: string | null;
 }
 
 export interface ContactRequestNotificationInput {
@@ -55,6 +57,7 @@ export async function sendReportRequestNotifications(
       detailLine("Source", input.src),
     ].filter((line): line is string => line !== null),
     "",
+    ...(input.quoteCheck ? [input.quoteCheck, ""] : []),
     "Reply to this email to reach the requester directly.",
   ];
 

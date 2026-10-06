@@ -207,7 +207,7 @@ export function FinancialProfileCharts({
         <KpiTile label="Net interest margin" value={pct(latest.nimPct)} peer={peers ? pct(peers.nimPct) : null} spark={values(recent, "nimPct")} />
         <KpiTile label="Efficiency ratio" value={pct(latest.efficiencyPct, 1)} peer={peers ? pct(peers.efficiencyPct, 1) : null} />
         <KpiTile label="Net charge-off rate" value={pct(latest.ncoRatePct)} peer={peers ? pct(peers.ncoRatePct) : null} spark={values(recent, "ncoRatePct")} />
-        <KpiTile label="Tier 1 capital ratio" value={pct(latest.tier1Pct, 1)} peer={peers ? pct(peers.tier1Pct, 1) : null} />
+        <KpiTile label={latest.source === "ncua" ? "Net worth ratio" : "Tier 1 capital ratio"} value={pct(latest.tier1Pct, 1)} peer={peers ? pct(peers.tier1Pct, 1) : null} />
         <KpiTile
           label={`Deposit service charges${latestCharges ? ` (${latestCharges.quarter})` : ""}`}
           value={formatCompactDollars(latestCharges?.serviceCharges ?? null)}

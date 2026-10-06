@@ -23,6 +23,11 @@ vi.mock("@/lib/email/benchmark-report", () => ({
   sendBenchmarkReportNotifications: vi.fn(),
 }));
 
+vi.mock("@/lib/custom-report/quote-check", () => ({
+  checkInstitutionReport: vi.fn(() => Promise.resolve({ status: "unmatched", reason: "No match." })),
+  describeQuoteCheck: vi.fn(() => "Report check: No match."),
+}));
+
 vi.mock("@/lib/email/lead-capture", () => ({
   sendLeadCaptureNotifications: vi.fn(),
 }));
@@ -165,7 +170,20 @@ describe("POST /api/leads", () => {
     expect(insert.text).toContain("INSERT INTO leads");
     expect(insert.text).toContain("RETURNING id");
     expect(insert.values).toContain("First National Bank Alaska");
-    expect(sqlMock.mock.calls.map((_, i) => issued(i).text).some((text) => text.includes("UPDATE leads"))).toBe(false);
+    const texts = sqlMock.mock.calls.map((_, i) => issued(i).text);
+    expect(texts.some((text) => text.includes("UPDATE leads") && text.includes("lower(email)"))).toBe(false);
+  });
+
+  it("records the report data check on the new row and in James's email only", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    const update = issued(2);
+    expect(update.text).toContain("UPDATE leads SET use_case");
+    expect(update.text).toContain("WHERE id = ?");
+    expect(update.values).toContain("Report check: No match.");
+    expect(update.values).toContain(42);
+    expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ quoteCheck: "Report check: No match." }));
   });
 
   it("sends the footer newsletter signup the monthly-index confirmation", async () => {
@@ -224,6 +242,7 @@ describe("POST /api/leads", () => {
       role: "VP Retail",
       institutionId: 4802,
       src: "profile",
+      quoteCheck: "Report check: No match.",
     });
   });
 

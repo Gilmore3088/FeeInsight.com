@@ -10,6 +10,18 @@ const dollarOrNull = numOrNull;
 
 export { dollarOrNull as _dollarOrNull_FOR_TESTING };
 
+/**
+ * Capital ratio in percent (12.5 = 12.5%). NCUA's net worth ratio (5300
+ * ACCT_998) is stored as filed, in basis points (1250 = 12.5%); FDIC ratios are
+ * already percent. Verified 2026-10-05: NCUA medians run 1,054-1,254 every year
+ * 2010-2026 and match net worth / assets x 100 (10.5-12.5).
+ */
+export function capitalRatioPct(value: unknown, source: unknown): number | null {
+  const n = numOrNull(value);
+  if (n === null) return null;
+  return String(source).toLowerCase() === "ncua" ? n / 100 : n;
+}
+
 export interface InstitutionFinancial {
   institution_id: number;
   report_date: string;
@@ -94,7 +106,7 @@ export async function getFinancialsByInstitution(
     efficiency_ratio: numOrNull(r.efficiency_ratio),
     roa: numOrNull(r.roa),
     roe: numOrNull(r.roe),
-    tier1_capital_ratio: numOrNull(r.tier1_capital_ratio),
+    tier1_capital_ratio: capitalRatioPct(r.tier1_capital_ratio, r.source),
     branch_count: numOrNull(r.branch_count),
     employee_count: numOrNull(r.employee_count),
     member_count: numOrNull(r.member_count),
@@ -606,7 +618,7 @@ export async function getFinancialHistory(
       efficiency_ratio: numOrNull(r.efficiency_ratio),
       roa: numOrNull(r.roa),
       roe: numOrNull(r.roe),
-      tier1_capital_ratio: numOrNull(r.tier1_capital_ratio),
+      tier1_capital_ratio: capitalRatioPct(r.tier1_capital_ratio, r.source),
       branch_count: numOrNull(r.branch_count),
       employee_count: numOrNull(r.employee_count),
       member_count: numOrNull(r.member_count),
@@ -671,7 +683,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
     efficiency_ratio: numOrNull(row.efficiency_ratio),
     net_charge_off_rate: numOrNull(row.net_charge_off_rate),
     noncurrent_loan_rate: numOrNull(row.noncurrent_loan_rate),
-    tier1_capital_ratio: numOrNull(row.tier1_capital_ratio),
+    tier1_capital_ratio: capitalRatioPct(row.tier1_capital_ratio, row.source),
     fee_income_ratio: numOrNull(row.fee_income_ratio),
   };
 }
