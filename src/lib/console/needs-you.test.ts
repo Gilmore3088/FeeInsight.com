@@ -98,4 +98,20 @@ describe("buildNeedsYou", () => {
     });
     expect(items).toEqual([]);
   });
+
+  it("brings back an emailed quote nobody paid after 5 business days", () => {
+    const quoted = lead({ status: "quoted", quote_cents: 30000, quote_sent_at: "2026-09-28T12:00:00Z" });
+    const [item] = buildNeedsYou({ attention: [], failureAlerts: [], leads: [quoted], now });
+    expect(item).toMatchObject({ id: "quote:1", severity: "work", area: "Customers" });
+    expect(item.title).toContain("Quote unpaid for 8 days");
+  });
+
+  it("leaves a fresh, paid or never-emailed quote alone", () => {
+    const leads = [
+      lead({ id: 2, status: "quoted", quote_sent_at: "2026-10-05T12:00:00Z" }),
+      lead({ id: 3, status: "paid", quote_sent_at: "2026-09-01T12:00:00Z", paid_at: "2026-09-02T12:00:00Z" }),
+      lead({ id: 4, status: "quoted", quote_sent_at: null }),
+    ];
+    expect(buildNeedsYou({ attention: [], failureAlerts: [], leads, now })).toEqual([]);
+  });
 });
