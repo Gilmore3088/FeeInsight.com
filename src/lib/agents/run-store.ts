@@ -15,6 +15,7 @@ import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -360,10 +361,18 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
         stateCode,
       });
+      // Outcome ledger: judge one slot of banks' links by the live fees they produced and
+      // write the judgements to the shared learning store.
+      const linkOutcomes = await recordLinkOutcomes(tx, {
+        runId: run.id,
+        stateCode,
+        dryRun: run.runKind === "dry_run",
+      });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
+          link_outcomes: linkOutcomes,
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,

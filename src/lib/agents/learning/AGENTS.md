@@ -118,7 +118,9 @@ Dedupe keys in use:
 - `darwin.verify:raw:<fee_raw_id>`: Darwin's judgement of a Knox read. Only
   `category_mismatch` rejects are written today; holds (peer, range) are not proof.
 - `answer_key:fee:<id>`: a confirmed answer-key fee (`right`, reported by a human).
-- `magellan.link_yield:doc:<source_document_id>`: a link's live-fee outcome (Magellan).
+- `magellan.link_yield:doc:<source_document_id>`: a link's live-fee outcome (Magellan),
+  keyed on the link's first document; written by every discover step for one 24th of the
+  banks (`magellan/outcomes.ts`; rules in `magellan/AGENTS.md`).
 
 `syncPipelineFeedback` (`feedback-sync.ts`) runs in every Hamilton publish step after
 the source check. It fills the store from takedowns, restores, Darwin category rejects

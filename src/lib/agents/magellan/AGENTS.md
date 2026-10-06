@@ -129,6 +129,26 @@ and `detail.method_version`).
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
 
+## Outcome ledger (`outcomes.ts`)
+
+Every discover step judges one 24th of the banks (bank id mod 24 = the UTC hour, so each
+bank once a day) by what their links produced downstream, and writes the judgement to
+the shared learning store (`pipeline_feedback`, `check_name = magellan.link_yield`,
+dedupe `magellan.link_yield:doc:<first source_document_id of the link>`). A link is the
+bank's main fee link or a companion page; all fetches of the same address count as one.
+
+| Label | Rule | Signal, kind, weight |
+|---|---|---|
+| good | 3 or more distinct fees from it are live | right, `produced_live_fees`, live fee count |
+| dead | last fetch 404/410, or Rosetta's last read was a 404 | wrong, `dead_link`, 1 |
+| rejected | Rosetta's last read ruled it the wrong document | wrong, `wrong_document`, 1 |
+| thin | Knox extracted it over 24 hours ago, fewer than 3 live fees | wrong, `thin_link`, 1 |
+
+Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
+is the Magellan specialist whose attempt found the address (null for links the old
+crawler left). Only changed judgements are written; the step's `link_outcomes` detail
+reports the counts. Finders, the fee-page classifier and Darwin read these rows.
+
 ## Boundaries
 
 - Do not call extraction providers from Magellan.
