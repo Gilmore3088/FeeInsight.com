@@ -14,6 +14,8 @@ const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export interface ResendMessage {
   from: string;
   to: string;
+  /** Copied recipients; left out of the request when empty. */
+  cc?: string[];
   subject: string;
   html: string;
   text: string;
@@ -89,6 +91,7 @@ export async function sendResendEmail(
     html: message.html,
     text: message.text,
   };
+  if (message.cc && message.cc.length > 0) body.cc = message.cc;
   if (message.replyTo) body.reply_to = message.replyTo;
   if (message.headers && Object.keys(message.headers).length > 0) body.headers = message.headers;
 

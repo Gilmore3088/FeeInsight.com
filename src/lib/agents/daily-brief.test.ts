@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { buildDailyBrief } from "./daily-brief";
+import { briefRecipients, buildDailyBrief } from "./daily-brief";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 
@@ -64,5 +64,45 @@ describe("buildDailyBrief", () => {
       now: new Date("2026-10-03T12:47:00Z"),
     });
     expect(brief.lines[1]).toBe("Since the last brief (Sep 30): +100 fees verified.");
+  });
+});
+
+describe("morning brief", () => {
+  const base = {
+    health,
+    funnel,
+    previous: null,
+    stepsByAgent: {},
+    feed24h: [],
+    now: new Date("2026-10-06T12:00:00Z"),
+  };
+
+  it("leads with the Needs-you list and the spend line", () => {
+    const brief = buildDailyBrief({
+      ...base,
+      needsYou: [
+        { id: "lead:1", severity: "critical", area: "Customers", title: "Reply overdue by 4 hours: Pat Lee", detail: "", href: "/admin/leads", action: "Open lead" },
+      ],
+      spend: {
+        readAt: "2026-10-06T12:00:00Z",
+        total: { key: "all", todayUsd: 8.35, monthUsd: 23.27, dailyCapUsd: 75, monthlyCapUsd: 500, enabled: true },
+        agents: [],
+      },
+    });
+    expect(brief.subject).toBe("Morning brief: 1 thing needs you, pipeline running");
+    expect(brief.lines[0]).toBe("1 thing needs you.\n- Reply overdue by 4 hours: Pat Lee");
+    expect(brief.lines).toContain("Spend: $8.35 so far today of the $75 daily cap; $23.27 this month of $500.");
+  });
+
+  it("says plainly when nothing needs you", () => {
+    const brief = buildDailyBrief({ ...base, needsYou: [] });
+    expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
+    expect(brief.lines[0]).toBe("Nothing needs you.");
+  });
+
+  it("copies the owner's Gmail unless told otherwise", () => {
+    expect(briefRecipients({})).toEqual({ to: "hello@bankfeeindex.com", cc: ["jlgilmore2@gmail.com"] });
+    expect(briefRecipients({ ATLAS_BRIEF_CC: "" })).toEqual({ to: "hello@bankfeeindex.com", cc: [] });
+    expect(briefRecipients({ ATLAS_BRIEF_TO: "jlgilmore2@gmail.com" }).cc).toEqual([]);
   });
 });
