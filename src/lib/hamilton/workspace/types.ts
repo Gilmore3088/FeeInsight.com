@@ -10,6 +10,8 @@
  * Client-safe: no server imports.
  */
 
+import type { Storyline, StorylineExhibit } from "./storyline-types";
+
 /** A source behind a fact, named so the reader can check it. */
 export interface SourceRef {
   label: string;
@@ -386,7 +388,8 @@ export type Exhibit =
       items: { name: string; amount: number; url: string | null }[];
       sources: SourceRef[];
       note?: string;
-    };
+    }
+  | StorylineExhibit;
 
 export type HamiltonRole = "economist" | "consultant" | "data_engineer" | "writer";
 
@@ -408,6 +411,8 @@ export interface HamiltonAnswer {
   question: ClarifyingQuestion | null;
   evidenceLevel: EvidenceLevel;
   provenance: Provenance;
+  /** The answer as a consulting memo: governing thought, numbered exhibits, both readers' lenses. */
+  storyline?: Storyline | null;
 }
 
 export type EvidenceLevel = "market" | "working_estimate" | "institution";
