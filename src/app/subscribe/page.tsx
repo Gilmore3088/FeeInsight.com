@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { activateIfPaid } from "@/lib/subscription-activation";
 import { redirect } from "next/navigation";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -69,6 +70,11 @@ export default async function SubscribePage({
 
   if (user && canAccessPremium(user)) {
     redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : "/account");
+  }
+  // Paid but the webhook hasn't landed (e.g. /pro redirected here): activate from Stripe
+  // and send them on, rather than offering checkout a second time.
+  if (user && (await activateIfPaid(user))) {
+    redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : WELCOME_PATH);
   }
 
   const isLoggedIn = !!user;

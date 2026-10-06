@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { REPORT_BULLETS, REPORT_PRICE_LABEL } from "./pricing";
 
@@ -61,16 +61,21 @@ export function ReportCard() {
           </ul>
           <p className="mt-3 text-sm text-[#5A5347]">
             One institution, one peer set, one PDF for your pricing committee.{" "}
-            {REPORT_OFFER.nextStep}.{" "}
-            <TrackLink
-              event="see_sample_report"
-              eventProps={{ placement: "pricing_report" }}
-              href={SAMPLE_REPORT_HREF}
-              className="font-medium text-[#1A1815] underline underline-offset-2"
-            >
-              See the sample report
-            </TrackLink>
-            .
+            {REPORT_OFFER.nextStep}.
+            {SAMPLE_REPORT_LIVE && (
+              <>
+                {" "}
+                <TrackLink
+                  event="see_sample_report"
+                  eventProps={{ placement: "pricing_report" }}
+                  href={SAMPLE_REPORT_HREF}
+                  className="font-medium text-[#1A1815] underline underline-offset-2"
+                >
+                  See the sample report
+                </TrackLink>
+                .
+              </>
+            )}
           </p>
         </div>
         <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
