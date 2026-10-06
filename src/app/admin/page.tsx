@@ -15,12 +15,15 @@ import { getFeedFreshness } from "@/lib/data-store/feed-freshness";
 import { EMPTY_PIPELINE_FUNNEL, getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import { pipelineHealthProblems } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
-import { Breadcrumbs } from "@/components/breadcrumbs";
+import { getLeads } from "@/lib/admin-queries";
+import { buildNeedsYou, needsYouHeadline } from "@/lib/console/needs-you";
+import { getSpendSummary } from "@/lib/data-store/console-spend";
 import { AtlasEmergencyControl } from "./atlas-emergency-control";
 import { AtlasOverview } from "./atlas-overview";
 import { CrewCommandBar } from "./crew-command-bar";
 import { CrewLive } from "./crew-live";
 import { DataFeedsPanel } from "./data-feeds-panel";
+import { NeedsYouList, VitalsRow, spendVitals, type Vital } from "./today-panels";
 
 const getCachedAtlasCommandCenter = unstable_cache(
   getAtlasCommandCenter,
@@ -46,26 +49,29 @@ const getCachedFeedFreshness = unstable_cache(getFeedFreshness, ["admin", "feed-
   revalidate: 300,
 });
 
+// Spend moves with every paid call; a minute old is fresh enough for the home screen.
+const getCachedSpendSummary = unstable_cache(getSpendSummary, ["admin", "console-spend"], { revalidate: 60 });
+
 function dateTime(value: string | null): string {
   return value ? formatAdminDateTime(value) : "—";
 }
 
 /**
- * The crew home: what each Fee Insight worker is doing, a plain-English log of
- * what they did, and a command bar to direct them. The full command center lives
- * at /admin/atlas/details.
+ * Today: the console's home. What needs a person first, then the vitals, then the
+ * crew at work. Every item and number is read from a table; a value that could not
+ * be read says so. The full run controls live at /admin/atlas/details.
  */
-export default async function CrewPage() {
+export default async function TodayPage() {
   await requireAuth("view");
-  const [center, health, funnel, crew, feed, failureAlerts, freshness] = await Promise.all([
+  const [center, health, funnel, crew, feed, failureAlerts, freshness, spend, leads] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {
-      console.error("Crew pipeline health query failed", error);
+      console.error("Today pipeline health query failed", error);
       return null;
     }),
     getCachedPipelineFunnel().catch((error) => {
-      console.error("Crew pipeline funnel query failed", error);
-      return EMPTY_PIPELINE_FUNNEL;
+      console.error("Today pipeline funnel query failed", error);
+      return null;
     }),
     getCrewStatus().catch((error) => {
       console.error("Crew status query failed", error);
@@ -80,19 +86,50 @@ export default async function CrewPage() {
       console.error("Crew feed freshness query failed", error);
       return null;
     }),
+    getCachedSpendSummary().catch((error) => {
+      console.error("Today spend query failed", error);
+      return null;
+    }),
+    getLeads(),
   ]);
   const problems = health
     ? pipelineHealthProblems(health)
     : ["Pipeline health could not be read; check the database connection."];
+  const needsYou = buildNeedsYou({ attention: center.attention, failureAlerts, leads });
+  const vitals: Vital[] = [
+    {
+      label: "Live fees",
+      value: funnel ? funnel.publishedRows.toLocaleString("en-US") : null,
+      note: funnel
+        ? `at ${funnel.publishedInstitutions.toLocaleString("en-US")} institutions`
+        : "Could not read the published catalog.",
+      href: "/admin/data",
+    },
+    ...spendVitals(spend?.total ?? null),
+    {
+      label: "Leads waiting",
+      value: String(needsYou.filter((item) => item.area === "Customers").length),
+      note: "requests owed a reply",
+      href: "/admin/customers",
+    },
+  ];
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "America/Chicago",
+  });
 
   return (
     <div className="space-y-8 pb-10">
       <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
-          <Breadcrumbs items={[{ label: "Crew" }]} />
-          <h1 className="admin-display-title mt-2">The crew</h1>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-gray-500">Today · {today}</p>
+          <h1 className="admin-display-title mt-2">{needsYouHeadline(needsYou)}</h1>
           <p className="admin-lede mt-1">
-            Six workers keep the Bank Fee Index growing. They run on their own every five minutes; tell them what to do any time.
+            {needsYou.length === 0
+              ? "The agents run on their own every five minutes. Everything below is live."
+              : "Most urgent first. Each item has the button that clears it."}
           </p>
         </div>
         <Link href="/admin/atlas/details" className="text-xs font-semibold text-[var(--brand-primary)]">
@@ -100,27 +137,14 @@ export default async function CrewPage() {
         </Link>
       </header>
 
-      {failureAlerts.length > 0 ? (
-        <section
-          className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
-          role="alert"
-          aria-label="Failing agent work"
-        >
-          <p className="font-semibold">Something in the pipeline is failing</p>
-          <ul className="mt-2 space-y-2">
-            {failureAlerts.map((alert) => (
-              <li key={alert.key}>
-                <span className="font-semibold">{alert.title}.</span> {alert.message}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <NeedsYouList items={needsYou} />
+
+      <VitalsRow vitals={vitals} />
 
       <CrewCommandBar />
 
       {health ? (
-        <AtlasOverview health={health} problems={problems} funnel={funnel} attention={center.attention} />
+        <AtlasOverview health={health} problems={problems} funnel={funnel ?? EMPTY_PIPELINE_FUNNEL} attention={center.attention} showAttention={false} />
       ) : (
         <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200" role="status">
           {problems[0]}

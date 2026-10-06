@@ -6,8 +6,12 @@
   },
   "permissions": {
     "ask": [
-      "Bash(git push*)",
       "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push origin main*)",
+      "Bash(git push -u origin main*)",
       "Bash(git reset --hard*)",
       "Bash(git branch -D*)",
       "Bash(vercel --prod*)",
@@ -23,6 +27,8 @@
       "Bash(npx supabase migration*)"
     ],
     "allow": [
+      "Bash(git push -u origin claude/*)",
+      "Bash(git push origin claude/*)",
       "Edit(src/lib/agents/**)",
       "Write(src/lib/agents/**)"
     ],

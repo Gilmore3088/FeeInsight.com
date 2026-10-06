@@ -5,6 +5,11 @@ import { escapeHtml, getTransactionalFromAddress, sendResendEmail, type EmailDel
 import { pipelineHealthProblems, type PipelineHealth } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
 import { CREW, getCrewFeed, type CrewFeedItem } from "./crew";
+import { getAtlasCommandCenter } from "@/lib/admin-command-center";
+import { getLeads } from "@/lib/admin-queries";
+import { buildNeedsYou, needsYouHeadline, type NeedsYouItem } from "@/lib/console/needs-you";
+import { getSpendSummary, type SpendSummary } from "@/lib/data-store/console-spend";
+import { getFailureAlerts } from "./failure-alerts";
 
 /**
  * Atlas's morning brief: what ran, how the database moved since the last brief,
@@ -14,7 +19,22 @@ import { CREW, getCrewFeed, type CrewFeedItem } from "./crew";
 export interface DailyBrief {
   subject: string;
   lines: string[];
+  /** The console's Needs-you list, when it was gathered. */
+  needsYou?: NeedsYouItem[];
 }
+
+/** People who get the morning brief. ATLAS_BRIEF_TO and ATLAS_BRIEF_CC (comma-separated) override. */
+export const BRIEF_CC_DEFAULT = ["jlgilmore2@gmail.com"];
+
+export function briefRecipients(env: Record<string, string | undefined> = process.env): { to: string; cc: string[] } {
+  const to = (env.ATLAS_BRIEF_TO || CONTACT_EMAIL).trim();
+  const cc = (env.ATLAS_BRIEF_CC !== undefined ? env.ATLAS_BRIEF_CC.split(",") : BRIEF_CC_DEFAULT)
+    .map((address) => address.trim())
+    .filter((address) => address && address.toLowerCase() !== to.toLowerCase());
+  return { to, cc };
+}
+
+const NEEDS_YOU_IN_EMAIL = 6;
 
 const FUNNEL_LABELS: Array<[keyof PipelineFunnel, string]> = [
   ["withFeeUrl", "fee URLs"],
@@ -56,6 +76,8 @@ export function buildDailyBrief({
   previous,
   stepsByAgent,
   feed24h,
+  needsYou,
+  spend,
   now = new Date(),
 }: {
   health: PipelineHealth;
@@ -64,6 +86,9 @@ export function buildDailyBrief({
   /** Steps each agent finished in the last 24 hours, counted in the ledger. */
   stepsByAgent: Partial<Record<string, number>>;
   feed24h: CrewFeedItem[];
+  /** When given, the brief leads with the console's Needs-you list. */
+  needsYou?: NeedsYouItem[];
+  spend?: SpendSummary | null;
   now?: Date;
 }): DailyBrief {
   const problems = pipelineHealthProblems(health);
@@ -93,6 +118,28 @@ export function buildDailyBrief({
     `Database: ${funnel.sourcedInstitutions.toLocaleString("en-US")} of ${funnel.institutions.toLocaleString("en-US")} institutions have sourced fees; ${funnel.withFeeUrl.toLocaleString("en-US")} have a fee URL.`,
   );
 
+  if (spend) {
+    const caps = spend.total.dailyCapUsd !== null ? ` of the $${spend.total.dailyCapUsd} daily cap` : "";
+    lines.push(
+      `Spend: $${spend.total.todayUsd.toFixed(2)} so far today${caps}; $${spend.total.monthUsd.toFixed(2)} this month${spend.total.monthlyCapUsd !== null ? ` of $${spend.total.monthlyCapUsd}` : ""}.`,
+    );
+  }
+
+  const status = !health.pipeline_enabled ? "paused" : problems.length > 0 ? "needs attention" : "running";
+
+  if (needsYou) {
+    const shown = needsYou.slice(0, NEEDS_YOU_IN_EMAIL).map((item) => `- ${item.title}`);
+    const more = needsYou.length > shown.length ? [`- and ${needsYou.length - shown.length} more in the console`] : [];
+    const problemLines = problems.map((problem) => `- ${problem}`);
+    const headline = needsYou.length === 0 && problems.length === 0 ? "Nothing needs you." : needsYouHeadline(needsYou);
+    lines.unshift([headline, ...problemLines, ...shown, ...more].join("\n"));
+    return {
+      subject: `Morning brief: ${headline.replace(/\.$/, "").toLowerCase()}, pipeline ${status}`,
+      lines,
+      needsYou,
+    };
+  }
+
   const errors = feed24h.filter((item) => item.tone === "error").slice(0, 2);
   if (problems.length === 0 && errors.length === 0) {
     lines.push("Nothing is stuck. Nothing needs you.");
@@ -100,7 +147,6 @@ export function buildDailyBrief({
     lines.push(`Needs you: ${[...problems, ...errors.map((item) => item.text)].slice(0, 3).join(" ")}`);
   }
 
-  const status = !health.pipeline_enabled ? "paused" : problems.length > 0 ? "needs attention" : "running";
   return {
     subject: `Atlas daily brief: pipeline ${status}, ${funnel.sourcedInstitutions.toLocaleString("en-US")} institutions published`,
     lines,
@@ -154,39 +200,53 @@ export interface DailyBriefResult {
   deliveryStatus: EmailDeliveryStatus;
   deliveryReason: string | null;
   recipient: string;
+  cc: string[];
 }
 
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  const [health, funnel, previous, stepsByAgent, feed] = await Promise.all([
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
     stepsFinishedByAgent(),
     getCrewFeed({ limit: 200 }),
+    getAtlasCommandCenter().catch((error) => {
+      console.error("Morning brief attention read failed", error);
+      return null;
+    }),
+    getFailureAlerts(),
+    getLeads(),
+    getSpendSummary().catch((error) => {
+      console.error("Morning brief spend read failed", error);
+      return null;
+    }),
   ]);
   const since = now.getTime() - DAY_MS;
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
-  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, now });
-  const recipient = (process.env.ATLAS_BRIEF_TO || CONTACT_EMAIL).trim();
+  // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
+  const needsYou = center ? buildNeedsYou({ attention: center.attention, failureAlerts, leads, now }) : undefined;
+  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, now });
+  const { to: recipient, cc } = briefRecipients();
   const from = getTransactionalFromAddress();
 
   if (dryRun) {
-    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "dry run", recipient };
+    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "dry run", recipient, cc };
   }
   if (!from) {
-    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured.", recipient };
+    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured.", recipient, cc };
   }
 
   const crewUrl = `${SITE_URL}/admin`;
-  const text = `${brief.lines.join("\n\n")}\n\nOpen the crew: ${crewUrl}\n\n— Atlas`;
-  const html = `${brief.lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line)}</p>`).join("")}`
-    + `<p style="margin:16px 0 0"><a href="${escapeHtml(crewUrl)}">Open the crew</a></p><p style="color:#6B6255">— Atlas</p>`;
+  const text = `${brief.lines.join("\n\n")}\n\nOpen the console: ${crewUrl}\n\n— Atlas`;
+  const html = `${brief.lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line).replace(/\n/g, "<br>")}</p>`).join("")}`
+    + `<p style="margin:16px 0 0"><a href="${escapeHtml(crewUrl)}">Open the console</a></p><p style="color:#6B6255">— Atlas</p>`;
   const result = await sendResendEmail(
     {
       from,
       to: recipient,
+      cc,
       subject: brief.subject,
       text,
       html,
@@ -200,5 +260,6 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
     deliveryStatus: result.status,
     deliveryReason: result.status === "sent" ? null : result.status === "failed" ? result.error : result.reason,
     recipient,
+    cc,
   };
 }

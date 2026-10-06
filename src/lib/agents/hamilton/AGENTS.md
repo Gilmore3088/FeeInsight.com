@@ -126,6 +126,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   line is skipped (`Older document than the live price`). When either document lists that
   name at both prices (two products or tiers), the new line publishes beside the old one
   and no change is recorded (`listsBothPrices`).
+- Document age is compared only within one stream (`src/lib/agents/companion-streams.ts`):
+  the main fee link with its own earlier copies, each companion page (one account's page,
+  a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
+  outdates Value Checking's line, or the main schedule's; it publishes beside them.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.
@@ -137,7 +141,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   not published and not written to `pipeline_attempts`, so they publish on the run
   where Knox's later finds bring the institution to the minimum. The step detail lists
   them as `held_thin_institutions`. The gate applies to new publishes only; it does not
-  close rows already live.
+  close rows already live. Readers get the same rule from `published_fee_catalog`, which
+  shows a bank's live fees only while it has at least 3 distinct fees live (migration
+  20270110000000): a bank that takedowns leave thinner drops off the site and returns on
+  its own at 3. Agents that need every live row read `published_fee_records`.
 - Batches take whole source documents (`agents/document-batch.ts`), oldest first, so a
   document's fees publish together; Darwin batches the same way. A batch can exceed the
   limit by one document.
@@ -178,6 +185,15 @@ document states each fee once: of live rows with the same category and price, th
 newest stays. The attempt's `missing_fees` counts fees today's rules read from the
 document's latest text that are not live; Knox extracts such a text again, so a rules
 fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only removes.
+
+The re-check also undoes its own takedowns (strategy version 2). A fee it took down comes
+back (verified row too) when today's rules read it again from its text under the same name,
+category and price, it still traces to that text (`checkFeeAgainstSource`), and no live fee
+of the institution has that category and price. Knox cannot bring that fee back itself:
+re-extracting would insert the same raw row, which the raw-row dedupe index (document, name,
+price) refuses. A fee read again under a new name returns the normal way, through Darwin.
+Documents whose live fees were all taken down are re-checked too. Step detail:
+`rules_recheck_restores`.
 
 ## Source Check
 

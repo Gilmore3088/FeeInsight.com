@@ -13,6 +13,62 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Almost a third of sampled "fee schedule" texts are not fee schedules
+**What happened:** building answer keys for CA, FL, GA, IL, MI, MN and NY, 18 of 56 sampled stored
+texts (newest completed `agent_source_texts` per bank, 1,500 to 60,000 characters) turned out not to
+be fee schedules: product pages, rate pages, a disclosure, a funds-availability policy, a homepage.
+Three are plain wrong stores: FL 11295 is a 404 page, IL 1644 is empty (0 bytes), NY 7750 is the
+credit union's homepage while its URL is a registration-guide PDF. NY was worst: 6 of 8.
+**Cause:** not yet known per text; the sample counts are hand-read, not a full measure.
+**Fix:** none yet; the Knox gate scores only the 38 real schedules. Reported to the Magellan thread.
+**Lesson:** a stored text is not proof the bank's schedule was found; measure share of real
+schedules per state before trusting a state's coverage.
+
+## 2026-10-06: A fee the rules re-check took down could never come back under the same name
+**What happened:** the Hamilton audit saw real fees taken down as `rules_recheck_unreproduced`
+(4,122 on prod at 06:00 UTC, read-only query) with no way back. Only 443 of them are live again, all
+under a new name.
+**Cause:** the re-check only rolls back. It asks Knox to re-extract a text with missing fees, but
+Knox's raw-row dedupe index (`raw_fee_observations_knox_agentic_dedup_idx`: document, lower(name),
+price) refuses the same raw row, so a fee re-read under the same name inserts nothing. A document
+whose live fees were all taken down was never re-checked again either.
+**Fix:** this PR: re-check version 2 restores such a fee (same text, name, category and price, still
+traces to the text, no live copy). A real-code dry run over 60 sampled documents (145 taken-down
+fees) found 1 candidate, already live elsewhere, so today it restores close to nothing; it matters
+after the next rules fix.
+**Lesson:** any step that takes data down needs its way back in the same change, checked against
+the dedupe rules of the stage that would otherwise re-create it.
+
+## 2026-10-06: Dead fee links were re-fetched forever and never re-searched
+**What happened:** the Magellan audit (05:05 UTC, read-only queries on prod) found 75 active banks whose
+fee link last returned HTTP 404 and 39 that returned 403, still holding that link; 29 of the 404s had
+failed two or more fetches in a row (one 11 times). Separately, 42 banks' fee links redirected to a
+homepage in the week to 2026-10-06 (for example a credit union's old fee PDF now landing on a renamed
+credit union's home page), and Magellan stored each homepage as the bank's fee document.
+**Cause:** a failed fetch only counted a failure and retried later (24 hours, then weekly). Discovery
+searches banks with no fee link, plus (PR 165) a failed link whose `last_crawl_at` is over 30 days
+old and holds no live fee. That PR 165 path never reaches a link the fetch queue keeps retrying,
+because every retry resets `last_crawl_at`: none of the 75 was older than 30 days. Rosetta sends a
+dead link back only for a document it re-reads (PR 155). A redirect was followed blindly, and the
+final address (the homepage) became the profile's fetch address.
+**Fix:** this PR closes the gap at the fetch itself, with the same hand-back Rosetta uses: a 404/410,
+or a deep link that redirects to a homepage, clears the fee link (unless a person locked it), records
+the URL as rejected and marks the bank due a search (`failure_reason = 'magellan_dead_link'`). A 403
+is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
+**Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
+loop on a dead address is a silent failure.
+
+## 2026-10-06: Report requests never stored their "ready to quote" line
+**What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,
+5 Oct) were stored without the "Report check: ..." line that /api/leads should append, so /admin/leads
+could not say whether a requested report can be built. Both emails went out (the API answered
+`notification: sent, confirmation: sent`).
+**Cause:** `leads.id` is bigint and the Postgres driver returns bigint as a string. The route kept the
+id only when `typeof id === "number"`, so it was always null: the quote line update and the
+failed-email marking (`handleLeadDeliveryOutcome`) never had a row id.
+**Fix:** the route parses the id from a string or a number; test added. PR on branch claude/project-thread-uc3vox.
+**Lesson:** bigint columns arrive as strings; never gate on `typeof id === "number"` for a bigint id.
+
 ## 2026-10-06: Knox reads the same web page several times, and checks nothing he writes
 **What happened:** the Knox audit (read-only prod queries, 05:00-05:30 UTC) found 632 fee pages stored
 as 2 to 10 separate `source_documents`. Knox extracts every copy: 14,895 extra raw rows, of which Darwin
@@ -74,6 +130,29 @@ they counted as waiting forever.
 the same test Darwin's own batch query uses.
 **Lesson:** a "waiting" count must use the stage's own done-marker (its `pipeline_attempts` row), not
 "missing from the next table", or every rejection reads as backlog.
+
+## 2026-10-06: Banks that publish fees across several pages kept only one page's fees
+**What happened:** James spotted Triangle FCU (MS, institution 5829): 4 live fees (wires in $10 and
+out $20, cashier's check $5, check cashing $10), all from its "Additional Services" page, while
+its Freedom and Value Checking pages and a courtesy pay PDF ($25 per item) carry the rest.
+Read-only queries on prod at 03:25 UTC: 2,066 of 2,662 institutions with live fees have only
+ever had one URL fetched; only 604 of 2,637 have a live monthly maintenance fee; 143 have an
+account or product page as their only fee link, 87 of them with fewer than 5 fee categories
+(Fremont Bank, Primis, Arizona Financial FCU, Minnwest).
+**Cause:** discovery stops at the first page that passes the fee-page check (Triangle: the site
+crawl at 03:11 UTC accepted Additional Services and never opened the checking pages), and only
+banks with no fee link are searched again. The second-document finder (PR 75) kept at most one
+extra document and had found 4 ever; nothing fetched what it found. The rest of the pipeline
+assumed one current document per bank: Rosetta read only the newest document, a newer document
+could send the main link back to discovery, and Hamilton let a newer document outdate another
+document's line for the same fee.
+**Fix:** this PR. Companion finder (`discover.second_document` v2) keeps up to 8 account pages
+and fee documents per bank, including the site's own search for "fee schedule"; companion fetch
+stores each as its own document stream (`source_documents.companion_source_id`, migration
+20270109000000); Rosetta reads the newest document of each stream; Hamilton compares document
+age only within a stream. Each page keeps its account name (`institution_additional_sources.account_name`).
+**Lesson:** "one fee page per bank" is not true for small institutions. Check fee coverage per
+bank (categories, monthly fee present), not only whether a fee link exists.
 
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
@@ -689,3 +768,29 @@ institutions the normal check reaches anyway and 44 are new from the bump. Paced
 publish step, about 720 an hour, so the re-check finishes in about four hours.
 **Lesson:** a check keyed on its input must also key on its own rules version, or improving the rules
 changes nothing already decided.
+
+## 2026-10-06: Supabase Preview failed on every migration PR
+**What happened:** the Supabase Preview check failed on every PR that added a migration (173, 189, 196)
+with `relation "agent_run_results" does not exist`.
+**Cause:** a preview branch builds a fresh database from `supabase/migrations/`, but production's first
+tables were created before that history began. A local replay on an empty Postgres failed in 41 of 77 files.
+**Fix:** PR 196 (James approved editing applied files): the oldest file opens with the public schema
+dumped from production on 2026-10-04, run only on a database without `institution_sources`; the eight
+files that rewrote pre-2026-08-13 legacy tables skip themselves on such a database. The full history now
+replays on an empty database. Production never re-runs applied versions, so nothing changes there.
+Details in `docs/runbooks/supabase-migration-baseline.md`.
+
+## 2026-10-06: Banks below the 3-fee rule stayed on the site after takedowns
+**What happened:** the Hamilton publish audit (read-only, 05:35 UTC) found 163 banks with fewer than 3
+distinct live fees: 93 showing one fee (110 fees), 70 showing two (157 fees). 120 got there through
+takedowns (source check, rules re-check, category guard); 82 had fees live before the rule existed.
+They showed on the site and counted in every median as full banks.
+**Cause:** the 3-fee rule (PR 66) gated only a bank's first publish. Nothing re-applied it when
+takedowns removed fees later.
+**Fix:** same PR: `published_fee_catalog` shows a bank's live fees only while it has at least 3 distinct
+canonical fee keys live (migration 20270110000000, view only, no data change). The rows stay live in
+`published_fee_records`, so the publish gate still counts them and the bank reappears on its own.
+Magellan's thin-bank finder now reads `published_fee_records`, since the catalog hides the banks it
+looks for.
+**Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
+read.
