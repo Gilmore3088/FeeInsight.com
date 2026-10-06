@@ -8,6 +8,7 @@ import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-roll
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
+import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
@@ -747,6 +748,7 @@ async function executeAgenticStep(
           })
         : null;
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
+      const recheckRestores = rulesRecheck?.restores.length ?? 0;
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
@@ -774,6 +776,9 @@ async function executeAgenticStep(
         stateCode,
       });
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
+      // Every agent learns from what happened to its output: this step's takedowns and
+      // restores (and a batch of older outcomes) go into the shared learning store.
+      const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -785,6 +790,7 @@ async function executeAgenticStep(
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               recheckRollbacks > 0 ||
+              recheckRestores > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
           });
@@ -801,9 +807,12 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${companionRollbacks.length.toLocaleString()} live fee(s) read from pages that are not consumer fee pages (loan or HELOC documents).`
           : "";
       const recheckNote =
-        recheckRollbacks > 0
+        (recheckRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
-          : "";
+          : "") +
+        (recheckRestores > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
+          : "");
       const sourceNote =
         sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
           ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
@@ -851,6 +860,7 @@ async function executeAgenticStep(
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
+          rules_recheck_restores: recheckRestores,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,
@@ -859,6 +869,15 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
           })),
+          learning_feedback: feedbackSync.ready
+            ? {
+                takedowns: feedbackSync.takedowns,
+                restores: feedbackSync.restores,
+                category_rejects: feedbackSync.categoryRejects,
+                answer_key_fees: feedbackSync.answerKeyFees,
+                written: feedbackSync.written,
+              }
+            : false,
           source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
           source_check_fees: sourceCheck?.liveFeesChecked ?? 0,
           source_check_traced: sourceCheck?.traced ?? 0,
