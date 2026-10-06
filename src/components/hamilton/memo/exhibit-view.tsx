@@ -309,7 +309,7 @@ export function ExhibitView({ exhibit }: { exhibit: ExhibitSpec }) {
   );
 }
 
-function FactList({ facts }: { facts: readonly Fact[] }) {
+export function FactList({ facts }: { facts: readonly Fact[] }) {
   return (
     <ul className="flex flex-col gap-2.5">
       {facts.map((f, i) => (

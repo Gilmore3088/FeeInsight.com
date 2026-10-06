@@ -27,6 +27,8 @@ import {
   fmtSignedPrice,
 } from "@/components/hamilton/memo/memo";
 import { PrintButton } from "@/components/hamilton/memo/PrintButton";
+import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { ExhibitView, FactList } from "@/components/hamilton/memo/exhibit-view";
 
 export const metadata: Metadata = { title: "Plan a change" };
 
@@ -160,6 +162,9 @@ export default async function PlanPage({ searchParams }: PageProps) {
     </div>
   );
 
+  // The engine's read of today's position, drawn as on My fees.
+  const read = ws.research ? buildFeeAnswer(ws.research, { focus: "position" }) : null;
+
   if (format !== "plan") {
     const title = format === "one-pager" ? "CEO one-pager" : "Pricing committee packet";
     return (
@@ -193,6 +198,21 @@ export default async function PlanPage({ searchParams }: PageProps) {
             </p>
           </section>
           {timing}
+          {read ? (
+            <section className="flex flex-col gap-3 break-inside-avoid">
+              <h2 className="text-xl text-warm-900" style={SERIF}>
+                Where the fee sits today
+              </h2>
+              <p className="text-pretty text-sm leading-relaxed text-warm-800">{read.headline}</p>
+              {read.exhibit ? <ExhibitView exhibit={read.exhibit} /> : null}
+              {format === "packet" && read.drivers.length > 0 ? (
+                <div>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What moves this</h3>
+                  <FactList facts={read.drivers} />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
           <section className="flex flex-col gap-2">
             <h2 className="text-xl text-warm-900" style={SERIF}>
               Where the price would sit
