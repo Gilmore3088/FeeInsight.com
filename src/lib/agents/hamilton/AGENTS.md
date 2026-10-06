@@ -179,9 +179,10 @@ fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only rem
 
 ## Source Check
 
-Every live fee must be stated in the bank's own stored schedule. After publishing, each
-state-lane (or single-institution) publish step runs `source-check.ts` on up to 40
-institutions not checked since their newest live fee. Each live fee, from any source,
+Every live fee must be stated in the bank's own stored schedule. After publishing, every
+publish step runs `source-check.ts` on up to 40 institutions not checked since their
+newest live fee: its own state's (or institution's) when it has one, any state's
+otherwise, institutions never checked first. Each live fee, from any source,
 goes through `checkFeeAgainstSource` (`src/lib/custom-report/source-check.ts`, the same
 rule the report gate uses): one row of the document names the fee and states the
 amount as its price, not a limit. When one line carries several fees (a flattened
