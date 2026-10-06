@@ -28,6 +28,11 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const NCUA_FINANCIALS_SOURCE = "ncua-financials";
+/**
+ * Bump when the parser reads new accounts; the registry scheduler re-pulls every
+ * quarter recorded under an older version. 2: overdraft and NSF fee income (IS0048, IS0049).
+ */
+export const NCUA_PARSER_VERSION = 2;
 export const NCUA_FILING_LAG_DAYS = 60;
 const UPSERT_CHUNK = 500;
 const RECENT_REFRESH_HOURS = 24 * 14;
@@ -75,6 +80,8 @@ function toRecord(row: NcuaFinancialRow, sourceUrl: string, runId: number | null
     total_equity: row.total_equity,
     net_income: row.net_income_ytd,
     service_charge_income: row.fee_income_ytd,
+    overdraft_revenue: row.overdraft_fee_income_ytd,
+    nsf_revenue: row.nsf_fee_income_ytd,
     net_charge_offs: row.net_charge_offs_ytd,
     noninterest_expense: row.noninterest_expense_ytd,
     total_revenue: row.total_revenue_ytd,
@@ -101,7 +108,8 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
         cert text, report_date text, total_assets bigint, total_deposits bigint, total_loans bigint,
-        total_equity bigint, net_income bigint, service_charge_income bigint, net_charge_offs bigint,
+        total_equity bigint, net_income bigint, service_charge_income bigint,
+        overdraft_revenue bigint, nsf_revenue bigint, net_charge_offs bigint,
         noninterest_expense bigint, total_revenue bigint, fee_income_ratio double precision,
         noncurrent_loans bigint, loans_real_estate bigint, loans_consumer bigint, loans_credit_card bigint,
         loans_auto bigint, tier1_capital_ratio double precision, roa double precision,
@@ -118,12 +126,14 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
       INSERT INTO institution_financial_records (
         institution_id, source_cert_number, report_date, source,
         total_assets, total_deposits, total_loans, total_equity, net_income, service_charge_income,
+        overdraft_revenue, nsf_revenue,
         net_charge_offs, noninterest_expense, total_revenue, fee_income_ratio, noncurrent_loans,
         loans_real_estate, loans_consumer, loans_credit_card, loans_auto, tier1_capital_ratio, roa,
         net_charge_off_rate, noncurrent_loan_rate, member_count, raw_json, source_url, agent_run_id, fetched_at
       )
       SELECT institution_id, cert, report_date, 'ncua',
         total_assets, total_deposits, total_loans, total_equity, net_income, service_charge_income,
+        overdraft_revenue, nsf_revenue,
         net_charge_offs, noninterest_expense, total_revenue, fee_income_ratio, noncurrent_loans,
         loans_real_estate, loans_consumer, loans_credit_card, loans_auto, tier1_capital_ratio, roa,
         net_charge_off_rate, noncurrent_loan_rate, member_count, raw_json, source_url, agent_run_id, NOW()
@@ -136,6 +146,8 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         total_equity = EXCLUDED.total_equity,
         net_income = EXCLUDED.net_income,
         service_charge_income = EXCLUDED.service_charge_income,
+        overdraft_revenue = EXCLUDED.overdraft_revenue,
+        nsf_revenue = EXCLUDED.nsf_revenue,
         net_charge_offs = EXCLUDED.net_charge_offs,
         noninterest_expense = EXCLUDED.noninterest_expense,
         total_revenue = EXCLUDED.total_revenue,
@@ -355,6 +367,7 @@ export async function runRegistryNcuaFinancials(
     runId: options.runId ?? null,
     nextAttemptAfterHours: recent ? RECENT_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS,
     detail: {
+      parser_version: NCUA_PARSER_VERSION,
       report_date: result.reportDate,
       credit_unions: result.creditUnions,
       universe_synced: result.universeSynced,

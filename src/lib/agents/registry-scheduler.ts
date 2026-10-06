@@ -4,7 +4,7 @@ import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
-import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE } from "@/lib/agents/magellan/registry/ncua-financials";
+import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
 import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
@@ -34,6 +34,20 @@ export const REGISTRY_RUN_SOURCE = "magellan.registry";
 export const DEFAULT_BACKFILL_FROM: Quarter = { year: 2010, quarter: 1 };
 /** If a scheduled run dies without recording an outcome, retry after this long. */
 const CLAIM_RETRY_HOURS = 6;
+
+/**
+ * Sources whose parser has read new accounts since some partitions were pulled. A
+ * succeeded partition recorded under an older `detail.parser_version` (missing = 1) is due
+ * again, so new fields fill in through ordinary, visible registry runs, newest first.
+ */
+export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
+  [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
+};
+
+export function isParserStale(source: string, status: string | null, parserVersion: number | null): boolean {
+  const current = REGISTRY_PARSER_VERSIONS[source];
+  return current !== undefined && status === "succeeded" && (parserVersion ?? 1) < current;
+}
 
 export interface RegistryPartitionCandidate {
   source: string;
@@ -134,6 +148,7 @@ async function hasActiveRegistryRun(): Promise<boolean> {
 
 /** Atomically claim a partition so two ticks never schedule the same one. */
 async function claimPartition(candidate: RegistryPartitionCandidate): Promise<boolean> {
+  const parserVersion = REGISTRY_PARSER_VERSIONS[candidate.source] ?? 0;
   const rows = await sql`
     INSERT INTO registry_ingest_partitions (source, partition_key, status, attempts, next_attempt_after)
     VALUES (${candidate.source}, ${candidate.partitionKey}, 'scheduled', 1,
@@ -144,6 +159,8 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
       next_attempt_after = EXCLUDED.next_attempt_after,
       updated_at = NOW()
     WHERE registry_ingest_partitions.next_attempt_after <= NOW()
+       OR (registry_ingest_partitions.status = 'succeeded'
+           AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
     RETURNING id
   `;
   return [...rows].length > 0;
@@ -191,12 +208,18 @@ export async function scheduleDueRegistryRuns({
     if (await hasActiveRegistryRun()) return { scheduled: false, reason: "active_run" };
 
     const candidates = registryCandidates(now);
-    const rows = await sql<PartitionStateRow[]>`
-      SELECT source, partition_key, (next_attempt_after <= NOW()) AS due
+    const rows = await sql<(PartitionStateRow & { status: string | null; parser_version: string | null })[]>`
+      SELECT source, partition_key, (next_attempt_after <= NOW()) AS due, status,
+             detail->>'parser_version' AS parser_version
         FROM registry_ingest_partitions
        WHERE source IN ${sql([...new Set(candidates.map((c) => c.source))])}
     `;
-    const candidate = pickDueCandidate(candidates, [...rows]);
+    const states = [...rows].map((row) => ({
+      source: row.source,
+      partition_key: row.partition_key,
+      due: row.due || isParserStale(row.source, row.status, row.parser_version === null ? null : Number(row.parser_version)),
+    }));
+    const candidate = pickDueCandidate(candidates, states);
     if (!candidate) return { scheduled: false, reason: "nothing_due" };
     if (!(await claimPartition(candidate))) return { scheduled: false, reason: "claim_lost" };
 

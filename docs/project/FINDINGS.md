@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: New call-report fields need a re-pull; credit unions split overdraft and NSF
+**What happened:** Hamilton needs per-fee income for overdraft and NSF. Banks file one combined
+overdraft-and-NSF line (RIAD H032, banks over $1B only, not in the FDIC API). Credit unions file
+overdraft fee income (IS0048) and NSF fee income (IS0049) separately on the NCUA 5300 (FS220P).
+**Cause:** the NCUA step keeps only the accounts it maps in `raw_json`, so a new account can't be
+read from stored rows, and finished quarters were not due again for a year.
+**Fix:** the NCUA parser reads both accounts into `overdraft_revenue` and new `nsf_revenue`, and
+the registry scheduler re-pulls succeeded quarters recorded under an older parser version
+(`REGISTRY_PARSER_VERSIONS`), as ordinary visible runs, newest first.
+**Lesson:** when a parser learns a new field, bump its version so history fills in through runs.
+
 ## 2026-10-06: Supabase Preview fails on any PR that adds a migration
 **What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
 `main` preview branch shows the same status. The preview log stops at
