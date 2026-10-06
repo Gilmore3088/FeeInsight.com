@@ -18,6 +18,8 @@ import {
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
 import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
 import { pageLinks, urlIdentity, type PageLink } from "./finders";
+import { LARGE_BANK_ASSETS } from "./link-coverage";
+import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
 
 type Fetcher = typeof fetch;
@@ -97,7 +99,14 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
        AND inst.rescue_status = 'dead'
-       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+       -- $10B+ banks and report requesters are searched from any state's paid step: they
+       -- are national names, and waiting for their own state's full pass can take weeks.
+       AND (
+         ${stateCode}::text IS NULL
+         OR upper(btrim(inst.state_code)) = ${stateCode}
+         OR inst.asset_size >= ${LARGE_BANK_ASSETS}
+         OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)
+       )
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
        AND COALESCE(profile.locked_by_correction, false) = false
@@ -127,7 +136,9 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
        )
-     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     -- Report requesters first, then the largest banks: the names buyers check.
+     ORDER BY EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) DESC,
+              inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${limit}
   `;
 }
@@ -264,6 +275,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   if (dryRun) {
     result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true }));
     await addWebsiteFind(result, options, db);
+    await addScheduleSearch(result, options, db);
     return result;
   }
 
@@ -413,7 +425,33 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason });
   }
   if (!result.budgetStopped) await addWebsiteFind(result, options, db);
+  if (!result.budgetStopped) await addScheduleSearch(result, options, db);
   return result;
+}
+
+/**
+ * $10B+ banks and report requesters whose page is not the consumer schedule get a paid
+ * search for it in the same step (schedule-search.ts); the answer is kept as a companion.
+ */
+async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+  const searched = await runScheduleSearch({
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    dryRun: Boolean(options.dryRun),
+    db,
+    create: options.create,
+    fetchImpl: options.fetchImpl,
+  });
+  result.selected += searched.selected;
+  result.processed += searched.processed;
+  result.succeeded += searched.found;
+  result.failed += searched.processed - searched.found;
+  result.costMicrousd += searched.costMicrousd;
+  if (searched.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = searched.budgetReason;
+  }
+  result.results.push(...searched.results);
 }
 
 /**
