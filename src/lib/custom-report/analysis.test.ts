@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, buildReportCsv, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
+import { analyzeMarket, buildReportCsv, diffReports, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
@@ -147,5 +147,33 @@ describe("buildReportCsv", () => {
     data.subject.institution_name = "=HYPERLINK(1), Bank";
     const csv = buildReportCsv(data, analyzeMarket(data));
     expect(csv).toContain(`"'=HYPERLINK(1), Bank"`);
+  });
+});
+
+describe("diffReports", () => {
+  it("is empty when nothing moved", () => {
+    const data = market({ competitors: 20 });
+    expect(diffReports(analyzeMarket(data), analyzeMarket(data))).toEqual([]);
+  });
+
+  it("lists a named competitor's change and the median it moves", () => {
+    const before = market({ competitors: 20 });
+    const after = market({ competitors: 20 });
+    // Every rival raises stop payment by $5: each named rival's fee and the median move.
+    after.lines = after.lines.map((l) => (l.institution_id !== 1 && l.line === "stop_payment" ? { ...l, amount: l.amount + 5 } : l));
+    const changes = diffReports(analyzeMarket(before), analyzeMarket(after));
+    const median = changes.find((c) => c.subject === "median");
+    expect(median).toMatchObject({ key: "stop_payment", before: expect.any(Number) });
+    expect(median!.after! - median!.before!).toBe(5);
+    const rival = changes.find((c) => c.subject === "competitor" && c.who === "Rival 0");
+    expect(rival).toMatchObject({ key: "stop_payment", before: 10, after: 15 });
+    expect(changes.filter((c) => c.subject === "own")).toEqual([]);
+  });
+});
+
+describe("positionCounts", () => {
+  it("counts above, inside and below the local middle half", () => {
+    const counts = positionCounts(analyzeMarket(market({ competitors: 20, ownAmount: 100 })).lines);
+    expect(counts).toEqual({ above: KEYS.length, inside: 0, below: 0 });
   });
 });

@@ -92,7 +92,7 @@ function peerClaim(research: FeeResearch): Fact | null {
   const band = research.band;
   if (!band || band.n < MIN_PEERS_FOR_POSITION) return null;
   return {
-    text: `Across ${count(band.n)} peers (${research.peerLabel}), the median is ${money(band.median)} and the middle half runs ${money(band.p25)} to ${money(band.p75)}.`,
+    text: `Across ${count(band.n)} peers, the median is ${money(band.median)} and the middle half runs ${money(band.p25)} to ${money(band.p75)}.`,
     source: feeSource(research),
     sampleSize: band.n,
   };
@@ -135,9 +135,9 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   }
   const fin = research.institutionFinancials;
   if (fin?.latestTtm != null) {
-    const change = fin.yoyPct != null ? `, ${fin.yoyPct >= 0 ? "up" : "down"} ${pct(Math.abs(fin.yoyPct))} on the year before` : "";
+    const change = fin.yoyPct != null ? `, ${fin.yoyPct >= 0 ? "up" : "down"} ${pct(Math.abs(fin.yoyPct))}` : "";
     out.push({
-      text: `Your ${incomeName(fin.source)} was ${formatDollarsInWords(fin.latestTtm)} over the four quarters to ${longDate(fin.quarterEnd)}${change}.`,
+      text: `Your ${incomeName(fin.source)} was ${formatDollarsInWords(fin.latestTtm)} in the year to ${longDate(fin.quarterEnd)}${change}.`,
       source: { ...fin.sourceRef, asOf: fin.quarterEnd },
     });
   }
@@ -306,12 +306,12 @@ function headline(research: FeeResearch, name: string): string {
   if (research.current !== null) {
     const position = pricePosition(research.current, amounts);
     if (band && position !== null) {
-      return `Your ${money(research.current)} ${name} fee sits at the ${ordinal(position)} percentile of ${count(band.n)} peers, whose median is ${money(band.median)}.`;
+      return `Your ${money(research.current)} ${name} fee is at the ${ordinal(position)} percentile of ${count(band.n)} peers (median ${money(band.median)}).`;
     }
-    return `Your ${name} fee is ${money(research.current)}, but only ${count(amounts.length)} peers publish one, too few to rank it.`;
+    return `Your ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
-  if (band) return `Your schedule shows no ${name} fee; across ${count(band.n)} peers the median is ${money(band.median)}.`;
-  return `Your schedule shows no ${name} fee, and too few peers publish one to set a benchmark.`;
+  if (band) return `Your schedule shows no ${name} fee; the median across ${count(band.n)} peers is ${money(band.median)}.`;
+  return `Your schedule shows no ${name} fee, and too few peers publish one to compare.`;
 }
 
 // ─── Economist: the one question ─────────────────────────────────────────────

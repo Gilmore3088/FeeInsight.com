@@ -29,7 +29,7 @@ function client(...replies: string[]): MemoClient & { calls: string[] } {
 }
 
 const good = JSON.stringify({
-  summary: "Your $32 overdraft fee sits at the 75th percentile of 16 peers, whose median is $29.50. The board decision is whether that position is worth what it earns.",
+  summary: "Your $32 overdraft fee is at the 75th percentile of 16 peers (median $29.50). The board decision is whether that position is worth what it earns.",
   board: "Service charges came to $209 thousand over the last four quarters. The filing carries no separate overdraft line, so the money at stake is not yet measured.",
   market: "Every peer group in your comparison publishes an overdraft fee; none charges $0, so price is not the headline claim against you.",
   questions: ["How many overdraft items did you charge last year?", "Which peers do your customers actually compare you with?"],

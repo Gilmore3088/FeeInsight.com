@@ -115,9 +115,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - The `category-guard` step (`hamilton/category-guard.ts`) rolls back live
   `published_fee_records` that fail the guard: soft delete only (`rolled_back_at`,
   `rolled_back_by_batch_id = category-guard-run-<id>`, `rolled_back_reason =
-  category_guard:<code>: ...`), rejects their verified rows, and refreshes the fee index. Start it from
-  Atlas details -> Catalog repair; a `dry_run` run reports counts and samples and writes
-  nothing.
+  category_guard:<code>: ...`), rejects their verified rows, and refreshes the fee index. Every
+  publish step runs it (up to 100 rollbacks a step), so a guard change takes effect on its own;
+  Atlas details -> Catalog repair still starts it by hand, and a `dry_run` run reports counts and
+  samples and writes nothing.
 
 ## Required Behavior
 

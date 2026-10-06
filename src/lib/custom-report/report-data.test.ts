@@ -34,10 +34,25 @@ describe("loadMarketReport", () => {
 
   it("uses live data when the market passes", async () => {
     live.mockResolvedValue(market(20));
+    saved.mockResolvedValue(null);
     const report = await loadMarketReport(1);
     expect(report?.savedAt).toBeNull();
     expect(report?.analysis.readiness.ready).toBe(true);
-    expect(saved).not.toHaveBeenCalled();
+    expect(report?.sinceBought).toBeNull();
+  });
+
+  it("lists what moved since a bought report was saved", async () => {
+    const before = market(20);
+    const after = market(20);
+    after.lines = after.lines.map((l) => (l.institution_id === 1 && l.line === "overdraft" ? { ...l, amount: 25 } : l));
+    live.mockResolvedValue(after);
+    saved.mockResolvedValue({ data: before, savedAt: "2026-10-06T14:00:00Z" });
+    const report = await loadMarketReport(1);
+    expect(report?.savedAt).toBeNull();
+    expect(report?.sinceBought?.savedAt).toBe("2026-10-06T14:00:00Z");
+    expect(report?.sinceBought?.changes).toEqual([
+      { key: "overdraft", label: expect.any(String), subject: "own", who: null, before: 20, after: 25 },
+    ]);
   });
 
   it("falls back to the copy saved at payment when the live market is thin", async () => {
