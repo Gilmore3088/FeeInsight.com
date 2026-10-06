@@ -53,8 +53,13 @@ export function narrateStepFinished(
     }
     case "discover-paid":
     case "read-paid":
-    case "extract-paid": {
-      const job = stepKey === "discover-paid" ? "find fee schedules" : stepKey === "read-paid" ? "read documents" : "extract fees";
+    case "extract-paid":
+    case "verify-paid": {
+      const job = stepKey === "discover-paid"
+        ? "find fee schedules"
+        : stepKey === "read-paid"
+          ? "read documents"
+          : stepKey === "extract-paid" ? "extract fees" : "review disputed fees";
       const processed = n(detail, "processed");
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
@@ -314,6 +319,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "extract-paid": "knox",
   review: "knox",
   classify: "darwin",
+  "verify-paid": "darwin",
   verify: "darwin",
   "public-cluster": "darwin",
   publish: "hamilton",

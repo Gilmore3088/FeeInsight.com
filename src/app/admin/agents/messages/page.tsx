@@ -3,6 +3,7 @@ import {
   listRecentThreads,
   type MessageThread,
 } from "@/lib/data-store/agent-console";
+import { ScreenHeader } from "../../room-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default async function AgentsMessagesPage() {
 
   return (
     <section className="flex flex-col gap-3">
+      <ScreenHeader title="Messages" lede="What the agents said to each other, grouped by conversation." />
       {loadError && (
         <div className="admin-card p-4 text-[12px] text-red-600 dark:text-red-400">
           Failed to load threads: {loadError}

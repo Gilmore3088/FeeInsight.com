@@ -17,6 +17,11 @@ function lead(overrides: Partial<LeadRow>): LeadRow {
     status: "new",
     created_at: "2026-10-06",
     created_at_iso: "2026-10-06T08:00:00Z",
+    quote_cents: null,
+    quote_institution_id: null,
+    quote_sent_at: null,
+    paid_at: null,
+    payment_columns: true,
     ...overrides,
   };
 }

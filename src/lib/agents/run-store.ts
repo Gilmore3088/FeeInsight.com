@@ -27,6 +27,7 @@ import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
+import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
@@ -464,12 +465,15 @@ async function executeAgenticStep(
     }
     case "discover-paid":
     case "read-paid":
-    case "extract-paid": {
+    case "extract-paid":
+    case "verify-paid": {
       const runner = step.stepKey === "discover-paid"
         ? runMagellanPaidFind
         : step.stepKey === "read-paid"
           ? runRosettaPaidRead
-          : runKnoxPaidExtract;
+          : step.stepKey === "extract-paid"
+            ? runKnoxPaidExtract
+            : runDarwinAdjudicate;
       const paid = await runner({
         runId: run.id,
         stepId: step.id,
@@ -2294,7 +2298,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation";
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;

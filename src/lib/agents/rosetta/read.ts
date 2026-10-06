@@ -32,6 +32,7 @@ import {
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
+import { DOCX_STRATEGY, DocxReadError, extractDocxText } from "@/lib/agents/rosetta/docx";
 import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
 import {
   alternateDocumentUrls,
@@ -366,7 +367,7 @@ const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
   pdf: [{ strategy: "read.pdf_layout", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["pdf_text"] }],
   html: [{ strategy: "read.html_dom", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["html_static"] }],
   text: [{ strategy: "read.plain_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["text"] }],
-  docx: [],
+  docx: [{ strategy: DOCX_STRATEGY, version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["docx"] }],
   other: [],
 };
 
@@ -729,6 +730,26 @@ async function readCandidate(
     return finishRead(ocr.read.text, "pdf_scanned", ocr.read.rows, "scanned_pdf");
   }
 
+  if (format === "docx") {
+    let extracted: { text: string; rows: SourceTableRow[] };
+    try {
+      extracted = extractDocxText(bytes);
+    } catch (error) {
+      return finish({
+        status: "failed",
+        error: `Word document not read: ${errorMessage(error)}`,
+        attemptOutcome: error instanceof DocxReadError ? "unsupported_format" : "parse_error",
+        format: "docx",
+      });
+    }
+    const normalizedText = normalizeWhitespace(extracted.text);
+    if (normalizedText.length === 0) {
+      return finish({ status: "empty", error: "No text in the Word document", attemptOutcome: "empty", format: "docx" }, normalizedText);
+    }
+    base.tableRows = extracted.rows.length;
+    return finishRead(normalizedText, "docx", extracted.rows);
+  }
+
   const raw = new TextDecoder("utf-8").decode(bytes);
   let normalizedText: string;
   let rows: SourceTableRow[] = [];
@@ -883,6 +904,26 @@ async function selectCandidates(
                 AND dead.outcome IN ('http_404', 'http_410')
            )
          )`);
+    // Nor is one whose download kept failing (blocked, timed out, server errors): after
+    // the limit it waits out the window, so a link that never answers is not retried every run.
+    params.push(STUCK_LINK_OUTCOMES);
+    const stuckOutcomesParam = `$${params.length}`;
+    params.push(STUCK_LINK_MAX_FAILURES);
+    const stuckMaxParam = `$${params.length}`;
+    params.push(STUCK_LINK_WINDOW_DAYS);
+    const stuckDaysParam = `$${params.length}`;
+    filters.push(`AND NOT (
+           ${notInVault}
+           AND (
+             SELECT COUNT(*)
+               FROM pipeline_attempts stuck
+              WHERE stuck.institution_id = cr.institution_id
+                AND stuck.stage = 'read'
+                AND stuck.source_document_id = cr.id
+                AND stuck.outcome = ANY(${stuckOutcomesParam}::text[])
+                AND stuck.created_at > NOW() - make_interval(days => ${stuckDaysParam}::int)
+           ) >= ${stuckMaxParam}::int
+         )`);
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -892,6 +933,8 @@ async function selectCandidates(
               AND pa.input_fingerprint = cr.content_hash
               AND pa.strategy_version = ${versionParam}
               AND pa.outcome = ANY(${permanentParam}::text[])
+              -- Word files were logged "unsupported" before read.docx_text existed.
+              AND NOT (pa.strategy = 'read.docx' AND pa.outcome = 'unsupported_format')
          )`);
   }
   const vaultColumns = vaultSchema
@@ -1094,23 +1137,40 @@ export async function recordReadResult(
 }
 
 /**
- * A document link that is gone (HTTP 404/410), or that blocked us (HTTP 401/403) on an
- * earlier read as well, cannot be read again from this URL. Rosetta sends the bank back
- * to Magellan so the next discovery pass finds its current fee page (and, if the free
- * finders fail, Magellan's paid finder). A single 403 can be a passing bot challenge,
- * so a block counts only when it repeats.
+ * Download failures that are not "gone" but can repeat forever: a block, rate limit,
+ * server error, timeout or dropped connection. One can pass; several in a row mean the
+ * link no longer works for us.
+ */
+export const STUCK_LINK_OUTCOMES: AttemptOutcome[] = ["http_403", "http_429", "http_5xx", "http_other", "timeout", "network_error"];
+/** Failed downloads of one document, inside the window, before Rosetta stops trying it. */
+export const STUCK_LINK_MAX_FAILURES = 3;
+/** After this many days without a try, a stuck link gets one more. */
+export const STUCK_LINK_WINDOW_DAYS = 7;
+
+/**
+ * A document link that is gone (HTTP 404/410), that blocked us (HTTP 401/403) on an
+ * earlier read as well, or whose download has now failed `STUCK_LINK_MAX_FAILURES` times
+ * in `STUCK_LINK_WINDOW_DAYS`, cannot be read again from this URL. Rosetta sends the bank
+ * back to Magellan so the next discovery pass finds its current fee page (and, if the
+ * free finders fail, Magellan's paid finder). A single 403 can be a passing bot
+ * challenge, so a block counts only when it repeats.
  */
 export async function isUnreachableLink(db: SqlTag, result: ReadResult): Promise<boolean> {
   if (result.status !== "failed") return false;
   if (result.attemptOutcome === "http_404" || result.attemptOutcome === "http_410") return true;
-  if (result.attemptOutcome !== "http_403") return false;
+  if (!result.attemptOutcome || !STUCK_LINK_OUTCOMES.includes(result.attemptOutcome)) return false;
+  // This attempt is logged after this check, so earlier rows are the earlier tries.
   const earlier = await db<{ blocked: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM pipeline_attempts pa
-       WHERE pa.source_document_id = ${result.sourceDocumentId}
-         AND pa.stage = 'read'
-         AND pa.outcome = 'http_403'
+    SELECT (
+      (${result.attemptOutcome} = 'http_403' AND COUNT(*) FILTER (WHERE pa.outcome = 'http_403') > 0)
+      OR COUNT(*) + 1 >= ${STUCK_LINK_MAX_FAILURES}
     ) AS blocked
+      FROM pipeline_attempts pa
+     WHERE pa.institution_id = ${result.institutionId}
+       AND pa.stage = 'read'
+       AND pa.source_document_id = ${result.sourceDocumentId}
+       AND pa.outcome = ANY(${STUCK_LINK_OUTCOMES}::text[])
+       AND pa.created_at > NOW() - make_interval(days => ${STUCK_LINK_WINDOW_DAYS})
   `;
   return earlier[0]?.blocked === true;
 }

@@ -14,7 +14,7 @@ import { getMarketReadiness } from "@/lib/data-store/market-readiness";
 import { getReportFreshness } from "@/lib/data-store/feed-freshness";
 import { buildLaunchChecklist, type CheckState } from "@/lib/console/launch-checklist";
 import { AtlasEmergencyControl } from "../atlas-emergency-control";
-import { RoomHeader, RoomScreens, Unreadable } from "../room-hub";
+import { RoomHeader, Unreadable } from "../room-hub";
 import { SpendPanel } from "../spend-panel";
 
 // Same cache entry as the Today page.
@@ -114,7 +114,6 @@ export default async function ControlsRoomPage() {
         </ul>
       </section>
 
-      <RoomScreens room="controls" />
     </div>
   );
 }
