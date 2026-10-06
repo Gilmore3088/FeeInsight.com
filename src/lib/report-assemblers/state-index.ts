@@ -16,6 +16,7 @@ import {
   type StateComparison,
 } from "@/app/(public)/research/state/[code]/state-findings";
 import type { Finding } from "@/app/(public)/research/findings";
+import { assembleRegulatoryContext, type RegulatoryContext } from "./regulatory-context";
 
 export interface StateIndexPayload {
   stateCode: string;
@@ -30,6 +31,7 @@ export interface StateIndexPayload {
   comparisons: StateComparison[];
   charterPairs: CharterPair[];
   findings: Finding[];
+  regulatory: RegulatoryContext;
 }
 
 export async function assembleStateIndex(stateCode: string): Promise<StateIndexPayload> {
@@ -37,8 +39,18 @@ export async function assembleStateIndex(stateCode: string): Promise<StateIndexP
   const stateName = STATE_NAMES[code];
   if (!stateName) throw new Error(`Unknown state code: ${stateCode}`);
 
-  const [stats, indexes, national]: [GeoStats, StateFeeIndexes, Awaited<ReturnType<typeof getPublicNationalIndex>>] =
-    await Promise.all([getStateStats(code), getStateFeeIndexes(code), getPublicNationalIndex()]);
+  const district = STATE_TO_DISTRICT[code] ?? null;
+  const [stats, indexes, national, regulatory]: [
+    GeoStats,
+    StateFeeIndexes,
+    Awaited<ReturnType<typeof getPublicNationalIndex>>,
+    RegulatoryContext,
+  ] = await Promise.all([
+    getStateStats(code),
+    getStateFeeIndexes(code),
+    getPublicNationalIndex(),
+    assembleRegulatoryContext({ stateCode: code, district }),
+  ]);
 
   const comparisons = buildComparisons(indexes.all, national);
   const charterPairs = buildCharterPairs(
@@ -46,7 +58,6 @@ export async function assembleStateIndex(stateCode: string): Promise<StateIndexP
     indexes.credit_union,
     comparisons.map((c) => c.fee_category),
   );
-  const district = STATE_TO_DISTRICT[code] ?? null;
 
   return {
     stateCode: code,
@@ -61,5 +72,6 @@ export async function assembleStateIndex(stateCode: string): Promise<StateIndexP
     comparisons,
     charterPairs,
     findings: computeStateFindings(stateName, comparisons, charterPairs),
+    regulatory,
   };
 }

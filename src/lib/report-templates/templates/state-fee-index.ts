@@ -21,6 +21,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 import type { StateIndexPayload } from "@/lib/report-assemblers/state-index";
+import { renderRegulatorySection } from "./regulatory-section";
 import { formatDelta, STATE_FINDING_MIN_INSTITUTIONS } from "@/app/(public)/research/state/[code]/state-findings";
 
 export interface StateFeeIndexReportInput {
@@ -160,6 +161,7 @@ export function renderStateFeeIndexReport(input: StateFeeIndexReportInput): stri
     findings.length > 0 ? numberedFindings(findings) : "",
     positionSection(p),
     charterSection(p),
+    renderRegulatorySection(p.regulatory, { number: "03", place: p.stateName }),
     fullIndexSection(p),
     footnote(
       [
