@@ -123,6 +123,9 @@ function makeMockPayload(
       strong_maturity_count: 10,
       provisional_maturity_count: 5,
     },
+    regional: { districts: [], sizes: [], states: [] },
+    income_series: [],
+    overdraft_distribution: [],
     manifest: {
       queries: [],
       data_hash: "abc123",
@@ -215,8 +218,8 @@ describe("buildThesisSummary", () => {
 
     expect(result.derived_tensions).toHaveLength(3);
     expect(result.derived_tensions[0]).toContain("Banks charge more than credit unions in 12 of 15");
-    expect(result.derived_tensions[1]).toContain("7 of 15 fee categories have IQR spread under 30%");
-    expect(result.derived_tensions[2]).toContain("Average fee revenue per institution: $6,000,000");
+    expect(result.derived_tensions[1]).toContain("7 of 15 fee categories have a middle half narrower than 30% of the median");
+    expect(result.derived_tensions[2]).toContain("Average service-charge income per reporting institution: $6,000,000 in Q4 2024");
   });
 
   it("sets revenue_snapshot and fred_snapshot to null when missing", () => {

@@ -8,9 +8,11 @@
  *   Cover -> TOC -> The Quarter in Figures ->
  *   Ch1: Where Prices Cluster and Where They Spread ->
  *   Ch2: Banks and Credit Unions ->
- *   Ch3: Fee Income in Call Reports ->
- *   Ch4: Data Coverage ->
- *   Ch5: What to Watch ->
+ *   Ch3: District, Size and State ->
+ *   Ch4: Fee Income in Call Reports ->
+ *   Ch5: Data Coverage ->
+ *   Economic Backdrop ->
+ *   Ch6: What to Watch ->
  *   Methodology -> Appendix
  *
  * Every heading and card states a figure from the payload. There is no fixed thesis,
@@ -24,6 +26,9 @@ import {
   tableOfContents,
   statCardRow,
   horizontalBarChart,
+  columnChart,
+  dataTable,
+  twoColumn,
   chapterDivider,
   hamiltonNarrativeBlock,
   compactTable,
@@ -34,10 +39,17 @@ import {
   layoutAnalytical,
   layoutStatement,
   dataFramework,
-  PALETTE,
+  escapeHtml,
 } from "../index";
 
-import type { DerivedAnalytics, NationalQuarterlyPayload } from "@/lib/report-assemblers/national-quarterly";
+import {
+  MIN_GROUP_INSTITUTIONS,
+  REGIONAL_FEES,
+  type DerivedAnalytics,
+  type GroupRow,
+  type NationalQuarterlyPayload,
+} from "@/lib/report-assemblers/national-quarterly";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
@@ -66,6 +78,48 @@ function fmtThousandsAsBillions(thousands: number): string {
   return `$${(thousands / 1_000_000).toFixed(1)}B`;
 }
 
+/** Thousands of dollars as $X.XB or $XXXM. */
+function fmtThousandsShort(thousands: number): string {
+  return thousands >= 1_000_000 ? fmtThousandsAsBillions(thousands) : `$${Math.round(thousands / 1_000)}M`;
+}
+
+/** "2026-Q2" -> "Q2 '26"; other labels pass through. */
+function shortQuarter(q: string): string {
+  const m = /^(\d{4})-?Q(\d)$/.exec(q);
+  return m ? `Q${m[2]} '${m[1].slice(2)}` : q;
+}
+
+function signedPct(value: number | null): string | undefined {
+  if (value === null) return undefined;
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}% YoY`;
+}
+
+/** Short column heads so the group name keeps its width. */
+const SHORT_FEE_LABELS: Record<string, string> = {
+  overdraft: "Overdraft",
+  nsf: "NSF",
+  monthly_maintenance: "Monthly",
+  atm_non_network: "Other ATM",
+  wire_domestic_outgoing: "Wire out",
+};
+
+/** One row per group, one column per headline fee; "\u2014" when too few institutions publish it. */
+function groupTable(rows: GroupRow[], groupLabel: string, caption: string): string {
+  return dataTable({
+    columns: [
+      { key: "label", label: groupLabel, align: "left" },
+      ...REGIONAL_FEES.map((fee) => ({ key: fee, label: SHORT_FEE_LABELS[fee] ?? getDisplayName(fee), align: "right" as const, format: "amount" as const })),
+      { key: "n", label: "OD filers", align: "right" as const, format: "integer" as const },
+    ],
+    rows: rows.map((r) => ({
+      label: r.label,
+      ...Object.fromEntries(REGIONAL_FEES.map((fee) => [fee, r.fees[fee]?.median ?? null])),
+      n: r.fees.overdraft?.institutions ?? 0,
+    })),
+    caption,
+  });
+}
+
 function fmtPct(value: number | null): string {
   if (value === null) return "\u2014";
   return `${value.toFixed(1)}%`;
@@ -88,6 +142,10 @@ const APPENDIX_COLUMNS = [
 export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInput): string {
   const { data, narratives } = input;
   const d: DerivedAnalytics = data.derived;
+  // Payloads stored before the regional and income chapters lack these fields.
+  const overdraftDistribution = data.overdraft_distribution ?? [];
+  const regional = data.regional ?? { districts: [], sizes: [], states: [] };
+  const incomeSeries = data.income_series ?? [];
 
   const formattedDate = new Date(data.report_date).toLocaleDateString("en-US", {
     month: "long",
@@ -98,7 +156,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   // ── Cover ──────────────────────────────────────────────────────────────────
   const cover = coverPage({
     title: `National Fee Index, ${data.quarter}`,
-    subtitle: `${data.total_institutions.toLocaleString()} institutions with published fees \u2014 ${d.categories_with_data_count} fee categories`,
+    subtitle: `${data.total_institutions.toLocaleString()} institutions with published fees \u2014 ${d.categories_with_data_count} fee categories. Fees as of ${formattedDate}${data.revenue ? `; call-report income through ${data.revenue.latest_quarter}` : ""}.`,
     report_date: formattedDate,
     series: `National Quarterly Report \u2014 ${data.quarter}`,
   });
@@ -123,16 +181,25 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     },
     {
       number: "03",
-      title: "Fee Income in Call Reports",
-      description: "FDIC and NCUA service-charge income",
+      title: "District, Size and State",
+      description: "Headline fee medians by Federal Reserve district, asset size and state",
     },
     {
       number: "04",
+      title: "Fee Income in Call Reports",
+      description: "Eight quarters of FDIC and NCUA service-charge income",
+    },
+    {
+      number: "05",
       title: "Data Coverage",
       description: "How much of each category is published",
     },
     {
-      number: "05",
+      title: "Economic Backdrop",
+      description: "Rates, prices and Beige Book notes from the Federal Reserve",
+    },
+    {
+      number: "06",
       title: "What to Watch",
       description: "Questions the next quarters of data can settle",
     },
@@ -234,11 +301,12 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       });
     }
 
+    // No wrapping box: the card rows keep together in print and a box would split from them.
     econSections.push(
-      `<div style="margin: 32px 0; padding: 24px 28px; background: ${PALETTE.sectionBg}; border-radius: 8px; border-left: 4px solid ${PALETTE.accent};">`,
-      `<h3 style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: ${PALETTE.accent}; margin: 0 0 16px 0;">Economic Environment \u2014 ${data.fred.as_of || data.quarter}</h3>`,
-      statCardRow(econCards),
-      `</div>`,
+      `<div class="h-bar-title">Economic indicators, as of ${escapeHtml(data.fred.as_of || data.quarter)}</div>`,
+      statCardRow(econCards.slice(0, 3)),
+      econCards.length > 3 ? statCardRow(econCards.slice(3, 6)) : "",
+      econCards.length > 6 ? statCardRow(econCards.slice(6)) : "",
     );
   }
 
@@ -273,7 +341,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   }
 
   const economicContext = econSections.length > 0
-    ? econSections.join("\n")
+    ? [chapterDivider("", "Economic Backdrop"), ...econSections].join("\n")
     : "";
 
   // ── Ch1: The Illusion of Fee Differentiation ──────────────────────────────
@@ -290,6 +358,17 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       title: "Fees with the narrowest middle half (spread as % of median)",
       source: `Bank Fee Index \u2014 ${data.total_institutions.toLocaleString()} institutions`,
     }),
+    overdraftDistribution.length > 1
+      ? columnChart({
+          title: "How overdraft prices spread: institutions at each price",
+          columns: overdraftDistribution.map((b) => ({
+            label: b.label.replace(" to ", "\u2013"),
+            segments: [{ label: "Institutions", value: b.count }],
+            displayValue: b.count.toLocaleString(),
+          })),
+          source: `One price per institution (its highest tier where it has several). ${overdraftDistribution.reduce((n, b) => n + b.count, 0).toLocaleString()} institutions.`,
+        })
+      : "",
     hamiltonNarrativeBlock(narratives.fee_differentiation.narrative),
   ].join("\n");
 
@@ -335,11 +414,49 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     hamiltonNarrativeBlock(narratives.banks_vs_credit_unions.narrative),
   ].join("\n");
 
-  // ── Ch3: Fee Income in Call Reports ─────────────────────────────────────
+  // ── Ch3: District, Size and State ─────────────────────────────────────────
+  const regionalSections: string[] = [chapterDivider("03", "District, Size and State")];
+  const minNote = `Medians shown where at least ${MIN_GROUP_INSTITUTIONS} institutions publish the fee; \u2014 otherwise.`;
+  if (regional.districts.length > 0) {
+    regionalSections.push(groupTable(regional.districts, "Federal Reserve district", `Headline fee medians by Federal Reserve district. ${minNote}`));
+  }
+  if (regional.sizes.length > 0) {
+    regionalSections.push(groupTable(regional.sizes, "Asset size", `Headline fee medians by asset size. ${minNote}`));
+  }
+  const stateOverdraft = regional.states
+    .filter((r) => r.fees.overdraft?.median !== null && r.fees.overdraft?.median !== undefined)
+    .map((r) => ({ label: r.label, median: r.fees.overdraft.median as number, n: r.fees.overdraft.institutions }))
+    .sort((a, b) => b.median - a.median || b.n - a.n);
+  if (stateOverdraft.length >= 10) {
+    const stateTable = (rows: typeof stateOverdraft, caption: string) =>
+      dataTable({
+        columns: [
+          { key: "label", label: "State", align: "left" },
+          { key: "median", label: "Overdraft median", align: "right", format: "amount" },
+          { key: "n", label: "Institutions", align: "right", format: "integer" },
+        ],
+        rows: rows.map((r) => ({ label: r.label, median: r.median, n: r.n })),
+        caption,
+      });
+    regionalSections.push(
+      twoColumn(
+        stateTable(stateOverdraft.slice(0, 5), "Highest overdraft medians"),
+        stateTable(stateOverdraft.slice(-5).reverse(), "Lowest overdraft medians"),
+        "1fr 1fr",
+      ),
+      footnote(`${stateOverdraft.length} states have at least ${MIN_GROUP_INSTITUTIONS} institutions publishing an overdraft fee; the rest are left out of this ranking.`),
+    );
+  }
+  if (regionalSections.length === 1) {
+    regionalSections.push(footnote("District, size and state medians were not available when this report was built."));
+  }
+  const ch3Regional = regionalSections.join("\n");
+
+  // ── Ch4: Fee Income in Call Reports ─────────────────────────────────────
   // Call reports give one service-charge line per institution, not income by fee
   // category, so this chapter ranks no category by revenue.
   const ch3Sections: string[] = [
-    chapterDivider("03", "Fee Income in Call Reports"),
+    chapterDivider("04", "Fee Income in Call Reports"),
   ];
 
   if (data.revenue) {
@@ -375,6 +492,26 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }
   }
 
+  // Oldest quarter on the left.
+  const series = [...incomeSeries].reverse();
+  if (series.length > 1) {
+    ch3Sections.push(
+      columnChart({
+        title: "Service-charge income by quarter",
+        columns: series.map((q) => ({
+          label: shortQuarter(q.quarter),
+          segments: [
+            { label: "Banks (FDIC)", value: q.banks },
+            { label: "Credit unions (NCUA)", value: q.credit_unions },
+          ],
+          displayValue: fmtThousandsShort(q.total),
+          note: signedPct(q.yoy_change_pct),
+        })),
+        source: "FDIC call reports and NCUA 5300 filings; credit-union year-to-date income converted to the quarter.",
+      }),
+    );
+  }
+
   ch3Sections.push(
     dataFramework(
       "What call reports can and cannot show",
@@ -388,7 +525,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Ch4: The Industry Blind Spot ──────────────────────────────────────────
   const ch4 = [
-    chapterDivider("04", "Data Coverage"),
+    chapterDivider("05", "Data Coverage"),
     statCardRow([
       {
         label: "Categories with Data",
@@ -411,7 +548,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Ch5: The Future of Fee Strategy ───────────────────────────────────────
   const ch5 = [
-    chapterDivider("05", "What to Watch"),
+    chapterDivider("06", "What to Watch"),
     statCardRow([
       {
         label: "Avg Price Spread",
@@ -476,8 +613,10 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     layoutStatement(execSummary),
     layoutAnalytical(ch1),
     layoutAnalytical(ch2),
+    layoutAnalytical(ch3Regional),
     layoutAnalytical(ch3),
     layoutAnalytical(ch4),
+    economicContext ? layoutAnalytical(economicContext) : "",
     layoutStatement(ch5),
     methodology,
     appendix,

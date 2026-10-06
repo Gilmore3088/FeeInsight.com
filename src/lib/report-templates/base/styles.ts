@@ -448,6 +448,91 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   font-style: italic;
 }
 
+/* Column chart (stacked) */
+.col-chart {
+  margin: 24px 0;
+  --col-seg-0: ${PALETTE.accent};
+  --col-seg-1: #E3A98F;
+  --col-seg-2: ${PALETTE.border};
+}
+
+.col-chart-legend {
+  display: flex;
+  gap: 16px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  color: ${PALETTE.textDark3};
+  margin-bottom: 10px;
+}
+
+.col-chart-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+.col-chart-cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  border-bottom: 1px solid ${PALETTE.border};
+}
+
+.col-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.col-chart-value {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  font-weight: 600;
+  color: ${PALETTE.textDark3};
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+
+.col-chart-plot {
+  height: 150px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.col-chart-bar {
+  width: 70%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+
+.col-chart-seg {
+  width: 100%;
+}
+
+.col-chart-label {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  color: ${PALETTE.textDark3};
+  margin-top: 6px;
+  white-space: nowrap;
+}
+
+.col-chart-note {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 8px;
+  color: ${PALETTE.textMuted};
+  font-variant-numeric: tabular-nums;
+}
+
 /* Two-column layout */
 .two-col {
   display: grid;
@@ -1206,6 +1291,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   .chapter-divider,
   .report-table-caption,
   .h-bar-title,
+  .col-chart-legend,
   .comparison-chart-title,
   .comparison-chart-header,
   .playbook-heading {
@@ -1225,6 +1311,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
   .stat-cards,
   .h-bar-chart,
+  .col-chart,
   .finding,
   .figure-finding,
   .position-row,

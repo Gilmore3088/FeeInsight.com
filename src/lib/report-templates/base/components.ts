@@ -293,6 +293,71 @@ export function horizontalBarChart(props: HorizontalBarChartProps): string {
 </div>`;
 }
 
+// ─── Column Chart ──────────────────────────────────────────────────────────────
+
+export interface ColumnChartSegment {
+  value: number;
+  /** Legend name; segments with the same index share a colour. */
+  label: string;
+}
+
+export interface ColumnChartColumn {
+  label: string;
+  segments: ColumnChartSegment[];
+  /** Text above the column, e.g. the total. */
+  displayValue?: string;
+  /** Small text under the label, e.g. a year-over-year change. */
+  note?: string;
+}
+
+export interface ColumnChartProps {
+  columns: ColumnChartColumn[];
+  title?: string;
+  source?: string;
+}
+
+const COLUMN_SEGMENT_COLORS = ["var(--col-seg-0)", "var(--col-seg-1)", "var(--col-seg-2)"];
+
+/**
+ * CSS-only vertical column chart with optional stacked segments (no SVG).
+ * Column heights are a share of the tallest column's total.
+ */
+export function columnChart(props: ColumnChartProps): string {
+  const totals = props.columns.map((c) => c.segments.reduce((sum, s) => sum + Math.max(s.value, 0), 0));
+  const max = Math.max(...totals, 0);
+  const legend = props.columns[0]?.segments.length > 1
+    ? `<div class="col-chart-legend">${props.columns[0].segments
+        .map((s, i) => `<span><i style="background:${COLUMN_SEGMENT_COLORS[i % COLUMN_SEGMENT_COLORS.length]}"></i>${escapeHtml(s.label)}</span>`)
+        .join("")}</div>`
+    : "";
+  const cols = props.columns
+    .map((col, ci) => {
+      const heightPct = max > 0 ? (totals[ci] / max) * 100 : 0;
+      const segs = col.segments
+        .map((s, i) => {
+          const share = totals[ci] > 0 ? (Math.max(s.value, 0) / totals[ci]) * 100 : 0;
+          return `<div class="col-chart-seg" style="height:${share.toFixed(1)}%;background:${COLUMN_SEGMENT_COLORS[i % COLUMN_SEGMENT_COLORS.length]};"></div>`;
+        })
+        .reverse()
+        .join("");
+      return `
+  <div class="col-chart-col">
+    <div class="col-chart-value">${escapeHtml(col.displayValue ?? "")}</div>
+    <div class="col-chart-plot"><div class="col-chart-bar" style="height:${heightPct.toFixed(1)}%;">${segs}</div></div>
+    <div class="col-chart-label">${escapeHtml(col.label)}</div>
+    <div class="col-chart-note">${col.note ? escapeHtml(col.note) : "&nbsp;"}</div>
+  </div>`;
+    })
+    .join("");
+  return `
+<div class="col-chart">
+  ${props.title ? `<div class="h-bar-title">${escapeHtml(props.title)}</div>` : ""}
+  ${legend}
+  <div class="col-chart-cols">${cols}</div>
+  ${props.source ? `<div class="h-bar-source">${escapeHtml(props.source)}</div>` : ""}
+</div>`;
+}
+
 // ─── Two Column ────────────────────────────────────────────────────────────────
 
 /**
