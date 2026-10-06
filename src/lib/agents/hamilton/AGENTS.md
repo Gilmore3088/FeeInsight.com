@@ -123,7 +123,9 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   normalized name) at a new amount in a newer source document (`source_documents.crawled_at`).
   Other lines of the same schedule, or differently named lines from another document,
   publish side by side with no change record. A row from an older document than a live
-  line is skipped (`Older document than the live price`).
+  line is skipped (`Older document than the live price`). When either document lists that
+  name at both prices (two products or tiers), the new line publishes beside the old one
+  and no change is recorded (`listsBothPrices`).
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.

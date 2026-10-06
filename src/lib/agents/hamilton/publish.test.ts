@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, runHamiltonPublish } from "./publish";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -539,5 +539,26 @@ describe("decidePriorFee", () => {
   it("does not record a change when either document's date is unknown", () => {
     expect(decidePriorFee({ ...row, document_crawled_at: null }, [live({})])).toEqual({ kind: "additional_line" });
     expect(decidePriorFee(row, [live({ document_crawled_at: null })])).toEqual({ kind: "additional_line" });
+  });
+});
+
+describe("listsBothPrices", () => {
+  const prior = { ...priorPublishedFee, fee_name: verifiedFee.fee_name };
+  const line = (source_document_id: unknown, amount: unknown, fee_name: string = verifiedFee.fee_name) =>
+    ({ source_document_id, fee_name, amount }) as Parameters<typeof listsBothPrices>[0][number];
+
+  it("is not a change when the newer page still lists the old price for the same name", () => {
+    const lines = [line(verifiedFee.source_document_id, prior.amount)];
+    expect(listsBothPrices(lines, verifiedFee, prior)).toBe(true);
+  });
+
+  it("is not a change when the older page already listed the new price for the same name", () => {
+    const lines = [line(prior.source_document_id, verifiedFee.amount)];
+    expect(listsBothPrices(lines, verifiedFee, prior)).toBe(true);
+  });
+
+  it("is a change when each page lists the name at one price", () => {
+    const lines = [line(verifiedFee.source_document_id, verifiedFee.amount), line(prior.source_document_id, prior.amount)];
+    expect(listsBothPrices(lines, verifiedFee, prior)).toBe(false);
   });
 });
