@@ -6,6 +6,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
+import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 
 export const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
@@ -237,5 +238,115 @@ export function Callout({ children }: { children: ReactNode }) {
     <div className="rounded-md border-l-2 border-terra bg-terra-soft px-4 py-3 text-sm leading-relaxed text-warm-800">
       {children}
     </div>
+  );
+}
+
+function longDateOrRange(asOf: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(asOf)
+    ? new Date(`${asOf}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    : asOf;
+}
+
+/**
+ * "How this was built": the sources, dates, method, assumptions and evidence level behind a
+ * screen, so nothing Hamilton shows is a black box. `open` renders it expanded (deliverables).
+ */
+export function AuditPanel({
+  trail,
+  downloadHref,
+  open = false,
+}: {
+  trail: AuditTrail;
+  downloadHref?: string | null;
+  open?: boolean;
+}) {
+  return (
+    <details open={open} className="group rounded-lg border border-warm-300 bg-warm-50 text-sm text-warm-800 print:border-0">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-5 py-3">
+        <span className="text-base text-warm-900" style={SERIF}>
+          How this was built
+        </span>
+        <span className="flex items-center gap-3 text-xs text-warm-600">
+          <span className="rounded-full border border-warm-300 px-2 py-0.5 text-warm-700">{trail.evidence}</span>
+          <span>{trail.sources.length} sources</span>
+          <span aria-hidden className="print:hidden group-open:rotate-180">▾</span>
+        </span>
+      </summary>
+      <div className="flex flex-col gap-5 border-t border-warm-200 px-5 py-4">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Sources</h3>
+          <ul className="mt-2 flex flex-col gap-2">
+            {trail.sources.map((s) => (
+              <li key={s.label} className="grid gap-x-4 sm:grid-cols-[12rem_1fr_9rem]">
+                <span className="font-medium text-warm-900">
+                  {s.href ? (
+                    <a href={s.href} target="_blank" rel="noreferrer" className="underline decoration-warm-400">
+                      {s.label}
+                    </a>
+                  ) : (
+                    s.label
+                  )}
+                </span>
+                <span className="text-warm-700">{s.detail}</span>
+                <span className="text-warm-600 sm:text-right">{s.asOf ? `As of ${longDateOrRange(s.asOf)}` : "Date not recorded"}</span>
+              </li>
+            ))}
+          </ul>
+          {downloadHref ? (
+            <a href={downloadHref} className="mt-3 inline-block text-terra-text underline print:hidden">
+              Download every institution behind this comparison (CSV)
+            </a>
+          ) : null}
+        </div>
+        {trail.ownFeeRows.length > 0 ? (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Your published fee lines</h3>
+            <ul className="mt-2 flex flex-col gap-1">
+              {trail.ownFeeRows.map((r, i) => (
+                <li key={`${r.feeName}-${i}`} className="flex flex-wrap justify-between gap-x-3">
+                  <span className="min-w-0">
+                    {r.feeName}: {fmtMoney(r.amount)}
+                  </span>
+                  <span className="text-warm-600">
+                    {r.publishedAt ? `Published ${longDateOrRange(r.publishedAt.slice(0, 10))}` : "Publish date not recorded"}
+                    {r.verifiedByEventId != null ? ` · Verification record ${r.verifiedByEventId}` : ""}
+                    {r.sourceUrl ? (
+                      <>
+                        {" · "}
+                        <a href={r.sourceUrl} target="_blank" rel="noreferrer" className="text-terra-text underline">
+                          Your schedule
+                        </a>
+                      </>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Method</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {trail.method.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </div>
+        {trail.assumptions.length > 0 ? (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Assumptions</h3>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {trail.assumptions.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <p className="text-xs text-warm-600">
+          Prepared {new Date(trail.preparedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC.
+          Hamilton doesn&apos;t recommend a price; it shows the evidence.
+        </p>
+      </div>
+    </details>
   );
 }

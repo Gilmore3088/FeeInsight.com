@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import type { BriefingObservation } from "@/lib/hamilton/briefing-observations";
+import type { AuditTrail } from "@/lib/hamilton/audit-trail";
+import { AuditPanel } from "@/components/hamilton/memo/memo";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 const COUNT_WORDS = ["", "one thing", "two things", "three things"];
@@ -12,9 +14,11 @@ const COUNT_WORDS = ["", "one thing", "two things", "three things"];
 export function WorthYourAttention({
   observations,
   institutionId,
+  trail,
 }: {
   observations: BriefingObservation[];
   institutionId: string | null;
+  trail: AuditTrail;
 }) {
   const count = COUNT_WORDS[observations.length] ?? `${observations.length} things`;
   return (
@@ -51,6 +55,9 @@ export function WorthYourAttention({
           </li>
         ))}
       </ol>
+      <div className="mt-5">
+        <AuditPanel trail={trail} />
+      </div>
     </section>
   );
 }

@@ -5,13 +5,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
 import { getArticles } from "@/lib/data-store/news";
 import {
+  AuditPanel,
   Callout,
   DistributionBars,
   Exhibit,
@@ -111,6 +113,18 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     instId,
   );
   const latest = trend[0] ?? null;
+  const trail = buildAuditTrail({
+    feeName: ws.feeName,
+    layer,
+    layerDates: layerDates(ws, layer),
+    ownFeeRows: ws.ownFeeRows,
+    local: layer.key === "local" ? ws.local : null,
+    callReport: latest
+      ? { quarter: latest.quarter, source: inst?.charterType === "credit_union" ? "NCUA 5300 call report, year to date." : "FDIC call report, quarterly." }
+      : null,
+    complaints: Boolean(complaints && complaints.total_complaints > 0),
+  });
+  const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
   const localBanks = ws.local?.banks ?? [];
 
   return (
@@ -164,6 +178,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           }))}
         />
         <LayerExhibit layer={layer} ownAmount={ws.ownAmount} feeName={ws.feeName} />
+        <AuditPanel trail={trail} downloadHref={csvHref} />
       </MemoSection>
 
       {layer.key === "local" && ws.local ? (

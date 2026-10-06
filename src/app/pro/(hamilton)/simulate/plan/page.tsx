@@ -5,12 +5,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
+import { parseLayer } from "@/lib/hamilton/research-layers";
 import { peerPosition } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan, earliestEffectiveDate } from "@/lib/hamilton/implementation-plan";
-import { parsePrices } from "@/lib/hamilton/model-params";
+import { parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { SITE_NAME } from "@/lib/constants";
 import {
+  AuditPanel,
   Callout,
   Figure,
   LinkButton,
@@ -27,7 +30,17 @@ import { PrintButton } from "@/components/hamilton/memo/PrintButton";
 export const metadata: Metadata = { title: "Plan a change" };
 
 interface PageProps {
-  searchParams: Promise<{ fee?: string; from?: string; to?: string; notice?: string; format?: string; instId?: string }>;
+  searchParams: Promise<{
+    fee?: string;
+    from?: string;
+    to?: string;
+    notice?: string;
+    format?: string;
+    instId?: string;
+    layer?: string;
+    paid?: string;
+    waiver?: string;
+  }>;
 }
 
 const FORMATS = [
@@ -68,11 +81,31 @@ export default async function PlanPage({ searchParams }: PageProps) {
         : `Moving the ${fee} fee from ${fmtMoney(from)} to ${fmtMoney(to)}`;
 
   const formatHref = (f: Format) => {
-    const q = new URLSearchParams({ fee: ws.fee, from: String(from), to: String(to), notice: noticeDate });
+    const q = new URLSearchParams({ fee: ws.fee, from: String(from), to: String(to), notice: noticeDate, layer: mainLayer.key });
+    if (params.paid) q.set("paid", params.paid);
+    if (params.waiver) q.set("waiver", params.waiver);
     if (f !== "plan") q.set("format", f);
     return hrefWithInstitutionContext(`/pro/simulate/plan?${q.toString()}`, instId);
   };
   const modelHref = hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(ws.fee)}&prices=${to}`, instId);
+
+  const paidItems = parseCount(params.paid);
+  const waiverRate = parsePercent(params.waiver);
+  const mainLayer = ws.layers.find((l) => l.key === parseLayer(params.layer)) ?? ws.layers[ws.layers.length - 1];
+  const trail = buildAuditTrail({
+    feeName: ws.feeName,
+    layer: mainLayer,
+    layerDates: layerDates(ws, mainLayer),
+    extraLayers: ws.layers.filter((l) => l.n > 0).map((l) => ({ layer: l, dates: layerDates(ws, l) })),
+    ownFeeRows: ws.ownFeeRows,
+    local: ws.local,
+    clientFigures: { paidItems, waiverRate },
+    extraAssumptions: [
+      `${fmtMoney(from)} is the starting price${ws.ownAmount === from ? ", your published fee" : ", as entered"}; ${fmtMoney(to)} is the price management is weighing.`,
+      `Notice dates assume notice goes out on ${longDate(noticeDate)}.`,
+      "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts. Confirm with compliance.",
+    ],
+  });
 
   const layerRows = ws.layers
     .filter((l) => l.n > 0)
@@ -200,6 +233,12 @@ export default async function PlanPage({ searchParams }: PageProps) {
               </p>
             </section>
           )}
+          <section className="flex flex-col gap-2 break-inside-avoid">
+            <h2 className="text-xl text-warm-900" style={SERIF}>
+              Appendix: sources and method
+            </h2>
+            <AuditPanel trail={trail} open />
+          </section>
           <p className="border-t border-warm-200 pt-3 text-xs text-warm-600">
             Fee income effects depend on the institution&apos;s own volume and waivers, which this document doesn&apos;t assume. This is
             research support, not legal advice; confirm notice terms with compliance.
@@ -243,6 +282,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
       <MemoSection title="Where the price would sit" note="Institutions charging less than you, today and after the change.">
         {marketTable}
       </MemoSection>
+      <AuditPanel trail={trail} />
       <MemoSection title="Turn this into" note="Ready to print or save as PDF, in the Fee Insight format.">
         <div className="flex flex-wrap gap-2">
           <LinkButton href={formatHref("one-pager")} primary>

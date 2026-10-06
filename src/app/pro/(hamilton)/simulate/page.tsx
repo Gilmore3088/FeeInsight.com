@@ -5,13 +5,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
+import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { parseLayer } from "@/lib/hamilton/research-layers";
 import { modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import {
+  AuditPanel,
   Callout,
   DistributionBars,
   Exhibit,
@@ -97,10 +99,26 @@ export default async function ModelPage({ searchParams }: PageProps) {
   };
   const planHref = (price: number) =>
     hrefWithInstitutionContext(
-      `/pro/simulate/plan?fee=${encodeURIComponent(ws.fee)}&from=${base}&to=${price}&layer=${layer.key}`,
+      `/pro/simulate/plan?fee=${encodeURIComponent(ws.fee)}&from=${base}&to=${price}&layer=${layer.key}` +
+        (params.paid ? `&paid=${encodeURIComponent(params.paid)}` : "") +
+        (params.waiver ? `&waiver=${encodeURIComponent(params.waiver)}` : ""),
       instId,
     );
   const researchHref = hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
+  const trail = buildAuditTrail({
+    feeName: ws.feeName,
+    layer,
+    layerDates: layerDates(ws, layer),
+    ownFeeRows: ws.ownFeeRows,
+    local: layer.key === "local" ? ws.local : null,
+    clientFigures: { paidItems, waiverRate },
+    extraAssumptions: [
+      current != null ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.` : "No published price for you, so each change is measured from $0.",
+      "Volume held steady at every price: Hamilton doesn't estimate how customers respond from public data.",
+      "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts.",
+    ],
+  });
+  const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
 
   const row = "border-b border-warm-200";
   const head = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
@@ -260,6 +278,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
       >
         <DistributionBars amounts={layer.amounts} own={current} tested={prices.length === 1 ? prices[0] : null} />
       </Exhibit>
+
+      <AuditPanel trail={trail} downloadHref={csvHref} />
 
       <p className="text-xs text-warm-600">
         Change the comparison: {ws.layers.map((l, i) => (

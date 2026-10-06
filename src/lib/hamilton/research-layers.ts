@@ -74,6 +74,22 @@ export function summarizeLayer(
   };
 }
 
+/** Whether a peer belongs to a non-local layer for this institution (local comes from branch data). */
+export function inLayer(key: LayerKey, institution: LayerInstitution, p: PeerAmount): boolean {
+  switch (key) {
+    case "state":
+      return p.stateCode === institution.stateCode;
+    case "district":
+      return p.fedDistrict === institution.fedDistrict;
+    case "peers":
+      return p.charterType === institution.charterType && p.assetTier === institution.assetTier;
+    case "national":
+      return true;
+    default:
+      return false;
+  }
+}
+
 /**
  * Every non-local layer for one fee. `peers` is the national read; the bank itself is left out of
  * its own comparison. `localAmounts` comes from the local market reader (banks in its counties).
@@ -85,7 +101,7 @@ export function buildLayers(
   localAmounts: number[] | null,
 ): LayerSummary[] {
   const others = peers.filter((p) => p.institutionId !== institution.id);
-  const pick = (f: (p: PeerAmount) => boolean) => others.filter(f).map((p) => p.amount);
+  const pick = (key: LayerKey) => others.filter((p) => inLayer(key, institution, p)).map((p) => p.amount);
   const layers: LayerSummary[] = [];
   if (localAmounts) {
     layers.push(summarizeLayer("local", "Your market", "Banks with branches in your counties", localAmounts, ownAmount));
@@ -93,13 +109,13 @@ export function buildLayers(
   if (institution.stateCode) {
     const name = STATE_NAMES[institution.stateCode] ?? institution.stateCode;
     layers.push(
-      summarizeLayer("state", name, `Banks and credit unions headquartered in ${name}`, pick((p) => p.stateCode === institution.stateCode), ownAmount),
+      summarizeLayer("state", name, `Banks and credit unions headquartered in ${name}`, pick("state"), ownAmount),
     );
   }
   if (institution.fedDistrict != null) {
     const name = DISTRICT_NAMES[institution.fedDistrict] ?? `District ${institution.fedDistrict}`;
     layers.push(
-      summarizeLayer("district", `${name} district`, `Institutions in the Federal Reserve Bank of ${name} district`, pick((p) => p.fedDistrict === institution.fedDistrict), ownAmount),
+      summarizeLayer("district", `${name} district`, `Institutions in the Federal Reserve Bank of ${name} district`, pick("district"), ownAmount),
     );
   }
   if (institution.charterType && institution.assetTier) {
@@ -109,12 +125,12 @@ export function buildLayers(
         "peers",
         "Peer group",
         `${capitalize(charterWord(institution.charterType))} in the ${tier} asset tier, nationwide`,
-        pick((p) => p.charterType === institution.charterType && p.assetTier === institution.assetTier),
+        pick("peers"),
         ownAmount,
       ),
     );
   }
-  layers.push(summarizeLayer("national", "National", "Every institution with this fee published", others.map((p) => p.amount), ownAmount));
+  layers.push(summarizeLayer("national", "National", "Every institution with this fee published", pick("national"), ownAmount));
   return layers;
 }
 

@@ -3,6 +3,16 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-06
+
+**Every Hamilton output shows its audit trail; nothing is a black box.** James, 00:08 UTC. For
+regulatory work a figure has to be defensible. Each Briefing, Research, Model and Plan screen has a
+"How this was built" panel listing every source with its date, the method, every assumption
+(including figures the bank typed in) and whether it rests on market data alone. The bank's own fee
+lines link to its schedule with their publish date and verification record, and a CSV lists every
+institution behind a comparison with its source. The CEO one-pager and committee packet carry the
+same panel as an appendix. Built in PR 89; the stored audit record belongs to the Hamilton engine.
+
 ## 2026-10-05
 
 **Hamilton is a neutral research and modeling workspace, never a fee recommender.** James,

@@ -26,7 +26,7 @@ import { HamiltonBriefing } from "@/components/hamilton/benchmark/HamiltonBriefi
 import { fetchStateContext } from "@/lib/hamilton/expert-context";
 import { getStateEconomicContextCached } from "@/lib/data-store/public-cached-reads";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
-import { buildBriefingObservations } from "@/lib/hamilton/briefing-observations";
+import { briefingAuditTrail, buildBriefingObservations } from "@/lib/hamilton/briefing-observations";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
 
 export const dynamic = "force-dynamic";
@@ -246,8 +246,12 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
         </section>
       )}
 
-      {observations.length > 0 ? (
-        <WorthYourAttention observations={observations} institutionId={selectedInstitutionId} />
+      {positioning && observations.length > 0 ? (
+        <WorthYourAttention
+          observations={observations}
+          institutionId={selectedInstitutionId}
+          trail={briefingAuditTrail(positioning)}
+        />
       ) : null}
 
       <HamiltonBriefing

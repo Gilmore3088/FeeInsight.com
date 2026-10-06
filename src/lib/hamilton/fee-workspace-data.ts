@@ -5,12 +5,19 @@
  */
 import { unstable_cache } from "next/cache";
 import { getInstitutionFeeValues } from "@/lib/data-store/fee-index";
-import { getCategoryPeerAmounts, getLocalMarketBanks, type LocalMarket, type PeerAmount } from "@/lib/data-store/fee-research";
+import {
+  getCategoryPeerAmounts,
+  getInstitutionFeeEvidence,
+  getLocalMarketBanks,
+  type FeeEvidenceRow,
+  type LocalMarket,
+  type PeerAmount,
+} from "@/lib/data-store/fee-research";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { plainFeeName } from "./briefing-observations";
 import type { HamiltonSelectedInstitutionContext } from "./institution-context";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { buildLayers, type LayerSummary } from "./research-layers";
+import { buildLayers, inLayer, type LayerInstitution, type LayerSummary } from "./research-layers";
 
 /** Fees Hamilton leads with, in this order, when the bank publishes them. */
 export const FEATURED_FEES = [
@@ -41,6 +48,8 @@ export interface FeeWorkspace {
   peers: PeerAmount[];
   local: LocalMarket | null;
   layers: LayerSummary[];
+  /** The bank's own published rows for the fee, for the audit trail. */
+  ownFeeRows: FeeEvidenceRow[];
   /** Set when a read failed, so the page can say so instead of showing zeros. */
   unavailable: string[];
 }
@@ -80,7 +89,7 @@ export async function loadFeeWorkspace(params: {
   const fee = params.fee && /^[a-z0-9_]+$/.test(params.fee) ? params.fee : (ownFees[0]?.category ?? "overdraft");
   const ownAmount = ownValues.get(fee) ?? null;
 
-  const [peers, local] = await Promise.all([
+  const [peers, local, ownFeeRows] = await Promise.all([
     getCachedPeerAmounts(fee).catch(() => {
       unavailable.push("market fees");
       return [] as PeerAmount[];
@@ -91,6 +100,12 @@ export async function loadFeeWorkspace(params: {
           return null;
         })
       : null,
+    institution && ownAmount != null
+      ? getInstitutionFeeEvidence(institution.id, fee).catch(() => {
+          unavailable.push("your fee's source lines");
+          return [] as FeeEvidenceRow[];
+        })
+      : ([] as FeeEvidenceRow[]),
   ]);
 
   const localAmounts = local
@@ -112,5 +127,25 @@ export async function loadFeeWorkspace(params: {
       )
     : buildLayers({ id: -1, stateCode: null, charterType: null, fedDistrict: null, assetTier: null }, peers, null, null);
 
-  return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, peers, local, layers, unavailable };
+  return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, peers, local, layers, ownFeeRows, unavailable };
+}
+
+/** Publish dates of the institutions in one layer, for the trail's "as of" range. */
+export function layerDates(ws: FeeWorkspace, layer: LayerSummary): (string | null)[] {
+  if (layer.key === "local") return [];
+  return layerPeers(ws, layer).map((p) => p.publishedAt);
+}
+
+/** The institutions behind a non-local layer (the bank itself left out), matching buildLayers. */
+export function layerPeers(ws: FeeWorkspace, layer: LayerSummary): PeerAmount[] {
+  const inst = ws.institution;
+  if (!inst) return layer.key === "national" ? ws.peers : [];
+  const self: LayerInstitution = {
+    id: inst.id,
+    stateCode: inst.stateCode,
+    charterType: inst.charterType,
+    fedDistrict: inst.fedDistrict,
+    assetTier: inst.assetTier,
+  };
+  return ws.peers.filter((p) => p.institutionId !== inst.id && inLayer(layer.key, self, p));
 }

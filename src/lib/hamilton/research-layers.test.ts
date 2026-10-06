@@ -12,6 +12,8 @@ const peer = (id: number, amount: number, over: Partial<PeerAmount> = {}): PeerA
   fedDistrict: 11,
   assetTier: "community",
   amount,
+  sourceUrl: null,
+  publishedAt: null,
   ...over,
 });
 
@@ -75,9 +77,17 @@ describe("buildBriefingObservations", () => {
   it("picks the furthest from the middle and never advises", () => {
     const obs = buildBriefingObservations(positioning);
     expect(obs.map((o) => o.feeCategory)).toEqual(["b", "c", "e"]);
-    expect(obs[1].detail).toBe("50% below the middle of Texas community banks (40 institutions).");
+    expect(obs[1].detail).toBe("50% below the median of your peer group (Texas community banks), 40 institutions.");
     const text = obs.map((o) => o.headline + o.detail).join(" ");
     expect(text).not.toMatch(/raise|lower|should|recommend/i);
+  });
+
+  it("leads with comparisons against a full peer group and flags small ones", () => {
+    const thin = { ...entry("z", 50, 10), benchmarkCount: 7 };
+    const obs = buildBriefingObservations({ ...positioning, entries: [thin, ...positioning.entries] } as InstitutionPositioning);
+    expect(obs.map((o) => o.feeCategory)).toEqual(["b", "c", "e"]);
+    const onlyThin = buildBriefingObservations({ ...positioning, entries: [thin] } as InstitutionPositioning);
+    expect(onlyThin[0].detail).toMatch(/small group, so read with care/);
   });
 
   it("strips the abbreviation from display names", () => {

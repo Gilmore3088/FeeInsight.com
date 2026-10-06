@@ -22,6 +22,10 @@ export interface PeerAmount {
   fedDistrict: number | null;
   assetTier: string | null;
   amount: number;
+  /** The institution's own fee schedule this value was read from (its latest published row). */
+  sourceUrl: string | null;
+  /** When the latest of its rows for this fee was published. */
+  publishedAt: string | null;
 }
 
 /** One value per institution for `category`, filtered to a layer. Sorted by amount. */
@@ -52,7 +56,7 @@ export async function getCategoryPeerAmounts(
     conditions.push(`ct.fed_district = $${params.length}`);
   }
   const rows = (await sql.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.amount,
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ef.source_url, ef.created_at,
             ct.institution_name, ct.state_code, ct.charter_type, ct.fed_district, ct.asset_size_tier
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
@@ -67,11 +71,18 @@ export async function getCategoryPeerAmounts(
     charter_type: string | null;
     fed_district: number | null;
     asset_size_tier: string | null;
+    source_url: string | null;
+    created_at: string | Date | null;
   }[];
 
   const values = valuePerInstitution(rows);
+  // Keep each institution's most recently published row for its source and date.
   const info = new Map<number, (typeof rows)[number]>();
-  for (const row of rows) info.set(Number(row.institution_id), row);
+  for (const row of rows) {
+    const id = Number(row.institution_id);
+    const prev = info.get(id);
+    if (!prev || isoDate(row.created_at) > isoDate(prev.created_at)) info.set(id, row);
+  }
   const out: PeerAmount[] = [];
   for (const [id, amount] of values) {
     const row = info.get(id)!;
@@ -83,9 +94,53 @@ export async function getCategoryPeerAmounts(
       fedDistrict: row.fed_district == null ? null : Number(row.fed_district),
       assetTier: row.asset_size_tier,
       amount,
+      sourceUrl: row.source_url,
+      publishedAt: isoDate(row.created_at) || null,
     });
   }
   return out.sort((a, b) => a.amount - b.amount || a.name.localeCompare(b.name));
+}
+
+function isoDate(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+export interface FeeEvidenceRow {
+  feeName: string;
+  amount: number | null;
+  sourceUrl: string | null;
+  publishedAt: string | null;
+  /** The agent event that verified this fee against the document; null when not recorded. */
+  verifiedByEventId: number | null;
+}
+
+/** Every published row behind one institution's value for a fee: the audit trail for "your fee". */
+export async function getInstitutionFeeEvidence(institutionId: number, category: string): Promise<FeeEvidenceRow[]> {
+  const rows = (await sql.unsafe(
+    `SELECT ef.fee_name, ef.amount, ef.source_url, ef.created_at, ef.verified_by_agent_event_id
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = $1
+        AND ef.fee_category = $2
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}
+      ORDER BY ef.amount DESC NULLS LAST`,
+    [institutionId, category] as never[],
+  )) as {
+    fee_name: string;
+    amount: number | string | null;
+    source_url: string | null;
+    created_at: string | Date | null;
+    verified_by_agent_event_id: number | string | null;
+  }[];
+  return rows.map((r) => ({
+    feeName: r.fee_name,
+    amount: r.amount == null ? null : Number(r.amount),
+    sourceUrl: r.source_url,
+    publishedAt: isoDate(r.created_at) || null,
+    verifiedByEventId: r.verified_by_agent_event_id == null ? null : Number(r.verified_by_agent_event_id),
+  }));
 }
 
 export interface LocalMarketBank {
