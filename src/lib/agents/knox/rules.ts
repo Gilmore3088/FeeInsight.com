@@ -103,7 +103,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
     key: "deposited_item_return",
-    pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|charge[- ]?backs?)\b/i,
+    pattern: /\b(deposited items? return(ed)?|returned deposit(ed)?|deposit(ed)? (items?|checks?) return(ed)?|deposited checks? \([^)]{0,30}\) return(ed)?|return(ed)? deposit(ed)? (items?|checks?)|return(ed)? (check|item) deposits?|deposit return|third[- ]party return(ed)? items?|charge[- ]?backs?)\b/i,
   },
   { key: "overdraft", pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b/i },
   {
@@ -120,7 +120,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "atm_international",
-    pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATM\b|\bATM\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
+    pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
   { key: "card_foreign_txn", pattern: /\b(foreign transaction|international transaction|currency conversion)\b/i },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
@@ -302,8 +302,11 @@ export function classifyPatternKey(value: string): string | null {
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
   // not an overdraft fee.
   if (key === "overdraft" && /\bdeclin(?:e|ed|es)\b/i.test(text)) return null;
-  // A PIN reissue is not a card replacement.
-  if (key === "card_replacement" && /\bPIN\b/i.test(text)) return null;
+  // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
+  // (replacement or PIN)").
+  if (key === "card_replacement" && /\bPIN\b/i.test(text) && !/\breplacement or PIN\b/i.test(text)) return null;
+  // "At Wells Fargo ATMs" is the bank's own machines; "At non-Wells Fargo ATMs" is not.
+  if (key === "atm_non_network" && /\bat (?:[A-Z][\w'&.]*\s){1,4}ATMs?\b/.test(text) && !/\b(?:non|other|another|not|out[-\s]of[-\s]network|foreign)\b/i.test(text)) return null;
   // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
   if (key === "atm_non_network" && /\bnon[-\s]?(?:member|customer)s?\b/i.test(text)) return null;
   // A card, loan or service's own monthly charge is not the account's maintenance fee.

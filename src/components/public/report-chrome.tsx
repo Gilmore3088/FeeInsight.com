@@ -36,7 +36,7 @@ export function ReportChromeFooter() {
   return (
     <footer className="border-t border-[#E0D7C9] bg-[#FDFBF8]">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-5 text-[12px] text-[#6B6255]">
-        <span>{SITE_NAME} — publisher of the Bank Fee Index</span>
+        <span>{SITE_NAME}</span>
         <span>
           <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] underline">
             {CONTACT_EMAIL}

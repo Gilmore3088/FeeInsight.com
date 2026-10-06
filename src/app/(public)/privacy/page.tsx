@@ -22,7 +22,7 @@ export default function PrivacyPage() {
         Privacy Policy
       </h1>
       <p className="mt-2 text-[13px] text-[#6B6255]">
-        Last updated: March 2026
+        Last updated: October 6, 2026
       </p>
 
       <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
@@ -47,6 +47,19 @@ export default function PrivacyPage() {
             by Stripe. We do not store credit card numbers or full payment details
             on our servers. We retain your Stripe customer ID for subscription
             management.
+          </p>
+          <p className="mt-3">
+            <strong>Forms and requests.</strong> When you request a report, ask to
+            hear about updates, send a message through the contact page, or submit a
+            fee schedule, we collect what you enter: usually your name, email address,
+            and optionally your institution, role, and the details of your request.
+            We use it to answer you and to deliver what you asked for.
+          </p>
+          <p className="mt-3">
+            <strong>Email list.</strong> If you subscribe to updates, your email
+            address is kept on our mailing list. Every marketing email has an
+            unsubscribe link, and you can change your choices on the email
+            preferences page.
           </p>
         </section>
 
@@ -85,9 +98,11 @@ export default function PrivacyPage() {
             Cookies
           </h2>
           <p>
-            We use essential cookies for authentication (session management)
-            and a preference cookie for dark mode settings. We do not use
-            third-party advertising cookies or cross-site tracking.
+            We use one essential cookie to keep you signed in. Your light or dark
+            display setting is saved in your own browser&apos;s storage, not in a
+            cookie. We measure page views with Vercel Analytics, which counts visits
+            in aggregate without cookies. We do not use advertising cookies or
+            cross-site tracking.
           </p>
         </section>
 
@@ -110,9 +125,11 @@ export default function PrivacyPage() {
             Data Retention
           </h2>
           <p>
-            Account data is retained for the duration of your account. If you
-            delete your account, we will remove your personal information within
-            30 days. Anonymized usage analytics may be retained for product
+            Account data is retained for the duration of your account. Form
+            submissions and mailing list entries are kept until you ask us to remove
+            them or unsubscribe. When you ask us to delete your personal information,
+            we remove it within 30 days, except records we must keep for billing or
+            legal reasons. Aggregate usage analytics may be retained for product
             improvement purposes.
           </p>
         </section>
@@ -123,9 +140,12 @@ export default function PrivacyPage() {
             Third-Party Services
           </h2>
           <ul className="list-disc pl-6 space-y-1.5">
+            <li><strong>Vercel</strong> for application hosting and aggregate page analytics</li>
+            <li><strong>Supabase</strong> for our database</li>
             <li><strong>Stripe</strong> for payment processing</li>
-            <li><strong>Anthropic (Claude)</strong> for Hamilton analysis features</li>
-            <li><strong>Fly.io</strong> for application hosting</li>
+            <li><strong>Resend</strong> for account and report emails</li>
+            <li><strong>MailerLite</strong> for our mailing list</li>
+            <li><strong>Anthropic (Claude)</strong> for Hamilton analysis features; questions you ask Hamilton are sent to Anthropic to produce an answer</li>
           </ul>
           <p className="mt-3">
             Each of these providers has their own privacy policy governing
@@ -144,6 +164,17 @@ export default function PrivacyPage() {
             <a href="mailto:hello@bankfeeindex.com" className="text-[#C44B2E] hover:underline">
               hello@bankfeeindex.com
             </a>.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
+            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+            Children
+          </h2>
+          <p>
+            Fee Insight is not directed at children under 13, and we do not knowingly
+            collect their personal information.
           </p>
         </section>
 

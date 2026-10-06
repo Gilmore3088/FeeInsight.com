@@ -24,7 +24,10 @@ Rosetta owns source text normalization.
   row is one line with cells joined by ` | `, definition lists pair term and
   description, layout tables read as blocks. PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
-  line. Knox pairs fees and amounts per line, so keep that contract.
+  line. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
+  `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
+  legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
+  so keep that contract.
 - Bump `ROSETTA_READ_VERSION` when a reader changes. Completed texts from an older
   version with fewer than `REREAD_MAX_KNOX_FEES` (5) Knox fees are read once more with
   the current reader, so an institution whose flattened table gave up one fee gets its
@@ -58,6 +61,15 @@ Rosetta owns source text normalization.
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
+  - Pages like that rejected as `wrong_document` before the fallback existed (an html
+    text whose link names the fee page, at most one amount, never tried by
+    `read.js_fallback`) are reopened once at the start of each read step, at most
+    `ROSETTA_REOPEN_LIMIT` (100) per step (`reopenScriptLoadedFeePages`): the URL leaves
+    `rejected_source_urls`, a bank with no `fee_schedule_url` (and no correction lock)
+    gets it back, and a `read.reopen` attempt (outcome `ok`, fingerprint = the text's
+    `source_hash`) makes that text readable once more and voids its earlier permanent
+    rejection. A page with more amounts is logged `rejected` and stays closed. No fee
+    is touched.
   - A download that fails with HTTP 404/410, with HTTP 401/403 when an earlier read of
     the same document was also blocked, or for the third time in 7 days with a block,
     rate limit, server error, timeout or network error (`STUCK_LINK_*` in `read.ts`),
@@ -92,8 +104,9 @@ stored). Rosetta writes them only once the migration is applied.
   are dropped, empty cells are dropped (as in the text). Rows keep document order.
 - `table` groups rows of one table (a run of consecutive row lines for text-derived
   rows); `page` is the 1-based PDF page when known, else null.
-- `header` is true only for HTML `<thead>` rows or rows of `<th>` cells.
-- `origin`: `html_table`, `html_definition_list`, `pdf_layout`, `ocr_layout`,
+- `header` is true only for HTML `<thead>` rows or rows of `<th>` cells, and Word rows
+  marked as a repeating header.
+- `origin`: `html_table`, `html_definition_list`, `docx_table`, `pdf_layout`, `ocr_layout`,
   `embedded_data`, `paid_transcription`. Treat OCR and paid rows as less certain than
   HTML/PDF rows.
 - At most `MAX_TABLE_ROWS` (2000) rows. Bump `version` for any breaking change.
