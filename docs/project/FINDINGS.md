@@ -13,12 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
-## 2026-10-06: Paid-find cost differs between the attempt log and the spend ledger
-**What happened:** read-only, 13:50 UTC: `pipeline_attempts` records $8.35 for today's 152
-paid-find attempts, while `ai_api_usage_events` (what the budget caps read) shows $4.41 for
-Magellan today. The caps follow the ledger, so they still hold.
-**Cause:** not yet known.
-**Fix:** none yet; next step is to compare one night's attempts with their usage rows.
+## 2026-10-06: The spend ledger left out web search charges, so caps undercounted Magellan
+**What happened:** read-only, 13:50 UTC: `pipeline_attempts` recorded $8.35 for today's 152
+paid web searches; `ai_api_usage_events`, which the budget caps and per-run limits sum, recorded
+$4.41 for the same 152 calls. October so far: $16.47 in attempts, $8.75 in the ledger.
+**Cause:** `trackAnthropicRequest` priced tokens only. Anthropic also bills $10 per 1,000 server
+web searches; `paid-pass.ts` added that to the attempt cost, but the ledger never saw it.
+**Fix:** the ledger estimate (`estimateAnthropicCostMicrousd`) counts
+`server_tool_use.web_search_requests`, and `paidCallCostMicrousd` uses that same estimate, so the
+attempt log and the ledger agree. Covers paid find and website find. Earlier rows stay as written
+(about $7.72 under for October), well inside Magellan's $150 cap.
+**Lesson:** a charge priced in one place and logged in another drifts; price it once, in the
+function the caps read.
 
 ## 2026-10-06: Atlas took states in waiting order, not where the work was
 **What happened:** after PR 204, a state's median gap between runs was still 135 minutes (live,
