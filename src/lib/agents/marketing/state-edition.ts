@@ -123,7 +123,7 @@ export async function runStateEditions({
       .map((campaign) => editionState(campaign.name))
       .filter((code): code is string => Boolean(code)),
   );
-  const [national, totals] = await Promise.all([readNational(db), readTotals(db)]);
+  const [national, totals] = await Promise.all([readNational(), readTotals(db)]);
 
   for (const group of groups) {
     const code = group.stateCode;
@@ -140,7 +140,7 @@ export async function runStateEditions({
         liveInstitutions: totals.institutions,
         liveFees: totals.fees,
         national,
-        previousNational: null,
+        previousCoverage: null,
         byCharter: [],
         state: { code, name, fees },
       };
