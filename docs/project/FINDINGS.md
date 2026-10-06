@@ -13,6 +13,22 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Every state lane stayed awake with nothing to do, so busy states waited two hours
+**What happened:** the Atlas audit (read-only queries on prod, 05:00 UTC) found no state lane ever
+went to sleep. The scheduler starts 2 lanes per 5-minute tick (24 an hour) for 55 lanes, so each
+state ran every 130 minutes (median gap over 24 hours) instead of hourly; 32 lanes were overdue
+at 05:01 and none was queued. 108 of 444 backlog runs in 24 hours found nothing to read, extract,
+verify, publish, discover or fetch, while Texas had 229 banks due a free search.
+**Cause:** `stateHasDocumentBacklog` counted 1,536 thin texts as "to re-extract", but 1,506 of them
+are texts Knox already extracted under another document id, which Knox's own selector skips
+forever. The check and the step disagreed, so the lane looped.
+**Fix:** this PR: the backlog check skips the same duplicate texts Knox skips, and an idle lane
+checks again within 12 hours instead of sleeping until next month (so a missed search coming due
+or a link going stale still wakes it). 22 lanes with no work now sleep and give their slots to
+the 31 with work.
+**Lesson:** a lane's "is there work" check must use the same filters as the step that does the
+work. When a step's selector changes, change the backlog check with it.
+
 ## 2026-10-06: Texas fee schedules went months without a re-fetch
 **What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
 the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
