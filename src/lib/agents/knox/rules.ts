@@ -437,13 +437,20 @@ export function ownNetworkAtm(hint: string, name: string): boolean {
 }
 
 /**
- * A free row that is really an allowance ("Stop payments, two per year: Free") or a
- * free in-network ATM is not a $0 price for the fee.
+ * A free row that is really an allowance ("Stop payments, two per year: Free"), a free
+ * in-network ATM, or a condition ("2 free cashiers checks monthly", "Monthly Service
+ * Charge if any of the following qualifications are met", "first 3 pgs for new acct
+ * Free", "minimum daily balance to waive monthly maintenance fees") is not a $0 price
+ * for the fee. "We do not charge a fee" and "Free bill pay" are.
  */
 export function notAZeroPrice(hint: string, name: string): boolean {
   return ownNetworkAtm(hint, name) ||
-    /\b(?:one|two|three|four|five|six|first|\d+)\b(?: free)?\s*(?:per|a|each)\s+(?:year|month|statement|cycle)\b/i.test(name);
+    /\b(?:one|two|three|four|five|six|first|\d+)\b(?: free)?\s*(?:per|a|each)\s+(?:year|month|statement|cycle)\b/i.test(name) ||
+    (ZERO_CONDITION.test(name) && !/\bdo(?:es)? not charge\b/i.test(name));
 }
+
+const ZERO_CONDITION =
+  /\b(?:to waive|waived? (?:if|when|with)|if (?!requested\b)\w+|unless|qualifications?|eligible|first \d+|\d+\s+free|free (?:day|with new)|(?:won[’']?t|will not) be charged|not (?:available|charged) on)\b/i;
 
 /** Rules for one line. Exported for tests. */
 export function extractFromSegment(segment: string): ExtractionRulesResult {

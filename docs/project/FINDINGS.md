@@ -751,3 +751,21 @@ Magellan's thin-bank finder now reads `published_fee_records`, since the catalog
 looks for.
 **Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
 read.
+
+## 2026-10-06: Free allowances and conditions published as $0 fees
+**What happened:** the companion-pages thread found about 6 wrong fees in the first 25 live
+companion fees. Several were $0 lines that state an allowance or a condition rather than a
+price ("2 free cashiers checks monthly", "Monthly Service Charge if any of the following
+qualifications are met", "you won't be charged overdraft item fees if...").
+**Cause:** Knox's $0 check (`notAZeroPrice`) knew only "N per year/month" allowances and the
+bank's own ATMs.
+**Fix:** same PR: `extract.rules` v13 also treats "N free", "first N", "if ...", "unless",
+"qualifications", "to waive", "won't be charged" and "not available on" as not a $0 price
+("do not charge a fee" still is). The version bump makes the rules re-check take these down
+everywhere. Read-only on prod: 24 live Knox $0 fees match; about 22 are wrong by hand (the
+notary "fees may differ if..." line is a likely right one lost). The Texas and seven-state
+answer-key gates in PR 213 still pass with no right fee lost. A rule on sentence-shaped names
+was measured and not added: 446 live names end in "of" ("An overdraft fee of"), and most carry
+the bank's real price.
+**Lesson:** judge a name-shape rule by the live prices it would remove, not by the bad names it
+catches.
