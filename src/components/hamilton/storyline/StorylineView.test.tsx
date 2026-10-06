@@ -56,3 +56,14 @@ describe("StorylineView with Hamilton's memo", () => {
     expect(none).not.toContain("Before deciding");
   });
 });
+
+describe("StorylineView sources", () => {
+  const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} />);
+
+  it("cites sources as numbered notes listed once at the foot, not a chip on every line", () => {
+    expect(html).toContain("Sources");
+    expect(html).toContain('id="story-source-1"');
+    expect(html).toContain('href="#story-source-1"');
+    expect(html).not.toContain("rounded border border-warm-200 bg-white px-1.5");
+  });
+});

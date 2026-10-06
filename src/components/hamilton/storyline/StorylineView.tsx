@@ -6,8 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
-import type { Fact } from "@/lib/hamilton/workspace/types";
-import { SourceChip } from "@/components/hamilton/memo/exhibit-view";
+import type { Fact, SourceRef } from "@/lib/hamilton/workspace/types";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import { LensSwitch } from "./LensSwitch";
@@ -21,35 +20,73 @@ export type MemoState =
   | { state: "written"; memo: StorylineMemo }
   | { state: "none"; reason: string };
 
-function Line({ fact, showSource = true }: { fact: Fact; showSource?: boolean }) {
+/**
+ * Sources as numbered notes, the way a consulting deck cites them: a small superscript beside
+ * each line and one list at the foot of the answer, instead of a source chip on every line.
+ */
+export interface SourceNotes {
+  noteFor: (source: SourceRef) => number;
+  list: { label: string; asOf: string | null; url?: string; n: number[] }[];
+}
+
+export function buildSourceNotes(story: Storyline): SourceNotes {
+  const index = new Map<string, number>();
+  const list: SourceNotes["list"] = [];
+  const key = (s: SourceRef) => `${s.label}|${s.asOf ?? ""}`;
+  const add = (s: SourceRef, n?: number) => {
+    let i = index.get(key(s));
+    if (i === undefined) {
+      i = list.length;
+      index.set(key(s), i);
+      list.push({ label: s.label, asOf: s.asOf ?? null, url: s.url, n: [] });
+    }
+    if (n != null && !list[i].n.includes(n)) list[i].n.push(n);
+  };
+  for (const f of story.keyFigures) add(f.source, f.n);
+  const facts = [
+    ...story.situation,
+    ...story.complication,
+    ...story.lenses.finance,
+    ...story.lenses.market,
+    ...(story.options ?? []).flatMap((o) => o.consequences),
+    ...story.watch,
+  ];
+  for (const f of facts) add(f.source, f.sampleSize);
+  return { noteFor: (s) => (index.get(key(s)) ?? 0) + 1, list };
+}
+
+function Note({ n }: { n: number }) {
+  return (
+    <sup className="ml-0.5 text-[10px] font-semibold text-terra-text [font-variant-numeric:tabular-nums]">
+      <a href={`#story-source-${n}`} className="no-underline">
+        {n}
+      </a>
+    </sup>
+  );
+}
+
+function Line({ fact, notes }: { fact: Fact; notes: SourceNotes }) {
   return (
     <>
-      {withFiguresBold(fact.text)} {showSource ? <SourceChip source={fact.source} n={fact.sampleSize} /> : null}
+      {withFiguresBold(fact.text)}
+      <Note n={notes.noteFor(fact.source)} />
     </>
   );
 }
 
-const sourceKey = (f: Fact) => [f.source.label, f.source.asOf ?? "", f.sampleSize ?? ""].join("|");
-
-/** A run of lines from one source carries its chip once, on the first line, so the page reads as prose. */
-export function sourceShownAt(facts: readonly Fact[]): boolean[] {
-  return facts.map((f, i) => i === 0 || sourceKey(f) !== sourceKey(facts[i - 1]));
-}
-
 function Kicker({ children }: { children: ReactNode }) {
-  return <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">{children}</h3>;
+  return <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">{children}</h3>;
 }
 
-function LensList({ facts, empty }: { facts: Fact[]; empty: string }) {
-  if (facts.length === 0) return <p className="text-sm text-warm-600">{empty}</p>;
-  const shown = sourceShownAt(facts);
+function FactList({ facts, notes, empty }: { facts: Fact[]; notes: SourceNotes; empty?: string }) {
+  if (facts.length === 0) return empty ? <p className="text-sm text-warm-600">{empty}</p> : null;
   return (
-    <ul className="flex flex-col gap-2.5">
+    <ul className="flex max-w-[65ch] flex-col gap-2">
       {facts.map((f, i) => (
-        <li key={i} className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2 text-[15px] leading-relaxed text-warm-800">
-          <span aria-hidden className="mt-2.5 h-1.5 w-1.5 rounded-full bg-terra" />
+        <li key={i} className="grid grid-cols-[0.875rem_minmax(0,1fr)] gap-2 text-[15px] leading-snug text-warm-800">
+          <span aria-hidden className="mt-[0.45rem] h-1.5 w-1.5 rounded-full bg-terra" />
           <span>
-            <Line fact={f} showSource={shown[i]} />
+            <Line fact={f} notes={notes} />
           </span>
         </li>
       ))}
@@ -57,28 +94,71 @@ function LensList({ facts, empty }: { facts: Fact[]; empty: string }) {
   );
 }
 
-function MemoNote({ text }: { text: string }) {
+/** Hamilton's written paragraph for a view, set apart from the bullet facts under it. */
+function MemoNote({ text, size = "base" }: { text: string; size?: "base" | "lead" }) {
   return (
-    <p className="max-w-[68ch] whitespace-pre-line text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]" style={SERIF}>
+    <p
+      className={`max-w-[62ch] whitespace-pre-line text-warm-800 [font-variant-numeric:tabular-nums] ${size === "lead" ? "text-[17px] leading-relaxed" : "border-l-2 border-warm-300 pl-4 text-[15px] leading-relaxed"}`}
+      style={size === "lead" ? SERIF : undefined}
+    >
       {withFiguresBold(text)}
     </p>
   );
 }
 
+function monthOf(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function SourceList({ notes }: { notes: SourceNotes }) {
+  if (notes.list.length === 0) return null;
+  return (
+    <section className="border-t border-warm-200 pt-4">
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">Sources</h3>
+      <ol className="grid gap-x-6 gap-y-1 text-xs leading-snug text-warm-600 sm:grid-cols-2">
+        {notes.list.map((s, i) => {
+          // One sample size reads as n=; several different ones would only clutter the note.
+          const detail = [monthOf(s.asOf), s.n.length === 1 ? `n=${s.n[0].toLocaleString("en-US")}` : null]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <li key={i} id={`story-source-${i + 1}`} className="grid grid-cols-[1.25rem_minmax(0,1fr)]">
+              <span className="font-semibold text-terra-text [font-variant-numeric:tabular-nums]">{i + 1}</span>
+              <span>
+                {s.url ? (
+                  <a href={s.url} target="_blank" rel="noreferrer" className="underline decoration-warm-300 hover:text-terra-text">
+                    {s.label}
+                  </a>
+                ) : (
+                  s.label
+                )}
+                {detail ? <span className="text-warm-500"> · {detail}</span> : null}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 export function StorylineView({ story, nextSteps, memo }: { story: Storyline; nextSteps?: ReactNode; memo?: MemoState }) {
   const written = memo?.state === "written" ? memo.memo : null;
+  const notes = buildSourceNotes(story);
   const figures = story.keyFigures.slice(0, 4);
-  const cols = figures.length >= 4 ? "sm:grid-cols-4" : figures.length === 3 ? "sm:grid-cols-3" : figures.length === 2 ? "sm:grid-cols-2" : "";
+  const cols = figures.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : figures.length === 3 ? "sm:grid-cols-3" : figures.length === 2 ? "grid-cols-2" : "grid-cols-1";
   return (
     <article className="flex flex-col gap-9">
       <div className="border-l-2 border-terra pl-5">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">The answer</p>
-        <p className="mt-1 text-2xl leading-snug text-warm-900 sm:text-[1.85rem]" style={SERIF}>
+        <p className="mt-1 max-w-[46ch] text-[1.4rem] leading-snug text-warm-900 sm:text-[1.6rem]" style={SERIF}>
           {story.governingThought}
         </p>
         {written ? (
-          <div className="mt-3 flex flex-col gap-1.5">
-            <MemoNote text={written.summary} />
+          <div className="mt-4 flex flex-col gap-1.5">
+            <MemoNote text={written.summary} size="lead" />
             <p className="text-xs text-warm-600">
               Written by Hamilton from the exhibits below; {written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.
             </p>
@@ -93,33 +173,33 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       </div>
 
       {figures.length > 0 ? (
-        <dl className={`grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 ${cols}`}>
+        <dl className={`grid gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 ${cols}`}>
           {figures.map((f) => (
             <div key={f.label} className="flex flex-col bg-white px-5 py-4">
               <dd
-                className={`${f.value.length > 8 ? "text-2xl" : "text-3xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
+                className={`${f.value.length > 8 ? "text-xl sm:text-2xl" : "text-3xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
                 style={SERIF}
               >
                 {f.value}
               </dd>
-              <dt className="mt-1 flex-1 text-xs leading-snug text-warm-600">{f.label}</dt>
-              <span className="mt-2">
-                <SourceChip source={f.source} n={f.n} />
-              </span>
+              <dt className="mt-1 line-clamp-3 text-xs leading-snug text-warm-600" title={f.label}>
+                {f.label}
+                <Note n={notes.noteFor(f.source)} />
+              </dt>
             </div>
           ))}
         </dl>
       ) : null}
 
       {story.situation.length > 0 || story.complication.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-x-8 gap-y-5 rounded-lg border border-warm-200 bg-white px-5 py-4 md:grid-cols-2">
           <section>
             <Kicker>Where things stand</Kicker>
-            <LensList facts={story.situation} empty="" />
+            <FactList facts={story.situation} notes={notes} />
           </section>
           <section>
             <Kicker>What has changed</Kicker>
-            <LensList facts={story.complication} empty="Nothing material has moved in the period on file." />
+            <FactList facts={story.complication} notes={notes} empty="Nothing material has moved in the period on file." />
           </section>
         </div>
       ) : null}
@@ -135,13 +215,13 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
           finance={
             <div className="flex flex-col gap-4">
               {written?.board ? <MemoNote text={written.board} /> : null}
-              <LensList facts={story.lenses.finance} empty="Nothing on file for the board view yet." />
+              <FactList facts={story.lenses.finance} notes={notes} empty="Nothing on file for the board view yet." />
             </div>
           }
           market={
             <div className="flex flex-col gap-4">
               {written?.market ? <MemoNote text={written.market} /> : null}
-              <LensList facts={story.lenses.market} empty="Nothing on file for the market view yet." />
+              <FactList facts={story.lenses.market} notes={notes} empty="Nothing on file for the market view yet." />
             </div>
           }
         />
@@ -150,7 +230,7 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       {written && written.questions.length > 0 ? (
         <section>
           <Kicker>Before deciding</Kicker>
-          <ol className="flex list-decimal flex-col gap-2 pl-5 text-[15px] leading-relaxed text-warm-800 marker:text-terra-text">
+          <ol className="flex max-w-[65ch] list-decimal flex-col gap-2 pl-5 text-[15px] leading-snug text-warm-800 marker:font-semibold marker:text-terra-text">
             {written.questions.map((q, i) => (
               <li key={i}>{withFiguresBold(q)}</li>
             ))}
@@ -163,14 +243,14 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
           <Kicker>Options and what each would mean</Kicker>
           <div className={`grid gap-3 ${story.options.length >= 3 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
             {story.options.map((o) => (
-              <div key={o.label} className="flex flex-col gap-2 rounded-lg border border-warm-300 bg-warm-50 p-4">
+              <div key={o.label} className="flex flex-col gap-3 rounded-lg border border-warm-300 bg-white p-4">
                 <p className="text-lg leading-snug text-warm-900" style={SERIF}>
                   {o.label}
                 </p>
-                <ul className="flex flex-col gap-1.5 text-sm leading-relaxed text-warm-800">
-                  {o.consequences.map((c, i, all) => (
-                    <li key={i}>
-                      <Line fact={c} showSource={sourceShownAt(all)[i]} />
+                <ul className="flex flex-col divide-y divide-warm-100 text-sm leading-snug text-warm-800">
+                  {o.consequences.map((c, i) => (
+                    <li key={i} className="py-1.5 first:pt-0 last:pb-0">
+                      <Line fact={c} notes={notes} />
                     </li>
                   ))}
                 </ul>
@@ -184,11 +264,13 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       {story.watch.length > 0 ? (
         <section>
           <Kicker>What would change this</Kicker>
-          <LensList facts={story.watch} empty="" />
+          <FactList facts={story.watch} notes={notes} />
         </section>
       ) : null}
 
-      {nextSteps ? <div className="flex flex-wrap justify-end gap-2 border-t border-warm-200 pt-4">{nextSteps}</div> : null}
+      {nextSteps ? <div className="flex flex-wrap justify-end gap-2">{nextSteps}</div> : null}
+
+      <SourceList notes={notes} />
     </article>
   );
 }

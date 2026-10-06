@@ -61,7 +61,7 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
               {m.institutionName}
               {m.stateCode ? <span className="ml-1.5 text-xs text-warm-500">{m.stateCode}</span> : null}
             </th>
-            <td className="px-3 py-2 text-right text-warm-700 [font-variant-numeric:tabular-nums]">{fmtAssets(m.totalAssets)}</td>
+            <td className="hidden px-3 py-2 text-right sm:table-cell text-warm-700 [font-variant-numeric:tabular-nums]">{fmtAssets(m.totalAssets)}</td>
             <td className="px-3 py-2">
               <div className="flex items-center gap-2">
                 <span className="w-14 shrink-0 text-right text-warm-900 [font-variant-numeric:tabular-nums]">{fmtMoney(m.amount)}</span>
@@ -70,10 +70,10 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
                 </span>
               </div>
             </td>
-            <td className="px-3 py-2 text-right text-warm-700 [font-variant-numeric:tabular-nums]" title={m.dailyFeeLimit?.line}>
+            <td className="hidden px-3 py-2 text-right sm:table-cell text-warm-700 [font-variant-numeric:tabular-nums]" title={m.dailyFeeLimit?.line}>
               {dailyLimitText(m)}
             </td>
-            <td className="px-3 py-2 text-right">
+            <td className="hidden px-3 py-2 text-right sm:table-cell">
               {m.documentUrls[0] ? (
                 <a href={m.documentUrls[0]} target="_blank" rel="noreferrer" className="text-xs text-terra-text underline">
                   Schedule
@@ -96,10 +96,10 @@ function Head() {
           <span className="sr-only">Rank by assets</span>#
         </th>
         <th className={`${th} text-left`} scope="col">Institution</th>
-        <th className={`${th} text-right`} scope="col">Assets</th>
+        <th className={`${th} hidden text-right sm:table-cell`} scope="col">Assets</th>
         <th className={`${th} text-left`} scope="col">Fee</th>
-        <th className={`${th} text-right`} scope="col">Daily limit</th>
-        <th className={th} scope="col">
+        <th className={`${th} hidden text-right sm:table-cell`} scope="col">Daily limit</th>
+        <th className={`${th} hidden sm:table-cell`} scope="col">
           <span className="sr-only">Source</span>
         </th>
       </tr>
@@ -161,7 +161,7 @@ export function SegmentTable({
       </dl>
       ) : null}
       <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">
-        <table className="w-full min-w-[40rem] text-sm">
+        <table className="w-full text-sm sm:min-w-[40rem]">
           <Head />
           {own != null ? (
             <tbody className="border-b-2 border-warm-200 bg-terra-soft/40">
@@ -170,7 +170,7 @@ export function SegmentTable({
                 <th scope="row" className="px-3 py-2 text-left font-medium text-terra-text">
                   {ownLabel}
                 </th>
-                <td className="px-3 py-2" />
+                <td className="hidden px-3 py-2 sm:table-cell" />
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="w-14 shrink-0 text-right font-medium text-terra-text [font-variant-numeric:tabular-nums]">{fmtMoney(own)}</span>
@@ -179,8 +179,8 @@ export function SegmentTable({
                     </span>
                   </div>
                 </td>
-                <td className="px-3 py-2" />
-                <td className="px-3 py-2" />
+                <td className="hidden px-3 py-2 sm:table-cell" />
+                <td className="hidden px-3 py-2 sm:table-cell" />
               </tr>
             </tbody>
           ) : null}
@@ -191,7 +191,7 @@ export function SegmentTable({
         <div className="mt-3">
           <More label={`The other ${rest.length.toLocaleString("en-US")}`}>
             <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">
-              <table className="w-full min-w-[40rem] text-sm">
+              <table className="w-full text-sm sm:min-w-[40rem]">
                 <Head />
                 <Rows rows={rest} start={SHOWN + 1} own={own} max={max} />
               </table>

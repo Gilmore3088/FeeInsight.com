@@ -3,8 +3,9 @@
  * ExhibitView; the storyline's own kinds (segment table, change timeline, structure matrix,
  * money at stake, pricing models) are drawn here.
  */
-import { ExhibitFrame, ExhibitView, EVIDENCE_LABELS, SourceChip } from "@/components/hamilton/memo/exhibit-view";
+import { ExhibitFrame, ExhibitView, EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
+import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
 
@@ -18,7 +19,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
   const x = item.exhibit;
   const takeaway = item.takeaway ? (
     <p className="mt-3 border-l-2 border-terra pl-3 text-sm font-medium text-warm-900">
-      {item.takeaway.text} <SourceChip source={item.takeaway.source} n={item.takeaway.sampleSize} />
+      {withFiguresBold(item.takeaway.text)}
     </p>
   ) : null;
 
