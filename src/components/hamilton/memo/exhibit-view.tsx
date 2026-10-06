@@ -3,7 +3,7 @@
  * sourced claims, the Economist's drivers, the one exhibit and the one clarifying question.
  * The engine returns data only (`HamiltonAnswer`, `Exhibit`); every chart decision lives here.
  */
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
 import type { Exhibit, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 
@@ -108,6 +108,12 @@ export function placeLabels(items: readonly { x: number; width: number }[]): { l
 /** About how wide an 11px label is on a ~900px track, in %. */
 const labelWidth = (text: string) => text.length * 0.58 + 1;
 
+function ownLabelStyle(at: number, left: number): CSSProperties {
+  if (at >= 70) return { right: `${Math.max(0, 100 - at - 1)}%` };
+  if (at <= 30) return { left: `${Math.max(0, at - 1)}%` };
+  return { left: `${left}%` };
+}
+
 function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> }) {
   const values = [x.band.p25, x.band.p75, x.band.median, ...x.markers.map((m) => m.value), ...(x.own != null ? [x.own] : [])];
   const axis = axisFor(values);
@@ -124,7 +130,8 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         {ownPlaced ? (
           <span
             className="absolute top-0 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
-            style={{ left: `${ownPlaced.left}%` }}
+            // Ends at the mark near the right edge and starts at it near the left, so it never runs off the track.
+            style={ownLabelStyle(axis.at(x.own!), ownPlaced.left)}
           >
             {ownText}
           </span>

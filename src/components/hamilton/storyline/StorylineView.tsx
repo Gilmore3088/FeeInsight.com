@@ -13,12 +13,19 @@ import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
 import type { Storyline } from "./types";
 
-function Line({ fact }: { fact: Fact }) {
+function Line({ fact, showSource = true }: { fact: Fact; showSource?: boolean }) {
   return (
     <>
-      {withFiguresBold(fact.text)} <SourceChip source={fact.source} n={fact.sampleSize} />
+      {withFiguresBold(fact.text)} {showSource ? <SourceChip source={fact.source} n={fact.sampleSize} /> : null}
     </>
   );
+}
+
+const sourceKey = (f: Fact) => [f.source.label, f.source.asOf ?? "", f.sampleSize ?? ""].join("|");
+
+/** A run of lines from one source carries its chip once, on the first line, so the page reads as prose. */
+export function sourceShownAt(facts: readonly Fact[]): boolean[] {
+  return facts.map((f, i) => i === 0 || sourceKey(f) !== sourceKey(facts[i - 1]));
 }
 
 function Kicker({ children }: { children: ReactNode }) {
@@ -27,13 +34,14 @@ function Kicker({ children }: { children: ReactNode }) {
 
 function LensList({ facts, empty }: { facts: Fact[]; empty: string }) {
   if (facts.length === 0) return <p className="text-sm text-warm-600">{empty}</p>;
+  const shown = sourceShownAt(facts);
   return (
     <ul className="flex flex-col gap-2.5">
       {facts.map((f, i) => (
         <li key={i} className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2 text-[15px] leading-relaxed text-warm-800">
           <span aria-hidden className="mt-2.5 h-1.5 w-1.5 rounded-full bg-terra" />
           <span>
-            <Line fact={f} />
+            <Line fact={f} showSource={shown[i]} />
           </span>
         </li>
       ))}
@@ -57,7 +65,10 @@ export function StorylineView({ story, nextSteps }: { story: Storyline; nextStep
         <dl className={`grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 ${cols}`}>
           {figures.map((f) => (
             <div key={f.label} className="flex flex-col bg-white px-5 py-4">
-              <dd className="text-3xl text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+              <dd
+                className={`${f.value.length > 8 ? "text-2xl" : "text-3xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
+                style={SERIF}
+              >
                 {f.value}
               </dd>
               <dt className="mt-1 flex-1 text-xs leading-snug text-warm-600">{f.label}</dt>
@@ -105,9 +116,9 @@ export function StorylineView({ story, nextSteps }: { story: Storyline; nextStep
                   {o.label}
                 </p>
                 <ul className="flex flex-col gap-1.5 text-sm leading-relaxed text-warm-800">
-                  {o.consequences.map((c, i) => (
+                  {o.consequences.map((c, i, all) => (
                     <li key={i}>
-                      <Line fact={c} />
+                      <Line fact={c} showSource={sourceShownAt(all)[i]} />
                     </li>
                   ))}
                 </ul>
