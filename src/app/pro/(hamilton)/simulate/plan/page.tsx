@@ -20,6 +20,7 @@ import {
   MemoHeader,
   MemoPage,
   MemoSection,
+  PositionShift,
   SERIF,
   Tabs,
   fmtMoney,
@@ -113,30 +114,11 @@ export default async function PlanPage({ searchParams }: PageProps) {
     .map((l) => ({ layer: l, now: peerPosition(l.amounts, from), after: peerPosition(l.amounts, to) }));
 
   const marketTable = (
-    <div className="overflow-x-auto rounded-lg border border-warm-300 bg-warm-50">
-      <table className="w-full min-w-[30rem] text-sm">
-        <thead>
-          <tr className="border-b border-warm-300 text-left text-xs uppercase tracking-[0.08em] text-warm-600">
-            <th className="px-4 py-2 font-medium">Compared with</th>
-            <th className="px-4 py-2 text-right font-medium">Middle</th>
-            <th className="px-4 py-2 text-right font-medium">Charge less, at {fmtMoney(from)}</th>
-            <th className="px-4 py-2 text-right font-medium">Charge less, at {fmtMoney(to)}</th>
-          </tr>
-        </thead>
-        <tbody className="text-warm-800">
-          {layerRows.map(({ layer, now, after }) => (
-            <tr key={layer.key} className="border-b border-warm-200 last:border-0">
-              <td className="px-4 py-2">
-                {layer.label} <span className="text-warm-600">({layer.n})</span>
-              </td>
-              <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums]">{fmtMoney(layer.median)}</td>
-              <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums]">{now.less}</td>
-              <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums]">{after.less}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <PositionShift
+      fromLabel={`${fmtMoney(from)} today`}
+      toLabel={`${fmtMoney(to)}`}
+      rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
+    />
   );
 
   const timing = (
@@ -289,7 +271,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
         <Callout>{plan.noticeSummary}</Callout>
       </MemoSection>
       <MemoSection title="Checklist">{checklist}</MemoSection>
-      <MemoSection title="Where the price would sit" note="Institutions charging less than you, today and after the change.">
+      <MemoSection title="Where the price would sit">
         {marketTable}
       </MemoSection>
       <AuditPanel trail={trail} />

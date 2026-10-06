@@ -233,58 +233,105 @@ export function DistributionBars({
   );
 }
 
+/** Rows for price labels so no two labels closer than `gap` (in % of the width) share a row. */
+export function labelRows(xs: readonly number[], gap = 9): number[] {
+  const lastInRow: number[] = [];
+  return xs.map((x) => {
+    let row = lastInRow.findIndex((last) => x - last >= gap);
+    if (row === -1) row = lastInRow.length;
+    lastInRow[row] = x;
+    return row;
+  });
+}
+
+/** Even dollar ticks for a $0..max axis: every $1, $2, $5, $10, $25, $50 or $100. */
+export function dollarTicks(max: number): number[] {
+  const step = [1, 2, 5, 10, 25, 50, 100, 250, 500].find((s) => max / s <= 8) ?? 1000;
+  const ticks: number[] = [];
+  for (let t = 0; t <= max; t += step) ticks.push(t);
+  return ticks;
+}
+
 /**
- * Where each price lands among the peers: every peer's published amount as a dot on one line, with
- * today's price and each tested price marked. Read left (cheaper) to right (dearer).
+ * Where each price lands among the peers: a bar for every price point, as tall as the number of
+ * institutions charging it, with today's price and each tested price drawn as a line through it.
+ * Read left (lower) to right (higher).
  */
 export function PriceStrip({
   amounts,
   marks,
+  scopeLabel,
 }: {
   amounts: readonly number[];
   marks: { label: string; price: number; today?: boolean }[];
+  scopeLabel?: string;
 }) {
-  const max = Math.max(1, ...amounts, ...marks.map((m) => m.price)) * 1.05;
-  const x = (v: number) => `${Math.min(100, (v / max) * 100)}%`;
+  const top = Math.max(1, ...amounts, ...marks.map((m) => m.price));
+  const binWidth = Math.max(1, Math.ceil(top / 60));
+  const bins = Math.floor(top / binWidth) + 1;
+  const counts = new Array<number>(bins).fill(0);
+  for (const a of amounts) counts[Math.min(bins - 1, Math.floor(Math.round(a) / binWidth))]++;
+  const tallest = Math.max(1, ...counts);
+  const tallestAt = counts.indexOf(tallest) * binWidth;
+  const axisMax = bins * binWidth;
+  const x = (v: number) => (Math.min(axisMax, Math.floor(Math.round(v) / binWidth) * binWidth + binWidth / 2) / axisMax) * 100;
   const sorted = [...marks].sort((a, b) => a.price - b.price);
+  const rows = labelRows(sorted.map((m) => x(m.price)));
+  const rowCount = Math.max(1, ...rows.map((r) => r + 1));
+  const markIn = (i: number) => sorted.find((m) => m.today && Math.floor(Math.round(m.price) / binWidth) === i);
+
   return (
-    <div className="flex flex-col gap-2" aria-label="Where each price lands among peers">
-      <div className="relative h-24">
-        <div className="absolute inset-x-0 top-1/2 h-px bg-warm-300" />
-        {amounts.map((a, i) => (
+    <figure className="flex flex-col gap-2" aria-label="How many institutions charge each price, with your prices marked">
+      <div className="relative" style={{ height: `${rowCount * 1.6}rem` }}>
+        {sorted.map((m, i) => (
           <span
-            key={i}
-            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warm-400/70"
-            style={{ left: x(a) }}
+            key={m.label}
+            className={
+              "absolute -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " +
+              (m.today ? "bg-terra text-white" : "bg-warm-900 text-warm-50")
+            }
+            style={{ left: `${x(m.price)}%`, top: `${rows[i] * 1.6}rem` }}
+          >
+            {m.label}
+          </span>
+        ))}
+      </div>
+      <div className="relative h-36 border-b border-warm-500">
+        <div className="absolute inset-0 flex items-end gap-px">
+          {counts.map((c, i) => {
+            const mark = markIn(i);
+            return (
+              <span
+                key={i}
+                title={`${c} ${c === 1 ? "institution charges" : "institutions charge"} ${binWidth === 1 ? fmtMoney(i) : `${fmtMoney(i * binWidth)} to ${fmtMoney((i + 1) * binWidth - 1)}`}`}
+                className={"flex-1 rounded-t-[1px] " + (mark?.today ? "bg-terra/50" : "bg-warm-400")}
+                style={{ height: c > 0 ? `${Math.max(3, (c / tallest) * 100)}%` : 0 }}
+              />
+            );
+          })}
+        </div>
+        {sorted.map((m) => (
+          <span
+            key={m.label}
             aria-hidden
+            className={"absolute -top-1 bottom-0 w-0.5 -translate-x-1/2 " + (m.today ? "bg-terra" : "bg-warm-900")}
+            style={{ left: `${x(m.price)}%` }}
           />
         ))}
-        {sorted.map((m, i) => {
-          const above = i % 2 === 0;
-          return (
-            <span key={m.label} className="absolute top-0 h-full -translate-x-1/2" style={{ left: x(m.price) }}>
-              <span className={"absolute left-1/2 top-1/4 h-1/2 w-0.5 -translate-x-1/2 " + (m.today ? "bg-terra" : "bg-warm-900")} />
-              <span
-                className={
-                  "absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " +
-                  (above ? "top-0 " : "bottom-0 ") +
-                  (m.today ? "bg-terra text-white" : "bg-warm-900 text-warm-50")
-                }
-              >
-                {m.label}
-              </span>
-            </span>
-          );
-        })}
       </div>
-      <div className="flex justify-between text-xs text-warm-600">
-        <span>$0</span>
-        <span>
-          Each dot is one institution&apos;s published price ({amounts.length})
-        </span>
-        <span>{fmtMoney(Math.round(max))}</span>
+      <div className="relative h-4 text-xs text-warm-600 [font-variant-numeric:tabular-nums]">
+        {dollarTicks(axisMax - binWidth).map((t) => (
+          <span key={t} className="absolute -translate-x-1/2" style={{ left: `${x(t)}%` }}>
+            {fmtMoney(t)}
+          </span>
+        ))}
       </div>
-    </div>
+      <figcaption className="mt-1 text-xs leading-relaxed text-warm-600">
+        <span className="font-medium text-warm-800">How to read this.</span> Each bar is a price; its height is how many{" "}
+        {scopeLabel ? `institutions in ${scopeLabel}` : "institutions"} charge it ({amounts.length} in all; the tallest bar is{" "}
+        {tallest} at {fmtMoney(tallestAt)}). The lines are your price today and the prices you&apos;re testing.
+      </figcaption>
+    </figure>
   );
 }
 
@@ -294,40 +341,194 @@ export function PeerSplitBars({
 }: {
   rows: { label: string; less: number; same: number; more: number; today?: boolean; note?: string }[];
 }) {
+  const n = rows[0] ? rows[0].less + rows[0].same + rows[0].more : 0;
+  const seg = (count: number, total: number, word: string, cls: string) =>
+    count > 0 ? (
+      <span
+        className={"flex items-center justify-center overflow-hidden whitespace-nowrap px-1 " + cls}
+        style={{ width: `${(count / total) * 100}%` }}
+        title={`${count} ${word}`}
+      >
+        {count / total >= 0.2 ? `${count} ${word}` : count}
+      </span>
+    ) : null;
   return (
-    <div className="flex flex-col gap-3">
+    <figure className="flex flex-col gap-3">
+      <p className="text-sm text-warm-800">
+        At each price, how the {n} institutions compare with you
+      </p>
       {rows.map((r) => {
-        const n = Math.max(1, r.less + r.same + r.more);
+        const total = Math.max(1, r.less + r.same + r.more);
         return (
           <div key={r.label} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[7rem_1fr_11rem]">
             <span className={"text-sm " + (r.today ? "font-semibold text-terra-text" : "text-warm-900")}>{r.label}</span>
-            <span className="flex h-6 overflow-hidden rounded-sm text-[11px] font-medium">
-              {r.less > 0 ? (
-                <span className="flex items-center justify-center bg-warm-300 text-warm-800" style={{ width: `${(r.less / n) * 100}%` }}>
-                  {r.less}
-                </span>
-              ) : null}
-              {r.same > 0 ? (
-                <span className="flex items-center justify-center bg-warm-600 text-white" style={{ width: `${(r.same / n) * 100}%` }}>
-                  {r.same}
-                </span>
-              ) : null}
-              {r.more > 0 ? (
-                <span className="flex items-center justify-center bg-terra text-white" style={{ width: `${(r.more / n) * 100}%` }}>
-                  {r.more}
-                </span>
-              ) : null}
+            <span className="flex h-7 overflow-hidden rounded-sm text-[11px] font-medium [font-variant-numeric:tabular-nums]">
+              {seg(r.less, total, "charge less", "bg-warm-300 text-warm-900")}
+              {seg(r.same, total, "the same", "bg-warm-600 text-white")}
+              {seg(r.more, total, "charge more", "bg-terra text-white")}
             </span>
             <span className="text-sm text-warm-700 [font-variant-numeric:tabular-nums] sm:text-right">{r.note ?? ""}</span>
           </div>
         );
       })}
-      <div className="flex flex-wrap gap-4 text-xs text-warm-600">
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-warm-300" /> charge less</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-warm-600" /> charge the same</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-terra" /> charge more</span>
+      <figcaption className="text-xs leading-relaxed text-warm-600">
+        <span className="font-medium text-warm-800">How to read this.</span> Each bar splits the institutions three ways:{" "}
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-warm-300" />charge less than that price</span>,{" "}
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-warm-600" />charge the same</span> and{" "}
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-terra" />charge more</span>. The more
+        grey on the left, the higher that price sits in the market.
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * How a price change moves you among each comparison group: a line from the lowest price in the
+ * group (left) to the highest (right), an open circle where the starting price sits and a filled one
+ * where the new price would.
+ */
+export function PositionShift({
+  rows,
+  fromLabel,
+  toLabel,
+}: {
+  rows: { label: string; n: number; median: number | null; from: { less: number; same: number }; to: { less: number; same: number } }[];
+  fromLabel: string;
+  toLabel: string;
+}) {
+  const pct = (p: { less: number; same: number }, n: number) => (n > 0 ? ((p.less + p.same / 2) / n) * 100 : 0);
+  return (
+    <figure className="flex flex-col gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 break-inside-avoid">
+      <div className="hidden grid-cols-[11rem_1fr_12rem] gap-4 text-xs uppercase tracking-[0.08em] text-warm-600 sm:grid">
+        <span>Compared with</span>
+        <span className="flex justify-between">
+          <span>Lowest price</span>
+          <span>Highest price</span>
+        </span>
+        <span className="text-right">Charge less than you</span>
       </div>
-    </div>
+      {rows.map((r) => {
+        const a = pct(r.from, r.n);
+        const b = pct(r.to, r.n);
+        return (
+          <div key={r.label} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[11rem_1fr_12rem]">
+            <span className="text-sm text-warm-900">
+              {r.label} <span className="text-warm-600">({r.n})</span>
+              <span className="block text-xs text-warm-600">Middle {fmtMoney(r.median)}</span>
+            </span>
+            <span className="relative h-6">
+              <span className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-warm-200" />
+              <span className="absolute top-1/2 h-4 w-px -translate-y-1/2 bg-warm-500" style={{ left: "50%" }} title="The middle institution" />
+              <span
+                className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-terra/40"
+                style={{ left: `${Math.min(a, b)}%`, width: `${Math.abs(b - a)}%` }}
+              />
+              <span
+                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-warm-800 bg-white"
+                style={{ left: `${a}%` }}
+                title={`${fromLabel}: ${r.from.less} of ${r.n} charge less`}
+              />
+              <span
+                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-terra"
+                style={{ left: `${b}%` }}
+                title={`${toLabel}: ${r.to.less} of ${r.n} charge less`}
+              />
+            </span>
+            <span className="text-sm text-warm-800 [font-variant-numeric:tabular-nums] sm:text-right">
+              {r.from.less} → <span className="font-semibold text-terra-text">{r.to.less}</span> of {r.n}
+            </span>
+          </div>
+        );
+      })}
+      <figcaption className="border-t border-warm-200 pt-3 text-xs leading-relaxed text-warm-600">
+        <span className="font-medium text-warm-800">How to read this.</span> Each line runs from the institution with the lowest price in the group
+        to the one with the highest; the tick is the middle one.{" "}
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-warm-800 bg-white" />
+          {fromLabel}
+        </span>{" "}
+        is where the price sits today;{" "}
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-terra" />
+          {toLabel}
+        </span>{" "}
+        is where it would sit. The right column counts institutions charging less than you, before and after.
+      </figcaption>
+    </figure>
+  );
+}
+
+/** Thousands of dollars as filed, in words: "$8.8 million", "$450 thousand", "$2.6 billion". */
+export function fmtFiledThousands(value: number): string {
+  const dollars = value * 1000;
+  if (Math.abs(dollars) >= 1_000_000_000) return `$${(dollars / 1_000_000_000).toFixed(2)} billion`;
+  if (Math.abs(dollars) >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)} million`;
+  return `$${Math.round(value).toLocaleString("en-US")} thousand`;
+}
+
+/**
+ * Two quarterly series on one scale (oldest left, newest right): the institution's own filed
+ * figure and its peer median, values in thousands as filed.
+ */
+export function QuarterLines({
+  quarters,
+  series,
+}: {
+  quarters: readonly string[];
+  series: { label: string; values: readonly (number | null)[]; own?: boolean }[];
+}) {
+  const W = 600;
+  const H = 180;
+  const pad = { l: 64, r: 40, t: 12, b: 26 };
+  const all = series.flatMap((s) => s.values.filter((v): v is number => v != null));
+  if (all.length === 0 || quarters.length < 2) return null;
+  const hi = Math.max(...all) * 1.1;
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * 10 ** Math.floor(Math.log10(hi / 4))).find((s) => hi / s <= 5) ?? hi / 4;
+  const ticks: number[] = [];
+  for (let t = 0; t <= hi; t += step) ticks.push(t);
+  const top = ticks[ticks.length - 1] < hi ? ticks[ticks.length - 1] + step : ticks[ticks.length - 1];
+  if (top > ticks[ticks.length - 1]) ticks.push(top);
+  const x = (i: number) => pad.l + (i / (quarters.length - 1)) * (W - pad.l - pad.r);
+  const y = (v: number) => pad.t + (1 - v / top) * (H - pad.t - pad.b);
+  // Values are thousands of dollars as filed.
+  const trim = (n: number) => String(Math.round(n * 10) / 10);
+  const short = (v: number) =>
+    v === 0 ? "$0" : v >= 1_000_000 ? `$${trim(v / 1_000_000)}B` : v >= 1_000 ? `$${trim(v / 1_000)}M` : `$${Math.round(v)}K`;
+  return (
+    <figure className="flex flex-col gap-2">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full max-w-3xl" role="img" aria-label={series.map((s) => s.label).join(" and ") + " by quarter"}>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} className="stroke-warm-200" strokeWidth={1} />
+            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" className="fill-warm-600 text-[11px]">
+              {short(t)}
+            </text>
+          </g>
+        ))}
+        {quarters.map((q, i) => (
+          <text key={q} x={x(i)} y={H - 6} textAnchor="middle" className="fill-warm-600 text-[11px]">
+            {i === 0 || i === quarters.length - 1 || q.endsWith("Q1") ? q.replace("-", " ") : q.slice(5)}
+          </text>
+        ))}
+        {series.map((s) => {
+          const pts = s.values.map((v, i) => (v == null ? null : `${x(i)},${y(v)}`)).filter(Boolean);
+          return (
+            <g key={s.label}>
+              <polyline points={pts.join(" ")} fill="none" strokeWidth={s.own ? 2.5 : 2} className={s.own ? "stroke-terra" : "stroke-warm-600"} strokeDasharray={s.own ? undefined : "5 4"} />
+              {s.values.map((v, i) => (v == null ? null : <circle key={i} cx={x(i)} cy={y(v)} r={s.own ? 3 : 2.5} className={s.own ? "fill-terra" : "fill-warm-600"} />))}
+            </g>
+          );
+        })}
+      </svg>
+      <figcaption className="flex flex-wrap gap-4 text-xs text-warm-700">
+        {series.map((s) => (
+          <span key={s.label} className="flex items-center gap-1.5">
+            <span className={"inline-block h-0.5 w-5 " + (s.own ? "bg-terra" : "border-t-2 border-dashed border-warm-600")} />
+            {s.label}
+          </span>
+        ))}
+      </figcaption>
+    </figure>
   );
 }
 

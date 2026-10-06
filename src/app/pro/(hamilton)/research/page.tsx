@@ -1,6 +1,7 @@
 // Auth-gated, renders live DB-backed data at request time; not statically prerendered.
 export const dynamic = "force-dynamic";
 
+import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data"
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
-import { getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
+import { getServiceChargeContext, type ServiceChargeContext } from "@/lib/data-store/service-charge-context";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
 import { getArticles } from "@/lib/data-store/news";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch } from "@/lib/hamilton/workspace/research";
@@ -23,8 +24,10 @@ import {
   MemoHeader,
   MemoPage,
   MemoSection,
+  QuarterLines,
   SERIF,
   Tabs,
+  fmtFiledThousands,
   fmtMoney,
 } from "@/components/hamilton/memo/memo";
 
@@ -40,11 +43,68 @@ function researchHref(p: { fee: string; layer: string }, instId: string | null) 
   return hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(p.fee)}&layer=${p.layer}`, instId);
 }
 
-function fmtThousands(value: number): string {
-  // Call report figures are in thousands of dollars.
-  const dollars = value * 1000;
-  if (Math.abs(dollars) >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)} million`;
-  return `$${Math.round(dollars / 1000).toLocaleString("en-US")} thousand`;
+// Filings change quarterly; the national and peer sums take a second or two, so keep them a few hours.
+const getCachedServiceCharges = unstable_cache(
+  async (institutionId: number) => getServiceChargeContext(institutionId, 8).catch(() => null),
+  ["hamilton-research-service-charges-v1"],
+  { revalidate: 6 * 60 * 60 },
+);
+
+function fmtYoy(pct: number | null): string {
+  if (pct == null) return "No same quarter a year earlier on file";
+  if (pct === 0) return "Level with the same quarter a year earlier";
+  return `${pct > 0 ? "Up" : "Down"} ${Math.abs(pct).toFixed(1)}% from the same quarter a year earlier`;
+}
+
+function FilingExhibits({ ctx, name, credit }: { ctx: ServiceChargeContext; name: string; credit: boolean }) {
+  const oldestFirst = [...ctx.quarters].reverse();
+  const latest = ctx.quarters[0];
+  const kind = credit ? "credit unions" : "banks";
+  const line = credit ? "Fee income" : "Service charges on deposit accounts";
+  const peerLabel = `Median of ${latest.peerCount.toLocaleString("en-US")} ${kind} with ${ctx.tierLabel}`;
+  const multiple = latest.own != null && latest.peerMedian ? latest.own / latest.peerMedian : null;
+  const source = credit
+    ? "NCUA 5300 call report, account 131 (fee income). Filed year to date; each quarter here is that quarter alone."
+    : "FDIC call report, service charges on deposit accounts. Filed for the quarter.";
+  return (
+    <>
+      <Exhibit number={2} title={`${line} each quarter, ${name} against its peers`} source={source}>
+        <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
+          <QuarterLines
+            quarters={oldestFirst.map((q) => q.quarter)}
+            series={[
+              { label: name, values: oldestFirst.map((q) => q.own), own: true },
+              { label: peerLabel, values: oldestFirst.map((q) => q.peerMedian) },
+            ]}
+          />
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
+            <Figure label={`You, ${latest.quarter.replace("-", " ")}`} value={latest.own != null ? fmtFiledThousands(latest.own) : "Not filed"} note={fmtYoy(ctx.ownYoyPct)} />
+            <Figure label="Peer median" value={latest.peerMedian != null ? fmtFiledThousands(latest.peerMedian) : "Too few peers"} note={fmtYoy(ctx.peerYoyPct)} />
+            {multiple != null ? (
+              <Figure label="Against the median" value={`${multiple.toFixed(1)}×`} note={`Your ${line.toLowerCase()} over the peer median, latest quarter`} />
+            ) : null}
+          </div>
+        </div>
+      </Exhibit>
+      <Exhibit number={3} title={`${line}, every ${credit ? "credit union" : "bank"} in the country`} source={source}>
+        <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
+          <QuarterLines
+            quarters={oldestFirst.map((q) => q.quarter)}
+            series={[{ label: `All ${kind} that filed, summed`, values: oldestFirst.map((q) => q.nationalTotal), own: true }]}
+          />
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
+            <Figure label={`Nationally, ${latest.quarter.replace("-", " ")}`} value={fmtFiledThousands(latest.nationalTotal)} note={fmtYoy(ctx.nationalYoyPct)} />
+            <Figure label="Filers" value={latest.nationalCount.toLocaleString("en-US")} note={`${kind[0].toUpperCase()}${kind.slice(1)} reporting this line that quarter`} />
+          </div>
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-warm-600">
+          {credit
+            ? "The 5300 also has separate overdraft (IS0048) and NSF (IS0049) income lines. Fee Insight hasn't loaded those yet, so they aren't shown."
+            : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). Fee Insight hasn't loaded that line yet, so it isn't shown."}
+        </p>
+      </Exhibit>
+    </>
+  );
 }
 
 function LayerExhibit({ layer, ownAmount, feeName }: { layer: LayerSummary; ownAmount: number | null; feeName: string }) {
@@ -93,8 +153,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   const layerKey = parseLayer(params.layer ?? (ws.layers.some((l) => l.key === "local") ? "local" : "state"));
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
-  const [trend, complaints, articles, research] = await Promise.all([
-    inst ? getInstitutionRevenueTrend(inst.id, 8).catch(() => []) : [],
+  const [filings, complaints, articles, research] = await Promise.all([
+    inst ? getCachedServiceCharges(inst.id) : null,
     inst ? getInstitutionComplaintProfile(inst.id).catch(() => null) : null,
     getArticles({ topic: OVERDRAFT_FAMILY.has(ws.fee) ? "overdraft" : "fees_pricing", limit: 5 }).catch(() => []),
     inst ? getFeeResearch(inst.id, ws.fee).catch(() => null) : null,
@@ -115,7 +175,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}`,
     instId,
   );
-  const latest = trend[0] ?? null;
+  const latest = filings?.quarters[0] ?? null;
+  const credit = inst?.charterType === "credit_union";
   const trail = buildAuditTrail({
     feeName: ws.feeName,
     layer,
@@ -123,7 +184,12 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     ownFeeRows: ws.ownFeeRows,
     local: layer.key === "local" ? ws.local : null,
     callReport: latest
-      ? { quarter: latest.quarter, source: inst?.charterType === "credit_union" ? "NCUA 5300 call report, year to date." : "FDIC call report, quarterly." }
+      ? {
+          quarter: latest.quarter,
+          source: credit
+            ? "NCUA 5300 call report, fee income (account 131); year-to-date filings turned into single quarters. Peer and national figures use every credit union that filed."
+            : "FDIC call report, service charges on deposit accounts, quarterly. Peer and national figures use every bank that filed.",
+        }
       : null,
     complaints: Boolean(complaints && complaints.total_complaints > 0),
     stateChanges: inst?.stateCode && research
@@ -242,31 +308,17 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       ) : null}
 
       {inst ? (
-        <MemoSection title={`${inst.name} on the record`} note="From your regulator filings and the CFPB complaint database.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Exhibit number={2} title="Service charges on deposit accounts" source={inst.charterType === "credit_union" ? "NCUA 5300 call report" : "FDIC call report"}>
-              {latest ? (
-                <div className="flex flex-col gap-3">
-                  <Figure
-                    label={inst.charterType === "credit_union" ? `Year to date, ${latest.quarter}` : `Quarter, ${latest.quarter}`}
-                    value={fmtThousands(latest.service_charge_income)}
-                    note={
-                      latest.yoy_change_pct != null
-                        ? `${latest.yoy_change_pct >= 0 ? "Up" : "Down"} ${Math.abs(latest.yoy_change_pct).toFixed(1)}% from the same quarter a year earlier`
-                        : "No same quarter a year earlier to compare"
-                    }
-                  />
-                  <p className="text-xs text-warm-600">
-                    {inst.charterType === "credit_union"
-                      ? "Credit union filings report this year to date, so compare a quarter with the same quarter a year earlier. Credit unions report overdraft and NSF income separately."
-                      : "Bank filings report this for the quarter alone. Banks report overdraft and NSF income only inside this total."}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-warm-700">No call report figures on file for this institution yet.</p>
-              )}
-            </Exhibit>
-            <Exhibit number={3} title="Consumer complaints" source="CFPB Consumer Complaint Database">
+        <MemoSection
+          title={`${inst.name} in the regulator filings`}
+          note={credit ? "From the NCUA 5300 call report every credit union files each quarter, and the CFPB complaint database." : "From the FDIC call report every bank files each quarter, and the CFPB complaint database."}
+        >
+          {filings && filings.quarters.length > 0 ? (
+            <FilingExhibits ctx={filings} name={inst.name} credit={credit} />
+          ) : (
+            <p className="text-sm text-warm-700">No call report figures on file for this institution yet.</p>
+          )}
+          <div>
+            <Exhibit number={4} title="Consumer complaints" source="CFPB Consumer Complaint Database">
               {complaints && complaints.total_complaints > 0 ? (
                 <div className="flex flex-col gap-3">
                   <Figure

@@ -6,12 +6,13 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 /**
  * Ask Hamilton, docked at the bottom of every workspace screen. A question opens the Ask screen
  * with the bank in context and is answered there straight away (James, 2026-10-06: never make the
- * banker retype it). The Ask screen has its own bar, so the dock stays off it.
+ * banker retype it). The dock stays off the Ask screen and the plan documents.
  */
 export function HamiltonAskDock({ selectedInstitutionId }: { selectedInstitutionId?: string | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  if (pathname.startsWith("/pro/analyze")) return null;
+  // The Ask screen has its own bar, and the plan formats are documents to read and print.
+  if (pathname.startsWith("/pro/analyze") || pathname.startsWith("/pro/simulate/plan")) return null;
 
   const fee = searchParams.get("fee") ?? searchParams.get("category");
   const instId = searchParams.get("instId") ?? selectedInstitutionId ?? null;

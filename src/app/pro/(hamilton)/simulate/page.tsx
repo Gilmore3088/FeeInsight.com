@@ -193,6 +193,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         <div className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-warm-50 p-5">
           <PriceStrip
             amounts={layer.amounts}
+            scopeLabel={layer.key === "national" ? "the nation" : layer.key === "peers" ? "your peer group" : layer.label}
             marks={columns.map((c) => ({ label: c.today ? `Today ${fmtMoney(c.price)}` : c.label, price: c.price, today: c.today }))}
           />
           <PeerSplitBars

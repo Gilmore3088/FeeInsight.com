@@ -71,6 +71,9 @@ read from stored rows, and finished quarters were not due again for a year.
 the registry scheduler re-pulls succeeded quarters recorded under an older parser version
 (`REGISTRY_PARSER_VERSIONS`), as ordinary visible runs, newest first.
 **Lesson:** when a parser learns a new field, bump its version so history fills in through runs.
+**Follow-up (04:10 UTC Oct 6, read-only check):** `overdraft_revenue` and `nsf_revenue` are still
+empty on every fdic and ncua row from 2025 Q1 to 2026 Q2, so no screen can show overdraft or NSF
+income yet. Hamilton's My fees says so under its filing exhibits rather than leaving a blank.
 
 ## 2026-10-06: Supabase Preview fails on any PR that adds a migration
 **What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
