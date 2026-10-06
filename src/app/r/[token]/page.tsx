@@ -167,8 +167,8 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
           <div>
             <h2 className="text-[1.1rem] font-semibold text-[#1A1815]">Keep this current</h2>
             <p className="mt-1 text-[14px] text-[#5A5347]">
-              Request a refreshed report next quarter, free, against the same peer set as
-              competitors change their fees.
+              Ask us for a refreshed report against the same peer set as competitors change their
+              fees. We reply with scope and price.
             </p>
           </div>
           <TrackLink
