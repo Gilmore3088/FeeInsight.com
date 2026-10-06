@@ -444,6 +444,24 @@ so the published numbers were not affected.
 **Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
 name and price into one line marked "listed N times". Live rows are unchanged.
 
+## 2026-10-06: Texas live fees were never source-checked
+**What happened:** a fresh random sample of 150 live Texas fees (03:20 UTC Oct 6) found 136 that
+match the bank's own schedule (90.7%), 8 wrong and 6 with no source document at all. Texas had 107
+live fees with no source document, all old imported rows.
+**Cause:** the source check that takes down untraceable fees ran only in publish steps that had a
+state or an institution. Most publish steps have neither, and the Texas lane ran one with a state
+three times since the check shipped, so 119 of 183 Texas institutions with live fees (499 of 2,662
+nationally, holding 7,888 live fees) had never been checked.
+**Fix:** same PR: every publish step source-checks a batch of 40 institutions, any state's when the
+step has none, institutions never checked first. A read-only dry run of the check over the 7,797
+never-checked live fees (495 institutions, all states) first predicted 709 takedowns; spot checks
+found reader misses, fixed in the same PR (dot leaders before a bare amount, a "$10 minimum" before
+the real price, a range inside a name's note, a heading over rows that carry their own names, box
+sizes like "5 x 10", and price-first lists). After the fixes 557 would come down at 182
+institutions: 195 imported fees with no source document, 15 with no amount, 245 whose amount is not
+the price on the matching row, 56 whose name is not in the schedule, 46 whose amount is a limit.
+**Lesson:** dry-run a takedown rule over the rows it has never touched before turning it on.
+
 ## 2026-10-06: Generated reports waited behind the whole pipeline queue
 **What happened:** National Index and Monthly Pulse runs started from /admin/hamilton/reports at
 03:03 UTC Oct 6 sat "pending" with no step started.
@@ -488,6 +506,33 @@ than $100.00 ..... $10.00 Returned Deposited Item ..... $32.00"), `checkFeeAgain
 "Returned Deposited Item" is $10 and that $32 is "amount_not_the_fee".
 **Cause:** in dotted-leader layouts the price follows the name, but the check took the amount just
 before the name. Not fixed yet; it affects any schedule stored without line breaks.
+
+## 2026-10-06: A fee listed at two prices on one schedule was recorded as a price change
+**What happened:** 9 fee-price changes were recorded since Oct 1 (read-only check, 04:00 UTC Oct 6).
+Four came from schedules that list the same fee name at both prices (two products or two tiers):
+Morgantown's notary fee $5 to $10, Mount Dora's monthly fee $5 to $32, Canyon View's returned
+deposit $3 to $10 and Commonwealth's overdraft $4 to $32. Two more (True North, First Community)
+were recorded before publish required the same fee name. Commonwealth's returned deposited item $10
+to $32 comes from two documents with one price each and may be real. The two New Hampshire FCU
+changes are real.
+**Cause:** Hamilton's publish replaced a live fee with a same-named line from a newer document and
+recorded the difference as a change, without asking whether either schedule lists both prices.
+Five live fees were closed this way; at Mount Dora the $5 monthly fee is no longer live.
+**Fix:** same PR: before replacing a live fee, publish checks both documents' extracted lines. If the
+newer one also lists the old price under that name, or the older one lists the new price, the new
+line is published as an additional line and no change is recorded. Applies to every state. Repairing
+the five closed rows and the false change records is SQL for James (sql-to-run issue).
+
+## 2026-10-06: Darwin's category guard let other banks' customers' ATM fees and gift card extras through
+**What happened:** the Texas accuracy sample (136 of 150 correct) found 8 fees in the wrong category.
+A read-only check of all live rows in those categories found 61 the same way: 34 non-network ATM
+fees that are really the surcharge a credit union charges non-members at its own ATMs or its own and
+in-network ATMs, 12 gift card purchases that are reload, inactivity or unrelated fees, 5 card
+replacements that are gift card replacements, 4 monthly fees that are per-transaction charges or
+earnings-credit notes, and 6 card disputes that are deposited-item or loan chargebacks.
+**Fix:** same PR: category guard v8 adds those exclusions and guards gift card purchase and card
+dispute. Darwin applies it to new rows; James clicks /admin/atlas/details > Misfiled fees > Dry run,
+then Roll back, after the deploy to take the 61 live rows down.
 
 ## 2026-10-06: Hamilton's workspace showed one peer group and none of the national data
 **What happened:** James saw "very little national data like NCUA reports, filings". The workspace

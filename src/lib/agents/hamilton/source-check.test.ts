@@ -104,6 +104,13 @@ describe("takeDownUntraceableFees", () => {
     expect(calls[0]).toContain("rolled_back_reason LIKE");
   });
 
+  it("checks any state's institutions when the step has no state, never-checked ones first", async () => {
+    const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
+    const result = await takeDownUntraceableFees(db, { runId: 7, batchId: "b", dryRun: true });
+    expect(result.institutionsChecked).toBe(1);
+    expect(calls[0]).toMatch(/ORDER BY EXISTS[\s\S]*live\.institution_id/);
+  });
+
   it("writes nothing on a dry run", async () => {
     const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
     const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });

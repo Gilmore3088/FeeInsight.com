@@ -123,7 +123,9 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   normalized name) at a new amount in a newer source document (`source_documents.crawled_at`).
   Other lines of the same schedule, or differently named lines from another document,
   publish side by side with no change record. A row from an older document than a live
-  line is skipped (`Older document than the live price`).
+  line is skipped (`Older document than the live price`). When either document lists that
+  name at both prices (two products or tiers), the new line publishes beside the old one
+  and no change is recorded (`listsBothPrices`).
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.
@@ -179,9 +181,10 @@ fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only rem
 
 ## Source Check
 
-Every live fee must be stated in the bank's own stored schedule. After publishing, each
-state-lane (or single-institution) publish step runs `source-check.ts` on up to 40
-institutions not checked since their newest live fee. Each live fee, from any source,
+Every live fee must be stated in the bank's own stored schedule. After publishing, every
+publish step runs `source-check.ts` on up to 40 institutions not checked since their
+newest live fee: its own state's (or institution's) when it has one, any state's
+otherwise, institutions never checked first. Each live fee, from any source,
 goes through `checkFeeAgainstSource` (`src/lib/custom-report/source-check.ts`, the same
 rule the report gate uses): one row of the document names the fee and states the
 amount as its price, not a limit. When one line carries several fees (a flattened

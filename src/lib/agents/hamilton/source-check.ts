@@ -138,7 +138,13 @@ export async function takeDownUntraceableFees(
             AND pa.institution_id = live.institution_id
             AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
        )
-       ORDER BY live.institution_id
+       ORDER BY EXISTS (
+                  SELECT 1 FROM pipeline_attempts pa
+                   WHERE pa.stage = 'publish'
+                     AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                     AND pa.institution_id = live.institution_id
+                ),
+                live.institution_id
        LIMIT ${limit}
     `);
     if (due.length === 0) return EMPTY_RESULT;
