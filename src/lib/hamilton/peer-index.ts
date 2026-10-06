@@ -86,7 +86,7 @@ export function parseSavedPeerSetFilters(peerSet: Pick<SavedPeerSet, "tiers" | "
 }
 
 /** Asset ranges for both tier vocabularies (institution segments and FDIC tiers). */
-const ASSET_TIER_RANGES: Record<string, string> = {
+export const ASSET_TIER_RANGES: Record<string, string> = {
   community_small: "under $300M",
   community_mid: "$300M to $1B",
   community_large: "$1B to $10B",

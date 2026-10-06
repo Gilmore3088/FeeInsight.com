@@ -534,3 +534,48 @@ than $100.00 ..... $10.00 Returned Deposited Item ..... $32.00"), `checkFeeAgain
 "Returned Deposited Item" is $10 and that $32 is "amount_not_the_fee".
 **Cause:** in dotted-leader layouts the price follows the name, but the check took the amount just
 before the name. Not fixed yet; it affects any schedule stored without line breaks.
+
+## 2026-10-06: A fee listed at two prices on one schedule was recorded as a price change
+**What happened:** 9 fee-price changes were recorded since Oct 1 (read-only check, 04:00 UTC Oct 6).
+Four came from schedules that list the same fee name at both prices (two products or two tiers):
+Morgantown's notary fee $5 to $10, Mount Dora's monthly fee $5 to $32, Canyon View's returned
+deposit $3 to $10 and Commonwealth's overdraft $4 to $32. Two more (True North, First Community)
+were recorded before publish required the same fee name. Commonwealth's returned deposited item $10
+to $32 comes from two documents with one price each and may be real. The two New Hampshire FCU
+changes are real.
+**Cause:** Hamilton's publish replaced a live fee with a same-named line from a newer document and
+recorded the difference as a change, without asking whether either schedule lists both prices.
+Five live fees were closed this way; at Mount Dora the $5 monthly fee is no longer live.
+**Fix:** same PR: before replacing a live fee, publish checks both documents' extracted lines. If the
+newer one also lists the old price under that name, or the older one lists the new price, the new
+line is published as an additional line and no change is recorded. Applies to every state. Repairing
+the five closed rows and the false change records is SQL for James (sql-to-run issue).
+
+## 2026-10-06: Darwin's category guard let other banks' customers' ATM fees and gift card extras through
+**What happened:** the Texas accuracy sample (136 of 150 correct) found 8 fees in the wrong category.
+A read-only check of all live rows in those categories found 61 the same way: 34 non-network ATM
+fees that are really the surcharge a credit union charges non-members at its own ATMs or its own and
+in-network ATMs, 12 gift card purchases that are reload, inactivity or unrelated fees, 5 card
+replacements that are gift card replacements, 4 monthly fees that are per-transaction charges or
+earnings-credit notes, and 6 card disputes that are deposited-item or loan chargebacks.
+**Fix:** same PR: category guard v8 adds those exclusions and guards gift card purchase and card
+dispute. Darwin applies it to new rows; James clicks /admin/atlas/details > Misfiled fees > Dry run,
+then Roll back, after the deploy to take the 61 live rows down.
+
+## 2026-10-06: Hamilton's workspace showed one peer group and none of the national data
+**What happened:** James saw "very little national data like NCUA reports, filings". The workspace
+engine's `getFeeResearch` returned only the narrowest peer group for a fee, with
+`revenueLine: null`, no national, Fed district or state view, none of the bank's own call report
+income and no rules. The Briefing had no industry income and no regulator items.
+**Fix:** each fee now carries four market layers (national, Fed district, state, charter and size)
+with percentiles where at least 5 institutions publish it; the bank's own service charge income by
+quarter (NCUA year-to-date split into quarters); the filed overdraft and NSF income line when one
+exists; the notice and disclosure rules that apply; and fee-related regulator releases. The
+Briefing adds national service charge income and a rule_change item for each fee-related release.
+**Still empty, honestly:** no institution has overdraft or NSF income stored yet (credit union
+lines land with the NCUA re-pull; bank RIAD H032 isn't loaded). The regulator feed
+(`reg_articles`, FDIC/Fed/OCC/CFPB press releases since 2025-01-28) has no release in the last
+year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the standing rules show.
+**Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
+same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
+`data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.
