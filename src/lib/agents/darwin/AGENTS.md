@@ -58,7 +58,11 @@ Darwin owns verification and classification.
   `category_model_disputes`. On the 43 Texas answer keys it disputed 20 of 61 wrong
   approvals and 16 of 268 right ones, and its guess matched the key for 14 of the 20.
   Disputes are meant for the Claude adjudicator (layer 3), Darwin's only paid call,
-  billed to `ANTHROPIC_API_KEY_DARWIN`.
+  billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
+  answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
+- Learning store: every verify decision except duplicates and category rejects (the
+  publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
+  Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
 - The ranges in `envelopes.ts` are hand-set and deliberately wide. Learned p1/p99 ranges
   (`category_envelopes`) remain planned work.
 

@@ -1,4 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
+import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
 
@@ -122,18 +124,46 @@ export function categoryOpinion(model: CategoryModel, name: string, categoryKey:
 
 let cached: { model: CategoryModel; loadedAt: number } | null = null;
 
-/** Trains on live published fees, one row per distinct (name, category). Cached for an hour per instance. */
+type ExampleRow = { name: string; category_key: string; count: number | string };
+
+/**
+ * Hand-checked answer-key fees from the shared learning store (`pipeline_feedback`),
+ * each at full weight. Empty when the store is not there yet or cannot be read.
+ */
+async function loadAnswerKeyExamples(db: SqlTag): Promise<ExampleRow[]> {
+  try {
+    if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return [];
+    return await inSavepoint(db, (scope) => scope<ExampleRow[]>`
+      SELECT LOWER(evidence->>'source_line') AS name, canonical_fee_key AS category_key, ${MAX_NAME_WEIGHT} AS count
+        FROM pipeline_feedback
+       WHERE kind = 'answer_key'
+         AND signal = 'right'
+         AND weight >= 1
+         AND canonical_fee_key IS NOT NULL
+         AND evidence->>'source_line' IS NOT NULL
+       GROUP BY 1, 2`);
+  } catch (error) {
+    console.error("loadAnswerKeyExamples failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Trains on live published fees, one row per distinct (name, category), plus the
+ * answer-key fees in the shared learning store. Cached for an hour per instance.
+ */
 export async function loadCategoryModel(db: SqlTag, now = Date.now()): Promise<CategoryModel | null> {
   if (cached && now - cached.loadedAt < CACHE_MS) return cached.model;
-  const rows: Array<{ name: string; category_key: string; count: number | string }> = await db`
+  const rows: ExampleRow[] = await db`
     SELECT LOWER(fee_name) AS name, canonical_fee_key AS category_key, COUNT(*) AS count
       FROM published_fee_catalog
      WHERE canonical_fee_key IS NOT NULL
        AND fee_name IS NOT NULL
      GROUP BY 1, 2`;
   if (rows.length === 0) return null;
+  const answerKey = await loadAnswerKeyExamples(db);
   const model = trainCategoryModel(
-    rows.map((row) => ({ name: row.name, categoryKey: row.category_key, count: Number(row.count) })),
+    [...rows, ...answerKey].map((row) => ({ name: row.name, categoryKey: row.category_key, count: Number(row.count) })),
   );
   cached = { model, loadedAt: now };
   return model;
