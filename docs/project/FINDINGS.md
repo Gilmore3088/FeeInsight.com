@@ -13,6 +13,49 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Every state lane stayed awake with nothing to do, so busy states waited two hours
+**What happened:** the Atlas audit (read-only queries on prod, 05:00 UTC) found no state lane ever
+went to sleep. The scheduler starts 2 lanes per 5-minute tick (24 an hour) for 55 lanes, so each
+state ran every 130 minutes (median gap over 24 hours) instead of hourly; 32 lanes were overdue
+at 05:01 and none was queued. 108 of 444 backlog runs in 24 hours found nothing to read, extract,
+verify, publish, discover or fetch, while Texas had 229 banks due a free search.
+**Cause:** `stateHasDocumentBacklog` counted 1,536 thin texts as "to re-extract", but 1,506 of them
+are texts Knox already extracted under another document id, which Knox's own selector skips
+forever. The check and the step disagreed, so the lane looped.
+**Fix:** this PR: the backlog check skips the same duplicate texts Knox skips, and an idle lane
+checks again within 12 hours instead of sleeping until next month (so a missed search coming due
+or a link going stale still wakes it). 22 lanes with no work now sleep and give their slots to
+the 31 with work.
+**Lesson:** a lane's "is there work" check must use the same filters as the step that does the
+work. When a step's selector changes, change the backlog check with it.
+## 2026-10-06: Darwin passed fees the bank's own schedule does not state
+**What happened:** of the Darwin-verified fees published and later taken down (read-only query on prod,
+04:50 UTC), 2,740 failed Hamilton's source check (1,370 name not in the text, 1,064 amount not the fee,
+304 amount is a threshold), 2,685 of them published in the last 24 hours. Another 4,032 were rolled
+back when newer Knox rules no longer read them, and 454 failed the category guard. 37,709 Darwin-verified
+fees are live.
+**Cause:** Darwin checked a fee's name, category, range and peers but never read the document. The
+check that reads it (`checkFeeAgainstSource`) ran only after publication, as Hamilton's takedown sweep.
+**Fix:** this PR: Darwin runs the shared source check against the fee's own stored text before verifying
+it (reason code `not_in_source`, rejected). Hamilton's sweep stays as the safety net for live fees.
+**Lesson:** a check that can stop a wrong fee before it goes live belongs at the gate, not only in a
+sweep afterwards.
+
+## 2026-10-06: The live board showed a Darwin backlog that did not exist
+**What happened:** /admin/live showed 2,838 banks waiting at Darwin (04:30 UTC, read-only query on prod).
+Every one of the 18,843 Knox rows behind that number already had a Darwin decision under the current
+rules (`verify.rules` v3): 9,756 duplicates of a fee verified in the same batch, 5,322 rejected for
+category mismatch, 2,374 held as outside the category's range, 1,391 held as peer outliers. Zero rows
+were unchecked. Darwin's classify step ran 523 times in 24 hours with a median of 0.9 s (p90 8.2 s);
+its queue wait (median 329 s) matched Knox's and Hamilton's.
+**Cause:** the board's Darwin count (`getFlowWaiting` in `src/lib/agents/flow.ts`) counted every raw
+row missing from `verified_fee_observations`. Rejected, held and duplicate rows never get there, so
+they counted as waiting forever.
+**Fix:** this PR: the count skips rows that already have a `verify.rules` attempt at the current version,
+the same test Darwin's own batch query uses.
+**Lesson:** a "waiting" count must use the stage's own done-marker (its `pipeline_attempts` row), not
+"missing from the next table", or every rejection reads as backlog.
+
 ## 2026-10-06: Banks that publish fees across several pages kept only one page's fees
 **What happened:** James spotted Triangle FCU (MS, institution 5829): 4 live fees (wires in $10 and
 out $20, cashier's check $5, check cashing $10), all from its "Additional Services" page, while
@@ -484,6 +527,11 @@ sizes like "5 x 10", and price-first lists). After the fixes 557 would come down
 institutions: 195 imported fees with no source document, 15 with no amount, 245 whose amount is not
 the price on the matching row, 56 whose name is not in the schedule, 46 whose amount is a limit.
 **Lesson:** dry-run a takedown rule over the rows it has never touched before turning it on.
+**Guard (follow-up PR):** the admin home page alert banner now lists, by state, institutions
+holding a live fee published over 12 hours ago and not source-checked since, so a gap in any state
+shows within a day instead of waiting for an accuracy sample. Read-only at 04:50 UTC Oct 6 it lists
+248 institutions (TX 66, CA 50, NY 45, PA 36, MI 21, OH 14, IL 10, WI 6), shrinking as every
+publish step works through them.
 
 ## 2026-10-06: Generated reports waited behind the whole pipeline queue
 **What happened:** National Index and Monthly Pulse runs started from /admin/hamilton/reports at
@@ -574,6 +622,38 @@ year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the sta
 **Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
 same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
 `data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.
+
+## 2026-10-06: Darwin rejected real fees Knox filed under a neighbouring category, and never re-checked them
+**What happened:** of the Knox fees that never reached verified, 5,322 were rejected because the name
+did not fit the category (Darwin thread, read-only, 04:30 UTC Oct 6). A read-only pass over the
+never-verified Knox names (05:10 UTC) found about 925 that are real fees whose own name says the
+neighbouring category: 356 overdraft transfers filed as overdraft, 248 international wires filed as
+domestic, 195 ATM/debit card replacements filed as ATM fees, 70 "Paid NSF" items (overdrafts) and 51
+returned deposited items filed as NSF, 5 NSF sweeps. Separately, 27 of 239 live minimum-balance fees
+were the balance to open an account, earn APY or avoid a fee, not a fee.
+**Cause:** Darwin only accepted or rejected the hinted category. And `CATEGORY_GUARD_VERSION` said a bump
+re-checks rows an older guard rejected, but Darwin never read it: a row decided under `verify.rules` v3
+was never selected again, so no guard fix could recover a wrongly rejected fee.
+**Fix:** same PR: `refileCategory` (fee-category-guard.ts) re-files a row to the category its own name
+names, only when that category's guard accepts it; Darwin checks the row under that category. Darwin
+records the guard version with each decision and re-selects a category rejection once when the guard
+version rises (now v9, which also adds a minimum-balance rule). Other decided rows stay closed, so
+`duplicate_in_batch` rows are never re-verified.
+**Lesson:** a "bump to re-check" version constant needs a test that the re-check really happens.
+## 2026-10-06: Rosetta rejected fee pages whose fees load by script
+**What happened:** the Rosetta audit compared stored text with 91 Texas fee schedules read
+independently. Two of them (atfcu.org/fees, firstcommand.com/.../fees/) were real schedules that
+Rosetta filed as "not a fee schedule": their static HTML held only menus (2,452 and 2,960
+characters, 0 and 1 dollar amounts) because the fee table loads by script. Rosetta tries its free
+JavaScript fallbacks (embedded data, linked PDF, print version) only for an app shell of at most
+1,500 characters, so these pages were rejected instead, the link was cleared and banned from
+discovery for 90 days. Live, read-only (05:10 UTC): 504 rejected HTML texts at 317 institutions
+have a link naming a fee page and at most one dollar amount; 221 of those institutions have no
+live fees.
+**Fix:** same PR: a page whose own link names the fee page ("/fees", "fee-schedule",
+"schedule-of-charges") and whose static text shows no fee schedule gets the free fallbacks first,
+whatever its length. Applies to every state's next read of such a page. Texts already rejected
+are not re-read by this PR (that needs a re-read rule; see the Rosetta scorecard).
 
 ## 2026-10-06: Supabase Preview failed on every migration PR
 **What happened:** the Supabase Preview check failed on every PR that added a migration (173, 189, 196)

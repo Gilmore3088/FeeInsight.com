@@ -38,6 +38,12 @@ export const STATE_LANE_DOCUMENT_BATCH_BY_STATE: Readonly<Record<string, number>
  * While a state still has a free-work backlog, its lane runs again this soon.
  */
 export const STATE_LANE_BACKLOG_RETRY_MINUTES = 60;
+/**
+ * A lane with no backlog checks again this soon, even when its next full pass is weeks
+ * away: a missed search becomes due again after 12 hours and a fee link goes stale after
+ * a month, and a lane asleep until next month would leave both waiting.
+ */
+export const STATE_LANE_IDLE_RECHECK_HOURS = 12;
 
 /**
  * Focus report markets (James, 2026-10-05: Texas and California). Their full passes look
@@ -289,6 +295,20 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                     AND pa.strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
                     AND pa.strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
                )
+               -- Knox never extracts a text it already extracted under another document id
+               -- (selectTextArtifacts). Without this, 1,506 such texts (2026-10-06) kept every
+               -- lane awake hourly with nothing to do.
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM agent_source_texts prior
+                   JOIN raw_fee_observations prior_fr
+                     ON prior_fr.source = 'knox'
+                    AND prior_fr.source_document_id = prior.source_document_id
+                  WHERE adt.text_hash IS NOT NULL
+                    AND prior.institution_id = adt.institution_id
+                    AND prior.text_hash = adt.text_hash
+                    AND prior.id <> adt.id
+               )
              )
              OR (
                (SELECT COUNT(*) FROM raw_fee_observations fr
@@ -539,7 +559,7 @@ async function markLaneScheduled(
            last_run_at = NOW(),
            next_run_after = CASE
              WHEN ${backlog} THEN NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-             ELSE ${nextFullPassAt(daily)}::timestamptz
+             ELSE LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour')
            END,
            lease_token = NULL,
            lease_expires_at = NULL,
@@ -548,11 +568,14 @@ async function markLaneScheduled(
   `;
 }
 
-/** Nothing due and no backlog: the lane sleeps until its next full pass (next month, or tomorrow for a daily focus state). */
+/**
+ * Nothing due and no backlog: the lane sleeps until its next full pass (next month, or
+ * tomorrow for a daily state), or at most STATE_LANE_IDLE_RECHECK_HOURS.
+ */
 async function markLaneIdle(stateCode: string, daily: boolean): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
-       SET next_run_after = ${nextFullPassAt(daily)}::timestamptz,
+       SET next_run_after = LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour'),
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()

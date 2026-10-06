@@ -191,6 +191,7 @@ export function FinancialProfileCharts({
   const caption = `Source: ${sources}, ${span}. Quarterly figures; ratios annualized.`;
   const recent = points.slice(-12);
 
+  const capitalLabel = latest.source === "ncua" ? "Net worth ratio" : "Tier 1 capital ratio";
   const latestIncome = [...points].reverse().find((p) => p.netIncome !== null) ?? null;
   const latestCharges = [...points].reverse().find((p) => p.serviceCharges !== null) ?? null;
 
@@ -207,12 +208,24 @@ export function FinancialProfileCharts({
         <KpiTile label="Net interest margin" value={pct(latest.nimPct)} peer={peers ? pct(peers.nimPct) : null} spark={values(recent, "nimPct")} />
         <KpiTile label="Efficiency ratio" value={pct(latest.efficiencyPct, 1)} peer={peers ? pct(peers.efficiencyPct, 1) : null} />
         <KpiTile label="Net charge-off rate" value={pct(latest.ncoRatePct)} peer={peers ? pct(peers.ncoRatePct) : null} spark={values(recent, "ncoRatePct")} />
-        <KpiTile label={latest.source === "ncua" ? "Net worth ratio" : "Tier 1 capital ratio"} value={pct(latest.tier1Pct, 1)} peer={peers ? pct(peers.tier1Pct, 1) : null} />
+        <KpiTile label={capitalLabel} value={pct(latest.tier1Pct, 1)} peer={peers ? pct(peers.tier1Pct, 1) : null} />
         <KpiTile
           label={`Deposit service charges${latestCharges ? ` (${latestCharges.quarter})` : ""}`}
           value={formatCompactDollars(latestCharges?.serviceCharges ?? null)}
           spark={values(recent, "serviceCharges")}
         />
+        {latest.roePct !== null && (
+          <KpiTile label="Return on equity" value={pct(latest.roePct)} peer={peers ? pct(peers.roePct) : null} spark={values(recent, "roePct")} />
+        )}
+        {latest.securities !== null && (
+          <KpiTile label="Securities" value={formatCompactDollars(latest.securities)} spark={values(recent, "securities")} />
+        )}
+        {latest.members !== null && (
+          <KpiTile label="Members" value={Math.round(latest.members).toLocaleString("en-US")} spark={values(recent, "members")} />
+        )}
+        {latest.employees !== null && (
+          <KpiTile label="Employees" value={Math.round(latest.employees).toLocaleString("en-US")} spark={values(recent, "employees")} />
+        )}
       </div>
       {peers && (
         <p className="mt-2 text-[11px] text-[#6B6255]">
@@ -240,12 +253,13 @@ export function FinancialProfileCharts({
       </div>
 
       <div className="mt-3 grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Balance sheet" subtitle="Total assets, deposits, and loans" caption={caption}>
+        <ChartCard title="Balance sheet" subtitle="Total assets, deposits, loans, and securities" caption={caption}>
           <Legend
             items={[
               { label: "Assets", color: SERIES[0] },
               { label: "Deposits", color: SERIES[1] },
               { label: "Loans", color: SERIES[2] },
+              ...(hasAny(visible, ["securities"]) ? [{ label: "Securities", color: SERIES[3] }] : []),
             ]}
           />
           <ResponsiveContainer width="100%" height={220}>
@@ -257,6 +271,9 @@ export function FinancialProfileCharts({
               <Line type="monotone" dataKey="assets" name="Assets" stroke={SERIES[0]} strokeWidth={2} dot={false} connectNulls={false} />
               <Line type="monotone" dataKey="deposits" name="Deposits" stroke={SERIES[1]} strokeWidth={2} dot={false} connectNulls={false} />
               <Line type="monotone" dataKey="loans" name="Loans" stroke={SERIES[2]} strokeWidth={2} dot={false} connectNulls={false} />
+              {hasAny(visible, ["securities"]) && (
+                <Line type="monotone" dataKey="securities" name="Securities" stroke={SERIES[3]} strokeWidth={2} dot={false} connectNulls={false} />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -413,6 +430,94 @@ export function FinancialProfileCharts({
                 <Tooltip cursor={{ fill: "#FAF7F2" }} content={<ChartTooltip format={formatCompactDollars} />} />
                 <Bar dataKey="serviceCharges" name="Service charges" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={18} />
               </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
+
+        {hasAny(visible, ["depositsCore", "depositsBrokered", "depositsUninsured"]) && (
+          <ChartCard
+            title="Deposit mix"
+            subtitle="Core, brokered, and uninsured deposits"
+            caption={`${caption} The three overlap: uninsured deposits can also be core.`}
+          >
+            <Legend
+              items={[
+                { label: "Total deposits", color: SERIES[0] },
+                { label: "Core", color: SERIES[1] },
+                { label: "Uninsured", color: SERIES[2] },
+                { label: "Brokered", color: SERIES[3] },
+              ]}
+            />
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={visible} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="quarter" {...axisProps} minTickGap={24} />
+                <YAxis {...axisProps} tickFormatter={compactAxis} width={56} />
+                <Tooltip content={<ChartTooltip format={formatCompactDollars} />} />
+                <Line type="monotone" dataKey="deposits" name="Total deposits" stroke={SERIES[0]} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="depositsCore" name="Core" stroke={SERIES[1]} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="depositsUninsured" name="Uninsured" stroke={SERIES[2]} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="depositsBrokered" name="Brokered" stroke={SERIES[3]} strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
+
+        {hasAny(visible, ["tier1Pct", "leveragePct", "totalCapitalPct"]) && (
+          <ChartCard
+            title="Capital"
+            subtitle={latest.source === "ncua" ? "Net worth ratio, % of assets" : "Tier 1, leverage, and total capital ratios"}
+            caption={caption}
+          >
+            <Legend
+              items={[
+                { label: capitalLabel, color: SERIES[0] },
+                ...(hasAny(visible, ["leveragePct"]) ? [{ label: "Leverage ratio", color: SERIES[1] }] : []),
+                ...(hasAny(visible, ["totalCapitalPct"]) ? [{ label: "Total capital ratio", color: SERIES[2] }] : []),
+              ]}
+            />
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={visible} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="quarter" {...axisProps} minTickGap={24} />
+                <YAxis {...axisProps} tickFormatter={(v: number) => `${v.toFixed(0)}%`} width={44} />
+                <Tooltip content={<ChartTooltip format={(v) => pct(v)} />} />
+                <Line type="linear" dataKey="tier1Pct" name={capitalLabel} stroke={SERIES[0]} strokeWidth={2} dot={false} />
+                {hasAny(visible, ["leveragePct"]) && (
+                  <Line type="linear" dataKey="leveragePct" name="Leverage ratio" stroke={SERIES[1]} strokeWidth={2} dot={false} />
+                )}
+                {hasAny(visible, ["totalCapitalPct"]) && (
+                  <Line type="linear" dataKey="totalCapitalPct" name="Total capital ratio" stroke={SERIES[2]} strokeWidth={2} dot={false} />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+            {peers && (peers.tier1Pct !== null || peers.leveragePct !== null) && (
+              <p className="text-[11px] text-[#6B6255]">
+                Peer medians {peers.quarter}: {capitalLabel.toLowerCase()} {pct(peers.tier1Pct, 1)}
+                {peers.leveragePct !== null && `, leverage ${pct(peers.leveragePct, 1)}`}
+                {peers.totalCapitalPct !== null && `, total capital ${pct(peers.totalCapitalPct, 1)}`}.
+              </p>
+            )}
+          </ChartCard>
+        )}
+
+        {hasAny(visible, ["loansCreditCard", "loansAuto"]) && (
+          <ChartCard title="Consumer lending" subtitle="Credit card and auto loans outstanding" caption={caption}>
+            <Legend
+              items={[
+                { label: "Credit card", color: SERIES[0] },
+                { label: "Auto", color: SERIES[1] },
+              ]}
+            />
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={visible} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="quarter" {...axisProps} minTickGap={24} />
+                <YAxis {...axisProps} tickFormatter={compactAxis} width={56} />
+                <Tooltip content={<ChartTooltip format={formatCompactDollars} />} />
+                <Line type="monotone" dataKey="loansCreditCard" name="Credit card" stroke={SERIES[0]} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="loansAuto" name="Auto" stroke={SERIES[1]} strokeWidth={2} dot={false} />
+              </LineChart>
             </ResponsiveContainer>
           </ChartCard>
         )}

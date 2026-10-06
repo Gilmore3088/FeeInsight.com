@@ -748,6 +748,36 @@ describe("Rosetta agentic read", () => {
       expect(result.results[0].rows.map((row) => row.origin)).toEqual(["pdf_layout", "pdf_layout", "pdf_layout"]);
     });
 
+    it("follows the PDF link on a fee page whose static text is only menus", async () => {
+      const db = specialistDb([htmlCandidate]);
+      // No app-shell marker and more than a shell's worth of text: menus, no amounts.
+      const menus = Array.from({ length: 120 }, (_, i) => `<li><a href="/p${i}">Menu item ${i}</a></li>`).join("");
+      const page = `<html><body><nav><ul>${menus}</ul></nav><h1>Fee Schedule</h1><a href="/docs/fees.pdf">Schedule of fees</a></body></html>`;
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(page))
+        .mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 text"), "application/pdf"));
+      const pdfText = ["Schedule of Fees", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00", "x".repeat(300)].join("\n");
+      const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text: pdfText, pages: [pdfText] });
+
+      const result = await runRosettaRead({ runId: 707, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(fetchImpl.mock.calls[1][0]).toBe("https://testbank.example/docs/fees.pdf");
+      expect(result).toMatchObject({ completed: 1, wrongDocuments: 0, jsFallbackRead: 1, sentBackToMagellan: 0 });
+      expect(result.results[0]).toMatchObject({ sourceUrl: "https://testbank.example/docs/fees.pdf" });
+    });
+
+    it("still rejects a menus-only page whose link does not name a fee page", async () => {
+      const db = specialistDb([{ ...htmlCandidate, document_url: "https://testbank.example/about-us" }]);
+      const menus = Array.from({ length: 120 }, (_, i) => `<li><a href="/p${i}">Menu item ${i}</a></li>`).join("");
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(`<html><body><nav><ul>${menus}</ul></nav><h1>About us</h1></body></html>`));
+
+      const result = await runRosettaRead({ runId: 708, db: asReadDb(db), fetchImpl });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ completed: 0, wrongDocuments: 1, jsFallbackRead: 0 });
+    });
+
     it("hands a JavaScript page with no free route to Magellan's paid finder", async () => {
       const db = specialistDb([htmlCandidate]);
       const fetchImpl = vi.fn(async (url: string) =>

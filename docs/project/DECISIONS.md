@@ -36,6 +36,13 @@ report has sold.
 
 ## 2026-10-05
 
+**Package all 16 years of call reports on institution pages, deeper for Pro.** James, 22:25 and
+22:38 UTC ("Go: phases 1 and 2"). Phase 1 shows the stored-but-hidden figures plus growth, peer
+rank and outliers. Phase 2 widens the FDIC and NCUA pulls (overdraft-related service charges and
+other deposit-fee lines) and re-pulls all 66 quarters as visible runs. Only figures the source
+reports: no overdraft/NSF split unless a filing reports one. Phases 3 (a Pro institution
+workspace) and 4 (free page tune-up) wait for his go-ahead.
+
 **The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
 gets in.** James, 23:28 UTC ("nobody else should have access to API"). Every `/api/v1` request
 needs a key Fee Insight issued by hand; there is no free self-serve tier. David's key is
