@@ -72,4 +72,82 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(prices, "(5 X 10)", 55, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(prices, "(5 X 10)", 80, ".").ok).toBe(false);
   });
+
+  it("pairs a dot-leader name with the price that opens the next line, not the price before it", () => {
+    const text = [
+      "Wire Transfer (outgoing).........................",
+      "$20.00 Wire Transfer Agreement (WPIN) Replacement Fee .....",
+      "$10.00 Outgoing International Wire (in foreign currency) ...........",
+      "$50.00 Levies ..........",
+      "$20.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Wire Transfer (outgoing)", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Outgoing International Wire (in foreign currency)", 50, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Outgoing International Wire (in foreign currency)", 10, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(text, "Levies", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Levies", 50, ".").ok).toBe(false);
+  });
+
+  it("reads a price past a line that only qualifies the name", () => {
+    const text = "Temporary Checks\nIf checks are not on order (10 maximum)\n$2.00\nMoney order\n(up to $1,000)\n$5";
+    expect(checkFeeAgainstSource(text, "Temporary Checks", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Money order", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Money order", 1000, ".").ok).toBe(false);
+    // Another fee's name between them still ends the row.
+    expect(checkFeeAgainstSource("Incoming\nOutgoing\n$25.00", "Incoming", 25, ".").ok).toBe(false);
+  });
+
+  it("ties a free word to its name on a schedule flattened to one line", () => {
+    const text =
+      "Checking Account Monthly Fee NONE Return Check Fee (Per Item) $30.00 Continuous Overdraft Fee (Per Day) NONE " +
+      "Wire Transfer - Domestic Outgoing $20.00 Wire Transfer - Domestic Incoming FREE";
+    expect(checkFeeAgainstSource(text, "Wire Transfer - Domestic Incoming", 0, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Checking Account Monthly Fee", 0, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Wire Transfer - Domestic Outgoing", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(text, "Return Check Fee", 0, ".").ok).toBe(false);
+  });
+
+  it("reads a cap stated after the row's per-item price for a fee named as the cap", () => {
+    const text = "Paid overdraft item $35 per item, maximum of $175 per day";
+    expect(checkFeeAgainstSource(text, "Paid overdraft item daily maximum", 175, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Paid overdraft item", 175, ".").ok).toBe(false);
+  });
+
+  it("reads a price line that carries a lowercase note about the price (Ent Courtesy Pay)", () => {
+    const text = "Courtesy Pay\n$30.00 | everyday debit card transactions and ATM withdrawals are not covered unless you opt in";
+    expect(checkFeeAgainstSource(text, "Courtesy Pay", 30, ".").ok).toBe(true);
+    // A long price line that names another fee is still that fee's row.
+    expect(checkFeeAgainstSource("Incoming\n$30.00 | Outgoing domestic wires sent through the branch", "Incoming", 30, ".").ok).toBe(false);
+  });
+
+  it("reads a tier named by its own band, never a band standing in for the whole fee", () => {
+    const text = "Overdraft Item Fee: based on item amount\n$10.01 - $20.00: $10.00 fee";
+    expect(checkFeeAgainstSource(text, "Overdraft Item Fee (items $10.01 - $20.00)", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdraft | Negative $25 or less | $5", "Overdraft", 5, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+  });
+});
+
+describe("checkFeeAgainstSource daily caps", () => {
+  it("reads a daily cap from its fee's row", () => {
+    const row = "Overdraft/Non-Sufficient Funds ** | $20.00 | Per Item | Maximum of $120.00 per day";
+    expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds daily maximum", 120, ".", "od_daily_cap").ok).toBe(true);
+    const inline = "NSF/Overdraft Fees**\n1st Overdraft Privilege Paid Fee $30.00 (max $180.00 daily)";
+    expect(checkFeeAgainstSource(inline, "1st Overdraft Privilege Paid Fee daily maximum", 180, ".", "od_daily_cap").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdraft fee $35 per item, up to $105 per day", "Overdraft Daily Cap", 105, ".", "od_daily_cap").ok).toBe(true);
+    // A cap row that names the cap still traces as a price, as before.
+    expect(checkFeeAgainstSource("Overdraft Daily Cap | $175", "Overdraft Daily Cap", 175, ".", "od_daily_cap").ok).toBe(true);
+  });
+
+  it("does not read a figure without cap wording, or another fee's cap, as the cap", () => {
+    expect(checkFeeAgainstSource("Overdraft Fee | $36.00 per item", "Overdraft Daily Cap", 36, ".", "od_daily_cap").ok).toBe(false);
+    expect(checkFeeAgainstSource("Wire Transfer | $25.00 | Maximum of $120.00 per day", "Overdraft Daily Cap", 120, ".", "od_daily_cap").ok).toBe(false);
+  });
+
+  it("reads a cap only for a cap category or a fee named as a cap", () => {
+    const row = "Overdraft/Non-Sufficient Funds ** | $20.00 | Per Item | Maximum of $120.00 per day";
+    expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds", 20, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds daily maximum", 120, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds", 120, ".", "overdraft").ok).toBe(false);
+    expect(checkFeeAgainstSource(row, "Overdraft/Non-Sufficient Funds", 120, ".", "od_daily_cap").ok).toBe(true);
+  });
 });

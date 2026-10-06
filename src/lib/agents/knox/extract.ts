@@ -551,6 +551,7 @@ function specialistDetail(row: TextArtifactRow, run: SpecialistRun): Record<stri
     found: run.found,
     added: run.added,
     held_found: run.heldFound,
+    self_check_failed: run.selfCheckFailed,
   };
 }
 

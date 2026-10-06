@@ -74,6 +74,24 @@ rather than check printing, and a name that opens with NSF is NSF when only a co
 mentions an overdraft ("NSF Fee (fee applies when overdraft is created)"); a combined
 "NSF/Overdraft" fee stays overdraft. At v16: Texas 461 of 478; seven states 683 right, 55 wrong.
 
+v17 (rules 17) adds Knox's self-check: every free find, and every $0 row, is checked against
+its text with the shared accuracy check (`checkFeeAgainstSource`, the rule Darwin applies
+before publishing). A find that doesn't trace is held for review as `untraced`
+(`knox_review:untraced`) instead of going to Darwin, where it would be rejected as
+`not_in_source`; a later specialist that reads the same fee under a traceable name keeps it.
+Each specialist run records `self_check_failed`. Since v17 the gates count only reads that
+pass the self-check, which is what can be published: Texas 444 of 459 (main at v16 scored 444
+of 459 on that basis), held out 43 of 49; seven states 660 of 708 (main: 659 of 707). The same PR
+widens the shared check for layouts it missed (a price on the line after a dot leader,
+FREE/NONE on a flattened line, a note line between name and price, a daily cap), which lifts
+the gates to Texas 446 of 461 and seven states 665 of 713 with no new wrong reads.
+v17 also tidies every fee name (`tidyFeeName` in `layout.ts`): table separators, dot
+leaders, bullets, list markers ("b.") and a neighbouring cell's unit ("Per Item", "/Item",
+"N/C") are not part of the name. Category, price and excerpt are unchanged. Hamilton's
+supersede match and the rules re-check restore compare tidied names, so a line live under
+an older untidy name is still the same line. In the 117-document live sample, untidy names
+fell from 136 to 3; gates and the dry run are unchanged.
+
 A new rules version also reaches lines older versions held. Knox does not extract a text twice,
 and the raw-row dedupe index (document, name, amount) stopped a categorized fee from replacing
 the held row, so a held line stayed held after the rules learned it. Now each extract step
@@ -81,6 +99,33 @@ re-reads up to 300 held unclassified lines from the document's current text with
 (`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
 (`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
 version. A categorized insert that meets a held row takes it over the same way.
+
+v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
+monthly with a balance condition that the maintenance guard keeps out (money market) is the
+account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
+and says it applies when the balance falls below a figure ("A club fee of $8.00 ... if the
+balance ... falls below $3,000") is a `minimum_balance` fee named by the fee's words and the
+condition; the fee and condition must share one sentence, and the price is never the balance.
+New name patterns cover "Average Daily Balance below", "Low-balance fee", "Below minimum
+balance" and misspelled "MININUM BALANCE FEE". A comparison sign ("< $2,500") makes a figure a
+condition. Prose maintenance fees keep the bank's own words ("Maintenance fee") so the shared
+check can trace them. Wires: "Non-Domestic Wire" and an international wire with no direction
+are outgoing international; one price for "Domestic or International" is the domestic one. A
+figure followed by "par" or "required" ("$5 par in Primary Savings is required") is a
+requirement, not a fee. Gates: Texas 452 of 467 (v17: 446 of 461), held out 43 of 49, seven
+states 673 of 720 (v17: 665 of 713).
+
+v19 (rules 19) fixes large banks' overdraft rows. "Overdrafts Paid" and "Overdrafts (OD)" are
+overdraft (the plural names the fee only when it opens the name or a fee word follows it); an
+insufficient-funds item the bank pays ("Item Paid") is overdraft. A fee written as a sentence ("We
+charge a fee of $37.00 each time we pay an overdraft") is named by what it charges for
+("Overdraft fee (each time we pay an overdraft)"); "one ... per day" stays in the name, because
+the daily-cap categories hold dollars. On a dot-leader line with two prices, lowercase words
+after the first price are its terms and the title before the second price is the second fee's
+name. Fee cards tiered by the item's value ("Fee Type" / "charged a fee based on the value of
+the item" / "Greater than $5.00: $5.00") are read per tier, and a price whose next cell is
+prose ("$30.00 | ... unless you opt in") is never named by that prose. The shared check now
+reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
 
 ## Extraction Passes
 

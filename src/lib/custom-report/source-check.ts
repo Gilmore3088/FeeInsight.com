@@ -6,7 +6,10 @@
  * balance band, and sit under wording of the fee's category. A row is a line, plus the
  * next short lines when the price sits under the name ("Overnight Courier Service" /
  * "$50.00" / "/Item"). When one line carries several fees, each price belongs to the words
- * since the previous price. Anything else is dropped rather than shown with a value we can't
+ * since the previous price. A daily cap (`od_daily_cap`, `nsf_daily_cap`) is the opposite
+ * case: its figure is the limit on the fee's own row ("$20.00 | Per Item | Maximum of $120.00
+ * per day", "$30.00 (max $180.00 daily)"), so it must sit after cap wording and before "per
+ * day" or "daily". Anything else is dropped rather than shown with a value we can't
  * point to.
  */
 
@@ -33,6 +36,12 @@ const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
 const PRICE_BELOW_LINES = 2;
 const PRICE_BELOW_MAX_LENGTH = 40;
+/**
+ * A longer price line is still the price when its first cell is only the price and the
+ * rest is a lowercase note about it ("$30.00 | everyday debit card transactions ... are
+ * not covered unless you opt in"), never another fee's name.
+ */
+const PRICE_THEN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per \w+|each)?\s*\|\s*[a-z]/;
 const CATEGORY_LOOKBACK_LINES = 3;
 const NAME_HEADING_LINES = 8;
 const NAME_WORD_SHARE = 0.75;
@@ -41,6 +50,21 @@ const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
 const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+/** A cap stated after a row's per-item price, and the name words that ask for it. */
+const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
+const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
+/** A line that only qualifies the fee named above it. */
+const QUALIFIER_LINE = /^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)\b.{0,80})$/i;
+/** Dot leaders (or an ellipsis run) at the end of a line. */
+const TRAILING_LEADER = /(?:\.\s?){3,}\s*$|…\s*$/;
+/** A price that opens a line, with its unit ("$20.00", "$5 each", "FREE"). */
+const LEADING_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|free\b|none\b|no charge|n\/c)(?:\s*(?:per|each|\/)\s*[a-z]*)?/i;
+/** Categories whose value is a daily limit on another fee, not a price. */
+export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap", "nsf_daily_cap"]);
+/** Words that make a name a cap; the row names the fee, not the cap. */
+const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
+const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
+const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
@@ -67,6 +91,15 @@ function moneyTokens(line: string): MoneyToken[] {
     tokens.push({ value: Number(`${whole}.${cents}`), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
   }
   return tokens;
+}
+
+/** Free words as $0 prices, for a line that also states other prices. */
+function zeroTokens(line: string): MoneyToken[] {
+  return [...line.matchAll(/\b(?:free|none|no charge|no fee|n\/c|waived)\b/gi)].map((match) => ({
+    value: 0,
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+  }));
 }
 
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
@@ -100,10 +133,13 @@ function stemCount(text: string, stems: string[]): number {
 }
 
 function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
-  const tokens = moneyTokens(line);
-  if (amount === 0) {
-    return ZERO_WORDS.test(line) && !tokens.some((t) => t.value > 0 && !isThreshold(line, t)) ? null : "amount_not_the_fee";
+  const money = moneyTokens(line);
+  if (amount === 0 && !money.some((t) => t.value > 0 && !isThreshold(line, t))) {
+    return ZERO_WORDS.test(line) ? null : "amount_not_the_fee";
   }
+  // A $0 fee on a line with other prices (a schedule flattened to one line: "Monthly Fee
+  // NONE Return Check Fee $30.00") is read like any price: its free word is its price.
+  const tokens = amount === 0 ? [...money, ...zeroTokens(line)].sort((a, b) => a.start - b.start) : money;
   // A row's prices are its figures that are not limits ("$4.00 | per check, minimum
   // $500"; "Negative from $50.01 and more | $35"). When one line carries several fees
   // ("Title Draft $50.00 Incoming Wire Fee (domestic) $18.00", or a whole schedule
@@ -124,10 +160,18 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
     /[a-z0-9]/i.test(line.slice(prices[prices.length - 1].end));
   const scores = !priceFirst && Math.max(0, ...before) > 0 ? before : after;
   const best = Math.max(0, ...scores);
-  const index = prices.findIndex((price, i) => scores[i] === best && Math.abs(price.value - amount) < 0.005);
+  let index = prices.findIndex((price, i) => scores[i] === best && Math.abs(price.value - amount) < 0.005);
+  // A cap on the row's own fee ("$35 per item, maximum of $175 per day") is that row's
+  // price for a fee named as the cap.
+  if (index < 0 && best > 0 && stems.some((stem) => CAP_STEMS.has(stem))) {
+    index = prices.findIndex(
+      (price, i) => Math.abs(price.value - amount) < 0.005 && CAP_BEFORE.test(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start)),
+    );
+  }
   if (best === 0 || index < 0) {
     return tokens.some((t) => Math.abs(t.value - amount) < 0.005) ? "amount_is_a_threshold" : "amount_not_the_fee";
   }
+  if (amount === 0 && !freeWordIsThePrice(line, prices, index, stems)) return "amount_not_the_fee";
   // A fee that depends on a balance band ("Negative $25 or less | $5") has no single
   // comparable value, so it never stands in for the bank's fee.
   const from = index === 0 ? 0 : prices[index - 1].end;
@@ -138,18 +182,66 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
+/**
+ * A free word on a line that also states prices is the fee's own price only when it reads
+ * as one: not an allowance or a note ("(2 FREE PER MONTH) | $1.00"), not one column of a
+ * table whose next column prices the same fee ("NSF | NONE | $14.00"), not a free word
+ * for a later name ("$3.95 FEE FOR PRINTED STATEMENT | NO CHARGE FOR PAPER STATEMENT").
+ */
+function freeWordIsThePrice(line: string, prices: MoneyToken[], index: number, stems: string[]): boolean {
+  const word = prices[index];
+  if (/\d\s*$/.test(line.slice(0, word.start)) || line.lastIndexOf("(", word.start) > line.lastIndexOf(")", word.start)) return false;
+  const next = prices[index + 1];
+  const after = line.slice(word.end, next?.start ?? line.length);
+  if (next && !/[a-z]{3,}/i.test(after)) return false;
+  if (namesFee(after, stems)) return false;
+  const previous = prices[index - 1];
+  return !previous || previous.value === 0 || !/^\s*(?:fee|charge)\b/i.test(line.slice(previous.end));
+}
+
+/** The row of a line's last name when its dot leader runs to a price on the next line. */
+function leaderRow(lines: string[], index: number): string | null {
+  const line = lines[index];
+  const lastPrice = moneyTokens(line).at(-1);
+  const tail = lastPrice ? line.slice(lastPrice.end) : line;
+  const opening = (lines[index + 1] ?? "").match(LEADING_PRICE);
+  return TRAILING_LEADER.test(tail) && /[a-z]{3,}/i.test(tail) && opening ? `${tail.trim()} | ${opening[0].trim()}` : null;
+}
+
+/**
+ * A daily cap is stated on the fee's row: the amount follows cap wording ("Maximum of",
+ * "max", "up to", "not to exceed") or "daily", and is followed by "per day" or "daily"
+ * ("$30.00 (max $180.00 daily)"; "Daily maximum $120 per day"). Exported for tests.
+ */
+export function statesDailyCap(line: string, amount: number): boolean {
+  return moneyTokens(line).some((t) => {
+    if (Math.abs(t.value - amount) >= 0.005) return false;
+    const before = line.slice(Math.max(0, t.start - 40), t.start);
+    const after = line.slice(t.end, t.end + 30);
+    return DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before));
+  });
+}
+
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
 function feeRow(lines: string[], index: number): string {
   const line = lines[index];
+  // A dot-leader row whose price was pushed onto the next line ("Levies ......" /
+  // "$20.00"): the row is the name after the line's last price and the price that opens
+  // the next line, never the price in front of the name (that is the previous row's).
+  // A long flattened line keeps its own prices; `leaderRow` offers its last name's row too.
+  const leader = leaderRow(lines, index);
+  if (leader && line.length <= PRICE_FIRST_MAX_LENGTH) return leader;
   if (moneyTokens(line).length > 0 || ZERO_WORDS.test(line)) return line;
   // Only a price line may follow; another name ("Incoming" then "Outgoing" then "$25")
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
-    .find((next) => next.length <= PRICE_BELOW_MAX_LENGTH && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
+    .find((next) => (next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next)) && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
-  return between.every((next) => /^\s*(\/|per\b)/i.test(next)) ? `${line} | ${price}` : line;
+  // Units ("/Item") and notes that only qualify the name ("If checks are not on order
+  // (10 maximum)", "(up to $1,000)") may sit between a name and its price.
+  return between.every((next) => /^\s*(\/|per\b)/i.test(next) || QUALIFIER_LINE.test(next)) ? `${line} | ${price}` : line;
 }
 
 function isThreshold(line: string, token: MoneyToken): boolean {
@@ -158,20 +250,55 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after);
 }
 
+/** The fee's name carries a band figure that sits in its row as a threshold. */
+function namesItsBand(row: string, feeName: string): boolean {
+  const bands = moneyTokens(row).filter((t) => isThreshold(row, t));
+  return moneyTokens(feeName).some((named) => bands.some((t) => Math.abs(t.value - named.value) < 0.005));
+}
+
+// Callers check many fees against one text in a row (Knox's self-check, a document's
+// live fees); split it once.
+let lastText: string | null = null;
+let lastLines: string[] = [];
+function cachedSourceLines(text: string): string[] {
+  if (text !== lastText) {
+    lastLines = sourceLines(text);
+    lastText = text;
+  }
+  return lastLines;
+}
+
 /**
  * Pure: is this published fee stated in its source text? Returns the source line that
  * carries it, or the first reason it is not traceable. `categoryPattern` is the report
- * line's include regex (Postgres word anchors \m \M are accepted).
+ * line's include regex (Postgres word anchors \m \M are accepted). A fee in a daily cap
+ * category (`canonicalFeeKey` in DAILY_CAP_CATEGORIES) that does not trace as a price is
+ * read once more as a cap on its fee's row, so the cap can only gain a trace, never lose one.
  */
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
+  canonicalFeeKey?: string | null,
+): SourceCheckResult {
+  const asPrice = checkAgainstLines(text, feeName, amount, categoryPattern, false);
+  if (asPrice.ok || !canonicalFeeKey || !DAILY_CAP_CATEGORIES.has(canonicalFeeKey)) return asPrice;
+  const asCap = checkAgainstLines(text, feeName, amount, categoryPattern, true);
+  return asCap.ok ? asCap : asPrice;
+}
+
+function checkAgainstLines(
+  text: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  dailyCap: boolean,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
-  const lines = sourceLines(text);
-  const stems = nameStems(feeName);
+  const lines = cachedSourceLines(text);
+  // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
+  const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
   const rounded = Math.round(amount * 100) / 100;
 
@@ -201,7 +328,18 @@ export function checkFeeAgainstSource(
       !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !` ${comparable(line)} `.includes(stem) || ` ${comparable(above)} `.includes(stem))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
-    const amountProblem = statesAmount(feeRow(lines, i), rounded, stems);
+    let row = feeRow(lines, i);
+    let amountProblem = dailyCap
+      ? statesDailyCap(row, rounded) ? null : "amount_not_the_fee"
+      : statesAmount(row, rounded, stems);
+    // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
+    // tier's price, not a band standing in for the whole fee.
+    if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;
+    const leader = dailyCap ? null : leaderRow(lines, i);
+    if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
+      row = leader;
+      amountProblem = null;
+    }
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
@@ -211,7 +349,7 @@ export function checkFeeAgainstSource(
       best = "category_not_in_text";
       continue;
     }
-    return { ok: true, sourceLine: feeRow(lines, i).slice(0, 240) };
+    return { ok: true, sourceLine: row.slice(0, 240) };
   }
   return { ok: false, reason: best };
 }
