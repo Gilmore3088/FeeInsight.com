@@ -5,7 +5,7 @@ import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
 
-import { fetchWithTimeout, looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
+import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import {
   cleanText,
   hubPages,
@@ -30,16 +30,20 @@ type Fetcher = typeof fetch;
  *
  * For live banks with few fee categories (or no monthly fee on an HTML fee link) this
  * reads the homepage, the stored fee page, a few hub pages (Checking, Accounts,
- * Disclosures) and the site's own search for "fee schedule", then keeps every page that
- * lists fees: deposit-account pages (named after their account) and fee documents
- * (schedules, disclosures, courtesy pay policies, PDFs behind opaque /assets/files
- * links). Each page is stored in `institution_additional_sources` (never replacing the
+ * Disclosures) and the site's own search (up to MAX_SEARCH_PAGES_PER_BANK queries such as
+ * "fee schedule", "truth in savings", "account agreement", "member agreement"), then keeps
+ * every page that lists fees: deposit-account pages (named after their account), fee
+ * documents (schedules, disclosures, courtesy pay policies, PDFs behind opaque
+ * /assets/files links) and account or membership agreements that list at least one fee
+ * with a dollar amount. Each page is stored in `institution_additional_sources` (never replacing the
  * bank's fee link); the companion fetch (`companion-fetch.ts`) downloads it as its own
  * document stream. Runs inside the `discover` step after the main search, with whatever
  * time the step has left, and logs every bank it checks.
  */
 
-export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 2 } as const;
+export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 3 } as const;
+/** One `pipeline_attempts` row per site-search query, so each query's hit rate is visible. */
+export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 1 } as const;
 /** Live banks with fewer published fee categories than this are searched. */
 export const THIN_BANK_CATEGORY_LIMIT = 8;
 export const SECOND_DOCUMENT_BANKS_PER_STEP = 6;
@@ -47,9 +51,45 @@ export const SECOND_DOCUMENT_BANKS_PER_STEP = 6;
 export const MAX_COMPANIONS_PER_BANK = 8;
 const MAX_ACCOUNT_PAGES_CHECKED = 8;
 const MAX_FEE_DOCUMENTS_CHECKED = 5;
+const MAX_AGREEMENTS_CHECKED = 3;
+/** Agreements put their fee section late; read this many PDF pages for a fee line. */
+const AGREEMENT_PDF_PAGES = 12;
+/** Site-search result pages requested per bank per run (one per query). */
+export const MAX_SEARCH_PAGES_PER_BANK = 4;
 const MAX_HUBS = 3;
 const RECHECK_DAYS = 30;
-const SEARCH_QUERY = "fee schedule";
+/** Always searched first: it found Triangle FCU's fees. */
+const PRIMARY_SEARCH_QUERY = "fee schedule";
+/**
+ * The other queries, fee and agreement wording interleaved so every run asks for both.
+ * Each run takes the next MAX_SEARCH_PAGES_PER_BANK - 1 of them, so a bank searched
+ * again a month later gets the rest.
+ */
+export const ROTATING_SEARCH_QUERIES = [
+  "account agreement",
+  "schedule of fees",
+  "member agreement",
+  "truth in savings",
+  "deposit agreement",
+  "membership agreement",
+] as const;
+export const SITE_SEARCH_QUERIES = [PRIMARY_SEARCH_QUERY, ...ROTATING_SEARCH_QUERIES] as const;
+
+/** The queries for one run: "fee schedule", then the rotation's slice of the others. */
+export function siteSearchQueries(rotation: number, limit = MAX_SEARCH_PAGES_PER_BANK): string[] {
+  const count = Math.max(0, Math.min(limit, SITE_SEARCH_QUERIES.length));
+  if (count === 0) return [];
+  const slots = count - 1;
+  const size = ROTATING_SEARCH_QUERIES.length;
+  const start = (((Math.trunc(rotation) * slots) % size) + size) % size;
+  const rest = Array.from({ length: slots }, (_, index) => ROTATING_SEARCH_QUERIES[(start + index) % size]);
+  return [PRIMARY_SEARCH_QUERY, ...rest];
+}
+
+/** Changes once per recheck window, so a bank's next search uses the next queries. */
+export function currentSearchRotation(now = Date.now()): number {
+  return Math.floor(now / (RECHECK_DAYS * 24 * 60 * 60 * 1000));
+}
 
 export type AdditionalDocumentRole = "business" | "other_services" | "consumer_supplement" | "account_page";
 
@@ -65,6 +105,9 @@ export function additionalDocumentRole(text: string): AdditionalDocumentRole {
 
 const STRONG_FEE_DOCUMENT =
   /\b(fee schedules?|schedules? of (fees|charges)|service charges?|truth in savings|courtesy pay|overdraft (privilege|protection|polic(y|ies)|services?|practices)|bounce (protection|coverage)|fee disclosures?|account fees|other fees|additional services|miscellaneous fees)\b/;
+/** Account and membership agreements: often the only place a small bank lists its fees. */
+const AGREEMENT =
+  /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
 const NOT_A_FEE_DOCUMENT =
   /\b(privacy|careers?|jobs|mortgage|loans?|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility)\b/;
@@ -73,7 +116,7 @@ const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
 const GENERIC_LABEL = /^(learn more|read more|more|details|view|click here|here|see details|explore|open|open now|get started|compare|go|>|»)$/i;
 
-export type CompanionKind = "account_page" | "fee_document";
+export type CompanionKind = "account_page" | "fee_document" | "agreement";
 
 export interface CompanionCandidate {
   url: string;
@@ -112,6 +155,13 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
   const strong = STRONG_FEE_DOCUMENT.exec(lower);
   const medium = MEDIUM_FEE_DOCUMENT.exec(lower);
   const document = looksLikePdfUrl(link.url) || /\/(assets\/files|files|documents?|uploads|media)\//i.test(url.pathname);
+  // "Fee Schedule and Account Agreement" stays a fee document; a plain agreement is kept
+  // only when it lists a fee (see agreementListsFees).
+  const agreement = strong ? null : AGREEMENT.exec(lower);
+  if (agreement) {
+    const score = 0.78 + (document ? 0.05 : 0);
+    return { url: link.url, label: link.label, kind: "agreement", score, reasons: [agreement[0], document ? "document" : ""].filter(Boolean), foundOn, source };
+  }
   if (strong || (medium && document)) {
     const reasons = [strong?.[0] ?? medium?.[0] ?? "", document ? "document" : ""].filter(Boolean);
     const score = Math.min(0.98, (strong ? 0.88 : 0.8) + (document ? 0.05 : 0));
@@ -156,10 +206,10 @@ export function accountNameFor(label: string, url: string): string {
 }
 
 /**
- * The site's own search for "fee schedule", from a GET search form on the page
- * (`<form action="/search"><input name="q">`). Null when the page has none.
+ * The site's own search for `query` (default "fee schedule"), from a GET search form on
+ * the page (`<form action="/search"><input name="q">`). Null when the page has none.
  */
-export function siteSearchUrl(html: string, site: URL): string | null {
+export function siteSearchUrl(html: string, site: URL, query: string = PRIMARY_SEARCH_QUERY): string | null {
   const forms = html.match(/<form\b[\s\S]*?<\/form>/gi) ?? [];
   for (const form of forms) {
     const openTag = form.slice(0, form.indexOf(">") + 1);
@@ -180,7 +230,7 @@ export function siteSearchUrl(html: string, site: URL): string | null {
       const target = new URL(action || "/", site);
       if (!sameSite(target, site) || (target.protocol !== "http:" && target.protocol !== "https:")) continue;
       target.hash = "";
-      target.searchParams.set(name, SEARCH_QUERY);
+      target.searchParams.set(name, query);
       return target.toString();
     } catch {
       continue;
@@ -196,6 +246,68 @@ export function accountPageListsFees(html: string, url: string): { ok: boolean; 
     return { ok: false, feeLines: page.feeLines, reason: page.reason };
   }
   return { ok: true, feeLines: page.feeLines, reason: `${page.feeLines} fee line${page.feeLines === 1 ? "" : "s"} on the account page` };
+}
+
+/** One search URL per query, from the page's search form; empty when it has none. */
+export function siteSearchUrls(html: string, site: URL, queries: readonly string[]): { query: string; url: string }[] {
+  const urls: { query: string; url: string }[] = [];
+  for (const query of queries) {
+    const url = siteSearchUrl(html, site, query);
+    if (!url) return [];
+    urls.push({ query, url });
+  }
+  return urls;
+}
+
+export interface AgreementCheck {
+  ok: boolean;
+  documentType: "html" | "pdf" | null;
+  feeLines: number;
+  verdict: string;
+  reason: string;
+}
+
+/**
+ * An agreement is kept only when its text lists at least one fee with a dollar amount
+ * (the same check as an account page). PDFs are read up to AGREEMENT_PDF_PAGES pages; a
+ * scan with no text is dropped, since nothing shows it lists a fee.
+ */
+export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promise<AgreementCheck> {
+  const response = await fetchWithTimeout(fetchImpl, url);
+  if (!response.ok) return { ok: false, documentType: null, feeLines: 0, verdict: `http_${response.status}`, reason: `Agreement HTTP ${response.status}` };
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const noFee = (documentType: "html" | "pdf", feeLines = 0): AgreementCheck => ({
+    ok: false,
+    documentType,
+    feeLines,
+    verdict: "no_fee_listed",
+    reason: "Agreement lists no fee with an amount",
+  });
+  const kept = (documentType: "html" | "pdf", feeLines: number): AgreementCheck => ({
+    ok: true,
+    documentType,
+    feeLines,
+    verdict: "accepted_agreement",
+    reason: `Agreement lists ${feeLines} fee line${feeLines === 1 ? "" : "s"}`,
+  });
+  if (contentType.includes("application/pdf") || (looksLikePdfUrl(url) && !contentType.includes("text/html"))) {
+    const tooLarge: AgreementCheck = { ok: false, documentType: "pdf", feeLines: 0, verdict: "too_large", reason: "Agreement PDF too large to check" };
+    if (Number(response.headers.get("content-length") ?? 0) > MAX_PDF_CHECK_BYTES) {
+      await response.body?.cancel().catch(() => undefined);
+      return tooLarge;
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > MAX_PDF_CHECK_BYTES) return tooLarge;
+    const text = await pdfCheckText(bytes, AGREEMENT_PDF_PAGES);
+    if (!text) return { ok: false, documentType: "pdf", feeLines: 0, verdict: "unreadable_pdf", reason: "Agreement PDF has no readable text" };
+    const page = scoreFeePage(text);
+    return page.feeLines >= 1 ? kept("pdf", page.feeLines) : noFee("pdf");
+  }
+  if (!contentType.includes("text/html")) {
+    return { ok: false, documentType: null, feeLines: 0, verdict: "unsupported_type", reason: `Unsupported content type ${contentType || "unknown"}` };
+  }
+  const check = accountPageListsFees(await response.text(), url);
+  return check.ok ? kept("html", check.feeLines) : noFee("html", check.feeLines);
 }
 
 interface ThinBankRow {
@@ -227,6 +339,21 @@ export interface SecondDocumentResult {
   reason: string;
   fetches: number;
   pages: CompanionPage[];
+  searches: SiteSearchResult[];
+}
+
+/** One query on the bank's own site search. */
+export interface SiteSearchResult {
+  query: string;
+  url: string;
+  outcome: AttemptOutcome;
+  /** HTTP status of the results page, or null when the request failed. */
+  status: number | null;
+  /** Fee documents and agreements its results linked to. */
+  candidates: number;
+  /** Companion pages kept from its results. */
+  kept: number;
+  durationMs: number;
 }
 
 export interface RunSecondDocumentFindResult {
@@ -303,12 +430,30 @@ async function searchBank(
   fetchImpl: Fetcher,
   known: Set<string>,
   deadline: number,
+  rotation: number,
 ): Promise<SecondDocumentResult & { trail: TrailEntry[] }> {
   const institutionId = Number(row.id);
   const categories = Number(row.categories);
   const trail: TrailEntry[] = [];
   const pages: CompanionPage[] = [];
   let fetches = 0;
+  // Each site search, with the links its results page held; a link is credited to the
+  // first query that found it.
+  const searchRuns: Array<{ query: string; url: string; status: number | null; ok: boolean; links: PageLink[]; durationMs: number }> = [];
+  const foundBySearch = new Map<string, string>();
+  let siteRef: URL | null = null;
+  let excludeRef = new Set<string>();
+  const searchResults = (): SiteSearchResult[] =>
+    searchRuns.map((search) => {
+      const candidates = siteRef ? companionCandidates(search.links, siteRef, excludeRef).length : 0;
+      const kept = pages.filter((page) => foundBySearch.get(urlIdentity(page.url)) === search.query).length;
+      let outcome: AttemptOutcome;
+      if (!search.ok) outcome = search.status != null && search.status < 400 ? "unsupported_format" : classifyFetchFailure(search.status);
+      else if (kept > 0) outcome = "ok";
+      else if (candidates === 0) outcome = "no_candidates";
+      else outcome = "rejected";
+      return { query: search.query, url: search.url, outcome, status: search.status, candidates, kept, durationMs: search.durationMs };
+    });
   const done = (fields: Pick<SecondDocumentResult, "outcome" | "reason">) => ({
     institutionId,
     categories,
@@ -317,6 +462,7 @@ async function searchBank(
     documentType: pages[0]?.documentType ?? null,
     fetches,
     pages,
+    searches: searchResults(),
     trail,
     ...fields,
   });
@@ -324,6 +470,8 @@ async function searchBank(
   const site = normalizeSite(row.website_url);
   if (!site) return done({ outcome: "invalid_url", reason: "Invalid website_url" });
   const exclude = new Set([...known, urlIdentity(row.fee_schedule_url)]);
+  siteRef = site;
+  excludeRef = exclude;
 
   // Hub pages are often account pages too: each URL is requested once.
   const opened = new Map<string, string | null>();
@@ -363,11 +511,22 @@ async function searchBank(
     const feePage = await openHtml(row.fee_schedule_url, "known_link");
     if (feePage) links.push(...pageLinks(feePage, site));
   }
-  // The site's own search for "fee schedule" (James found Triangle FCU's fees this way).
-  const searchUrl = siteSearchUrl(homepage, site);
-  if (searchUrl && Date.now() < deadline) {
-    const results = await openHtml(searchUrl, "crawl_page", "site search");
-    if (results) links.push(...pageLinks(results, site));
+  // The site's own search (James found Triangle FCU's fees this way): "fee schedule" plus
+  // fee and agreement wording, at most MAX_SEARCH_PAGES_PER_BANK result pages per bank.
+  const searches = siteSearchUrls(homepage, site, siteSearchQueries(rotation)).slice(0, MAX_SEARCH_PAGES_PER_BANK);
+  for (const search of searches) {
+    if (Date.now() > deadline) break;
+    const startedAt = Date.now();
+    const results = await openHtml(search.url, "crawl_page", `site search: ${search.query}`);
+    const verdict = trail[trail.length - 1]?.verdict ?? "";
+    const status = Number(/^http_(\d+)$/.exec(verdict)?.[1] ?? 0) || null;
+    const found = results ? pageLinks(results, site) : [];
+    links.push(...found);
+    for (const link of found) {
+      const identity = urlIdentity(link.url);
+      if (!foundBySearch.has(identity)) foundBySearch.set(identity, search.query);
+    }
+    searchRuns.push({ query: search.query, url: search.url, status, ok: results != null, links: found, durationMs: Date.now() - startedAt });
   }
   const hubs = hubPages(links.filter((link) => !BUSINESS.test(linkText(link)) && !NOT_A_FEE_DOCUMENT.test(linkText(link))), site, exclude, MAX_HUBS);
   for (const hub of hubs) {
@@ -441,6 +600,36 @@ async function searchBank(
     }
   }
 
+  // Account, membership and deposit agreements: kept only when they list a fee with an amount.
+  const agreements = companionCandidates([...links, ...moreLinks], site, new Set([...exclude, ...checked, ...kept]))
+    .filter((candidate) => candidate.kind === "agreement")
+    .slice(0, MAX_AGREEMENTS_CHECKED);
+  for (const candidate of agreements) {
+    if (Date.now() > deadline) break;
+    if (pages.length >= MAX_COMPANIONS_PER_BANK) break;
+    fetches += 1;
+    const entry: TrailEntry = { url: candidate.url, source: candidate.source, foundOn: candidate.foundOn, label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "" };
+    trail.push(entry);
+    try {
+      const check = await agreementListsFees(candidate.url, fetchImpl);
+      entry.verdict = check.verdict;
+      if (check.ok) {
+        keep({
+          url: candidate.url,
+          role: "consumer_supplement",
+          kind: "agreement",
+          accountName: accountNameFor(candidate.label, candidate.url),
+          documentType: check.documentType,
+          reason: check.reason,
+        });
+      } else {
+        rejectedAny = rejectedAny || !check.verdict.startsWith("http_");
+      }
+    } catch {
+      entry.verdict = "fetch_failed";
+    }
+  }
+
   if (pages.length > 0) {
     return done({ outcome: "ok", reason: `${pages.length} companion page${pages.length === 1 ? "" : "s"} list fees` });
   }
@@ -458,6 +647,8 @@ export async function runSecondDocumentFind(options: {
   deadline: number;
   dryRun?: boolean;
   learning: boolean;
+  /** Which slice of the site-search queries to run; defaults to the current recheck window. */
+  searchRotation?: number;
 }): Promise<RunSecondDocumentFindResult> {
   const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, results: [] });
   if (!options.learning) return empty("no_attempt_log");
@@ -472,7 +663,7 @@ export async function runSecondDocumentFind(options: {
     const startedAt = Date.now();
     const institutionId = Number(row.id);
     const known = await knownDocumentUrls(db, institutionId);
-    const result = await searchBank(row, options.fetchImpl, known, options.deadline);
+    const result = await searchBank(row, options.fetchImpl, known, options.deadline, options.searchRotation ?? currentSearchRotation());
     const { trail, ...summary } = result;
     results.push(summary);
     if (options.dryRun) continue;
@@ -485,6 +676,24 @@ export async function runSecondDocumentFind(options: {
            ${SECOND_DOCUMENT_FINDER.version}, ${options.runId}, ${page.reason})
         ON CONFLICT (institution_id, url) DO NOTHING
       `;
+    }
+    // One row per site-search query, beside the bank's main attempt: the query's own hit rate.
+    for (const search of result.searches) {
+      await recordAttempt(db, {
+        institutionId,
+        stage: "discover",
+        strategy: SITE_SEARCH_STRATEGY.strategy,
+        version: SITE_SEARCH_STRATEGY.version,
+        fingerprint: search.url,
+        outcome: search.outcome,
+        yieldCount: search.kept,
+        costMicrousd: 0,
+        durationMs: search.durationMs,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        detail: { pass: 2, finder: SECOND_DOCUMENT_FINDER.strategy, query: search.query, url: search.url, status: search.status, candidates: search.candidates, kept: search.kept },
+        foldIntoPlaybook: false,
+      });
     }
     await recordAttempt(db, {
       institutionId,
@@ -505,6 +714,7 @@ export async function runSecondDocumentFind(options: {
         published_categories: result.categories,
         reason: result.reason,
         pages_fetched: result.fetches,
+        searches: result.searches.map((search) => ({ query: search.query, outcome: search.outcome, candidates: search.candidates, kept: search.kept })),
         trail: trail.slice(0, 40),
       },
     });

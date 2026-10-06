@@ -13,7 +13,7 @@ type Fetcher = typeof fetch;
 
 export const FIND_REQUEST_TIMEOUT_MS = 8_000;
 /** PDFs larger than this are not downloaded to check; they are judged by their label. */
-const MAX_PDF_CHECK_BYTES = 8 * 1024 * 1024;
+export const MAX_PDF_CHECK_BYTES = 8 * 1024 * 1024;
 const PDF_CHECK_PAGES = 3;
 const PDF_CHECK_TIMEOUT_MS = 6_000;
 /** A scanned or unreadable PDF needs at least this link score to be accepted. */
@@ -121,15 +121,15 @@ export function looksLikePdfUrl(url: string): boolean {
   return /\.pdf($|\?)/i.test(url);
 }
 
-/** Text of the first pages of a PDF, or null when it has none (a scan) or cannot be read. */
-export async function pdfCheckText(bytes: Uint8Array): Promise<string | null> {
+/** Text of the first `maxPages` pages of a PDF, or null when it has none (a scan) or cannot be read. */
+export async function pdfCheckText(bytes: Uint8Array, maxPages = PDF_CHECK_PAGES): Promise<string | null> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     const { getDocumentProxy } = await import("unpdf");
     const read = (async () => {
       const pdf = await getDocumentProxy(bytes);
       try {
-        const pages = Math.min(Number(pdf.numPages ?? 0), PDF_CHECK_PAGES);
+        const pages = Math.min(Number(pdf.numPages ?? 0), maxPages);
         const lines: string[] = [];
         for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) {
           const content = await (await pdf.getPage(pageNumber)).getTextContent();
