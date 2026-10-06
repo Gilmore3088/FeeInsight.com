@@ -118,6 +118,32 @@ describe("sendReportRequestNotifications", () => {
     expect(reply.html).toContain("Example Credit Union");
   });
 
+  it("answers a held request at once with the free district report", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("em_internal")).mockResolvedValueOnce(okResponse("em_reply"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications({ ...REQUEST, held: { district: 11 } });
+
+    const [internal, reply] = sentBodies(fetchMock);
+    expect(internal.subject).toContain("Held report request: Example Credit Union");
+    expect(internal.text).toContain("Set to Held automatically.");
+    expect(internal.text).not.toContain("reply with scope and price");
+    expect(reply.subject).toBe("About your request for Example Credit Union");
+    expect(reply.text).toContain("we are not quoting this report yet, and nothing has been charged");
+    expect(reply.text).toContain("/reports/benchmark/district-11");
+    expect(reply.html).toContain("Open the free District 11 report");
+  });
+
+  it("falls back to the national report when the district is unknown", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("a")).mockResolvedValueOnce(okResponse("b"));
+    vi.stubGlobal("fetch", fetchMock);
+    await sendReportRequestNotifications({ ...REQUEST, held: { district: null } });
+    const [, reply] = sentBodies(fetchMock);
+    expect(reply.text).toContain("/reports/benchmark/national");
+  });
+
   it("prefers REPORT_REQUEST_EMAIL_FROM over the workspace invite address", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     vi.stubEnv("REPORT_REQUEST_EMAIL_FROM", "Fee Insight <reports@example.com>");

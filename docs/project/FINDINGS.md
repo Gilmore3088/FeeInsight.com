@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Server actions sat outside the API rate limits
+**What happened:** the funnel audit found free signup (`register`, a server action) had a honeypot
+but no rate limit, while every lead form had one. API limits only cover routes in
+`API_ROUTE_POLICIES`, and a policy test requires each of those to be an `/api` route file, so a
+server action could not be added there.
+**Cause:** the limiter counted audit rows per API route bucket; nothing wrote audit rows for actions.
+**Fix:** `src/lib/api-hardening/action-rate-limit.ts` gives an action its own policy, writes one audit
+row per attempt and counts them (signup: 8 per 10 minutes per connection, like the lead forms).
+Funnel fixes PR (this branch).
+**Lesson:** a public server action that creates rows or sends email needs
+`isServerActionRateLimited` with its own policy, the same as an API route.
+
 ## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
 **What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
 our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks

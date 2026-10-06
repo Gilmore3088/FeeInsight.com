@@ -8,7 +8,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
-import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 import { analyzeMarket, MIN_LOCAL_PEERS_PER_LINE, type LinePosition, type ReportLine } from "@/lib/custom-report/analysis";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { verifyReportToken } from "@/lib/custom-report/link";
@@ -49,9 +49,10 @@ const POSITION_CLASS: Record<LinePosition, string> = {
   free: "bg-[#E8EEF6] text-[#2F5585]",
 };
 
-// No booking tool yet, so the page offers email under its real name, never "book".
+// No booking tool yet, so the page offers the contact form (stored and answered like every
+// request), never "book". The institution is filled in for them.
 function contactHref(institutionName: string): string {
-  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Competitive Fee Position Report — ${institutionName}`)}`;
+  return `/contact?${new URLSearchParams({ source: "report", company: institutionName }).toString()}`;
 }
 
 function PositionChip({ line }: { line: ReportLine }) {
@@ -104,7 +105,7 @@ export default async function MarketReportPage({ params }: PageProps) {
               href={contactHref(name)}
               className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
             >
-              Email us about this report
+              Ask us about this report
             </a>
           </div>
         </section>
@@ -115,10 +116,9 @@ export default async function MarketReportPage({ params }: PageProps) {
               This market is being refreshed
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">
-              {analysis.readiness.reason} We only show a comparison when the local data supports it. Questions
-              to{" "}
+              {analysis.readiness.reason} We only show a comparison when the local data supports it.{" "}
               <a href={contactHref(name)} className="underline">
-                {CONTACT_EMAIL}
+                Send us a question
               </a>
               .
             </p>
@@ -271,9 +271,9 @@ export default async function MarketReportPage({ params }: PageProps) {
                   ))}
               </ul>
               <p className="mt-3">
-                If a figure does not match your current schedule, reply to{" "}
+                If a figure does not match your current schedule,{" "}
                 <a href={contactHref(name)} className="underline">
-                  {CONTACT_EMAIL}
+                  tell us through the contact form
                 </a>{" "}
                 and we will correct it. This link resolves until {DATE.format(verified.expiresOn)}.
               </p>

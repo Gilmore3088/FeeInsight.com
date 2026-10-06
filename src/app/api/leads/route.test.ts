@@ -44,6 +44,7 @@ import {
   sendContactRequestNotifications,
   sendReportRequestNotifications,
 } from "@/lib/email/report-request";
+import { checkInstitutionReport } from "@/lib/custom-report/quote-check";
 import { POST } from "./route";
 
 const sqlMock = sql as unknown as ReturnType<typeof vi.fn>;
@@ -207,6 +208,29 @@ describe("POST /api/leads", () => {
     expect(update.values).toContain("Report check: No match.");
     expect(update.values).toContain(42);
     expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ quoteCheck: "Report check: No match." }));
+  });
+
+  it("holds a request whose market is not ready and tells the email which district", async () => {
+    vi.mocked(checkInstitutionReport).mockResolvedValueOnce({
+      status: "thin",
+      readiness: {} as never,
+      rule: { state_code: "TX", charter_type: "bank", ownCategories: 4, richCompetitors: 2, passes: false } as never,
+    });
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    const update = issued(2);
+    expect(update.text).toContain("THEN 'held' ELSE status END");
+    expect(update.values).toContain(true);
+    expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ held: { district: 11 } }));
+  });
+
+  it("does not hold a request it could not match; James checks it by hand", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    expect(issued(2).values).toContain(false);
+    expect(reportNotifyMock.mock.calls[0][0]).not.toHaveProperty("held");
   });
 
   it("records the report data check when the driver returns the bigint id as a string", async () => {
