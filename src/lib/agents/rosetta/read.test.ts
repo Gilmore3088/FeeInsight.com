@@ -788,6 +788,127 @@ describe("Rosetta agentic read", () => {
       expect(attempts(db)).toEqual([]);
     });
 
+    describe("when a text's fees did not hold up", () => {
+      const filler = "This schedule applies to personal deposit accounts opened at any branch. ".repeat(6);
+      const layoutText = [filler, "SCHEDULE OF FEES", "OVERDRAFT FEE | $33.00", "Charges may apply to some services."].join("\n");
+      const textPdf = { ...htmlCandidate, document_url: "https://testbank.example/fees.pdf", last_reader: "read.pdf_layout", last_text_lost: true };
+      const layout = () => vi.fn().mockResolvedValueOnce({ totalPages: 1, text: layoutText });
+
+      it("reads a text PDF with free OCR too, and keeps OCR's text when it lists more fees", async () => {
+        const db = specialistDb([textPdf]);
+        const reader = ocrReader(feeLines.join("\n"));
+
+        const result = await runRosettaRead({ runId: 720, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: layout(), scannedPdfReader: reader });
+
+        expect(reader.read).toHaveBeenCalledTimes(1);
+        expect(result).toMatchObject({ completed: 1, readerEscalations: 1, readerEscalationsUsed: 1 });
+        expect(result.results[0]).toMatchObject({ reader: "read.ocr_tesseract", format: "pdf_text", escalation: { to: "read.ocr_tesseract", used: true } });
+        expect(result.results[0].routerReason).toContain("did not hold up");
+        expect(attempts(db).slice(0, 2)).toEqual([
+          ["read.pdf_layout", "ok"],
+          ["read.ocr_tesseract", "ok"],
+        ]);
+      });
+
+      it("keeps the layout text when OCR's is thinner", async () => {
+        const db = specialistDb([textPdf]);
+        const reader = ocrReader([filler, "Fee schedule", "Charges vary."].join("\n"));
+
+        const result = await runRosettaRead({ runId: 721, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: layout(), scannedPdfReader: reader });
+
+        expect(result).toMatchObject({ completed: 1, readerEscalations: 1, readerEscalationsUsed: 0 });
+        expect(result.results[0]).toMatchObject({ reader: "read.pdf_layout", escalation: { to: "read.ocr_tesseract", used: false } });
+      });
+
+      it("defers the OCR rung past this run's allowance instead of re-reading without it", async () => {
+        const db = specialistDb([textPdf]);
+        const reader = ocrReader("unused");
+
+        const result = await runRosettaRead({
+          runId: 722,
+          db: asReadDb(db),
+          fetchImpl: pdfFetch(),
+          pdfTextExtractor: layout(),
+          scannedPdfReader: reader,
+          ocrDocumentsPerRun: 0,
+        });
+
+        expect(result).toMatchObject({ deferred: 1, completed: 0 });
+        expect(attempts(db)).toEqual([]);
+      });
+
+      it("reads a web page with the JavaScript fallbacks too, and keeps the richer text", async () => {
+        const page = `<html><body><p>${filler}</p><table><tr><td>Overdraft fee</td><td>$35.00</td></tr></table>
+          <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+            props: { fees: [{ name: "Overdraft fee", amount: "$35.00" }, { name: "Stop payment fee", amount: "$30.00" }, { name: "NSF fee", amount: "$35.00" }, { name: "Wire fee", amount: "$25.00" }] },
+          })}</script></body></html>`;
+        const db = specialistDb([{ ...htmlCandidate, last_reader: "read.html_dom", last_text_lost: true }]);
+        const fetchImpl = vi.fn().mockResolvedValueOnce(response(page));
+
+        const result = await runRosettaRead({ runId: 723, db: asReadDb(db), fetchImpl });
+
+        expect(result.results[0]).toMatchObject({ reader: "read.js_fallback", escalation: { to: "read.js_fallback", used: true } });
+        expect(attempts(db).slice(0, 2)).toEqual([
+          ["read.html_dom", "ok"],
+          ["read.js_fallback", "ok"],
+        ]);
+      });
+
+      it("keeps a lost text whose re-read is thinner, and never sends that bank back to Magellan", async () => {
+        const stored = [layoutText, "STOP PAYMENT | $31.00", "WIRE TRANSFER FEE | $25.00", "NSF FEE | $35.00"].join("\n");
+        const db = specialistDb([{ ...textPdf, last_reader: "legacy.pdf", last_lost_text: stored }]);
+
+        const result = await runRosettaRead({ runId: 726, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: layout() });
+
+        expect(result.results[0]).toMatchObject({ status: "completed", reader: "read.pdf_layout", escalation: null });
+        const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+        expect(sqlText).not.toContain("INSERT INTO agent_source_texts");
+        expect(sqlText).not.toContain("SET fee_schedule_url = NULL");
+        expect(attempts(db)[0]).toEqual(["read.pdf_layout", "ok"]);
+      });
+
+      it("replaces a lost text with a re-read that lists at least as many fees", async () => {
+        const db = specialistDb([{ ...textPdf, last_reader: "legacy.pdf", last_lost_text: "OVERDRAFT FEE $40" }]);
+
+        await runRosettaRead({ runId: 727, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: layout() });
+
+        const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+        expect(sqlText).toContain("INSERT INTO agent_source_texts");
+      });
+
+      it("scores texts once a day and selects lost texts for one read a rung up", async () => {
+        const db = specialistDb([]);
+        const base = db.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
+        db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+          const text = templateText(strings);
+          if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+          if (text.includes("AS fresh")) return Promise.resolve([{ fresh: true }]);
+          return base(strings, ...values);
+        });
+
+        const result = await runRosettaRead({ runId: 725, db: asReadDb(db), fetchImpl: vi.fn() });
+
+        expect(result.textSurvivalRefreshed).toBe(false);
+        const selection = db.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents"));
+        const query = String(selection?.[0]);
+        expect(query).toContain("lost.evidence->>'text_hash' = adt.text_hash");
+        expect(query).toContain("rung.strategy = CASE WHEN adt.reader =");
+        expect(query).toContain("AS last_reader");
+        expect(query).toContain("AS last_text_lost");
+        expect(query).toContain("AS reader_record");
+        expect(selection?.[1]).toEqual(expect.arrayContaining(["rosetta.text_survival", "read.ocr_tesseract", "read.js_fallback"]));
+      });
+
+      it("starts a bank's new document on the alternate when its layout texts keep losing fees", async () => {
+        const db = specialistDb([{ ...textPdf, last_reader: null, last_text_lost: false, reader_record: { "read.pdf_layout": { held: 0, lost: 2 } } }]);
+        const reader = ocrReader(feeLines.join("\n"));
+
+        const result = await runRosettaRead({ runId: 724, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: layout(), scannedPdfReader: reader });
+
+        expect(result.results[0].escalation).toEqual({ to: "read.ocr_tesseract", used: true });
+      });
+    });
+
     it("reads a JavaScript page from the data it embeds", async () => {
       const db = specialistDb([htmlCandidate]);
       const shell = `<html><body><div id="__next"></div><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({

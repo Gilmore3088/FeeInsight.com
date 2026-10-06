@@ -1,8 +1,7 @@
 import type { IndexEntry } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
-import type { Finding } from "../../findings";
-import { lowerName } from "../../findings";
+import { lowerName, type Finding } from "./finding";
 
 /** A state headline needs at least this many institutions behind the state median. */
 export const STATE_FINDING_MIN_INSTITUTIONS = 10;
@@ -66,6 +65,15 @@ export function buildCharterPairs(bank: IndexEntry[], cu: IndexEntry[], categori
   return categories
     .map((c) => ({ fee_category: c, bank_median_amount: bankBy.get(c) ?? null, cu_median_amount: cuBy.get(c) ?? null }))
     .filter((p) => p.bank_median_amount != null && p.cu_median_amount != null);
+}
+
+/** Gaps wider than this (in percent) are pinned to the edge of the position chart. */
+export const POSITION_AXIS_MAX_PCT = 50;
+
+/** Position-chart axis half-width that fits the largest gap, in steps of 10%, between 10% and the maximum. */
+export function positionAxis(deltas: number[]): number {
+  const widest = Math.max(0, ...deltas.map((d) => Math.abs(d)));
+  return Math.min(POSITION_AXIS_MAX_PCT, Math.max(10, Math.ceil(widest / 10) * 10));
 }
 
 export function formatDelta(pct: number): string {

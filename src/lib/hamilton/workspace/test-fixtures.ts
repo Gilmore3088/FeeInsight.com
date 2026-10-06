@@ -113,7 +113,7 @@ export function overdraftResearch(overrides: Partial<FeeResearch> = {}): FeeRese
     regulation: [],
     economy: economicBackdrop(economyContext, "Tennessee", 6, "Atlanta"),
     provenance: {
-      engineVersion: "1.4.0",
+      engineVersion: "1.6.0",
       generatedAt: "2026-10-06T08:00:00.000Z",
       peerGroup: { label: "Credit unions, $300M to $1B in assets, Tennessee", n: peers.length },
       dataAsOf: { fees: "2026-09-30", financials: "2026-06-30", changes: null },

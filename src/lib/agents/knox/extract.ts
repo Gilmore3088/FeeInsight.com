@@ -293,8 +293,11 @@ export async function insertCandidate(
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
+  // The dedupe index is (document, fee name, amount), so a line an older version held
+  // as unclassified would block this fee forever. A held row with no category takes the
+  // category instead; any other existing row stays as it is.
   const inserted = await db`
-    INSERT INTO raw_fee_observations (
+    INSERT INTO raw_fee_observations AS fr (
       institution_id,
       source_document_id,
       document_r2_key,
@@ -322,7 +325,19 @@ export async function insertCandidate(
       ${JSON.stringify(flags)}::jsonb,
       'knox'
     )
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric))
+      WHERE source = 'knox' AND source_document_id IS NOT NULL
+    DO UPDATE SET
+      extraction_confidence = EXCLUDED.extraction_confidence,
+      agent_event_id = EXCLUDED.agent_event_id,
+      frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
+      conditions = EXCLUDED.conditions,
+      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
+                      || EXCLUDED.outlier_flags
+                      || '["knox_promoted_from_held"]'::jsonb
+     WHERE fr.source = 'knox'
+       AND fr.outlier_flags ? 'knox_review:unclassified'
+       AND NOT fr.outlier_flags ? 'needs_darwin_verification'
     RETURNING fee_raw_id
   `;
   return inserted.length > 0;
@@ -536,6 +551,7 @@ function specialistDetail(row: TextArtifactRow, run: SpecialistRun): Record<stri
     found: run.found,
     added: run.added,
     held_found: run.heldFound,
+    self_check_failed: run.selfCheckFailed,
   };
 }
 

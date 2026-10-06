@@ -93,6 +93,29 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
   ) as ContractFeeRow[];
 }
 
+export interface SegmentFeeRow extends ContractFeeRow {
+  fed_district: number | null;
+}
+
+/**
+ * Approved, sourced published rows for the given categories with each institution's
+ * Fed district and asset tier, for district, state and size-tier breakdowns.
+ */
+export async function getSegmentFeeRows(categories: string[]): Promise<SegmentFeeRow[]> {
+  if (categories.length === 0) return [];
+  const rows = await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ct.institution_name,
+            ct.state_code, ct.charter_type, ct.asset_size_tier, ct.fed_district
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ANY($1::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [categories] as never[],
+  ) as (ContractFeeRow & { fed_district: number | string | null })[];
+  return rows.map((r) => ({ ...r, fed_district: r.fed_district === null ? null : Number(r.fed_district) }));
+}
+
 /**
  * One institution's value per category under the statistics contract (the median of its
  * approved, sourced amounts; overdraft's highest tier), so "your fee" is measured the same way as the benchmark.
@@ -733,4 +756,125 @@ export async function getPeerFeeValues(
     }
     return result;
   });
+}
+
+export interface SegmentFilter {
+  /** Total assets in thousands of dollars. */
+  minAssets: number | null;
+  maxAssets: number | null;
+  charterType: string | null;
+  stateCode: string | null;
+  /** Keep only the N largest by assets after the other filters. */
+  largest: number | null;
+}
+
+export interface SegmentFeeValue extends PeerFeeValue {
+  total_assets: number | null;
+  charter_type: string | null;
+}
+
+/**
+ * One fee (and its daily cap, when given) across a segment of the registry: how many active
+ * institutions fit, and each one's value under the statistics contract with its documents.
+ */
+export async function getSegmentFeeValues(
+  filter: SegmentFilter,
+  feeCategory: string,
+  capCategory: string | null,
+  excludeInstitutionId?: number,
+): Promise<{ institutionsInSegment: number; ownInSegment: boolean; values: SegmentFeeValue[]; caps: Map<number, number> }> {
+  const params = [filter.minAssets, filter.maxAssets, filter.charterType, filter.stateCode, filter.largest ?? null];
+  const segmentSql = `
+    SELECT ct.id
+      FROM institution_sources ct
+     WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'
+       AND ($1::bigint IS NULL OR ct.asset_size >= $1)
+       AND ($2::bigint IS NULL OR ct.asset_size < $2)
+       AND ($3::text IS NULL OR ct.charter_type = $3)
+       AND ($4::text IS NULL OR ct.state_code = $4)
+       AND ($5::int IS NULL OR ct.asset_size IS NOT NULL)
+     ORDER BY ct.asset_size DESC NULLS LAST, ct.id
+     LIMIT COALESCE($5::int, 100000)`;
+  // Counted without the asking institution, as the values are.
+  const [countRow] = (await sql.unsafe(
+    `SELECT COUNT(*) FILTER (WHERE s.id IS DISTINCT FROM $6::int)::int AS n, COALESCE(BOOL_OR(s.id = $6::int), false) AS own
+       FROM (${segmentSql}) s`,
+    [...params, excludeInstitutionId ?? null] as never[],
+  )) as { n: number; own: boolean }[];
+  const categories = capCategory ? [feeCategory, capCategory] : [feeCategory];
+  const rows = (await sql.unsafe(
+    `WITH seg AS (${segmentSql})
+     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
+            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+       JOIN seg ON seg.id = ct.id
+      WHERE ef.fee_category = ANY($6::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [...params, categories] as never[],
+  )) as {
+    fee_category: string;
+    amount: number | string | null;
+    institution_id: number | string;
+    institution_name: string;
+    charter_type: string | null;
+    state_code: string | null;
+    asset_size: number | string | null;
+    source_document_id: number | string | null;
+    document_url: string | null;
+    created_at: Date | string | null;
+  }[];
+  const kept = rows.filter((r) => Number(r.institution_id) !== excludeInstitutionId);
+  const iso = (v: Date | string | null) => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
+  const feeRows = kept.filter((r) => r.fee_category === feeCategory);
+  const values: SegmentFeeValue[] = [];
+  for (const [id, amount] of valuePerInstitution(feeRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })))) {
+    const own = feeRows.filter((r) => Number(r.institution_id) === id);
+    const first = own[0];
+    values.push({
+      institution_id: id,
+      institution_name: first?.institution_name ?? `Institution ${id}`,
+      state_code: first?.state_code ?? null,
+      amount,
+      source_document_ids: [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))],
+      document_urls: [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))],
+      published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
+      total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),
+      charter_type: first?.charter_type ?? null,
+    });
+  }
+  const capRows = capCategory ? kept.filter((r) => r.fee_category === capCategory) : [];
+  const caps = valuePerInstitution(capRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })));
+  return { institutionsInSegment: Number(countRow?.n ?? 0), ownInSegment: Boolean(countRow?.own), values, caps };
+}
+
+/**
+ * Several fees for a list of institutions, one value each under the statistics contract:
+ * institution id -> fee category -> amount. An institution or fee with no counted row is absent.
+ */
+export async function getFeeValuesForInstitutions(
+  institutionIds: number[],
+  categories: string[],
+): Promise<Map<number, Map<string, number>>> {
+  const out = new Map<number, Map<string, number>>();
+  if (institutionIds.length === 0 || categories.length === 0) return out;
+  const rows = (await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = ANY($1::int[])
+        AND ef.fee_category = ANY($2::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [institutionIds, categories] as never[],
+  )) as { institution_id: number | string; fee_category: string; amount: number | string | null }[];
+  for (const category of categories) {
+    const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
+    for (const [id, value] of valuePerInstitution(list)) {
+      const own = out.get(id) ?? new Map<string, number>();
+      own.set(category, value);
+      out.set(id, own);
+    }
+  }
+  return out;
 }

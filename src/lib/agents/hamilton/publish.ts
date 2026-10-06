@@ -11,6 +11,7 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
+import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
@@ -499,8 +500,9 @@ function documentStream(value: string | null | undefined): string {
   return value == null ? "" : String(value);
 }
 
+/** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 function normalizedFeeName(name: string | null | undefined): string {
-  return (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function documentTime(value: string | Date | null | undefined): number | null {

@@ -10,6 +10,8 @@
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
+import { buildStoryline, type StoryIntent } from "./storyline";
 
 export { proseFeeName };
 import type {
@@ -332,20 +334,29 @@ function evidenceLevel(research: FeeResearch): EvidenceLevel {
   return "market";
 }
 
-export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus } = {}): HamiltonAnswer {
+export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus; story?: StoryIntent } = {}): HamiltonAnswer {
   const name = proseFeeName(research.feeCategory);
-  const claims = [ownFeeClaim(research, name), peerClaim(research), ...layerClaims(research), ...revenueClaims(research, name)].filter(
-    (f): f is Fact => f !== null,
-  );
+  const seg = research.segment ?? null;
   const level = evidenceLevel(research);
-  return {
+  // A segment the question named leads the answer. When it could not be built, the first
+  // claim says so and the default peer group follows; it never stands in silently.
+  const segmentLed = seg !== null && seg.problem === null;
+  const claims = [
+    ...(seg ? segmentClaims(seg, research.feeCategory, research.current) : []),
+    ownFeeClaim(research, name),
+    ...(segmentLed ? [] : [peerClaim(research)]),
+    ...layerClaims(research).filter((c) => !segmentLed || c.text.startsWith("The national")),
+    ...revenueClaims(research, name),
+  ].filter((f): f is Fact => f !== null);
+  const answer: HamiltonAnswer = {
     feeCategory: research.feeCategory,
-    headline: headline(research, name),
+    headline: segmentLed ? segmentHeadline(seg, research.feeCategory, research.current) : headline(research, name),
     claims,
     drivers: economicDrivers(research.economy, research.feeCategory),
-    exhibit: buildExhibit(research, options.focus),
+    exhibit: (segmentLed ? segmentExhibit(seg, research.feeCategory, research.current, research.institutionName) : null) ?? buildExhibit(research, options.focus),
     question: missingFigure(research),
     evidenceLevel: level,
     provenance: { ...research.provenance, evidenceLevel: level },
   };
+  return { ...answer, storyline: buildStoryline(research, answer, { focus: options.focus, ...options.story }) };
 }
