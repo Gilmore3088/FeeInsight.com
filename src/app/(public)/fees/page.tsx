@@ -4,15 +4,14 @@ import Link from "next/link";
 import { getDisplayName, getFeeFamily, FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 
-// No live number in the title: counts come from getPublicStatsSummary() in the body.
+// No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
   title: `The ${PRODUCT_NAME} — Fee benchmarks by category`,
   description:
@@ -36,12 +35,12 @@ export default async function FeeCatalogPage() {
   const showAll = canAccessAllCategories(user);
   const spotlightCats = new Set(getSpotlightCategories());
 
-  const allSummaries = await getCachedFeeCategorySummaries();
+  // Counts and benchmarks from one snapshot: the same figures as the homepage and research hub.
+  const { summary, categories: allSummaries } = await getPublicSnapshot();
   const summaries = showAll
     ? allSummaries
     : allSummaries.filter((s) => spotlightCats.has(s.fee_category));
 
-  const summary = await getPublicStatsSummary();
   // Gated count uses the same canonical-category basis as the public headline number.
   const shownCanonical = summaries.filter((s) => CANONICAL_CATEGORIES.has(s.fee_category)).length;
   const gatedCount = Math.max(summary.categories - shownCanonical, 0);
@@ -83,14 +82,19 @@ export default async function FeeCatalogPage() {
           {PRODUCT_NAME} — benchmarks by category
         </h1>
         <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
-          Bank and credit union fee benchmarks — {summary.categoriesLabel} categories,{" "}
-          {summary.institutionsLabel} institutions.
+          Bank and credit union fee benchmarks across {summary.categoriesLabel} fee categories, from{" "}
+          {summary.institutionsLabel} institutions with published fees.
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
           <span>
             <span className="font-medium text-[#5A5347] tabular-nums">{summary.observationsLabel}</span>{" "}
-            verified fees
+            {COVERAGE_LABELS.observations.toLowerCase()}
+          </span>
+          <span className="h-3 w-px bg-[#D4C9BA]" />
+          <span>
+            <span className="font-medium text-[#5A5347] tabular-nums">{summary.monitoredLabel}</span>{" "}
+            {COVERAGE_LABELS.monitored.toLowerCase()}
           </span>
           <span className="h-3 w-px bg-[#D4C9BA]" />
           <span>{summary.freshnessLabel}</span>
@@ -121,13 +125,29 @@ export default async function FeeCatalogPage() {
               <span className="mx-1.5 text-[#D4C9BA]">&middot;</span>
               {fee.institution_count.toLocaleString()} inst.
             </p>
+            <p className="mt-0.5 text-[11px] tabular-nums text-[#6B6255]">
+              {fee.total_observations.toLocaleString()} published fee entries
+            </p>
           </Link>
         ))}
       </div>
       <p className="mt-2 text-[11px] text-[#6B6255]">
-        Median and typical range (25th to 75th percentile) of verified fees. Full min–max by
-        category is in the tables below.
+        Each institution counts once, and the median and typical range (25th to 75th
+        percentile) are taken across institutions.{" "}
+        {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
+        Full min–max by category is in the tables below.
       </p>
+      {!showAll && gatedCount > 0 && (
+        <p className="mt-3 rounded-lg border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-2.5 text-[13px] text-[#5A5347]">
+          <span className="font-semibold text-[#1A1815]">Free:</span> national benchmarks for the{" "}
+          {shownCanonical} spotlight categories below.{" "}
+          <span className="font-semibold text-[#1A1815]">Pro:</span> the other {gatedCount} categories, peer
+          and state breakdowns, and API access on request.{" "}
+          <Link href="/subscribe" className="font-medium text-[#A93D25] hover:underline">
+            Compare plans
+          </Link>
+        </p>
+      )}
 
       {/* ── ACTION BAR ── */}
       <div className="mt-5 flex flex-wrap items-center gap-2">

@@ -29,9 +29,8 @@ import {
   getFeeCategoryDetail,
   getCheapestAndMostExpensive,
   getDataFreshness,
-  getStats,
 } from "@/lib/data-store";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
+import { getPublicSnapshot } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -114,11 +113,11 @@ export default async function GuidePage({ params }: PageProps) {
 
   const categories = guideCategories(guide);
 
-  const [allSummaries, freshness, stats, primaryDetail, extremes, related] =
+  // National medians and counts from the shared public snapshot (same as the fee index).
+  const [{ summary, categories: allSummaries }, freshness, primaryDetail, extremes, related] =
     await Promise.all([
-      getCachedFeeCategorySummaries(),
+      getPublicSnapshot(),
       getDataFreshness(),
-      getStats(),
       getFeeCategoryDetail(guide.primaryCategory),
       getCheapestAndMostExpensive(guide.primaryCategory, 5),
       loadRelatedGuides(guide),
@@ -160,9 +159,8 @@ export default async function GuidePage({ params }: PageProps) {
     });
   });
 
-  const primaryAmounts = primaryDetail.fees
-    .map((f) => f.amount)
-    .filter((a): a is number => a !== null && a > 0);
+  // One value per institution, the same population as the median printed beside it.
+  const primaryAmounts = primaryDetail.institution_values ?? [];
 
   const { cheapest, mostExpensive } = extremes;
   const zeroFeeCount = primarySummary?.zero_count ?? 0;
@@ -273,8 +271,8 @@ export default async function GuidePage({ params }: PageProps) {
                     : `How does your bank compare on ${primaryNamePlain}?`}
                 </h2>
                 <p className="mt-1 text-[13px] text-[#6B6255]">
-                  Search the {stats.total_institutions.toLocaleString()} banks and credit
-                  unions in the index and see your institution&rsquo;s published{" "}
+                  Search the {summary.monitoredLabel} banks and credit
+                  unions we monitor and see your institution&rsquo;s published{" "}
                   {primaryNamePlain} against the national median.
                 </p>
               </div>
@@ -333,7 +331,7 @@ export default async function GuidePage({ params }: PageProps) {
                   </p>
                   <div className="mt-4 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-5 backdrop-blur-sm">
                     <DistributionChart
-                      amounts={primaryAmounts}
+                      values={primaryAmounts}
                       median={primarySummary.median_amount}
                       bucketCount={16}
                     />
@@ -358,7 +356,7 @@ export default async function GuidePage({ params }: PageProps) {
                 <p>
                   Fee data from the Fee Insight National Fee Index, covering{" "}
                   <span className="tabular-nums">
-                    {(primarySummary?.institution_count ?? stats.total_institutions).toLocaleString()}
+                    {primarySummary ? primarySummary.institution_count.toLocaleString() : summary.institutionsLabel}
                   </span>{" "}
                   institutions&rsquo; published fee schedules for {primaryNamePlain}.
                   Medians reflect the most recent collection period. Individual institutions

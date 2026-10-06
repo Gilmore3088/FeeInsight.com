@@ -4,12 +4,11 @@ import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { AudiencePaths } from "@/components/public/audience-paths";
 import { SITE_URL } from "@/lib/constants";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicSnapshot } from "@/lib/public-stats";
 import {
   getPublishedArticleSummariesCached,
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import type { ArticleSummary } from "@/lib/data-store/articles";
 import { ResearchHero, ResearchSectionNav, SectionHeading } from "./research-hero";
 import { BenchmarkBoard, pickBenchmarks } from "./benchmark-board";
@@ -38,11 +37,11 @@ async function loadArticles(): Promise<ArticleSummary[]> {
 }
 
 export default async function ResearchHubPage() {
-  // All four reads are served from the public cache between publishes.
-  const [summary, coverage, summaries, articles] = await Promise.all([
-    getPublicStatsSummary(),
+  // All reads are served from the public cache between publishes. Counts and benchmarks
+  // come from one shared snapshot, so they match the homepage and fee index.
+  const [{ summary, categories: summaries }, coverage, articles] = await Promise.all([
+    getPublicSnapshot(),
     getResearchCoverageCached(),
-    getCachedFeeCategorySummaries(),
     loadArticles(),
   ]);
 
@@ -77,21 +76,21 @@ export default async function ResearchHubPage() {
 
         <section id="states" className="scroll-mt-28">
           <SectionHeading eyebrow="Exhibit 3 · State reports" title="Where the data is">
-            Every state report is built from the same verified fees. Switch the map between how many institutions we
+            Every state report is built from the same published fees. Switch the map between how many institutions we
             have, how many fees, and what share of each state&apos;s institutions are covered so far.
           </SectionHeading>
           <div className="mt-7">
             <StateExplorer states={coverage.states} />
           </div>
           <ExhibitSource asOf={asOf}>
-            Coverage is institutions with at least one verified fee divided by institutions monitored in the state.
+            Coverage is institutions with at least one published fee divided by institutions monitored in the state.
           </ExhibitSource>
         </section>
 
         <section id="districts" className="scroll-mt-28">
           <SectionHeading eyebrow="Exhibit 4 · Federal Reserve districts" title="Twelve districts, one view">
             District reports pair fees with Beige Book economic context. The bars show how many of each
-            district&apos;s monitored institutions have verified fees today.
+            district&apos;s monitored institutions have published fees today.
           </SectionHeading>
           <div className="mt-7">
             <DistrictBoard districts={coverage.districts} />

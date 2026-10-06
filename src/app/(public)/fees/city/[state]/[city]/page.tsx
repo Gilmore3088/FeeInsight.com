@@ -3,10 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import {
-  getCityInstitutions,
-  getNationalIndexCached,
-} from "@/lib/data-store";
+import { getCityInstitutions } from "@/lib/data-store";
+import { getPublicNationalIndex } from "@/lib/public-stats";
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
 import { formatAmount, formatAssets } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -66,7 +64,7 @@ export default async function CityFeePage({ params }: PageProps) {
   if (institutions.length === 0) notFound();
 
   const cityAverages = await getCityFeeAveragesCached(cityName, stateCode);
-  const nationalIndex = await getNationalIndexCached();
+  const nationalIndex = await getPublicNationalIndex();
 
   const nationalMedians: Record<string, number> = {};
   for (const entry of nationalIndex) {

@@ -17,7 +17,7 @@ export const RESEARCH_SECTIONS = [
 
 interface ResearchHeroProps {
   summary: PublicStatsSummary;
-  /** The 50 states (not DC or territories) with verified fees. */
+  /** The 50 states (not DC or territories) with published fees. */
   stateCount: number;
   hasDc: boolean;
   territoryCount: number;
@@ -27,13 +27,13 @@ interface ResearchHeroProps {
 export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: ResearchHeroProps) {
   const extras = [hasDc ? "DC" : null, territoryCount > 0 ? `${territoryCount} territories` : null].filter(Boolean);
   const stats = [
-    { value: summary.observationsLabel, label: "verified fees", note: "each traced to a published schedule" },
-    { value: summary.institutionsLabel, label: "banks & credit unions", note: "with at least one verified fee" },
-    { value: summary.categoriesLabel, label: "fee categories", note: "from overdraft to wires" },
+    { value: summary.observationsLabel, label: "published fee entries", note: "each traced to a published schedule" },
+    { value: summary.institutionsLabel, label: "institutions with published fees", note: `of ${summary.monitoredLabel} monitored` },
+    { value: summary.categoriesLabel, label: "fee categories with published fees", note: "from overdraft to wires" },
     {
       value: String(stateCount),
       label: "states",
-      note: extras.length > 0 ? `plus ${extras.join(" and ")}` : "with verified fees",
+      note: extras.length > 0 ? `plus ${extras.join(" and ")}` : "with published fees",
     },
   ];
 

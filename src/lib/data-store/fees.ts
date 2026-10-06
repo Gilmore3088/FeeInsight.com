@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { summarizeFeesBy, type StatsInputRow } from "./fee-stats";
+import { summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
 
 export interface FeeCategorySummary {
@@ -209,6 +209,11 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   by_fed_district: DimensionBreakdown[];
   by_state: DimensionBreakdown[];
   change_events: FeeChangeEvent[];
+  /**
+   * One value per institution (sourced rows only): the same population and per-institution
+   * rule as the national median, so the distribution chart and the median agree.
+   */
+  institution_values: number[];
 }> {
   const rawFees = await sql`
     SELECT ef.id, ct.institution_name, ef.institution_id,
@@ -297,6 +302,9 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     by_fed_district: by_fed_district_real,
     by_state: by_state.slice(0, 15),
     change_events,
+    institution_values: [
+      ...valuePerInstitution(sourcedFees.map((fee) => ({ ...fee, fee_category: category }))).values(),
+    ].sort((a, b) => a - b),
   };
 }
 

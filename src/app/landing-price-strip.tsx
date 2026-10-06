@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { IndexEntry } from "@/lib/data-store";
+import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { formatCount } from "@/lib/public-stats";
 
 /** Everyday fees a consumer recognizes, with short labels that fit one phone line. */
 const STRIP_FEES: { category: string; label: string }[] = [
@@ -24,13 +25,13 @@ function formatUsd(value: number): string {
   return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }
 
-function buildRows(entries: IndexEntry[]): PriceRow[] {
-  const byCategory = new Map(entries.map((e) => [e.fee_category, e]));
+function buildRows(categories: FeeCategorySummary[]): PriceRow[] {
+  const byCategory = new Map(categories.map((e) => [e.fee_category, e]));
   return STRIP_FEES.flatMap(({ category, label }) => {
     const e = byCategory.get(category);
+    // The median is null below the minimum sample, so a thin category drops out here.
     if (
       !e ||
-      e.maturity_tier === "insufficient" ||
       e.median_amount == null ||
       e.p25_amount == null ||
       e.p75_amount == null
@@ -56,14 +57,14 @@ function buildRows(entries: IndexEntry[]): PriceRow[] {
  * Numbers carry the message; words stay small. Renders nothing without data.
  */
 export function LandingPriceStrip({
-  entries,
-  institutionsLabel,
+  categories,
+  refreshedOn,
 }: {
-  entries: IndexEntry[];
-  /** Live count of institutions with verified fees, same figure as the hero and stats band. */
-  institutionsLabel: string;
+  /** National benchmarks from the shared public snapshot (same figures as /fees). */
+  categories: FeeCategorySummary[];
+  refreshedOn: string | null;
 }) {
-  const rows = buildRows(entries);
+  const rows = buildRows(categories);
   if (rows.length === 0) return null;
 
   return (
@@ -105,8 +106,8 @@ export function LandingPriceStrip({
             Middle half of institutions
           </span>
           <span>
-            From the published schedules of{" "}
-            {/\d/.test(institutionsLabel) ? `${institutionsLabel} ` : ""}verified institutions
+            One value per institution, from its published schedule
+            {refreshedOn ? ` · updated ${refreshedOn}` : ""}
           </span>
           <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
             How we calculate this →
@@ -127,7 +128,7 @@ function PriceRowLink({ row }: { row: PriceRow }) {
     <Link
       href={`/fees/${row.category}`}
       className="group flex items-center gap-4 py-3.5"
-      aria-label={`${row.label}: median ${formatUsd(row.median)}, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}`}
+      aria-label={`${row.label}: median ${formatUsd(row.median)} across ${formatCount(row.institutions)} institutions, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}`}
     >
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-[#5A5347] group-hover:text-[#1A1815]">{row.label}</p>
@@ -142,8 +143,8 @@ function PriceRowLink({ row }: { row: PriceRow }) {
             style={{ left: pct(row.median) }}
           />
         </div>
-        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-[#8A8072]">
-          {formatUsd(row.p25)}–{formatUsd(row.p75)}
+        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+          {formatUsd(row.p25)}–{formatUsd(row.p75)} · {formatCount(row.institutions)} institutions
         </p>
       </div>
       <p aria-hidden="true" className="w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-[#1A1815]">
