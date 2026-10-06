@@ -47,7 +47,11 @@ function templateText(strings: unknown): string {
 }
 
 function laneUpdate(): { text: string; values: unknown[] } | undefined {
-  const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("UPDATE public.agent_state_lanes"));
+  // The one lane's update, not refreshLanePriorities' update of every lane's priority_score.
+  const call = sqlMock.mock.calls.find((entry) => {
+    const text = templateText(entry[0]);
+    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("priority_score");
+  });
   return call ? { text: templateText(call[0]), values: call.slice(1) } : undefined;
 }
 
