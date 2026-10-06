@@ -54,10 +54,11 @@ export function HamiltonViewPanel({ content, confidence, isStreaming }: Hamilton
               aria-hidden="true"
             />
             {confidenceLevel === "high"
-              ? "High confidence — based on fee data, peer movement, and complaint trends"
+              ? "High confidence"
               : confidenceLevel === "medium"
-              ? "Medium confidence — limited peer data"
-              : "Low confidence — insufficient data"}
+              ? "Medium confidence"
+              : "Low confidence"}
+            {confidence?.basis?.length ? ` — ${confidence.basis.join("; ")}` : ""}
           </div>
         )}
       </div>
