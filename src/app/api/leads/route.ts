@@ -12,7 +12,6 @@ import {
   isEmailOnlySource,
   parseStateCode,
   placementForSource,
-  stateFromUseCase,
 } from "@/lib/lead-capture";
 import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import {
@@ -27,6 +26,7 @@ import {
   parseSrc,
 } from "./lead-notifications";
 import { isRequestLead } from "@/lib/leads/lead-status";
+import { knownReaderEmail } from "@/lib/leads/known-reader";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -63,7 +63,9 @@ async function handlePOST(request: NextRequest) {
     const name =
       cleanText(body.name) ??
       (isEmailOnlySource(source) || benchmark ? NEWSLETTER_PLACEHOLDER_NAME : null);
-    const email = cleanText(body.email);
+    // A confirmed reader asking for a free report isn't asked to type their email again:
+    // the form sends none and the signed cookie from their confirm link supplies it.
+    const email = cleanText(body.email) ?? (benchmark ? await knownReaderEmail(request).catch(() => null) : null);
     const company = cleanText(body.company);
     const role = cleanText(body.role);
     const institutionId =
@@ -197,7 +199,9 @@ async function handlePOST(request: NextRequest) {
         email,
         subscribed: true,
         source: sources.join(","),
-        state: stateCode ?? known.map((row) => stateFromUseCase(row.use_case)).find(Boolean) ?? null,
+        // Only a state picked on this form changes the reader's state group; a form with no
+        // state leaves their group alone (an older row's state must not add a second one).
+        state: stateCode,
       });
       if (sync.status === "failed") console.error("[api/leads] MailerLite sync failed", { error: sync.error });
     }

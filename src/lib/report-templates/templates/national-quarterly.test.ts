@@ -146,4 +146,25 @@ describe("renderNationalQuarterlyReport", () => {
   it("states the institutions-with-published-fees count", () => {
     expect(html).toContain("2,669 institutions with published fees");
   });
+
+  it("lists fees stated as a rate on their own, and leaves the table out when none are stated", () => {
+    expect(html).not.toContain("Fee stated as a rate");
+    const out = renderNationalQuarterlyReport({
+      data: {
+        ...payload,
+        rate_categories: [
+          { fee_category: "card_foreign_txn", display_name: "Foreign Transaction Fee", institution_count: 40, median_rate: 1.1, p25_rate: 1, p75_rate: 3, maturity_tier: "provisional" },
+          { fee_category: "coin_counting", display_name: "Coin Counting", institution_count: 0, median_rate: null, p25_rate: null, p75_rate: null, maturity_tier: "insufficient" },
+        ],
+      },
+      narratives: {
+        executive_summary: narrative, fee_differentiation: narrative, banks_vs_credit_unions: narrative,
+        revenue_reality: narrative, industry_blind_spot: narrative, future_strategy: narrative,
+      },
+    });
+    expect(out).toContain("Fee stated as a rate");
+    expect(out).toContain("1.1%");
+    expect(out).toContain("1% to 3%");
+    expect(out).not.toContain("Coin Counting");
+  });
 });

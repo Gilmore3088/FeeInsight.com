@@ -142,6 +142,7 @@ describe("storyline", () => {
       totalAssets: 1_000_000_000 - i * 10_000_000,
       charterType: "bank",
       dailyCap: null,
+      dailyFeeLimit: null,
     }));
     const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });
     const question = "talk to me about all 10B and up institutions for od fees";

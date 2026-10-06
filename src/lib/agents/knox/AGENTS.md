@@ -100,6 +100,38 @@ re-reads up to 300 held unclassified lines from the document's current text with
 (`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
 version. A categorized insert that meets a held row takes it over the same way.
 
+v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
+monthly with a balance condition that the maintenance guard keeps out (money market) is the
+account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
+and says it applies when the balance falls below a figure ("A club fee of $8.00 ... if the
+balance ... falls below $3,000") is a `minimum_balance` fee named by the fee's words and the
+condition; the fee and condition must share one sentence, and the price is never the balance.
+New name patterns cover "Average Daily Balance below", "Low-balance fee", "Below minimum
+balance" and misspelled "MININUM BALANCE FEE". A comparison sign ("< $2,500") makes a figure a
+condition. Prose maintenance fees keep the bank's own words ("Maintenance fee") so the shared
+check can trace them. Wires: "Non-Domestic Wire" and an international wire with no direction
+are outgoing international; one price for "Domestic or International" is the domestic one. A
+figure followed by "par" or "required" ("$5 par in Primary Savings is required") is a
+requirement, not a fee. Gates: Texas 452 of 467 (v17: 446 of 461), held out 43 of 49, seven
+states 673 of 720 (v17: 665 of 713).
+
+v19 (rules 19) fixes large banks' overdraft rows. "Overdrafts Paid" and "Overdrafts (OD)" are
+overdraft (the plural names the fee only when it opens the name or a fee word follows it); an
+insufficient-funds item the bank pays ("Item Paid") is overdraft. A fee written as a sentence ("We
+charge a fee of $37.00 each time we pay an overdraft") is named by what it charges for
+("Overdraft fee (each time we pay an overdraft)"); "one ... per day" stays in the name, because
+the daily-cap categories hold dollars. On a dot-leader line with two prices, lowercase words
+after the first price are its terms and the title before the second price is the second fee's
+name. Fee cards tiered by the item's value ("Fee Type" / "charged a fee based on the value of
+the item" / "Greater than $5.00: $5.00") are read per tier, and a price whose next cell is
+prose ("$30.00 | ... unless you opt in") is never named by that prose. The shared check now
+reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
+
+v20 (rules 20) files "ATM Foreign Transaction Fee" (and "ATM – Foreign Transaction", "Debit ATM
+Foreign Transaction") as `atm_non_network`: it is what a customer pays at another bank's ATM, not
+a card's foreign transaction fee. "ATM/Debit Card International/Foreign Transaction Fee" and
+"Debit/ATM Foreign Transaction" name the card and are unchanged.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

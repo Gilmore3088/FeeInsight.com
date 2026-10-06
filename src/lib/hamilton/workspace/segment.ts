@@ -191,6 +191,7 @@ export function buildSegmentResearch(input: {
     band,
     zeroCount: members.filter((m) => m.amount === 0).length,
     withDailyCap: members.filter((m) => m.dailyCap !== null).length,
+    withDailyFeeLimit: members.filter((m) => m.dailyFeeLimit !== null).length,
     ownPosition: input.current !== null && band ? pricePosition(input.current, amounts) : null,
     ownInSegment: input.ownInSegment,
     problem,
@@ -273,6 +274,17 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
   }
   if (seg.withDailyCap > 0) {
     out.push({ text: `${count(seg.withDailyCap)} of them publish a daily cap on this fee.`, source, sampleSize: seg.withDailyCap });
+  }
+  if (seg.withDailyFeeLimit > 0) {
+    const counts = seg.members.flatMap((m) => (m.dailyFeeLimit ? [m.dailyFeeLimit.count] : []));
+    const tally = new Map<number, number>();
+    for (const c of counts) tally.set(c, (tally.get(c) ?? 0) + 1);
+    const [common] = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    out.push({
+      text: `${count(seg.withDailyFeeLimit)} of them limit how many ${name} fees they charge in a day; the most common limit is ${common}.`,
+      source,
+      sampleSize: seg.withDailyFeeLimit,
+    });
   }
   if (current !== null && !seg.ownInSegment) {
     out.push({ text: `Your institution is outside this segment; your ${money(current)} is placed against it for comparison.`, source });

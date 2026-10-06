@@ -95,6 +95,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 ## Authority
 
 - Hamilton publishes eligible `verified_fee_observations` into `published_fee_records` and the `published_fee_catalog` read model.
+- A percentage fee (`amount_kind = 'percent'`, `rate_percent` set, amount NULL) publishes only in a
+  category listed in `PERCENT_FEE_RANGES` (`src/lib/percent-fees.ts`: foreign transaction, cash
+  advance, coin counting, late payment) and inside that range. It appears in `published_fee_rate_catalog`, not in
+  `published_fee_catalog`, counts toward a bank's 3 fees and toward headline coverage, traces
+  by its rate (`checkRateAgainstSource`), and is skipped by the rules re-check, whose free
+  readers state dollar amounts only.
 - Hamilton reads selected institution context, evidence policy, peer baseline metadata, financial context, Monitor signals, and refresh jobs.
 - Hamilton may generate public-safe, Pro-grade, or internal/admin analysis depending on audience and access control.
 
@@ -174,8 +180,28 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   limit by one document.
 - Dry runs read the prior live row and report the same skips, movements and supersedes
   as a real run, without writing.
-- Not yet built: closing a row when a fee line disappears from a newer copy of its
-  document.
+- A fee line the bank removed from a newer copy of its page comes down (Newer-copy
+  check below).
+
+## Newer-copy check
+
+Magellan stores each changed fetch of a page as a new `source_documents` row (same
+institution and URL). Every publish step, `newer-copy-retire.ts` takes up to 25 older
+documents that still have live fees and a newer, different copy Rosetta has read, and
+checks each fee against the newest copy (`newerCopyVerdict`). A fee is retired only when
+the reader finds it in the older copy, finds no row naming it in the newer copy, and
+neither its name, nor the words of its older row, nor its non-generic name words appear
+anywhere in the newer copy; a newer copy that only glues rows together or drops the price
+column keeps its fees. Nothing is retired unless the newer copy still states at least half
+(and at least 2) of the older copy's fees, so a navigation page or redesign retires
+nothing. Retired rows get `rolled_back_reason = 'newer_copy_drops_fee:#<newer document
+id>'` and the run's batch id, and their verified row is rejected; a later copy that states
+the fee again restores it. Fees still named at a new price stay live: the price change
+belongs to the publish step once Knox reads the newer copy. Each pair is checked once
+(attempt log, stage `publish`, strategy `hamilton.newer_copy_check`, fingerprint
+`v1:<older>:<newer>`). The shared learning store skips these takedowns, since the bank
+changed the page and Knox and Darwin read the older copy correctly.
+`NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
 ## Outlier Rollback
 
@@ -222,7 +248,7 @@ Documents whose live fees were all taken down are re-checked too. Step detail:
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
-publish step runs `source-check.ts` on up to 40 institutions not checked since their
+publish step runs `source-check.ts` on up to 120 institutions not checked since their
 newest live fee: its own state's (or institution's) first, then any state's to fill
 the batch, institutions never checked first. A new strategy version (bumped whenever
 the shared reader changes) re-checks every institution and restores fees an older
@@ -237,7 +263,9 @@ that states it. A fee that still can't be traced is taken down
 `rolled_back_at` to restore it) and its verified row is rejected. Fees an earlier version
 took down are re-checked with their institution and restored, with their verified row,
 when they now trace (version 2 restored correct fees v1 took down from flattened lines). Each pass logs a
-`hamilton.source_check` event and one attempt per institution. The hourly scheduler
+`hamilton.source_check` event and one attempt per institution, folded into the bank's
+playbook (as are the rules re-check's), so its record shows how many of its fees survive
+Hamilton's checks beside how many Knox read. The hourly scheduler
 tick wakes sleeping state lanes that still have unchecked live fees (source check or
 rules re-check), so a new rule reaches every state within hours.
 

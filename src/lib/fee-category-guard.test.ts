@@ -135,6 +135,71 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v11 keeps ATM, wire, currency-exchange and joined-cell lines out of foreign transaction fees and never takes a rate's figure as dollars", () => {
+    for (const name of [
+      "Foreign Transaction Fee",
+      "Debit Card International Transaction",
+      "International Service Assessment (ISA)",
+      "ATM/Debit Card International/Foreign Transaction Fee",
+      "Foreign Transaction Fee - VISA Signature",
+      // Rates' names: a sentence, and a card that also works at ATMs.
+      "In addition, you will be charged a foreign transaction fee of",
+      "Debit/ATM Foreign Transaction (C/B fee) of",
+      "Foreign ATM / Debit Card Transaction Fee | Up to",
+    ]) {
+      expect(checkFeeCategory("card_foreign_txn", name).ok).toBe(true);
+    }
+    for (const name of [
+      "ATM Foreign Transaction Fee",
+      "ATM – Foreign Transaction Customer",
+      "1.1% foreign transaction fee (excluding World Mastercard®): WIRE TRANSFERS",
+      "Currency Conversion Assessment | Domestic Wire In (per wire)",
+      "Foreign Transaction Fee - Visa® Debit Cards | Premium Checking Low Balance Fee",
+      "Foreign Currency Cash Exchange",
+      "Foreign Currency Ordered",
+      "Foreign Transactions, Currency or Checks",
+      "36. Many Canadian credit cards charge a foreign transaction fee of 2.5%, which equals",
+    ]) {
+      expect(checkFeeCategory("card_foreign_txn", name).ok).toBe(false);
+    }
+    expect(refileCategory("card_foreign_txn", "ATM Foreign Transaction Fee")).toBe("atm_non_network");
+    expect(refileCategory("card_foreign_txn", "Debit ATM Foreign Transaction Fee")).toBe("atm_non_network");
+
+    // A dollar amount on a line that states a rate is not the fee; the rate itself (no
+    // dollar amount) and a flat fee are.
+    const percentName = "Debit Card Foreign Transaction 1% of the U.S. dollar amount of the transaction";
+    expect(checkFeeCategory("card_foreign_txn", percentName, { amount: "7.00" })).toMatchObject({ ok: false, code: "rate_as_amount" });
+    expect(checkFeeCategory("card_foreign_txn", percentName, { amount: null }).ok).toBe(true);
+    expect(checkFeeCategory("card_foreign_txn", "VISA Exchange Rate", { amount: 1 }).ok).toBe(false);
+    const sentence = "Currency conversion fees will be assessed when ATM transactions take";
+    expect(checkFeeCategory("card_foreign_txn", sentence, { amount: 0 }).ok).toBe(false);
+    expect(checkFeeCategory("card_foreign_txn", sentence, { amount: null }).ok).toBe(true);
+    expect(checkFeeCategory("card_foreign_txn", "Foreign Transaction", { amount: 2, conditions: "2.00% of transaction." }).ok).toBe(false);
+    expect(checkFeeCategory("card_foreign_txn", "Debit Card International Transaction", { amount: 5, conditions: null }).ok).toBe(true);
+    expect(checkFeeCategory("card_foreign_txn", "Foreign Transaction Fee", { amount: 0, conditions: "No foreign transaction fees apply" }).ok).toBe(true);
+    expect(
+      checkFeeCategory("card_foreign_txn", "Debit Card International Transaction", {
+        amount: 5,
+        conditions: 'Knox deterministic extraction. excerpt="Debit Card International Transaction | $5 | Balance Transfer | 3% of amt"',
+      }).ok,
+    ).toBe(true);
+    // Other categories never run the rate check.
+    expect(checkFeeCategory("overdraft", "Overdraft Fee", { amount: 35, conditions: "APR 18%" }).ok).toBe(true);
+  });
+
+  it("v10 accepts a returned deposit draft, a service fee named by the balance that avoids it (Air Academy FCU) and an NSF item paid as an overdraft (Santander)", () => {
+    expect(checkFeeCategory("deposited_item_return", "Deposit Drafts Returned Unpaid Fee (when payor and payee are the same)").ok).toBe(true);
+    expect(
+      checkFeeCategory("monthly_maintenance", "Basic Checking Fee | Minimum daily balance of $500.00 required to avoid a $5.00 service fee").ok,
+    ).toBe(true);
+    // Santander: "Insufficient Funds Fee – Item Paid" is an overdraft (the item was paid).
+    expect(checkFeeCategory("overdraft", "Insufficient Funds Fee – Item Paid").ok).toBe(true);
+    expect(refileCategory("nsf", "Non Sufficient Funds (NSF) Item Paid")).toBe("overdraft");
+    expect(refileCategory("nsf", "per item paid Returned Item Fee")).not.toBe("overdraft");
+    // A service fee with no balance that avoids it is still not the monthly fee.
+    expect(checkFeeCategory("monthly_maintenance", "Business ACH Payments Origination Service Fee").ok).toBe(false);
+  });
+
   it("keeps deposit bag and other supply prices out of night deposit", () => {
     for (const name of ["Zipper Bags", "Night Deposit Lock Bag", "Deposit Bag - Locking", "Strapped currency"]) {
       expect(checkFeeCategory("night_deposit", name).ok).toBe(false);

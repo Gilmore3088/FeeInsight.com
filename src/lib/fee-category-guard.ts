@@ -15,9 +15,16 @@
  * Amounts are not checked here: Darwin's per-category envelopes
  * (src/lib/agents/darwin/envelopes.ts) own the plausible range, and Hamilton's outlier
  * rollback applies them to live rows, so there is one definition of a plausible price.
+ * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-export type CategoryGuardCode = "name_contradicts" | "name_unsupported";
+export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount";
+
+/** What a caller knows about the fee besides its name; enables the rate check. */
+export interface CategoryGuardContext {
+  amount?: number | string | null;
+  conditions?: string | null;
+}
 
 export type CategoryGuardVerdict =
   | { ok: true }
@@ -34,13 +41,15 @@ const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
-    include: /(maintenance|monthly service|service charge|monthly fee)/i,
+    // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
+    // account's monthly fee by the balance that waives it.
+    include: /(maintenance|monthly service|service charge|monthly fee|(minimum|balance)\b.{0,80}\bavoid\b.{0,30}\bservice fee)/i,
     // A per-transaction charge or an earnings-credit note is not the account's monthly fee.
     exclude:
       /(savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   overdraft: {
-    include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|paid nsf|courtesy pay|bounce protection|privilege)/i,
+    include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege)/i,
     exclude:
       /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b)/i,
   },
@@ -112,12 +121,23 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(charge-?back (on )?(loan|deposit)|charge-?back (items?|message)\b|return\/charge-?back)/i,
   },
   deposited_item_return: {
-    include: /(deposit(ed)? (item|check)|return(ed)? deposit|deposit return|chargeback)/i,
+    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|chargeback)/i,
     exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
   // fee for the night deposit service ("Zipper Bags $3.00" is not a night deposit fee).
   // A lost or replaced key, a bag rental and a monthly or annual charge per bag are fees.
+  // A card's foreign transaction fee. "ATM Foreign Transaction Fee" is what a customer
+  // pays at another bank's ATM (a "foreign ATM"); a wire, a foreign currency or check
+  // service and a neighbouring cell joined into the name ("... | Premium Checking Low
+  // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
+  // names the card. A rate's name is often a sentence ("you will be charged a foreign
+  // transaction fee of"), so sentences are checked only on dollar amounts (below).
+  card_foreign_txn: {
+    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b)/i,
+    exclude:
+      /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -127,7 +147,32 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 9;
+export const CATEGORY_GUARD_VERSION = 11;
+
+/**
+ * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
+ * under one, on a line that states a percent ("Debit Card Foreign Transaction 1% of the
+ * U.S. dollar amount ... $7.00") or names a rate ("VISA Exchange Rate"), is the rate read
+ * as dollars or a neighbouring figure. A rate itself is stored as a rate with no dollar
+ * amount, so this never touches it.
+ */
+const RATE_CATEGORIES: ReadonlySet<string> = new Set(["card_foreign_txn"]);
+// "Currency conversion fees will be assessed when ..." quotes a rate stated elsewhere.
+const RATE_IN_NAME = /(\d\s*%|percent|\brates?\b|\b(will|may) be (assessed|charged)\b)/i;
+const RATE_IN_CONDITIONS = /(\d\s*%|percent)/i;
+
+function statesRate(
+  canonicalFeeKey: string,
+  name: string,
+  context: CategoryGuardContext | undefined,
+): string | null {
+  if (!context || !RATE_CATEGORIES.has(canonicalFeeKey)) return null;
+  if (context.amount == null || context.amount === "") return null;
+  // Knox's provenance note quotes the whole table row, whose other cells may hold rates
+  // for other fees ("| Balance Transfer Fee | 3% of amt"); only the stated terms count.
+  const terms = context.conditions?.replace(/\bexcerpt=[\s\S]*$/, "");
+  return name.match(RATE_IN_NAME)?.[0] ?? terms?.match(RATE_IN_CONDITIONS)?.[0] ?? null;
+}
 
 /**
  * A fee Knox filed under a neighbouring category whose own name says which one it is: an
@@ -143,10 +188,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
     when: /(transfer|xfe?r\b|sweep|from (your |a |linked |eligible )?(savings|shares?|account|loan|line))/i,
   },
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
-  { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid)/i },
+  { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid|items? paid)/i },
   { from: "nsf", to: "deposited_item_return", when: /deposit/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl)/i, unless: /domestic/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
+  { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
 /** The category a fee belongs in: its own, or the one its name re-files it to. */
@@ -170,10 +216,19 @@ export function refileCategory(
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
+  context?: CategoryGuardContext,
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
-  if (!rule) return { ok: true };
+  if (!canonicalFeeKey || !rule) return { ok: true };
   const name = (feeName ?? "").trim();
+  const rate = statesRate(canonicalFeeKey, name, context);
+  if (rate) {
+    return {
+      ok: false,
+      code: "rate_as_amount",
+      reason: `"${name}" states a rate ("${rate}"), so its dollar amount is not the ${canonicalFeeKey} fee`,
+    };
+  }
   const excluded = name.match(rule.exclude);
   if (excluded) {
     return {

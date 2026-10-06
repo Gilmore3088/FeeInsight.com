@@ -18,7 +18,9 @@ import {
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
+import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ASSET_TIER_RANGES, buildInstitutionPeerFilterCandidates, describePeerFilters, type HamiltonPeerFilters } from "../peer-index";
@@ -51,6 +53,7 @@ import {
   type AskSegment,
   type OwnFeeRow,
   type PeerValue,
+  type RateResearch,
   type SegmentResearch,
   type SourceRef,
 } from "./types";
@@ -457,13 +460,22 @@ const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "nsf
 async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: AskSegment): Promise<SegmentResearch> {
   const current = base.ownValues.get(feeCategory) ?? null;
   try {
-    const { institutionsInSegment, ownInSegment, values, caps } = await getSegmentFeeValues(
+    const { institutionsInSegment, ownInSegment, values, caps, limits } = await getSegmentFeeValues(
       segment,
       feeCategory,
       DAILY_CAP[feeCategory] ?? null,
       base.institutionId,
     );
-    const members = values.map((v) => ({ ...toPeerValue(v), totalAssets: v.total_assets, charterType: v.charter_type, dailyCap: caps.get(v.institution_id) ?? null }));
+    const members = values.map((v) => {
+      const limit = limits.get(v.institution_id);
+      return {
+        ...toPeerValue(v),
+        totalAssets: v.total_assets,
+        charterType: v.charter_type,
+        dailyCap: caps.get(v.institution_id) ?? null,
+        dailyFeeLimit: limit ? { count: limit.count, line: limit.line } : null,
+      };
+    });
     return buildSegmentResearch({ segment, feeCategory, institutionsInSegment, members, current, ownInSegment });
   } catch (error) {
     console.error("[hamilton-research] segment read failed", { segment: segment.label, error });
@@ -510,6 +522,39 @@ async function loadStructure(
   }
 }
 
+const RATE_SOURCE_LABEL = "Fees stated as a rate on each institution's own published schedule (verified, live)";
+
+/**
+ * The fee where it is stated as a rate, for the fees that may publish as one. Rates are read
+ * from published_fee_rate_catalog and never pooled with dollar amounts. Null for other fees
+ * or on a failed read (the dollar answer still stands).
+ */
+async function loadRates(institutionId: number, feeCategory: string, asOf: string): Promise<RateResearch | null> {
+  if (!percentFeeAllowed(feeCategory)) return null;
+  try {
+    const [ownRates, stats] = await Promise.all([getRateFeesByInstitution(institutionId), getNationalRateStats(feeCategory)]);
+    const own = ownRates
+      .filter((r) => r.fee_category === feeCategory)
+      .sort((a, b) => b.rate_percent - a.rate_percent)
+      .map((r) => ({ feeName: r.fee_name, label: r.rate_label, ratePercent: r.rate_percent, sourceUrl: r.source_url }));
+    return {
+      own,
+      national: {
+        n: stats.institution_count,
+        median: stats.median_rate,
+        p25: stats.p25_rate,
+        p75: stats.p75_rate,
+        min: stats.min_rate,
+        max: stats.max_rate,
+      },
+      source: { label: RATE_SOURCE_LABEL, table: "published_fee_rate_catalog", asOf },
+    };
+  } catch (error) {
+    console.error("[hamilton-research] rate read failed", { feeCategory, error });
+    return null;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
@@ -518,7 +563,7 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
@@ -527,6 +572,7 @@ export async function getFeeResearch(
     loadNationalIncomeSeries(),
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
+    loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
@@ -584,6 +630,7 @@ export async function getFeeResearch(
     segment,
     changeEvents,
     structure,
+    rates,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
@@ -604,6 +651,7 @@ export async function getFeeResearch(
         ...(economy?.indicators.map((i) => i.source) ?? []),
         ...(economy?.beigeBook ? [economy.beigeBook.source] : []),
         ...(segment ? [segment.source] : []),
+        ...(rates ? [rates.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [
@@ -611,6 +659,9 @@ export async function getFeeResearch(
           ? `Only ${peers.length} institutions publish this fee even nationally, too few for percentiles.`
           : `Peers are the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish this fee.`,
         "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
+        ...(rates
+          ? ["Where a fee is stated as a rate, rates are compared only with other rates, one per institution, never with dollar amounts."]
+          : []),
         "Each peer's amount links to the schedule document it was read from.",
         `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
         "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",

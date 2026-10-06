@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
+import { categoryOpinion, loadCategoryModel, type CategoryModel } from "./category-model";
 import { withinAmountEnvelope } from "./envelopes";
 import { recordDarwinFeedback } from "./feedback";
 import { knoxStrategyFromFlags, type FeedbackRow } from "@/lib/agents/learning/feedback";
@@ -24,28 +25,38 @@ type SqlTag = typeof sql;
  * Each held fee is checked against the bank's own stored schedule with the shared
  * accuracy check (`checkFeeAgainstSource`):
  * - not stated: `reject`, with the source check's reason recorded.
- * - stated, held only for being unusual next to peers: `release` (verified, so Hamilton
- *   can publish it). The audit found half of the peer holds were real prices.
  * - stated, but outside the category's hand-set range: `keep` for a person. Hamilton's
  *   publish gate uses the same range, so releasing it would not publish it.
+ * - stated only as a tier (no single schedule line to show), or filed under a category
+ *   Darwin's category model disputes: `keep`.
+ * - otherwise `review`: Claude reads the fee beside its schedule line in the next
+ *   `verify-paid` step (release-review.ts), and only a fee it confirms as a price the
+ *   bank charges, in the category it was filed under, at that amount, is released.
  *
- * Version 1 is a dry run on live data: it records each verdict in the attempt log and
- * changes nothing. Acting (inserting released fees, writing rejects to the learning
- * store) is version 2, so every held fee is judged again when it switches on.
+ * Version 1's dry run released on the schedule check alone, and a hand check of 20 of
+ * its releases found 10 right: a name and amount on the schedule say nothing about the
+ * category, and being far from peers was often a sign of a wrong category. Version 2
+ * adds the gates above. Both versions record verdicts only until DARWIN_RELEASE_ACTS is
+ * switched on, which bumps the version so every held fee is judged again.
  */
-export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 1 } as const;
+export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 2 } as const;
 export const DARWIN_RELEASE_ACTS = false;
+/**
+ * Every fee the release publishes carries this flag on its verified row, so the whole
+ * release can be found and rolled back.
+ */
+export const DARWIN_RELEASED_HOLD_FLAG = "darwin_released_hold";
 export const DARWIN_RELEASE_BATCH = 200;
 
 export type HeldReason = "outside_envelope" | "peer_outlier";
-export type ReleaseVerdict = "release" | "reject" | "keep" | "duplicate";
+export type ReleaseVerdict = "review" | "reject" | "keep" | "duplicate";
 
 export interface HeldFeeRow extends RawFeeRow {
   held_reason: HeldReason;
   held_canonical_fee_key: string;
 }
 
-export type ReleaseSourceCheck = "stated" | SourceCheckFailure | "no_amount";
+export type ReleaseSourceCheck = "stated" | SourceCheckFailure | "no_amount" | "tiered_unconfirmed" | "category_disputed";
 
 export interface ReleaseDecision {
   feeRawId: number;
@@ -74,14 +85,15 @@ function amountOf(value: number | string | null): number | null {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 }
 
-/** Pure: the verdict for one held fee, given its stored schedule text. */
+/** Pure: the verdict for one held fee, given its stored schedule text and Darwin's category model. */
 export function releaseVerdict(
   row: Pick<HeldFeeRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
   text: string | null | undefined,
+  categoryModel: CategoryModel | null = null,
 ): { verdict: Exclude<ReleaseVerdict, "duplicate">; sourceCheck: ReleaseSourceCheck; sourceLine: string | null } {
   const amount = amountOf(row.amount);
   if (amount == null || amount <= 0) return { verdict: "reject", sourceCheck: "no_amount", sourceLine: null };
-  const check = checkFeeAgainstSource(text, row.fee_name, amount, ".");
+  const check = checkFeeAgainstSource(text, row.fee_name, amount, ".", row.held_canonical_fee_key);
   // A tiered price is the bank's real price for its band, as Darwin and Hamilton read it.
   const stated = check.ok || check.reason === "tiered_fee";
   if (!stated) return { verdict: "reject", sourceCheck: check.ok ? "stated" : check.reason, sourceLine: null };
@@ -89,7 +101,43 @@ export function releaseVerdict(
   if (row.held_reason === "outside_envelope" && !withinAmountEnvelope(row.held_canonical_fee_key, amount)) {
     return { verdict: "keep", sourceCheck: "stated", sourceLine };
   }
-  return { verdict: "release", sourceCheck: "stated", sourceLine };
+  // A tier has no single schedule line for a reviewer to read beside it.
+  if (!sourceLine) return { verdict: "keep", sourceCheck: "tiered_unconfirmed", sourceLine: null };
+  const opinion = categoryModel ? categoryOpinion(categoryModel, row.fee_name, row.held_canonical_fee_key) : null;
+  if (opinion?.disputed) return { verdict: "keep", sourceCheck: "category_disputed", sourceLine };
+  return { verdict: "review", sourceCheck: "stated", sourceLine };
+}
+
+/**
+ * Publish one held fee the review confirmed: a verified row flagged
+ * DARWIN_RELEASED_HOLD_FLAG (so the release can be found and rolled back) and a
+ * "darwin_verified" note in the learning store. Null when an equal row already exists.
+ */
+export async function releaseHeldFee(
+  db: SqlTag,
+  options: { runId: number; row: HeldFeeRow; sourceLine: string | null },
+): Promise<{ feeVerifiedId: number | null; feedbackWritten: number | null }> {
+  const { row } = options;
+  const feeVerifiedId = await insertVerifiedFee(db, {
+    runId: options.runId,
+    row,
+    canonicalFeeKey: row.held_canonical_fee_key,
+    extraFlags: [DARWIN_RELEASED_HOLD_FLAG],
+  });
+  if (feeVerifiedId == null) return { feeVerifiedId: null, feedbackWritten: null };
+  const decision: ReleaseDecision = {
+    feeRawId: Number(row.fee_raw_id),
+    institutionId: Number(row.institution_id),
+    canonicalFeeKey: row.held_canonical_fee_key,
+    amount: amountOf(row.amount),
+    heldReason: row.held_reason,
+    verdict: "review",
+    sourceCheck: "stated",
+    sourceLine: options.sourceLine,
+    feeVerifiedId,
+  };
+  const entry = feedbackFor(decision, row, options.runId, "release");
+  return { feeVerifiedId, feedbackWritten: entry ? await recordDarwinFeedback(db, [entry]) : null };
 }
 
 /** Same institution, category, amount and source as a fee already verified. */
@@ -169,8 +217,12 @@ async function loadVerifiedKeys(db: SqlTag, institutionIds: number[]): Promise<S
     duplicateKey(Number(row.institution_id), row.canonical_fee_key, amountOf(row.amount), row.source_url)));
 }
 
-function feedbackFor(decision: ReleaseDecision, row: HeldFeeRow, runId: number): FeedbackRow | null {
-  if (decision.verdict !== "release" && decision.verdict !== "reject") return null;
+function feedbackFor(
+  decision: ReleaseDecision,
+  row: HeldFeeRow,
+  runId: number,
+  outcome: "release" | "reject",
+): FeedbackRow | null {
   let flags: string[] = [];
   try {
     const parsed: unknown = typeof row.outlier_flags === "string" ? JSON.parse(row.outlier_flags) : row.outlier_flags;
@@ -181,8 +233,8 @@ function feedbackFor(decision: ReleaseDecision, row: HeldFeeRow, runId: number):
   return {
     aboutStage: "extract",
     aboutStrategy: knoxStrategyFromFlags(flags),
-    signal: decision.verdict === "release" ? "right" : "wrong",
-    kind: decision.verdict === "release" ? "darwin_verified" : "not_on_schedule",
+    signal: outcome === "release" ? "right" : "wrong",
+    kind: outcome === "release" ? "darwin_verified" : "not_on_schedule",
     reportedBy: "darwin",
     checkName: "darwin.release",
     institutionId: decision.institutionId,
@@ -192,7 +244,7 @@ function feedbackFor(decision: ReleaseDecision, row: HeldFeeRow, runId: number):
     feeVerifiedId: decision.feeVerifiedId,
     canonicalFeeKey: decision.canonicalFeeKey,
     amount: decision.amount,
-    weight: decision.verdict === "release" ? 0.5 : 1,
+    weight: outcome === "release" ? 0.5 : 1,
     evidence: {
       fee_name: row.fee_name,
       held_reason: decision.heldReason,
@@ -205,8 +257,10 @@ function feedbackFor(decision: ReleaseDecision, row: HeldFeeRow, runId: number):
 }
 
 /**
- * Judge up to DARWIN_RELEASE_BATCH held fees. With DARWIN_RELEASE_ACTS off (version 1)
- * it only records verdicts; a dry-run agent run records nothing.
+ * Judge up to DARWIN_RELEASE_BATCH held fees. Nothing is published here: a `review`
+ * verdict waits for release-review.ts. With DARWIN_RELEASE_ACTS on, a reject writes its
+ * "not_on_schedule" note to the learning store (the fee was never live, so nothing comes
+ * down). With it off, verdicts are recorded only; a dry-run agent run records nothing.
  */
 export async function runDarwinReleaseHeld(options: {
   runId: number;
@@ -226,25 +280,18 @@ export async function runDarwinReleaseHeld(options: {
     Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
   );
   const verified = await loadVerifiedKeys(db, Array.from(new Set(rows.map((row) => Number(row.institution_id)))));
+  const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
 
   const decisions: ReleaseDecision[] = [];
   const feedback: FeedbackRow[] = [];
   for (const row of rows) {
     const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id));
-    const judged = releaseVerdict(row, text);
+    const judged = releaseVerdict(row, text, categoryModel);
     const amount = amountOf(row.amount);
     const key = duplicateKey(Number(row.institution_id), row.held_canonical_fee_key, amount, row.source_url);
     let verdict: ReleaseVerdict = judged.verdict;
-    if (verdict === "release" && verified.has(key)) verdict = "duplicate";
-
-    let feeVerifiedId: number | null = null;
-    if (verdict === "release" && acts) {
-      feeVerifiedId = await insertVerifiedFee(db, { runId: options.runId, row, canonicalFeeKey: row.held_canonical_fee_key });
-      if (feeVerifiedId == null) verdict = "duplicate";
-      else verified.add(key);
-    } else if (verdict === "release") {
-      verified.add(key);
-    }
+    if (verdict === "review" && verified.has(key)) verdict = "duplicate";
+    else if (verdict === "review") verified.add(key);
 
     const decision: ReleaseDecision = {
       feeRawId: Number(row.fee_raw_id),
@@ -255,11 +302,11 @@ export async function runDarwinReleaseHeld(options: {
       verdict,
       sourceCheck: judged.sourceCheck,
       sourceLine: judged.sourceLine,
-      feeVerifiedId,
+      feeVerifiedId: null,
     };
     decisions.push(decision);
-    if (acts) {
-      const entry = feedbackFor(decision, row, options.runId);
+    if (acts && verdict === "reject") {
+      const entry = feedbackFor(decision, row, options.runId, "reject");
       if (entry) feedback.push(entry);
     }
 
@@ -271,8 +318,8 @@ export async function runDarwinReleaseHeld(options: {
         strategy: DARWIN_RELEASE_STRATEGY.strategy,
         version: DARWIN_RELEASE_STRATEGY.version,
         fingerprint: rawFeeFingerprint(decision.feeRawId),
-        outcome: verdict === "release" ? "ok" : verdict === "reject" ? "rejected" : "unchanged",
-        yieldCount: verdict === "release" ? 1 : 0,
+        outcome: verdict === "review" ? "ok" : verdict === "reject" ? "rejected" : "unchanged",
+        yieldCount: 0,
         costMicrousd: 0,
         runId: options.runId,
         stepId: options.stepId ?? null,
@@ -286,7 +333,6 @@ export async function runDarwinReleaseHeld(options: {
           verdict,
           source_check: decision.sourceCheck,
           source_line: decision.sourceLine?.slice(0, 300) ?? null,
-          fee_verified_id: feeVerifiedId,
           acted: acts,
         },
       });
@@ -299,7 +345,7 @@ export async function runDarwinReleaseHeld(options: {
     selected: rows.length,
     acted: acts,
     verdicts,
-    released: decisions.filter((decision) => decision.feeVerifiedId != null).length,
+    released: 0,
     feedbackWritten: acts ? await recordDarwinFeedback(db, feedback) : null,
     decisions,
   };
