@@ -7,7 +7,10 @@ import type { DocumentVault } from "@/lib/agents/document-vault";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
-import { companionStreamsReady } from "@/lib/agents/companion-streams";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { NOT_CONSUMER_FEE_PAGE_REASON, companionStreamsReady } from "@/lib/agents/companion-streams";
+
+import { accountNameFor, isGenericAccountName, isNonDepositLink } from "./second-document";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -60,8 +63,15 @@ export interface CompanionFetchResult {
   reason: string | null;
 }
 
+export interface CompanionReviewResult {
+  checked: number;
+  retired: Array<{ companionId: number; institutionId: number; url: string; accountName: string | null }>;
+  renamed: Array<{ companionId: number; from: string | null; to: string }>;
+}
+
 export interface RunCompanionFetchResult {
   status: "ran" | "schema_pending";
+  review: CompanionReviewResult;
   selected: number;
   fetched: number;
   unchanged: number;
@@ -91,6 +101,62 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
      ORDER BY ias.last_fetched_at ASC NULLS FIRST, ias.id ASC
      LIMIT ${limit}
   `;
+}
+
+export const COMPANION_REVIEW_LIMIT = 500;
+
+interface ReviewRow {
+  id: number | string;
+  institution_id: number | string;
+  url: string;
+  account_name: string | null;
+}
+
+/**
+ * Re-applies today's finder rules to the companion pages already stored for a state, so
+ * a rule learned later reaches every bank found before it. A page that today's rules
+ * call a loan, HELOC or business document is retired with NOT_CONSUMER_FEE_PAGE_REASON
+ * (Hamilton then takes down the live fees read from it), and a page named after its
+ * link text ("Download", "Features and Fees") is renamed from its URL.
+ */
+export async function reviewStoredCompanions(
+  db: SqlTag,
+  options: { stateCode: string | null; institutionId: number | null; limit?: number },
+): Promise<CompanionReviewResult> {
+  const rows = await db<ReviewRow[]>`
+    SELECT ias.id, ias.institution_id, ias.url, ias.account_name
+      FROM institution_additional_sources ias
+      JOIN institution_sources inst ON inst.id = ias.institution_id
+     WHERE ias.status IN ('found', 'fetched')
+       AND (${options.stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode})
+       AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
+     ORDER BY ias.id ASC
+     LIMIT ${options.limit ?? COMPANION_REVIEW_LIMIT}
+  `;
+  const result: CompanionReviewResult = { checked: rows.length, retired: [], renamed: [] };
+  for (const row of rows) {
+    const companionId = Number(row.id);
+    const label = row.account_name ?? "";
+    if (isNonDepositLink(label, row.url)) {
+      await db`
+        UPDATE institution_additional_sources
+           SET status = 'rejected',
+               reason = ${`${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`},
+               updated_at = NOW()
+         WHERE id = ${companionId}
+      `;
+      result.retired.push({ companionId, institutionId: Number(row.institution_id), url: row.url, accountName: row.account_name });
+      continue;
+    }
+    if (row.account_name != null && isGenericAccountName(row.account_name)) {
+      const name = accountNameFor(label, row.url);
+      if (name !== row.url && name !== row.account_name) {
+        await db`UPDATE institution_additional_sources SET account_name = ${name}, updated_at = NOW() WHERE id = ${companionId}`;
+        result.renamed.push({ companionId, from: row.account_name, to: name });
+      }
+    }
+  }
+  return result;
 }
 
 async function download(fetchImpl: Fetcher, url: string): Promise<Response> {
@@ -233,12 +299,28 @@ export async function runCompanionFetch(options: {
 }): Promise<RunCompanionFetchResult> {
   const db = options.db;
   if (!(await companionStreamsReady(db))) {
-    return { status: "schema_pending", selected: 0, fetched: 0, unchanged: 0, failed: 0, results: [] };
+    return {
+      status: "schema_pending",
+      review: { checked: 0, retired: [], renamed: [] },
+      selected: 0,
+      fetched: 0,
+      unchanged: 0,
+      failed: 0,
+      results: [],
+    };
   }
   const deadline = options.deadline ?? Date.now() + COMPANION_FETCH_BUDGET_MS;
+  const stateCode = normalizeStateCode(options.stateCode ?? undefined);
+  let review: CompanionReviewResult = { checked: 0, retired: [], renamed: [] };
+  try {
+    review = await inSavepoint(db, (scope) => reviewStoredCompanions(scope, { stateCode, institutionId: options.institutionId ?? null }));
+  } catch (error) {
+    // A failed review must never stop the fetch.
+    console.error("Companion review failed:", error);
+  }
   const rows = await selectDue(
     db,
-    normalizeStateCode(options.stateCode ?? undefined),
+    stateCode,
     options.institutionId ?? null,
     options.limit ?? COMPANION_FETCH_LIMIT,
   );
@@ -276,6 +358,7 @@ export async function runCompanionFetch(options: {
   }
   return {
     status: "ran",
+    review,
     selected: rows.length,
     fetched: results.filter((result) => result.outcome === "success").length,
     unchanged: results.filter((result) => result.outcome === "unchanged").length,

@@ -4,6 +4,7 @@ import {
   accountNameFor,
   additionalDocumentRole,
   classifyCompanionLink,
+  isGenericAccountName,
   runSecondDocumentFind,
   SECOND_DOCUMENT_FINDER,
   siteSearchUrl,
@@ -115,6 +116,10 @@ describe("Magellan companion finder", () => {
     expect(link("https://bank.example/business/checking", "Business Checking")).toBeNull();
     expect(link("https://bank.example/loans/auto", "Auto Loans")).toBeNull();
     expect(link("https://bank.example/about", "About Us")).toBeNull();
+    // A HELOC disclosure labelled "Download" is not a deposit fee document.
+    expect(link("https://cu.example/documents/heloc-important-terms-disclosures/", "Download")).toBeNull();
+    expect(link("https://bank.example/docs/home-equity-line-of-credit-fees.pdf", "Fees")).toBeNull();
+    expect(link("https://bank.example/cftc-swap-disclosures/credit-derivatives-disclosure-annex.pdf", "Credit Derivatives Disclosure Annex")).toBeNull();
   });
 
   it("finds the site's own search form", () => {
@@ -130,6 +135,12 @@ describe("Magellan companion finder", () => {
   it("names the account from the label, or the path for 'Learn more' links", () => {
     expect(accountNameFor("Freedom Checking", "https://bank.example/freedom-checking")).toBe("Freedom Checking");
     expect(accountNameFor("Learn more", "https://bank.example/accounts/value-checking/")).toBe("Value Checking");
+    expect(accountNameFor("Product Details", "https://bank.example/checking/virtual-wallet.html")).toBe("Virtual Wallet");
+    expect(accountNameFor("Download", "https://cu.example/documents/consumer-rate-and-fee-schedule/")).toBe("Consumer Rate And Fee Schedule");
+    // Opaque file names fall back to the folder that names the account.
+    expect(accountNameFor("Features and Fees", "https://bank.example/pdf/personal/Checking/fees-vw-A.pdf")).toBe("Checking");
+    expect(isGenericAccountName("See Rates")).toBe(true);
+    expect(isGenericAccountName("Freedom Checking")).toBe(false);
   });
 
   it("names the document's role from its label", () => {

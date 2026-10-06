@@ -5,6 +5,7 @@ import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
@@ -419,6 +420,13 @@ async function executeAgenticStep(
           companion_pages_fetched: fetched.companions?.fetched ?? 0,
           companion_pages_unchanged: fetched.companions?.unchanged ?? 0,
           companion_pages_failed: fetched.companions?.failed ?? 0,
+          companion_pages_retired: fetched.companions?.review.retired.length ?? 0,
+          companion_pages_renamed: fetched.companions?.review.renamed.length ?? 0,
+          companion_pages_retired_samples: (fetched.companions?.review.retired ?? []).slice(0, 10).map((page) => ({
+            companion_source_id: page.companionId,
+            institution_id: page.institutionId,
+            url: page.url,
+          })),
           stored_documents: fetched.storedDocuments,
           vault: fetched.vault,
           failed_fetches: fetched.failed,
@@ -712,6 +720,16 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
+      // derivatives notice) come down before anything new publishes.
+      const companionRetire = await rollBackRetiredCompanionFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
+      const companionRollbacks = companionRetire.rollbacks;
       const duplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -769,6 +787,7 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
@@ -782,6 +801,10 @@ async function executeAgenticStep(
       const offTaxonomyNote =
         offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
+          : "";
+      const companionNote =
+        companionRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${companionRollbacks.length.toLocaleString()} live fee(s) read from pages that are not consumer fee pages (loan or HELOC documents).`
           : "";
       const recheckNote =
         (recheckRollbacks > 0
@@ -800,7 +823,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${companionNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -823,6 +846,16 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          companion_retire_rollbacks: companionRollbacks.length,
+          companion_retire_rejected_verified: companionRetire.rejectedVerified,
+          companion_retire_samples: companionRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            companion_source_id: rollback.companionSourceId,
           })),
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,

@@ -47,6 +47,14 @@ export async function companionSourceOf(db: SqlTag, sourceDocumentId: number | n
 }
 
 /**
+ * Reason prefix for companion pages retired because today's finder rules say they are
+ * not a consumer fee page (a HELOC disclosure, a business account). Hamilton takes down
+ * live fees read from such pages (`hamilton/companion-retire.ts`); pages retired for
+ * other reasons (a dead link, an empty page) keep the fees they already gave.
+ */
+export const NOT_CONSUMER_FEE_PAGE_REASON = "not_consumer_fee_page";
+
+/**
  * A companion page Rosetta ruled out (not a fee page, or a dead link) is retired. The
  * bank's main fee link and its discovery state are left alone.
  */
