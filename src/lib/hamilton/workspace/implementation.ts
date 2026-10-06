@@ -18,19 +18,19 @@ import { WORKSPACE_ENGINE_VERSION, type ImplementationPlan, type PlanStep, type 
 export const ADVERSE_CHANGE_NOTICE_DAYS = 30;
 export const EFT_FEE_NOTICE_DAYS = 21;
 
-const REG_DD_BANK: SourceRef = {
+export const REG_DD_BANK: SourceRef = {
   label: "Reg DD, 12 CFR 1030.5(a)",
   url: "https://www.consumerfinance.gov/rules-policy/regulations/1030/5/",
 };
-const REG_DD_CU: SourceRef = {
+export const REG_DD_CU: SourceRef = {
   label: "NCUA Truth in Savings, 12 CFR 707.5(a)",
   url: "https://www.ecfr.gov/current/title-12/chapter-VII/subchapter-A/part-707/section-707.5",
 };
-const REG_E_FEE_NOTICE: SourceRef = {
+export const REG_E_FEE_NOTICE: SourceRef = {
   label: "Reg E, 12 CFR 1005.8(a)",
   url: "https://www.consumerfinance.gov/rules-policy/regulations/1005/8/",
 };
-const REG_E_OPT_IN: SourceRef = {
+export const REG_E_OPT_IN: SourceRef = {
   label: "Reg E, 12 CFR 1005.17",
   url: "https://www.consumerfinance.gov/rules-policy/regulations/1005/17/",
 };
