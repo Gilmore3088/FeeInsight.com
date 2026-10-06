@@ -7,8 +7,14 @@ import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees
 
 type SqlTag = typeof sql;
 
-/** Institutions source-checked per publish step; later steps pick up the rest. */
-export const SOURCE_CHECK_INSTITUTION_LIMIT = 40;
+/**
+ * Institutions source-checked per publish step; later steps pick up the rest. A strategy
+ * bump makes every institution due at once (about 3,000), and publish steps run about 12
+ * times an hour, so 120 a step clears a full re-check in about 2 hours where 40 took 6
+ * while new fees kept adding more. A 40-institution step took 4-15 s and reads about 20 KB
+ * of text per institution.
+ */
+export const SOURCE_CHECK_INSTITUTION_LIMIT = 120;
 export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 2: a line carrying several fees gives each fee its own price, and fees an
 // earlier version took down are re-checked and restored when they trace.

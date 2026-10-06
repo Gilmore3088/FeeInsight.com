@@ -1012,7 +1012,7 @@ export async function runHamiltonPublish(
     let result: HamiltonPublishResult;
     // A row whose name contradicts its category (verified before Darwin had the guard)
     // is retired instead of published.
-    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name, { amount: row.amount });
     if (!category.ok && !dryRun) {
       await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
     }

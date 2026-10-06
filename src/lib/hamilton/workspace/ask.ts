@@ -18,6 +18,7 @@ import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, waiverRateQuestion } from "./scenario";
 import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
+import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
 import type {
   AskObjective,
@@ -171,7 +172,9 @@ export function clarifyAgain(fieldKey: string): AskResponse {
           ? annualItemsQuestion(fee)
           : fee && fieldKey.endsWith(".waiver_rate")
             ? waiverRateQuestion(fee)
-            : feeQuestion();
+            : fee && fieldKey.endsWith(".annual_volume")
+              ? rateVolumeQuestion(fee)
+              : feeQuestion();
   return { kind: "clarifying_question", shortAnswer: `Hamilton could not read that as an answer. ${question.prompt}`, pageChange: { screen: "none" }, question };
 }
 
