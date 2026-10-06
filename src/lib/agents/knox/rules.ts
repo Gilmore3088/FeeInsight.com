@@ -222,6 +222,13 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "account_verification", pattern: /\baudit confirmations?\b/i },
   { key: "ira_administration", pattern: /\bIRA custodial\b/i },
   { key: "document_reproduction", pattern: /\b(document cop(?:y|ies)|copy fee)\b/i },
+  // v18: a wire that says international but not which way is outgoing (the answer keys
+  // file "International (each)" under wires that way).
+  {
+    key: "wire_intl_outgoing",
+    pattern:
+      /^(?!.*\b(?:in|incoming|inbound|received|receiving)\b).*(?:\b(?:international|foreign)\b.{0,25}\bwires?\b|\bwires?\b.{0,25}\b(?:international|foreign)\b)/i,
+  },
   // v18: low-balance account rows ("Average Daily Balance below $2,500 | $10.00/month",
   // "Low-balance fee", "MININUM BALANCE FEE", "Below minimum balance ..... $1.00").
   {
@@ -254,7 +261,7 @@ const CONDITION_BEFORE =
  * "$500 or more", "Money Orders ($1,000 Limit)", "($300 THRESHOLD, fee per item)",
  * "$10.00 refundable key deposit". "Limits may apply" after a price does not count.
  */
-const CONDITION_AFTER = /^(?:\+|\s*(?:or more|and more|or less|and less|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit|limit\b|threshold\b|refundable\b))/i;
+const CONDITION_AFTER = /^(?:\+|\s*(?:or more|and more|or less|and less|or higher|or greater|or above|and above|and up|and over|minimum|min\b|balance|in (?:deposits|balances)|on deposit|limit\b|threshold\b|refundable\b|par\b|required\b))/i;
 
 export interface AmountMatch {
   value: number;
@@ -303,8 +310,10 @@ export function classifyPatternKey(value: string): string | null {
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
     .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international")
-    // v18: "Non-Domestic Wire" is an international wire.
+    // v18: "Non-Domestic Wire" is an international wire; one price for "Domestic or
+    // International" is the domestic one.
     .replace(/\bnon[-\s]?domestic\b/gi, "international")
+    .replace(/\bdomestic\s*(?:or|\/|&|and)\s*international\b|\binternational\s*(?:or|\/|&|and)\s*domestic\b/gi, "domestic")
     // v16: "Int'l Wire Fee Out" and "Outgoing Wire Out of Country" are international
     // wires; one price for "domestic/int'l" stays domestic.
     .replace(/\bint'l\b\.?|\b(?:out of|outside(?: of)?)\s+(?:the\s+)?country\b/gi, (match, offset, whole: string) =>

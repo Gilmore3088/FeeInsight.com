@@ -495,8 +495,18 @@ describe("Knox extract.rules", () => {
     expect(fee("If your balance falls below $1,500.00, a fee of $6.00 will be charged.")).toEqual([]);
   });
 
-  it("v18 files a non-domestic wire as international, never domestic", () => {
+  it("v18 files wires by what they say: non-domestic, undirected international, domestic or international", () => {
     expect(classifyPatternKey("Non-Domestic Wire Outgoing")).toBe("wire_intl_outgoing");
-    expect(classifyPatternKey("Non-Domestic Wire")).not.toBe("wire_domestic_outgoing");
+    expect(classifyPatternKey("Non-Domestic Wire")).toBe("wire_intl_outgoing");
+    expect(classifyPatternKey("Wire Transfer - International Fee")).toBe("wire_intl_outgoing");
+    expect(classifyPatternKey("Incoming International Wire")).toBe("wire_intl_incoming");
+    expect(classifyPatternKey("International Wire In (each)")).not.toBe("wire_intl_outgoing");
+    // Banner Bank: one incoming price for both is the domestic incoming wire.
+    expect(classifyPatternKey("Wire Transfer - Incoming Wire (Domestic or International)")).toBe("wire_domestic_incoming");
+  });
+
+  it("v18 never reads a par requirement as a fee (Air Academy)", () => {
+    const par = "*$5 par in Primary Savings is required and deposit enough for Annual Fee and Key Deposit to be pulled at time of opening.";
+    expect(extractFromSegment(par).candidates).toEqual([]);
   });
 });

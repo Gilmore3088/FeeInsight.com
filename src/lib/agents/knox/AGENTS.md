@@ -109,8 +109,11 @@ condition; the fee and condition must share one sentence, and the price is never
 New name patterns cover "Average Daily Balance below", "Low-balance fee", "Below minimum
 balance" and misspelled "MININUM BALANCE FEE". A comparison sign ("< $2,500") makes a figure a
 condition. Prose maintenance fees keep the bank's own words ("Maintenance fee") so the shared
-check can trace them. "Non-Domestic Wire" is international. Gates: Texas 448 of 463 (v17: 446
-of 461), held out 43 of 49, seven states 668 of 715 (v17: 665 of 713).
+check can trace them. Wires: "Non-Domestic Wire" and an international wire with no direction
+are outgoing international; one price for "Domestic or International" is the domestic one. A
+figure followed by "par" or "required" ("$5 par in Primary Savings is required") is a
+requirement, not a fee. Gates: Texas 452 of 467 (v17: 446 of 461), held out 43 of 49, seven
+states 673 of 720 (v17: 665 of 713).
 
 ## Extraction Passes
 
