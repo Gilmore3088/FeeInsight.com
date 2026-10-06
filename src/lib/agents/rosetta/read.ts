@@ -13,7 +13,7 @@ import {
   isVaultKey,
   type DocumentVault,
 } from "@/lib/agents/document-vault";
-import { FEE_PAGE_CHECK_VERSION, scoreFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
+import { FEE_PAGE_CHECK_VERSION, scoreFeePage, urlNamesFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
 import {
@@ -733,10 +733,14 @@ async function readCandidate(
     normalizedText = extracted.text;
     base.tableRows = extracted.tableRows;
     rows = extracted.rows;
-    // A page built by JavaScript: empty, or an app shell whose text is no fee schedule.
+    // A page built by JavaScript: empty, or an app shell or a page its own link names as
+    // the fee page, whose static text is no fee schedule. A fee page whose fees load by
+    // script often has more than a shell's worth of menu text (atfcu.org/fees: 2,452
+    // characters, no amounts), so the link is checked as well as the HTML.
     const shell =
       normalizedText.length === 0 ||
-      (looksLikeJsShell(raw, normalizedText) && scoreFeePage(normalizedText).verdict === "wrong_document");
+      ((looksLikeJsShell(raw, normalizedText) || urlNamesFeePage(finalUrl)) &&
+        scoreFeePage(normalizedText).verdict === "wrong_document");
     if (shell) {
       const fallback = await tryJsFallback(raw, finalUrl, ctx);
       base.followUps.push(fallback.attempt);

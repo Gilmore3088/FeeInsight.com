@@ -556,3 +556,18 @@ year whose title mentions fees, overdraft, NSF, Reg E or Reg DD, so only the sta
 **Also open:** the Briefing's competitor moves read `fee_change_records` directly, which has the
 same two-price problem as the Pulse (entry above). `getDistrictFeeRevenue` in
 `data-store/call-reports.ts` still sums NCUA year-to-date income as one quarter.
+
+## 2026-10-06: Rosetta rejected fee pages whose fees load by script
+**What happened:** the Rosetta audit compared stored text with 91 Texas fee schedules read
+independently. Two of them (atfcu.org/fees, firstcommand.com/.../fees/) were real schedules that
+Rosetta filed as "not a fee schedule": their static HTML held only menus (2,452 and 2,960
+characters, 0 and 1 dollar amounts) because the fee table loads by script. Rosetta tries its free
+JavaScript fallbacks (embedded data, linked PDF, print version) only for an app shell of at most
+1,500 characters, so these pages were rejected instead, the link was cleared and banned from
+discovery for 90 days. Live, read-only (05:10 UTC): 504 rejected HTML texts at 317 institutions
+have a link naming a fee page and at most one dollar amount; 221 of those institutions have no
+live fees.
+**Fix:** same PR: a page whose own link names the fee page ("/fees", "fee-schedule",
+"schedule-of-charges") and whose static text shows no fee schedule gets the free fallbacks first,
+whatever its length. Applies to every state's next read of such a page. Texts already rejected
+are not re-read by this PR (that needs a re-read rule; see the Rosetta scorecard).
