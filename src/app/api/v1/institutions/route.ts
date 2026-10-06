@@ -7,6 +7,7 @@ import {
   getFinancialsByInstitution,
   getComplaintsByInstitution,
 } from "@/lib/data-store";
+import { searchInstitutions } from "@/lib/data-store/search";
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
@@ -64,6 +65,7 @@ async function handleGET(request: NextRequest) {
   let page: number;
   let pageSize: number;
   let hasFees: boolean;
+  let query: string | null;
   try {
     id = searchParams.has("id")
       ? intParam(searchParams, "id", { fallback: 0, min: 1, max: Number.MAX_SAFE_INTEGER })
@@ -77,6 +79,10 @@ async function handleGET(request: NextRequest) {
       throw new ApiParamError("has_fees must be true or false");
     }
     hasFees = hasFeesRaw === "true";
+    query = searchParams.get("q")?.trim() || null;
+    if (query !== null && (query.length < 2 || query.length > 100)) {
+      throw new ApiParamError("q must be 2 to 100 characters");
+    }
   } catch (error) {
     if (error instanceof ApiParamError) {
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
@@ -149,6 +155,49 @@ async function handleGET(request: NextRequest) {
         complaints: complaints.map((c) => ({
           product: c.product,
           complaint_count: Number(c.complaint_count),
+        })),
+        attribution: API_ATTRIBUTION,
+      }),
+      rateLimit,
+    );
+  }
+
+  // Name search: banks with published fees sort first; has_fees does not apply.
+  if (query !== null) {
+    const { rows, total } = await searchInstitutions({
+      query,
+      state_code: state ?? undefined,
+      charter_type: charter ?? undefined,
+      page,
+      pageSize,
+    });
+
+    logApiUsage(organizationId, anonymousId, "api.v1.institutions.search", {
+      state,
+      charter_type: charter,
+      page,
+      page_size: pageSize,
+      status: 200,
+    }).catch(() => {});
+
+    const pages = Math.ceil(total / pageSize);
+    return withApiHeaders(
+      NextResponse.json({
+        total,
+        page,
+        page_size: pageSize,
+        pages,
+        has_more: page < pages,
+        data: rows.map((r) => ({
+          id: r.id,
+          name: r.institution_name,
+          state: r.state_code,
+          city: r.city,
+          charter_type: r.charter_type,
+          asset_size: r.asset_size,
+          asset_tier: r.asset_size_tier,
+          fed_district: null,
+          fee_count: r.published_fee_count,
         })),
         attribution: API_ATTRIBUTION,
       }),

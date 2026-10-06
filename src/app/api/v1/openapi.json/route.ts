@@ -6,7 +6,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.1.0",
+    version: "1.2.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
@@ -479,7 +479,14 @@ const spec = {
             name: "has_fees",
             in: "query",
             schema: { type: "string", enum: ["true", "false"] },
-            description: "Only institutions with at least one published fee",
+            description: "Only institutions with at least one published fee (not applied with q)",
+          },
+          {
+            name: "q",
+            in: "query",
+            schema: { type: "string", minLength: 2, maxLength: 100 },
+            description:
+              "Search by institution name, e.g. Frost. Institutions with published fees sort first; fed_district is null in name-search results.",
           },
           {
             name: "page",

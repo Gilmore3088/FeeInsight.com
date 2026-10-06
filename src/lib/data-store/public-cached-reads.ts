@@ -21,6 +21,7 @@ import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./sea
 import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
 import { getMarketReadiness } from "./market-readiness";
+import { getCustomReportMarketData } from "./custom-report-market";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -85,3 +86,4 @@ export const getStateEconomicContextCached = cachedPublicRead(
   isEmptyEconomicContext,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);

@@ -77,6 +77,22 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_unsupported" });
   });
 
+  it("keeps deposit bag and other supply prices out of night deposit", () => {
+    for (const name of ["Zipper Bags", "Night Deposit Lock Bag", "Deposit Bag - Locking", "Strapped currency"]) {
+      expect(checkFeeCategory("night_deposit", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Night Deposit Annual Fee",
+      "Night Depository Key Replacement",
+      "Night Depository Service",
+      "Night Deposit Bag – Lost Key",
+      "Night Deposit Service (per bag per month)",
+      "Night Depository - Bag Rental (one-time charge)",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name)).toEqual({ ok: true });
+    }
+  });
+
   it("leaves amounts to Darwin's envelopes, the one definition of a plausible price", () => {
     // A $2,500 balance threshold read as a monthly fee: the name passes here, and the
     // envelope (not this guard) is what keeps it out.

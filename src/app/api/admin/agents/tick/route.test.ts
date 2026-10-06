@@ -80,6 +80,7 @@ describe("/api/admin/agents/tick", () => {
     assertCronTickBudgetAllowedMock.mockResolvedValue({
       allowed: true,
       policyId: 42,
+      maxRuns: 1,
       maxProviderCalls: 3,
       maxEstimatedMicrousd: 250_000,
     });
@@ -106,6 +107,7 @@ describe("/api/admin/agents/tick", () => {
       budgetPolicyId: null,
       maxProviderCallsPerRun: null,
       maxEstimatedCostMicrousd: null,
+      providerRunLimit: null,
       deadlineAt: expect.any(Number),
     });
   });
@@ -159,6 +161,7 @@ describe("/api/admin/agents/tick", () => {
       budgetPolicyId: 42,
       maxProviderCallsPerRun: 3,
       maxEstimatedCostMicrousd: 250_000,
+      providerRunLimit: 1,
       deadlineAt: expect.any(Number),
     });
   });
