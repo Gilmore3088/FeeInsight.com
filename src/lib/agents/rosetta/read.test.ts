@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
@@ -492,7 +493,22 @@ describe("Rosetta agentic read", () => {
       expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "http_5xx"]));
     });
 
-    it("records Word documents as unsupported instead of reading them as text", async () => {
+    it("reads a Word document's text and table rows for free", async () => {
+      const docxBytes = (body: string) =>
+        zipSync({ "word/document.xml": strToU8(`<w:document xmlns:w="w"><w:body>${body}</w:body></w:document>`) });
+      const db = learningDb([htmlCandidate]);
+      const fee = (name: string, amount: string) =>
+        `<w:tr><w:tc><w:p><w:r><w:t>${name}</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>${amount}</w:t></w:r></w:p></w:tc></w:tr>`;
+      const docx = docxBytes(`<w:tbl>${fee("Overdraft fee", "$35.00")}${fee("NSF fee", "$35.00")}${fee("Stop payment fee", "$30.00")}</w:tbl>`);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+
+      const result = await runRosettaRead({ runId: 306, db: asReadDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ status: "completed", documentType: "docx", reader: "read.docx_text", tableRows: 3 });
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["read", "read.docx_text", "ok"]));
+    });
+
+    it("records a file that is not a readable .docx as unsupported instead of reading it as text", async () => {
       const db = learningDb([htmlCandidate]);
       const docx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new TextEncoder().encode("word/document.xml")]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response(docx, "application/octet-stream"));
