@@ -80,7 +80,10 @@ describe("Knox agentic extraction", () => {
     const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(insertSql).toContain("INSERT INTO raw_fee_observations");
     expect(insertSql).toContain("INSERT INTO hamilton_signals");
-    expect(insertSql).toContain("ON CONFLICT DO NOTHING");
+    // A categorized fee takes over a row an older version held as unclassified.
+    expect(insertSql).toContain("DO UPDATE SET");
+    expect(insertSql).toContain("fr.outlier_flags ? 'knox_review:unclassified'");
+    expect(insertSql).toContain("knox_promoted_from_held");
     expect(JSON.stringify(db.mock.calls)).toContain("needs_darwin_verification");
     expect(JSON.stringify(db.mock.calls)).toContain("knox_extraction_completed");
     expect(JSON.stringify(db.mock.calls)).toContain("raw_observations_pending_verification");

@@ -1067,6 +1067,23 @@ fee changes; a page that still is not a fee page is rejected again the normal wa
 **Lesson:** when a reader learns a new route, texts rejected by the old reader need one pass
 under the new one; a ban written by a judgment the code no longer makes outlives its reason.
 
+<<<<<<< HEAD
+## 2026-10-06: Knox's held lines never got the newer rules
+**What happened:** 11,889 raw rows at 3,016 banks sit held as `knox_review:unclassified`, out of
+Darwin's reach. Today's rules categorize many of them: "Courtesy Pay Fee | $30" (raw 118567) is an
+overdraft fee and "Inactivity fee $5.00 per month" (raw 109417) a dormant-account fee, but both
+stayed held.
+**Cause:** Knox never extracts the same text twice, and the dedupe index on
+(document, fee name, amount) made a later categorized insert of the same line `DO NOTHING`. A
+line held by an older rules version stayed held for good.
+**Fix:** the extract step re-reads held unclassified lines from the document's current text with
+today's rules (`knox/held-recheck.ts`, 300 per step, marked by rules version so each line is read
+once per version), and a categorized insert that meets a held row takes it over. Read-only dry run
+on all 11,783 current-text held lines: 1,529 get a category and go to Darwin (top: dormant 230,
+early closure 168, monthly maintenance 143, NSF 113, copies 106); nothing live is taken down.
+**Lesson:** a dedupe key that ignores a row's state lets the first, weakest answer win forever;
+when a reader improves, re-read what it set aside, not just what it never saw.
+=======
 ## 2026-10-06: Rosetta never heard whether its texts' fees held up
 **What happened:** Rosetta learned only whether a reader opened a file. Scored by fees that
 stayed live (read-only, Oct 6), 298 of 3,400 judged texts (9%) lost fees to takedowns the text can cause:
@@ -1084,3 +1101,4 @@ on them, 1 PDF for the paid pass now. A new text replaces the old only when it l
 many fees, so no live fee is taken down by the re-read itself.
 **Lesson:** an agent should be scored by what survives downstream, not by whether it ran.
 
+>>>>>>> origin/main
