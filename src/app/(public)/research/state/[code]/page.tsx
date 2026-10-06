@@ -10,7 +10,7 @@ import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stat
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_URL } from "@/lib/constants";
 import {
   getCitiesInStateCached,
   getStateEconomicContextCached,
@@ -172,9 +172,13 @@ export default async function StateReportPage({ params }: PageProps) {
           stateCode={stateCode}
           eyebrow="Free benchmark"
           headline={`Get the free ${stateName} fee benchmark`}
-          body={`Leave your email and we'll send ${stateName} medians against national, plus a link to the sample ${REPORT_OFFER.name}.`}
+          body={`Leave your email and we'll send you the link to the ${stateName} medians against national, updated as new fee schedules are verified.`}
           buttonLabel="Send it to me"
-          secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
+          secondaryLink={
+            SAMPLE_REPORT_LIVE
+              ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
+              : undefined
+          }
         />
 
         <PositionExhibit rows={visible} stateName={stateName} asOf={asOf} />

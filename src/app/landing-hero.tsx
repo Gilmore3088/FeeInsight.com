@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId, useState, type KeyboardEvent } from "react";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
@@ -161,19 +161,21 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <TrackLink
-                event="request_report"
+                event="request_report_click"
                 eventProps={{ placement: "home_hero" }}
                 href={REPORT_REQUEST_HREF}
                 className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
               >
                 {REPORT_OFFER.ctaLabel}
               </TrackLink>
-              <Link
-                href="/reports/sample-competitive-fee-position"
-                className="text-sm font-semibold text-[#1A1815] underline-offset-4 hover:text-[#A93D25] hover:underline"
-              >
-                Read the full sample
-              </Link>
+              {SAMPLE_REPORT_LIVE && (
+                <Link
+                  href="/reports/sample-competitive-fee-position"
+                  className="text-sm font-semibold text-[#1A1815] underline-offset-4 hover:text-[#A93D25] hover:underline"
+                >
+                  Read the full sample
+                </Link>
+              )}
             </div>
           </div>
         </div>
