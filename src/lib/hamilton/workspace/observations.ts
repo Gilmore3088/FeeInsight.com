@@ -8,8 +8,8 @@
  *   bank also charges (fee_change_records).
  * - revenue_shift: the bank's deposit service charge income moved 15% or more year over
  *   year (call reports).
- * rule_change needs a regulatory feed keyed to fee categories; none exists yet, so the
- * Briefing shows none rather than inventing one.
+ * - rule_change (built in ./context): a regulator release whose title mentions fees,
+ *   overdraft, NSF, Reg E or Reg DD (reg_articles).
  */
 
 import { getDisplayName } from "@/lib/fee-taxonomy";

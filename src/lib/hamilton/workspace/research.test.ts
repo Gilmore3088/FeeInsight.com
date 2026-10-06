@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choosePeers } from "./research";
+import { choosePeers, marketLayerSets } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -19,5 +19,22 @@ describe("choosePeers", () => {
     expect(chosen.get("overdraft")?.values).toHaveLength(8);
     expect(chosen.get("overdraft")?.label).not.toContain("Fed district");
     expect(chosen.get("rare_fee")).toMatchObject({ label: "Verified national index" });
+  });
+});
+
+describe("marketLayerSets", () => {
+  it("names national, Fed district, state, and charter and size layers", () => {
+    const sets = marketLayerSets({ state_code: "TX", charter_type: "credit_union", asset_size_tier: "community_mid", fed_district: 11 });
+    expect(sets.map((s) => [s.scope, s.label])).toEqual([
+      ["national", "National"],
+      ["fed_district", "Fed district 11 (Dallas)"],
+      ["state", "Texas"],
+      ["charter_size", "Credit unions, $300M to $1B in assets"],
+    ]);
+    expect(sets[3].filters).toEqual({ charter_type: "credit_union", asset_tiers: ["community_mid"] });
+  });
+
+  it("leaves out layers the institution has no data for", () => {
+    expect(marketLayerSets({ state_code: null, charter_type: "bank", asset_size_tier: null, fed_district: null }).map((s) => s.scope)).toEqual(["national"]);
   });
 });

@@ -35,8 +35,9 @@ const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     include: /(maintenance|monthly service|service charge|monthly fee)/i,
+    // A per-transaction charge or an earnings-credit note is not the account's monthly fee.
     exclude:
-      /(savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies))/i,
+      /(savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   overdraft: {
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|paid nsf|courtesy pay|bounce protection|privilege)/i,
@@ -49,9 +50,13 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing)/i,
   },
+  // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
+  // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
+  // what its own customer pays at another network's ATM.
   atm_non_network: {
     include: /(atm|allpoint|network machine)/i,
-    exclude: /(replace|deposit|statement|card fee|annual|\bpin\b|inquir|denied|declin)/i,
+    exclude:
+      /(replace|deposit|statement|card fee|annual|\bpin\b|inquir|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other)\b)\w+[- ]owned atm)/i,
   },
   wire_domestic_outgoing: {
     include: /wire/i,
@@ -86,7 +91,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   card_replacement: {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
-    exclude: /(check|statement|key|book|expedit|rush|overnight)/i,
+    exclude: /(check|statement|key|book|expedit|rush|overnight|gift)/i,
+  },
+  // Buying a gift or prepaid card. Its reload, replacement and inactivity fees are other fees.
+  gift_card_purchase: {
+    include: /(gift|prepaid|reloadable|travel card)/i,
+    exclude: /(inactiv|dormant|monthly|non-?use|replac|lost|stolen|reload(?!able)|maintenance)/i,
+  },
+  // A chargeback on a deposited item or a loan is not a card dispute.
+  card_dispute: {
+    include: /(dispute|charge-?back|charged back)/i,
+    exclude: /(charge-?back (on )?(loan|deposit)|charge-?back (items?|message)\b|return\/charge-?back)/i,
   },
   deposited_item_return: {
     include: /(deposit(ed)? (item|check)|return(ed)? deposit|deposit return|chargeback)/i,
@@ -104,7 +119,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 7;
+export const CATEGORY_GUARD_VERSION = 8;
 
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
