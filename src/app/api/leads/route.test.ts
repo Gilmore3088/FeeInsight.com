@@ -261,6 +261,30 @@ describe("POST /api/leads", () => {
     expect(reportNotifyMock.mock.calls[0][0]).not.toHaveProperty("held");
   });
 
+  it("stores the optional state and competitors on a report request and passes them to James's email", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({
+      name: "Dana Lee",
+      email: "dana@cu.org",
+      company: "Example CU",
+      source: "report",
+      state: "tx",
+      competitors: "Frost Bank; Amplify CU\nstate=CA",
+    });
+    expect(issued(1).values).toContain("state=TX; competitors=Frost Bank, Amplify CU, state, CA");
+    expect(reportNotifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ stateCode: "TX", competitors: "Frost Bank, Amplify CU, state, CA" }),
+    );
+  });
+
+  it("ignores a state that is not a US state", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report", state: "ZZ" });
+    expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ stateCode: null, competitors: null }));
+  });
+
   it("records the report data check when the driver returns the bigint id as a string", async () => {
     sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "18" }]).mockResolvedValueOnce([]);
     reportNotifyMock.mockResolvedValueOnce(SENT);
@@ -328,6 +352,8 @@ describe("POST /api/leads", () => {
       institutionId: 4802,
       src: "profile",
       quoteCheck: "Report check: No match.",
+      stateCode: null,
+      competitors: null,
     });
   });
 
