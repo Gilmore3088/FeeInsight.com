@@ -58,7 +58,8 @@ describe("registry scheduler", () => {
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
     expect(isParserStale("ncua-financials", "succeeded", null)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);
-    expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(false);
+    expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(true);
+    expect(isParserStale("ncua-financials", "succeeded", 3)).toBe(false);
     // A claimed or failed partition follows its normal retry time instead of looping.
     expect(isParserStale("ncua-financials", "scheduled", 1)).toBe(false);
     expect(isParserStale("ncua-financials", "failed", 1)).toBe(false);
