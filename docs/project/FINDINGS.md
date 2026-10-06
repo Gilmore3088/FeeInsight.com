@@ -1361,3 +1361,18 @@ check because the row has no fee or charge word.
 **Lesson:** a new column is not a new fee until the extractor writes it; score the writer on the
 answer keys, not only on the held rows it was built from.
 
+## 2026-10-06: Knox never read its own corrections
+**What happened:** Darwin and Hamilton write every category rejection and verification to the
+shared learning store (`pipeline_feedback`, 5,835 Darwin category rejects at 15:30 UTC), but Knox
+never read it. Fixes came only as hand rules, and a hand rule can regress: v19's plural
+"overdrafts" rule filed "Overdraft Transfers" under overdraft again, a name the guards had
+already rejected at 13 banks and verified as od_protection_transfer at 7.
+**Fix:** `src/lib/agents/knox/lessons.ts`. Each extract step reads the store's clear lessons (47
+at 15:30 UTC: statement copies, overdraft transfers, outgoing international wires, ATM card
+replacements, paid NSF items) and re-files an exact name that today's rules still put in the
+rejected category, flagged `knox_lesson:`. The rules re-check accepts the rejected-category read
+for such a row. Answer keys: 2 fees re-filed, 1 fixed, 0 broken; flat gates unchanged. Only new
+reads change, so no live fee is taken down.
+**Lesson:** an agent that writes corrections to a shared store must also read them, or the same
+mistake comes back with the next rule change.
+

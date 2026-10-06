@@ -9,6 +9,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
+import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
@@ -105,6 +106,9 @@ export interface RunKnoxExtractResult {
   limit: number;
   dryRun: boolean;
   learning: boolean;
+  /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
+  lessonsLoaded: number;
+  lessonRefiles: Record<string, number>;
   outcomes: Partial<Record<AttemptOutcome, number>>;
   results: KnoxExtractDocumentResult[];
 }
@@ -626,6 +630,8 @@ export async function runKnoxExtract(
   const learning = !dryRun && (await learningSchemaReady(db));
   const rows = await selectTextArtifacts(db, limit, learning, options.institutionId, options.stateCode);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
+  const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
+  const lessonRefiles: Record<string, number> = {};
 
   const results: KnoxExtractDocumentResult[] = [];
   let skippedKnownInputs = 0;
@@ -644,14 +650,22 @@ export async function runKnoxExtract(
     }
 
     const startedAt = Date.now();
-    const { candidates, held, rates, runs } = runFreeSpecialists(row.normalized_text);
+    const free = runFreeSpecialists(row.normalized_text);
+    const { held, rates, runs } = free;
+    // The learning reader: a name the category guards keep rejecting under the rules'
+    // category, and verify under another, is filed under the verified one.
+    const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons));
+    const candidates = lessoned.map((entry) => entry.candidate);
+    const lessonFlags = new Map(lessoned.filter((entry) => entry.lessonFlag).map((entry) => [entry.candidate, entry.lessonFlag!]));
+    for (const flag of lessonFlags.values()) lessonRefiles[flag] = (lessonRefiles[flag] ?? 0) + 1;
     let inserted = 0;
     let heldInserted = 0;
     let freeInserted = 0;
     if (!dryRun) {
       retiredOlderRows += await retireRowsFromOlderText(db, row);
       for (const candidate of candidates) {
-        if (await insertCandidate(db, { runId: options.runId, row, candidate })) inserted += 1;
+        const lessonFlag = lessonFlags.get(candidate);
+        if (await insertCandidate(db, { runId: options.runId, row, candidate, extraFlags: lessonFlag ? [lessonFlag] : [] })) inserted += 1;
       }
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
@@ -744,6 +758,8 @@ export async function runKnoxExtract(
     limit,
     dryRun,
     learning,
+    lessonsLoaded: lessons.size,
+    lessonRefiles,
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     results,
   };
