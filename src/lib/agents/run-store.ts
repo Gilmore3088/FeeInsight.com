@@ -1917,7 +1917,9 @@ export async function executeQueuedAgentRuns({
               )
          )
        )
-     ORDER BY r.started_at ASC, r.id ASC
+     -- Report runs go first: someone pressed Generate and is watching the page, while
+     -- the pipeline backlog keeps ~20 lane runs queued (about 50 minutes of work).
+     ORDER BY (r.run_kind = 'report') DESC, r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
   // Runs advance one after another. Running state lanes side by side held several

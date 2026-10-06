@@ -430,3 +430,12 @@ name (ignoring case) and same amount gave extra live rows of 95 counter check, 5
 so the published numbers were not affected.
 **Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
 name and price into one line marked "listed N times". Live rows are unchanged.
+
+## 2026-10-06: Generated reports waited behind the whole pipeline queue
+**What happened:** National Index and Monthly Pulse runs started from /admin/hamilton/reports at
+03:03 UTC Oct 6 sat "pending" with no step started.
+**Cause:** the agent tick takes queued runs oldest first. The state backlog adds two lane runs every
+five minutes and finishes about two, so about 20 lane runs (roughly 50 minutes of work) were always
+queued ahead of any new report run. Read-only check at 03:08 UTC: 17 lane runs queued ahead of the two
+report runs.
+**Fix:** same PR: the tick takes queued report runs before pipeline runs; the rest keeps its order.
