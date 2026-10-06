@@ -20,10 +20,11 @@ import {
 import { getInstitutionById } from "@/lib/data-store/core";
 import { institutionFactsFrom, scenariosFor } from "./workspace/ask";
 import { buildLedger, defaultWatches, evaluateWatches, type Ledger } from "./workspace/decisions";
+import { buildDeliverable, type Deliverable } from "./workspace/deliverables";
 import { buildImplementationPlan } from "./workspace/implementation";
 import { getFeeResearch } from "./workspace/research";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import type { DecisionEvent, DecisionRecord, DecisionStatus, ImplementationPlan, Scenario } from "./workspace/types";
+import type { DecisionEvent, DecisionRecord, DecisionStatus, DeliverableKind, ImplementationPlan, Scenario } from "./workspace/types";
 import type { WatchState } from "./workspace/decisions";
 
 interface Person {
@@ -177,4 +178,46 @@ export async function moveDecision(user: Person, decisionId: string, status: unk
   }
   await addDecisionEvents(decision.id, [{ kind: "status_changed", detail: { from: decision.status, to: next }, actor: `user:${user.id}` }], next);
   return { status: 200, body: { decision: (await getDecision(user.id, decision.id)) ?? decision } };
+}
+
+const DELIVERABLE_KINDS: DeliverableKind[] = [
+  "ceo_onepager",
+  "board_memo",
+  "pricing_packet",
+  "competitive_appendix",
+  "regulatory_summary",
+  "implementation_checklist",
+];
+const MAX_DECISIONS_PER_DELIVERABLE = 10;
+
+/** "Turn this into": builds a deliverable from the reader's decisions and logs it on each. */
+export async function makeDeliverable(user: Person, kind: unknown, decisionIds: unknown): Promise<ServiceResult<Deliverable>> {
+  if (!DELIVERABLE_KINDS.includes(kind as DeliverableKind)) return { status: 400, body: { error: "Pick a deliverable." } };
+  const ids = Array.isArray(decisionIds) ? [...new Set(decisionIds.filter((d): d is string => typeof d === "string"))] : [];
+  if (ids.length === 0 || ids.length > MAX_DECISIONS_PER_DELIVERABLE) return { status: 400, body: { error: "Pick between one and ten decisions." } };
+  if (!(await workspaceSchemaReady())) return { status: 503, body: { error: "Decisions are not set up yet." } };
+  const decisions = (await Promise.all(ids.map((id) => getDecision(user.id, id)))).filter((d): d is DecisionRecord => Boolean(d?.feeCategory));
+  if (decisions.length !== ids.length) return { status: 404, body: { error: "One of those decisions was not found." } };
+  if (new Set(decisions.map((d) => d.institutionId)).size > 1) return { status: 400, body: { error: "Pick decisions for one institution." } };
+  const events = await getEventsFor(ids);
+  const inputs = [];
+  for (const decision of decisions) {
+    const research = await getFeeResearch(decision.institutionId, decision.feeCategory as string);
+    if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
+    inputs.push({ decision, events: events.get(decision.id) ?? [], research });
+  }
+  const deliverable = buildDeliverable(kind as DeliverableKind, inputs);
+  for (const decision of decisions) {
+    await addDecisionEvents(decision.id, [{ kind: "deliverable_made", detail: { kind, decisionIds: ids }, actor: `user:${user.id}` }]);
+  }
+  await recordProRequest({
+    operation: "decision",
+    title: `Hamilton deliverable: ${deliverable.title}`,
+    status: "completed",
+    summary: `Built a ${String(kind).replace(/_/g, " ")} from ${ids.length} ${ids.length === 1 ? "decision" : "decisions"}.`,
+    userId: user.id,
+    institutionId: decisions[0].institutionId,
+    detail: { kind, decision_ids: ids },
+  });
+  return { status: 200, body: deliverable };
 }
