@@ -11,6 +11,8 @@
  *   Ch3: Fee Income in Call Reports ->
  *   Ch4: Data Coverage ->
  *   Ch5: What to Watch ->
+ *   Ch6: Districts, States and Size (when trends are available) ->
+ *   Ch6/7: Regulation and Complaints (when available) ->
  *   Methodology -> Appendix
  *
  * Every heading and card states a figure from the payload. There is no fixed thesis,
@@ -42,6 +44,8 @@ import type { DerivedAnalytics, NationalQuarterlyPayload } from "@/lib/report-as
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import { renderRegulatorySection } from "./regulatory-section";
+import type { NationalTrends } from "@/lib/report-assemblers/national-trends";
+import { renderNationalTrendsSection } from "./national-trends-section";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
 
@@ -57,6 +61,8 @@ export interface NationalQuarterlyReportInput {
   };
   /** Regulator releases, enforcement, CFPB complaints and fee rules; omitted when unavailable. */
   regulatory?: RegulatoryContext | null;
+  /** Fed districts, state ranking, size tiers, 16 quarters of fee income and outliers; omitted when unavailable. */
+  trends?: NationalTrends | null;
 }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
@@ -109,6 +115,10 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   });
 
   // ── Table of Contents ──────────────────────────────────────────────────────
+  // The trends chapter runs about four pages (district, state, size, income and outlier tables).
+  const trendsPages = input.trends ? 4 : 0;
+  const regulatoryPage = 9 + trendsPages;
+  const methodologyPage = regulatoryPage + (input.regulatory ? 1 : 0);
   const toc = tableOfContents([
     {
       title: "The Quarter in Figures",
@@ -147,24 +157,32 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       description: "Questions the next quarters of data can settle",
       page: 8,
     },
-    ...(input.regulatory
+    ...(input.trends
       ? [{
           number: "06",
+          title: "Districts, States and Size",
+          description: "Each Fed district, a state ranking, size tiers, fee income by quarter and the highest fees",
+          page: 9,
+        }]
+      : []),
+    ...(input.regulatory
+      ? [{
+          number: input.trends ? "07" : "06",
           title: "Regulation and Complaints",
           description: "Regulator releases, enforcement actions, CFPB complaints and fee rules",
-          page: 9,
+          page: regulatoryPage,
         }]
       : []),
     {
       title: "Methodology",
       description: "Data sources, computation methods, and maturity definitions",
-      page: input.regulatory ? 10 : 9,
+      page: methodologyPage,
       sectionLabel: "Data",
     },
     {
       title: "Full Category Index",
       description: "Complete national benchmark data for all tracked fee categories",
-      page: input.regulatory ? 11 : 10,
+      page: methodologyPage + 1,
     },
   ]);
 
@@ -506,7 +524,8 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     layoutAnalytical(ch3),
     layoutAnalytical(ch4),
     layoutStatement(ch5),
-    input.regulatory ? layoutAnalytical(renderRegulatorySection(input.regulatory, { number: "06", place: "the United States" })) : "",
+    input.trends ? layoutAnalytical(renderNationalTrendsSection(input.trends, { number: "06" })) : "",
+    input.regulatory ? layoutAnalytical(renderRegulatorySection(input.regulatory, { number: input.trends ? "07" : "06", place: "the United States" })) : "",
     methodology,
     appendix,
   ]
