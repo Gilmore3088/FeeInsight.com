@@ -23,7 +23,7 @@ function toneFor(line: ReportLine): keyof typeof TONE {
 }
 
 /**
- * Where the fee ranks among local competitors, 0 (cheapest) to 100 (dearest), counting ties
+ * Where the fee ranks among local competitors, 0 (lowest) to 100 (highest), counting ties
  * as half. Every row shares this one scale, so the rows line up against one median and one
  * middle-half band. A fee the report calls "inside the middle half" (by amount) is kept on
  * the band's edge when ties would nudge its rank just past it.
@@ -81,9 +81,9 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
         >
           <span role="columnheader">Fee</span>
           <span role="columnheader" className="flex justify-between">
-            <span>Cheapest</span>
+            <span>Lower</span>
             <span>Local median</span>
-            <span>Dearest</span>
+            <span>Higher</span>
           </span>
           <span role="columnheader" className="text-right">Yours</span>
           <span role="columnheader" className="text-right">vs median</span>
@@ -120,9 +120,9 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
         ))}
 
         <div className="mt-2 flex justify-between text-[11px] text-[#8A8173] sm:hidden" aria-hidden="true">
-          <span>Cheapest</span>
+          <span>Lower</span>
           <span>Median</span>
-          <span>Dearest</span>
+          <span>Higher</span>
         </div>
       </div>
 
