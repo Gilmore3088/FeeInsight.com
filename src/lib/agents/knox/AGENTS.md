@@ -53,7 +53,18 @@ v14 added names the keys showed held as unclassified (account closing, reactivat
 wires without a direction, child support, legal orders, negative balance, audit confirmations,
 IRA custodial, document copies) and a checking account's own monthly price ("Opportunity Checking
 | $10 per month"). Returned mail and foreign item collection stay unclassified: the Texas keys and
-the taxonomy file them differently, and Knox waits for one answer. A rules
+the taxonomy file them differently, and Knox waits for one answer.
+
+v15 (rules 15, table 5, families +1) came from Rosetta's look at two live stacked pages. A line
+that only qualifies the name above it ("(for each overdraft item paid)", "(up to $1,000)", "If
+checks are not on order") no longer becomes the fee's name or breaks the name/price pair
+(`qualifiesName` in `layout.ts`). Table headings may run to 10 words, so "ATM fees per transaction
+– At non-Wells Fargo ATMs" names the "Cash withdrawals - Within U.S." row under it; "At <Bank>
+ATMs" without non/other is the bank's own machines and is not out-of-network. Also read: "Debit
+Card (replacement or PIN)" and "Deposited checks (and other items) returned unpaid". At v15:
+Texas 460 of 478, held out 43 of 49; seven states 681 of 739. Hold statements, special statement
+cutoff, account activity printouts and a debit card's own monthly charge have no taxonomy
+category (the keys file them as unmapped), so Knox still leaves them out. A rules
 change scores both gates; a fix that helps Texas and hurts another state fails.
 
 ## Extraction Passes

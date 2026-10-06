@@ -937,3 +937,25 @@ medians already split NCUA into quarters, but the single-quarter reads in `call-
 **Fix:** same PR: those reads join each credit union's prior quarter in the same year and use the
 difference (Q1 stands alone; a missing prior quarter leaves the row out). Read-only; no data change.
 **Lesson:** a unit rule fixed in one query must live in a shared helper, or the next query repeats the bug.
+
+## 2026-10-06: Knox named stacked fees after the line under the name
+**What happened:** Rosetta's read of Community Bank (Longview, TX, `cbanktexas.com/limit-and-fees`)
+and Wells Fargo's account fee summaries found fees Knox missed or misnamed: overdraft and NSF were
+published as "(for each overdraft item, ...)", and the debit card replacement, temporary checks,
+returned deposited items, non-Wells Fargo ATM $3 and $5, and money order $5 were missed.
+**Cause:** Knox's stacked-line pairing (`table-rows.ts`, `families.ts`) took the line right above
+a price as its name, so a qualifier line between name and price ("(for each ...)", "(up to
+$1,000)", "If checks are not on order") either became the name or broke the pair. Wells Fargo's
+section heading ran to 9 words, past the 6-word heading limit, so "Cash withdrawals - Within U.S."
+had no category to borrow.
+**Fix:** same PR (Knox v15): a qualifier line keeps the name above it, table headings may run to 10
+words, "At <Bank> ATMs" is not read as out-of-network, and two name patterns. Answer-key gates:
+Texas 455 to 460 right, seven states 677 to 681, wrong reads 77 to 76, no right fee lost. Dry run
+on 117 sampled live documents: 1,956 reads kept, 7 new (all checked right by hand), 1 replaced (a
+statement copy read as $15 "Consumer", which is the business price, now $5; that document has no
+fee in `published_fee_catalog`).
+**Still open:** hold statements, special statement cutoff, account activity printouts and a debit
+card's monthly charge have no category in `fee-taxonomy.ts`; the answer keys file them as
+unmapped. They stay out until the taxonomy has a place for them.
+**Lesson:** pages built as name / note / price stacks are common on bank summary pages; pair
+across the note rather than adding names per bank.
