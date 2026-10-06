@@ -13,6 +13,45 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
+**What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
+our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
+have malformed `website_url` values (16 "www" with no dot, such as "wwwbank.com" or "www.bankcom";
+27 odd domain endings). Those counts are the audit's; they were not re-measured here.
+**Cause:** `discovery.ts` returned `blocked` as soon as the homepage answered 401/403, so the site
+map specialist, which needs no homepage, never ran. A 200 challenge page was searched as if it
+were the homepage. Discovery read `website_url` as stored: "wwwbank.com" is a valid host, so it
+was fetched and failed as unreachable (retried every 12 hours) instead of being fixed. There is
+no other stored website to fall back on: the FDIC registry step reads `WEBADDR` but only fills an
+empty `website_url`, and the NCUA step stores no website at all.
+**Fix:** discovery method version 4. A 401/403 or a challenge page now runs the known link and the
+site map (robots.txt `Sitemap:` lines, else `/sitemap.xml`, then `/sitemap_index.xml`, with
+robots.txt Disallow rules respected and fee-named PDFs opened); a find is code
+`found_blocked_homepage` with `detail.rescue = 'blocked_homepage'`, and every attempt carries
+`detail.homepage_blocked`. A 429 still stops. The website is repaired first
+(`website-repair.ts`, attempt `discover.website_repair`), saved unless a correction locks the
+bank, and an unreadable one is `needs_human` (`website_unrepairable`). Branch
+`magellan/mg7-mg8-blocked-homepage-url-repair`, not merged.
+**Lesson:** a specialist that needs no homepage must not sit behind the homepage fetch. If a
+registry website should back up a bad stored one, the registry steps must store it in its own
+column; today they do not.
+
+## 2026-10-06: Product pages became banks' fee links
+**What happened:** the Magellan audit (read-only queries on prod, Oct 6) found 853 of 4,451 fee
+links were account or product pages ("/personal/checking"), not fee schedules; those banks had a
+median of 4 live fees against 15 for fee-named links. In a random sample of 40 links, 9 were
+product pages. In the two days before, 57% of 960 new finds were product or rates pages.
+**Cause:** the fee-page check accepted any HTML page with two fee words, counted on the raw page
+including its menu and footer, where "Fee Schedule | Truth in Savings" appears on every page of a
+bank's site. A checking page quoting its monthly charge passed.
+**Fix:** this PR counts fee words on the page's own content only and requires, below the 3 fee
+line bar, an address that names the fee page or a strong label plus a listed fee; product pages
+are rejected (`product_page`). Banks that already hold a product-page link get one upgrade search;
+a find replaces the link and keeps the product page as a companion account page. Dry run before
+merge (read-only, 06:35 UTC): 784 unlocked banks qualify, 131 of them with live fees; links stay
+until a real schedule is found.
+**Lesson:** never judge a page by words that sit in the site's shared menu or footer.
+
 ## 2026-10-06: Almost a third of sampled "fee schedule" texts are not fee schedules
 **What happened:** building answer keys for CA, FL, GA, IL, MI, MN and NY, 18 of 56 sampled stored
 texts (newest completed `agent_source_texts` per bank, 1,500 to 60,000 characters) turned out not to
@@ -79,6 +118,26 @@ the URL as rejected and marks the bank due a search (`failure_reason = 'magellan
 is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
 **Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
 loop on a dead address is a silent failure.
+## 2026-10-06: Slow bank sites were cut off at the same point on every discovery search
+**What happened:** the Magellan audit (read-only, 6 Oct) counted 513 active banks with a website and no
+fee link whose last free search ended `retry_after` because the `discover` step ran out of time partway
+through the bank. Every 12 hours they were searched again from the first specialist and stopped at
+about the same place, so the later specialists (hub pages, guessed paths, peer hint, site crawl) never
+ran for them.
+**Cause:** a search had no memory between steps. Each bank gets 45 s (`INSTITUTION_BUDGET_MS`), less when
+it starts late in the step (the step stops at 100 s), and `retry_after` banks sort last in the batch, so
+they usually got the squeezed budget. The next search repeated the specialists already done (homepage,
+robots.txt, site map), spent the same time there and stopped in the same place. Once the profile showed
+two failures in a row (`OUT_OF_TIME_RETRIES`) the next cut-off made the bank a miss, which waits a month,
+and then the loop began again.
+**Fix:** MG-6 (branch in this PR, not merged): a search cut short writes `detail.resume` on its last
+`pipeline_attempts` row (specialists finished, where the clock stopped, how many cut-off searches). The
+next search of that bank skips the finished specialists and starts at the next one. A specialist the
+clock stops inside twice on a full budget is skipped; after 12 cut-off searches the bank is a miss. The
+first cut-off bank in each step goes to the front and gets the whole 45 s; other banks keep their place
+and the step's budget is unchanged (no Vercel plan change). No migration.
+**Lesson:** work that can outlast one function call needs a saved place to continue from, or the same
+budget is spent on the same first steps every time.
 
 ## 2026-10-06: Report requests never stored their "ready to quote" line
 **What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,
