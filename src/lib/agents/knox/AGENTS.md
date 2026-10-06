@@ -63,7 +63,9 @@ only on what the free team could not read.
   the line opens with the price and says it is a fee, or the line states an account's
   monthly service charge in prose ("otherwise $8 service charge per statement cycle",
   "avoid the $10 monthly fee"; `maintenanceFromProse`, guarded like Darwin). A free in-network ATM or an
-  allowance ("two per year: Free") is not a $0 price. All three specialists follow the
+  allowance ("two per year: Free", "2 free cashiers checks monthly") or a condition
+  ("Monthly Service Charge if any of the following qualifications are met", "to waive") is not
+  a $0 price (v13). All three specialists follow the
   same rules, and table and family rows whose name opens mid-sentence (agreement prose
   in columns) are skipped.
 - Pass 2, free and heavier (`specialists.ts` runs the team and merges its finds):
