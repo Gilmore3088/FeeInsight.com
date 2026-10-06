@@ -18,6 +18,8 @@ interface InstitutionGroup {
   min_amount: number | null;
   max_amount: number | null;
   fee_count: number;
+  /** The fees as listed, with the same name and price shown once ("listed 2 times"). */
+  listings: { fee: FeeInstance; times: number }[];
   /** False when none of its rows trace to a bank document, so the index leaves it out. */
   counted: boolean;
 }
@@ -102,12 +104,19 @@ export function InstitutionTable({
           min_amount: null,
           max_amount: null,
           fee_count: 0,
+          listings: [],
           counted: false,
         });
       }
       const group = map.get(fee.institution_id)!;
       group.fees.push(fee);
-      group.fee_count++;
+      const key = `${(fee.fee_name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${fee.amount}`;
+      const same = group.listings.find(
+        (listing) => `${(listing.fee.fee_name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${listing.fee.amount}` === key,
+      );
+      if (same) same.times += 1;
+      else group.listings.push({ fee, times: 1 });
+      group.fee_count = group.listings.length;
     }
 
     // Compute aggregate amounts per institution
@@ -478,7 +487,7 @@ export function InstitutionTable({
                     </td>
                   </tr>
                   {isExpanded &&
-                    group.fees.map((fee) => (
+                    group.listings.map(({ fee, times }) => (
                       <tr
                         key={fee.id}
                         className="border-b bg-gray-50/50 dark:bg-white/[0.02]"
@@ -486,6 +495,9 @@ export function InstitutionTable({
                         <td className="px-4 py-1.5"></td>
                         <td className="px-4 py-1.5 pl-8 text-xs text-gray-600 dark:text-gray-300 sticky left-0 bg-gray-50/50 dark:bg-[oklch(0.17_0_0)] z-10">
                           {fee.fee_name || fee.frequency || "—"}
+                          {times > 1 && (
+                            <span className="ml-2 text-[10px] text-gray-400">listed {times} times</span>
+                          )}
                         </td>
                         <td className="px-4 py-1.5 text-right tabular-nums text-xs text-gray-700 dark:text-gray-300">
                           {formatAmount(fee.amount)}

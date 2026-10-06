@@ -60,4 +60,12 @@ describe("InstitutionTable", () => {
     expect(screen.getByRole("link", { name: /Bank's schedule/ }).getAttribute("href")).toBe("https://example.com/10.pdf");
     expect(screen.getByText("no source, not counted")).toBeTruthy();
   });
+
+  it("shows a fee listed twice with the same name and price once", () => {
+    const listed = [fee(1, 10, "Alpha Bank", 30, { fee_name: "Stop Payment" }), fee(2, 10, "Alpha Bank", 30, { fee_name: "Stop payment" })];
+    render(<InstitutionTable fees={listed} median={30} countedValues={{ 10: 30 }} />);
+    fireEvent.click(screen.getByText("Alpha Bank").closest("tr")!);
+    expect(screen.getAllByText(/Stop Payment/i)).toHaveLength(1);
+    expect(screen.getByText("listed 2 times")).toBeTruthy();
+  });
 });

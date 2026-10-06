@@ -411,3 +411,14 @@ $30.00" across three lines of its right column, so no single line held both the 
 one fee per priced tier (the index counts overdraft at its highest tier), and rebuilds the columns
 of a "left | right" text to join a fee name with the lowercase lines that continue it up to its
 price. Both only add fees, and every one still passes Darwin's guard.
+
+## 2026-10-06: The fee catalog listed the same fee twice at one institution
+**What happened:** opening an institution on a fee catalog page could show the same fee, with the
+same name and price, two or more times, which read as conflicting data.
+**Cause:** some schedules print a fee in more than one place (a fee table and an account section),
+and each listing is its own live row. Read-only check at 03:00 UTC Oct 6: same institution, same
+name (ignoring case) and same amount gave extra live rows of 95 counter check, 52 rush card, 49 NSF,
+48 stop payment, 31 overdraft and 27 bill pay. The index already counts one value per institution,
+so the published numbers were not affected.
+**Fix:** same PR: the catalog's institution table merges a fee listed more than once with the same
+name and price into one line marked "listed N times". Live rows are unchanged.
