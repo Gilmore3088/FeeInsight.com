@@ -354,21 +354,29 @@ export function CommandPalette() {
   );
 }
 
-export function CommandPaletteTrigger() {
-  function handleClick() {
-    // Dispatch Cmd+K to open the palette
-    document.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "k",
-        metaKey: true,
-        bubbles: true,
-      })
-    );
-  }
+function openPalette() {
+  // Dispatch Cmd+K to open the palette
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+}
 
+/** The search button for a phone, where the wide trigger is hidden. */
+export function CommandPaletteIconTrigger() {
   return (
     <button
-      onClick={handleClick}
+      type="button"
+      onClick={openPalette}
+      aria-label="Search"
+      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 md:hidden dark:hover:bg-white/[0.06]"
+    >
+      <Search className="size-4" />
+    </button>
+  );
+}
+
+export function CommandPaletteTrigger() {
+  return (
+    <button
+      onClick={openPalette}
       className="hidden md:flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-500
                  hover:bg-gray-100 transition-colors dark:border-white/[0.1] dark:bg-white/[0.04] dark:text-gray-400 dark:hover:bg-white/[0.08]"
     >
