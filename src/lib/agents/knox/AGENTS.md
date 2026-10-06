@@ -127,6 +127,11 @@ the item" / "Greater than $5.00: $5.00") are read per tier, and a price whose ne
 prose ("$30.00 | ... unless you opt in") is never named by that prose. The shared check now
 reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
 
+v20 (rules 20) files "ATM Foreign Transaction Fee" (and "ATM – Foreign Transaction", "Debit ATM
+Foreign Transaction", "foreign ATM") as `atm_non_network`: it is what a customer pays at another
+bank's ATM, not a card's foreign transaction fee. "ATM/Debit Card International/Foreign
+Transaction Fee" names the card and is unchanged.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

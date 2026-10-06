@@ -13,6 +13,27 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Flat foreign transaction fees were mostly ATM, wire and rate rows
+**What happened:** read-only prod query, 14:50 UTC Oct 6. Of 45 live `card_foreign_txn` rows
+with a dollar amount, 15 were "ATM Foreign Transaction Fee" (a fee for using another bank's
+ATM, $1-$5), 3 were wires ("1.1% foreign transaction fee ...: WIRE TRANSFERS" $10/$15,
+"Currency Conversion Assessment | Domestic Wire In" $10), 7 were a rate read as dollars
+("Debit Card Foreign Transaction 1% of the U.S. dollar amount" $7, "VISA Exchange Rate" $1 with
+"Percentage of transaction", "Foreign Transaction" $2 with "2.00% of transaction"), 3 were
+foreign currency or check services, one joined a low-balance fee from the next cell, and one
+was a sentence ("Many Canadian credit cards charge ... 2.5%").
+**Cause:** Knox's `card_foreign_txn` pattern matches "foreign transaction" before the ATM
+pattern, and the category had no guard, so nothing checked the name or a rate on the line.
+**Fix:** category guard v11 guards `card_foreign_txn` (ATM, wire, currency-service, joined-cell
+and sentence names fail) and fails a dollar amount whose name states a percent or a rate, or
+whose stated terms state a percent (`rate_as_amount`); a rate row has no dollar amount, so it
+never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and Knox v20 files
+it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
+the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
+foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows come down with the admin category guard repair run.
+**Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
+under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
+
 ## 2026-10-06: Magellan called a link "found" when it was not the consumer fee schedule
 **What happened:** read-only prod queries, 14:15-14:30 UTC Oct 6. 187 active institutions'
 only fee link is a business-only schedule (882 live fees), e.g. First National Bank Alaska's
