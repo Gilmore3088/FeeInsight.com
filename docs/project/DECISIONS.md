@@ -18,6 +18,13 @@ month's campaigns, picks two formats not used in three months (readers tire of t
 writes them from live data, and drafts each as an A/B subject test in MailerLite. One approval in
 /admin/customers/marketing sends the month. Results and lessons go to `pipeline_feedback`.
 
+**The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
+stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
+pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; the price comes from
+the request row, never the link. The Stripe webhook marks the request Paid, alerts James, and emails
+the requester their private report link. A quote is saved only when the report check says "ready to
+quote", so no one pays for a report built on thin data. The report stays "priced on request".
+
 **Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
 shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan
 (https://claude.ai/code/artifact/12c7e165-b7af-4aee-a356-cc0c4f5c15a8): tighten the main-link

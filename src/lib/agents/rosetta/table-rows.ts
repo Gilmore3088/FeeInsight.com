@@ -24,6 +24,7 @@ export const MAX_TABLE_ROWS = 2000;
 export type TableRowOrigin =
   | "html_table"
   | "html_definition_list"
+  | "docx_table"
   | "pdf_layout"
   | "ocr_layout"
   | "embedded_data"

@@ -67,7 +67,7 @@ export function EmailSignup() {
         Monthly fee index update
       </label>
       <p className="text-[12px] leading-relaxed text-[#6B6255]">
-        New benchmarks, notable fee changes, one chart. About once a month. Pick a state to get its numbers too.
+        New benchmarks, notable fee changes, one chart. No more than once a month. Pick a state to get its numbers too.
       </p>
       <label htmlFor="footer-newsletter-state" className="sr-only">
         Your state (optional)

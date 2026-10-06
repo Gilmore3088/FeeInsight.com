@@ -32,6 +32,7 @@ import {
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
+import { DOCX_STRATEGY, DocxReadError, extractDocxText } from "@/lib/agents/rosetta/docx";
 import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
 import {
   alternateDocumentUrls,
@@ -366,7 +367,7 @@ const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
   pdf: [{ strategy: "read.pdf_layout", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["pdf_text"] }],
   html: [{ strategy: "read.html_dom", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["html_static"] }],
   text: [{ strategy: "read.plain_text", version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["text"] }],
-  docx: [],
+  docx: [{ strategy: DOCX_STRATEGY, version: ROSETTA_READ_VERSION, costMicrousd: 0, formats: ["docx"] }],
   other: [],
 };
 
@@ -729,6 +730,26 @@ async function readCandidate(
     return finishRead(ocr.read.text, "pdf_scanned", ocr.read.rows, "scanned_pdf");
   }
 
+  if (format === "docx") {
+    let extracted: { text: string; rows: SourceTableRow[] };
+    try {
+      extracted = extractDocxText(bytes);
+    } catch (error) {
+      return finish({
+        status: "failed",
+        error: `Word document not read: ${errorMessage(error)}`,
+        attemptOutcome: error instanceof DocxReadError ? "unsupported_format" : "parse_error",
+        format: "docx",
+      });
+    }
+    const normalizedText = normalizeWhitespace(extracted.text);
+    if (normalizedText.length === 0) {
+      return finish({ status: "empty", error: "No text in the Word document", attemptOutcome: "empty", format: "docx" }, normalizedText);
+    }
+    base.tableRows = extracted.rows.length;
+    return finishRead(normalizedText, "docx", extracted.rows);
+  }
+
   const raw = new TextDecoder("utf-8").decode(bytes);
   let normalizedText: string;
   let rows: SourceTableRow[] = [];
@@ -912,6 +933,8 @@ async function selectCandidates(
               AND pa.input_fingerprint = cr.content_hash
               AND pa.strategy_version = ${versionParam}
               AND pa.outcome = ANY(${permanentParam}::text[])
+              -- Word files were logged "unsupported" before read.docx_text existed.
+              AND NOT (pa.strategy = 'read.docx' AND pa.outcome = 'unsupported_format')
          )`);
   }
   const vaultColumns = vaultSchema

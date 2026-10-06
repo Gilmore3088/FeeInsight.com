@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import {
   assetSizeTier,
+  blankUnreportedFeeIncome,
   fetchNcuaArchive,
   parseNcuaFinancial,
   parseNcuaInstitution,
@@ -31,8 +32,10 @@ export const NCUA_FINANCIALS_SOURCE = "ncua-financials";
 /**
  * Bump when the parser reads new accounts; the registry scheduler re-pulls every
  * quarter recorded under an older version. 2: overdraft and NSF fee income (IS0048, IS0049).
+ * 3: overdraft and NSF income stored as null, not zero, in a quarter where no credit union
+ * reports a nonzero value; a second file's zero no longer overwrites a reported figure.
  */
-export const NCUA_PARSER_VERSION = 2;
+export const NCUA_PARSER_VERSION = 3;
 export const NCUA_FILING_LAG_DAYS = 60;
 const UPSERT_CHUNK = 500;
 const RECENT_REFRESH_HOURS = 24 * 14;
@@ -315,9 +318,10 @@ export async function runRegistryNcuaFinancials(
   const institutions = archive.foicu
     .map(parseNcuaInstitution)
     .filter((row): row is NcuaInstitutionRow => row !== null);
-  const financials = [...archive.accounts.entries()]
+  const parsed = [...archive.accounts.entries()]
     .map(([charter, row]) => parseNcuaFinancial(charter, row, quarter))
     .filter((row): row is NcuaFinancialRow => row !== null);
+  const { rows: financials, blanked } = blankUnreportedFeeIncome(parsed);
   const result: RegistryNcuaFinancialsResult = {
     ...base,
     reportDate: financials[0]?.report_date ?? "",
@@ -368,6 +372,11 @@ export async function runRegistryNcuaFinancials(
     nextAttemptAfterHours: recent ? RECENT_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS,
     detail: {
       parser_version: NCUA_PARSER_VERSION,
+      fee_income_accounts_unreported: blanked,
+      account_files: {
+        ACCT_IS0048: archive.accountFiles.ACCT_IS0048 ?? [],
+        ACCT_IS0049: archive.accountFiles.ACCT_IS0049 ?? [],
+      },
       report_date: result.reportDate,
       credit_unions: result.creditUnions,
       universe_synced: result.universeSynced,

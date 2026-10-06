@@ -38,6 +38,11 @@ export interface StoredLead {
   benchmarkScope?: BenchmarkScope | null;
   /** Institution report requests only: the data check line for James. */
   quoteCheck?: string | null;
+  /**
+   * Institution report requests the data check held (market not ready): the requester's
+   * Fed district for their free report, or null when unknown. Undefined when not held.
+   */
+  heldDistrict?: number | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -182,6 +187,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionId: lead.institutionId,
         src: lead.src,
         quoteCheck: lead.quoteCheck ?? null,
+        ...(lead.heldDistrict !== undefined ? { held: { district: lead.heldDistrict } } : {}),
       });
       await handleUndelivered(lead, outcome);
       return toStatus(outcome);

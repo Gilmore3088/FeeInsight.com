@@ -28,7 +28,6 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
-import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -382,14 +381,11 @@ async function executeAgenticStep(
         stateCode,
         dryRun: run.runKind === "dry_run",
       });
-      // MG-4: retrain the shadow fee-page classifier from the ledger when it is 6+ hours old.
-      const pageClassifier = await refreshPageClassifier(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
           link_outcomes: linkOutcomes,
-          page_classifier: { ...pageClassifier, scored_with: discovery.pageClassifier },
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -2348,7 +2344,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation";
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;

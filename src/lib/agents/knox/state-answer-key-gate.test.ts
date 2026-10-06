@@ -13,14 +13,14 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 121, wrong: 10 },
+  CA: { right: 123, wrong: 9 },
   FL: { right: 96, wrong: 7 },
-  GA: { right: 140, wrong: 13 },
+  GA: { right: 142, wrong: 13 },
   IL: { right: 86, wrong: 7 },
   MI: { right: 104, wrong: 0 },
   MN: { right: 92, wrong: 14 },
   NY: { right: 38, wrong: 8 },
-  all: { right: 677, wrong: 59 },
+  all: { right: 681, wrong: 58 },
 };
 
 const fixture = JSON.parse(

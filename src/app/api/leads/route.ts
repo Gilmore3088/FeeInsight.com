@@ -25,6 +25,7 @@ import {
   parseSrc,
 } from "./lead-notifications";
 import { isRequestLead } from "@/lib/leads/lead-status";
+import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_SOURCE = "website";
@@ -160,18 +161,22 @@ async function handlePOST(request: NextRequest) {
 
     // An institution report is paid and quoted by James, so the requester gets nothing
     // automatic. James's email and the lead row say whether we can build it from live data.
+    // When the local data is too thin, the request is answered at once: the row is Held
+    // and the requester is told so, with their free Fed district report.
     let quoteCheck: string | null = null;
+    let heldDistrict: number | null | undefined;
     if (source === REPORT_SOURCE) {
-      quoteCheck = describeQuoteCheck(
-        await checkInstitutionReport({ institutionId, institutionName: company }),
-        SITE_URL,
-      );
+      const check = await checkInstitutionReport({ institutionId, institutionName: company });
+      quoteCheck = describeQuoteCheck(check, SITE_URL);
+      const held = check.status === "thin";
+      if (held) heldDistrict = (check.rule?.state_code && STATE_TO_DISTRICT[check.rule.state_code]) || null;
       if (leadId !== null) {
         await sql`
           UPDATE leads SET use_case = CASE
             WHEN use_case IS NULL OR use_case = '' THEN ${quoteCheck}
             ELSE use_case || '; ' || ${quoteCheck}
-          END
+          END,
+          status = CASE WHEN ${held} AND status = ${NEW_LEAD_STATUS} THEN 'held' ELSE status END
           WHERE id = ${leadId}`;
       }
     }
@@ -205,6 +210,7 @@ async function handlePOST(request: NextRequest) {
       institutionName,
       benchmarkScope,
       quoteCheck,
+      heldDistrict,
     });
 
     return NextResponse.json(notifications ? { success: true, notifications } : { success: true });
