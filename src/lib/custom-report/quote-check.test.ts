@@ -11,11 +11,12 @@ const readiness = {
 };
 
 describe("describeQuoteCheck", () => {
-  it("gives James the private link only when the report is buildable", () => {
+  it("never puts the private report link in the line, which can reach the requester", () => {
     const line = describeQuoteCheck({ status: "ready", readiness, path: "/market-report/abc" }, "https://feeinsight.com/");
     expect(line).toBe(
-      "Report check: ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Private report link to send after they agree (works for 90 days): https://feeinsight.com/market-report/abc",
+      "Report check: ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Quote a price at https://feeinsight.com/admin/leads; the private report link goes to them when they pay by card.",
     );
+    expect(line).not.toContain("market-report");
   });
 
   it("says why a thin market is not ready", () => {
