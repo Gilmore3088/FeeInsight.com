@@ -876,3 +876,13 @@ was measured and not added: 446 live names end in "of" ("An overdraft fee of"), 
 the bank's real price.
 **Lesson:** judge a name-shape rule by the live prices it would remove, not by the bad names it
 catches.
+
+## 2026-10-06: Single-quarter income reads doubled credit-union income
+**What happened:** a read-only check (07:30 UTC) found the district, size-tier, top-institution,
+peer-ranking and institution-trend income reads summed NCUA 5300 service charges as reported. For
+Q2 2026 that was $5.16B for credit unions against $2.64B earned in the quarter.
+**Cause:** NCUA income lines are year to date; FDIC lines are quarterly. getRevenueTrend and the peer
+medians already split NCUA into quarters, but the single-quarter reads in `call-reports.ts` did not.
+**Fix:** same PR: those reads join each credit union's prior quarter in the same year and use the
+difference (Q1 stands alone; a missing prior quarter leaves the row out). Read-only; no data change.
+**Lesson:** a unit rule fixed in one query must live in a shared helper, or the next query repeats the bug.
