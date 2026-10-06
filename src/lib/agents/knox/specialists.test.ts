@@ -45,6 +45,47 @@ describe("Knox pass 2a: extract.table", () => {
     expect(held(text)).toEqual([["zero", "Paper statement", 0, "paper_statement"]]);
   });
 
+  it("keeps the name above a qualifier line, and lets an ATM heading name a cash withdrawal row", () => {
+    // Community Bank (Longview, TX) and Wells Fargo summary pages, as Rosetta stores them.
+    const text = [
+      "Community Bank Debit Card (replacement or PIN)",
+      "$5.00",
+      "Temporary Checks",
+      "If checks are not on order (10 maximum)",
+      "$2.00",
+      "Overdraft Item Fee",
+      "(for each overdraft item, overdraft debit or overdraft check paid)",
+      "$30.00",
+      "Deposited checks (and other items) returned unpaid",
+      "$3.00",
+      "ATM fees per transaction – At Wells Fargo ATMs",
+      "Cash withdrawals",
+      "$0",
+      "ATM fees per transaction – At non-Wells Fargo ATMs",
+      "(non-Wells Fargo ATM operator fees may also apply)",
+      "Cash withdrawals - Within U.S. / U.S. territories",
+      "$3.00",
+      "Cash withdrawals - Outside U.S.",
+      "$5.00",
+      "Money order footnote 2",
+      "(up to $1,000)",
+      "$5",
+      "each",
+    ].join("\n");
+
+    expect(fees(text)).toEqual([
+      ["Community Bank Debit Card (replacement or PIN)", 5, "card_replacement"],
+      ["Temporary Checks", 2, "counter_check"],
+      ["Overdraft Item Fee", 30, "overdraft"],
+      ["Deposited checks (and other items) returned unpaid", 3, "deposited_item_return"],
+      ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Within U.S. / U.S. territories", 3, "atm_non_network"],
+      ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Outside U.S.", 5, "atm_international"],
+      ["Money order footnote 2", 5, "money_order"],
+    ]);
+    // The bank's own ATMs are not out-of-network.
+    expect(held(text)).toEqual([]);
+  });
+
   it("re-pairs dot-leader rows whose prices were pushed onto the next line", () => {
     const text = [
       "Wire Transfer (outgoing).................................................",

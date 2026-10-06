@@ -16,7 +16,7 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * the floor there; never lower it silently.
  */
 const FLOORS = {
-  all: { right: 455, wrong: 18 },
+  all: { right: 460, wrong: 18 },
   holdout: { right: 43, wrong: 6 },
 };
 
