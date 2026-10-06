@@ -116,6 +116,16 @@ function exhibitPoints(exhibit: Exhibit): number {
       return exhibit.series.reduce((sum, s) => sum + s.points.length, 0);
     case "competitor_range":
       return exhibit.items.length;
+    case "segment_table":
+      return exhibit.members.length;
+    case "change_timeline":
+      return exhibit.events.length;
+    case "structure_matrix":
+      return exhibit.rows.length;
+    case "money_at_stake":
+      return exhibit.rows.length;
+    case "archetype_map":
+      return exhibit.archetypes.reduce((sum, a) => sum + a.count, 0);
   }
 }
 
