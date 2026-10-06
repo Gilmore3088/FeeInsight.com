@@ -5,6 +5,7 @@
 import { REPORT_OFFER } from "@/lib/constants";
 import {
   adminLeadsUrl,
+  emailOptInLines,
   sendLeadNotificationPair,
   type LeadNotificationOutcome,
 } from "./lead-notification";
@@ -18,6 +19,8 @@ export interface ReportRequestNotificationInput {
   role: string | null;
   institutionId: number | null;
   src: string | null;
+  /** Whether we can build this institution's report from live data; James's email only. */
+  quoteCheck?: string | null;
 }
 
 export interface ContactRequestNotificationInput {
@@ -55,6 +58,7 @@ export async function sendReportRequestNotifications(
       detailLine("Source", input.src),
     ].filter((line): line is string => line !== null),
     "",
+    ...(input.quoteCheck ? [input.quoteCheck, ""] : []),
     "Reply to this email to reach the requester directly.",
   ];
 
@@ -71,6 +75,7 @@ export async function sendReportRequestNotifications(
         `We received your request for ${input.institution}. ${REPORT_REQUEST_CONFIRMATION_LINE}`,
         "",
         "Reply to this email with questions.",
+        ...emailOptInLines(input.email),
       ],
     },
   });

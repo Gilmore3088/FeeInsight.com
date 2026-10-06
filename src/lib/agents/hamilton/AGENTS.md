@@ -1,6 +1,76 @@
 # Hamilton Agent Guide
 
-Hamilton owns publication and analysis surfaces.
+Hamilton is the last agent in the pipeline and the one people meet. It has four faces,
+all built on the same live published fees, and one rule across them: every output can be
+retraced without asking Hamilton (see Audit trail).
+
+## Hamilton's faces (James, 2026-10-06 00:08 UTC)
+
+1. **Fee verifier and publisher.** Publishes Darwin-verified fees and keeps the live
+   catalog honest: category guard, outlier rollback, duplicate collapse, rules re-check
+   and source check (sections below). Accuracy is the share of live fees whose amount and
+   category match the bank's own current schedule.
+2. **Research publisher.** Writes the national and district reporting from the live
+   catalog and the economic layers: the National Fee Index, state indexes, peer briefs
+   and the Monthly Pulse (`src/lib/report-engine`, report types in `types.ts`). Reports
+   are queued as `report_jobs` and live in `published_reports` once published.
+3. **Industry expert and research assistant.** Answers questions about fees, regulation
+   and the economy with cited facts, at every data layer the project holds: national,
+   Fed district, regional, state, regulatory and institutional. Overdraft and NSF are
+   reported separately wherever a filing separates them (NCUA does; the bank call
+   report combines them on one line, which Hamilton always says).
+4. **Decision-support workspace for paid clients** (`src/lib/hamilton/workspace`). See
+   the next section.
+
+## Decision-support workspace (James, 2026-10-05 23:27 UTC)
+
+Hamilton supports the decision; it does not make it.
+
+- Flow: research, explore, model, decide, implement. The Briefing surfaces what is worth
+  a look (market position, competitor moves, revenue shifts); salience orders items and
+  never implies a price direction.
+- Never tell the institution to raise, lower or drop a fee, and never offer to "approve a
+  recommendation". Model the prices the reader asks about; the tested price is always
+  the reader's.
+- Every scenario is labeled with its evidence level: `market` (position and
+  per-1,000-items arithmetic, no dollar total), `working_estimate` (the bank's reported
+  income for that fee line divided by its published fee), or `institution` (items and
+  waiver rate the bank gave Hamilton). The scenario names the one figure that would
+  move it up a level.
+- Implementation is a separate step that runs only after management chooses an amount:
+  notice (Reg DD / NCUA Part 707 30 days for an adverse change, Reg E 21 days for EFT
+  fees, the overdraft opt-in notice), approvals, systems, earliest effective date and
+  monitoring. The compliance caveat is always shown.
+- An opinion is given only when the reader explicitly asks, after they pick the
+  objective (revenue, customer treatment or competitive position), and it names that
+  objective.
+- The Ask bar returns `{kind, shortAnswer, pageChange, savedFact?}` with kinds research,
+  scenario, saved_fact, deliverable_draft, opinion and clarifying_question.
+- Decisions, their event log, client-given facts and uploads are kept in
+  `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
+  `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
+  (`superseded_at`), so the history of what the bank told Hamilton survives.
+- The workspace builders are deterministic and make no provider calls.
+
+## Audit trail (James, 2026-10-06 00:08 UTC)
+
+Regulatory work needs a defensible position, so nothing Hamilton produces is a black box.
+
+- Every workspace output (Briefing, Research, Scenario, Implementation plan) carries a
+  `Provenance` (`workspace/types.ts`): engine version, when it was built, evidence
+  level, the peer group and its size, the newest date each data source contributed,
+  every source (table or rule, with links), every assumption in plain words, and each
+  client-given figure with who gave it and when.
+- Each peer value names the schedule documents it was read from (`sourceDocumentIds`,
+  `documentUrls`) and when it was published, so any figure can be traced to the bank's
+  own document.
+- Bump `WORKSPACE_ENGINE_VERSION` whenever a builder's math or wording changes, so a
+  saved output names the engine that made it.
+- When a decision event is saved, its provenance is saved with it, so the record shows
+  what Hamilton showed at the time, not what it would show today.
+- Pages show the provenance in a "How this was built" disclosure under each output, and
+  deliverables carry it as an appendix.
+- Never fill a gap with an invented number. A missing input stays missing and is named.
 
 ## Authority
 

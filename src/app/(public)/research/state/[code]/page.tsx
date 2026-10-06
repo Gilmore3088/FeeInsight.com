@@ -1,17 +1,16 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getNationalIndexCached } from "@/lib/data-store";
 import { isFeaturedFee } from "@/lib/fee-taxonomy";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_URL } from "@/lib/constants";
 import {
   getCitiesInStateCached,
   getStateEconomicContextCached,
@@ -104,7 +103,7 @@ export default async function StateReportPage({ params }: PageProps) {
     getPublicStatsSummary(),
     getStateStatsCached(stateCode),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
-    getNationalIndexCached(),
+    getPublicNationalIndex(),
     loadCities(stateCode),
     // Context only: a failed read hides the exhibit rather than failing the report.
     getStateEconomicContextCached(stateCode, district ?? null).catch(() => EMPTY_ECONOMY),
@@ -173,9 +172,13 @@ export default async function StateReportPage({ params }: PageProps) {
           stateCode={stateCode}
           eyebrow="Free benchmark"
           headline={`Get the free ${stateName} fee benchmark`}
-          body={`Leave your email and we'll send ${stateName} medians against national, plus a link to the sample ${REPORT_OFFER.name}.`}
+          body={`Leave your email and we'll send you the link to the ${stateName} medians against national, updated as new fee schedules are verified.`}
           buttonLabel="Send it to me"
-          secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
+          secondaryLink={
+            SAMPLE_REPORT_LIVE
+              ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
+              : undefined
+          }
         />
 
         <PositionExhibit rows={visible} stateName={stateName} asOf={asOf} />

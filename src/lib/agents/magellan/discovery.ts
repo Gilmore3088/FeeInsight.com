@@ -501,7 +501,8 @@ function foundResult(
 }
 
 /**
- * Banks due for a search. Nothing is dead forever:
+ * Banks due for a search: no fee link, or a stale link whose last document failed and
+ * that has no live fee. Nothing is dead forever:
  * - never searched, or pending/`retry_after` older than 12 hours;
  * - a miss (`dead`, `needs_human`) after a month, then after a quarter once it has
  *   missed twice in a row (`consecutive_failures` on the bank's profile);
@@ -531,7 +532,27 @@ async function selectCandidates(
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
-       AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
+       AND (
+         inst.fee_schedule_url IS NULL
+         OR btrim(inst.fee_schedule_url) = ''
+         -- A link the old crawler left behind that failed and was never read since
+         -- (Southside Bank's ".../404") holds no live fee: search for the real page
+         -- instead of waiting for the fetch queue to reach it.
+         OR (
+           inst.last_crawl_at < NOW() - INTERVAL '30 days'
+           AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+           AND (
+             SELECT doc.status FROM source_documents doc
+              WHERE doc.institution_id = inst.id
+              ORDER BY doc.id DESC
+              LIMIT 1
+           ) = 'failed'
+           AND NOT EXISTS (
+             SELECT 1 FROM published_fee_records fp
+              WHERE fp.institution_id = inst.id AND fp.rolled_back_at IS NULL
+           )
+         )
+       )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})

@@ -66,3 +66,12 @@ describe("HAMILTON_VOICE", () => {
     expect(HAMILTON_VOICE.forbidden).toBe(HAMILTON_FORBIDDEN);
   });
 });
+
+describe("consultant bar", () => {
+  it("tells Hamilton not to restate what the public site shows", () => {
+    expect(HAMILTON_VERSION).toBe("3.2.0");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Consultant, not restatement.");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Never answer by repeating them.");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Never tell the institution to raise, lower or drop a fee.");
+  });
+});

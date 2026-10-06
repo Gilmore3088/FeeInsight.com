@@ -91,7 +91,7 @@ export default async function WelcomePage({
       </header>
 
       <main id="main-content" className="px-4 py-10">
-        {params.success === "true" && <TrackView event="checkout_complete" />}
+        {params.success === "true" && <TrackView event="checkout_complete" onceKey={`checkout_complete:${user.id}`} />}
         <WelcomeSteps
           userName={user.display_name}
           user={user}

@@ -52,7 +52,26 @@ export function leadDueAt(lead: { source: string | null; status: string; created
   if (!isRequestLead(lead.source) || !OPEN_LEAD_STATUSES.includes(lead.status as LeadStatus)) return null;
   const created = new Date(lead.created_at);
   if (Number.isNaN(created.getTime())) return null;
-  return new Date(created.getTime() + LEAD_RESPONSE_HOURS * 3_600_000);
+  return addBusinessHours(created, LEAD_RESPONSE_HOURS);
+}
+
+/**
+ * The site promises a reply "within one business day", so the clock skips weekends:
+ * a due time that lands on a Saturday or Sunday (UTC) moves to the same time on Monday,
+ * and a request sent on a weekend is due 24 hours after Monday begins. Holidays are not counted.
+ */
+export function addBusinessHours(start: Date, hours: number): Date {
+  const DAY = 86_400_000;
+  const isWeekend = (d: Date) => d.getUTCDay() === 0 || d.getUTCDay() === 6;
+  let from = start;
+  if (isWeekend(from)) {
+    const monday = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+    while (isWeekend(monday)) monday.setTime(monday.getTime() + DAY);
+    from = monday;
+  }
+  const due = new Date(from.getTime() + hours * 3_600_000);
+  while (isWeekend(due)) due.setTime(due.getTime() + DAY);
+  return due;
 }
 
 export function isLeadOverdue(lead: { source: string | null; status: string; created_at: string | Date }, now = new Date()): boolean {

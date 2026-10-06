@@ -96,6 +96,9 @@ describe("Knox agentic extraction", () => {
 
     expect(result).toMatchObject({ extractedFees: 1, insertedFees: 1, heldForReview: 2 });
     expect(result.results[0].heldInserted).toBe(2);
+    // The free fee goes to Darwin and is reported apart, so the live board can count it.
+    expect(result).toMatchObject({ freeFees: 1 });
+    expect(result.results[0].freeInserted).toBe(1);
     const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
     const flags = inserts.map((call) => call.slice(1).find((value) => typeof value === "string" && value.startsWith("[")) as string);
     expect(flags).toEqual([

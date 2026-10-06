@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getFinancialsByInstitution, getNationalIndexCached } from "@/lib/data-store";
+import { getFinancialsByInstitution } from "@/lib/data-store";
 import { getFinancialHistory, getPeerFinancialMedians } from "@/lib/data-store/financial";
 import {
   getBranchFootprint,
@@ -25,7 +25,7 @@ import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
-import { formatAbsoluteDate } from "@/lib/public-stats";
+import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
 import { FeeScheduleTable, type FeeBenchmarks } from "./fee-schedule-table";
@@ -165,7 +165,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
 
   const nationalIndex =
-    verifiedFees.length > 0 ? await getNationalIndexCached().catch(fallbackTo("national index", [])) : [];
+    verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
   const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
   // Medians for the per-row comparison: the same verified-only index the rating uses, and
   // only where enough institutions publish the fee for a median to mean something.
@@ -315,7 +315,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   saved: alertSubscription !== null,
                   feeCategories: alertSubscription?.fee_categories ?? null,
                 }}
-                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Benchmark it against peers, free" }}
+                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Request a report against local competitors" }}
               />
 
               {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the

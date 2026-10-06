@@ -103,7 +103,7 @@ export async function UpgradeGate({
           : `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`}
       </p>
       <div className="text-[12px] text-[#6B6255] mt-2 mb-4">
-        Based on {summary.observationsLabel} verified fees from {summary.institutionsLabel} institutions
+        Based on {summary.observationsLabel} published fee entries from {summary.institutionsLabel} institutions
       </div>
       <TrackLink
         event="upgrade_click"

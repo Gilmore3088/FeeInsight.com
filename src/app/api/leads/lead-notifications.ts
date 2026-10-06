@@ -36,6 +36,8 @@ export interface StoredLead {
   institutionName?: string | null;
   /** Free benchmark requests only: which report to send. */
   benchmarkScope?: BenchmarkScope | null;
+  /** Institution report requests only: the data check line for James. */
+  quoteCheck?: string | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -179,6 +181,7 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         role: lead.role,
         institutionId: lead.institutionId,
         src: lead.src,
+        quoteCheck: lead.quoteCheck ?? null,
       });
       await handleUndelivered(lead, outcome);
       return toStatus(outcome);

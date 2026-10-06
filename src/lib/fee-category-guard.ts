@@ -41,12 +41,13 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   overdraft: {
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|paid nsf|courtesy pay|bounce protection|privilege)/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b)/i,
   },
   nsf: {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
-    exclude: /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover)/i,
+    exclude:
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing)/i,
   },
   atm_non_network: {
     include: /(atm|allpoint|network machine)/i,
@@ -91,12 +92,19 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(deposit(ed)? (item|check)|return(ed)? deposit|deposit return|chargeback)/i,
     exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction)/i,
   },
+  // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
+  // fee for the night deposit service ("Zipper Bags $3.00" is not a night deposit fee).
+  // A lost or replaced key, a bag rental and a monthly or annual charge per bag are fees.
+  night_deposit: {
+    include: /(night|depository|after[- ]hours|drop box)/i,
+    exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
+  },
 };
 
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 4;
+export const CATEGORY_GUARD_VERSION = 7;
 
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
