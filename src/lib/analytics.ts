@@ -35,7 +35,9 @@ export type AnalyticsEvent =
   | "contact_sales"
   | "fee_alert_save"
   | "fee_alert_signup"
-  | "fee_alert_remove";
+  | "fee_alert_remove"
+  /** The 60-second Fee Insight video started playing. */
+  | "video_play";
 
 export type AnalyticsProps = Record<string, string | number | boolean>;
 

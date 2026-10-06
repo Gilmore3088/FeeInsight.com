@@ -1,5 +1,6 @@
 import { TrackLink } from "@/components/track-link";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
+import { FeeInsightVideo } from "@/components/public/fee-insight-video";
 import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
@@ -42,6 +43,10 @@ export function LandingBankOffer() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-6 max-w-xl">
+            <FeeInsightVideo placement="home_bank_section" />
+          </div>
 
           {SAMPLE_REPORT_LIVE && (
             <>
