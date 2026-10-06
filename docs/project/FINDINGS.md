@@ -13,6 +13,42 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
+**What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
+rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
+(42,886 live fees) were due. 2,883 of them were due only because source check v4 (daily caps,
+PR 271) went live at about 15:00: a strategy bump makes every bank due again. Before that,
+v3 checks ran 157-247 banks an hour (11:00-14:59) while Knox re-reads and new publishes kept
+raising banks' newest fee id, which also makes a bank due, so the backlog grew from 262 to 315
+banks. Publish steps run about 12 times an hour at 40 banks each (4-15 s a step).
+**Cause:** a fixed 40 banks per publish step could not absorb a full re-check plus the day's
+new fees.
+**Fix:** `SOURCE_CHECK_INSTITUTION_LIMIT` 40 -> 120 (PR 280). About 1,400 banks an hour, so a
+full re-check clears in about 2 hours; the texts a step reads stay small (about 20 KB a bank).
+**Lesson:** a version bump on a check that covers every bank needs the check's pace sized to
+the whole catalog, or a catch-up pass, in the same PR; count the due backlog after each bump.
+
+## 2026-10-06: Flat foreign transaction fees were mostly ATM, wire and rate rows
+**What happened:** read-only prod query, 14:50 UTC Oct 6. Of 45 live `card_foreign_txn` rows
+with a dollar amount, 13 were "ATM Foreign Transaction Fee" (a fee for using another bank's
+ATM, $1-$5), 3 were wires ("1.1% foreign transaction fee ...: WIRE TRANSFERS" $10/$15,
+"Currency Conversion Assessment | Domestic Wire In" $10), 6 were a rate read as dollars
+("Debit Card Foreign Transaction 1% of the U.S. dollar amount" $7, "VISA Exchange Rate" $1 with
+"Percentage of transaction", "Foreign Transaction" $2 with "2.00% of transaction"), 3 were
+foreign currency or check services, one joined a low-balance fee from the next cell, and two
+were sentences ("Many Canadian credit cards charge ... 2.5%").
+**Cause:** Knox's `card_foreign_txn` pattern matches "foreign transaction" before the ATM
+pattern, and the category had no guard, so nothing checked the name or a rate on the line.
+**Fix:** category guard v11 guards `card_foreign_txn` (ATM, wire, currency-service, joined-cell
+and sentence names fail) and fails a dollar amount whose name states a percent or a rate, or
+whose stated terms state a percent (`rate_as_amount`); a rate row has no dollar amount, so it
+never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and Knox v20 files
+it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
+the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
+foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows come down with the admin category guard repair run.
+**Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
+under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
+
 ## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
 **What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
 at 14:41. The lead rows showed confirmed and not unsubscribed, but MailerLite subscriber
