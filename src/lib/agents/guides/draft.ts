@@ -297,7 +297,7 @@ export async function runGuideDraft(
     .slice(0, 3);
 
   // Step 2 — draft. Provider access is centralized; never a direct SDK import.
-  const client = getAnthropicMessagesClient("guide draft agent");
+  const client = getAnthropicMessagesClient("guide draft agent", "hamilton");
   const response = await client.messages.create({
     model: GUIDE_DRAFT_MODEL,
     max_tokens: 8000,

@@ -55,7 +55,7 @@ export async function paidModelCall({
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
 }): Promise<PaidCallResult> {
-  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`).messages.create(body));
+  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, agent).messages.create(body));
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata },
     () => send(params),
