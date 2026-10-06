@@ -12,7 +12,7 @@ import {
   type FeePosition,
   type TradeoffDeltas,
 } from "@/lib/hamilton/simulation";
-import { canSimulate, type ConfidenceTier } from "@/lib/hamilton/confidence";
+import { canSimulate, describeSimulationBasis, type ConfidenceTier } from "@/lib/hamilton/confidence";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import {
   getSimulationCategories,
@@ -634,6 +634,11 @@ export function SimulateWorkspace({
               <HamiltonInterpretation
                 interpretation={completion}
                 isStreaming={isStreaming}
+                basis={
+                  confidenceTier && distribution
+                    ? describeSimulationBasis(confidenceTier, distribution.institution_count, distribution.peer_label)
+                    : null
+                }
               />
               {interpretationError && !isStreaming && (
                 <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded px-3 py-2 text-sm" style={{ backgroundColor: "#fef2f2", color: "#7f1d1d" }}>

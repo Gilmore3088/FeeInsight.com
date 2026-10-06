@@ -22,6 +22,7 @@ import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
 import { getMarketReadiness } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
+import { getNationalRateStats } from "./rate-fees";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -37,6 +38,11 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
   "fee-category-detail",
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
+);
+export const getNationalRateStatsCached = cachedPublicRead(
+  "national-rate-stats",
+  getNationalRateStats,
+  (stats) => stats.institution_count === 0,
 );
 export const getPeerIndexCached = cachedPublicRead("peer-index", getPeerIndex);
 export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats);

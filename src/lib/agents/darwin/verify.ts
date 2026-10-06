@@ -248,7 +248,7 @@ export function verificationReasonCode(
 ): DarwinReasonCode | null {
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
-  if (!checkFeeCategory(canonicalFeeKey, row.fee_name).ok) return "category_mismatch";
+  if (!checkFeeCategory(canonicalFeeKey, row.fee_name, row).ok) return "category_mismatch";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
   if (isPercentFee(row)) {
     if (!percentFeeAllowed(canonicalFeeKey)) return "percent_not_publishable";

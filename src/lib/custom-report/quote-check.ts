@@ -24,8 +24,10 @@ export type QuoteCheck =
       path: string | null;
       /** The market data that passed, so a paid report can keep exactly these numbers. */
       data?: CustomReportMarketData;
+      /** The institution checked (given, or matched by name). */
+      institutionId?: number;
     }
-  | { status: "thin"; readiness: ReadinessResult; rule?: ReportRuleCheck | null }
+  | { status: "thin"; readiness: ReadinessResult; rule?: ReportRuleCheck | null; institutionId?: number }
   | { status: "unmatched"; reason: string };
 
 /** Never throws: a failed check reads as unmatched with the reason, and the request is still stored. */
@@ -45,10 +47,10 @@ export async function checkInstitutionReport(request: {
     if (!data) return { status: "unmatched", reason: "The institution was not found." };
     const { readiness } = analyzeMarket(data);
     const rule = await getReportRuleCheck(institutionId);
-    if (!readiness.ready || !rule?.passes) return { status: "thin", readiness, rule };
+    if (!readiness.ready || !rule?.passes) return { status: "thin", readiness, rule, institutionId };
     // The link needs CUSTOM_REPORT_LINK_SECRET; without it James still learns the report is buildable.
     const token = createReportToken(institutionId);
-    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null, data };
+    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null, data, institutionId };
   } catch (error) {
     console.error("[custom-report] quote check failed", {
       institutionId,

@@ -57,6 +57,7 @@ import {
   ProviderCircuitOpenError,
   recordProviderUsage,
   trackAnthropicRequest,
+  WEB_SEARCH_COST_MICROUSD,
 } from "./ai-provider-usage";
 
 function templateText(strings: unknown): string {
@@ -104,6 +105,22 @@ describe("AI provider usage", () => {
       templateText(call[0]).includes("INSERT INTO ai_api_usage_events"),
     );
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([120, 30]));
+  });
+
+  it("records web search charges in the ledger the budget caps read", async () => {
+    const response = {
+      content: [],
+      usage: { input_tokens: 1_000, output_tokens: 100, server_tool_use: { web_search_requests: 3 } },
+    };
+    await trackAnthropicRequest(
+      { model: "claude-sonnet-4", agent: "magellan", operation: "paid_find" },
+      async () => response,
+    );
+    const insertCall = sqlMock.mock.calls.find((call) =>
+      templateText(call[0]).includes("INSERT INTO ai_api_usage_events"),
+    );
+    // 4,500 for tokens plus 3 searches at $10 per 1,000.
+    expect(insertCall?.slice(1)).toContain(4_500 + 3 * WEB_SEARCH_COST_MICROUSD);
   });
 
   it("engages the emergency stop after Anthropic credit exhaustion", async () => {

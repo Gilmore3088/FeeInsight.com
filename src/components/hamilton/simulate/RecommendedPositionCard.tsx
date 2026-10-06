@@ -57,8 +57,8 @@ export function RecommendedPositionCard({
     ? `below median (P${proposedPosition.percentile}), ${formatDollar(Number(gap))} below peer median`
     : `above median (P${proposedPosition.percentile}), ${formatDollar(Number(gap))} above peer median`;
 
-  // Describes where the price would sit; Hamilton never recommends or cautions against a price.
-  const recommendationText = `${formatDollar(proposedFee)} would sit in the ${positionDescription}.`;
+  // Decision support, not advice: state where the fee would sit and stop there.
+  const positionText = `At ${formatDollar(proposedFee)}, this fee would sit ${positionDescription}.`;
 
   return (
     <div
@@ -77,7 +77,7 @@ export function RecommendedPositionCard({
             color: "var(--hamilton-text-primary)",
           }}
         >
-          Where this price would sit
+          Where this fee would sit
         </h3>
         <span
           className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold flex-shrink-0"
@@ -97,7 +97,7 @@ export function RecommendedPositionCard({
           color: "var(--hamilton-text-primary)",
         }}
       >
-        {recommendationText}
+        {positionText}
       </p>
 
       {confidenceTier === "provisional" && (

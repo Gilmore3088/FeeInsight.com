@@ -12,9 +12,14 @@ interface ImpactRow {
   note: string;
 }
 
-// The simulation returns these as labelled text only, so no bar is drawn for them.
+// Rows carry only what the simulation computed: the price change and the peer position
+// change, each with its own note. No bar: there is no measured scale to draw it against.
 function deriveImpactRows(tradeoffs: TradeoffDeltas): ImpactRow[] {
-  return [tradeoffs.revenueImpact, tradeoffs.riskMitigation].map((t) => ({ label: t.label, value: t.value, note: t.note }));
+  return [tradeoffs.revenueImpact, tradeoffs.riskMitigation].map(({ label, value, note }) => ({
+    label,
+    value,
+    note,
+  }));
 }
 
 export function StrategicTradeoffs({ tradeoffs }: Props) {
@@ -75,15 +80,13 @@ export function StrategicTradeoffs({ tradeoffs }: Props) {
               {row.value}
             </span>
           </div>
-          {row.note ? (
-            <p className="mt-2 text-xs leading-snug" style={{ color: "rgb(87 83 78)" }}>
-              {row.note}
-            </p>
-          ) : null}
+          <p className="mt-2 text-xs" style={{ color: "rgb(120 113 108)" }}>
+            {row.note}
+          </p>
         </div>
       ))}
 
-      {/* Operational note */}
+      {/* Peer band: where the proposed fee sits among peers */}
       <div
         className="p-5 border rounded"
         style={{
@@ -95,13 +98,13 @@ export function StrategicTradeoffs({ tradeoffs }: Props) {
           className="font-label text-[9px] uppercase tracking-widest mb-2 block"
           style={{ color: "var(--hamilton-on-primary-fixed-variant, #703714)" }}
         >
-          {tradeoffs.operationalImpact.label}
+          {tradeoffs.operationalImpact.label}: {tradeoffs.operationalImpact.value}
         </label>
         <p
           className="font-headline text-sm italic leading-snug"
           style={{ color: "var(--hamilton-on-primary-fixed, #331200)" }}
         >
-          &ldquo;{tradeoffs.operationalImpact.note}&rdquo;
+          {tradeoffs.operationalImpact.note}
         </p>
       </div>
     </div>
