@@ -23,8 +23,10 @@ function asDb(db: DbMock): Parameters<typeof rollBackUnreproducedFees>[0] {
   return db as unknown as Parameters<typeof rollBackUnreproducedFees>[0];
 }
 
-function live(id: number, key: string, name: string, amount: string, textHash: string | null = "abc") {
+function live(id: number, key: string, name: string, amount: string, textHash: string | null = "abc", pulled = false) {
   return {
+    pulled,
+    raw_fee_name: name,
     fee_published_id: id,
     lineage_ref: id + 1000,
     institution_id: 42,
@@ -69,8 +71,8 @@ describe("Hamilton rules re-check", () => {
     const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
     expect(query).toContain("fr.source = 'knox'");
     expect(query).toContain("knox_paid_extraction");
-    expect(query).toContain("upper(btrim(inst.state_code)) = $5");
-    expect(params).toEqual([25, "hamilton.rules_recheck", 1, knoxFreeSignature(), "TX"]);
+    expect(query).toContain("upper(btrim(inst.state_code)) = $6");
+    expect(params).toEqual([25, "hamilton.rules_recheck", 2, knoxFreeSignature(), RULES_RECHECK_REASON, "TX"]);
     const writes = JSON.stringify(db.mock.calls);
     expect(writes).toContain("UPDATE published_fee_records");
     expect(writes).toContain("UPDATE verified_fee_observations");
@@ -112,6 +114,52 @@ describe("Hamilton rules re-check", () => {
     const writes = JSON.stringify(db.mock.calls);
     expect(writes).not.toContain("UPDATE published_fee_records");
     expect(writes).toContain("INSERT INTO pipeline_attempts");
+  });
+
+  it("restores a takedown today's rules read again under the same name, once, never over a live copy", async () => {
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Payment", "30.00"),
+        // Pulled by an older version; today's rules read "Copy of Draft (Check)" $3 again.
+        live(2, "check_image", "Copy of Draft (Check)", "3.00", "abc", true),
+        live(4, "check_image", "Copy of Draft (Check)", "3.00", "abc", true),
+        // Same category and price, but a name today's rules do not read: Knox re-reads it.
+        live(5, "safe_deposit_box", "Box rent", "30.00", "abc", true),
+        // Already live, so its pulled copy stays down.
+        live(6, "stop_payment", "Stop Payment", "30.00", "abc", true),
+        // Still not read today: stays down.
+        live(7, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00", "abc", true),
+      ],
+      texts,
+    );
+    db.mockImplementation(((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(texts);
+      if (query.includes("RETURNING fp.fee_published_id")) return Promise.resolve([{ fee_published_id: 4, lineage_ref: 1004 }]);
+      return Promise.resolve([]);
+    }) as never);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 305, batchId: "b", dryRun: false });
+
+    expect(result.rollbacks).toEqual([]);
+    expect(result.liveFeesChecked).toBe(1);
+    expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([4]);
+    const writes = JSON.stringify(db.mock.calls);
+    expect(writes).toContain("SET rolled_back_at = NULL");
+    expect(writes).toContain("SET review_status = 'verified'");
+    const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts"));
+    // safe_deposit_box $30 is read under another name: still missing, so Knox re-reads the text.
+    expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 0, restored: 1, missing_fees: 1 });
+  });
+
+  it("re-checks documents whose live fees were all taken down", async () => {
+    const db = createDbMock([live(2, "check_image", "Copy of Draft (Check)", "3.00", "abc", true)], texts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", dryRun: true });
+
+    expect(result.documentsChecked).toBe(1);
+    expect(result.liveFeesChecked).toBe(0);
+    expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
   });
 
   it("only reads in a dry run", async () => {

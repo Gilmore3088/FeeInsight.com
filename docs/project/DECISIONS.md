@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
+abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
+Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges
+still need green CI, and anything that can take down live fees still gets a dry run first.
+
+**One shared learning store for every agent: `pipeline_feedback`.** Agreed by the Knox, Magellan
+and Darwin threads at 05:50 UTC, following James's "knowledge flow through to other agents, to and
+from" (05:41 UTC). One row is one judgement about one agent's output (a takedown, a Darwin
+category reject, an answer-key fee, a link's live-fee count), upserted on `dedupe_key`. No agent
+keeps its own copy. Fields and keys: `src/lib/agents/learning/AGENTS.md`.
+
 **The admin becomes one console with six rooms, opening on a Needs-you list.** James, 05:57 UTC,
 answering the console brainstorm (https://claude.ai/artifact/9xib8VUnETMBh1u4txabzW). /admin opens
 on Today: everything waiting on a person, with the button that clears it. Every other screen
