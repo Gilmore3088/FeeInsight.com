@@ -33,8 +33,10 @@ const money = (v) => (v === 0 ? "$0" : Number.isInteger(v) ? `$${v}` : `$${v.toF
 
 function utm(url, automation, email) {
   if (!url.startsWith(BRAND.siteUrl)) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}utm_source=mailerlite&utm_medium=email&utm_campaign=${automation}&utm_content=${email}`;
+  // Tracking goes in the query, before any #fragment, or the browser never sends it.
+  const [base, hash] = url.split("#");
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}utm_source=mailerlite&utm_medium=email&utm_campaign=${automation}&utm_content=${email}${hash ? `#${hash}` : ""}`;
 }
 
 // ---------- block renderers (html, text) ----------
@@ -141,7 +143,7 @@ function renderEmail(automation, email) {
   });
   const bodyHtml = parts.map((p) => p[0]).join("\n");
   const bodyText = parts.map((p) => p[1]).join("\n\n");
-  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index: fee schedules from ${BRAND.institutionsLabel} U.S. banks and credit unions, each figure linked to the published document it came from. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${esc(BRAND.mailingAddress)}<br>You're getting this because you signed up at feeinsight.com. <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
+  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${esc(BRAND.mailingAddress)}<br>You're getting this because you signed up at feeinsight.com. <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(email.subject)}</title></head>
 <body style="margin:0;padding:0;background:${C.sand};">
@@ -155,7 +157,7 @@ ${bodyHtml}
 <tr><td style="padding:20px 32px 28px;background:${C.cream};border-top:1px solid ${C.line};">${footerHtml}</td></tr>
 </table></td></tr></table></body></html>
 `;
-  const text = `${email.preheader}\n\n${bodyText}\n\n----\nFee Insight publishes the Bank Fee Index: fee schedules from ${BRAND.institutionsLabel} U.S. banks and credit unions.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n${BRAND.mailingAddress}\nUnsubscribe: {$unsubscribe}\n`;
+  const text = `${email.preheader}\n\n${bodyText}\n\n----\nFee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n${BRAND.mailingAddress}\nUnsubscribe: {$unsubscribe}\n`;
   return { html, text, short: condense(email, parts) };
 }
 

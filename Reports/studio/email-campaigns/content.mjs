@@ -186,81 +186,78 @@ const welcome = {
 };
 
 // ---------------------------------------------------------------------------
-// 2. Report requests (sample report / report form / for-institutions)
+// 2. Report requests (free national / district reports, institution report requests)
 // ---------------------------------------------------------------------------
+// No figures in this sequence: every number lives on the live report pages, which read
+// published_fee_catalog, so an email can never quote a stale median. The institution
+// report has no fixed price yet (James, Oct 5), so these emails never state one.
 const report = {
   key: "report",
-  name: "Report requests: sample → own report",
-  masthead: "Competitive Fee Position",
+  name: "Report requests: free report → institution report",
+  masthead: "Bank Fee Index · Reports",
   trigger:
-    "Joins group 'Fee Insight · Report requests' (sources: capture_report_sample, report). Remove from Welcome series on entry.",
+    "Joins group 'Fee Insight · Report requests' after confirming their email (sources: report_national, report_district, report, capture_report_sample). Remove from Welcome series on entry.",
   emails: [
     {
-      key: "read-your-sample",
+      key: "read-your-report",
       day: 0,
-      subject: "Your sample report, and the 5 pages to read first",
-      preheader: "How to read a Competitive Fee Position report in five minutes.",
+      subject: "Your free fee report, and how to read it",
+      preheader: "What to read first, and where every number comes from.",
       blocks: [
-        { type: "kicker", text: "Competitive Fee Position · 1 of 3" },
-        { type: "h1", text: "Your sample report, and how to read it in five minutes" },
-        { type: "cta", text: "Open the sample report", href: `${S}/reports/sample-competitive-fee-position`, sub: "No login. Every figure links to the source schedule." },
-        { type: "p", text: "The report is built to be read by a busy executive. If you only have five minutes, read these in order:" },
+        { type: "kicker", text: "Bank Fee Index · 1 of 3" },
+        { type: "h1", text: "Your free fee report, and how to read it" },
+        { type: "p", text: "Thanks for confirming. Your report is live and updates as new fee schedules are verified, so the link always shows the current numbers." },
+        { type: "cta", text: "Open the national report", href: `${S}/reports/benchmark/national`, sub: "District reports for all 12 Fed districts are on the reports page." },
+        { type: "p", text: "If you have five minutes, read these in order:" },
         { type: "list", ordered: true, items: [
-          "**Executive summary.** Three findings, each with a dollar figure and a peer count.",
-          "**Position chart.** Every headline fee placed between the peer low 25% and high 25%. Dots outside the band are the story.",
-          "**Outlier flags.** Fees more than 2× the peer median, or statistically high. Each gets a suggested next step.",
-          "**Named competitors.** The same fees at the institutions customers actually compare you to.",
-          "**Sources.** Every number links to the published document, with its date, so nobody in the room has to take it on faith.",
+          "**Key findings.** The two penalty fees and the bank vs credit union gap, each with how many institutions stand behind it.",
+          "**Headline fees.** The median and the middle half (25th to 75th percentile) for each of the 15 fees customers notice most. A fee only appears when 20 or more institutions publish it.",
+          "**Banks vs credit unions.** The same fees by charter, where each side has enough institutions to compare.",
+          "**Methodology.** One value per institution, taken from its own published fee schedule.",
         ] },
-        { type: "box", tone: "term", title: "What \"peer cohort\" means here", paras: [
-          `Same charter type and the same asset-size tier, drawn from the ${BRAND.institutionsLabel} institutions in the index. That's why the medians in a report differ from the national numbers. The national NSF median is ${m(F.nsf.all.med)}, but bank and credit union medians are ${m(F.nsf.bank.med)} and ${m(F.nsf.cu.med)}.`,
+        { type: "box", tone: "term", title: "Why your own fees may sit outside the range", paras: [
+          "The middle half is where most institutions price. Sitting outside it isn't wrong, but it's the first thing a pricing committee, an examiner or a reporter will notice.",
         ] },
-        { type: "p", text: "In three days: the three findings that show up in almost every report we build." },
+        { type: "p", text: `[See every free report](${S}/reports). In a week: how your state compares with the national numbers.` },
         { type: "sign" },
       ],
     },
     {
-      key: "three-findings",
-      day: 3,
-      subject: "3 findings that show up in almost every fee report",
-      preheader: "If you check only three things on your schedule, check these.",
-      blocks: [
-        { type: "kicker", text: "Competitive Fee Position · 2 of 3" },
-        { type: "h1", text: "Three findings that show up in almost every report" },
-        { type: "p", text: "After building these reports across banks and credit unions of every size, the same three issues come up again and again. Check yours against them today." },
-        { type: "h2", text: "1. One fee is far out of line with the rest" },
-        { type: "p", text: `Most institutions price close to the market on most fees, then have one or two at 2× the peer median or more. Card replacement is the usual suspect (national spread ${m(F.card_replacement.all.p25)} to ${m(F.card_replacement.all.p75)}), followed by returned deposits and stop payments.` },
-        { type: "h2", text: "2. NSF is still on the schedule while peers dropped it" },
-        { type: "p", text: `A quarter of banks in the index charge ${m(F.nsf.bank.p25)} or less for NSF. If yours is ${m(F.nsf.all.p75)} or more, you're in the expensive quarter on the fee examiners and journalists ask about first.` },
-        { type: "h2", text: "3. The schedule no longer matches the website" },
-        { type: "p", text: "The PDF says one thing and the product page says another, or the online price isn't listed at all. It's the cheapest finding to fix and the most embarrassing to have a customer find." },
-        { type: "box", tone: "action", title: "10-minute self-check", items: [
-          "Any fee above 2× the peer median? (Use the medians in the sample report.)",
-          `NSF above ${m(F.nsf.all.p75)}? On re-presented items too?`,
-          "Do the fee schedule PDF and the website agree, line by line?",
-        ] },
-        { type: "sign" },
-      ],
-    },
-    {
-      key: "your-report",
+      key: "your-state",
       day: 7,
-      subject: "Want your own report? Here's exactly what you get",
-      preheader: "Your institution, your peers, your named competitors. $300, refreshed quarterly.",
+      subject: "How your state's fees compare with the national median",
+      preheader: "Free state fee reports, from each institution's own published schedule.",
       blocks: [
-        { type: "kicker", text: "Competitive Fee Position · 3 of 3" },
-        { type: "h1", text: "The same report, built for your institution" },
-        { type: "p", text: "If the sample was useful, here's the version with your name on it." },
-        { type: "box", tone: "rule", title: "What's included", items: [
-          "Your 15 headline fees against your true peer cohort (charter type + asset size).",
-          "Outliers flagged with suggested actions.",
-          "Up to 5 named competitors you choose, side by side.",
-          "Every figure linked to the published schedule it came from.",
-          "A board-ready summary page.",
-          "Quarterly refresh, so it doesn't go stale before the next committee meeting.",
+        { type: "kicker", text: "Bank Fee Index · 2 of 3" },
+        { type: "h1", text: "How your state compares with the national numbers" },
+        { type: "p", text: "Customers don't compare you with the whole country. They compare you with the institutions down the street. The state reports are the next step closer: each headline fee in your state against the national median, banks against credit unions, and the economy around them." },
+        { type: "cta", text: "Find your state's report", href: `${S}/research`, sub: "Free, no login." },
+        { type: "box", tone: "action", title: "10-minute self-check", items: [
+          "Which of your 15 headline fees sit above your state's median?",
+          "Is your overdraft or NSF fee above the state's middle half?",
+          "Do your fee schedule PDF and your website agree, line by line?",
         ] },
-        { type: "cta", text: "Request your report", href: `${S}/for-institutions`, sub: "$300. Or reply with your institution's name and we'll take it from there." },
-        { type: "p", text: "Not ready? Your institution's free public profile is already live and updates as schedules change: [find it here](" + S + "/institutions). You'll also get the monthly Fee Pulse." },
+        { type: "p", text: "Next week: what the institution report adds, for when the state view isn't close enough." },
+        { type: "sign" },
+      ],
+    },
+    {
+      key: "institution-report",
+      day: 14,
+      subject: "Your institution against the competitors you name",
+      preheader: "The one report we build by hand. Tell us your institution and we'll quote it.",
+      blocks: [
+        { type: "kicker", text: "Bank Fee Index · 3 of 3" },
+        { type: "h1", text: "Your institution against the competitors you name" },
+        { type: "p", text: "The free reports show the market. The institution report shows where you stand in it." },
+        { type: "box", tone: "rule", title: "What's in it", items: [
+          "Your headline fees against your local competitors, fee by fee.",
+          "The competitors you name, side by side with you.",
+          "Fees well above or below the local market, flagged.",
+          "Every figure taken from the competitor's own published fee schedule.",
+        ] },
+        { type: "cta", text: "Request your institution report", href: `${S}/for-institutions?report=institution#report`, sub: "We check that your market has enough published data, then reply with scope and price." },
+        { type: "p", text: "Or just reply with your institution's name." },
         { type: "sign" },
       ],
     },
