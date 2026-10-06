@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { computeConfidenceTier, canSimulate, CONFIDENCE_TIERS } from "./confidence";
+import { computeConfidenceTier, canSimulate, CONFIDENCE_TIERS, describeSimulationBasis } from "./confidence";
 
 describe("computeConfidenceTier (institutions, not rows)", () => {
   it.each([
@@ -37,3 +37,18 @@ describe("constants", () => {
     expect([...CONFIDENCE_TIERS]).toEqual(["strong", "provisional", "insufficient"]);
   });
 });
+
+describe("describeSimulationBasis", () => {
+  it("names the tier and the institutions behind it", () => {
+    expect(describeSimulationBasis("strong", 1240, "Texas banks")).toBe(
+      "Strong data: published fee schedules from 1,240 institutions (Texas banks)."
+    );
+  });
+
+  it("changes with the tier and never claims complaint or migration data", () => {
+    const text = describeSimulationBasis("provisional", 1, null);
+    expect(text).toBe("Provisional data: published fee schedules from 1 institution.");
+    expect(text).not.toMatch(/complaint|migration/i);
+  });
+});
+

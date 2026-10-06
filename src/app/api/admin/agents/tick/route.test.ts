@@ -31,6 +31,7 @@ vi.mock("@/lib/execution-backend", () => ({
 
 vi.mock("@/lib/agents/state-lane-scheduler", () => ({
   scheduleDueStateLaneRuns: scheduleDueStateLaneRunsMock,
+  STATE_LANE_LIMIT_PER_TICK: 3,
 }));
 
 vi.mock("@/lib/agents/run-store", () => ({

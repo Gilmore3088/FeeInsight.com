@@ -52,7 +52,7 @@ const MAX_OUTPUT_TOKENS = 1024;
 /** Link score given to the model's answer: strong enough to accept a scanned PDF. */
 const PAID_ANSWER_SCORE = 0.85;
 /** Paid outcomes that do not count as this month's paid try (nothing was learned). */
-const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
+export const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
 
 interface PaidFindRow {
   id: number | string;

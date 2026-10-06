@@ -408,6 +408,11 @@ function SignalCard({ signal, isPriority }: { signal: SignalEntry; isPriority?: 
   );
 }
 
+function formatSeverity(severity: string): string {
+  const value = severity.trim().toLowerCase();
+  return value ? value[0].toUpperCase() + value.slice(1) : "Unrated";
+}
+
 function ComplaintRiskCard({ signal }: { signal: SignalEntry }) {
   const whatChanged = deriveWhatChanged(signal.body);
   const institutionName = deriveInstitutionName(signal);
@@ -478,7 +483,7 @@ function ComplaintRiskCard({ signal }: { signal: SignalEntry }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        {/* What Changed + Risk Score badge side-by-side */}
+        {/* What Changed + the signal's own severity side-by-side */}
         <div style={{ display: "flex", gap: "1rem" }}>
           <div style={{ flex: 1 }}>
             <p
@@ -507,7 +512,7 @@ function ComplaintRiskCard({ signal }: { signal: SignalEntry }) {
             </p>
           </div>
 
-          {/* Risk Score badge */}
+          {/* Severity badge: the signal's stored severity, not a computed score */}
           <div
             style={{
               width: "33%",
@@ -529,7 +534,7 @@ function ComplaintRiskCard({ signal }: { signal: SignalEntry }) {
                 marginBottom: "0.25rem",
               }}
             >
-              Risk Score
+              Severity
             </div>
             <div
               className="font-headline"
@@ -540,37 +545,9 @@ function ComplaintRiskCard({ signal }: { signal: SignalEntry }) {
                 lineHeight: 1,
               }}
             >
-              Elevated
+              {formatSeverity(signal.severity)}
             </div>
           </div>
-        </div>
-
-        {/* Recommended Next Move */}
-        <div>
-          <p
-            className="font-label"
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.625rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: "var(--hamilton-text-tertiary)",
-              marginBottom: "0.25rem",
-              fontWeight: 600,
-            }}
-          >
-            Recommended Next Move
-          </p>
-          <p
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.875rem",
-              color: "var(--hamilton-primary)",
-              fontWeight: 600,
-            }}
-          >
-            Request automated variance report from Compliance.
-          </p>
         </div>
       </div>
     </article>

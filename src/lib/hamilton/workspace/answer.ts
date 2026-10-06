@@ -12,6 +12,7 @@ import { proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
 import { buildStoryline, type StoryIntent } from "./storyline";
+import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
 
 export { proseFeeName };
 import type {
@@ -298,6 +299,8 @@ export function buildExhibit(research: FeeResearch, focus: ExhibitFocus = "posit
 // ─── Writer: the headline ────────────────────────────────────────────────────
 
 function headline(research: FeeResearch, name: string): string {
+  const byRate = rateHeadline(research, name);
+  if (byRate) return byRate;
   const band = research.band;
   const amounts = research.peers.map((p) => p.amount);
   if (research.current !== null) {
@@ -323,6 +326,10 @@ function currentFeeQuestion(feeCategory: string): ClarifyingQuestion {
 
 /** The one figure that would most sharpen the answer, or null when nothing is missing. */
 export function missingFigure(research: FeeResearch): ClarifyingQuestion | null {
+  // A fee stated as a rate has no per-item amount; the volume it applies to sets the money.
+  if (research.current === null && ownRate(research)) {
+    return research.provenance.clientFacts.length === 0 ? rateVolumeQuestion(research.feeCategory) : null;
+  }
   if (research.current === null) return currentFeeQuestion(research.feeCategory);
   if (!research.revenueLine && research.provenance.clientFacts.length === 0) return annualItemsQuestion(research.feeCategory);
   return null;
@@ -341,11 +348,16 @@ export function buildFeeAnswer(research: FeeResearch, options: { focus?: Exhibit
   // A segment the question named leads the answer. When it could not be built, the first
   // claim says so and the default peer group follows; it never stands in silently.
   const segmentLed = seg !== null && seg.problem === null;
+  // A bank that states the fee only as a rate leads with the rate; otherwise rates follow the dollars.
+  const rates = rateClaims(research, name);
+  const rateLed = research.current === null && ownRate(research) !== null;
   const claims = [
     ...(seg ? segmentClaims(seg, research.feeCategory, research.current) : []),
+    ...(rateLed ? rates : []),
     ownFeeClaim(research, name),
     ...(segmentLed ? [] : [peerClaim(research)]),
     ...layerClaims(research).filter((c) => !segmentLed || c.text.startsWith("The national")),
+    ...(rateLed ? [] : rates),
     ...revenueClaims(research, name),
   ].filter((f): f is Fact => f !== null);
   const answer: HamiltonAnswer = {

@@ -13,6 +13,89 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
+**What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
+rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
+(42,886 live fees) were due. 2,883 of them were due only because source check v4 (daily caps,
+PR 271) went live at about 15:00: a strategy bump makes every bank due again. Before that,
+v3 checks ran 157-247 banks an hour (11:00-14:59) while Knox re-reads and new publishes kept
+raising banks' newest fee id, which also makes a bank due, so the backlog grew from 262 to 315
+banks. Publish steps run about 12 times an hour at 40 banks each (4-15 s a step).
+**Cause:** a fixed 40 banks per publish step could not absorb a full re-check plus the day's
+new fees.
+**Fix:** `SOURCE_CHECK_INSTITUTION_LIMIT` 40 -> 120 (PR 280). About 1,400 banks an hour, so a
+full re-check clears in about 2 hours; the texts a step reads stay small (about 20 KB a bank).
+**Lesson:** a version bump on a check that covers every bank needs the check's pace sized to
+the whole catalog, or a catch-up pass, in the same PR; count the due backlog after each bump.
+
+## 2026-10-06: Flat foreign transaction fees were mostly ATM, wire and rate rows
+**What happened:** read-only prod query, 14:50 UTC Oct 6. Of 45 live `card_foreign_txn` rows
+with a dollar amount, 13 were "ATM Foreign Transaction Fee" (a fee for using another bank's
+ATM, $1-$5), 3 were wires ("1.1% foreign transaction fee ...: WIRE TRANSFERS" $10/$15,
+"Currency Conversion Assessment | Domestic Wire In" $10), 6 were a rate read as dollars
+("Debit Card Foreign Transaction 1% of the U.S. dollar amount" $7, "VISA Exchange Rate" $1 with
+"Percentage of transaction", "Foreign Transaction" $2 with "2.00% of transaction"), 3 were
+foreign currency or check services, one joined a low-balance fee from the next cell, and two
+were sentences ("Many Canadian credit cards charge ... 2.5%").
+**Cause:** Knox's `card_foreign_txn` pattern matches "foreign transaction" before the ATM
+pattern, and the category had no guard, so nothing checked the name or a rate on the line.
+**Fix:** category guard v11 guards `card_foreign_txn` (ATM, wire, currency-service, joined-cell
+and sentence names fail) and fails a dollar amount whose name states a percent or a rate, or
+whose stated terms state a percent (`rate_as_amount`); a rate row has no dollar amount, so it
+never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and Knox v20 files
+it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
+the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
+foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows come down with the admin category guard repair run.
+**Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
+under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
+
+## 2026-10-06: No bank market can pass the report rule soon, and percentage fees never count
+**What happened:** read-only, 14:10 UTC: 6 of 109 state markets pass James's report rule (16
+rich institutions of one type in a state), all credit unions. The closest bank market is MA
+(12 of 16); OK and IL banks have 9. AK has 5 banks in total and WA 31 with 1 rich, so the
+real requesters there (First National Bank Alaska, Banner Bank) cannot pass the state rule.
+`card_foreign_txn` is a headline fee live at 42 institutions, while 347 more have a foreign
+transaction fee held as `knox_review:percentage`.
+**Cause:** the rule counts only same-state, same-type peers. Percentage fees have no path
+to the catalog. Requester gaps were wrong or partial links (a business-only PDF; a general
+services page without account fees) and Knox misses (wires, prose maintenance fee).
+**Fix:** Atlas now runs states with a failing report request and near-ready bank markets
+first. The link and extraction gaps went to Magellan and Knox. The rule itself (peer fallback
+for small states) and percentage fees are open.
+**Lesson:** check whether a market can reach a threshold at all before scheduling toward it.
+
+## 2026-10-06: The spend ledger left out web search charges, so caps undercounted Magellan
+**What happened:** read-only, 13:50 UTC: `pipeline_attempts` recorded $8.35 for today's 152
+paid web searches; `ai_api_usage_events`, which the budget caps and per-run limits sum, recorded
+$4.41 for the same 152 calls. October so far: $16.47 in attempts, $8.75 in the ledger.
+**Cause:** `trackAnthropicRequest` priced tokens only. Anthropic also bills $10 per 1,000 server
+web searches; `paid-pass.ts` added that to the attempt cost, but the ledger never saw it.
+**Fix:** the ledger estimate (`estimateAnthropicCostMicrousd`) counts
+`server_tool_use.web_search_requests`, and `paidCallCostMicrousd` uses that same estimate, so the
+attempt log and the ledger agree. Covers paid find and website find. Earlier rows stay as written
+(about $7.72 under for October), well inside Magellan's $150 cap.
+**Lesson:** a charge priced in one place and logged in another drifts; price it once, in the
+function the caps read.
+
+## 2026-10-06: Atlas took states in waiting order, not where the work was
+**What happened:** after PR 204, a state's median gap between runs was still 135 minutes (live,
+13:20 UTC, last 6 h). Every lane's `priority_score` was 0, so Atlas picked whichever lane had
+waited longest. Texas (196 banks due a search, 181 not source-checked) waited as long as
+Vermont. The daily-pass rule counted 2,024 dead-end banks, which kept 23 states on daily paid
+passes that could never turn off. The state experts ranked finder strategies (Texas: site crawl
+80%, sitemap 0 of 23), but nothing read the ranking.
+**Cause:** `priority_score` was never written, and the daily rule counted every bank missing a
+link. `stateExpertHints` had no caller.
+**Fix:** the Atlas gaps PR. The hourly sync scores each lane by its banks with open work or a
+recent error, and due lanes run highest first; a lane 3 h overdue goes first. Only findable
+banks count toward the daily rule (5 states on that count alone: TX, IL, MN, IA, MO), and a
+state with paid-find or no-website targets stays daily so the paid steps still run (live
+13:45 UTC: 51 states have paid-find targets, 459 banks, plus 582 institutions with no
+website). Magellan runs each state's best
+finders first. Launches go from 2 to 3 per tick.
+**Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
+("Magellan uses the hints") needs a caller and a test.
+
 ## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
 **What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
 at 14:41. The lead rows showed confirmed and not unsubscribed, but MailerLite subscriber
@@ -1304,3 +1387,39 @@ and the snapshot's `published_fee_catalog` still lacks PR 215's 3-fee rule, so t
 one-fee peer banks would vanish under the real view.
 **Fix:** PR 278 appends its columns to the snapshot. Open: refresh the whole snapshot from prod,
 and give the test's peer banks 3 fees each so it runs under the real catalog rule.
+
+## 2026-10-06: Knox held every percentage fee, often under a sentence fragment
+**What happened:** with rate columns in place, Knox still wrote every rate as a held
+`knox_review:percentage` row with no amount, 1,023 of them in the four rate categories, many
+named by a fragment ("A 1% Currency Conversion Fee will be assessed on", "for customers").
+**Fix:** `src/lib/agents/knox/percent.ts`. A held rate in an allow-listed category whose rate
+traces with `checkRateAgainstSource` goes to Darwin as a rate fee, named from the category's own
+words; "up to" rates, interest rates, two-rate lines and out-of-range rates stay held. Held rows
+are re-read in place by `recheckHeldRates`. Knox v21 also reads the card's currency fee and
+coin counting under the other names banks give them. Answer keys: 20 rate reads, 18 keyed and 2
+real fees the keys leave out (0.2% currency conversion, 0.9% cross-border); flat gates and the
+live dry run (1,416 of 1,437 kept) unchanged. Dry run on the 1,001 held rows with their
+stored excerpts: 287 foreign transaction rates at 217 banks (median 1%), 106 late payment at 82
+(median 5%), 39 cash advance, 37 coin counting.
+**Still open:** 52 of 68 keyed rates still don't publish: about half are never read as a
+rate (prose, rates split across lines), and the rest are "up to", two-rate or interest lines;
+coin counting rows ("Coin Counting | 10% of total") fail the rate
+check because the row has no fee or charge word.
+**Lesson:** a new column is not a new fee until the extractor writes it; score the writer on the
+answer keys, not only on the held rows it was built from.
+
+## 2026-10-06: Knox never read its own corrections
+**What happened:** Darwin and Hamilton write every category rejection and verification to the
+shared learning store (`pipeline_feedback`, 5,835 Darwin category rejects at 15:30 UTC), but Knox
+never read it. Fixes came only as hand rules, and a hand rule can regress: v19's plural
+"overdrafts" rule filed "Overdraft Transfers" under overdraft again, a name the guards had
+already rejected at 13 banks and verified as od_protection_transfer at 7.
+**Fix:** `src/lib/agents/knox/lessons.ts`. Each extract step reads the store's clear lessons (47
+at 15:30 UTC: statement copies, overdraft transfers, outgoing international wires, ATM card
+replacements, paid NSF items) and re-files an exact name that today's rules still put in the
+rejected category, flagged `knox_lesson:`. The rules re-check accepts the rejected-category read
+for such a row. Answer keys: 2 fees re-filed, 1 fixed, 0 broken; flat gates unchanged. Only new
+reads change, so no live fee is taken down.
+**Lesson:** an agent that writes corrections to a shared store must also read them, or the same
+mistake comes back with the next rule change.
+

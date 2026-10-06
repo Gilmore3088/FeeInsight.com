@@ -90,4 +90,12 @@ describe("computeTradeoffs", () => {
     const tradeoffs = computeTradeoffs(35, 45, current, proposed);
     expect(tradeoffs.revenueImpact.value).toContain("+");
   });
+
+  it("states peer position only, with no complaint, regulatory or advice claims", () => {
+    for (const [from, to] of [[35, 45], [45, 20], [30, 30]] as const) {
+      const tradeoffs = computeTradeoffs(from, to, computeFeePosition(from, MOCK_DIST), computeFeePosition(to, MOCK_DIST));
+      const text = Object.values(tradeoffs).map((t) => `${t.label} ${t.note}`).join(" ");
+      expect(text).not.toMatch(/complaint|regulatory|reputational|attrition|recommend|risk/i);
+    }
+  });
 });

@@ -10,7 +10,9 @@
  */
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { formatRatePercent } from "@/lib/percent-fees";
 import { proseFeeName } from "./names";
+import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentExhibit } from "./segment";
 import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
@@ -282,6 +284,47 @@ function structurePiece(research: FeeResearch): Piece | null {
   };
 }
 
+/** The fee as a rate: the bank's own rate beside the national rate picture, never beside dollars. */
+function ratePiece(research: FeeResearch, name: string): Piece | null {
+  const rates = ratesOf(research);
+  if (!rates) return null;
+  const own = ownRate(research);
+  const { n, median, p25, p75, min, max } = rates.national;
+  if (!own && median === null) return null;
+  const relation = own ? rateRelation(own.ratePercent, rates) : null;
+  const actionTitle =
+    own && relation && median !== null
+      ? `Your ${formatRatePercent(own.ratePercent)} ${name} rate is ${relation} the national median rate of ${formatRatePercent(median)} across ${count(n)} institutions.`
+      : own
+        ? `Your ${name} fee is ${own.label}; too few institutions state it as a rate for a national median.`
+        : `Where institutions state the ${name} fee as a rate, the national median is ${formatRatePercent(median)} across ${count(n)} institutions.`;
+  const institutions = count(n);
+  const rows: { name: string; cells: (string | null)[]; own?: boolean }[] = [
+    { name: research.institutionName, cells: [own?.label ?? null, null], own: true },
+  ];
+  if (median !== null) {
+    rows.push({ name: "National median", cells: [formatRatePercent(median), institutions] });
+    if (p25 !== null && p75 !== null) rows.push({ name: "Middle half", cells: [`${formatRatePercent(p25)} to ${formatRatePercent(p75)}`, institutions] });
+    if (min !== null && max !== null) rows.push({ name: "Lowest to highest", cells: [`${formatRatePercent(min)} to ${formatRatePercent(max)}`, institutions] });
+  }
+  return {
+    key: "rate",
+    actionTitle,
+    exhibit: {
+      kind: "structure_matrix",
+      title: `${capitalize(name)} fee stated as a rate: you and the nation`,
+      columns: ["Rate", "Institutions"],
+      rows,
+      sources: [...(own ? [ownRateSource(rates, own)] : []), rates.source],
+      note: "Rates are compared only with other rates, one per institution, never with dollar amounts. A blank rate means your schedule states none.",
+    },
+    takeaway:
+      median !== null
+        ? { text: `${institutions} institutions state the ${name} fee as a rate nationally.`, source: rates.source, sampleSize: n }
+        : undefined,
+  };
+}
+
 function stateName(research: FeeResearch): string | null {
   return research.layers.find((l) => l.scope === "state")?.label ?? null;
 }
@@ -372,12 +415,12 @@ export function storylineKind(research: FeeResearch, intent: StoryIntent): Story
 }
 
 const ORDER: Record<StorylineKind, string[]> = {
-  position: ["position", "local", "archetype", "structure", "money", "changes"],
-  segment: ["segment", "archetype", "structure", "changes", "position", "money"],
-  price_test: ["position", "money", "archetype", "local", "changes"],
-  board_decision: ["position", "money", "archetype", "changes", "local", "structure"],
-  structure: ["structure", "archetype", "position", "local", "changes"],
-  trend: ["trend", "money", "changes", "position", "local"],
+  position: ["position", "rate", "local", "archetype", "structure", "money", "changes"],
+  segment: ["segment", "archetype", "structure", "changes", "position", "rate", "money"],
+  price_test: ["position", "money", "rate", "archetype", "local", "changes"],
+  board_decision: ["position", "money", "rate", "archetype", "changes", "local", "structure"],
+  structure: ["structure", "archetype", "position", "rate", "local", "changes"],
+  trend: ["trend", "money", "changes", "position", "rate", "local"],
 };
 
 function pieces(research: FeeResearch, name: string): Record<string, () => Piece | null> {
@@ -391,12 +434,21 @@ function pieces(research: FeeResearch, name: string): Record<string, () => Piece
     changes: () => changePiece(research, name),
     money: () => moneyPiece(research, name),
     trend: () => trendPiece(research),
+    rate: () => ratePiece(research, name),
   };
 }
 
 function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
   const out: KeyFigure[] = [];
   const own = research.ownRows[0];
+  const rates = ratesOf(research);
+  const rate = ownRate(research);
+  if (research.current === null && rates && rate) {
+    out.push({ value: formatRatePercent(rate.ratePercent), label: `Your ${name} rate`, source: ownRateSource(rates, rate) });
+    if (rates.national.median !== null) {
+      out.push({ value: formatRatePercent(rates.national.median), label: "National median rate", source: rates.source, n: rates.national.n });
+    }
+  }
   if (research.current !== null) {
     out.push({
       value: money(research.current),
@@ -488,10 +540,30 @@ function names(list: { name: string }[], max = 3): string {
  * reads the figures for a product or marketing reader rather than restating an exhibit,
  * and none says what to charge.
  */
+/** Where the bank's rate sits against the national middle half, as a customer comparing terms would see it. */
+function rateLens(research: FeeResearch): Fact | null {
+  const rates = ratesOf(research);
+  const own = ownRate(research);
+  if (!rates || !own) return null;
+  const { n, p25, p75 } = rates.national;
+  if (p25 === null || p75 === null) return null;
+  const at = `At ${formatRatePercent(own.ratePercent)}, your rate sits`;
+  const half = `the middle half of ${count(n)} institutions (${formatRatePercent(p25)} to ${formatRatePercent(p75)})`;
+  const text =
+    own.ratePercent > p75
+      ? `${at} above ${half}; competitors can claim a lower rate.`
+      : own.ratePercent < p25
+        ? `${at} below ${half}, a cost point you can make to customers.`
+        : `${at} inside ${half}, so on rate alone you blend in.`;
+  return { text, source: rates.source, sampleSize: n };
+}
+
 function marketLens(research: FeeResearch, name: string): Fact[] {
   const out: Fact[] = [];
   const current = research.current;
   const group = customerGroup(research);
+  const rate = rateLens(research);
+  if (rate) out.push(rate);
 
   // Positioning: what a customer comparing side by side would see, by name.
   if (group && current !== null) {
