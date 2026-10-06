@@ -26,6 +26,18 @@ state. A county-level assignment would need county FIPS on each institution.
 **Lesson:** when a report names a Fed district, say which states it covers, and expect thin
 coverage in districts whose split states went elsewhere.
 
+## 2026-10-06: Knox said "no fees" while Darwin checked two
+**What happened:** at 01:00 UTC the live board showed Evergreen Federal Bank (OR) as "Found no
+fees in the document" in Knox and "Checked 2 fees: all passed" in Darwin, in the same run (1239).
+**Cause:** a reporting gap, not bad data. From that one document (16915) Knox wrote six rows: two
+free fees with a category (e-statements, notary, $0), which go to Darwin, and four unclassified
+lines held for review. Knox's `inserted` count only covers priced fees, so its step said 0. Darwin
+checked exactly the two free rows (raw 204906, 204907). Oregon Coast Bank's "no fees" was true:
+its page (16916) is a checking product page with no fee lines, and Knox wrote nothing.
+**Fix:** Knox reports `freeInserted` and `heldInserted` per document and `freeFees` per step; the
+board counts free fees as pulled and says how many lines were held for review.
+**Lesson:** a count shown next to another agent's count must include every row that agent hands on.
+
 ## 2026-10-05: Rosetta kept re-downloading dead links, and the live board miscounted
 **What happened:** James's screen recording of /admin/live (22:36 UTC) showed banks failing in
 Rosetta with "page not found" that had no working document, the same bank more than once, and
