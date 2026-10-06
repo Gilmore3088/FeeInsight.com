@@ -11,7 +11,10 @@ export const SOURCE_CHECK_INSTITUTION_LIMIT = 40;
 export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 2: a line carrying several fees gives each fee its own price, and fees an
 // earlier version took down are re-checked and restored when they trace.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 2 } as const;
+// Version 3: the shared reader learned six layouts (PR 195), so every institution is
+// checked again and fees the older reader took down are restored when they now trace.
+// Bump this whenever checkFeeAgainstSource changes what it can read.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 3 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -127,8 +130,6 @@ export async function takeDownUntraceableFees(
             FROM published_fee_records fp
             JOIN institution_sources inst ON inst.id = fp.institution_id
            WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${TAKEN_DOWN})
-             AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
-             AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
            GROUP BY fp.institution_id
         ) live
        WHERE NOT EXISTS (
@@ -138,7 +139,14 @@ export async function takeDownUntraceableFees(
             AND pa.institution_id = live.institution_id
             AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
        )
-       ORDER BY EXISTS (
+       ORDER BY NOT (
+                  (${options.institutionId ?? null}::bigint IS NULL OR live.institution_id = ${options.institutionId ?? null}::bigint)
+                  AND (${options.stateCode ?? null}::text IS NULL OR EXISTS (
+                    SELECT 1 FROM institution_sources inst
+                     WHERE inst.id = live.institution_id AND upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text
+                  ))
+                ),
+                EXISTS (
                   SELECT 1 FROM pipeline_attempts pa
                    WHERE pa.stage = 'publish'
                      AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}

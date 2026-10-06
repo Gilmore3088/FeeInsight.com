@@ -631,3 +631,25 @@ live fees.
 "schedule-of-charges") and whose static text shows no fee schedule gets the free fallbacks first,
 whatever its length. Applies to every state's next read of such a page. Texts already rejected
 are not re-read by this PR (that needs a re-read rule; see the Rosetta scorecard).
+
+## 2026-10-06: Source-check fixes never reached fees already checked or taken down
+**What happened:** the Hamilton publish audit (05:10 UTC Oct 6) found 6,626 live fees at 410
+institutions not yet source-checked, and fees taken down by older readers that were never re-checked.
+For example, about 934 safe deposit box rentals were down although PR 195 taught the reader box sizes.
+Read-only at 05:15 UTC: 5,864 live fees at 363 institutions were unchecked, and the check covered
+about 170 institutions an hour.
+**Cause:** a state publish step checked only its own state, so most steps found little to check while
+other states waited. The check's fingerprint changes only when a new fee is published, so a reader fix
+never re-checked an institution or restored its takedowns.
+**Fix:** same PR: a state step checks its own state first, then fills its 40 from any state, never-checked
+institutions first. The source-check strategy goes to version 3, so every institution (2,922 due) is
+checked again with the current reader, restoring fees that now trace. The comment on the version says to
+bump it whenever `checkFeeAgainstSource` changes. The due query takes about 110 ms on prod. Spot checks of
+a read-only dry run found two layouts the reader misread, fixed in the same PR: a line under a heading that
+names most of the fee ("WIRE TRANSFERS (OUTGOING)" / "DOMESTIC WIRE | $35") and a price under the name
+that starts with "•" or "~". Dry run over all 43,577 live and taken-down fees: 1,477 restored (927 box
+sizes; 19 of 20 sampled box restores right), 445 taken down, of which 401 are at never-checked
+institutions the normal check reaches anyway and 44 are new from the bump. Paced at 40 institutions per
+publish step, about 720 an hour, so the re-check finishes in about four hours.
+**Lesson:** a check keyed on its input must also key on its own rules version, or improving the rules
+changes nothing already decided.
