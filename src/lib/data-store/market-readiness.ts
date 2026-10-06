@@ -4,7 +4,7 @@ import { sql } from "./connection";
  * Market readiness: is there enough live fee data in a market for a competitive report?
  *
  * An institution is "rich" when it has at least RICH_MIN_CATEGORIES of the 15 headline
- * fee categories live in published_fee_catalog. James's report rule: an institution can
+ * fee categories live in published_fee_catalog (or, for a rate, published_fee_rate_catalog). James's report rule: an institution can
  * get a report when it is rich and at least MIN_RICH_COMPETITORS other institutions of its
  * type in its state are rich. A market (one state, one charter type) is ready when a rich
  * institution there passes that rule, i.e. MARKET_READY_MIN_RICH rich institutions.
@@ -160,7 +160,12 @@ export async function getInstitutionHeadlineCoverage(ids: number[]): Promise<Map
 function headlineCoverageSql(keys: string[], institutionIds?: number[]) {
   return sql`
     SELECT institution_id, COUNT(DISTINCT canonical_fee_key) AS categories
-    FROM published_fee_catalog
+    FROM (
+      SELECT institution_id, canonical_fee_key FROM published_fee_catalog
+      -- A foreign transaction fee stated as a rate ("1.1%") is that headline fee too.
+      UNION ALL
+      SELECT institution_id, canonical_fee_key FROM published_fee_rate_catalog
+    ) live
     WHERE canonical_fee_key = ANY(${keys})
       ${institutionIds ? sql`AND institution_id = ANY(${institutionIds})` : sql``}
     GROUP BY institution_id`;
