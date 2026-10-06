@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Texas fee schedules went months without a re-fetch
+**What happened:** the Texas state report failed its 90-day freshness check (`src/lib/report-engine/freshness.ts`):
+the median `institution_sources.last_crawl_at` for Texas was 181 days at 03:05 UTC (read-only query on prod).
+Of 741 Texas rows, 479 were last crawled over 90 days ago; 189 active fee links had not been fetched
+in 30+ days, and 695 such links existed across 13 states.
+**Cause:** stale links were only re-fetched in a state's full pass, 50 at a time in Texas, while the
+hourly backlog fetch took only newly found links. About 300 of the stale Texas rows have no fee link
+at all; their old crawl date still counts toward the freshness median.
+**Fix:** this PR: the hourly backlog fetch (free) also re-fetches links last fetched over 30 days ago,
+and a state with such links counts as having a backlog.
+**Lesson:** a freshness check that reads `last_crawl_at` needs a schedule that actually refreshes it;
+check crawl-age spread per state, not only the national median.
+
 ## 2026-10-06: Two merged migrations did not reach prod because prod had a higher number
 **What happened:** PRs 170 and 173 merged at 02:00 UTC with `20270107000001_hamilton_decision_workspace.sql`
 and `20270107000002_financial_nsf_revenue.sql`. Minutes later prod had neither the
