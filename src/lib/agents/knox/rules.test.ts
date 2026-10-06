@@ -8,6 +8,48 @@ function fees(text: string): Array<[string, number, string]> {
 }
 
 describe("Knox extract.rules", () => {
+  it("v11 joins a fee name split across lines in one column of a two-column PDF (Austin Bank)", () => {
+    const text = [
+      "Account Research | Government Reclamations (Paper/ACH)....$50.00",
+      "Per copy....$5.00 | Inactive Account .... $10.00",
+      "Account Transfers | Levy/Garnishment ....$100.00",
+      "Austin Bank ATM ....FREE | * Non-Sufficient Check Fee (NSF), per item,",
+      "One Plus Banking....FREE | per presentment ....$30.00",
+      "Online Banking....FREE | Notary Service....$5.00",
+      "Mobile Banking....FREE (in bank transfers) | * Overdraft Fee, per item, per presentment (applies to",
+      ".... $2.00 (bank to bank transfers) | overdrafts created by check, in-person withdrawal, ATM",
+      "Non-Austin Bank ATM ....$3.00 | withdrawal, or other electronic means) ....$30.00",
+      "Early Closing Fee for accounts closed within 30 days of | be assessed; however, your account will not be charged",
+      "opening ....$25.00 | returned that is $5.00 or less.",
+    ].join("\n");
+    const found = extractCandidatesFromText(text).candidates.map((c) => [c.canonicalHint, c.amount]);
+    expect(found).toContainEqual(["nsf", 30]);
+    expect(found).toContainEqual(["overdraft", 30]);
+    expect(found).toContainEqual(["early_closure", 25]);
+    expect(found).not.toContainEqual(["nsf", 5]);
+  });
+
+  it("v11 reads an overdraft fee tiered by item amount, one fee per priced tier (Texas Bank and Trust)", () => {
+    const text = [
+      "Overdraft Item Fee:  based on item amount",
+      "Limit of $120 per day",
+      "Applies to items such as checks, withdrawals, debit card/ATM transactions, and other electronic means",
+      "Item amount | Fee Amount",
+      "$0 - $10.00:  $0 fee",
+      "$10.01 - $20.00:  $10.00 fee",
+      "$20.01 - $30.00:  $20.00 fee",
+      "$30.01 or above:  $30.00 fee",
+      "TBT Debit Card Fees",
+      "Replacement card:  $5",
+    ].join("\n\n");
+    const overdraft = extractCandidatesFromText(text).candidates.filter((c) => c.canonicalHint === "overdraft");
+    expect(overdraft.map((c) => [c.feeName, c.amount])).toEqual([
+      ["Overdraft Item Fee (items $10.01 - $20.00)", 10],
+      ["Overdraft Item Fee (items $20.01 - $30.00)", 20],
+      ["Overdraft Item Fee (items $30.01 or above)", 30],
+    ]);
+  });
+
   it("v10 never pairs a fee name with the next column's box price (Hawaii Community FCU)", () => {
     const text = "NSF Fee* (Non-Sufficient Funds Fee) | 5” X 10” X 22” box...................................................... $50.00\n";
     const found = runFreeSpecialists(text).candidates.map((c) => [c.amount, c.canonicalHint]);
