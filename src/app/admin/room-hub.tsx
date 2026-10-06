@@ -51,3 +51,13 @@ export function Unreadable({ what }: { what: string }) {
     </p>
   );
 }
+
+/** The title of a screen inside a room, for pages that had their name only in an old tab bar. */
+export function ScreenHeader({ title, lede }: { title: string; lede?: string }) {
+  return (
+    <header>
+      <h1 className="admin-display-title">{title}</h1>
+      {lede ? <p className="admin-lede mt-1.5 max-w-3xl">{lede}</p> : null}
+    </header>
+  );
+}
