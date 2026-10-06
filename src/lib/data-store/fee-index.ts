@@ -604,3 +604,55 @@ export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeInd
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
 }
+
+export interface PeerFeeValue {
+  institution_id: number;
+  institution_name: string;
+  state_code: string | null;
+  amount: number;
+}
+
+/**
+ * Each peer's own value per category under the statistics contract (the same value the
+ * medians are built from), so a scenario can count exactly how many peers charge more,
+ * the same or less. Rows are loaded once and split per filter set; results follow the
+ * order of `filterSets`. The target institution is left out of its own peer group.
+ */
+export async function getPeerFeeValues(
+  filterSets: PeerFilterSet[],
+  categories: string[],
+  excludeInstitutionId?: number,
+): Promise<Map<string, PeerFeeValue[]>[]> {
+  if (categories.length === 0 || filterSets.length === 0) return filterSets.map(() => new Map());
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ANY($1::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [categories] as never[],
+  ) as (PeerRow & { institution_name: string })[];
+  const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
+  const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
+  return filterSets.map((filters) => {
+    const byCategory = new Map<string, typeof peerRows>();
+    for (const row of peerRows) {
+      if (!matchesPeerFilters(row, filters)) continue;
+      const list = byCategory.get(row.fee_category) ?? [];
+      list.push(row);
+      byCategory.set(row.fee_category, list);
+    }
+    const result = new Map<string, PeerFeeValue[]>();
+    for (const [category, list] of byCategory) {
+      const values: PeerFeeValue[] = [];
+      for (const [id, amount] of valuePerInstitution(list)) {
+        const row = meta.get(id);
+        values.push({ institution_id: id, institution_name: row?.institution_name ?? `Institution ${id}`, state_code: row?.state_code ?? null, amount });
+      }
+      result.set(category, values.sort((a, b) => a.amount - b.amount));
+    }
+    return result;
+  });
+}
