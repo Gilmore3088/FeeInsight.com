@@ -9,7 +9,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
 import { SITE_NAME } from "@/lib/constants";
-import { analyzeMarket, MIN_LOCAL_PEERS_PER_LINE, type LinePosition, type ReportLine } from "@/lib/custom-report/analysis";
+import {
+  analyzeMarket,
+  MIN_LOCAL_PEERS_PER_LINE,
+  NAMED_WITHOUT_DEPOSITS,
+  type LinePosition,
+  type ReportLine,
+} from "@/lib/custom-report/analysis";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { verifyReportToken } from "@/lib/custom-report/link";
 import { getCustomReportMarketDataCached } from "@/lib/data-store/public-cached-reads";
@@ -78,6 +84,7 @@ export default async function MarketReportPage({ params }: PageProps) {
   const comparable = analysis.lines.filter((l) => l.comparable);
   const tableKeys = comparable.slice(0, 6).map((l) => l.key);
   const ownFees = Object.fromEntries(analysis.lines.filter((l) => l.own).map((l) => [l.key, l.own!.amount]));
+  const competitorName = new Map(data.competitors.map((c) => [c.institution_id, c.institution_name]));
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
@@ -101,6 +108,14 @@ export default async function MarketReportPage({ params }: PageProps) {
           </div>
           <div className="flex flex-wrap gap-3 print:hidden">
             <PrintButton className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]" />
+            {analysis.readiness.ready && (
+              <a
+                href={`/market-report/${token}/csv`}
+                className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
+              >
+                Download CSV
+              </a>
+            )}
             <a
               href={contactHref(name)}
               className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
@@ -154,6 +169,7 @@ export default async function MarketReportPage({ params }: PageProps) {
                     <th className="py-2 pr-3 text-right font-semibold">Local median</th>
                     <th className="py-2 pr-3 text-right font-semibold">Middle half</th>
                     <th className="py-2 pr-3 text-right font-semibold">Competitors</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Charging less</th>
                     <th className="py-2 font-semibold">Position</th>
                   </tr>
                 </thead>
@@ -174,6 +190,9 @@ export default async function MarketReportPage({ params }: PageProps) {
                         {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{line.peers?.n ?? 0}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
+                      </td>
                       <td className="py-2">
                         {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-[#8A8173]">Not enough local data</span>}
                       </td>
@@ -188,7 +207,11 @@ export default async function MarketReportPage({ params }: PageProps) {
                 <h2 id="named-heading" className="text-xl text-[#1A1815]" style={SERIF}>
                   Named competitors, same lines
                 </h2>
-                <p className="mt-1 text-[13px] text-[#6B6255]">Largest local deposit holders first (FDIC Summary of Deposits, {data.market.sod_year}).</p>
+                <p className="mt-1 text-[13px] text-[#6B6255]">
+                  Banks by deposits held in your market (FDIC Summary of Deposits, {data.market.sod_year}), then up to{" "}
+                  {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how many of
+                  your fees they publish. Each amount links to the schedule it was read from.
+                </p>
                 <table className="mt-4 w-full min-w-[640px] text-left text-sm">
                   <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
                     <tr>
@@ -217,11 +240,26 @@ export default async function MarketReportPage({ params }: PageProps) {
                           </a>
                           {competitor.city && <span className="text-[12px] text-[#8A8173]"> · {competitor.city}</span>}
                         </td>
-                        {tableKeys.map((key) => (
-                          <td key={key} className="py-2 pr-3 text-right tabular-nums">
-                            {money(competitor.fees[key])}
-                          </td>
-                        ))}
+                        {tableKeys.map((key) => {
+                          const source = competitor.sources[key];
+                          return (
+                            <td key={key} className="py-2 pr-3 text-right tabular-nums">
+                              {source?.source_url ? (
+                                <a
+                                  href={source.source_url}
+                                  title={`“${source.source_line}”`}
+                                  className="underline decoration-[#D5CBBF] underline-offset-2 hover:decoration-[#A93D25]"
+                                  rel="noopener noreferrer"
+                                  target="_blank"
+                                >
+                                  {money(competitor.fees[key])}
+                                </a>
+                              ) : (
+                                money(competitor.fees[key])
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -242,6 +280,10 @@ export default async function MarketReportPage({ params }: PageProps) {
                 when a line of that institution&apos;s own stored schedule states that amount as the fee; amounts that are
                 balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out
                 {droppedCount > 0 ? ` (${droppedCount} published figures in this market were left out this way)` : ""}.
+                When a schedule lists several versions of a fee, the comparison uses the standard consumer version (not an
+                online, business or other special variant); if several still remain, it uses the lowest monthly maintenance
+                fee and the highest amount for every other fee. &ldquo;Read&rdquo; dates are the day we saved the copy of the
+                schedule that states the fee.
               </p>
               <ul className="mt-3 space-y-1">
                 {analysis.lines
@@ -264,12 +306,45 @@ export default async function MarketReportPage({ params }: PageProps) {
                           <a href={line.own!.source_url} className="underline" rel="noopener noreferrer" target="_blank">
                             source
                           </a>
-                          {line.own!.updated_at ? `, read ${line.own!.updated_at}` : ""})
+                          {line.own!.schedule_read_on ? `, read ${line.own!.schedule_read_on}` : ""})
                         </>
                       )}
                     </li>
                   ))}
               </ul>
+              <details className="mt-4 rounded-md border border-[#E0D7C9] bg-white/60 p-3">
+                <summary className="cursor-pointer font-semibold text-[#1A1815]">
+                  Every competitor figure behind the local numbers, with its source
+                </summary>
+                {comparable.map((line) => (
+                  <div key={line.key} className="mt-4 overflow-x-auto">
+                    <h3 className="text-[13px] font-semibold text-[#1A1815]">
+                      {line.label} ({line.peerFigures.length} competitors)
+                    </h3>
+                    <table className="mt-1 w-full min-w-[640px] text-left text-[12px]">
+                      <tbody>
+                        {line.peerFigures.map((figure) => (
+                          <tr key={figure.institution_id} className="border-b border-[#EFE8DD] last:border-0 align-top">
+                            <td className="py-1 pr-3 text-[#1A1815]">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
+                            <td className="py-1 pr-3 text-right tabular-nums text-[#1A1815]">{money(figure.amount)}</td>
+                            <td className="py-1 pr-3">“{figure.source_line}”</td>
+                            <td className="whitespace-nowrap py-1">
+                              {figure.source_url ? (
+                                <a href={figure.source_url} className="underline" rel="noopener noreferrer" target="_blank">
+                                  source
+                                </a>
+                              ) : (
+                                "stored copy"
+                              )}
+                              {figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </details>
               <p className="mt-3">
                 If a figure does not match your current schedule,{" "}
                 <a href={contactHref(name)} className="underline">
