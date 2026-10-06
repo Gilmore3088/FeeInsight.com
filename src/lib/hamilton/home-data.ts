@@ -165,7 +165,7 @@ export async function fetchHomeBriefingData(
   // Preview deployments and builds share the production database but carry no
   // ANTHROPIC_API_KEY. They cannot write a thesis, and logging that as a failed
   // pro.thesis step put a false alarm on the admin Crew page. Production still logs it.
-  const thesisCannotRunHere = !hasAnthropicApiKey() && process.env.VERCEL_ENV !== "production";
+  const thesisCannotRunHere = !hasAnthropicApiKey("hamilton") && process.env.VERCEL_ENV !== "production";
 
   let thesis: ThesisOutput | null = null;
   try {

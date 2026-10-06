@@ -13,6 +13,24 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Knox reads the same web page several times, and checks nothing he writes
+**What happened:** the Knox audit (read-only prod queries, 05:00-05:30 UTC) found 632 fee pages stored
+as 2 to 10 separate `source_documents`. Knox extracts every copy: 14,895 extra raw rows, of which Darwin
+dropped 9,782 as duplicates. 4,972 live fees at 430 banks come from an older copy of a page that has a
+newer one; 89 of them have a price the newest copy does not show. Separately, pass 2 specialists keep only
+rows that already pass Darwin's checks, so Darwin cannot catch them: 21% of their approved fees were
+pulled later (1,027 name not on the page, 738 wrong number) against 12% for the line rules. Accuracy:
+86.0% on 578 fees at 29 Texas answer-key banks (54% of each schedule found); 76 of 103 right in a national
+random sample of stored rows, 9 of 103 still wrong when the same lines are replayed through rules v11.
+**Cause:** Knox's "read each text once" and older-text retirement are keyed on one document, not on the
+page's address. Knox never runs `checkFeeAgainstSource` on his own rows.
+**Fix:** rules v12 (PR 207) reads price-first table rows ("$20.00 | Domestic outgoing wire", which the
+rules re-check could not reproduce) and stops two misreads seen in the sample: a limit, threshold or refundable
+deposit after a price ("Money Orders ($1,000 Limit)") and a column label cell ("Fee Rush Card Fee |
+Amount $50") hiding the fee name. One document per page and a Knox self-check are open, waiting for James.
+**Lesson:** a dedupe or retirement rule must be keyed on what is really the same thing (the page), not on
+the row id that stored it. A specialist that pre-filters by the next agent's rules removes that agent's check.
+
 ## 2026-10-06: Every state lane stayed awake with nothing to do, so busy states waited two hours
 **What happened:** the Atlas audit (read-only queries on prod, 05:00 UTC) found no state lane ever
 went to sleep. The scheduler starts 2 lanes per 5-minute tick (24 an hour) for 55 lanes, so each
@@ -28,6 +46,7 @@ or a link going stale still wakes it). 22 lanes with no work now sleep and give 
 the 31 with work.
 **Lesson:** a lane's "is there work" check must use the same filters as the step that does the
 work. When a step's selector changes, change the backlog check with it.
+
 ## 2026-10-06: Darwin passed fees the bank's own schedule does not state
 **What happened:** of the Darwin-verified fees published and later taken down (read-only query on prod,
 04:50 UTC), 2,740 failed Hamilton's source check (1,370 name not in the text, 1,064 amount not the fee,
@@ -654,6 +673,28 @@ live fees.
 "schedule-of-charges") and whose static text shows no fee schedule gets the free fallbacks first,
 whatever its length. Applies to every state's next read of such a page. Texts already rejected
 are not re-read by this PR (that needs a re-read rule; see the Rosetta scorecard).
+
+## 2026-10-06: Source-check fixes never reached fees already checked or taken down
+**What happened:** the Hamilton publish audit (05:10 UTC Oct 6) found 6,626 live fees at 410
+institutions not yet source-checked, and fees taken down by older readers that were never re-checked.
+For example, about 934 safe deposit box rentals were down although PR 195 taught the reader box sizes.
+Read-only at 05:15 UTC: 5,864 live fees at 363 institutions were unchecked, and the check covered
+about 170 institutions an hour.
+**Cause:** a state publish step checked only its own state, so most steps found little to check while
+other states waited. The check's fingerprint changes only when a new fee is published, so a reader fix
+never re-checked an institution or restored its takedowns.
+**Fix:** same PR: a state step checks its own state first, then fills its 40 from any state, never-checked
+institutions first. The source-check strategy goes to version 3, so every institution (2,922 due) is
+checked again with the current reader, restoring fees that now trace. The comment on the version says to
+bump it whenever `checkFeeAgainstSource` changes. The due query takes about 110 ms on prod. Spot checks of
+a read-only dry run found two layouts the reader misread, fixed in the same PR: a line under a heading that
+names most of the fee ("WIRE TRANSFERS (OUTGOING)" / "DOMESTIC WIRE | $35") and a price under the name
+that starts with "•" or "~". Dry run over all 43,577 live and taken-down fees: 1,477 restored (927 box
+sizes; 19 of 20 sampled box restores right), 445 taken down, of which 401 are at never-checked
+institutions the normal check reaches anyway and 44 are new from the bump. Paced at 40 institutions per
+publish step, about 720 an hour, so the re-check finishes in about four hours.
+**Lesson:** a check keyed on its input must also key on its own rules version, or improving the rules
+changes nothing already decided.
 
 ## 2026-10-06: Supabase Preview failed on every migration PR
 **What happened:** the Supabase Preview check failed on every PR that added a migration (173, 189, 196)

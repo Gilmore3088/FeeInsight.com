@@ -25,6 +25,66 @@ export interface RevenueTrend {
   latest: RevenueSnapshot | null;
 }
 
+export interface PeerIncomeQuarter {
+  quarter_end: string;
+  /** Median quarterly deposit service charges among filers, in thousands. */
+  median_thousands: number;
+  institutions: number;
+}
+
+/**
+ * Median quarterly deposit service charges for one charter and asset tier, newest quarter
+ * first. NCUA year-to-date figures are split into quarters the same way as getRevenueTrend;
+ * an institution counts in a quarter only when it reported positive income for it.
+ */
+export async function getPeerServiceChargeMedians(
+  charterType: string,
+  assetTier: string,
+  quarterCount = 8,
+): Promise<PeerIncomeQuarter[]> {
+  const sql = getSql();
+  const rows = (await sql.unsafe(
+    `WITH filed AS (
+       SELECT inf.institution_id,
+              inf.source,
+              inf.report_date::date AS rd,
+              inf.service_charge_income AS amount,
+              LAG(inf.service_charge_income) OVER w AS prior_amount,
+              LAG(inf.report_date::date) OVER w AS prior_rd
+         FROM institution_financial_records inf
+         JOIN institution_sources ct ON ct.id = inf.institution_id
+        WHERE ${SAME_SCALE_SOURCES}
+          AND ct.charter_type = $1
+          AND ct.asset_size_tier = $2
+       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
+                    ORDER BY inf.report_date::date)
+     ),
+     quarterly AS (
+       SELECT rd,
+              CASE
+                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
+                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
+                ELSE NULL
+              END AS income
+         FROM filed
+     )
+     SELECT TO_CHAR(rd, 'YYYY-MM-DD') AS quarter_end,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY income) AS median_thousands,
+            COUNT(*)::int AS institutions
+       FROM quarterly
+      WHERE income > 0
+      GROUP BY rd
+      ORDER BY rd DESC
+      LIMIT $3`,
+    [charterType, assetTier, quarterCount],
+  )) as { quarter_end: string; median_thousands: string | number; institutions: number }[];
+  return rows.map((r) => ({
+    quarter_end: r.quarter_end,
+    median_thousands: Number(r.median_thousands),
+    institutions: Number(r.institutions),
+  }));
+}
+
 export interface TopRevenueInstitution {
   cert_number: string;
   institution_name: string | null;

@@ -162,7 +162,7 @@ Provide a concise strategic interpretation of this fee change. What does this po
 
   let providerFailed = false;
   const result = await streamText({
-    model: getAnthropicLanguageModel(HAMILTON_MODEL),
+    model: getAnthropicLanguageModel(HAMILTON_MODEL, "hamilton"),
     system: systemPrompt,
     prompt: userPrompt,
     // Opus 5.5 always thinks first; thinking counts toward this cap.
