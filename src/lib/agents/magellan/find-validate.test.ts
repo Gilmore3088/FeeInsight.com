@@ -39,6 +39,8 @@ describe("Magellan fee-page check", () => {
     const bytes = pdf(["Schedule of Fees", "Overdraft fee $32.00", "NSF fee $30.00", "Stop payment $35.00", "Wire transfer fee $25.00"]);
     const result = await validateFeeCandidate(candidate("https://a.example/fees.pdf"), serve(bytes as BodyInit, "application/pdf"));
     expect(result).toMatchObject({ ok: true, documentType: "pdf", verdict: "accepted_pdf" });
+    // The shadow page classifier scores the same text the rule check read.
+    expect(result.scoringText).toContain("Overdraft fee $32.00");
   });
 
   it("rejects a press release PDF even with a fee-like link", async () => {

@@ -1,4 +1,5 @@
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
+import { classifyPage, type PageClassifier } from "@/lib/agents/magellan/page-classifier";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { classifyFetchFailure } from "@/lib/agents/learning/outcomes";
 
@@ -169,6 +170,8 @@ export interface TrailEntry {
   label: string;
   score: number;
   verdict: string;
+  /** Shadow page classifier: its probability that the page is a fee schedule (decides nothing). */
+  page_p?: number;
 }
 
 export interface FoundDocument {
@@ -227,6 +230,8 @@ export interface SearchContext {
   robots?: string | null;
   /** HTML of same-site pages already opened, so the crawl does not fetch them twice. */
   pages: Map<string, string>;
+  /** The learned fee-page classifier, in shadow: scores each opened candidate, decides nothing. */
+  pageClassifier?: PageClassifier | null;
 }
 
 export function cleanText(value: string): string {
@@ -397,6 +402,9 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     try {
       const validation = await validateFeeCandidate(candidate, ctx.fetchImpl);
       entry.verdict = validation.verdict;
+      if (ctx.pageClassifier && validation.scoringText) {
+        entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
+      }
       if (validation.html && sameSite(new URL(candidate.url), ctx.site)) ctx.pages.set(identity, validation.html);
       if (validation.ok) {
         result.found = foundFrom(candidate, validation);
