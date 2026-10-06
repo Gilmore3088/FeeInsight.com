@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
+**What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
+at 14:41. The lead rows showed confirmed and not unsubscribed, but MailerLite subscriber
+200589712283404206 stayed "unsubscribed", and the sync returned "synced". The same reader also
+ended up in two state groups (FL from the confirm page, AL from an older row's use_case).
+**Cause:** MailerLite's upsert (POST /subscribers) does not bring back an unsubscribed address
+unless the request says to resubscribe, and it still answers 200. The sync checked only the HTTP
+status. A later form with no state re-sent a state read from an old row.
+**Fix:** this PR. A sync right after a confirm link sends `resubscribe: true`; every sync checks
+the status MailerLite stored and reports "failed" when it differs; a reader joins only the state
+they picked last and leaves other state groups; a form with no state leaves the group alone.
+**Lesson:** check what an external API stored, not only its status code.
+
 ## 2026-10-06: Every daily overdraft cap was taken down, and none of the largest banks had one
 **What happened:** of 185 active institutions with $10B or more in assets, 40 had a live overdraft
 fee and 0 a daily cap (prod read-only, 14:00 UTC). Nationwide, all 251 dollar caps
