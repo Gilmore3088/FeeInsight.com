@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Report requests never stored their "ready to quote" line
+**What happened:** the end-to-end test request (lead 18, 05:39 UTC) and James's own request (lead 17,
+5 Oct) were stored without the "Report check: ..." line that /api/leads should append, so /admin/leads
+could not say whether a requested report can be built. Both emails went out (the API answered
+`notification: sent, confirmation: sent`).
+**Cause:** `leads.id` is bigint and the Postgres driver returns bigint as a string. The route kept the
+id only when `typeof id === "number"`, so it was always null: the quote line update and the
+failed-email marking (`handleLeadDeliveryOutcome`) never had a row id.
+**Fix:** the route parses the id from a string or a number; test added. PR on branch claude/project-thread-uc3vox.
+**Lesson:** bigint columns arrive as strings; never gate on `typeof id === "number"` for a bigint id.
+
 ## 2026-10-06: Darwin passed fees the bank's own schedule does not state
 **What happened:** of the Darwin-verified fees published and later taken down (read-only query on prod,
 04:50 UTC), 2,740 failed Hamilton's source check (1,370 name not in the text, 1,064 amount not the fee,
