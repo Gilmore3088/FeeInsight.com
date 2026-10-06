@@ -15,6 +15,8 @@ export interface SegmentRow {
   /** Thousands of dollars. */
   totalAssets: number | null;
   dailyCap: number | null;
+  /** At most this many of the fee a day, with the schedule line that says so. */
+  dailyFeeLimit?: { count: number; line: string } | null;
 }
 
 export interface SegmentData {
@@ -39,6 +41,13 @@ export function fmtAssets(thousands: number | null): string {
 
 const SHOWN = 15;
 
+/** The schedule's daily limit: a count of fees ("3 a day") or a dollar cap ("$105 a day"). */
+export function dailyLimitText(m: Pick<SegmentRow, "dailyCap" | "dailyFeeLimit">): string {
+  if (m.dailyFeeLimit) return `${m.dailyFeeLimit.count} a day`;
+  if (m.dailyCap != null) return `${fmtMoney(m.dailyCap)} a day`;
+  return "—";
+}
+
 function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; own: number | null; max: number }) {
   return (
     <tbody>
@@ -61,7 +70,9 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
                 </span>
               </div>
             </td>
-            <td className="px-3 py-2 text-right text-warm-700 [font-variant-numeric:tabular-nums]">{m.dailyCap != null ? `${m.dailyCap} a day` : "—"}</td>
+            <td className="px-3 py-2 text-right text-warm-700 [font-variant-numeric:tabular-nums]" title={m.dailyFeeLimit?.line}>
+              {dailyLimitText(m)}
+            </td>
             <td className="px-3 py-2 text-right">
               {m.documentUrls[0] ? (
                 <a href={m.documentUrls[0]} target="_blank" rel="noreferrer" className="text-xs text-terra-text underline">
@@ -87,7 +98,7 @@ function Head() {
         <th className={`${th} text-left`} scope="col">Institution</th>
         <th className={`${th} text-right`} scope="col">Assets</th>
         <th className={`${th} text-left`} scope="col">Fee</th>
-        <th className={`${th} text-right`} scope="col">Daily cap</th>
+        <th className={`${th} text-right`} scope="col">Daily limit</th>
         <th className={th} scope="col">
           <span className="sr-only">Source</span>
         </th>
@@ -142,8 +153,10 @@ export function SegmentTable({
           <dd className="text-lg text-warm-900 [font-variant-numeric:tabular-nums]">{data.zeroCount}</dd>
         </div>
         <div>
-          <dt className="text-xs text-warm-600">Publish a daily cap</dt>
-          <dd className="text-lg text-warm-900 [font-variant-numeric:tabular-nums]">{data.withDailyCap}</dd>
+          <dt className="text-xs text-warm-600">Publish a daily limit</dt>
+          <dd className="text-lg text-warm-900 [font-variant-numeric:tabular-nums]">
+            {data.members.filter((m) => m.dailyCap != null || m.dailyFeeLimit != null).length}
+          </dd>
         </div>
       </dl>
       ) : null}

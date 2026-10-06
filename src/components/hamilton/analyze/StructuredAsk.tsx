@@ -3,7 +3,8 @@
 /**
  * The Ask bar's structured answer from the Hamilton engine (POST /api/hamilton/ask): the
  * four-role answer, a scenario, an opinion, a saved figure, or Hamilton's one clarifying
- * question answered in place. Deterministic and free; the written answer below it is the AI's.
+ * question answered in place. Deterministic and free. When the answer carries a storyline,
+ * Hamilton's written memo over it (POST /api/hamilton/ask/memo) follows; that call is paid.
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
@@ -11,7 +12,8 @@ import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/
 import { EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
-import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
+import { StorylineView, type MemoState } from "@/components/hamilton/storyline/StorylineView";
+import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
@@ -31,6 +33,25 @@ async function postAsk(body: AskBody): Promise<AskResponse> {
   const json = (await res.json().catch(() => ({}))) as AskResponse & { error?: string };
   if (!res.ok) throw new Error(json.error ?? "Hamilton could not answer that just now.");
   return json;
+}
+
+/** Hamilton's memo over the storyline the Ask bar just returned; the same body as the Ask. */
+async function postMemo(body: AskBody): Promise<MemoState> {
+  try {
+    const res = await fetch("/api/hamilton/ask/memo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, institutionId: body.institutionId ?? undefined }),
+    });
+    const json = (await res.json().catch(() => ({}))) as Partial<StorylineMemoResult> & { error?: string };
+    if (json.status === "written" && "memo" in json && json.memo) return { state: "written", memo: json.memo };
+    if ((json.status === "withheld" || json.status === "unavailable") && "reason" in json && json.reason) {
+      return { state: "none", reason: json.reason };
+    }
+    return { state: "none", reason: json.error ?? "Hamilton could not write this up just now; the exhibits stand on their own." };
+  } catch {
+    return { state: "none", reason: "Hamilton could not write this up just now; the exhibits stand on their own." };
+  }
 }
 
 function QuestionForm({ question, onAnswer, busy }: { question: ClarifyingQuestion; onAnswer: (value: string) => void; busy: boolean }) {
@@ -143,6 +164,7 @@ export function StructuredAsk({
   institutionId,
   modelHrefFor,
   researchHrefFor,
+  onNoStoryline,
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
@@ -150,12 +172,17 @@ export function StructuredAsk({
   modelHrefFor: (feeCategory: string, tested: number) => string;
   /** My fees for a fee, where the full market picture lives. */
   researchHrefFor?: (feeCategory: string) => string;
+  /** Called once per question when the engine has no storyline for it, so the page can answer in prose instead. */
+  onNoStoryline?: (question: string) => void;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const decisionId = useRef<string | undefined>(undefined);
   const lastQuestion = useRef<string | null>(null);
+  const [memo, setMemo] = useState<MemoState | undefined>(undefined);
+  // The question the memo was asked for; a newer question drops an older memo's result.
+  const memoFor = useRef<string | null>(null);
 
   const run = useCallback(
     async (body: Omit<AskBody, "institutionId" | "decisionId">) => {
@@ -175,20 +202,45 @@ export function StructuredAsk({
     [institutionId],
   );
 
+  // A storyline answer gets Hamilton's memo; anything else (bar a clarifying question) is
+  // handed back to the page to answer in prose.
+  const follow = useCallback(
+    (asked: string, res: AskResponse | null) => {
+      if (res?.answer?.storyline) {
+        memoFor.current = asked;
+        setMemo({ state: "writing" });
+        void postMemo({ institutionId, question: asked, decisionId: decisionId.current }).then((m) => {
+          if (memoFor.current === asked) setMemo(m);
+        });
+        return;
+      }
+      if (res?.question) return;
+      onNoStoryline?.(asked);
+    },
+    [institutionId, onNoStoryline],
+  );
+
   useEffect(() => {
     if (!question || question === lastQuestion.current) return;
     lastQuestion.current = question;
+    memoFor.current = null;
+    setMemo(undefined);
     setResponse(null);
-    void run({ question }).then((res) => res && setResponse(res));
-  }, [question, run]);
+    void run({ question }).then((res) => {
+      if (res) setResponse(res);
+      follow(question, res);
+    });
+  }, [question, run, follow]);
 
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
     const saved = await run({ answer: { fieldKey: q.fieldKey, value } });
     if (!saved) return;
     // An objective is remembered, then the original question is asked again with it.
     if (q.fieldKey === "decision.objective" && lastQuestion.current) {
-      const again = await run({ question: lastQuestion.current });
+      const asked = lastQuestion.current;
+      const again = await run({ question: asked });
       if (again) setResponse(again);
+      follow(asked, again);
       return;
     }
     setResponse(saved);
@@ -218,6 +270,7 @@ export function StructuredAsk({
       {response.answer && storyline ? (
         <StorylineView
           story={storyline}
+          memo={memo}
           nextSteps={
             researchHrefFor ? (
               <>

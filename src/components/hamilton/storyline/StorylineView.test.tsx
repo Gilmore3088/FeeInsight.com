@@ -28,3 +28,31 @@ describe("StorylineView", () => {
     expect(html).not.toMatch(/recommend/i);
   });
 });
+
+describe("StorylineView with Hamilton's memo", () => {
+  const memo = {
+    summary: "Your $32 sits above the peer median of $29.50.",
+    board: "Board paragraph about money at stake.",
+    market: "Market paragraph about positioning.",
+    questions: ["What share of overdraft items fall on customers with recurring payroll?"],
+    model: "test",
+    generatedAt: "2026-10-06T00:00:00Z",
+    figureCheck: { checked: 4, unmatched: [] },
+  };
+
+  it("puts the summary under the answer, each view's paragraph in its view and the questions under Before deciding", () => {
+    const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "written", memo }} />);
+    expect(html).toContain("above the peer median");
+    expect(html).toContain("4 figures checked");
+    expect(html).toContain("Board paragraph about money at stake.");
+    expect(html).toContain("Before deciding");
+    expect(html).toContain("recurring payroll");
+  });
+
+  it("shows a writing state, and one quiet line when no memo is written", () => {
+    expect(renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "writing" }} />)).toContain("Hamilton is writing this up");
+    const none = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "none", reason: "Hamilton's daily writing budget is used up." }} />);
+    expect(none).toContain("daily writing budget is used up");
+    expect(none).not.toContain("Before deciding");
+  });
+});

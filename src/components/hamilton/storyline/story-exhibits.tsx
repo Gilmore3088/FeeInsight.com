@@ -40,7 +40,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
             members: x.members,
             band: null,
             zeroCount: x.members.filter((m) => m.amount === 0).length,
-            withDailyCap: x.members.filter((m) => m.dailyCap != null).length,
+            withDailyCap: x.members.filter((m) => m.dailyCap != null || m.dailyFeeLimit != null).length,
             problem: null,
             source: x.sources[0] ?? { label: "Bank Fee Index" },
           }}

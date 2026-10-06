@@ -48,6 +48,7 @@ describe("StorylineView with engine storylines", () => {
       totalAssets: 1_000_000_000,
       charterType: "bank",
       dailyCap: null,
+      dailyFeeLimit: null,
     }));
     const seg = buildSegmentResearch({
       segment: parseSegment("all 10B and up institutions")!,

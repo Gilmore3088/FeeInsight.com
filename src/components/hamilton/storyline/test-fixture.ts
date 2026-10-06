@@ -38,6 +38,7 @@ export function sampleStoryline(): Storyline {
             charterType: "bank",
             totalAssets: 3_000_000_000 / (i + 1),
             dailyCap: i % 2 ? 3 : null,
+            dailyFeeLimit: null,
           })),
         },
         takeaway: f("Your price sits in the middle; your lack of a cap does not.", src, 18),

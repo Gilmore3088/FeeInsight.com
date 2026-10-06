@@ -231,6 +231,13 @@ export function AnalyzeWorkspace({
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
   }, [input]);
 
+  const answerInProse = useCallback(
+    (question: string) => {
+      if (question === lastPromptRef.current) sendMessage({ text: question });
+    },
+    [sendMessage],
+  );
+
   const ask = useCallback(
     (question: string) => {
       const trimmed = question.trim();
@@ -241,11 +248,13 @@ export function AnalyzeWorkspace({
       setFigureCheck(null);
       setAskedQuestion(trimmed);
       setMessages([]);
-      sendMessage({ text: trimmed });
+      // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
+      // question without one is sent on for a written answer (onNoStoryline below), so one
+      // question never pays for two write-ups.
       setInput("");
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, sendMessage, setMessages],
+    [clearError, isLoading, setMessages],
   );
 
   // A question typed in the Ask bar on another screen is answered here without retyping it.
@@ -378,6 +387,7 @@ export function AnalyzeWorkspace({
           institutionId={instId}
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
+          onNoStoryline={answerInProse}
         />
       ) : null}
 
