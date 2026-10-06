@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { computeStats } from "@/lib/data-store";
 import {
   getDisplayName,
   getFeeFamily,
@@ -14,14 +13,14 @@ import { loadGuidesForCategory } from "@/lib/guides/source";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { DataFreshness } from "@/components/data-freshness";
 import { DistributionChart } from "@/components/public/distribution-chart";
 import { STATE_NAMES } from "@/lib/us-states";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
-import { getFeeCategoryDetailCached, getDataFreshnessCached } from "@/lib/data-store/public-cached-reads";
+import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -100,22 +99,30 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const name = getDisplayName(category);
   const family = getFeeFamily(category);
   const familyColor = family ? getFamilyColor(family) : null;
-  const [detail, freshness] = await Promise.all([
+  const [detail, snapshot] = await Promise.all([
     getFeeCategoryDetailCached(category),
-    getDataFreshnessCached(),
+    getPublicSnapshot(),
   ]);
 
   // Close the loop the other way: a reader on a fee page can reach the guide that
   // explains it. Consumer guides are public, so this link is never a dead end.
   const consumerGuides = await loadGuidesForCategory(category, "consumer");
 
-  // N and M share one basis: verified fees with a stated amount, and the
-  // distinct institutions those fees came from.
-  const pricedFees = detail.fees.filter((f) => f.amount !== null && f.amount > 0);
-  const amounts = pricedFees.map((f) => f.amount!);
-  const verifiedFeeCount = amounts.length;
-  const institutionCount = new Set(pricedFees.map((f) => f.institution_id)).size;
-  const stats = computeStats(amounts);
+  // Headline figures come from the shared public snapshot, so this page states the same
+  // median, institution count and entry count as the fee index, research hub and homepage.
+  // The chart uses the same population: one value per institution.
+  const national = snapshot.categories.find((c) => c.fee_category === category) ?? null;
+  const refreshedOn = snapshot.summary.refreshedOn;
+  const institutionValues = detail.institution_values ?? [];
+  const institutionCount = national?.institution_count ?? 0;
+  const entryCount = national?.total_observations ?? 0;
+  const stats = {
+    median: national?.median_amount ?? null,
+    p25: national?.p25_amount ?? null,
+    p75: national?.p75_amount ?? null,
+    min: national?.min_amount ?? null,
+    max: national?.max_amount ?? null,
+  };
 
   const familyMembers = family
     ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category)
@@ -161,13 +168,16 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       >
         {name} Fee
       </h1>
-      <p className="mt-2 text-[14px] text-[#6B6255]">
-        Based on {verifiedFeeCount.toLocaleString()} verified fees from{" "}
-        {institutionCount.toLocaleString()} institutions.
+      <p className="mt-2 text-[14px] text-[#5A5347]">
+        {national ? benchmarkBasis(national, refreshedOn) : "Not enough published fees yet for a national benchmark."}
       </p>
-      <div className="mt-1">
-        <DataFreshness />
-      </div>
+      <p className="mt-1 text-[12px] text-[#6B6255]">
+        Each institution counts once. The median and percentiles are taken across institutions, from
+        published fee schedules.{" "}
+        <Link href="/methodology" className="font-medium text-[#A93D25] hover:underline">
+          Methodology
+        </Link>
+      </p>
 
       {/* Stat cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -207,7 +217,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         </h2>
         <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm p-5">
           <DistributionChart
-            amounts={amounts}
+            values={institutionValues}
             median={stats.median}
           />
         </div>
@@ -327,7 +337,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           Methodology
         </h3>
         <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
-          Based on {verifiedFeeCount.toLocaleString()} verified fees from{" "}
+          Based on {entryCount.toLocaleString()} published fee entries from{" "}
           {institutionCount.toLocaleString()} US banks and credit unions, read from their published
           fee schedules. Fees the software is not sure about are held for a person to check and are
           not counted here. Institutions are identified via FDIC and NCUA regulatory databases.
@@ -460,9 +470,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             "@context": "https://schema.org",
             "@type": "Article",
             headline: `${name} Fee - National Benchmarks`,
-            description: `National ${name.toLowerCase()} fee: median ${money(stats.median)}, based on ${verifiedFeeCount} verified fees from ${institutionCount} institutions.`,
+            description: `National ${name.toLowerCase()} fee: median ${money(stats.median)}, based on ${entryCount} published fee entries from ${institutionCount} institutions.`,
             url: `${SITE_URL}/fees/${category}`,
-            dateModified: freshness.last_crawl_at ?? undefined,
+            dateModified: refreshedOn && !Number.isNaN(Date.parse(refreshedOn)) ? new Date(refreshedOn).toISOString() : undefined,
             publisher: {
               "@type": "Organization",
               name: SITE_NAME,

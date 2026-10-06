@@ -1,6 +1,8 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
+import { SITE_URL } from "@/lib/constants";
+import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/quote-check";
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
@@ -132,6 +134,24 @@ async function handlePOST(request: NextRequest) {
       leadId = typeof inserted?.id === "number" ? inserted.id : null;
     }
 
+    // An institution report is paid and quoted by James, so the requester gets nothing
+    // automatic. James's email and the lead row say whether we can build it from live data.
+    let quoteCheck: string | null = null;
+    if (source === REPORT_SOURCE) {
+      quoteCheck = describeQuoteCheck(
+        await checkInstitutionReport({ institutionId, institutionName: company }),
+        SITE_URL,
+      );
+      if (leadId !== null) {
+        await sql`
+          UPDATE leads SET use_case = CASE
+            WHEN use_case IS NULL OR use_case = '' THEN ${quoteCheck}
+            ELSE use_case || '; ' || ${quoteCheck}
+          END
+          WHERE id = ${leadId}`;
+      }
+    }
+
     // Storage is done; email is best-effort and its status rides along for the client.
     const notifications = await notifyForLead({
       leadId,
@@ -146,6 +166,7 @@ async function handlePOST(request: NextRequest) {
       stateCode,
       institutionName,
       benchmarkScope,
+      quoteCheck,
     });
 
     return NextResponse.json(notifications ? { success: true, notifications } : { success: true });

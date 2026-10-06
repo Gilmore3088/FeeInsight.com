@@ -13,6 +13,51 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Credit union capital ratio shown as about 1,100%
+**What happened:** Pro institution pages, the API and Hamilton's briefings showed credit union
+"Tier 1 capital ratio" around 1,100% (a $1.1B credit union showed 1,090 for Q2 2026). The NCUA
+median is 1,054 to 1,254 in every year from 2010 to 2026 (read-only query, 22:40 UTC).
+**Cause:** the NCUA pull stores the 5300 net worth ratio (ACCT_998) as filed, in basis points,
+while FDIC ratios are percent. The medians match net worth / assets x 100 (10.5 to 12.5).
+**Fix:** a fix PR converts it once in `src/lib/data-store/financial.ts`
+(`capitalRatioPct`), so every reader gets percent, and labels it "Net worth ratio" for credit unions.
+Stored rows are unchanged.
+**Lesson:** check each regulator field's unit against an independent figure before showing it;
+a ratio that is right for banks may be in different units for credit unions.
+
+## 2026-10-05: The public API gave away what its docs called Pro-only
+**What happened:** the API docs and spec said the free tier gets 6 spotlight categories and that
+category detail and institution detail (per-bank fees, call reports, complaints) need a Pro or
+Enterprise key. The code (`src/app/api/v1/*/route.ts`) checked none of it, so anonymous callers got
+everything. The "100 requests/month" was also counted per endpoint, unlimited keys sent
+`X-RateLimit-Limit: Infinity`, a database hiccup in usage tracking showed as "Rate limit exceeded",
+and bad inputs (`state=Texas`, `limit=0`) were ignored or caused errors.
+**Cause:** the docs were written ahead of the code, and each route had its own copy of the checks.
+**Fix:** the API audit PR (shared `src/lib/api-v1.ts`, route tests).
+**Lesson:** when docs promise a limit, add a route test that proves it.
+
+## 2026-10-05: Footnote numbers glued to live fee names
+**What happened:** SoFi's fee sheet published "Outgoing domestic wire transfer3" and "Return Item
+fee2". At 23:25 UTC, 155 live fees at 66 institutions had a footnote number glued to the name
+(read-only regex count on `published_fee_catalog`; box sizes like "10x10" are excluded).
+**Cause:** Knox's line rules (pass 1) kept a PDF's superscript footnote, which the text layer
+flattens into a digit. The table and family specialists (pass 2) already stripped it; pass 1 did not.
+**Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
+merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
+**Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+
+## 2026-10-05: Public pages showed different counts and medians on the same day
+**What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
+overdraft median while the fee index, directory and research hub said 2,144 and 60, research said
+$29, and the overdraft page said $30 from 798 institutions (the index listed 777).
+**Cause:** three caches with different lifetimes (hourly headline counts, per-publish category
+summaries, the fee_index_cache memo) each caught the catalog at a different moment while the sweep
+was publishing; the overdraft page also computed its own median over raw rows with $0 removed.
+**Fix:** PR 135: one public snapshot (`getPublicSnapshot` in `src/lib/public-stats.ts`) that every
+public page reads, plus one per-institution population for the chart.
+**Lesson:** a public figure has one reader. New public pages read the snapshot, never their own
+aggregate or cache, and say what the number measures and when it was taken.
+
 ## 2026-10-05: Shutdown months stored as 0 in economic series
 **What happened:** state report trend charts showed Texas unemployment dropping to 0% and back
 (found by the Hamilton Pro page thread).
@@ -44,6 +89,17 @@ Texas sample it was tuned on had one fee per line, so the gap didn't show.
 now trace, on the next hourly passes.
 **Lesson:** test a rule that changes live data on a sample from several states and layouts, and
 run it as a dry run (counts and samples) before it writes.
+
+## 2026-10-05: The first source check took down correct fees
+**What happened:** by 20:15 UTC the live source check had taken down 1,956 fees outside Texas and
+California, 903 of them as "amount_is_a_threshold". Spot checks found many were correct (Stop
+Payment $32, Incoming Wire $18, NSF/Overdraft $32). Source: PR 132.
+**Cause:** on a source line carrying several fees, version 1 compared every fee to the line's first
+price and called the rest thresholds.
+**Fix:** PR 132 (merged 23:10 UTC): each price belongs to the words before it; version 2 re-checks
+every institution and restores fees that now trace, logged as `hamilton.source_check` events.
+**Lesson:** test a bulk takedown on lines with several fees before it runs nationwide, and keep
+takedowns reversible.
 
 ## 2026-10-05: Public reports stopped being produced
 **What happened:** no National Quarterly, Monthly Pulse or State Index report has been made since

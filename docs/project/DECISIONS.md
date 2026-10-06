@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-05
 
+**The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
+gets in.** James, 23:28 UTC ("nobody else should have access to API"). Every `/api/v1` request
+needs a key Fee Insight issued by hand; there is no free self-serve tier. David's key is
+Enterprise (all categories, institution detail, call reports, complaints, CSV, no limit). The
+site's own signed-in download buttons keep working without a key. Built in PR 161.
+
 **Hamilton is decision support, not a recommendation engine.** James, 23:27 UTC, correcting his
 23:08 direction: Hamilton surfaces what is worth investigating and what the market says, models
 the prices the bank asks about (roughly from published revenue, precisely from figures the bank

@@ -19,13 +19,12 @@ import { ProLock } from "@/components/public/pro-lock";
 import Link from "next/link";
 import { guideCategories, type Guide } from "@/lib/guides";
 import { loadConsumerGuides, loadProfessionalGuides } from "@/lib/guides/source";
-import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
-import { getStatsCached, getDataFreshnessCached } from "@/lib/data-store/public-cached-reads";
+import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -195,23 +194,15 @@ function GuideCard({
 }
 
 export default async function GuidesIndexPage() {
-  const [allSummaries, stats, freshness, consumerGuides, professionalGuides] =
+  // Counts and medians from the shared public snapshot, so they match the fee index.
+  const [{ summary, categories: allSummaries }, consumerGuides, professionalGuides] =
     await Promise.all([
-      getCachedFeeCategorySummaries(),
-      getStatsCached(),
-      getDataFreshnessCached(),
+      getPublicSnapshot(),
       loadConsumerGuides(),
       loadProfessionalGuides(),
     ]);
 
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
-  const totalObservations = allSummaries.reduce((a, s) => a + s.total_observations, 0);
-  const updateDate = freshness.last_crawl_at
-    ? new Date(freshness.last_crawl_at).toLocaleDateString("en-US", {
-        month: "short",
-        year: "numeric",
-      })
-    : null;
 
   const featured = consumerGuides.filter((g) => g.featured);
   const more = consumerGuides.filter((g) => !g.featured);
@@ -244,21 +235,18 @@ export default async function GuidesIndexPage() {
         <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
           Plain-language guides backed by live benchmark data from{" "}
           <span className="font-medium tabular-nums text-[#5A5347]">
-            {stats.total_institutions.toLocaleString()}
+            {summary.institutionsLabel}
           </span>{" "}
-          institutions. Free to read, and always will be.
+          institutions with published fees (of {summary.monitoredLabel} monitored). Free to read, and
+          always will be.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
           <span className="tabular-nums">
-            {totalObservations.toLocaleString()} fee observations
+            {summary.observationsLabel} {COVERAGE_LABELS.observations.toLowerCase()}
           </span>
-          {updateDate && (
-            <>
-              <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
-              <span>Fee data updated {updateDate}</span>
-            </>
-          )}
+          <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+          <span>{summary.freshnessLabel}</span>
         </div>
       </div>
 

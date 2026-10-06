@@ -1,12 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment } from "./rules";
+import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, stripFootnoteMarks } from "./rules";
 
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
 }
 
 describe("Knox extract.rules", () => {
+  it("v8 drops footnote numbers glued to a fee name (SoFi fee sheet)", () => {
+    expect(fees("Outgoing domestic wire transfer3 $30 per wire transfer")).toEqual([["Outgoing domestic wire transfer", 30, "wire_domestic_outgoing"]]);
+    expect(extractFromSegment("Return Item fee2 $0").held.map((held) => held.feeName)).toEqual(["Return Item fee"]);
+    expect(stripFootnoteMarks("Overdraft Fee7,8")).toBe("Overdraft Fee");
+    expect(stripFootnoteMarks("Incoming Wire Transfer (Consumer)6")).toBe("Incoming Wire Transfer (Consumer)");
+    expect(stripFootnoteMarks("Dormant Account2 (per month)")).toBe("Dormant Account (per month)");
+    // Box sizes, acronyms and counts are not footnotes.
+    expect(stripFootnoteMarks("Safe Deposit Box 3x10")).toBe("Safe Deposit Box 3x10");
+    expect(stripFootnoteMarks("10x10")).toBe("10x10");
+    expect(stripFootnoteMarks("IRS Form W2")).toBe("IRS Form W2");
+    expect(stripFootnoteMarks("IRA Inactive Fee (assessed after12 months of no activity)")).toBe("IRA Inactive Fee (assessed after12 months of no activity)");
+  });
+
+  it("v8 reads a $0 checkbook and legal processing line (SoFi fee sheet)", () => {
+    const zero = (segment: string) => extractFromSegment(segment).held.map((held) => [held.canonicalHint, held.amount]);
+    expect(zero("Checkbook fee $0")).toEqual([["check_printing", 0]]);
+    expect(zero("Statement & Research – Legal Processing $0")).toEqual([["legal_process", 0]]);
+  });
+
   it("takes the price cell, never a tier or threshold figure in the label (Texar FCU)", () => {
     const fees = (segment: string) => extractFromSegment(segment).candidates.map((c) => [c.canonicalHint, c.amount]);
     expect(fees("Overdraft Protection Items - Negative $25 or less | $5")).toEqual([["overdraft", 5]]);
