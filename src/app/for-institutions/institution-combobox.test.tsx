@@ -22,7 +22,7 @@ describe("InstitutionCombobox", () => {
 
   it("suggests institutions and reports the one picked, with its state", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(ROWS))));
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(() => Promise.resolve(new Response(JSON.stringify(ROWS))));
     vi.stubGlobal("fetch", fetchMock);
     const onPick = vi.fn();
     render(<InstitutionCombobox id="i" name="institution" defaultValue="" readOnly={false} className="" onPick={onPick} />);
