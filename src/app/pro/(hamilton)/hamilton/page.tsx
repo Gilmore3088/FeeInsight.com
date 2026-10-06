@@ -26,6 +26,8 @@ import { HamiltonBriefing } from "@/components/hamilton/benchmark/HamiltonBriefi
 import { fetchStateContext } from "@/lib/hamilton/expert-context";
 import { getStateEconomicContextCached } from "@/lib/data-store/public-cached-reads";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { buildBriefingObservations } from "@/lib/hamilton/briefing-observations";
+import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +96,7 @@ async function loadInstitutionPositioning(
 /** State medians, regulator and expert: slow-moving, so cached for hours. */
 const getCachedStateContext = unstable_cache(fetchStateContext, ["hamilton-expert-state"], { revalidate: 21600 });
 
-export const metadata: Metadata = { title: "Benchmark" };
+export const metadata: Metadata = { title: "Briefing" };
 
 interface HamiltonHomePageProps {
   searchParams: Promise<{
@@ -177,10 +179,11 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
   const districtName = positioning?.fedDistrict ? DISTRICT_NAMES[positioning.fedDistrict] ?? null : null;
 
   const topCategory = positioning?.topGap?.feeCategory ?? null;
-  const simulateHref = hrefWithInstitutionContext(
-    topCategory ? `/pro/simulate?category=${encodeURIComponent(topCategory)}` : "/pro/simulate",
+  const researchHref = hrefWithInstitutionContext(
+    topCategory ? `/pro/research?fee=${encodeURIComponent(topCategory)}` : "/pro/research",
     selectedInstitutionId,
   );
+  const observations = buildBriefingObservations(positioning);
   const reportsHref = hrefWithInstitutionContext("/pro/reports?intent=executive-briefing", selectedInstitutionId);
   const analyzeHref = hrefWithInstitutionContext("/pro/analyze", selectedInstitutionId);
   const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
@@ -190,7 +193,7 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--hamilton-on-surface)" }}>
-            Benchmark
+            Briefing
           </h1>
           <p className="mt-0.5 text-balance text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
             {positioning
@@ -211,11 +214,11 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
             Build a report
           </Link>
           <Link
-            href={simulateHref}
+            href={researchHref}
             className="rounded-lg px-3.5 py-2 text-sm font-medium text-white no-underline"
             style={{ background: "var(--hamilton-gradient-cta)" }}
           >
-            {positioning?.topGap ? `Simulate ${positioning.topGap.displayName}` : "Simulate a change"}
+            Open research
           </Link>
         </div>
       </header>
@@ -242,6 +245,10 @@ export default async function HamiltonHomePage({ searchParams }: HamiltonHomePag
           </Link>
         </section>
       )}
+
+      {observations.length > 0 ? (
+        <WorthYourAttention observations={observations} institutionId={selectedInstitutionId} />
+      ) : null}
 
       <HamiltonBriefing
         thesis={data.thesis}

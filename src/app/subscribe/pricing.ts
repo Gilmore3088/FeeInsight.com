@@ -48,7 +48,7 @@ export function isProPlan(value: string | undefined): value is ProPlan {
 export function proFeatureList(summary: PublicStatsSummary): string[] {
   return [
     `Full dataset: ${summary.categoriesLabel} fee categories, ${summary.institutionsLabel} institutions with verified fees`,
-    "Hamilton workspace: Analyze, Benchmark, Scenario, Report and Monitor modes",
+    "Hamilton workspace: Briefing, Research, Model, Reports and Watch",
     "Unlimited peer sets by charter type, asset tier and Fed district",
     "Fee-change alerts: an email when a competitor you follow changes a published fee",
     "What-if scenario modeling on your own schedule",

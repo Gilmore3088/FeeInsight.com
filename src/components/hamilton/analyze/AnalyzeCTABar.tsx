@@ -25,8 +25,8 @@ interface AnalyzeCTABarProps {
 /**
  * AnalyzeCTABar — CTA hierarchy for the Analyze screen.
  * Matches HTML prototype: burnished primary + outlined secondary buttons.
- * Primary: "Simulate a Change" → /pro/simulate, carrying the fee category when known
- * Secondary: "Show Peer Distribution" → Benchmark (where each fee sits among peers);
+ * Primary: "Model a Price" → /pro/simulate, carrying the fee category when known
+ * Secondary: "Show the Market" → Research (where the fee sits at every market layer);
  * "View Risk Drivers" → the Risk lens of this same screen.
  * Export PDF: outlined secondary button, triggers onExportPdf callback (ANL-05)
  * No "Recommended Position" — analyze only (ARCH-05).
@@ -48,8 +48,9 @@ export function AnalyzeCTABar({
     institutionId,
   );
   const secondaryActions = secondary.map((label) => {
-    if (label === "Show Peer Distribution") {
-      return { label, href: hrefWithInstitutionContext("/pro/hamilton", institutionId), onClick: undefined };
+    if (label === "Show the Market") {
+      const researchHref = feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research";
+      return { label, href: hrefWithInstitutionContext(researchHref, institutionId), onClick: undefined };
     }
     if (label === "View Risk Drivers") {
       return {

@@ -7,6 +7,7 @@ import { HamiltonTopNav } from "./HamiltonTopNav";
 import { HamiltonContextBar } from "./HamiltonContextBar";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonLeftRail } from "./HamiltonLeftRail";
+import { HamiltonAskDock } from "./HamiltonAskDock";
 
 interface SavedAnalysis {
   id: string;
@@ -55,7 +56,7 @@ interface HamiltonShellProps {
 /**
  * HamiltonShell - Client component (owns left rail collapse state).
  * Outer shell wrapper applying .hamilton-shell CSS isolation boundary.
- * Composes: admin bar, HamiltonTopNav, HamiltonContextBar, HamiltonLeftRail, and main content.
+ * Composes: admin bar, HamiltonTopNav, HamiltonContextBar, HamiltonLeftRail, main content and the Ask dock.
  * Per D-13, ARCH-01: .hamilton-shell class scopes all editorial design tokens.
  * Per D-10: admin mode bar shown only to admin/analyst users.
  */
@@ -125,8 +126,11 @@ export function HamiltonShell({
           peerSets={peerSets}
           selectedInstitutionId={selectedInstitutionId}
         />
-        <main className="min-w-0 flex-1 px-4 pb-6 pt-14 sm:px-6 lg:px-10 lg:py-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 pb-28 pt-14 sm:px-6 lg:px-10 lg:pb-28 lg:pt-8">{children}</main>
       </div>
+
+      {/* Ask Hamilton, docked on every screen */}
+      <HamiltonAskDock selectedInstitutionId={selectedInstitutionId} />
     </div>
   );
 }

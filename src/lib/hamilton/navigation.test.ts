@@ -24,18 +24,19 @@ describe("HAMILTON_BASE", () => {
 });
 
 describe("HAMILTON_NAV", () => {
-  it("has exactly 6 entries", () => {
-    expect(HAMILTON_NAV).toHaveLength(6);
+  it("has exactly 7 entries", () => {
+    expect(HAMILTON_NAV).toHaveLength(7);
   });
 
-  it("has exact labels in order: Analyze, Benchmark, Scenario, Report, Monitor, Admin", () => {
+  it("has exact labels in order: Briefing, Research, Model, Reports, Watch, Data, Admin", () => {
     const labels = HAMILTON_NAV.map((item) => item.label);
     expect(labels).toEqual([
-      "Analyze",
-      "Benchmark",
-      "Scenario",
-      "Report",
-      "Monitor",
+      "Briefing",
+      "Research",
+      "Model",
+      "Reports",
+      "Watch",
+      "Data",
       "Admin",
     ]);
   });
@@ -78,11 +79,11 @@ describe("LEFT_RAIL_CONFIG", () => {
   });
 
   it("routes primary actions to the matching Hamilton workflow", () => {
-    expect(getPrimaryActionHref("Analyze")).toBe("/pro/simulate");
-    expect(getPrimaryActionHref("Benchmark")).toBe("/pro/simulate");
-    expect(getPrimaryActionHref("Scenario")).toBe("/pro/reports");
-    expect(getPrimaryActionHref("Report")).toBe("/pro/reports?intent=executive-briefing");
-    expect(getPrimaryActionHref("Monitor")).toBe("/pro/analyze");
+    expect(getPrimaryActionHref("Briefing")).toBe("/pro/research");
+    expect(getPrimaryActionHref("Research")).toBe("/pro/simulate");
+    expect(getPrimaryActionHref("Model")).toBe("/pro/reports");
+    expect(getPrimaryActionHref("Reports")).toBe("/pro/reports?intent=executive-briefing");
+    expect(getPrimaryActionHref("Watch")).toBe("/pro/analyze");
     expect(getPrimaryActionHref("Admin")).toBe("/admin");
     expect(Object.keys(PRIMARY_ACTION_HREF).sort()).toEqual(
       HAMILTON_NAV.map((item) => item.label).sort(),
@@ -91,13 +92,14 @@ describe("LEFT_RAIL_CONFIG", () => {
 });
 
 describe("CTA_HIERARCHY", () => {
-  it("has entries for non-Admin screens (Analyze, Benchmark, Scenario, Report, Monitor)", () => {
+  it("has entries for the workspace screens and the Ask answer screen", () => {
     const expectedKeys = [
       "Analyze",
-      "Benchmark",
-      "Scenario",
-      "Report",
-      "Monitor",
+      "Briefing",
+      "Research",
+      "Model",
+      "Reports",
+      "Watch",
     ];
     for (const key of expectedKeys) {
       expect(CTA_HIERARCHY).toHaveProperty(key);
@@ -105,16 +107,21 @@ describe("CTA_HIERARCHY", () => {
     expect(CTA_HIERARCHY).not.toHaveProperty("Admin");
   });
 
-  it("Analyze primary CTA is 'Simulate a Change'", () => {
-    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Simulate a Change");
+  it("Analyze primary CTA is 'Model a Price'", () => {
+    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Model a Price");
   });
 
-  it("Scenarios primary CTA is 'Generate Board Scenario Summary'", () => {
-    expect(CTA_HIERARCHY["Scenario"].primary).toBe("Generate Board Scenario Summary");
+  it("Model primary CTA is 'Plan the Change'", () => {
+    expect(CTA_HIERARCHY["Model"].primary).toBe("Plan the Change");
   });
 
-  it("Reports & Briefs primary CTA is 'Generate Brief'", () => {
-    expect(CTA_HIERARCHY["Report"].primary).toBe("Generate Brief");
+  it("Reports primary CTA is 'Generate Brief'", () => {
+    expect(CTA_HIERARCHY["Reports"].primary).toBe("Generate Brief");
+  });
+
+  it("no CTA tells the bank what to charge", () => {
+    const text = JSON.stringify(CTA_HIERARCHY) + JSON.stringify(LEFT_RAIL_CONFIG);
+    expect(text).not.toMatch(/recommend|raise|lower/i);
   });
 
   it("each entry has primary string and secondary array", () => {
@@ -164,12 +171,14 @@ describe("no Sovereign branding (D-05)", () => {
 });
 
 describe("labels open the screen of the same name", () => {
-  it("Analyze opens /pro/analyze and Benchmark opens the briefing", () => {
+  it("Briefing opens /pro/hamilton and each screen keeps its old URL", () => {
     const byLabel = Object.fromEntries(HAMILTON_NAV.map((item) => [item.label, item.href]));
-    expect(byLabel.Analyze).toBe("/pro/analyze");
-    expect(byLabel.Benchmark).toBe("/pro/hamilton");
-    expect(byLabel.Scenario).toBe("/pro/simulate");
-    expect(byLabel.Report).toBe("/pro/reports");
+    expect(byLabel.Briefing).toBe("/pro/hamilton");
+    expect(byLabel.Research).toBe("/pro/research");
+    expect(byLabel.Model).toBe("/pro/simulate");
+    expect(byLabel.Reports).toBe("/pro/reports");
+    expect(byLabel.Watch).toBe("/pro/monitor");
+    expect(byLabel.Data).toBe("/pro/settings");
   });
 
   it("reference pages stay inside Pro", () => {

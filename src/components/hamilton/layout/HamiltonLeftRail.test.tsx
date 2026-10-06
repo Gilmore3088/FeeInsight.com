@@ -28,15 +28,15 @@ describe("HamiltonLeftRail primary actions", () => {
     );
   });
 
-  it("routes My Bank primary action to scenarios with institution context", () => {
+  it("routes the Briefing's primary action to Research with institution context", () => {
     navigationState.pathname = "/pro/hamilton";
     navigationState.searchParams = new URLSearchParams("");
 
     render(<HamiltonLeftRail selectedInstitutionId="8109" />);
 
-    expect(screen.getByRole("link", { name: /simulate change/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /research a fee/i })).toHaveAttribute(
       "href",
-      "/pro/simulate?instId=8109",
+      "/pro/research?instId=8109",
     );
   });
 });

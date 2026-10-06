@@ -24,7 +24,7 @@ const FREE_ACCOUNT_BENEFITS = [
 ];
 
 const PRO_ACCOUNT_BENEFITS = [
-  "Hamilton workspace: Analyze, Benchmark, Scenario, Report and Monitor",
+  "Hamilton workspace: Briefing, Research, Model, Reports and Watch",
   "Unlimited peer sets and CSV exports (API access on request)",
   "Cancel monthly seats at the end of any billing period",
 ];

@@ -68,7 +68,7 @@ export function HamiltonLeftRail({
     ? hrefWithInstitutionContext(getPrimaryActionHref(currentScreen), activeInstitutionId)
     : null;
 
-  const isSimulateScreen = currentScreen === "Scenario";
+  const isSimulateScreen = currentScreen === "Model";
   const withCurrentContext = (href: string) =>
     hrefWithInstitutionContext(href, activeInstitutionId);
   const hrefForSavedAnalysis = (analysis: SavedAnalysis) =>
@@ -142,11 +142,11 @@ export function HamiltonLeftRail({
             </button>
           </div>
 
-          {/* Screen title — "Scenario" on Simulate, else screen label */}
+          {/* Screen title — "Model" on the Model screen, else the primary action */}
           {isSimulateScreen ? (
             <div className="mb-8">
               <div className="font-headline text-lg" style={{ color: "var(--hamilton-on-surface)" }}>
-                Scenario
+                Model
               </div>
             </div>
           ) : config?.primaryAction && primaryActionHref ? (

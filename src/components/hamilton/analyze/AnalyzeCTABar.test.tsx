@@ -16,9 +16,9 @@ describe("AnalyzeCTABar", () => {
       <AnalyzeCTABar isVisible institutionId="2945" />,
     );
 
-    expect(html).toContain('href="/pro/hamilton?instId=2945"');
+    expect(html).toContain('href="/pro/research?instId=2945"');
     expect(html).toContain('href="/pro/analyze?intent=risk&amp;instId=2945"');
-    expect(html).toContain("Show Peer Distribution");
+    expect(html).toContain("Show the Market");
     expect(html).toContain("View Risk Drivers");
   });
 

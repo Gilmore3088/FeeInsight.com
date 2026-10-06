@@ -7,7 +7,6 @@ import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-cont
 import { StatusStrip } from "@/components/hamilton/monitor/StatusStrip";
 import { SignalFeed } from "@/components/hamilton/monitor/SignalFeed";
 import { WatchlistPanel } from "@/components/hamilton/monitor/WatchlistPanel";
-import { FloatingChatOverlay } from "@/components/hamilton/monitor/FloatingChatOverlay";
 
 export const metadata: Metadata = { title: "Monitor" };
 
@@ -158,7 +157,6 @@ export default async function MonitorPage({
       </div>
 
       {/* Floating chat overlay — fixed position */}
-      <FloatingChatOverlay institutionId={selectedInstitution?.id.toString() ?? null} />
     </>
   );
 }
