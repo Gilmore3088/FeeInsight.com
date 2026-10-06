@@ -10,7 +10,7 @@ const buildJsonLd = (institutions: string) => ({
   "@type": "Article",
   headline: "How the Bank Fee Index works",
   description:
-    `A transparent account of how Bank Fee Index collects, classifies, and verifies fee data across ${institutions} financial institutions.`,
+    `A transparent account of how Fee Insight collects, classifies, and verifies fee data across ${institutions} financial institutions.`,
   url: METHODOLOGY_URL,
   datePublished: "2026-04-06T00:00:00Z",
   author: {
@@ -31,14 +31,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
   title: "Methodology — How the Bank Fee Index works",
   description:
-    `Bank Fee Index collects published fee schedules from ${institutions} banks and credit unions on a rolling calendar, reads the fees, and holds anything uncertain for a person to check. Learn how our data is collected, categorized, and verified.`,
+    `Fee Insight collects published fee schedules from ${institutions} banks and credit unions on a rolling calendar, reads the fees, and holds anything uncertain for a person to check. Learn how our data is collected, categorized, and verified.`,
   alternates: {
     canonical: METHODOLOGY_URL,
   },
   openGraph: {
     title: "Methodology — How the Bank Fee Index works",
     description:
-      `A transparent account of how Bank Fee Index collects, classifies, and verifies fee data across ${institutions} financial institutions.`,
+      `A transparent account of how Fee Insight collects, classifies, and verifies fee data across ${institutions} financial institutions.`,
     url: METHODOLOGY_URL,
     siteName: SITE_NAME,
     type: "article",
@@ -49,7 +49,7 @@ export async function generateMetadata(): Promise<Metadata> {
     card: "summary_large_image",
     title: "Methodology — How the Bank Fee Index works",
     description:
-      `A transparent account of how Bank Fee Index collects, classifies, and verifies fee data across ${institutions} financial institutions.`,
+      `A transparent account of how Fee Insight collects, classifies, and verifies fee data across ${institutions} financial institutions.`,
   },
   };
 }
@@ -87,7 +87,7 @@ export default async function MethodologyPage() {
           label="Data Sources"
           title="We start with every regulated U.S. bank and credit union"
           body={[
-            `Bank Fee Index draws its institution universe from two authoritative federal databases: the FDIC's BankFind Suite (which tracks every FDIC-insured bank, thrift, and savings institution) and the NCUA's Research & Data portal (which covers all federally chartered credit unions). Together, these sources provide accurate legal names, charter classifications, asset sizes, physical locations, and primary website URLs for roughly ${summary.monitoredLabel} active institutions.`,
+            `Fee Insight draws its institution universe from two authoritative federal databases: the FDIC's BankFind Suite (which tracks every FDIC-insured bank, thrift, and savings institution) and the NCUA's Research & Data portal (which covers all federally chartered credit unions). Together, these sources provide accurate legal names, charter classifications, asset sizes, physical locations, and primary website URLs for roughly ${summary.monitoredLabel} active institutions.`,
             "We do not use purchased data lists, scraped directories, or self-reported feeds. Every institution in our index is traceable to a federal regulator record with a published institution ID. This is the foundation of our data quality commitment: our institution universe is authoritative before the first fee is collected.",
             `As of the most recent index update, ${institutions} institutions have verified fee schedules in the Bank Fee Index, across ${summary.statesLabel} states. Coverage is skewed toward institutions with assets above $100 million, where fee schedules are most consistently published online. Institutions below $50 million in assets are included where fee schedules are publicly discoverable.`,
           ]}
@@ -123,7 +123,7 @@ export default async function MethodologyPage() {
           title="Standardized fee categories make institutions comparable"
           body={[
             "Raw fee names vary substantially across institutions. \"Monthly service charge,\" \"account maintenance fee,\" and \"checking maintenance\" typically refer to the same economic product. Comparison is only possible after normalization.",
-            `Bank Fee Index maps every raw fee name to a standard category — ${summary.categoriesLabel} categories currently carry verified data — organized into fee families such as account maintenance, overdraft and NSF, wire transfers, ATM and card, check services, and account services. Each category has a canonical name and a maintained list of known aliases.`,
+            `Fee Insight maps every raw fee name to a standard category — ${summary.categoriesLabel} categories currently carry verified data — organized into fee families such as account maintenance, overdraft and NSF, wire transfers, ATM and card, check services, and account services. Each category has a canonical name and a maintained list of known aliases.`,
             "Categorization is automatic when a raw fee name matches a known alias. Names that do not match are held for a person to assign, and the alias list grows as new naming patterns appear.",
             "A small set of spotlight categories (monthly maintenance, overdraft, NSF, non-network ATM, foreign transaction, domestic outgoing wire) appears at high rates across all institution types and anchors the public index; the full list of categories is on the Bank Fee Index page.",
           ]}
@@ -146,10 +146,10 @@ export default async function MethodologyPage() {
           label="Coverage and Limitations"
           title="What our data covers — and what it does not"
           body={[
-            "Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects disclosed rates, which are the standard of comparison for regulatory purposes and consumer research.",
+            "The Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects disclosed rates, which are the standard of comparison for regulatory purposes and consumer research.",
             "Our coverage is strongest for retail deposit account fees (maintenance, overdraft, NSF, wire, ATM) and weakest for business account fees, loan fees, and investment-account fees. Fee schedules for these product types are less consistently published in machine-readable formats.",
-            "Geographic coverage is reasonably uniform at the state level but skewed toward states with higher institution density (Texas, California, Illinois, Ohio, New York). Fed District 4 (Cleveland), District 7 (Chicago), and District 11 (Dallas) have the strongest coverage. District 10 (Kansas City) and District 12 (San Francisco, excluding California) have the largest gaps relative to institution population.",
-            "Source freshness varies by institution and schedule. The national index represents a rolling snapshot of fee schedules collected over the trailing 120 days. State-level indexes use a 90-day window. Fees older than these thresholds are excluded from the live index to prevent stale data from distorting benchmarks.",
+            "Geographic coverage is uneven: some states and Federal Reserve districts have far more institutions with published fees than others. Each state and district page shows its own institution count, and a benchmark is marked provisional or withheld when too few institutions report it.",
+            "Source freshness varies by institution and schedule. Every fee carries the date its schedule was collected, so a figure can be judged by its age. A fee stays in the index until a newer copy of its schedule replaces it.",
           ]}
         />
 

@@ -175,4 +175,47 @@ describe("API budget guard", () => {
     expect(decision.allowed).toBe(false);
     expect(decision.reasonCode).toBe("budget_policy_missing");
   });
+
+  const tickPolicy = {
+    ...enabledPolicy,
+    id: 9,
+    policy_key: "route:api.admin.agents.tick",
+    scope: "route",
+    route_id: "api.admin.agents.tick",
+    hard_daily_microusd: null,
+    hard_monthly_microusd: null,
+    max_provider_calls_per_tick: 30,
+    max_estimated_cost_per_tick_microusd: 3_000_000,
+  };
+
+  it("lets a tick that asks for more runs than the cap covers give paid steps to only the runs that fit", async () => {
+    sqlMock.mockResolvedValueOnce([tickPolicy]);
+
+    const decision = await assertCronTickBudgetAllowed({
+      routeId: "api.admin.agents.tick",
+      requestedRunLimit: 10,
+      requestedMaxStepsPerRun: 10,
+      requestedStateLaneLimit: 2,
+      triggeredBy: "test",
+    });
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.maxRuns).toBe(3);
+    expect(auditMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks a tick whose single run could exceed the per-tick call cap", async () => {
+    sqlMock.mockResolvedValueOnce([{ ...tickPolicy, max_provider_calls_per_tick: 5 }]);
+
+    const decision = await assertCronTickBudgetAllowed({
+      routeId: "api.admin.agents.tick",
+      requestedRunLimit: 10,
+      requestedMaxStepsPerRun: 10,
+      requestedStateLaneLimit: 2,
+      triggeredBy: "test",
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reasonCode).toBe("budget_tick_cap_exhausted");
+  });
 });

@@ -11,6 +11,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { toDateStr } from "@/lib/pg-helpers";
+import { paymentFieldsOf } from "@/lib/data-store/report-payments";
 import {
   classifyInstitutionQuality,
   type AgentFailureClass,
@@ -2169,6 +2170,15 @@ export interface LeadRow {
   source: string | null;
   status: string;
   created_at: string;
+  /** Full timestamp, for the lead's due time. */
+  created_at_iso: string;
+  /** Institution report quote and payment (null until quoted / paid, or before the migration). */
+  quote_cents: number | null;
+  quote_institution_id: number | null;
+  quote_sent_at: string | null;
+  paid_at: string | null;
+  /** False until migration 20270110000003 has added the payment columns. */
+  payment_columns: boolean;
 }
 
 export interface LeadsSummary {
@@ -2210,12 +2220,15 @@ export async function getLeadsSummary(): Promise<LeadsSummary> {
 export async function getLeads(limit = 200): Promise<LeadRow[]> {
   try {
     const rows = await sql`
-      SELECT id, name, email, company, role, use_case, source, status, created_at
+      SELECT id, name, email, company, role, use_case, source, status, created_at,
+        to_jsonb(leads) AS fields
       FROM leads
       ORDER BY created_at DESC
       LIMIT ${limit}
     `;
-    return rows.map((r) => ({
+    return rows.map((r) => {
+      const payment = paymentFieldsOf(r.fields as Record<string, unknown> | null);
+      return {
       id: Number(r.id),
       name: String(r.name),
       email: String(r.email),
@@ -2225,7 +2238,14 @@ export async function getLeads(limit = 200): Promise<LeadRow[]> {
       source: r.source ? String(r.source) : null,
       status: String(r.status || "new"),
       created_at: toDateStr(r.created_at as string | Date),
-    }));
+      created_at_iso: new Date(r.created_at as string | Date).toISOString(),
+      quote_cents: payment.quoteCents,
+      quote_institution_id: payment.quoteInstitutionId,
+      quote_sent_at: payment.quoteSentAt,
+      paid_at: payment.paidAt,
+      payment_columns: payment.paymentColumns,
+      };
+    });
   } catch (e) {
     console.error("getLeads failed:", e);
     return [];

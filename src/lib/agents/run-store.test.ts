@@ -98,6 +98,14 @@ vi.mock("@/lib/agents/magellan/discovery", () => ({
   runMagellanDiscovery: runMagellanDiscoveryMock,
 }));
 
+vi.mock("@/lib/agents/magellan/outcomes", () => ({
+  recordLinkOutcomes: vi.fn(async () => ({ ready: false, slot: 0, links: 0, judged: { good: 0, thin: 0, rejected: 0, dead: 0 }, undecided: 0, unchanged: 0, written: 0 })),
+}));
+
+vi.mock("@/lib/agents/magellan/page-classifier", () => ({
+  refreshPageClassifier: vi.fn(async () => ({ status: "not_ready", positives: 0, negatives: 0, features: 0, holdout: null, trainedAt: null })),
+}));
+
 vi.mock("@/lib/agents/magellan/fetch", () => ({
   runMagellanFetch: runMagellanFetchMock,
 }));
@@ -348,6 +356,7 @@ describe("agentic run store", () => {
       processedDocuments: 3,
       extractedFees: 8,
       insertedFees: 7,
+      freeFees: 0,
       skippedFees: 1,
       limit: 10,
       dryRun: false,
@@ -704,6 +713,29 @@ describe("agentic run store", () => {
     );
   });
 
+  it("cancels the run's queued later steps when a step fails", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    runRosettaReadMock.mockRejectedValue(new Error("invalid byte sequence"));
+    const readStepRows = [
+      { ...queuedStepRows[0], step_key: "read", agent_name: "rosetta", title: "Read source document text" },
+      { ...queuedStepRows[0], id: 2, sequence: 2, step_key: "extract", agent_name: "knox", title: "Extract fees" },
+    ];
+    const readRunRow = {
+      ...runRow,
+      agent_name: "rosetta",
+      run_kind: "manual_repair",
+      params_json: { institution_id: 42, read_limit: 4 },
+    };
+    installSqlMocks({ finalRun: readRunRow, finalSteps: readStepRows });
+    installTxMocks(readStepRows, readRunRow);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed", terminal: true });
+    const combinedSql = combinedTransactionSql();
+    expect(combinedSql).toContain("step.failed");
+    expect(combinedSql).toContain("SET status = 'cancelled'");
+    expect(combinedSql).toContain("AND status = 'queued'");
+  });
+
   it("runs Knox extraction through the agentic worker instead of measuring only", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const extractStepRows = [
@@ -911,6 +943,64 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
+  it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) return Promise.resolve([{ id: 101 }, { id: 102 }, { id: 103 }]);
+      if (text.includes("FROM agent_runs")) return Promise.resolve([runRow]);
+      if (text.includes("FROM agent_run_steps")) return Promise.resolve(queuedStepRows);
+      return Promise.resolve([]);
+    });
+    installTxMocks(queuedStepRows, runRow);
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() - 1 });
+
+    expect(result.selected).toBe(3);
+    expect(result.results.map((run) => run.runId)).toEqual([101]);
+  });
+
+  it("leaves a paid step queued, neither run nor skipped, when the run has no paid slot this tick", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT step_key")) return Promise.resolve([{ step_key: "read-paid" }]);
+      if (text.includes("FROM agent_runs")) return Promise.resolve([runRow]);
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      executeAgentRun(101, { maxSteps: 10, allowProviderSteps: true, deferProviderSteps: true }),
+    ).resolves.toMatchObject({ runId: 101, status: "queued", terminal: false, executedSteps: 0 });
+    expect(withTransactionMock).not.toHaveBeenCalled();
+    expect(runRosettaReadMock).not.toHaveBeenCalled();
+  });
+
+  it("gives paid steps only to the first providerRunLimit runs of a tick", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) return Promise.resolve([{ id: 101 }, { id: 102 }]);
+      if (text.includes("SELECT step_key")) return Promise.resolve([{ step_key: "read-paid" }]);
+      if (text.includes("FROM agent_runs")) {
+        // Run 101 takes the one paid slot (and is already finished, so it does nothing).
+        return Promise.resolve([values[0] === 101 ? { ...runRow, status: "completed" } : { ...runRow, id: 102 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({
+      runLimit: 10,
+      maxStepsPerRun: 10,
+      allowProviderSteps: true,
+      providerRunLimit: 1,
+    });
+
+    expect(result.results[0]).toMatchObject({ runId: 101, terminal: true });
+    expect(result.results[1]).toMatchObject({ runId: 102, terminal: false, executedSteps: 0 });
+    expect(result.results[1].message).toContain("left queued");
+    expect(withTransactionMock).not.toHaveBeenCalled();
+  });
+
   it("still sends the Atlas daily brief while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
@@ -984,6 +1074,7 @@ describe("agentic run store", () => {
     const combinedSql = combinedTransactionSql();
     expect(combinedSql).toContain("step.dead");
     expect(combinedSql).toContain("SET status = 'failed'");
+    expect(combinedSql).toContain("SET status = 'cancelled'");
   });
 });
 

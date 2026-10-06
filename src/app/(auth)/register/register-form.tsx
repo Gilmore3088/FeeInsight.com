@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { resetSessionChrome } from "@/components/use-session-chrome";
+import { trackEvent } from "@/lib/analytics";
 import type { RegisterVariant } from "./register-destination";
+import { HoneypotField } from "@/components/public/honeypot-field";
 
 const INSTITUTION_TYPES = [
   { value: "", label: "Select..." },
@@ -72,6 +74,7 @@ export function RegisterForm({
     const result = await register(formData, redirectTo);
 
     if (result.success && result.redirect) {
+      trackEvent("create_account", { variant });
       // The nav caches the signed-out session; drop it so the new account shows at once.
       resetSessionChrome();
       router.push(result.redirect);
@@ -88,7 +91,8 @@ export function RegisterForm({
   const selectClass = `${inputClass} appearance-none`;
 
   return (
-    <form onSubmit={handleSubmit} className="bg-[#FFFDF9] rounded-lg border border-[#E8DFD1] shadow-sm p-6 space-y-4">
+    <form onSubmit={handleSubmit} className="relative bg-[#FFFDF9] rounded-lg border border-[#E8DFD1] shadow-sm p-6 space-y-4">
+      <HoneypotField />
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
           {error}

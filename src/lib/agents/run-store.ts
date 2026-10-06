@@ -5,14 +5,31 @@ import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
+import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
+import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
+import {
+  currentMonth,
+  mailingAddress,
+  runMarketingScore,
+  runMarketingSend,
+  runMarketingWrite,
+  summarizeScore,
+  summarizeSend,
+  summarizeWrite,
+} from "@/lib/agents/marketing/monthly";
+import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing/state-edition";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
+import { recheckHeldRates, recheckHeldRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -23,13 +40,18 @@ import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
+import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
+import { tallyByInstitution, type Sample } from "./flow-model";
+import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -50,11 +72,34 @@ import {
 } from "./types";
 
 const ACTIVE_STATUSES = ["queued", "running", "cancel_requested"];
+/** Category-guard rollbacks per publish step; a larger guard change comes down over several steps. */
+const CATEGORY_GUARD_STEP_LIMIT = 100;
 const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "report", "manual_repair", "dry_run"] as const;
-const AGENTIC_SUMMARY =
-  "Agentic run advanced through the TypeScript run ledger with committed step events. Magellan can reduce missing fee URLs, fetch source documents, and inventory public discovery routes; Rosetta can normalize HTML/text/PDF source documents and route scanned PDFs to OCR; Knox can extract conservative raw fee observations and classify public page findings; Darwin can verify canonical-hinted raw rows and cluster public findings; Hamilton can publish eligible verified rows into the Tier-3 ledger and summarize public discovery diagnosis. Durable queues, scanned-PDF OCR, provider extraction, browser-render screenshots, and adversarial review depth remain gated until each agent module is implemented.";
+const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
 type SqlTag = typeof sql;
+
+/**
+ * Every institution's totals for a fee step, so the live board's counts are the step's real
+ * numbers rather than whatever fell into the ten sample rows. Capped to keep events small.
+ */
+function institutionResults(stepKey: string, rows: Sample[]) {
+  return tallyByInstitution(stepKey, rows).slice(0, 50);
+}
+
+/** A completed run's summary is what its steps actually reported, never stock text. */
+export async function completedRunSummary(db: SqlTag, runId: number, completed: number, total: number): Promise<string> {
+  const steps = await db<Array<{ summary: string | null }>>`
+    SELECT summary
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND summary IS NOT NULL
+     ORDER BY sequence, id
+  `;
+  const head = `Completed ${completed} of ${total} step${total === 1 ? "" : "s"}.`;
+  const text = [head, ...steps.map((step) => String(step.summary).trim()).filter(Boolean)].join(" ");
+  return text.length > RUN_SUMMARY_MAX_LENGTH ? `${text.slice(0, RUN_SUMMARY_MAX_LENGTH - 1)}…` : text;
+}
 
 interface AgenticStepExecution {
   status: Extract<AgentRunStepStatus, "completed" | "skipped">;
@@ -334,10 +379,18 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
         stateCode,
       });
+      // Outcome ledger: judge one slot of banks' links by the live fees they produced and
+      // write the judgements to the shared learning store.
+      const linkOutcomes = await recordLinkOutcomes(tx, {
+        runId: run.id,
+        stateCode,
+        dryRun: run.runKind === "dry_run",
+      });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
+          link_outcomes: linkOutcomes,
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -347,7 +400,10 @@ async function executeAgenticStep(
           failures: discovery.failures,
           attempted_urls: discovery.attemptedUrls,
           discovery_codes: discovery.codes,
+          resumed_searches: discovery.resumed,
           found_by: discovery.foundBy,
+          websites_repaired: discovery.websitesRepaired,
+          blocked_homepage_rescues: discovery.blockedHomepageRescues,
           method_version: discovery.methodVersion,
           learning_log: discovery.learning,
           second_documents_status: discovery.secondDocuments?.status ?? null,
@@ -378,6 +434,7 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["fetch_limit", "limit", "size"]),
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
+        newLinksOnly: params.new_links_only === true,
       });
       return {
         status: "completed",
@@ -388,6 +445,17 @@ async function executeAgenticStep(
           fetched_documents: fetched.succeeded,
           unchanged_documents: fetched.unchanged,
           reused_documents: fetched.reusedDocuments,
+          companion_pages_status: fetched.companions?.status ?? null,
+          companion_pages_fetched: fetched.companions?.fetched ?? 0,
+          companion_pages_unchanged: fetched.companions?.unchanged ?? 0,
+          companion_pages_failed: fetched.companions?.failed ?? 0,
+          companion_pages_retired: fetched.companions?.review.retired.length ?? 0,
+          companion_pages_renamed: fetched.companions?.review.renamed.length ?? 0,
+          companion_pages_retired_samples: (fetched.companions?.review.retired ?? []).slice(0, 10).map((page) => ({
+            companion_source_id: page.companionId,
+            institution_id: page.institutionId,
+            url: page.url,
+          })),
           stored_documents: fetched.storedDocuments,
           vault: fetched.vault,
           failed_fetches: fetched.failed,
@@ -413,12 +481,15 @@ async function executeAgenticStep(
     }
     case "discover-paid":
     case "read-paid":
-    case "extract-paid": {
+    case "extract-paid":
+    case "verify-paid": {
       const runner = step.stepKey === "discover-paid"
         ? runMagellanPaidFind
         : step.stepKey === "read-paid"
           ? runRosettaPaidRead
-          : runKnoxPaidExtract;
+          : step.stepKey === "extract-paid"
+            ? runKnoxPaidExtract
+            : runDarwinAdjudicate;
       const paid = await runner({
         runId: run.id,
         stepId: step.id,
@@ -477,6 +548,14 @@ async function executeAgenticStep(
           handed_to_magellan: read.handedToMagellan,
           deferred_scans: read.deferred,
           triaged_texts: read.triagedTexts,
+          reopened_fee_pages: read.reopenedFeePages,
+          reopened_bans_lifted: read.reopenedBansLifted,
+          reopened_links_restored: read.reopenedLinksRestored,
+          text_survival_refreshed: read.textSurvivalRefreshed,
+          texts_held_up: read.textsHeldUp,
+          texts_lost_fees: read.textsLostFees,
+          reader_escalations: read.readerEscalations,
+          reader_escalations_used: read.readerEscalationsUsed,
           formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
@@ -509,22 +588,52 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Lines older rules held as unclassified get today's rules too.
+      const heldRecheck = await recheckHeldRows(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
+      // Held percentage fees in categories that publish rates go to Darwin as rate fees.
+      const rateRecheck = await recheckHeldRates(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped).`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
         detail: {
+          held_recheck: heldRecheck,
+          held_rate_recheck: rateRecheck,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
           inserted_raw_fee_observations: extraction.insertedFees,
+          inserted_free_fees: extraction.freeFees,
           skipped_fee_candidates: extraction.skippedFees,
           held_for_review: extraction.heldForReview,
           replaced_older_rows: extraction.retiredOlderRows,
+          retired_older_copy_rows: extraction.retiredOlderCopyRows,
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
+          lessons_loaded: extraction.lessonsLoaded,
+          lesson_refiles: extraction.lessonRefiles,
+          calibration_groups: extraction.calibrationGroups,
+          calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
+          layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
+          institution_results: institutionResults(
+            "extract",
+            extraction.results.map((result) => ({
+              institution_id: result.institutionId,
+              inserted: result.inserted,
+              free_inserted: result.freeInserted,
+              held_inserted: result.heldInserted,
+            })),
+          ),
           sample_results: extraction.results.slice(0, 10).map((result) => ({
             document_text_id: result.documentTextId,
             source_document_id: result.sourceDocumentId,
@@ -532,6 +641,8 @@ async function executeAgenticStep(
             source_url: result.sourceUrl,
             extracted: result.extracted,
             inserted: result.inserted,
+            free_inserted: result.freeInserted,
+            held_inserted: result.heldInserted,
             skipped: result.skipped,
             sample_candidates: result.candidates.slice(0, 5).map((candidate) => ({
               fee_name: candidate.feeName,
@@ -555,6 +666,15 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Held fees get a way out: each is judged against the bank's schedule.
+      const release = await runDarwinReleaseHeld({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+        db: tx,
+      });
       return {
         status: "completed",
         summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
@@ -564,11 +684,27 @@ async function executeAgenticStep(
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
+          category_model_disputes: verification.categoryModelDisputes,
+          peer_fallback_checks: verification.peerFallbackChecks,
+          peer_fallback_outliers: verification.peerFallbackOutliers,
+          learned_envelope_holds: verification.learnedEnvelopeHolds,
+          held_release: {
+            selected: release.selected,
+            acted: release.acted,
+            verdicts: release.verdicts,
+            released: release.released,
+            feedback_written: release.feedbackWritten,
+          },
+          feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
           learning_log: verification.learning,
           verify_limit: verification.limit,
           dry_run: verification.dryRun,
+          institution_results: institutionResults(
+            "classify",
+            verification.results.map((result) => ({ institution_id: result.institutionId, status: result.status, reason: result.reason })),
+          ),
           sample_results: verification.results.slice(0, 10).map((result) => ({
             fee_raw_id: result.feeRawId,
             institution_id: result.institutionId,
@@ -664,12 +800,46 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A live fee whose own name contradicts its category (an ATM fee filed as a card's
+      // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
+      // a guard change takes effect without anyone starting the repair run by hand.
+      const categoryGuard = await runHamiltonCategoryGuard({
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        limit: CATEGORY_GUARD_STEP_LIMIT,
+        institutionId,
+        db: tx,
+      });
+      const categoryGuardRollbacks = categoryGuard.dryRun
+        ? Math.min(categoryGuard.failingFees, categoryGuard.limit)
+        : categoryGuard.rolledBackFees;
+      // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
+      // derivatives notice) come down before anything new publishes.
+      const companionRetire = await rollBackRetiredCompanionFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
+      const companionRollbacks = companionRetire.rollbacks;
       const duplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A fee line the bank removed from a newer copy of its page comes down (shadow
+      // mode until NEWER_COPY_RETIRE_LIVE is turned on: it reports and changes nothing).
+      const newerCopy = await retireFeesDroppedFromNewerCopy(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
+      const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
+      const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
@@ -682,6 +852,7 @@ async function executeAgenticStep(
           })
         : null;
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
+      const recheckRestores = rulesRecheck?.restores.length ?? 0;
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
@@ -697,6 +868,21 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
+      // Every live fee must be stated in the bank's own stored schedule: every publish
+      // step source-checks a batch of institutions (its state's or institution's when it
+      // has one, any state's otherwise) after publishing, so fees published in this step
+      // are checked too.
+      const sourceCheck = await takeDownUntraceableFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
+      const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
+      // Every agent learns from what happened to its output: this step's takedowns and
+      // restores (and a batch of older outcomes) go into the shared learning store.
+      const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -705,8 +891,15 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              categoryGuardRollbacks > 0 ||
+              companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
-              recheckRollbacks > 0,
+              newerCopyRetired > 0 ||
+              newerCopyRestored > 0 ||
+              recheckRollbacks > 0 ||
+              recheckRestores > 0 ||
+              sourceTakedowns > 0 ||
+              (sourceCheck?.restored ?? 0) > 0,
           });
       const outlierNote =
         outlierRollbacks.length > 0
@@ -716,9 +909,28 @@ async function executeAgenticStep(
         offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
           : "";
+      const categoryGuardNote =
+        categoryGuardRollbacks > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
+          : "";
+      const companionNote =
+        companionRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${companionRollbacks.length.toLocaleString()} live fee(s) read from pages that are not consumer fee pages (loan or HELOC documents).`
+          : "";
       const recheckNote =
-        recheckRollbacks > 0
+        (recheckRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
+          : "") +
+        (recheckRestores > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
+          : "");
+      const sourceNote =
+        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
+          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
+          : "";
+      const newerCopyNote =
+        newerCopyRetired > 0 || newerCopyRestored > 0
+          ? ` ${published.dryRun ? "Would retire" : "Retired"} ${newerCopyRetired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${newerCopyRestored > 0 ? ` and ${published.dryRun ? "would restore" : "restored"} ${newerCopyRestored.toLocaleString()} a later copy states again` : ""}.`
           : "";
       const duplicateNote =
         duplicateCollapses.length > 0
@@ -726,7 +938,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${recheckNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -750,9 +962,47 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
           })),
+          category_guard_rollbacks: categoryGuardRollbacks,
+          category_guard_failing: categoryGuard.failingFees,
+          category_guard_version: categoryGuard.guardVersion,
+          category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({
+            fee_published_id: failure.feePublishedId,
+            institution_id: failure.institutionId,
+            canonical_fee_key: failure.canonicalFeeKey,
+            fee_name: failure.feeName,
+            amount: failure.amount,
+            code: failure.code,
+          })),
+          companion_retire_rollbacks: companionRollbacks.length,
+          companion_retire_rejected_verified: companionRetire.rejectedVerified,
+          companion_retire_samples: companionRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            companion_source_id: rollback.companionSourceId,
+          })),
+          newer_copy_live: newerCopy.live,
+          newer_copy_documents: newerCopy.documentsChecked,
+          newer_copy_unrecognized: newerCopy.unrecognized,
+          newer_copy_still_stated: newerCopy.stillStated,
+          newer_copy_still_named: newerCopy.stillNamed,
+          newer_copy_retired: newerCopy.retired.length,
+          newer_copy_restored: newerCopy.restored,
+          newer_copy_samples: newerCopy.retired.slice(0, 10).map((fee) => ({
+            fee_published_id: Number(fee.fee_published_id),
+            institution_id: Number(fee.institution_id),
+            older_document_id: Number(fee.source_document_id),
+            newer_document_id: Number(fee.newer_document_id),
+            canonical_fee_key: fee.canonical_fee_key,
+            fee_name: fee.fee_name,
+            amount: fee.amount == null ? null : Number(fee.amount),
+          })),
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
+          rules_recheck_restores: recheckRestores,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,
@@ -760,6 +1010,29 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          learning_feedback: feedbackSync.ready
+            ? {
+                takedowns: feedbackSync.takedowns,
+                restores: feedbackSync.restores,
+                category_rejects: feedbackSync.categoryRejects,
+                answer_key_fees: feedbackSync.answerKeyFees,
+                written: feedbackSync.written,
+              }
+            : false,
+          source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
+          source_check_fees: sourceCheck?.liveFeesChecked ?? 0,
+          source_check_traced: sourceCheck?.traced ?? 0,
+          source_check_relinked: sourceCheck?.relinked ?? 0,
+          source_check_takedowns: sourceTakedowns,
+          source_check_restored: sourceCheck?.restored ?? 0,
+          source_check_samples: (sourceCheck?.takedowns ?? []).slice(0, 10).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            fee_name: row.feeName,
+            amount: row.amount,
+            reason: row.reason,
           })),
           duplicate_collapses: duplicateCollapses.length,
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
@@ -787,6 +1060,10 @@ async function executeAgenticStep(
           dry_run: published.dryRun,
           index_refreshed: indexRefresh?.refreshed ?? false,
           index_categories: indexRefresh?.categories ?? 0,
+          institution_results: institutionResults(
+            "publish",
+            published.results.map((result) => ({ institution_id: result.institutionId, status: result.status, reason: result.reason })),
+          ),
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
             institution_id: result.institutionId,
@@ -910,13 +1187,14 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: result.deliveryStatus === "sent"
-          ? `Atlas emailed the daily brief to ${result.recipient}.`
+          ? `Atlas emailed the morning brief to ${[result.recipient, ...result.cc].join(", ")}.`
           : `Atlas wrote the daily brief but did not email it: ${result.deliveryReason ?? result.deliveryStatus}.`,
         detail: {
           delivery_status: result.deliveryStatus,
           delivery_reason: result.deliveryReason,
           subject: result.brief.subject,
           lines: result.brief.lines,
+          needs_you: result.brief.needsYou?.map((item) => ({ id: item.id, severity: item.severity, title: item.title })) ?? null,
           funnel: result.funnel,
         },
       };
@@ -927,6 +1205,21 @@ async function executeAgenticStep(
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
         detail: { ...result },
+      };
+    }
+    case "lead-watch": {
+      const result = await runLeadWatch({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeLeadWatch(result),
+        detail: {
+          overdue: result.overdue.length,
+          email_failed: result.emailFailed.length,
+          alert: result.alert,
+          alert_reason: result.alertReason,
+          dry_run: result.dryRun,
+          lead_ids: [...result.overdue, ...result.emailFailed].map((lead) => lead.id),
+        },
       };
     }
     case "score-answer-key": {
@@ -960,17 +1253,49 @@ async function executeAgenticStep(
           stored: result.stored,
           snapshot_date: result.snapshotDate,
           ...result.numbers,
+          agent_health: result.agentHealth ?? null,
         },
       };
     }
-    case "assemble":
-    case "render": {
-      return {
-        status: "completed",
-        summary: `${step.title} acknowledged for run #${run.id}; report rendering worker remains a dedicated follow-up.`,
-        detail: { report_worker_pending: true },
-      };
+    case "marketing-score": {
+      const result = await runMarketingScore({
+        db: tx,
+        runId: run.id,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeScore(result), detail: { ...result } };
     }
+    case "marketing-write": {
+      const result = await runMarketingWrite({
+        db: tx,
+        runId: run.id,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeWrite(result), detail: { ...result } };
+    }
+    case "marketing-states": {
+      const result = await runStateEditions({
+        db: tx,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        mailingAddress: mailingAddress(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeStateEditions(result), detail: { ...result } };
+    }
+    case "marketing-send": {
+      const month = stringRunParam(params, ["month"]);
+      if (!month) throw new Error("marketing-send needs a month (YYYY-MM).");
+      const result = await runMarketingSend({ month });
+      // A refused or partly failed send fails the step, so it shows red in the run ledger.
+      if (result.refused || result.failures.length) throw new Error(summarizeSend(result));
+      return { status: "completed", summary: summarizeSend(result), detail: { ...result } };
+    }
+    case "report-render":
+      return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
+    case "report-close":
+      return runReportCloseStep(tx, stringRunParam(params, ["report_job_id"]));
     default:
       return {
         status: "skipped",
@@ -1126,13 +1451,15 @@ async function prepareNextAgenticStep(runId: number): Promise<
           message: failed.error ?? "Agent run has a failed step.",
         };
       }
+      const finishedSteps = steps.filter((candidate) => candidate.status === "completed" || candidate.status === "skipped").length;
+      const summary = await completedRunSummary(tx, runId, finishedSteps, steps.length);
       await tx`
         UPDATE agent_runs
            SET status = 'completed',
-               progress_current = ${steps.filter((candidate) => candidate.status === "completed" || candidate.status === "skipped").length},
+               progress_current = ${finishedSteps},
                progress_total = ${steps.length},
                current_stage = NULL,
-               summary = COALESCE(summary, ${AGENTIC_SUMMARY}),
+               summary = COALESCE(summary, ${summary}),
                completed_at = COALESCE(completed_at, NOW()),
                updated_at = NOW()
          WHERE id = ${runId}
@@ -1292,13 +1619,14 @@ async function finishAgenticStep(
       };
     }
 
+    const summary = await completedRunSummary(tx, runId, completed, total);
     await tx`
       UPDATE agent_runs
          SET status = 'completed',
              progress_current = ${completed},
              progress_total = ${total},
              current_stage = NULL,
-             summary = ${AGENTIC_SUMMARY},
+             summary = ${summary},
              error_summary = NULL,
              completed_at = NOW(),
              updated_at = NOW()
@@ -1309,7 +1637,7 @@ async function finishAgenticStep(
         (agent_run_id, event_type, status, message, detail)
       VALUES
         (${runId}, 'run.completed', 'completed',
-         ${AGENTIC_SUMMARY},
+         ${summary},
          ${JSON.stringify({ completed_steps: completed, total_steps: total })}::jsonb)
     `;
     await updateStateLaneTerminalStatus(tx, runId, "completed");
@@ -1366,6 +1694,37 @@ async function updateStateLaneTerminalStatus(
   }
 }
 
+/**
+ * A failed run never reaches its later steps. Close them as cancelled so they
+ * stop reading as queued work in the ledger and admin views.
+ */
+async function cancelStepsAfterRunFailure(
+  tx: SqlTag,
+  runId: number,
+  failedStepKey: string,
+): Promise<void> {
+  const cancelled = await tx`
+    UPDATE agent_run_steps
+       SET status = 'cancelled',
+           error_summary = COALESCE(error_summary, ${`Not run: step ${failedStepKey} failed earlier in this run.`}),
+           completed_at = COALESCE(completed_at, NOW()),
+           updated_at = NOW()
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     RETURNING id
+  `;
+  if (cancelled.length > 0) {
+    await tx`
+      INSERT INTO agent_run_events
+        (agent_run_id, event_type, status, message, detail)
+      VALUES
+        (${runId}, 'run.steps_cancelled', 'cancelled',
+         ${`Cancelled ${cancelled.length} queued steps after ${failedStepKey} failed.`},
+         ${JSON.stringify({ failed_step: failedStepKey, cancelled_steps: cancelled.length })}::jsonb)
+    `;
+  }
+}
+
 async function failAgenticStep(
   runId: number,
   step: AgentRunStepSnapshot,
@@ -1413,6 +1772,7 @@ async function failAgenticStep(
          ${message},
          ${JSON.stringify({ failed_step: step.stepKey, completed_steps: completed })}::jsonb)
     `;
+    await cancelStepsAfterRunFailure(tx, runId, step.stepKey);
     await updateStateLaneTerminalStatus(tx, runId, "failed");
   });
   return {
@@ -1485,6 +1845,7 @@ export async function reapStaleAgentSteps({
             (${runId}, ${stepId}, 'step.dead', 'failed', ${message},
              ${JSON.stringify({ step_key: stepKey, attempts: attempt, reaper: true })}::jsonb)
         `;
+        await cancelStepsAfterRunFailure(tx, runId, stepKey);
         await updateStateLaneTerminalStatus(tx, runId, "failed");
       });
       result.dead.push({ runId, stepId, stepKey, attempts: attempt });
@@ -1590,7 +1951,13 @@ async function providerStepGate(
 
 export async function executeAgentRun(
   runId: number,
-  options: { maxSteps?: number; allowProviderSteps?: boolean; deadlineAt?: number } = {},
+  options: {
+    maxSteps?: number;
+    allowProviderSteps?: boolean;
+    deadlineAt?: number;
+    /** Leave a paid step queued for a later tick instead of running or skipping it. */
+    deferProviderSteps?: boolean;
+  } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
     return {
@@ -1652,6 +2019,15 @@ export async function executeAgentRun(
     // stop to be clear and the caller to have provider budget for this tick.
     const nextStepKey = await peekNextQueuedStepKey(runId);
     if (nextStepKey && isProviderStep(nextStepKey)) {
+      if (options.deferProviderSteps) {
+        return {
+          runId,
+          status: lastResult?.status ?? existing.status,
+          terminal: false,
+          executedSteps,
+          message: "Paid step left queued for a later tick (this tick's paid-run cap is used).",
+        };
+      }
       const gate = await providerStepGate(options.allowProviderSteps ?? true);
       if (!gate.allowed) {
         // A paid pass is optional: when the budget or the stop blocks it, record it as
@@ -1735,6 +2111,7 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId = null,
   maxProviderCallsPerRun = null,
   maxEstimatedCostMicrousd = null,
+  providerRunLimit = null,
   deadlineAt,
 }: {
   runLimit?: number;
@@ -1743,7 +2120,12 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
-  /** Epoch ms after which no new step starts (each run still gets its first step). */
+  /**
+   * Runs that may take paid steps this tick; later runs do only free steps and leave
+   * their next paid step queued. Null means every run may.
+   */
+  providerRunLimit?: number | null;
+  /** Epoch ms after which no new step or run starts (the first run still gets its first step). */
   deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
@@ -1770,7 +2152,9 @@ export async function executeQueuedAgentRuns({
               )
          )
        )
-     ORDER BY r.started_at ASC, r.id ASC
+     -- Report runs go first: someone pressed Generate and is watching the page, while
+     -- the pipeline backlog keeps ~20 lane runs queued (about 50 minutes of work).
+     ORDER BY (r.run_kind = 'report') DESC, r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
   // Runs advance one after another. Running state lanes side by side held several
@@ -1778,7 +2162,11 @@ export async function executeQueuedAgentRuns({
   // holding theirs), which starved the shared database and slowed the public site and
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
+  let providerRuns = 0;
   for (const row of rows) {
+    // The first run always gets a step; later runs start only before the deadline, so
+    // a larger run limit fills the tick's time budget without running past it.
+    if (results.length > 0 && deadlineAt != null && Date.now() >= deadlineAt) break;
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -1790,7 +2178,16 @@ export async function executeQueuedAgentRuns({
          WHERE id = ${runId}
       `;
     }
-    results.push(await executeAgentRun(runId, { maxSteps: maxStepsPerRun, allowProviderSteps, deadlineAt }));
+    const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
+    if (providerSlot) providerRuns += 1;
+    results.push(
+      await executeAgentRun(runId, {
+        maxSteps: maxStepsPerRun,
+        allowProviderSteps,
+        deadlineAt,
+        deferProviderSteps: allowProviderSteps && !providerSlot,
+      }),
+    );
   }
   return { selected: rows.length, results };
 }
@@ -2062,7 +2459,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation";
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision" | "ask_memo";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;

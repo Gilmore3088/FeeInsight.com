@@ -10,6 +10,18 @@ const dollarOrNull = numOrNull;
 
 export { dollarOrNull as _dollarOrNull_FOR_TESTING };
 
+/**
+ * Capital ratio in percent (12.5 = 12.5%). NCUA's net worth ratio (5300
+ * ACCT_998) is stored as filed, in basis points (1250 = 12.5%); FDIC ratios are
+ * already percent. Verified 2026-10-05: NCUA medians run 1,054-1,254 every year
+ * 2010-2026 and match net worth / assets x 100 (10.5-12.5).
+ */
+export function capitalRatioPct(value: unknown, source: unknown): number | null {
+  const n = numOrNull(value);
+  if (n === null) return null;
+  return String(source).toLowerCase() === "ncua" ? n / 100 : n;
+}
+
 export interface InstitutionFinancial {
   institution_id: number;
   report_date: string;
@@ -94,7 +106,7 @@ export async function getFinancialsByInstitution(
     efficiency_ratio: numOrNull(r.efficiency_ratio),
     roa: numOrNull(r.roa),
     roe: numOrNull(r.roe),
-    tier1_capital_ratio: numOrNull(r.tier1_capital_ratio),
+    tier1_capital_ratio: capitalRatioPct(r.tier1_capital_ratio, r.source),
     branch_count: numOrNull(r.branch_count),
     employee_count: numOrNull(r.employee_count),
     member_count: numOrNull(r.member_count),
@@ -541,6 +553,12 @@ export interface InstitutionFinancialHistoryRow extends InstitutionFinancial {
   noncurrent_loan_rate: number | null;
   leverage_ratio: number | null;
   total_capital_ratio: number | null;
+  total_securities: number | null;
+  loans_credit_card: number | null;
+  loans_auto: number | null;
+  core_deposits: number | null;
+  brokered_deposits: number | null;
+  uninsured_deposits: number | null;
   fetched_at: string | null;
 }
 
@@ -560,6 +578,12 @@ const HISTORY_EXTRA_NUMERIC = [
   "noncurrent_loan_rate",
   "leverage_ratio",
   "total_capital_ratio",
+  "total_securities",
+  "loans_credit_card",
+  "loans_auto",
+  "core_deposits",
+  "brokered_deposits",
+  "uninsured_deposits",
 ] as const;
 
 /**
@@ -585,6 +609,8 @@ export async function getFinancialHistory(
            net_charge_offs, noncurrent_loans, total_equity,
            loans_real_estate, loans_commercial, loans_consumer, loans_agricultural,
            net_charge_off_rate, noncurrent_loan_rate, leverage_ratio, total_capital_ratio,
+           total_securities, loans_credit_card, loans_auto,
+           core_deposits, brokered_deposits, uninsured_deposits,
            fetched_at
     FROM institution_financial_records
     WHERE institution_id = ${targetId}
@@ -606,7 +632,7 @@ export async function getFinancialHistory(
       efficiency_ratio: numOrNull(r.efficiency_ratio),
       roa: numOrNull(r.roa),
       roe: numOrNull(r.roe),
-      tier1_capital_ratio: numOrNull(r.tier1_capital_ratio),
+      tier1_capital_ratio: capitalRatioPct(r.tier1_capital_ratio, r.source),
       branch_count: numOrNull(r.branch_count),
       employee_count: numOrNull(r.employee_count),
       member_count: numOrNull(r.member_count),
@@ -646,11 +672,15 @@ export interface PeerFinancialMedians {
   source: string;
   peer_count: number;
   roa: number | null;
+  roe: number | null;
   net_interest_margin: number | null;
   efficiency_ratio: number | null;
   net_charge_off_rate: number | null;
   noncurrent_loan_rate: number | null;
+  /** Percent; NCUA's net worth ratio is converted from basis points. */
   tier1_capital_ratio: number | null;
+  leverage_ratio: number | null;
+  total_capital_ratio: number | null;
   /** Fraction (fdic/ncua convention), e.g. 0.05 = 5%. */
   fee_income_ratio: number | null;
 }
@@ -668,12 +698,15 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
     SELECT me.report_date, me.source,
            COUNT(*)::int AS peer_count,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.roa) FILTER (WHERE f.roa <> 0) AS roa,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.roe) AS roe,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.net_interest_margin) AS net_interest_margin,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.efficiency_ratio)
              FILTER (WHERE f.efficiency_ratio BETWEEN 0 AND 200) AS efficiency_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.net_charge_off_rate) AS net_charge_off_rate,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.noncurrent_loan_rate) AS noncurrent_loan_rate,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.tier1_capital_ratio) AS tier1_capital_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.leverage_ratio) AS leverage_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) AS total_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS fee_income_ratio
       FROM me
       JOIN institution_sources s
@@ -688,11 +721,117 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
     source: String(row.source),
     peer_count: Number(row.peer_count),
     roa: numOrNull(row.roa),
+    roe: numOrNull(row.roe),
     net_interest_margin: numOrNull(row.net_interest_margin),
     efficiency_ratio: numOrNull(row.efficiency_ratio),
     net_charge_off_rate: numOrNull(row.net_charge_off_rate),
     noncurrent_loan_rate: numOrNull(row.noncurrent_loan_rate),
-    tier1_capital_ratio: numOrNull(row.tier1_capital_ratio),
+    tier1_capital_ratio: capitalRatioPct(row.tier1_capital_ratio, row.source),
+    leverage_ratio: numOrNull(row.leverage_ratio),
+    total_capital_ratio: numOrNull(row.total_capital_ratio),
     fee_income_ratio: numOrNull(row.fee_income_ratio),
+  };
+}
+
+/** Metrics ranked against peers. Growth compares to the same quarter a year earlier. */
+export const PEER_RANK_METRICS = [
+  "total_assets",
+  "asset_growth",
+  "deposit_growth",
+  "loan_growth",
+  "roa",
+  "roe",
+  "net_interest_margin",
+  "efficiency_ratio",
+  "fee_income_ratio",
+  "net_charge_off_rate",
+  "noncurrent_loan_rate",
+  "tier1_capital_ratio",
+  "brokered_share",
+  "uninsured_share",
+] as const;
+export type PeerRankMetric = (typeof PEER_RANK_METRICS)[number];
+
+export interface PeerPercentiles {
+  report_date: string;
+  source: string;
+  peer_count: number;
+  /**
+   * 0-100: the share of peers reporting the figure whose value is below this
+   * institution's (percent_rank x 100). Null when the institution has no value
+   * or fewer than 10 peers report it.
+   */
+  percentiles: Record<PeerRankMetric, number | null>;
+}
+
+/** Minimum peers reporting a figure before a rank is shown. */
+export const MIN_PEERS_FOR_RANK = 10;
+
+/**
+ * Where the institution sits among its peers (same charter and asset tier,
+ * same quarter and source) on each PEER_RANK_METRICS figure.
+ */
+export async function getPeerPercentiles(targetId: number): Promise<PeerPercentiles | null> {
+  const rank = (metric: string) =>
+    `CASE WHEN ${metric} IS NULL OR COUNT(${metric}) OVER () < ${MIN_PEERS_FOR_RANK} THEN NULL
+          ELSE percent_rank() OVER (PARTITION BY ${metric} IS NULL ORDER BY ${metric}) * 100 END AS ${metric}`;
+  const metricSql = PEER_RANK_METRICS.map(rank).join(",\n           ");
+  const [row] = await sql.unsafe(
+    `
+    WITH me AS MATERIALIZED (
+      SELECT s.charter_type, s.asset_size_tier, f.report_date, f.source,
+             to_char(f.report_date::date - interval '1 year', 'YYYY-MM-DD') AS prior_date
+        FROM institution_sources s
+        JOIN institution_financial_records f ON f.institution_id = s.id
+       WHERE s.id = $1 AND f.source IN ('fdic', 'ncua')
+       ORDER BY f.report_date DESC
+       LIMIT 1
+    ),
+    peers AS (
+      SELECT f.institution_id, me.report_date, me.source,
+             f.total_assets::float8 AS total_assets,
+             f.total_assets::float8 / NULLIF(p.total_assets, 0) * 100 - 100 AS asset_growth,
+             f.total_deposits::float8 / NULLIF(p.total_deposits, 0) * 100 - 100 AS deposit_growth,
+             f.total_loans::float8 / NULLIF(p.total_loans, 0) * 100 - 100 AS loan_growth,
+             NULLIF(f.roa, 0) AS roa,
+             f.roe,
+             f.net_interest_margin,
+             CASE WHEN f.efficiency_ratio BETWEEN 0 AND 200 THEN f.efficiency_ratio END AS efficiency_ratio,
+             f.fee_income_ratio,
+             f.net_charge_off_rate,
+             f.noncurrent_loan_rate,
+             f.tier1_capital_ratio,
+             f.brokered_deposits::float8 / NULLIF(f.total_deposits, 0) * 100 AS brokered_share,
+             f.uninsured_deposits::float8 / NULLIF(f.total_deposits, 0) * 100 AS uninsured_share
+        FROM me
+        JOIN institution_sources s
+          ON s.charter_type = me.charter_type
+         AND s.asset_size_tier IS NOT DISTINCT FROM me.asset_size_tier
+        JOIN institution_financial_records f
+          ON f.institution_id = s.id AND f.report_date = me.report_date AND f.source = me.source
+        LEFT JOIN institution_financial_records p
+          ON p.institution_id = f.institution_id AND p.source = f.source
+         AND p.report_date = me.prior_date
+    ),
+    ranked AS (
+      SELECT institution_id, report_date, source, COUNT(*) OVER ()::int AS peer_count,
+           ${metricSql}
+        FROM peers
+    )
+    SELECT * FROM ranked WHERE institution_id = $1`,
+    [targetId],
+  );
+  if (!row) return null;
+  const percentiles = Object.fromEntries(
+    PEER_RANK_METRICS.map((metric) => {
+      const value = numOrNull(row[metric]);
+      return [metric, value === null ? null : Math.round(value)];
+    }),
+  ) as Record<PeerRankMetric, number | null>;
+  return {
+    report_date: String(row.report_date),
+    source: String(row.source),
+    peer_count: Number(row.peer_count),
+    percentiles,
   };
 }

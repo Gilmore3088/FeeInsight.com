@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAGELLAN_FETCH_STRATEGY, runMagellanFetch } from "./fetch";
+import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -136,6 +136,75 @@ describe("Magellan agentic fetch", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("magellan_fetch_http_404");
   });
 
+  it("sends a bank whose fee link is gone (404) back to discovery", async () => {
+    const db = createDbMock([
+      {
+        id: 46,
+        institution_name: "Moved Bank",
+        fee_schedule_url: "https://moved.example/fees",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+      },
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("missing", "text/html", 404));
+
+    await runMagellanFetch({ runId: 104, db: asFetchDb(db), fetchImpl });
+
+    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(sqlText).toContain("rejected_source_urls");
+    expect(sqlText).toContain("rescue_status = 'pending'");
+    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
+    expect(sqlText).toContain("locked_by_correction IS TRUE");
+  });
+
+  it("treats a fee link that redirects to the homepage as gone", async () => {
+    const db = createDbMock([
+      {
+        id: 47,
+        institution_name: "Renamed CU",
+        fee_schedule_url: "https://www.oldcu.example/schedule-of-fees.pdf",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+      },
+    ]);
+    const home = response("<html>Welcome</html>");
+    Object.defineProperty(home, "url", { value: "https://www.newcu.example/" });
+    const fetchImpl = vi.fn().mockResolvedValueOnce(home);
+
+    const result = await runMagellanFetch({ runId: 105, db: asFetchDb(db), fetchImpl });
+
+    expect(result.results[0]).toMatchObject({
+      outcome: "failed",
+      attemptOutcome: "wrong_document",
+      redirectedHome: true,
+      finalUrl: "https://www.newcu.example/",
+    });
+    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(sqlText).not.toContain("last_success_at = NOW()");
+    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
+  });
+
+  it("keeps the link on a block (403), which can pass", async () => {
+    const db = createDbMock([
+      {
+        id: 48,
+        institution_name: "Guarded Bank",
+        fee_schedule_url: "https://guarded.example/fees",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+      },
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("blocked", "text/html", 403));
+
+    await runMagellanFetch({ runId: 106, db: asFetchDb(db), fetchImpl });
+
+    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(sqlText).not.toContain("magellan_dead_link");
+  });
+
   it("rotates fetch work by retry window instead of immediately retrying failures", async () => {
     const db = createDbMock([]);
     const fetchImpl = vi.fn();
@@ -152,6 +221,27 @@ describe("Magellan agentic fetch", () => {
     expect(sqlText).toContain("WHEN COALESCE(inst.consecutive_failures, 0) > 0 THEN INTERVAL '24 hours'");
     expect(sqlText).toContain("inst.last_crawl_at ASC NULLS FIRST");
     expect(sqlText).toContain("COALESCE(inst.consecutive_failures, 0) ASC");
+  });
+
+  it("fetches a link found since the last fetch first, and only those when asked", async () => {
+    const db = createDbMock([]);
+
+    await runMagellanFetch({ runId: 105, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
+
+    const sqlText = templateText(db.mock.calls[0][0]);
+    expect(sqlText).toContain("inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
+    expect(sqlText).toContain("CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END");
+    expect(db.mock.calls[0]).toContain(true);
+  });
+
+  it("also re-fetches links last fetched over a month ago in a backlog run", async () => {
+    const db = createDbMock([]);
+
+    await runMagellanFetch({ runId: 106, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
+
+    const sqlText = templateText(db.mock.calls[0][0]);
+    expect(sqlText).toContain("OR inst.last_crawl_at < NOW() - make_interval(days =>");
+    expect(db.mock.calls[0]).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
   });
 
   it("filters fetch candidates by state lane and profile memory", async () => {
@@ -344,5 +434,20 @@ describe("Magellan agentic fetch", () => {
       expect(vault.store).not.toHaveBeenCalled();
       expect(result).toMatchObject({ unchanged: 1, storedDocuments: 0 });
     });
+  });
+});
+
+describe("redirectedToHomepage", () => {
+  it("flags a deep link that lands on a homepage, on the same or a new domain", () => {
+    expect(redirectedToHomepage("https://bank.example/fees.pdf", "https://bank.example/")).toBe(true);
+    expect(redirectedToHomepage("https://old.example/a/b", "https://new.example/index.html")).toBe(true);
+  });
+
+  it("leaves real pages, query-string pages and homepage links alone", () => {
+    expect(redirectedToHomepage("https://bank.example/fees", "https://bank.example/fees/")).toBe(false);
+    expect(redirectedToHomepage("https://bank.example/fees", "https://bank.example/index.php?pid=disclosures")).toBe(false);
+    expect(redirectedToHomepage("https://bank.example/", "https://bank.example/")).toBe(false);
+    expect(redirectedToHomepage("https://bank.example/#fees", "https://bank.example/")).toBe(false);
+    expect(redirectedToHomepage("https://bank.example/fees", null)).toBe(false);
   });
 });

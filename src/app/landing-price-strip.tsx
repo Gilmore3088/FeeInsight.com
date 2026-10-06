@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { IndexEntry } from "@/lib/data-store";
+import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { formatCount } from "@/lib/public-stats";
 
 /** Everyday fees a consumer recognizes, with short labels that fit one phone line. */
 const STRIP_FEES: { category: string; label: string }[] = [
@@ -24,13 +25,13 @@ function formatUsd(value: number): string {
   return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }
 
-function buildRows(entries: IndexEntry[]): PriceRow[] {
-  const byCategory = new Map(entries.map((e) => [e.fee_category, e]));
+function buildRows(categories: FeeCategorySummary[]): PriceRow[] {
+  const byCategory = new Map(categories.map((e) => [e.fee_category, e]));
   return STRIP_FEES.flatMap(({ category, label }) => {
     const e = byCategory.get(category);
+    // The median is null below the minimum sample, so a thin category drops out here.
     if (
       !e ||
-      e.maturity_tier === "insufficient" ||
       e.median_amount == null ||
       e.p25_amount == null ||
       e.p75_amount == null
@@ -51,31 +52,37 @@ function buildRows(entries: IndexEntry[]): PriceRow[] {
 }
 
 /**
- * "What banks charge": the national middle price for a handful of everyday fees,
+ * "What banks charge": the national median price for a handful of everyday fees,
  * each with a bar showing where most institutions fall (25th–75th percentile).
  * Numbers carry the message; words stay small. Renders nothing without data.
  */
 export function LandingPriceStrip({
-  entries,
-  institutionsLabel,
+  categories,
+  refreshedOn,
 }: {
-  entries: IndexEntry[];
-  /** Live count of institutions with verified fees, same figure as the hero and stats band. */
-  institutionsLabel: string;
+  /** National benchmarks from the shared public snapshot (same figures as /fees). */
+  categories: FeeCategorySummary[];
+  refreshedOn: string | null;
 }) {
-  const rows = buildRows(entries);
+  const rows = buildRows(categories);
   if (rows.length === 0) return null;
 
   return (
     <section className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2
-            className="text-2xl font-normal text-[#1A1815] sm:text-3xl"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-          >
-            What banks charge
-          </h2>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+          <div className="min-w-0">
+            <h2
+              className="text-2xl font-normal text-[#1A1815] sm:text-3xl"
+              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            >
+              What banks charge
+            </h2>
+            <p className="mt-1.5 max-w-2xl text-pretty text-[13px] leading-relaxed text-[#5A5347]">
+              The big number is the median: half of institutions charge more, half charge less. The
+              shaded bar shows where the middle half of institutions fall.
+            </p>
+          </div>
           <Link href="/fees" className="shrink-0 text-xs font-semibold text-[#A93D25] hover:text-[#8E2A17]">
             All fees →
           </Link>
@@ -89,12 +96,23 @@ export function LandingPriceStrip({
           ))}
         </ul>
 
-        <p className="mt-4 flex items-center gap-2 text-[11px] text-[#8A8072]">
-          <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
-          Most banks
-          <span aria-hidden="true" className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" />
-          Typical price · {institutionsLabel} verified institutions
-        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[#6B6255]">
+          <span className="inline-flex items-center gap-2">
+            <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" />
+            Median price
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
+            Middle half of institutions
+          </span>
+          <span>
+            One value per institution, from its published schedule
+            {refreshedOn ? ` · updated ${refreshedOn}` : ""}
+          </span>
+          <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
+            How we calculate this →
+          </Link>
+        </div>
       </div>
     </section>
   );
@@ -110,7 +128,7 @@ function PriceRowLink({ row }: { row: PriceRow }) {
     <Link
       href={`/fees/${row.category}`}
       className="group flex items-center gap-4 py-3.5"
-      aria-label={`${row.label}: typically ${formatUsd(row.median)}, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}`}
+      aria-label={`${row.label}: median ${formatUsd(row.median)} across ${formatCount(row.institutions)} institutions, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}`}
     >
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-[#5A5347] group-hover:text-[#1A1815]">{row.label}</p>
@@ -125,8 +143,8 @@ function PriceRowLink({ row }: { row: PriceRow }) {
             style={{ left: pct(row.median) }}
           />
         </div>
-        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-[#8A8072]">
-          {formatUsd(row.p25)}–{formatUsd(row.p75)}
+        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+          {formatUsd(row.p25)}–{formatUsd(row.p75)} · {formatCount(row.institutions)} institutions
         </p>
       </div>
       <p aria-hidden="true" className="w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-[#1A1815]">

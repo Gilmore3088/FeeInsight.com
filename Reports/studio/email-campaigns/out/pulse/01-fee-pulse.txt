@@ -1,50 +1,49 @@
-What moved in the Bank Fee Index this month, and one idea to use it.
+Where the Bank Fee Index stands this month, and one idea to use it.
 
-FEE PULSE · OCTOBER 3, 2026
+FEE PULSE · OCTOBER 6, 2026
 
 This month in the Bank Fee Index
 ================================
 
-* 1,232 — institutions with published schedules
-* $29 — median overdraft
-* $25 — median NSF
+* $30 — median overdraft (1,324 institutions)
+* $30 — median NSF (1,630 institutions)
+* $5.50 — median monthly maintenance (530 institutions)
 
 
 THE NUMBER THAT MATTERS
 
-14% of institutions in the index publish a $0 monthly maintenance fee on at least one checking account, and 52% charge $5 or less. If your entry-level checking account still carries a fee, the "free checking" competitor is closer than you think.
+The typical NSF fee ($30) is the same as the typical overdraft fee ($30), even though NSF is the fee regulators have pushed hardest on re-presented items. If your NSF fee sits above $31.50, you're in the most expensive quarter of the market on the fee examiners ask about first.
 
 
 [ ONE IDEA TO USE THIS MONTH ]
-List your checking accounts by monthly fee and by how to waive it. If the waiver needs more than one condition, a customer will read it as "not free". Try rewriting it as one sentence.
+Check whether your schedule charges NSF on re-presented items, and how many times. If the answer takes more than one sentence, so will the conversation with your examiner.
 
 
-FULL BENCHMARK TABLE
+NATIONAL BENCHMARK TABLE
 
-Fee | low 25% | median | high 25% | banks | CUs | n
-Overdraft (paid item) | $9 | $29 | $34 | $30 | $25 | 88
-NSF (returned item) | $10 | $25 | $30 | $18 | $25 | 173
-Monthly maintenance | $2 | $5 | $15 | $8 | $5 | 133
-Stop payment | $15 | $25 | $30 | $30 | $20 | 125
-Deposited item returned | $10 | $15 | $25 | $15 | $20 | 82
-Debit card replacement | $7.63 | $20 | $43.75 | $10 | $25 | 174
-Overdraft protection transfer | $3 | $5 | $10 | $5 | $5 | 69
-Out-of-network ATM | $1 | $2 | $3 | $2 | $1.50 | 69
-Cashier's check | $3 | $5 | $7.25 | $7 | $5 | 68
-Paper statement | $2 | $3 | $5 | $3 | $3 | 86
-Domestic wire, outgoing | $15 | $20 | $25 | $20 | $20 | 94
-Domestic wire, incoming | $10 | $10 | $15 | $15 | $10 | 53
-International wire, outgoing | $30 | $40 | $50 | $40 | $40 | 44
-Bank Fee Index, October 3, 2026. One headline amount per institution (lowest published amount for that fee). "Low 25%" and "High 25%" are the 25th and 75th percentiles; n = institutions with that fee published. Banks and CUs columns are medians.
+Fee | low 25% | median | high 25% | n
+Overdraft (paid item) | $25 | $30 | $32 | 1,324
+NSF (returned item) | $25 | $30 | $31.50 | 1,630
+Monthly maintenance | $3 | $5.50 | $10 | 530
+Stop payment | $20 | $26 | $30 | 1,925
+Deposited item returned | $10 | $15 | $25 | 891
+Debit card replacement | $5 | $10 | $10 | 1,352
+Overdraft protection transfer | $3 | $5 | $5 | 531
+Out-of-network ATM | $1 | $1.83 | $2.50 | 894
+Cashier's check | $3 | $5 | $5.50 | 1,356
+Paper statement | $2 | $3 | $5 | 552
+Domestic wire, outgoing | $20 | $25 | $25 | 1,223
+Domestic wire, incoming | $5 | $10 | $15 | 871
+International wire, outgoing | $40 | $50 | $50 | 437
+Bank Fee Index, national, October 6, 2026. One value per institution, from its own published fee schedule. "Low 25%" and "High 25%" are the 25th and 75th percentiles; n = institutions that publish the fee.
 
-More: National Fee Index (https://feeinsight.com/research/national-fee-index?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse) · Research (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse) · Guides (https://feeinsight.com/guides?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse)
+More: National report (https://feeinsight.com/reports/benchmark/national?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse) · Fed district reports (https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse) · Research (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse)
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 
 ----
-Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

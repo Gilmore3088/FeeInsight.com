@@ -17,6 +17,7 @@ import {
   looksLikeHeading,
   passesDarwinChecks,
   QUALIFIER,
+  qualifiesName,
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
 
@@ -32,7 +33,7 @@ import {
  * the adapter; the extractor only sees `KnoxTableRow`.
  */
 
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 2 } as const;
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 5 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -65,6 +66,8 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
     const line = lines[index];
     const next = lines[index + 1] ?? "";
     const lead = line.match(LEADING_VALUE);
+
+    if (pendingName && !lead && qualifiesName(line) && LEADING_VALUE.test(next)) continue;
 
     if (lead && pendingName) {
       const rest = line.slice(lead[0].length);
@@ -106,12 +109,15 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
       continue;
     }
 
-    if (LEADING_VALUE.test(next) && line.length <= MAX_NAME_LINE_CHARS && /[a-z]/i.test(line)) {
+    const priceFollows = LEADING_VALUE.test(next) || (qualifiesName(next) && LEADING_VALUE.test(lines[index + 2] ?? ""));
+    if (priceFollows && line.length <= MAX_NAME_LINE_CHARS && /[a-z]/i.test(line) && !qualifiesName(line)) {
       pendingName = line;
       pendingHeading = heading;
       continue;
     }
-    if (looksLikeHeading(line)) heading = line;
+    // Headings run longer on bank summary pages ("ATM fees per transaction – At
+    // non-Wells Fargo ATMs"); only composable row names ever borrow them.
+    if (looksLikeHeading(line, 10)) heading = line;
   }
   return rows;
 }
@@ -139,6 +145,9 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     // its own; the line rules read it.
     const valueLead = row.cells[valueIndex].split("$")[0];
     if ((valueLead.match(/[a-z]{2,}/gi) ?? []).length >= 2 && !/^\W*(?:per|each|a|an|for|up to|plus)\b/i.test(valueLead)) continue;
+    // So is one that a rule names on its own, like a box size from the next column
+    // ("NSF Fee | 5" X 10" X 22" box ..... $50.00").
+    if (/[a-z]/i.test(valueLead) && classifyFeeText(valueLead)) continue;
     const nameCell = row.cells[nameIndex];
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);

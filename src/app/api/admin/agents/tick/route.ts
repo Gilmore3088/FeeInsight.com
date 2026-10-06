@@ -6,7 +6,7 @@ import {
   hasQueuedProviderSteps,
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
-import { scheduleDueStateLaneRuns } from "@/lib/agents/state-lane-scheduler";
+import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
@@ -16,13 +16,17 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 300;
 /**
- * Steps a run may take per tick. State-lane steps finish in seconds, so one step per
- * run per tick left a day's lanes queued for hours; the deadline below keeps several
- * steps inside the function's time limit.
+ * Steps a run may take per tick. A full state pass is about 14 steps, most of them
+ * seconds long; with 5 steps per run and 2 runs a tick stopped after 10 steps, often
+ * within seconds, and full passes took an hour. The deadline below, not these caps,
+ * is what bounds a tick's work.
  */
-const DEFAULT_MAX_STEPS_PER_RUN = 5;
-/** Runs advanced per tick, one after another (see executeQueuedAgentRuns). */
-const DEFAULT_RUN_LIMIT = 2;
+const DEFAULT_MAX_STEPS_PER_RUN = 10;
+/**
+ * Runs advanced per tick, strictly one after another (see executeQueuedAgentRuns),
+ * until the step-start deadline. No run starts past the deadline except the first.
+ */
+const DEFAULT_RUN_LIMIT = 10;
 /**
  * No new step starts this long after the tick began. Ticks fire every 5 minutes and a
  * killed tick leaves its query running on the database, so a tick must end well inside
@@ -84,8 +88,8 @@ async function handleGET(request: NextRequest) {
   }
 
   const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), DEFAULT_RUN_LIMIT, 10);
-  const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 5);
-  const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), 2, 10);
+  const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 10);
+  const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), STATE_LANE_LIMIT_PER_TICK, 10);
 
   // Recover steps a killed invocation left running before selecting new work.
   const reaped = await reapStaleAgentSteps();
@@ -103,6 +107,7 @@ async function handleGET(request: NextRequest) {
   let budgetPolicyId: number | null = null;
   let maxProviderCallsPerRun: number | null = null;
   let maxEstimatedCostMicrousd: number | null = null;
+  let providerRunLimit: number | null = null;
 
   if (await hasQueuedProviderSteps()) {
     const budget = await assertCronTickBudgetAllowed({
@@ -123,6 +128,7 @@ async function handleGET(request: NextRequest) {
       budgetPolicyId = budget.policyId ?? null;
       maxProviderCallsPerRun = budget.maxProviderCalls ?? null;
       maxEstimatedCostMicrousd = budget.maxEstimatedMicrousd ?? null;
+      providerRunLimit = budget.maxRuns ?? null;
     }
   }
 
@@ -137,6 +143,7 @@ async function handleGET(request: NextRequest) {
     budgetPolicyId,
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
+    providerRunLimit,
     deadlineAt: tickStartedAt + STEP_START_BUDGET_MS,
   });
   return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });

@@ -5,6 +5,7 @@ import {
   isReusablePath,
   isSitemapIndex,
   looksJavaScriptBuilt,
+  looksLikeBotChallenge,
   robotsAllows,
   robotsDisallows,
   robotsSitemaps,
@@ -49,6 +50,15 @@ describe("Magellan site signals", () => {
     expect(detectPlatform("<p>plain</p>")).toBeNull();
     expect(looksJavaScriptBuilt('<div id="root"></div><script src="/app.js"></script>')).toBe(true);
     expect(looksJavaScriptBuilt('<a href="/1">1</a><a href="/2">2</a><a href="/3">3</a><a href="/4">4</a><a href="/5">5</a><script src="/app.js"></script>')).toBe(false);
+  });
+
+  it("recognizes a bot wall served with HTTP 200, not a real homepage", () => {
+    expect(looksLikeBotChallenge("<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>")).toBe(true);
+    expect(looksLikeBotChallenge("<title>Access Denied</title><h1>Access Denied</h1>")).toBe(true);
+    expect(looksLikeBotChallenge('<script src="/_Incapsula_Resource?x=1"></script>')).toBe(true);
+    expect(looksLikeBotChallenge("<title>First Community Bank</title><p>Welcome</p>")).toBe(false);
+    const realHome = "<title>Access Denied Bank</title>" + [1, 2, 3, 4, 5].map((n) => `<a href="/${n}">${n}</a>`).join("") + "<div>challenge-platform</div>";
+    expect(looksLikeBotChallenge(realHome)).toBe(false);
   });
 
   it("shares only paths that can exist on another bank's site", () => {

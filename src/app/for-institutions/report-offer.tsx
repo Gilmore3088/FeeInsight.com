@@ -1,17 +1,10 @@
 import { CheckCircle2 } from "lucide-react";
-import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 import { RequestReportForm } from "./request-report-form";
 
-export const REPORT_NAME = REPORT_OFFER.name;
-export const REPORT_TURNAROUND = REPORT_OFFER.turnaround;
 
-const REPORT_CONTENTS = [
-  "15 headline fees benchmarked against your true peer cohort (charter, asset tier, district)",
-  "Named competitors on the same lines — no anonymous averages",
-  "Outlier flags where you sit above or below the peer band",
-  "A source citation for every figure: the disclosure, the page, the date collected",
-  "PDF, board-ready, with your complete published schedule as an appendix",
-];
+// The same list as the homepage offer and the pay page, so the paid report is described one way.
+const REPORT_CONTENTS = REPORT_INCLUDES;
 
 export function ReportOfferSection() {
   return (
@@ -20,20 +13,22 @@ export function ReportOfferSection() {
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-              {REPORT_NAME}
+              Fee reports
             </p>
             <h2
               className="mt-3 text-warm-900 text-[28px] leading-tight"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
-              {REPORT_NAME} — free, {REPORT_TURNAROUND}
+              Free national and Fed district reports, in a minute
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-warm-700">
-              One institution, one peer set, one PDF you can hand to your pricing committee.
-              We pull your published fees and your competitors&apos; from their disclosures and
-              show where you stand, line by line.
+              Pick the national report or your Fed district and it opens right away: the median
+              and typical range for the 15 headline fees, from each institution&apos;s own
+              published schedule. When you want your own institution against named competitors,
+              that is the paid institution report.
             </p>
-            <ul className="mt-6 space-y-2.5">
+            <p className="mt-6 text-[13px] font-semibold text-warm-900">The institution report adds</p>
+            <ul className="mt-3 space-y-2.5">
               {REPORT_CONTENTS.map((item) => (
                 <li key={item} className="flex items-start gap-2 text-[14px] text-warm-700">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-terra" />
@@ -41,7 +36,8 @@ export function ReportOfferSection() {
                 </li>
               ))}
             </ul>
-            <ProofExcerpt />
+            {/* Rows copied from the sample, which is offline until re-rendered from source-checked data. */}
+            {SAMPLE_REPORT_LIVE && <ProofExcerpt />}
           </div>
           <RequestReportForm contactEmail={CONTACT_EMAIL} />
         </div>

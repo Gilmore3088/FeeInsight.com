@@ -14,17 +14,26 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { markCurrentCopy } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
 export const MAGELLAN_FETCH_DEFAULT_LIMIT = 25;
 export const MAGELLAN_FETCH_MAX_LIMIT = 50;
+/**
+ * An hourly backlog run also re-fetches a fee link last fetched this many days ago, so a
+ * state's schedules stay current between full passes (Texas had 189 live links unfetched
+ * since April on 2026-10-06, failing its state report's 90-day freshness check). Fetching
+ * is free; changed text is read and extracted on the state's normal cadence.
+ */
+export const MAGELLAN_STALE_LINK_REFETCH_DAYS = 30;
 
 /** The fetch strategy recorded in the attempt log; bump the version when its behavior changes. */
-export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 1 } as const;
+export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 2 } as const;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
@@ -74,6 +83,10 @@ interface FetchResult {
   previousDocumentId: number | null;
   /** True when new-looking content matched an older stored document of this institution. */
   reusedDocument?: boolean;
+  /** True when the link's redirects ended on the site's homepage. */
+  redirectedHome?: boolean;
+  /** True when the gone link was cleared and the bank sent back to discovery. */
+  sentBackToDiscovery?: boolean;
   /** Downloaded bytes, kept only long enough to store them in the vault. */
   body: Uint8Array | null;
   vaultStatus: VaultStoreStatus | null;
@@ -86,6 +99,11 @@ export interface RunMagellanFetchOptions {
   limit?: number;
   institutionId?: number;
   stateCode?: string;
+  /**
+   * Only banks whose fee link was found after their last fetch, or was last fetched over
+   * MAGELLAN_STALE_LINK_REFETCH_DAYS ago (hourly backlog runs).
+   */
+  newLinksOnly?: boolean;
   dryRun?: boolean;
   db?: SqlTag;
   fetchImpl?: Fetcher;
@@ -111,6 +129,10 @@ export interface RunMagellanFetchResult {
   storedDocuments: number;
   vault: "on" | "not_configured" | "schema_pending";
   outcomes: Partial<Record<AttemptOutcome, number>>;
+  /** Older copies of fetched pages newly marked as history (superseded_by_id). */
+  supersededCopies: number;
+  /** Companion pages (account pages, other fee documents) fetched after the fee links. */
+  companions: RunCompanionFetchResult | null;
   results: FetchResult[];
 }
 
@@ -131,6 +153,31 @@ function normalizeHttpUrl(value: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+const HOMEPAGE_PATH = /^\/?(index\.(html?|php|aspx?))?$/i;
+
+/**
+ * A fee link with a path that lands on the site's homepage after redirects is gone: the
+ * bank moved or removed the page and its server sends every old address home (or to a
+ * new domain's home). 42 banks' fee links did this in the week to 2026-10-06.
+ */
+export function redirectedToHomepage(requestedUrl: string, finalUrl: string | null): boolean {
+  if (!finalUrl) return false;
+  try {
+    const requested = new URL(requestedUrl);
+    const final = new URL(finalUrl);
+    const requestedIsHome = HOMEPAGE_PATH.test(requested.pathname) && !requested.search;
+    const finalIsHome = HOMEPAGE_PATH.test(final.pathname) && !final.search;
+    return !requestedIsHome && finalIsHome;
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch outcomes that mean the link itself is gone, not that the site had a bad moment. */
+function linkIsGone(result: FetchResult): boolean {
+  return result.attemptOutcome === "http_404" || result.attemptOutcome === "http_410" || result.redirectedHome === true;
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -257,6 +304,18 @@ async function fetchCandidate(
     });
   }
 
+  if (redirectedToHomepage(sourceUrl, finalUrl)) {
+    await response.body?.cancel().catch(() => undefined);
+    return finish({
+      ...headerFields,
+      outcome: "failed",
+      documentType: declaredType,
+      reason: `Link redirects to the homepage (${finalUrl})`,
+      attemptOutcome: "wrong_document",
+      redirectedHome: true,
+    });
+  }
+
   let buffer: ArrayBuffer;
   try {
     buffer = await response.arrayBuffer();
@@ -314,6 +373,7 @@ async function selectCandidates(
   limit: number,
   institutionId?: number,
   stateCode?: string,
+  newLinksOnly = false,
 ): Promise<FetchCandidateRow[]> {
   const normalizedState = normalizeStateCode(stateCode);
   if (institutionId) {
@@ -360,8 +420,15 @@ async function selectCandidates(
          OR (inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> '')
        )
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
+       -- A link discovery found after the last fetch is fetched at once and first. An
+       -- hourly backlog run fetches those and links last fetched over a month ago.
+       AND (NOT ${newLinksOnly}::boolean OR (
+         inst.rescue_status = 'rescued'
+         AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+       ) OR inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS}))
        AND (
          inst.last_crawl_at IS NULL
+         OR (inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at)
          OR inst.last_crawl_at < NOW() - CASE
            WHEN COALESCE(inst.consecutive_failures, 0) >= 3 THEN INTERVAL '7 days'
            WHEN COALESCE(inst.consecutive_failures, 0) > 0 THEN INTERVAL '24 hours'
@@ -371,6 +438,7 @@ async function selectCandidates(
      ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.last_crawl_at IS NULL THEN 0 ELSE 1 END,
+       CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END,
        inst.last_crawl_at ASC NULLS FIRST,
        COALESCE(inst.consecutive_failures, 0) ASC,
        inst.asset_size DESC NULLS LAST,
@@ -665,6 +733,45 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
   return sourceDocumentId;
 }
 
+/**
+ * A gone link (404/410, or redirected to the homepage) is never going to work again, so
+ * the bank goes back to discovery the way Rosetta sends back a dead link it reads:
+ * remember the URL as rejected, drop the fetch address, clear the fee link while it is
+ * still the one fetched, and mark the bank due a search. Before this, the bank kept the
+ * dead link and was re-fetched every week, and discovery (which only searches banks
+ * with no link) never looked for its new page. A person's locked correction is kept.
+ */
+async function sendGoneLinkToDiscovery(db: SqlTag, result: FetchResult, feeScheduleUrl: string | null): Promise<boolean> {
+  const rejected = JSON.stringify([{ url: result.sourceUrl, reason: result.reason, at: new Date().toISOString() }]);
+  await db`
+    UPDATE institution_source_profiles
+       SET rejected_source_urls = (
+             SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+              WHERE entry->>'url' IS DISTINCT FROM ${result.sourceUrl}
+           ) || ${rejected}::jsonb,
+           canonical_source_url = CASE WHEN locked_by_correction THEN canonical_source_url ELSE NULL END,
+           updated_at = NOW()
+     WHERE institution_id = ${result.institutionId}
+  `;
+  const cleared = await db`
+    UPDATE institution_sources inst
+       SET fee_schedule_url = NULL,
+           rescue_status = 'pending',
+           failure_reason = 'magellan_dead_link',
+           failure_reason_note = ${result.reason},
+           failure_reason_updated_at = NOW()
+     WHERE inst.id = ${result.institutionId}
+       AND btrim(COALESCE(inst.fee_schedule_url, '')) = ${feeScheduleUrl?.trim() ?? ""}
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+       )
+    RETURNING inst.id
+  `;
+  return cleared.length > 0;
+}
+
 /** Saves the downloaded bytes to the vault and records the key on the document row. */
 async function storeInVault(
   db: SqlTag,
@@ -696,19 +803,27 @@ export async function runMagellanFetch(
   const fetchImpl = options.fetchImpl ?? fetch;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
-  const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode);
+  const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode, Boolean(options.newLinksOnly));
   const learning = !dryRun && rows.length > 0 && (await learningSchemaReady(db));
   const vaultSchema = learning && (await documentVaultSchemaReady(db));
   const vault = options.vault ?? getDocumentVault();
   const vaultOn = vaultSchema && vault.configured;
 
   const results: FetchResult[] = [];
+  let supersededCopies = 0;
   for (const row of rows) {
     const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
     const result = await fetchCandidate(row, fetchImpl, previous);
     results.push(result);
     if (dryRun) continue;
     const sourceDocumentId = await recordFetchResult(db, result, learning);
+    // The copy this fetch stored or confirmed is the page's current one.
+    if (result.outcome === "success" || result.outcome === "unchanged") {
+      supersededCopies += await markCurrentCopy(db, sourceDocumentId);
+    }
+    if (linkIsGone(result)) {
+      result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
+    }
     // New content is always stored; an unchanged document is stored once if it predates the vault.
     if (vaultOn && (result.outcome === "success" || (result.outcome === "unchanged" && !previous?.vaultKey))) {
       await storeInVault(db, vault, result, sourceDocumentId);
@@ -741,6 +856,26 @@ export async function runMagellanFetch(
     }
   }
 
+  // Companion pages ride on the same step, each stored as its own document stream. A
+  // failure here never fails the fee-link fetch.
+  let companions: RunCompanionFetchResult | null = null;
+  if (!dryRun) {
+    try {
+      const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
+      companions = await runCompanionFetch({
+        db,
+        fetchImpl,
+        vault: companionVault,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        institutionId: options.institutionId ?? null,
+      });
+    } catch (error) {
+      console.error("Companion fetch failed:", error);
+    }
+  }
+
   return {
     selected: rows.length,
     processed: results.length,
@@ -756,6 +891,8 @@ export async function runMagellanFetch(
     storedDocuments: results.filter((result) => result.vaultStatus === "stored" || result.vaultStatus === "already_stored").length,
     vault: vaultOn ? "on" : vaultSchema ? "not_configured" : "schema_pending",
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
+    supersededCopies,
+    companions,
     results,
   };
 }

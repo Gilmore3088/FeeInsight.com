@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { activateIfPaid } from "@/lib/subscription-activation";
 import { redirect } from "next/navigation";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -70,6 +71,11 @@ export default async function SubscribePage({
   if (user && canAccessPremium(user)) {
     redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : "/account");
   }
+  // Paid but the webhook hasn't landed (e.g. /pro redirected here): activate from Stripe
+  // and send them on, rather than offering checkout a second time.
+  if (user && (await activateIfPaid(user))) {
+    redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : WELCOME_PATH);
+  }
 
   const isLoggedIn = !!user;
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
@@ -94,12 +100,6 @@ export default async function SubscribePage({
       <main id="main-content">
 
       <div className="mx-auto max-w-5xl px-6 py-14">
-        {params.success && (
-          <div className="mb-6 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm text-emerald-700">
-            Subscription activated. You now have full access.
-          </div>
-        )}
-
         {inviteMode && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
@@ -128,7 +128,7 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Free lookup → Report (free) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
+            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
             per seat, or {ANNUAL_PRICE_LABEL}/yr) → {SITE_NAME} Advisory (custom)
           </p>
         </div>

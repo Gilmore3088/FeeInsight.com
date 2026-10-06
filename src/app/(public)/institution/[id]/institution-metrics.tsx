@@ -33,6 +33,9 @@ export function Metric({
 }
 
 export interface InstitutionMetricRowProps {
+  /** Headline categories published, out of headlineTotal; null when the count could not be read. */
+  headlineCategories: number | null;
+  headlineTotal: number;
   verifiedCount: number;
   underReviewCount: number;
   assetsDollars: number | null;
@@ -40,14 +43,20 @@ export interface InstitutionMetricRowProps {
 
 /** Counts and context for the profile, below the fee schedule and the alert control. */
 export function InstitutionMetricRow({
+  headlineCategories,
+  headlineTotal,
   verifiedCount,
   underReviewCount,
   assetsDollars,
 }: InstitutionMetricRowProps) {
   return (
     <section aria-label="Profile facts" className="overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="grid grid-cols-3 divide-x divide-[#E0D7C9]">
-        <Metric label="Verified fees" value={verifiedCount.toLocaleString("en-US")} tone="verified" />
+      <div className="grid grid-cols-2 gap-px bg-[#E0D7C9] *:bg-[#FDFBF8] sm:grid-cols-4">
+        <Metric
+          label="Headline fees published"
+          value={headlineCategories === null ? "N/A" : `${headlineCategories} of ${headlineTotal}`}
+        />
+        <Metric label="Published fees" value={verifiedCount.toLocaleString("en-US")} />
         <Metric
           label="Under review"
           value={underReviewCount.toLocaleString("en-US")}
@@ -76,8 +85,8 @@ export function InstitutionOfferBand({
             <p>Work at {institutionName}? See every fee vs. your peers.</p>
             <InfoTip label="About the report">
               The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
-              verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}, delivered in{" "}
-              {COMPETITIVE_FEE_POSITION_REPORT.turnaround}.
+              verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}:{" "}
+              {COMPETITIVE_FEE_POSITION_REPORT.nextStep.toLowerCase()}.
             </InfoTip>
           </div>
         </div>
@@ -86,7 +95,7 @@ export function InstitutionOfferBand({
             href={reportOfferHref}
             className="inline-flex items-center gap-2 rounded-md bg-[#C44B2E] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
           >
-            Get your free report
+            Request the report
             <ArrowRight className="h-4 w-4" />
           </Link>
           <Link

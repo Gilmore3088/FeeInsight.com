@@ -8,10 +8,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
-import { LeadCapture } from "@/components/public/lead-capture";
 import { ReportExecutiveSummaryBlock } from "@/components/public/report-executive-summary";
 import { ReportFrame } from "@/components/public/report-frame";
-import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL, REPORT_OFFER, REPORT_OFFER_LINE } from "@/lib/constants";
+import {
+  CONTACT_EMAIL,
+  RESEARCH_IMPRINT,
+  SAMPLE_REPORT_LIVE,
+  SITE_NAME,
+  SITE_URL,
+  REPORT_OFFER,
+  REPORT_OFFER_LINE,
+} from "@/lib/constants";
 import { extractExecutiveSummary, prepareReportForEmbed, readSampleReportHtml } from "@/lib/hosted-reports";
 import { SampleReportJsonLd } from "./sample-jsonld";
 
@@ -23,9 +30,9 @@ const REPORT_DESCRIPTION = `An anonymized ${REPORT_OFFER.name} for a ~$400M comm
 
 export const metadata: Metadata = {
   title: REPORT_TITLE,
-  description: `See what the free ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the lines outside the market range, the revenue lens, and a named peer comparison. Delivered in 48 hours.`,
+  description: `See what the ${REPORT_OFFER.name} from ${SITE_NAME} contains: your fees against a verified peer set, the lines outside the market range, the revenue lens, and a named peer comparison.`,
   alternates: { canonical: SAMPLE_PATH },
-  robots: { index: true, follow: true },
+  robots: { index: SAMPLE_REPORT_LIVE, follow: true },
   openGraph: {
     type: "article",
     title: REPORT_TITLE,
@@ -49,7 +56,60 @@ const PRIMARY_BUTTON =
 const SECONDARY_BUTTON =
   "inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
 
+/** Shown while the sample is offline for a re-render, so no stale figures stay public. */
+function SampleComingSoon() {
+  return (
+    <div className="mx-auto max-w-3xl px-6 pb-24 pt-14">
+      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-[#6B6255]">
+        <Link href="/reports" className="transition-colors hover:text-[#1A1815]">
+          Reports
+        </Link>
+        <span className="text-[#D4C9BA]">/</span>
+        <span className="text-[#5A5347]">Sample</span>
+      </nav>
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+        Sample — {REPORT_OFFER.name}
+      </p>
+      <h1
+        className="text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815] sm:text-[2.5rem]"
+        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+      >
+        A new sample report is on its way.
+      </h1>
+      <p className="mt-4 text-[16px] leading-relaxed text-[#5A5347]">
+        We took the previous sample down while we rebuild it from current data, with every fee
+        checked against the institution&apos;s own published schedule. It will be back here once that
+        is done.
+      </p>
+      <p className="mt-3 text-[16px] leading-relaxed text-[#5A5347]">
+        You can still request a report for your own institution. We confirm your peer set with you
+        before anything is sent.
+      </p>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <TrackLink
+          event="request_report_click"
+          eventProps={{ placement: "sample_report_offline" }}
+          href={REQUEST_HREF}
+          className={PRIMARY_BUTTON}
+        >
+          {REPORT_OFFER.ctaLabel}
+        </TrackLink>
+        <Link href="/research" className={SECONDARY_BUTTON}>
+          Browse the research
+        </Link>
+      </div>
+      <p className="mt-6 text-[13px] text-[#6B6255]">
+        Questions:{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] underline">
+          {CONTACT_EMAIL}
+        </a>
+      </p>
+    </div>
+  );
+}
+
 export default function SampleReportPage() {
+  if (!SAMPLE_REPORT_LIVE) return <SampleComingSoon />;
   const rawHtml = readSampleReportHtml();
   const html = prepareReportForEmbed(rawHtml);
   const summary = extractExecutiveSummary(rawHtml);
@@ -81,10 +141,10 @@ export default function SampleReportPage() {
             className="text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815] sm:text-[2.5rem]"
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
           >
-            This is what your free report looks like.
+            This is what your institution report looks like.
           </h1>
           <p className="mt-4 max-w-[560px] text-[16px] leading-relaxed text-[#5A5347]">
-            Yours is built for your institution and your peer set, delivered in 48 hours. The report
+            Yours is built for your institution and your peer set. The report
             below was prepared for a real ~$400M community bank; only the client is anonymized, shown
             as Sample Community Bank. The eight peers are named — their fee schedules are public
             disclosures — and every figure is real, drawn from published fee schedules and public
@@ -95,7 +155,7 @@ export default function SampleReportPage() {
               Download the sample (PDF)
             </a>
             <TrackLink
-              event="request_report"
+              event="request_report_click"
               eventProps={{ placement: "sample_report_header" }}
               href={REQUEST_HREF}
               className={SECONDARY_BUTTON}
@@ -104,14 +164,6 @@ export default function SampleReportPage() {
             </TrackLink>
           </div>
           <p className="mt-3 text-[13px] text-[#6B6255]">{REPORT_OFFER_LINE}.</p>
-          <LeadCapture
-            placement="sample_report"
-            className="mt-6"
-            eyebrow="Free sample, by email"
-            headline="Email me the sample"
-            body={`Get the sample PDF to share with your team, and a free ${REPORT_OFFER.name} for your own institution when you want one.`}
-            buttonLabel="Send it"
-          />
         </div>
 
         <aside className="rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-5">
@@ -155,7 +207,7 @@ export default function SampleReportPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "sample_report_footer" }}
             href={REQUEST_HREF}
             className={PRIMARY_BUTTON}

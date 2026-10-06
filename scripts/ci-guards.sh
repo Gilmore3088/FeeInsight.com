@@ -29,6 +29,8 @@
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
 #   heading-wrap-kill
 #                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
+#   plausible-kill
+#                 Fail if Plausible analytics (script, CSP host, env var, window.plausible) comes back.
 #   brand-kill    Fail if src copy names the site as the product or references bankfeeindex.com (Fee Insight is the site; Bank Fee Index is the product).
 #   prompt-kill   Fail if active .claude prompts point agents at retired tooling.
 #   active-doc-kill
@@ -642,6 +644,28 @@ sql_placeholder_kill() {
   echo "sql-placeholder-kill: OK (no placeholders computed from params.length - N)"
 }
 
+migration_version_kill() {
+  # Supabase records each migration by the number before the first underscore and applies
+  # files in number order. Two files with one number, or a file numbered below what prod has
+  # already applied, stop a deploy. The eight-digit numbers are the April-May 2026 history;
+  # every newer file uses fourteen digits, one higher than the highest file already here.
+  local dir="supabase/migrations"
+  [[ -d "$dir" ]] || { echo "migration-version-kill: OK (no $dir)"; return 0; }
+  local bad dupes
+  bad=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort \
+    | grep -vE '^(2026[0-9]{4}|[0-9]{14})_[a-z0-9_]+\.sql$' || true)
+  bad+=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort \
+    | awk -F_ 'length($1) == 8 && $1 > "20260517"' || true)
+  dupes=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -d_ -f1 | sort | uniq -d)
+  if [[ -n "$bad" || -n "$dupes" ]]; then
+    echo "migration-version-kill: migration file names must be <14-digit number>_<snake_name>.sql with a unique number:" >&2
+    [[ -n "$bad" ]] && echo "$bad" >&2
+    [[ -n "$dupes" ]] && echo "duplicate numbers: $dupes" >&2
+    exit 1
+  fi
+  echo "migration-version-kill: OK (unique, well-formed migration numbers)"
+}
+
 heading_wrap_kill() {
   # Headings must never wrap one word onto its own line (James, 5 Oct 2026). The rule lives
   # once in the global stylesheet and once in the report template; per-page fixes drift.
@@ -655,6 +679,21 @@ heading_wrap_kill() {
     exit 1
   fi
   echo "heading-wrap-kill: OK (headings balance their lines site-wide and in reports)"
+}
+
+plausible_kill() {
+  # Fee Insight does not use Plausible (James, 5 Oct 2026). Its script, CSP host, env var and
+  # window.plausible calls were removed; keep them out so no one is asked to set it up again.
+  # Matches only Plausible identifiers, not the English word "plausible" (fee ranges).
+  local hits
+  hits=$(grep -rnE 'plausible\.io|window\.plausible|PLAUSIBLE_|data-domain=' \
+    src next.config.ts .env.example AGENTS.md CLAUDE.md 2>/dev/null || true)
+  if [[ -n "$hits" ]]; then
+    echo "plausible-kill: Plausible is not used; remove these references:" >&2
+    echo "$hits" >&2
+    exit 1
+  fi
+  echo "plausible-kill: OK (no Plausible analytics references)"
 }
 
 case "$SUBCOMMAND" in
@@ -679,13 +718,15 @@ case "$SUBCOMMAND" in
   brand-kill) brand_kill ;;
   sql-placeholder-kill) sql_placeholder_kill ;;
   heading-wrap-kill) heading_wrap_kill ;;
+  plausible-kill) plausible_kill ;;
+  migration-version-kill) migration_version_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill>" >&2
     exit 2
     ;;
 esac

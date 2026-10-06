@@ -1,6 +1,8 @@
 "use server";
 
+import { REGISTER_ACTION_POLICY, isServerActionRateLimited } from "@/lib/api-hardening/action-rate-limit";
 import { createUserWithSession } from "@/lib/auth";
+import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
 
 export interface RegisterResult {
@@ -25,6 +27,10 @@ function optionalString(value: FormDataEntryValue | null): string | null {
  * user reaches checkout (see `ensureStripeCustomer`).
  */
 export async function register(formData: FormData, redirectTo?: string): Promise<RegisterResult> {
+  // Bots fill the hidden honeypot; no account is created for them.
+  if (optionalString(formData.get(LEAD_HONEYPOT_FIELD))) {
+    return { success: false, error: "Registration failed" };
+  }
   const email = formData.get("email");
   const password = formData.get("password");
   const name = optionalString(formData.get("name"));
@@ -39,6 +45,10 @@ export async function register(formData: FormData, redirectTo?: string): Promise
   const trimmedEmail = email.trim().toLowerCase();
   if (!EMAIL_PATTERN.test(trimmedEmail)) {
     return { success: false, error: "Invalid email format" };
+  }
+
+  if (await isServerActionRateLimited(REGISTER_ACTION_POLICY)) {
+    return { success: false, error: "Too many sign-up attempts from this connection. Try again in 10 minutes." };
   }
 
   const destination = sanitizeInternalRedirect(redirectTo, "/account");

@@ -8,7 +8,7 @@ import {
 } from "@/lib/data-store";
 import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
-import { SITE_URL } from "@/lib/constants";
+import { SAMPLE_REPORT_LIVE, SITE_URL } from "@/lib/constants";
 
 const BASE_URL = SITE_URL;
 const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
@@ -104,6 +104,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/research", dataUpdated, "weekly", 0.7),
     entry("/contact", now, "yearly", 0.5),
     entry("/api-docs", now, "monthly", 0.5),
+    entry("/submit-fees", now, "monthly", 0.4),
     entry("/privacy", now, "yearly", 0.3),
     entry("/terms", now, "yearly", 0.3),
   ];
@@ -112,7 +113,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // and the sample stay listed.
   const reportPages: Entry[] = [
     entry("/reports", now, "weekly", reportsPriority),
-    entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7),
+    ...(SAMPLE_REPORT_LIVE ? [entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7)] : []),
   ];
 
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)
@@ -129,6 +130,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const researchPages: Entry[] = [
     entry("/research/national-fee-index", dataUpdated, "weekly", 0.9),
+    entry("/research/data-sources", now, "monthly", 0.5),
   ];
 
   // Consumer guides live at /guides/[slug]; professional guides at /guides/pro/[slug],

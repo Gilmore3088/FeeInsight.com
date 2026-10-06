@@ -36,7 +36,16 @@ function sleep(ms: number): Promise<void> {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 
-export async function registryFetch(url: string, options: RegistryFetchOptions = {}): Promise<Response> {
+/** A POST body for APIs that take their parameters as JSON (BLS). */
+export interface RegistryJsonBody {
+  json: unknown;
+}
+
+export async function registryFetch(
+  url: string,
+  options: RegistryFetchOptions = {},
+  body?: RegistryJsonBody,
+): Promise<Response> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const retries = options.retries ?? 3;
   const timeoutMs = options.timeoutMs ?? 60_000;
@@ -47,7 +56,12 @@ export async function registryFetch(url: string, options: RegistryFetchOptions =
     if (attempt > 0) await sleep(backoffMs * 2 ** (attempt - 1));
     try {
       const response = await fetchImpl(url, {
-        headers: { "User-Agent": REGISTRY_USER_AGENT, Accept: "application/json, */*" },
+        ...(body ? { method: "POST", body: JSON.stringify(body.json) } : {}),
+        headers: {
+          "User-Agent": REGISTRY_USER_AGENT,
+          Accept: "application/json, */*",
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
         signal: AbortSignal.timeout(timeoutMs),
         redirect: "follow",
       });
@@ -67,7 +81,11 @@ export async function registryFetch(url: string, options: RegistryFetchOptions =
   throw new RegistryHttpError(`Request failed: ${url}`, url, null);
 }
 
-export async function registryFetchJson<T>(url: string, options: RegistryFetchOptions = {}): Promise<T> {
-  const response = await registryFetch(url, options);
+export async function registryFetchJson<T>(
+  url: string,
+  options: RegistryFetchOptions = {},
+  body?: RegistryJsonBody,
+): Promise<T> {
+  const response = await registryFetch(url, options, body);
   return (await response.json()) as T;
 }

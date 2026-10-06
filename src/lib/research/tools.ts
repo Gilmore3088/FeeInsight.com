@@ -1,4 +1,5 @@
 import { tool } from "ai";
+import { readerFeeConditions } from "@/lib/fee-conditions";
 import { z } from "zod";
 import {
   getFeeCategorySummaries,
@@ -238,7 +239,7 @@ export const getInstitution = tool({
               display_name: getDisplayName(f.fee_name),
               amount: f.amount,
               frequency: f.frequency,
-              conditions: f.conditions,
+              conditions: readerFeeConditions(f.conditions),
               status: "provisional",
               extraction_confidence: f.extraction_confidence,
               source_url: f.source_url,
@@ -247,6 +248,7 @@ export const getInstitution = tool({
           ]
         : [];
     const provisionalFees = [...catalogProvisionalFees, ...pipelineProvisionalFees];
+    const sameScaleFinancials = financials.filter((record) => record.source !== "ffiec");
     const status = inst.fee_publication_status ?? "unavailable";
 
     return {
@@ -279,9 +281,11 @@ export const getInstitution = tool({
         verified: verifiedFees,
         provisional: provisionalFees,
       },
+      // ffiec rows duplicate fdic quarters at other scales (see financial-units.ts).
       financials: {
-        latest: financials[0] ?? null,
-        records: financials.slice(0, 8),
+        units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        latest: sameScaleFinancials[0] ?? null,
+        records: sameScaleFinancials.slice(0, 8),
       },
       revenue_trend: revenueTrend,
       peer_ranking: peerRanking,

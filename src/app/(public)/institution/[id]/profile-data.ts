@@ -5,6 +5,8 @@ import type { InstitutionFeeScheduleEvidence } from "@/lib/data-store/institutio
 import { formatFeeAmount } from "@/lib/format";
 import { NON_PAID_ITEM_OVERDRAFT_PATTERN } from "@/lib/institution-rating";
 import type { DisplayFee } from "./fee-schedule-table";
+import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fees";
+import { rateDisplayParts } from "@/lib/percent-fees";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -18,6 +20,31 @@ export const getVisibleFeesForPage = cache(async (institutionId: number): Promis
     return [];
   }
 });
+
+/** Live fees stated as a rate ("1.1% of the transaction"), read apart from dollar fees. */
+export const getRateFeesForPage = cache(async (institutionId: number): Promise<RateFee[]> => {
+  try {
+    return await getRateFeesByInstitution(institutionId);
+  } catch (error) {
+    console.error("Institution page rate fees failed:", error);
+    return [];
+  }
+});
+
+/** Rate fees as table rows: the rate shows in the amount column and never meets a dollar benchmark. */
+export function toRateDisplayFees(fees: RateFee[]): DisplayFee[] {
+  return fees.map((fee) => ({
+    id: `rate-${fee.id}`,
+    feeName: fee.fee_name,
+    feeCategory: fee.fee_category,
+    amount: null,
+    frequency: fee.frequency,
+    conditions: fee.conditions,
+    status: "verified",
+    sourceUrl: fee.source_url,
+    rate: rateDisplayParts(fee),
+  }));
+}
 
 export function isVerifiedFee(fee: ExtractedFee): boolean {
   return fee.review_status === "approved";

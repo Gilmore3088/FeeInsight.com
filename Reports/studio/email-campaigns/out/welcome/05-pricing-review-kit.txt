@@ -1,4 +1,4 @@
-A one-page agenda for your next pricing committee, plus where to get a peer report.
+A one-page agenda for your next pricing committee, and where to get a report on your own fees.
 
 FEE LITERACY · EMAIL 5 OF 5
 
@@ -9,7 +9,7 @@ Last email in the series. Here's a one-page agenda you can paste into your next 
 
 
 [ FEE REVIEW AGENDA (60 MINUTES) ]
-1. Position (15 min): our 13 headline fees vs peer low 25% / median / high 25%. List every fee above the high quarter.
+1. Position (15 min): our headline fees against the market's 25th percentile, median and 75th percentile. List every fee above the 75th.
 2. Revenue (10 min): service charges on deposit accounts from our Call Report (Schedule RI) or NCUA 5300 fee income. Which 3 fees drive most of it?
 3. Risk (10 min): re-presentment NSF, authorize-positive/settle-negative, overdraft caps, Reg E opt-in records.
 4. Customer (10 min): complaints and reviews that mention a fee by name in the last 12 months.
@@ -23,19 +23,18 @@ Two outcomes make a review worth it: a fee you can defend in one sentence, and a
 
 WANT THIS DONE FOR YOUR INSTITUTION?
 
-We build a Competitive Fee Position report for a single bank or credit union: your 15 headline fees against your true peer cohort, outliers flagged, named competitors side by side, and every figure linked to the published schedule it came from.
+We build an institution report: your fees against the local competitors you name, fee by fee, with every competitor figure taken from its own published schedule.
 
-See a sample report: https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=pricing-review-kit
-Sample is free and needs no login. A custom report is $300, refreshed quarterly.
+Request your institution report: https://feeinsight.com/for-institutions?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=pricing-review-kit#report
+We check that your market has enough published data, then reply with scope and price.
 
-From here you'll get the monthly Fee Pulse: one email a month with what moved in the index and one practical idea. Reply any time with a fee question. We answer them.
+From here you'll get the monthly Fee Pulse: what moved in the index and one practical idea. Reply any time with a fee question.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 
 ----
-Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

@@ -4,14 +4,21 @@
  * Pure function: (input) => HTML string.
  * No async, no AI calls — narratives are pre-computed and injected.
  *
- * V3 Chapter Structure:
- *   Cover -> TOC -> Executive Summary ("5 Truths") ->
- *   Ch1: The Illusion of Fee Differentiation ->
- *   Ch2: Banks vs Credit Unions: Two Models ->
- *   Ch3: Where the Money Actually Comes From ->
- *   Ch4: The Industry Blind Spot ->
- *   Ch5: The Future of Fee Strategy ->
- *   Playbook -> Methodology -> Appendix
+ * Chapter structure:
+ *   Cover -> TOC -> The Quarter in Figures ->
+ *   Ch1: Where Prices Cluster and Where They Spread ->
+ *   Ch2: Banks and Credit Unions ->
+ *   Ch3: District, Size and State ->
+ *   Ch4: Fee Income in Call Reports ->
+ *   Ch5: Data Coverage ->
+ *   Economic Backdrop ->
+ *   Ch6: What to Watch ->
+ *   Ch9: Rankings, Income Trend and Outliers (when available) ->
+ *   Methodology -> Appendix
+ *
+ * Every heading and card states a figure from the payload. There is no fixed thesis,
+ * "so what" advice or playbook: Hamilton supports decisions and never tells an
+ * institution what to charge (James, 2026-10-06).
  */
 
 import {
@@ -19,27 +26,38 @@ import {
   coverPage,
   tableOfContents,
   statCardRow,
-  keyFinding,
   horizontalBarChart,
+  columnChart,
+  dataTable,
+  twoColumn,
   chapterDivider,
   hamiltonNarrativeBlock,
   compactTable,
   footnote,
-  pageBreak,
-  soWhatBox,
   pullQuote,
   insightCardRow,
   comparisonChart,
-  playbook,
   layoutAnalytical,
   layoutStatement,
-  revenuePyramid,
   dataFramework,
-  PALETTE,
+  escapeHtml,
 } from "../index";
 
-import type { DerivedAnalytics, NationalQuarterlyPayload } from "@/lib/report-assemblers/national-quarterly";
+import {
+  MIN_GROUP_INSTITUTIONS,
+  REGIONAL_FEES,
+  type DerivedAnalytics,
+  type GroupRow,
+  type NationalQuarterlyPayload,
+} from "@/lib/report-assemblers/national-quarterly";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { formatRatePercent } from "@/lib/percent-fees";
+import { developmentsContent, feeChangesContent } from "./developments";
+import { regulatoryExtras } from "./regulatory-section";
+import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
+import type { NationalTrends } from "@/lib/report-assemblers/national-trends";
+import { renderNationalTrendsSection } from "./national-trends-section";
 
 // ─── Input Type ────────────────────────────────────────────────────────────────
 
@@ -53,6 +71,10 @@ export interface NationalQuarterlyReportInput {
     industry_blind_spot: { narrative: string };
     future_strategy: { narrative: string };
   };
+  /** CFPB complaints and the fee-change rules for the developments chapter; omitted when not read. */
+  regulatory?: RegulatoryContext | null;
+  /** Fed districts, state ranking, size tiers, 16 quarters of fee income and outliers; omitted when unavailable. */
+  trends?: NationalTrends | null;
 }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
@@ -62,8 +84,81 @@ function fmtFee(amount: number | null): string {
   return `$${amount.toFixed(2)}`;
 }
 
-function fmtBillions(amount: number): string {
-  return `$${(amount / 1_000_000_000).toFixed(1)}B`;
+/** Call-report income is reported in thousands of dollars. */
+function fmtThousandsAsBillions(thousands: number): string {
+  return `$${(thousands / 1_000_000).toFixed(1)}B`;
+}
+
+/** Thousands of dollars as $X.XB or $XXXM. */
+function fmtThousandsShort(thousands: number): string {
+  return thousands >= 1_000_000 ? fmtThousandsAsBillions(thousands) : `$${Math.round(thousands / 1_000)}M`;
+}
+
+/** "2026-Q2" -> "Q2 '26"; other labels pass through. */
+function shortQuarter(q: string): string {
+  const m = /^(\d{4})-?Q(\d)$/.exec(q);
+  return m ? `Q${m[2]} '${m[1].slice(2)}` : q;
+}
+
+function signedPct(value: number | null): string | undefined {
+  if (value === null) return undefined;
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}% YoY`;
+}
+
+/** Short column heads so the group name keeps its width. */
+const SHORT_FEE_LABELS: Record<string, string> = {
+  overdraft: "Overdraft",
+  nsf: "NSF",
+  monthly_maintenance: "Monthly",
+  atm_non_network: "Other ATM",
+  wire_domestic_outgoing: "Wire out",
+};
+
+/** One row per group, one column per headline fee; "\u2014" when too few institutions publish it. */
+function groupTable(rows: GroupRow[], groupLabel: string, caption: string): string {
+  return dataTable({
+    columns: [
+      { key: "label", label: groupLabel, align: "left" },
+      ...REGIONAL_FEES.map((fee) => ({ key: fee, label: SHORT_FEE_LABELS[fee] ?? getDisplayName(fee), align: "right" as const, format: "amount" as const })),
+      { key: "n", label: "OD filers", align: "right" as const, format: "integer" as const },
+    ],
+    rows: rows.map((r) => ({
+      label: r.label,
+      ...Object.fromEntries(REGIONAL_FEES.map((fee) => [fee, r.fees[fee]?.median ?? null])),
+      n: r.fees.overdraft?.institutions ?? 0,
+    })),
+    caption,
+  });
+}
+
+/** Fees stated as a rate, each compared only with other rates; empty until any institution states one. */
+function rateTable(data: NationalQuarterlyPayload): string {
+  const rows = (data.rate_categories ?? []).filter((r) => r.institution_count > 0);
+  if (rows.length === 0) return "";
+  return dataTable({
+    columns: [
+      { key: "fee", label: "Fee stated as a rate", align: "left" },
+      { key: "median", label: "Median rate", align: "right", format: "text" },
+      { key: "half", label: "Middle half", align: "right", format: "text" },
+      { key: "n", label: "Institutions", align: "right", format: "integer" },
+    ],
+    rows: rows.map((r) => ({
+      fee: r.display_name,
+      median: r.median_rate === null ? null : formatRatePercent(r.median_rate),
+      half: r.p25_rate === null || r.p75_rate === null ? null : `${formatRatePercent(r.p25_rate)} to ${formatRatePercent(r.p75_rate)}`,
+      n: r.institution_count,
+    })),
+    caption: "One rate per institution, compared only with other rates and never with the dollar figures above. A dash means too few institutions state the fee as a rate.",
+  });
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** ", January 2026" from a YYYYMM release code; empty when unknown. */
+function releaseLabel(code: string | undefined): string {
+  const m = code ? /^(\d{4})(\d{2})$/.exec(code) : null;
+  const month = m ? MONTHS[Number(m[2]) - 1] : undefined;
+  return m && month ? `, ${month} ${m[1]}` : "";
 }
 
 function fmtPct(value: number | null): string {
@@ -88,6 +183,12 @@ const APPENDIX_COLUMNS = [
 export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInput): string {
   const { data, narratives } = input;
   const d: DerivedAnalytics = data.derived;
+  // Payloads stored before median_iqr_spread_pct existed fall back to the mean.
+  const spreadPct = d.median_iqr_spread_pct ?? d.avg_iqr_spread_pct ?? null;
+  // Payloads stored before the regional and income chapters lack these fields.
+  const overdraftDistribution = data.overdraft_distribution ?? [];
+  const regional = data.regional ?? { districts: [], sizes: [], states: [] };
+  const incomeSeries = data.income_series ?? [];
 
   const formattedDate = new Date(data.report_date).toLocaleDateString("en-US", {
     month: "long",
@@ -97,109 +198,131 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
 
   // ── Cover ──────────────────────────────────────────────────────────────────
   const cover = coverPage({
-    title: "The Death of Fee-Based Differentiation",
-    subtitle: `${data.total_institutions.toLocaleString()} Institutions \u2014 Full Fee Catalog \u2014 National Benchmark Analysis`,
+    title: `National Fee Index, ${data.quarter}`,
+    subtitle: `${data.total_institutions.toLocaleString()} institutions with published fees \u2014 ${d.categories_with_data_count} fee categories. Fees as of ${formattedDate}${data.revenue ? `; call-report income through ${data.revenue.latest_quarter}` : ""}.`,
     report_date: formattedDate,
     series: `National Quarterly Report \u2014 ${data.quarter}`,
   });
 
   // ── Table of Contents ──────────────────────────────────────────────────────
+  // The trends chapter runs about four pages (district, state, size, income and outlier tables).
+  const trendsPages = input.trends ? 4 : 0;
+  const regulatoryPage = 9 + trendsPages;
+  const methodologyPage = regulatoryPage + (input.regulatory ? 1 : 0);
   const toc = tableOfContents([
     {
-      title: "5 Truths About Banking Fees",
-      description: "A structural shift in how banks generate fee revenue",
-      page: 3,
+      title: "The Quarter in Figures",
+      description: "Headline medians, charter comparison and call-report income",
       sectionLabel: "Executive Summary",
     },
     {
       number: "01",
-      title: "The Illusion of Fee Differentiation",
-      description: "Why pricing no longer drives advantage",
-      page: 4,
+      title: "Where Prices Cluster and Where They Spread",
+      description: "Spread around the national median, by fee",
       sectionLabel: "Core Analysis",
     },
     {
       number: "02",
-      title: "Banks vs Credit Unions: Two Models",
-      description: "Convenience vs penalty economics",
-      page: 5,
+      title: "Banks and Credit Unions",
+      description: "Medians by charter where both publish the fee",
     },
     {
       number: "03",
-      title: "Where the Money Actually Comes From",
-      description: "Revenue concentration + national data",
-      page: 6,
+      title: "District, Size and State",
+      description: "Headline fee medians by Federal Reserve district, asset size and state",
     },
     {
       number: "04",
-      title: "The Industry Blind Spot",
-      description: "Why pricing lacks benchmark context",
-      page: 7,
+      title: "Fee Income in Call Reports",
+      description: "Eight quarters of FDIC and NCUA service-charge income",
     },
     {
       number: "05",
-      title: "The Future of Fee Strategy",
-      description: "Behavior, bundling, and segmentation",
-      page: 8,
+      title: "Fee Changes at the Same Banks",
+      description: "Price changes confirmed against each bank's own schedules",
     },
     {
-      title: "What Winning Institutions Do Next",
-      description: "Actionable recommendations by charter type",
-      page: 9,
-      sectionLabel: "Strategy",
+      number: "06",
+      title: "Regulatory and Industry Developments",
+      description: "Federal Reserve, FDIC, OCC and CFPB releases from the last 90 days",
     },
+    {
+      number: "07",
+      title: "Data Coverage",
+      description: "How much of each category is published",
+    },
+    {
+      title: "Economic Backdrop",
+      description: "Rates, prices and Beige Book notes from the Federal Reserve",
+    },
+    {
+      number: "08",
+      title: "What to Watch",
+      description: "Questions the next quarters of data can settle",
+    },
+    ...(input.trends
+      ? [{
+          number: "09",
+          title: "Rankings, Income Trend and Outliers",
+          description: "District income, every state ranked, 16 quarters of fee income and the highest published fees",
+        }]
+      : []),
     {
       title: "Methodology",
       description: "Data sources, computation methods, and maturity definitions",
-      page: 10,
       sectionLabel: "Data",
     },
     {
       title: "Full Category Index",
       description: "Complete national benchmark data for all tracked fee categories",
-      page: 11,
     },
   ]);
 
-  // ── Executive Summary: "5 Truths About Banking Fees" ──────────────────────
+  // ── Executive Summary: the quarter in figures ─────────────────────────────
   const commoditizedPct = d.total_priced_categories > 0
     ? Math.round((d.commoditized_count / d.total_priced_categories) * 100)
     : 0;
-
-  // Build 5 Truths as individual insight cards — each: bold claim, proof stat, arrow implication
-  const fiveTruths = [
-    {
-      number: `${commoditizedPct}%`,
-      insight: "Pricing is not a competitive advantage",
-      supporting: `${d.commoditized_count} of ${d.total_priced_categories} categories cluster within narrow IQR ranges. Competing on price alone is ineffective.`,
-    },
-    {
-      number: String(d.bank_higher_count),
-      insight: "Credit unions win perception, not pricing",
-      supporting: `Banks charge more in ${d.bank_higher_count} of ${d.comparable_count} comparable categories, yet CUs carry higher penalty exposure. Fee strategy must align with customer behavior.`,
-    },
-    {
-      number: d.bank_revenue_share_pct !== null ? `${d.bank_revenue_share_pct.toFixed(0)}%` : "\u2014",
-      insight: "Revenue visibility is broken",
-      supporting: d.bank_revenue_share_pct !== null
-        ? `Banks hold ${d.bank_revenue_share_pct.toFixed(0)}% of fee revenue, yet no standardized benchmarking exists. Institutions are pricing without context.`
-        : "No standardized fee revenue benchmarking exists. Institutions are pricing without context.",
-    },
-    {
-      number: String(d.strong_maturity_count),
-      insight: "Fee income is concentrated",
-      supporting: `Only ${d.strong_maturity_count} categories have strong data maturity out of ${d.total_priced_categories}. Optimization must focus on high-impact fees.`,
-    },
-    {
-      number: d.avg_iqr_spread_pct !== null ? `${d.avg_iqr_spread_pct.toFixed(0)}%` : "\u2014",
-      insight: "Behavior beats pricing",
-      supporting: `Average IQR spread of ${d.avg_iqr_spread_pct !== null ? d.avg_iqr_spread_pct.toFixed(0) + "%" : "N/A"} confirms static fee schedules cannot capture value. Future advantage = segmentation + behavior.`,
-    },
-  ];
+  const byCategory = new Map(data.categories.map((c) => [c.fee_category, c]));
+  const headlineCard = (key: string, label: string) => {
+    const c = byCategory.get(key);
+    if (!c || c.median_amount === null) return null;
+    return {
+      number: fmtFee(c.median_amount),
+      insight: `${label} national median`,
+      supporting: `Middle half ${fmtFee(c.p25_amount)} to ${fmtFee(c.p75_amount)}, from ${c.institution_count.toLocaleString()} institutions.`,
+    };
+  };
+  const figures = [
+    headlineCard("overdraft", "Overdraft"),
+    headlineCard("nsf", "NSF / returned item"),
+    d.comparable_count > 0
+      ? {
+          number: `${d.bank_higher_count} of ${d.comparable_count}`,
+          insight: "Categories where banks' median is higher",
+          supporting: `Credit unions' median is higher in ${d.cu_higher_count}; the rest are equal.`,
+        }
+      : null,
+    data.revenue && data.revenue.total_service_charges > 0
+      ? {
+          number: fmtThousandsAsBillions(data.revenue.total_service_charges),
+          insight: `Service-charge income, ${data.revenue.latest_quarter}`,
+          supporting: data.revenue.yoy_change_pct !== null
+            ? `${data.revenue.yoy_change_pct > 0 ? "+" : ""}${data.revenue.yoy_change_pct.toFixed(1)}% from a year earlier, FDIC and NCUA filings.`
+            : "FDIC and NCUA filings.",
+        }
+      : null,
+    spreadPct !== null
+      ? {
+          number: `${spreadPct.toFixed(0)}%`,
+          insight: "Typical spread of the middle half",
+          supporting: `Median across ${d.total_priced_categories} priced categories of each fee's middle half as a share of its median.`,
+        }
+      : null,
+  ].filter((f): f is { number: string; insight: string; supporting: string } => f !== null);
 
   const execSummary = [
-    chapterDivider("", "5 Truths About Banking Fees in 2026"),
-    insightCardRow(fiveTruths),
+    chapterDivider("", "The Quarter in Figures"),
+    insightCardRow(figures),
     hamiltonNarrativeBlock(narratives.executive_summary.narrative),
   ].join("\n");
 
@@ -242,11 +365,12 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       });
     }
 
+    // No wrapping box: the card rows keep together in print and a box would split from them.
     econSections.push(
-      `<div style="margin: 32px 0; padding: 24px 28px; background: ${PALETTE.sectionBg}; border-radius: 8px; border-left: 4px solid ${PALETTE.accent};">`,
-      `<h3 style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: ${PALETTE.accent}; margin: 0 0 16px 0;">Economic Environment \u2014 ${data.fred.as_of || data.quarter}</h3>`,
-      statCardRow(econCards),
-      `</div>`,
+      `<div class="h-bar-title">Economic indicators, as of ${escapeHtml(data.fred.as_of || data.quarter)}</div>`,
+      statCardRow(econCards.slice(0, 3)),
+      econCards.length > 3 ? statCardRow(econCards.slice(3, 6)) : "",
+      econCards.length > 6 ? statCardRow(econCards.slice(6)) : "",
     );
   }
 
@@ -268,7 +392,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     const themeQuotes = data.beige_themes
       .map((t) => pullQuote(
         t.summary.slice(0, 250) + (t.summary.length > 250 ? "..." : ""),
-        `Federal Reserve Beige Book \u2014 ${t.district_name} (${t.theme_category.replace(/_/g, " ")})`
+        `Federal Reserve Beige Book${releaseLabel(t.release_code)} \u2014 ${t.district_name} (${t.theme_category.replace(/_/g, " ")})`
       ))
       .join("\n");
 
@@ -281,7 +405,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   }
 
   const economicContext = econSections.length > 0
-    ? econSections.join("\n")
+    ? [chapterDivider("", "Economic Backdrop"), ...econSections].join("\n")
     : "";
 
   // ── Ch1: The Illusion of Fee Differentiation ──────────────────────────────
@@ -292,15 +416,24 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   }));
 
   const ch1 = [
-    pageBreak(),
-    chapterDivider("01", "The Illusion of Fee Differentiation"),
+    chapterDivider("01", "Where Prices Cluster and Where They Spread"),
     horizontalBarChart({
       bars: tightestBars,
-      title: "Top 10 Functionally Undifferentiated Fees (Smallest IQR Spread)",
+      title: "Fees with the narrowest middle half (spread as % of median)",
       source: `Bank Fee Index \u2014 ${data.total_institutions.toLocaleString()} institutions`,
     }),
+    overdraftDistribution.length > 1
+      ? columnChart({
+          title: "How overdraft prices spread: institutions at each price",
+          columns: overdraftDistribution.map((b) => ({
+            label: b.label.replace(" to ", "\u2013"),
+            segments: [{ label: "Institutions", value: b.count }],
+            displayValue: b.count.toLocaleString(),
+          })),
+          source: `One price per institution (its highest tier where it has several). ${overdraftDistribution.reduce((n, b) => n + b.count, 0).toLocaleString()} institutions.`,
+        })
+      : "",
     hamiltonNarrativeBlock(narratives.fee_differentiation.narrative),
-    soWhatBox("Stop competing on price alone. Differences exist but are too small to influence customer choice. Differentiation must come from experience, packaging, and targeting."),
   ].join("\n");
 
   // ── Ch2: Banks vs Credit Unions — Two Models ─────────────────────────────
@@ -317,8 +450,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }));
 
   const ch2 = [
-    pageBreak(),
-    chapterDivider("02", "Banks vs Credit Unions: Two Models"),
+    chapterDivider("02", "Banks and Credit Unions"),
     comparisonChart({
       bars: comparisonBars,
       leftLabel: "Banks",
@@ -328,12 +460,12 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }),
     statCardRow([
       {
-        label: "Banks Charge More",
+        label: "Bank median higher",
         value: String(d.bank_higher_count),
         source: "categories",
       },
       {
-        label: "CUs Charge More",
+        label: "Credit union median higher",
         value: String(d.cu_higher_count),
         source: "categories",
       },
@@ -344,75 +476,76 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       },
     ]),
     hamiltonNarrativeBlock(narratives.banks_vs_credit_unions.narrative),
-    soWhatBox("Banks monetize convenience; credit unions monetize penalties. Neither model is sustainable without intentional fee architecture."),
   ].join("\n");
 
-  // ── Ch3: Where the Money Actually Comes From ─────────────────────────────
-  // Revenue proxy model: estimate impact from fee prevalence and median amount.
-  const revenueProxy = data.categories
-    .filter((c) => c.median_amount !== null && c.median_amount > 0 && c.institution_count > 0)
-    .map((c) => ({
-      display_name: c.display_name,
-      median: c.median_amount!,
-      institutions: c.institution_count,
-      estimated_impact: c.median_amount! * c.institution_count,
-    }))
-    .sort((a, b) => b.estimated_impact - a.estimated_impact);
+  // ── Ch3: District, Size and State ─────────────────────────────────────────
+  const regionalSections: string[] = [chapterDivider("03", "District, Size and State")];
+  const minNote = `Medians shown where at least ${MIN_GROUP_INSTITUTIONS} institutions publish the fee; \u2014 otherwise.`;
+  if (regional.districts.length > 0) {
+    regionalSections.push(groupTable(regional.districts, "Federal Reserve district", `Headline fee medians by Federal Reserve district. ${minNote}`));
+  }
+  if (regional.sizes.length > 0) {
+    regionalSections.push(groupTable(regional.sizes, "Asset size", `Headline fee medians by asset size. ${minNote}`));
+  }
+  const stateOverdraft = regional.states
+    .filter((r) => r.fees.overdraft?.median !== null && r.fees.overdraft?.median !== undefined)
+    .map((r) => ({ label: r.label, median: r.fees.overdraft.median as number, n: r.fees.overdraft.institutions }))
+    .sort((a, b) => b.median - a.median || b.n - a.n);
+  if (stateOverdraft.length >= 10) {
+    const stateTable = (rows: typeof stateOverdraft, caption: string) =>
+      dataTable({
+        columns: [
+          { key: "label", label: "State", align: "left" },
+          { key: "median", label: "Overdraft median", align: "right", format: "amount" },
+          { key: "n", label: "Institutions", align: "right", format: "integer" },
+        ],
+        rows: rows.map((r) => ({ label: r.label, median: r.median, n: r.n })),
+        caption,
+      });
+    regionalSections.push(
+      twoColumn(
+        stateTable(stateOverdraft.slice(0, 5), "Highest overdraft medians"),
+        stateTable(stateOverdraft.slice(-5).reverse(), "Lowest overdraft medians"),
+        "1fr 1fr",
+      ),
+      footnote(`${stateOverdraft.length} states have at least ${MIN_GROUP_INSTITUTIONS} institutions publishing an overdraft fee; the rest are left out of this ranking.`),
+    );
+  }
+  if (regionalSections.length === 1) {
+    regionalSections.push(footnote("District, size and state medians were not available when this report was built."));
+  }
+  const ch3Regional = regionalSections.join("\n");
 
-  const primaryDriverNames = revenueProxy.slice(0, 3).map((r) => r.display_name).join(" / ");
-  const secondaryDriverNames = revenueProxy.slice(3, 8).map((r) => r.display_name).join(", ");
-  const longTailCount = Math.max(revenueProxy.length - 8, 0);
-
+  // ── Ch4: Fee Income in Call Reports ─────────────────────────────────────
+  // Call reports give one service-charge line per institution, not income by fee
+  // category, so this chapter ranks no category by revenue.
   const ch3Sections: string[] = [
-    pageBreak(),
-    chapterDivider("03", "Where the Money Actually Comes From"),
+    chapterDivider("04", "Fee Income in Call Reports"),
   ];
 
-  // Revenue concentration pyramid — always shown
-  ch3Sections.push(
-    revenuePyramid([
-      {
-        label: primaryDriverNames,
-        description: "Primary Revenue Drivers",
-        widthPct: 30,
-      },
-      {
-        label: secondaryDriverNames,
-        description: "Secondary Drivers",
-        widthPct: 55,
-      },
-      {
-        label: `${longTailCount} Other Categories`,
-        description: "Long Tail -- Minimal Revenue",
-        widthPct: 90,
-      },
-    ])
-  );
-
   if (data.revenue) {
-    // Real revenue data path — filter out $0 values
     const revenueCards: Array<{ label: string; value: string; delta?: string; source?: string }> = [];
 
     if (data.revenue.total_service_charges > 0) {
       revenueCards.push({
-        label: "Total Service Charges",
-        value: fmtBillions(data.revenue.total_service_charges),
+        label: "Service-charge income",
+        value: fmtThousandsAsBillions(data.revenue.total_service_charges),
         delta: data.revenue.yoy_change_pct !== null ? `${data.revenue.yoy_change_pct > 0 ? "+" : ""}${data.revenue.yoy_change_pct.toFixed(1)}% YoY` : undefined,
         source: data.revenue.latest_quarter,
       });
     }
 
-    if (d.revenue_per_institution !== null && d.revenue_per_institution > 0) {
+    if (d.bank_revenue_share_pct !== null) {
       revenueCards.push({
-        label: "Revenue per Institution",
-        value: `$${(d.revenue_per_institution / 1_000_000).toFixed(1)}M`,
-        source: `${data.revenue.total_institutions.toLocaleString()} reporting institutions`,
+        label: "Banks' share",
+        value: `${d.bank_revenue_share_pct.toFixed(1)}%`,
+        source: d.cu_revenue_share_pct !== null ? `credit unions ${d.cu_revenue_share_pct.toFixed(1)}%` : undefined,
       });
     }
 
     if (data.revenue.total_institutions > 0) {
       revenueCards.push({
-        label: "Reporting Institutions",
+        label: "Reporting institutions",
         value: data.revenue.total_institutions.toLocaleString(),
         source: "FDIC + NCUA filings",
       });
@@ -423,44 +556,40 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     }
   }
 
-  // Revenue contribution bar chart (proxy ranking) — after pyramid
-  ch3Sections.push(
-    horizontalBarChart({
-      bars: revenueProxy.slice(0, 8).map((r) => ({
-        label: r.display_name,
-        value: r.estimated_impact,
-        displayValue: `$${r.median.toFixed(2)} \u00d7 ${r.institutions.toLocaleString()}`,
-      })),
-      title: "Estimated Revenue Contribution (Median x Institution Count)",
-      source: `Bank Fee Index \u2014 ${data.total_institutions.toLocaleString()} institutions`,
-    })
-  );
+  // Oldest quarter on the left.
+  const series = [...incomeSeries].reverse();
+  if (series.length > 1) {
+    ch3Sections.push(
+      columnChart({
+        title: "Service-charge income by quarter",
+        columns: series.map((q) => ({
+          label: shortQuarter(q.quarter),
+          segments: [
+            { label: "Banks (FDIC)", value: q.banks },
+            { label: "Credit unions (NCUA)", value: q.credit_unions },
+          ],
+          displayValue: fmtThousandsShort(q.total),
+          note: signedPct(q.yoy_change_pct),
+        })),
+        source: "FDIC call reports and NCUA 5300 filings; credit-union year-to-date income converted to the quarter.",
+      }),
+    );
+  }
 
-  // National Data Framework block
   ch3Sections.push(
     dataFramework(
-      "National Fee Revenue Framework",
-      `This analysis integrates FDIC Call Report service charge data, NCUA 5300 credit union filings, and observed pricing across ${data.total_institutions.toLocaleString()} institutions. Because fee revenue is not reported at the category level, this report models revenue concentration using median fee amounts, institutional prevalence, and regulatory reporting totals.`,
+      "What call reports can and cannot show",
+      "FDIC call reports give each bank's quarterly service charges on deposit accounts; NCUA 5300 reports give each credit union's fee income, reported year to date and converted here to the quarter. Neither splits income by fee, so this report does not say which fees earn the most.",
     )
   );
 
   ch3Sections.push(hamiltonNarrativeBlock(narratives.revenue_reality.narrative));
 
-  ch3Sections.push(
-    keyFinding(
-      "Most institutions optimize pricing across every category they publish \u2014 but revenue is driven by fewer than 5.",
-      "Key Finding",
-    )
-  );
-
-  ch3Sections.push(soWhatBox("Focus optimization on high-impact categories. Stop over-analyzing low-impact fees."));
-
   const ch3 = ch3Sections.join("\n");
 
   // ── Ch4: The Industry Blind Spot ──────────────────────────────────────────
   const ch4 = [
-    pageBreak(),
-    chapterDivider("04", "The Industry Blind Spot"),
+    chapterDivider("07", "Data Coverage"),
     statCardRow([
       {
         label: "Categories with Data",
@@ -479,82 +608,60 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       },
     ]),
     hamiltonNarrativeBlock(narratives.industry_blind_spot.narrative),
-    soWhatBox("No institution can benchmark fee revenue nationally today. This is the competitive blind spot the Bank Fee Index exists to close."),
   ].join("\n");
 
   // ── Ch5: The Future of Fee Strategy ───────────────────────────────────────
   const ch5 = [
-    pageBreak(),
-    chapterDivider("05", "The Future of Fee Strategy"),
+    chapterDivider("08", "What to Watch"),
     statCardRow([
       {
-        label: "Avg Price Spread",
-        value: d.avg_iqr_spread_pct !== null ? `${d.avg_iqr_spread_pct.toFixed(0)}%` : "\u2014",
-        source: "IQR as % of median",
+        label: "Typical price spread",
+        value: spreadPct !== null ? `${spreadPct.toFixed(0)}%` : "\u2014",
+        source: "middle half as % of median, median across fees",
       },
       {
-        label: "Effectively Commoditized",
+        label: "Narrow middle half",
         value: `${commoditizedPct}%`,
         source: `${d.commoditized_count} of ${d.total_priced_categories} categories`,
       },
       {
-        label: "Institutions Tracked",
+        label: "Institutions with published fees",
         value: data.total_institutions.toLocaleString(),
         source: "national coverage",
       },
     ]),
     hamiltonNarrativeBlock(narratives.future_strategy.narrative),
-    soWhatBox("Future revenue growth comes from behavior design, bundling, and segmentation — not static price sheets."),
   ].join("\n");
 
-  // ── Playbook ──────────────────────────────────────────────────────────────
-  const playbookSection = [
-    pageBreak(),
-    playbook([
-      {
-        title: "If You Are a Bank",
-        recommendations: [
-          "Monetize convenience fees where you hold pricing power (wires, specialized services)",
-          "Reduce reliance on penalty fees — regulatory and reputational risk is growing",
-          "Build fee bundles that align price with customer segment behavior",
-        ],
-      },
-      {
-        title: "If You Are a Credit Union",
-        recommendations: [
-          "Rebalance penalty fee exposure — NSF and overdraft concentration creates regulatory vulnerability",
-          "Expand digital and convenience monetization (mobile, instant transfers)",
-          "Leverage member data for behavior-based fee strategies",
-        ],
-      },
-      {
-        title: "If You Are Behind",
-        recommendations: [
-          "Stop benchmarking on price alone — your peers are already effectively commoditized",
-          "Start with segmentation: know which customers generate fee revenue and why",
-          "Invest in behavioral pricing models before competitors capture the advantage",
-        ],
-      },
-    ]),
+  // ── Fee changes and agency releases ──────────────────────────────────────
+  // Payloads stored before these fields existed render the chapters' "not read" line.
+  const changesChapter = [
+    chapterDivider("05", "Fee Changes at the Same Banks"),
+    feeChangesContent(data.fee_changes, { label: "U.S." }),
+  ].join("\n");
+  const developmentsChapter = [
+    chapterDivider("06", "Regulatory and Industry Developments"),
+    developmentsContent(data.developments, data.report_date),
+    regulatoryExtras(input.regulatory, "the United States"),
   ].join("\n");
 
   // ── Methodology ───────────────────────────────────────────────────────────
   const methodologyText = [
-    "National medians computed from all non-rejected fee observations in the Bank Fee Index pipeline.",
+    "National medians computed from live published fees (published_fee_catalog), one value per institution per fee.",
     `Maturity: "strong" = 10+ approved observations; "provisional" = 10+ total; "insufficient" = below threshold.`,
     "Charter split computed from charter_type field on institution_sources.",
     "IQR spread = (P75 - P25) / Median. Categories with median below $0.50 excluded from spread analysis.",
-    "Revenue data sourced from FDIC Call Reports and NCUA 5300 filings.",
+    "Service-charge income from FDIC call reports (quarterly) and NCUA 5300 filings (year to date, converted to the quarter); figures are reported in thousands of dollars.",
     `${SITE_NAME} — ${SITE_DOMAIN} — Generated ${data.report_date}`,
   ].join(" ");
 
   const methodology = [
-    pageBreak(),
     footnote(methodologyText),
   ].join("\n");
 
   // ── Appendix ──────────────────────────────────────────────────────────────
-  // No pageBreak() here — methodology flows directly into appendix to avoid blank pages.
+  // Chapters, methodology and appendix flow without forced page breaks, so no page is left
+  // mostly blank; each chapter heading stays with its first block (base/styles.ts).
   // The compact table uses break-inside:auto so it flows across pages naturally.
   const appendix = [
     chapterDivider("A", "Full Category Index"),
@@ -571,6 +678,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
       })),
       caption: `All ${data.categories.length} fee categories \u2014 ${data.total_institutions.toLocaleString()} institutions \u2014 as of ${data.report_date}`,
     }),
+    rateTable(data),
   ].join("\n");
 
   // ── Assemble with layout wrappers ───────────────────────────────────────────
@@ -582,10 +690,14 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     layoutStatement(execSummary),
     layoutAnalytical(ch1),
     layoutAnalytical(ch2),
+    layoutAnalytical(ch3Regional),
     layoutAnalytical(ch3),
+    layoutAnalytical(changesChapter),
+    layoutAnalytical(developmentsChapter),
     layoutAnalytical(ch4),
+    economicContext ? layoutAnalytical(economicContext) : "",
     layoutStatement(ch5),
-    layoutStatement(playbookSection),
+    input.trends ? layoutAnalytical(renderNationalTrendsSection(input.trends, { number: "09", title: "Rankings, Income Trend and Outliers", districtFees: false, tiers: false })) : "",
     methodology,
     appendix,
   ]
@@ -593,7 +705,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     .join("\n\n");
 
   return wrapReport(body, {
-    title: "The Death of Fee-Based Differentiation",
+    title: `National Fee Index, ${data.quarter}`,
     author: HAMILTON_ATTRIBUTION,
     date: data.report_date,
   });

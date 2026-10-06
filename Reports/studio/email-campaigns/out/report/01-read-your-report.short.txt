@@ -1,0 +1,15 @@
+Every free report is live. Here is where every number comes from.
+
+Your fee reports, and what to read first
+See every free report: https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=read-your-report
+National, all 12 Fed districts, and every state. Free, no login.
+1. Key findings. The two penalty fees and the bank vs credit union gap, each with how many institutions stand behind it.
+2. Headline fees. The median and the middle half (25th to 75th percentile) for each of the 15 fees customers notice most. A fee only appears when 20 or more institutions publish it.
+3. Banks vs credit unions. The same fees by charter, where each side has enough institutions to compare.
+4. Methodology. One value per institution, taken from its own published fee schedule.
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

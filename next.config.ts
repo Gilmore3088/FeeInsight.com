@@ -29,6 +29,19 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  // The sample report PDF is offline until it is re-rendered from live, source-checked
+  // data (SAMPLE_REPORT_LIVE in src/lib/constants.ts). Old links and emails land on the
+  // sample page's "new sample coming soon" note. Remove this when the sample is back.
+  async redirects() {
+    return [
+      {
+        source: "/reports/sample-competitive-fee-position.pdf",
+        destination: "/reports/sample-competitive-fee-position",
+        permanent: false,
+      },
+    ];
+  },
+
   async headers() {
     return [
       {
@@ -54,13 +67,13 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://plausible.io https://js.stripe.com https://va.vercel-scripts.com",
+              "script-src 'self' 'unsafe-inline' https://js.stripe.com https://va.vercel-scripts.com",
               // Google Fonts stylesheet (Material Symbols Outlined for /pro icons)
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob:",
               // Google Fonts font files (Material Symbols served from gstatic)
               "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' https://plausible.io https://api.stripe.com https://vitals.vercel-insights.com",
+              "connect-src 'self' https://api.stripe.com https://vitals.vercel-insights.com",
               "frame-src 'self' https://js.stripe.com",
               "frame-ancestors 'none'",
             ].join("; "),

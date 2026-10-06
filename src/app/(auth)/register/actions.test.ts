@@ -5,10 +5,15 @@ const mocks = vi.hoisted(() => ({
   getStripe: vi.fn(() => {
     throw new Error("Stripe must not be called during registration");
   }),
+  rateLimited: vi.fn(async () => false),
 }));
 
 vi.mock("@/lib/auth", () => ({ createUserWithSession: mocks.createUserWithSession }));
 vi.mock("@/lib/stripe", () => ({ getStripe: mocks.getStripe }));
+vi.mock("@/lib/api-hardening/action-rate-limit", () => ({
+  REGISTER_ACTION_POLICY: { routeId: "action.register" },
+  isServerActionRateLimited: mocks.rateLimited,
+}));
 
 function form(fields: Record<string, string>): FormData {
   const data = new FormData();
@@ -20,6 +25,21 @@ describe("register", () => {
   beforeEach(() => {
     mocks.createUserWithSession.mockReset();
     mocks.getStripe.mockClear();
+  });
+
+  it("creates no account once this connection is over the signup limit", async () => {
+    mocks.rateLimited.mockResolvedValueOnce(true);
+    const { register } = await import("./actions");
+    const result = await register(form({ email: "reader@example.com", password: "password1" }));
+    expect(result).toEqual({ success: false, error: expect.stringContaining("Too many sign-up attempts") });
+    expect(mocks.createUserWithSession).not.toHaveBeenCalled();
+  });
+
+  it("creates no account when the hidden honeypot is filled", async () => {
+    const { register } = await import("./actions");
+    const result = await register(form({ email: "bot@example.com", password: "password1", website: "spam.example" }));
+    expect(result.success).toBe(false);
+    expect(mocks.createUserWithSession).not.toHaveBeenCalled();
   });
 
   it("creates a consumer account from email and password alone, without Stripe", async () => {

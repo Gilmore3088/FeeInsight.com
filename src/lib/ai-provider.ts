@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropic as createAnthropicLanguageModel } from "@ai-sdk/anthropic";
+import { anthropic as sharedAnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
 
 /** SDK types for modules that build typed Messages requests through this provider. */
 export type { Anthropic };
@@ -42,24 +42,56 @@ export function anthropicPriceFor(model: string): { input: number; output: numbe
 export const MISSING_ANTHROPIC_API_KEY_MESSAGE =
   "AI service not configured. Set ANTHROPIC_API_KEY.";
 
-export function hasAnthropicApiKey(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+/**
+ * Each agent may bill to its own Anthropic key (ANTHROPIC_API_KEY_DARWIN and so on), so
+ * the Anthropic Console shows and caps spend per agent. An agent without its own key
+ * uses the shared ANTHROPIC_API_KEY.
+ */
+export const PROVIDER_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton"] as const;
+export type ProviderAgent = (typeof PROVIDER_AGENTS)[number];
+
+export function anthropicApiKeyEnvName(agent: ProviderAgent): string {
+  return `ANTHROPIC_API_KEY_${agent.toUpperCase()}`;
 }
 
-export function assertAnthropicApiKey(context = "Anthropic provider"): string {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+export type AnthropicKeySource = "own" | "shared" | "missing";
+
+function resolveAnthropicApiKey(agent?: ProviderAgent): { apiKey: string | undefined; source: AnthropicKeySource } {
+  const own = agent ? process.env[anthropicApiKeyEnvName(agent)]?.trim() : undefined;
+  if (own) return { apiKey: own, source: "own" };
+  const shared = process.env.ANTHROPIC_API_KEY?.trim();
+  return shared ? { apiKey: shared, source: "shared" } : { apiKey: undefined, source: "missing" };
+}
+
+/** Which key each agent would bill to right now; shown on the admin provider panel. */
+export function anthropicKeySources(): Array<{ agent: ProviderAgent; envName: string; source: AnthropicKeySource }> {
+  return PROVIDER_AGENTS.map((agent) => ({
+    agent,
+    envName: anthropicApiKeyEnvName(agent),
+    source: resolveAnthropicApiKey(agent).source,
+  }));
+}
+
+export function hasAnthropicApiKey(agent?: ProviderAgent): boolean {
+  return Boolean(resolveAnthropicApiKey(agent).apiKey);
+}
+
+export function assertAnthropicApiKey(context = "Anthropic provider", agent?: ProviderAgent): string {
+  const { apiKey } = resolveAnthropicApiKey(agent);
   if (!apiKey) {
     throw new Error(`${context}: ${MISSING_ANTHROPIC_API_KEY_MESSAGE}`);
   }
   return apiKey;
 }
 
-export function getAnthropicMessagesClient(context?: string): Anthropic {
-  return new Anthropic({ apiKey: assertAnthropicApiKey(context) });
+export function getAnthropicMessagesClient(context?: string, agent?: ProviderAgent): Anthropic {
+  return new Anthropic({ apiKey: assertAnthropicApiKey(context, agent) });
 }
 
-export function getAnthropicLanguageModel(model: string) {
-  return createAnthropicLanguageModel(model);
+export function getAnthropicLanguageModel(model: string, agent?: ProviderAgent) {
+  const { apiKey, source } = resolveAnthropicApiKey(agent);
+  // The shared provider reads ANTHROPIC_API_KEY itself; only an agent's own key needs a new one.
+  return source === "own" ? createAnthropic({ apiKey })(model) : sharedAnthropicProvider(model);
 }
 
 type AnthropicTextBlock = {

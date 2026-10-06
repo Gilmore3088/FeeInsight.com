@@ -5,7 +5,6 @@ import { getArticles } from "@/lib/data-store/articles";
 import { ensureResearchTables } from "@/lib/research/history";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ArticlesTable } from "@/components/articles-table";
-import { ArticleActions } from "./article-actions";
 
 export default async function ArticlesPage({
   searchParams,
@@ -74,10 +73,7 @@ export default async function ArticlesPage({
         ))}
       </div>
 
-      <ArticlesTable
-        articles={articles}
-        renderActions={(article) => <ArticleActions article={article} />}
-      />
+      <ArticlesTable articles={articles} />
     </div>
   );
 }

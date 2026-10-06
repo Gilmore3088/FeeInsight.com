@@ -58,6 +58,12 @@ export function parseStateCode(value: unknown): string | null {
   return VALID_US_CODES.has(code) ? code : null;
 }
 
+/** The state a reader most recently chose, from `state=XX` in their lead's use_case. */
+export function stateFromUseCase(useCase: string | null | undefined): string | null {
+  const matches = [...(useCase ?? "").matchAll(/(?:^|;\s*)state=([A-Z]{2})\b/g)];
+  return parseStateCode(matches.at(-1)?.[1]);
+}
+
 /** `placement=...; institution_id=...; state=...` — queryable with LIKE on use_case. */
 export function buildCaptureAttribution(
   placement: LeadCapturePlacement,

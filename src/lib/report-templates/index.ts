@@ -20,6 +20,7 @@ export {
   statCardRow,
   keyFinding,
   horizontalBarChart,
+  columnChart,
   twoColumn,
   chapterDivider,
   tableOfContents,
@@ -35,6 +36,11 @@ export {
   layoutStatement,
   revenuePyramid,
   dataFramework,
+  figureFindings,
+  reportSection,
+  emptyNotice,
+  releaseList,
+  escapeHtml,
 } from "./base/components";
 
 export type {
@@ -46,6 +52,10 @@ export type {
   StatCard,
   BarChartBar,
   HorizontalBarChartProps,
+  ColumnChartProps,
+  ColumnChartColumn,
+  ReleaseListGroup,
+  ReleaseListItem,
   TocEntry,
   NumberedFinding,
   InsightCardProps,
@@ -53,6 +63,7 @@ export type {
   ComparisonChartBar,
   PlaybookSegment,
   RevenuePyramidTier,
+  FigureFinding,
 } from "./base/components";
 
 export { PALETTE, TYPOGRAPHY, REPORT_CSS } from "./base/styles";

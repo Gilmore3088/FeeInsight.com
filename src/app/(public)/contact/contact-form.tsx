@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, use } from "react";
+import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
+import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 
 const INQUIRY_TYPES = [
-  { value: "report", label: "Competitive Fee Position Report (free)" },
+  { value: "report", label: "Competitive Fee Position Report (priced on request)" },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },
@@ -17,6 +19,7 @@ interface ContactFormProps {
 export function ContactForm({ searchParamsPromise }: ContactFormProps) {
   const searchParams = use(searchParamsPromise);
   const defaultSource = typeof searchParams.source === "string" ? searchParams.source : "";
+  const defaultCompany = typeof searchParams.company === "string" ? searchParams.company.slice(0, 160) : "";
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [confirmationSent, setConfirmationSent] = useState(false);
@@ -33,6 +36,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       role: form.get("role") as string,
       use_case: form.get("message") as string,
       source: `contact_${form.get("inquiry_type") || "general"}`,
+      [LEAD_HONEYPOT_FIELD]: honeypotValue(e.currentTarget),
     };
 
     try {
@@ -73,7 +77,8 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
     "w-full rounded-xl border border-[#E8DFD1] bg-white px-4 py-2.5 text-[13px] text-[#1A1815] placeholder:text-[#6B6255] focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30 focus:border-transparent";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="relative space-y-4">
+      <HoneypotField />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor="name" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
@@ -112,6 +117,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
             id="company"
             name="company"
             type="text"
+            defaultValue={defaultCompany}
             placeholder="First National Bank"
             className={inputClasses}
           />

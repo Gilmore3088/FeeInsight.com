@@ -11,12 +11,20 @@
  */
 
 import { createHash } from "crypto";
-import { getNationalIndex, getPeerIndex } from "@/lib/data-store/fee-index";
+import { getNationalIndex, getPeerFeeValues, getPeerIndex, getPeerIndexes, type IndexEntry } from "@/lib/data-store/fee-index";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
+import { priceBands } from "@/lib/hamilton/workspace/bands";
+import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import { getRevenueTrend } from "@/lib/data-store/call-reports";
+import { getPublicStatsSummary } from "@/lib/public-stats";
 import { getBeigeBookHeadlines, getBeigeBookThemes, getFredSummary } from "@/lib/data-store/fed";
 import type { BeigeBookTheme } from "@/lib/data-store/fed";
 import { getDisplayName, FEE_TIERS } from "@/lib/fee-taxonomy";
+import { getNationalRateStats } from "@/lib/data-store/rate-fees";
+import { PERCENT_FEE_RANGES } from "@/lib/percent-fees";
 import type { DataManifest } from "@/lib/report-engine/types";
+import { loadDevelopments, loadFeeChanges, type DevelopmentsBlock, type FeeChangesBlock } from "./developments";
 import type { ThesisSummaryPayload } from "@/lib/hamilton/types";
 
 // ─── Payload Types ─────────────────────────────────────────────────────────────
@@ -41,6 +49,8 @@ export interface NationalQuarterlySection {
 export interface DerivedAnalytics {
   // Ch1: Fee Differentiation analysis
   avg_iqr_spread_pct: number | null;
+  /** Median across priced categories of (P75 - P25) / median, in percent; a few very wide fees do not pull it. */
+  median_iqr_spread_pct: number | null;
   commoditized_count: number;
   total_priced_categories: number;
   tightest_spreads: Array<{ display_name: string; spread_pct: number; median: number }>;
@@ -64,6 +74,43 @@ export interface DerivedAnalytics {
   provisional_maturity_count: number;
 }
 
+/** Fees shown in every regional and size table, in this order. */
+export const REGIONAL_FEES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network", "wire_domestic_outgoing"] as const;
+/** A median is shown only when at least this many institutions publish the fee in the group. */
+export const MIN_GROUP_INSTITUTIONS = 5;
+
+export interface GroupFeeMedian {
+  median: number | null;
+  institutions: number;
+}
+
+export interface GroupRow {
+  key: string;
+  label: string;
+  fees: Record<string, GroupFeeMedian>;
+}
+
+export interface IncomeQuarterRow {
+  quarter: string;
+  /** Thousands of dollars, as filed. */
+  total: number;
+  banks: number;
+  credit_unions: number;
+  institutions: number;
+  yoy_change_pct: number | null;
+}
+
+/** A fee as institutions state it as a rate ("1% of the transaction"); never pooled with dollar amounts. */
+export interface NationalRateSection {
+  fee_category: string;
+  display_name: string;
+  institution_count: number;
+  median_rate: number | null;
+  p25_rate: number | null;
+  p75_rate: number | null;
+  maturity_tier: "strong" | "provisional" | "insufficient";
+}
+
 export interface NationalQuarterlyPayload {
   report_date: string;
   quarter: string;
@@ -71,6 +118,8 @@ export interface NationalQuarterlyPayload {
   total_bank_institutions: number;
   total_cu_institutions: number;
   categories: NationalQuarterlySection[];
+  /** Fees that may publish as a rate, by their rates; absent on older payloads. */
+  rate_categories?: NationalRateSection[];
   revenue: {
     latest_quarter: string;
     total_service_charges: number;
@@ -102,9 +151,21 @@ export interface NationalQuarterlyPayload {
     theme_category: string;
     sentiment: string;
     summary: string;
+    /** Beige Book release, YYYYMM, so an older release is never read as current. */
+    release_code?: string;
   }>;
   // V3 derived analytics
   derived: DerivedAnalytics;
+  /** Headline fee medians by Federal Reserve district, asset size and state. */
+  regional: { districts: GroupRow[]; sizes: GroupRow[]; states: GroupRow[] };
+  /** Service-charge income, newest quarter first (up to eight). */
+  income_series: IncomeQuarterRow[];
+  /** Every institution's overdraft fee, counted into price bands. */
+  overdraft_distribution: { label: string; count: number }[];
+  /** Federal agency releases in the last 90 days; null when the read failed. */
+  developments?: DevelopmentsBlock | null;
+  /** Confirmed fee price changes at the same banks in the last 90 days; null when the read failed. */
+  fee_changes?: FeeChangesBlock | null;
   manifest: DataManifest;
 }
 
@@ -119,6 +180,23 @@ function deriveQuarter(date: Date): string {
   if (month <= 5) return `Q2 ${year}`;
   if (month <= 8) return `Q3 ${year}`;
   return `Q4 ${year}`;
+}
+
+const REGIONAL_SIZE_TIERS = ["community_small", "community_mid", "community_large", "regional", "large_regional", "super_regional"];
+
+/** One group's medians for the headline fees; a median needs MIN_GROUP_INSTITUTIONS publishers. */
+export function groupRow(key: string, label: string, entries: IndexEntry[]): GroupRow {
+  const byCategory = new Map(entries.map((e) => [e.fee_category, e]));
+  const fees: Record<string, GroupFeeMedian> = {};
+  for (const fee of REGIONAL_FEES) {
+    const e = byCategory.get(fee);
+    const institutions = e?.institution_count ?? 0;
+    fees[fee] = {
+      median: e && institutions >= MIN_GROUP_INSTITUTIONS ? e.median_amount : null,
+      institutions,
+    };
+  }
+  return { key, label, fees };
 }
 
 // ─── Assembler ─────────────────────────────────────────────────────────────────
@@ -151,8 +229,18 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
 
   // Query 4: Call Report revenue trend (graceful degradation)
   let revenue: NationalQuarterlyPayload["revenue"] = null;
+  let income_series: IncomeQuarterRow[] = [];
   try {
-    const trend = await getRevenueTrend(8);
+    // Twelve quarters so each of the newest eight has its year-earlier quarter.
+    const trend = await getRevenueTrend(12);
+    income_series = trend.quarters.slice(0, 8).map((q) => ({
+      quarter: q.quarter,
+      total: q.total_service_charges,
+      banks: q.bank_service_charges,
+      credit_unions: q.cu_service_charges,
+      institutions: q.total_institutions,
+      yoy_change_pct: q.yoy_change_pct,
+    }));
     if (trend.latest) {
       revenue = {
         latest_quarter: trend.latest.quarter,
@@ -164,14 +252,14 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       };
     }
     manifestEntries.push({
-      sql: "getRevenueTrend(8)",
+      sql: "getRevenueTrend(12)",
       row_count: trend.quarters.length,
       executed_at: assembled_at,
     });
   } catch (e) {
     console.warn("[assembler] Call Report query failed, skipping:", e);
     manifestEntries.push({
-      sql: "getRevenueTrend(8)",
+      sql: "getRevenueTrend(12)",
       row_count: 0,
       executed_at: assembled_at,
     });
@@ -294,8 +382,17 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const total_bank_institutions = bankEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
   const total_cu_institutions = cuEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
 
-  // total_institutions: broadest coverage — max institution_count across all categories
-  const total_institutions = nationalEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
+  // total_institutions: the site's own count of institutions with published fees, so the
+  // report and every public page state one number. The largest single category's count
+  // (the old rule) understated coverage by a fifth.
+  const largestCategory = nationalEntries.reduce((max, e) => Math.max(max, e.institution_count), 0);
+  let total_institutions = largestCategory;
+  try {
+    const summary = await getPublicStatsSummary();
+    if (summary.institutions > 0) total_institutions = summary.institutions;
+  } catch (err) {
+    console.warn("[assembleNationalQuarterly] public stats summary failed, using largest category count:", err);
+  }
 
   // Suppress unused variable warnings
   void bankInstitutionSet;
@@ -316,6 +413,9 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const commoditized_count = spreads.filter((s) => s.spread_pct < 30).length;
   const avg_iqr_spread_pct = spreads.length > 0
     ? spreads.reduce((sum, s) => sum + s.spread_pct, 0) / spreads.length
+    : null;
+  const median_iqr_spread_pct = sortedBySpreadAsc.length > 0
+    ? (sortedBySpreadAsc[Math.floor((sortedBySpreadAsc.length - 1) / 2)].spread_pct + sortedBySpreadAsc[Math.ceil((sortedBySpreadAsc.length - 1) / 2)].spread_pct) / 2
     : null;
 
   // Bank vs CU comparison
@@ -342,8 +442,9 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   let bank_revenue_share_pct: number | null = null;
   let cu_revenue_share_pct: number | null = null;
   if (revenue && revenue.total_service_charges > 0) {
+    // Filed in thousands; per institution in dollars, for one quarter.
     revenue_per_institution = revenue.total_institutions > 0
-      ? revenue.total_service_charges / revenue.total_institutions
+      ? (revenue.total_service_charges * 1000) / revenue.total_institutions
       : null;
     bank_revenue_share_pct = (revenue.bank_service_charges / revenue.total_service_charges) * 100;
     cu_revenue_share_pct = (revenue.cu_service_charges / revenue.total_service_charges) * 100;
@@ -355,6 +456,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
 
   const derived: DerivedAnalytics = {
     avg_iqr_spread_pct,
+    median_iqr_spread_pct,
     commoditized_count,
     total_priced_categories: spreads.length,
     tightest_spreads: sortedBySpreadAsc.slice(0, 5),
@@ -375,9 +477,91 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     provisional_maturity_count,
   };
 
+  // Query 8: headline fees by district, asset size and state, from one read of the catalog
+  let regional: NationalQuarterlyPayload["regional"] = { districts: [], sizes: [], states: [] };
+  let overdraft_distribution: NationalQuarterlyPayload["overdraft_distribution"] = [];
+  try {
+    const districtSets = Object.keys(DISTRICT_NAMES).map((d) => ({
+      key: d,
+      label: `${d} ${DISTRICT_NAMES[Number(d)]}`,
+      filters: { fed_districts: [Number(d)] },
+    }));
+    const sizeSets = REGIONAL_SIZE_TIERS.map((tier) => ({
+      key: tier,
+      label: ASSET_TIER_RANGES[tier] ?? tier,
+      filters: { asset_tiers: [tier] },
+    }));
+    const stateSets = [...US_STATES_ONLY].sort().map((code) => ({
+      key: code,
+      label: STATE_NAMES[code] ?? code,
+      filters: { state_code: code },
+    }));
+    const all = [...districtSets, ...sizeSets, ...stateSets];
+    const indexes = await getPeerIndexes(all.map((g) => g.filters));
+    const rows = all.map((g, i) => groupRow(g.key, g.label, indexes[i] ?? []));
+    regional = {
+      districts: rows.slice(0, districtSets.length),
+      sizes: rows.slice(districtSets.length, districtSets.length + sizeSets.length),
+      states: rows.slice(districtSets.length + sizeSets.length),
+    };
+    const [values] = await getPeerFeeValues([{}], ["overdraft"]);
+    overdraft_distribution = priceBands((values?.get("overdraft") ?? []).map((v) => v.amount), null)
+      .filter((b) => b.count > 0)
+      .map((b) => ({ label: b.label, count: b.count }));
+    manifestEntries.push({
+      sql: `getPeerIndexes(${all.length} district, size and state groups); getPeerFeeValues(national, overdraft)`,
+      row_count: all.length,
+      executed_at: assembled_at,
+    });
+  } catch (e) {
+    console.warn("[assembler] regional index query failed, skipping:", e);
+  }
+
+  // Query 9: agency releases and confirmed fee changes, last 90 days
+  let developments: DevelopmentsBlock | null = null;
+  let fee_changes: FeeChangesBlock | null = null;
+  try {
+    developments = await loadDevelopments(now);
+    manifestEntries.push({ sql: "reg_articles, last 90 days", row_count: developments.items.length, executed_at: assembled_at });
+  } catch (e) {
+    console.error("[assembler] agency release read failed; the section says so:", e);
+  }
+  try {
+    fee_changes = await loadFeeChanges(now);
+    manifestEntries.push({ sql: "fee_change_records, last 90 days, confirmed against schedules", row_count: fee_changes.changes.length, executed_at: assembled_at });
+  } catch (e) {
+    console.error("[assembler] fee change read failed; the section says so:", e);
+  }
+
+  // Query 10: fees stated as a rate, each on its own (published_fee_rate_catalog)
+  let rate_categories: NationalRateSection[] = [];
+  try {
+    rate_categories = await Promise.all(
+      Object.keys(PERCENT_FEE_RANGES).map(async (fee_category) => {
+        const stats = await getNationalRateStats(fee_category);
+        return {
+          fee_category,
+          display_name: getDisplayName(fee_category),
+          institution_count: stats.institution_count,
+          median_rate: stats.median_rate,
+          p25_rate: stats.p25_rate,
+          p75_rate: stats.p75_rate,
+          maturity_tier: stats.maturity_tier,
+        };
+      }),
+    );
+    manifestEntries.push({
+      sql: "published_fee_rate_catalog, national rates by category",
+      row_count: rate_categories.reduce((sum, r) => sum + r.institution_count, 0),
+      executed_at: assembled_at,
+    });
+  } catch (e) {
+    console.error("[assembler] rate fee read failed; the report leaves rates out:", e);
+  }
+
   // Compute data_hash over assembled payload content
   const data_hash = createHash("sha256")
-    .update(JSON.stringify({ categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived }))
+    .update(JSON.stringify({ categories, rate_categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, overdraft_distribution, developments, fee_changes }))
     .digest("hex");
 
   const pipeline_commit = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
@@ -389,6 +573,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     total_bank_institutions,
     total_cu_institutions,
     categories,
+    rate_categories,
     revenue,
     fred,
     district_headlines,
@@ -398,8 +583,14 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       theme_category: t.theme_category,
       sentiment: t.sentiment,
       summary: t.summary,
+      release_code: t.release_code,
     })),
     derived,
+    regional,
+    income_series,
+    overdraft_distribution,
+    developments,
+    fee_changes,
     manifest: {
       queries: manifestEntries,
       data_hash,
@@ -472,12 +663,12 @@ export function buildThesisSummary(
   }
   if (avg_iqr_spread_pct !== null) {
     derived_tensions.push(
-      `${commoditized_count} of ${total_priced_categories} fee categories have IQR spread under 30% — functionally undifferentiated`,
+      `${commoditized_count} of ${total_priced_categories} fee categories have a middle half narrower than 30% of the median`,
     );
   }
   if (revenue_per_institution !== null) {
     derived_tensions.push(
-      `Average fee revenue per institution: $${Math.round(revenue_per_institution).toLocaleString()}`,
+      `Average service-charge income per reporting institution: $${Math.round(revenue_per_institution).toLocaleString()} in ${payload.revenue?.latest_quarter ?? "the latest quarter"}`,
     );
   }
 

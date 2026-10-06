@@ -38,8 +38,8 @@ export function KeyFindings({ findings, asOf }: { findings: Finding[]; asOf: str
                 <span className="block text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
                   {f.figure}
                 </span>
-                <span className="mt-2 block text-balance text-[15px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">{f.headline}</span>
-                <span className="mt-1 block text-pretty text-[13px] leading-relaxed text-[#6B6255]">{f.detail}</span>
+                <span className="mt-2 block text-[15px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">{f.headline}</span>
+                <span className="mt-1 block text-[13px] leading-relaxed text-[#6B6255]">{f.detail}</span>
               </span>
             </a>
           </li>

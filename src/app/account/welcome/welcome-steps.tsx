@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { CONTACT_EMAIL } from "@/lib/constants";
 import { saveOnboardingProfile } from "../actions";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import type {
@@ -22,6 +23,8 @@ interface WelcomeStepsProps {
   districtName: string | null;
   districtId: number | null;
   isPro: boolean;
+  /** Back from a paid checkout but Stripe has not confirmed yet: never send them to pay again. */
+  activationPending?: boolean;
   pendingWorkspaceInvitations: InstitutionWorkspaceInvitation[];
   workspaceMemberships: InstitutionWorkspaceMembership[];
 }
@@ -80,6 +83,7 @@ export function WelcomeSteps({
   user,
   feePreview,
   isPro,
+  activationPending = false,
   pendingWorkspaceInvitations,
   workspaceMemberships,
 }: WelcomeStepsProps) {
@@ -114,6 +118,16 @@ export function WelcomeSteps({
 
   return (
     <div className="max-w-2xl mx-auto">
+      {activationPending && (
+        <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Payment received. Activating your Pro access.</p>
+          <p className="mt-1">
+            Stripe usually confirms within a minute. <Link href="/account/welcome?success=true" className="font-semibold underline">Refresh this page</Link>{" "}
+            to check; you won&apos;t be charged again. If it still isn&apos;t active after a few minutes, write to {CONTACT_EMAIL}.
+          </p>
+        </div>
+      )}
+
       {pendingWorkspaceInvitations.length > 0 && !isPro && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Workspace invitation ready after Pro activation</p>
@@ -314,7 +328,9 @@ export function WelcomeSteps({
 
           <div className="grid grid-cols-2 gap-3 mb-6">
             {TOOLS.map((tool) => {
-              const href = tool.requiresPro && !isPro ? "/subscribe" : tool.href;
+              const href = tool.requiresPro && !isPro
+                ? activationPending ? "/account/welcome?success=true" : "/subscribe"
+                : tool.href;
 
               return (
                 <Link

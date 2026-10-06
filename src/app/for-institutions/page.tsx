@@ -2,15 +2,14 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
-import { ReportOfferSection, REPORT_NAME } from "./report-offer";
+import { ReportOfferSection } from "./report-offer";
 import { ProToolsSection } from "./pro-tools";
 import { CompareTableSection } from "./compare-table";
 
@@ -20,7 +19,7 @@ const REPORT_ANCHOR = "#report";
 export const metadata: Metadata = {
   title: "For Financial Institutions",
   description:
-    `Competitive Fee Position Report (free, 48 hours), peer benchmarking, and the Hamilton ` +
+    `Free national and Fed district fee reports, institution reports, peer benchmarking, and the Hamilton ` +
     `workspace for banking teams — built on the ${PRODUCT_NAME}.`,
 };
 
@@ -54,31 +53,45 @@ export default async function ForInstitutionsPage() {
               <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
-                it came from. Start with a free report or run the workspace yourself.
+                it came from. Start with a free national or Fed district report, or run the workspace yourself.
               </p>
 
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">
-                <TrackLink
-                  event="see_sample_report"
-                  eventProps={{ placement: "for_institutions_hero" }}
-                  href={SAMPLE_REPORT_HREF}
-                  className={PRIMARY_BUTTON}
-                >
-                  See the sample report
-                  <ArrowRight className="h-4 w-4" />
-                </TrackLink>
-                <Link
-                  href="/subscribe"
+                {/* The sample is offline until it is re-rendered from source-checked data, so the
+                    hero leads to the free reports instead of a "coming soon" page. */}
+                {SAMPLE_REPORT_LIVE ? (
+                  <TrackLink
+                    event="see_sample_report"
+                    eventProps={{ placement: "for_institutions_hero" }}
+                    href={SAMPLE_REPORT_HREF}
+                    className={PRIMARY_BUTTON}
+                  >
+                    See the sample report
+                    <ArrowRight className="h-4 w-4" />
+                  </TrackLink>
+                ) : (
+                  <TrackLink
+                    event="request_report_click"
+                    eventProps={{ placement: "for_institutions_hero" }}
+                    href={REPORT_ANCHOR}
+                    className={PRIMARY_BUTTON}
+                  >
+                    Get a free fee report
+                    <ArrowRight className="h-4 w-4" />
+                  </TrackLink>
+                )}
+                <a
+                  href={REPORT_ANCHOR}
                   className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
                 >
-                  See pricing
-                </Link>
+                  What&apos;s in the report
+                </a>
               </div>
               <p className="mt-4 text-[13px] text-[#D5CBBF]">
                 <a href={REPORT_ANCHOR} className="underline underline-offset-2 hover:text-warm-150">
                   Get your free report
                 </a>{" "}
-                · {REPORT_NAME}, delivered in 48 hours.
+                · National and Fed district reports, free and instant.
               </p>
             </div>
           </div>
@@ -167,14 +180,14 @@ function AdvisorySection() {
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_advisory" }}
-              href={`mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Advisory`}
+              href="/contact?source=advisory"
               className={PRIMARY_BUTTON}
             >
               Talk to us
               <ArrowRight className="h-4 w-4" />
             </TrackLink>
             <TrackLink
-              event="request_report"
+              event="request_report_click"
               eventProps={{ placement: "for_institutions_advisory" }}
               href={REPORT_ANCHOR}
               className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
@@ -199,24 +212,40 @@ function FinalCtaSection() {
           Ready to see where your fees stand?
         </h2>
         <p className="mt-3 text-[15px] text-[#D5CBBF]">
-          Start with the sample, or request your own report today.
+          {SAMPLE_REPORT_LIVE
+            ? "Start with the sample, or request your own report today."
+            : "Start with a free national or Fed district report, or ask us to quote your institution's own."}
         </p>
         <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
-          <TrackLink
-            event="see_sample_report"
-            eventProps={{ placement: "for_institutions_footer" }}
-            href={SAMPLE_REPORT_HREF}
-            className={PRIMARY_BUTTON}
-          >
-            See the sample report
-            <ArrowRight className="h-4 w-4" />
-          </TrackLink>
-          <a
-            href={REPORT_ANCHOR}
-            className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
-          >
-            Get your free report
-          </a>
+          {SAMPLE_REPORT_LIVE ? (
+            <>
+              <TrackLink
+                event="see_sample_report"
+                eventProps={{ placement: "for_institutions_footer" }}
+                href={SAMPLE_REPORT_HREF}
+                className={PRIMARY_BUTTON}
+              >
+                See the sample report
+                <ArrowRight className="h-4 w-4" />
+              </TrackLink>
+              <a
+                href={REPORT_ANCHOR}
+                className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
+              >
+                Get your free report
+              </a>
+            </>
+          ) : (
+            <TrackLink
+              event="request_report_click"
+              eventProps={{ placement: "for_institutions_footer" }}
+              href={REPORT_ANCHOR}
+              className={PRIMARY_BUTTON}
+            >
+              Get your free report
+              <ArrowRight className="h-4 w-4" />
+            </TrackLink>
+          )}
         </div>
       </div>
     </section>

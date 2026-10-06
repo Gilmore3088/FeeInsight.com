@@ -1,0 +1,33 @@
+Every free report is live. Here is where every number comes from.
+
+BANK FEE INDEX · 1 OF 3
+
+Your fee reports, and what to read first
+========================================
+
+Thanks for confirming. Whichever report you asked for, the free ones are live and update as new fee schedules are verified, so a link always shows the current numbers.
+
+See every free report: https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=read-your-report
+National, all 12 Fed districts, and every state. Free, no login.
+
+If you have five minutes, read these in order:
+
+1. Key findings. The two penalty fees and the bank vs credit union gap, each with how many institutions stand behind it.
+2. Headline fees. The median and the middle half (25th to 75th percentile) for each of the 15 fees customers notice most. A fee only appears when 20 or more institutions publish it.
+3. Banks vs credit unions. The same fees by charter, where each side has enough institutions to compare.
+4. Methodology. One value per institution, taken from its own published fee schedule.
+
+
+[ ASKED FOR A REPORT ON YOUR OWN INSTITUTION? ]
+That one is built by hand against the competitors in your market. We first check that your market has enough published fee schedules, then write to you directly with what it covers and the price.
+
+In a week: how your state compares with the national numbers.
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+Unsubscribe: {$unsubscribe}

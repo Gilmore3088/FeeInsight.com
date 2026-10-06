@@ -1,20 +1,21 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getNationalIndexCached, getCpiContext } from "@/lib/data-store";
+import { getCpiContext } from "@/lib/data-store";
+import { getPublicNationalIndex } from "@/lib/public-stats";
 import {
   getDisplayName,
   FEE_FAMILIES,
   FAMILY_COLORS,
   TAXONOMY_COUNT,
   FEATURED_COUNT,
-  getSpotlightCategories,
+  getFeaturedCategories,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { SAMPLE_REPORT_LIVE, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
@@ -37,14 +38,15 @@ export const metadata: Metadata = {
 export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
-  const allIndex = await getNationalIndexCached();
+  // Same snapshot as the fee index and research hub, so the medians match to the cent.
+  const allIndex = await getPublicNationalIndex();
   const cpi = await getCpiContext();
 
-  // Pro: full index. Free: spotlight preview only (6 categories)
-  const spotlightCats = new Set(getSpotlightCategories());
+  // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
+  const headlineCats = new Set(getFeaturedCategories());
   const index = isPro
     ? allIndex
-    : allIndex.filter((e) => spotlightCats.has(e.fee_category));
+    : allIndex.filter((e) => headlineCats.has(e.fee_category));
   const gatedCount = allIndex.length - index.length;
 
   // Group by family
@@ -99,7 +101,7 @@ export default async function NationalFeeIndexPage() {
           </>
         ) : (
           <>
-            Preview of {index.length} spotlight fee categories from our full
+            Preview of {index.length} headline fee categories from our full
             index of {TAXONOMY_COUNT} categories.{" "}
             <Link
               href="/subscribe"
@@ -119,11 +121,11 @@ export default async function NationalFeeIndexPage() {
       <LeadCapture
         placement="national_index"
         className="mt-5"
-        eyebrow="Monthly index update"
+        eyebrow="National index updates"
         headline="Get the national fee index in your inbox"
-        body="New national medians, the fee changes that moved them, and one chart — about once a month."
+        body="New national medians and one table worth bringing to a pricing meeting. No more than once a month."
         buttonLabel="Subscribe"
-        secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
+        secondaryLink={SAMPLE_REPORT_LIVE ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
       />
 
       {/* CPI context strip */}
@@ -234,7 +236,7 @@ export default async function NationalFeeIndexPage() {
                 You&apos;re viewing a preview
               </h2>
               <p className="text-[13px] text-[#6B6255] mt-1">
-                Showing {index.length} spotlight categories with median only.
+                Showing {index.length} headline categories with median only.
                 The full index includes {gatedCount} more categories with
                 P25/P75 percentiles, bank vs. credit union breakdowns, and range
                 data.
@@ -391,7 +393,7 @@ export default async function NationalFeeIndexPage() {
           The National Fee Index is computed from published fee schedules of
           FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
           into {TAXONOMY_COUNT} standard categories across 9 families. All
-          statistics are based on verified, published fee schedules. National
+          statistics are based on published fee schedules. National
           medians are computed across all reporting institutions for each fee
           category.
         </p>

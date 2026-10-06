@@ -1,6 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -18,6 +20,9 @@ import { learningSchemaReady } from "@/lib/agents/learning/attempts";
  *   accuracy             the newest answer-key score (end-to-end precision and recall)
  *   freshness            median age in days of live fees, from the last time their
  *                        source document was fetched or checked
+ *   Knox survival        of Knox fees ever published, the share still live, overall and
+ *                        per Knox strategy. Yield rewards finding more fees; survival
+ *                        rewards finding fees that stay right. Stored in `detail`.
  */
 
 type SqlTag = typeof sql;
@@ -32,6 +37,14 @@ export interface ScoreboardNumbers {
   depth: { median: number | null; liveInstitutions: number };
   accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null } | null;
   freshness: { medianDays: number | null; liveFees: number };
+  knoxSurvival: KnoxSurvival;
+}
+
+export interface KnoxSurvival {
+  rate: number | null;
+  live: number;
+  published: number;
+  byStrategy: Array<{ strategy: string; rate: number | null; live: number; published: number }>;
 }
 
 const RIGHT_DOCUMENT_WINDOW_DAYS = 30;
@@ -104,7 +117,7 @@ async function readKnoxYield(db: SqlTag): Promise<ScoreboardNumbers["knoxYield"]
              SELECT COUNT(*) FROM raw_fee_observations fr
               WHERE fr.institution_id = s.institution_id
                 AND fr.source_document_id = s.source_document_id
-                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'superseded_by_reread')
+                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
            )), 0)::int AS fees
       FROM sample s
   `;
@@ -160,16 +173,49 @@ async function readFreshness(db: SqlTag): Promise<ScoreboardNumbers["freshness"]
   return { medianDays: numberOrNull(row?.median_days), liveFees: Number(row?.live_fees ?? 0) };
 }
 
+/** Knox's strategy for a published fee, from its raw row's flags (as `knoxStrategyFromFlags`). */
+async function readKnoxSurvival(db: SqlTag): Promise<KnoxSurvival> {
+  const rows = await db<Array<{ strategy: string; published: number | string; live: number | string }>>`
+    SELECT CASE
+             WHEN fr.outlier_flags ? 'knox_paid_extraction' THEN 'extract.paid'
+             ELSE COALESCE((
+               SELECT substr(flag, length('knox_specialist:') + 1)
+                 FROM jsonb_array_elements_text(fr.outlier_flags) flag
+                WHERE flag LIKE 'knox_specialist:%'
+                LIMIT 1
+             ), 'extract.rules')
+           END AS strategy,
+           COUNT(*)::int AS published,
+           (COUNT(*) FILTER (WHERE fp.rolled_back_at IS NULL))::int AS live
+      FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+     WHERE fr.source = 'knox'
+     GROUP BY 1
+     ORDER BY 2 DESC
+  `;
+  const byStrategy = rows.map((row) => ({
+    strategy: row.strategy,
+    published: Number(row.published),
+    live: Number(row.live),
+    rate: rate(Number(row.live), Number(row.published)),
+  }));
+  const live = byStrategy.reduce((sum, row) => sum + row.live, 0);
+  const published = byStrategy.reduce((sum, row) => sum + row.published, 0);
+  return { rate: rate(live, published), live, published, byStrategy };
+}
+
 export async function readScoreboardNumbers(db: SqlTag = sql): Promise<ScoreboardNumbers> {
-  const [coverage, rightDocument, knoxYield, depth, accuracy, freshness] = await Promise.all([
+  const [coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival] = await Promise.all([
     readCoverage(db),
     readRightDocument(db),
     readKnoxYield(db),
     readDepth(db),
     readAccuracy(db),
     readFreshness(db),
+    readKnoxSurvival(db),
   ]);
-  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness };
+  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival };
 }
 
 export interface ScoreboardSnapshotResult {
@@ -177,6 +223,8 @@ export interface ScoreboardSnapshotResult {
   snapshotDate: string;
   numbers: ScoreboardNumbers;
   stored: boolean;
+  /** Per-agent health check (agent-health.ts); null when it could not be read. */
+  agentHealth?: AgentHealthReport | null;
 }
 
 /** Reads the six numbers and stores today's snapshot (one row per UTC day; reruns replace it). */
@@ -194,7 +242,14 @@ export async function runScoreboardSnapshot({
   const snapshotDate = now.toISOString().slice(0, 10);
   const numbers = await readScoreboardNumbers(db);
   const schemaReady = await scoreboardSchemaReady(db);
-  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false };
+  // The health check reads yesterday's snapshot, so it needs the scoreboard table too.
+  const agentHealth = schemaReady
+    ? await inSavepoint(db, (scope) => readAgentHealth(scope, snapshotDate)).catch((error) => {
+        console.error("readAgentHealth failed:", error);
+        return null;
+      })
+    : null;
+  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth };
   await db`
     INSERT INTO pipeline_scoreboard_snapshots (
       snapshot_date, agent_run_id,
@@ -212,7 +267,12 @@ export async function runScoreboardSnapshot({
       ${numbers.depth.median}, ${numbers.depth.liveInstitutions},
       ${numbers.accuracy?.precision ?? null}, ${numbers.accuracy?.recall ?? null}, ${numbers.accuracy?.scoreRunId ?? null},
       ${numbers.freshness.medianDays}, ${numbers.freshness.liveFees},
-      ${JSON.stringify({ right_document_window_days: numbers.rightDocument?.windowDays ?? null, accuracy_scored_at: numbers.accuracy?.scoredAt ?? null })}::jsonb
+      ${JSON.stringify({
+        right_document_window_days: numbers.rightDocument?.windowDays ?? null,
+        accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
+        knox_survival: numbers.knoxSurvival,
+        ...(agentHealth ? { agent_health: agentHealth } : {}),
+      })}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
       agent_run_id = EXCLUDED.agent_run_id,
@@ -236,7 +296,7 @@ export async function runScoreboardSnapshot({
       detail = EXCLUDED.detail,
       updated_at = NOW()
   `;
-  return { schemaReady, snapshotDate, numbers, stored: true };
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth };
 }
 
 function pct(value: number | null | undefined): string {
@@ -253,11 +313,13 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
     `depth ${n.depth.median == null ? "n/a" : `${n.depth.median} categories`}`,
     `accuracy ${pct(n.accuracy?.precision)} precision / ${pct(n.accuracy?.recall)} recall`,
     `freshness ${n.freshness.medianDays == null ? "n/a" : `${n.freshness.medianDays} days`}`,
+    `Knox survival ${pct(n.knoxSurvival.rate)} of ${n.knoxSurvival.published.toLocaleString("en-US")} published fees still live`,
   ];
   const prefix = result.stored
     ? `Atlas recorded the ${result.snapshotDate} scoreboard`
     : result.schemaReady
       ? `Atlas read the scoreboard (dry run, not stored)`
       : `Atlas read the scoreboard (not stored: the scoreboard migration is not applied yet)`;
-  return `${prefix}: ${parts.join(", ")}.`;
+  const health = result.agentHealth ? ` ${summarizeAgentHealth(result.agentHealth)}` : "";
+  return `${prefix}: ${parts.join(", ")}.${health}`;
 }

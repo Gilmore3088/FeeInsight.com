@@ -9,24 +9,23 @@ import { PRODUCT_NAME } from "@/lib/constants";
 import { PrintButton } from "../../print-button";
 import { SectionHeading } from "../../research-hero";
 import { ExhibitSource } from "../../exhibits";
-import { STATE_FINDING_MIN_INSTITUTIONS, formatDelta, type StateComparison } from "./state-findings";
+import {
+  POSITION_AXIS_MAX_PCT,
+  STATE_FINDING_MIN_INSTITUTIONS,
+  formatDelta,
+  positionAxis,
+  type StateComparison,
+} from "@/lib/research-report/state-findings";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
 /** Widest half-width of the % axis in the position chart; larger gaps are pinned to the edge. */
-const POSITION_AXIS_MAX_PCT = 50;
-
-/** Axis half-width that fits the largest gap, in steps of 10%, between 10% and the maximum. */
-function positionAxis(deltas: number[]): number {
-  const widest = Math.max(0, ...deltas.map((d) => Math.abs(d)));
-  return Math.min(POSITION_AXIS_MAX_PCT, Math.max(10, Math.ceil(widest / 10) * 10));
-}
-
 export const STATE_SECTIONS = [
   { id: "findings", label: "Key findings" },
   { id: "benchmarks", label: "Everyday fees" },
   { id: "position", label: "vs national" },
   { id: "charters", label: "Banks vs CUs" },
+  { id: "economy", label: "Economy & regulation" },
   { id: "coverage", label: "Coverage & cities" },
   { id: "table", label: "Full table" },
   { id: "methodology", label: "Methodology" },
@@ -75,10 +74,10 @@ export function StateHero(props: StateHeroProps) {
           <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
           State fee report{district ? ` · ${DISTRICT_NAMES[district]} Fed` : ""}
         </p>
-        <h1 className="mt-3 max-w-3xl text-balance text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
           {stateName} bank &amp; credit union fees
         </h1>
-        <p className="mt-4 max-w-2xl text-pretty text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
           What {stateName} banks and credit unions charge for everyday services, measured against the national{" "}
           {PRODUCT_NAME}. Every number comes from verified, published fee schedules.
         </p>
@@ -220,7 +219,7 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
 
   return (
     <section id="position" className="scroll-mt-28 print:break-inside-avoid">
-      <SectionHeading eyebrow="Exhibit 2 · Position vs national" title={`${above} fees above national, ${below} below`}>
+      <SectionHeading eyebrow="Exhibit 2 · Position vs national" title={`${above} ${above === 1 ? "fee" : "fees"} above national, ${below} below`}>
         Each bar is the {stateName} median relative to the national median for the same fee. Right of center means{" "}
         {stateName} institutions typically charge more.
       </SectionHeading>
@@ -306,7 +305,7 @@ export function CoverageExhibit(props: {
   return (
     <section id="coverage" className="scroll-mt-28 print:break-inside-avoid">
       <SectionHeading
-        eyebrow="Exhibit 4 · Coverage & local markets"
+        eyebrow="Exhibit 5 · Coverage & local markets"
         title="Who is in the data"
         action={
           <Link

@@ -5,21 +5,9 @@ import { formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
 import { SectionHeading } from "./research-hero";
 import { ExhibitSource } from "./exhibits";
+import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
 
-/**
- * Everyday fees people ask about first. Flat-dollar categories only: foreign transaction
- * fees are usually a percentage, so a dollar median would mislead.
- */
-export const BENCHMARK_KEYS = [
-  "overdraft",
-  "nsf",
-  "monthly_maintenance",
-  "atm_non_network",
-  "wire_domestic_outgoing",
-  "wire_intl_outgoing",
-  "stop_payment",
-  "cashiers_check",
-] as const;
+export { BENCHMARK_KEYS };
 
 /** Fewer institutions than this and a median is too thin to headline. */
 const MIN_INSTITUTIONS = 10;
@@ -57,7 +45,7 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
         <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
           {formatAmount(median)}
         </span>
-        <span className="text-[11px] font-medium uppercase tracking-wider text-[#8A8072]">median</span>
+        <span className="text-[11px] font-medium uppercase tracking-wider text-[#6B6255]">median</span>
       </p>
 
       {/* Range: track is $0 to the card's scale; box is the middle half; tick is the median. */}
@@ -72,7 +60,7 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
             style={{ left: `${pct(median, scaleMax)}%` }}
           />
         </div>
-        <div className="mt-1.5 flex justify-between text-[10px] tabular-nums text-[#8A8072]">
+        <div className="mt-1.5 flex justify-between text-[10px] tabular-nums text-[#6B6255]">
           <span>$0</span>
           <span>{formatAmount(scaleMax)}</span>
         </div>
@@ -86,11 +74,12 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
         <div>
           <p className="font-semibold tabular-nums text-[#1A1815]">{formatCount(fee.institution_count)}</p>
           <p>institutions</p>
+          <p className="text-[10px] text-[#6B6255]">{formatCount(fee.total_observations)} published fee entries</p>
           {/* Bank vs credit union mix behind this median. */}
           <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-[#7A7F3F]/50" title="Banks vs credit unions">
             <div className="bg-[#1A1815]" style={{ width: `${bankShare * 100}%` }} />
           </div>
-          <p className="mt-1 text-[10px] text-[#8A8072]">
+          <p className="mt-1 text-[10px] text-[#6B6255]">
             <span aria-hidden="true" className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#1A1815]" />
             {formatCount(fee.bank_count)} banks{" "}
             <span aria-hidden="true" className="ml-1 mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#7A7F3F]/70" />
@@ -100,7 +89,7 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
         <div>
           <p className="font-semibold tabular-nums text-[#1A1815]">{Math.round(zeroShare * 100)}%</p>
           <p>list it at $0</p>
-          <p className="mt-1 text-[10px] text-[#8A8072]">{formatCount(fee.zero_count)} institutions</p>
+          <p className="mt-1 text-[10px] text-[#6B6255]">{formatCount(fee.zero_count)} institutions</p>
         </div>
       </div>
     </Link>
@@ -119,8 +108,9 @@ export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchm
           </Link>
         }
       >
-        Medians and the middle half of prices across {institutionsLabel} banks and credit unions. The tick marks the
-        median; the shaded band is where the middle 50% of institutions land.
+        Medians and the middle half of prices from {institutionsLabel} institutions with published fees. Each card
+        shows how many institutions its median covers. The tick marks the median; the shaded band is where the
+        middle 50% of institutions land.
       </SectionHeading>
 
       {benchmarks.length > 0 ? (

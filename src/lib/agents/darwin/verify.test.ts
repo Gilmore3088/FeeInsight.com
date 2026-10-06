@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, verificationReasonCode, type RawFeeRow } from "./verify";
-import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, SECOND_SOURCE_FLAG } from "./peer-checks";
+import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
+import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
+import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
+import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -9,9 +12,14 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
+/** The stored text of document 55, the schedule Knox read the test fees from. */
+const SCHEDULE_TEXT = ["Overdraft fee $35.00", "Courtesy overdraft fee $5.00", "Paper statement Free"].join("\n");
+const SOURCE_TEXTS = [{ source_document_id: 55, normalized_text: SCHEDULE_TEXT }];
+
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
+    if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
     if (text.includes("INSERT INTO verified_fee_observations")) {
       return Promise.resolve([{ fee_verified_id: db.mock.calls.length + 1200 }]);
     }
@@ -37,11 +45,17 @@ const rawFee = {
   fee_name: "Overdraft fee",
   amount: "35.00",
   frequency: "per_item",
+  source_document_id: 55,
   outlier_flags: ["needs_darwin_verification", "canonical_hint:overdraft"],
   conditions: "canonical_hint=overdraft; excerpt=\"Overdraft fee $35\"",
 };
 
 describe("Darwin agentic verification", () => {
+  beforeEach(() => {
+    resetLearnedEnvelopeCache();
+    resetWiderPeerLevelCache();
+  });
+
   it("verifies Knox raw rows with canonical hints into verified_fee_observations", async () => {
     const db = createDbMock([rawFee]);
 
@@ -96,17 +110,27 @@ describe("Darwin agentic verification", () => {
       status: "verified",
       feeVerifiedId: null,
     });
-    expect(db.unsafe).toHaveBeenCalledTimes(1);
-    // Pass 2 may read evidence; a dry run never writes.
+    // Pass 2 may read evidence (peer levels, learned ranges); a dry run never writes.
+    const reads = db.unsafe.mock.calls.map((call) => String(call[0]));
+    expect(reads.every((text) => !/\b(INSERT|UPDATE|DELETE)\b/.test(text))).toBe(true);
     const statements = db.mock.calls.map((call) => templateText(call[0]));
     expect(statements.every((text) => !/\b(INSERT|UPDATE|DELETE)\b/.test(text))).toBe(true);
+  });
+
+  it("re-files a row whose own name says the neighbouring category", async () => {
+    const db = createDbMock([{ ...rawFee, fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" }]);
+
+    const result = await runDarwinVerify({ runId: 105, db: asVerifyDb(db), dryRun: true });
+
+    expect(result.results[0]).toMatchObject({ canonicalFeeKey: "od_protection_transfer" });
+    expect(result.results[0]).not.toMatchObject({ reasonCode: "category_mismatch" });
   });
 
   it("rejects rows whose name contradicts the hinted category", async () => {
     const db = createDbMock([
       {
         ...rawFee,
-        fee_name: "Overdraft Transfer Fee (Sweep)",
+        fee_name: "Overdraft Fee - Daily Maximum",
         amount: "7.50",
       },
     ]);
@@ -124,6 +148,32 @@ describe("Darwin agentic verification", () => {
     });
     const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
+  it("rejects a fee its own stored schedule does not state", async () => {
+    const db = createDbMock([{ ...rawFee, amount: "36.00" }]);
+
+    const result = await runDarwinVerify({ runId: 108, db: asVerifyDb(db) });
+
+    expect(result.verifiedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({ status: "skipped", decision: "rejected", reasonCode: "not_in_source" });
+    const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
+  describe("statedInOwnSource", () => {
+    const texts = new Map(SOURCE_TEXTS.map((text) => [text.source_document_id, text.normalized_text]));
+
+    it("traces a fee to the document Knox read it from", () => {
+      expect(statedInOwnSource(rawFee, texts)).toBe(true);
+    });
+
+    it("does not trace a fee with no stored text, another price, or another document", () => {
+      expect(statedInOwnSource({ ...rawFee, amount: "36.00" }, texts)).toBe(false);
+      expect(statedInOwnSource({ ...rawFee, source_document_id: 56 }, texts)).toBe(false);
+      expect(statedInOwnSource({ ...rawFee, source_document_id: null }, texts)).toBe(false);
+      expect(statedInOwnSource({ ...rawFee, fee_name: "Wire transfer fee" }, texts)).toBe(false);
+    });
   });
 
   it("skips raw rows without a valid canonical hint", async () => {
@@ -191,6 +241,17 @@ describe("Darwin agentic verification", () => {
       expect(verificationReasonCode({ ...row, amount: "350.00" }, "safe_deposit_box")).toBeNull();
     });
 
+    it("holds an amount above a learned ceiling for a category with no hand-set range", () => {
+      const gift = { ...row, fee_name: "Gift Card Purchase" };
+      const learned = new Map([["gift_card_purchase", learnedEnvelope("gift_card_purchase", 5.25, 539)!]]);
+      // Without learned ranges the $0.01-$2,500 catch-all lets a $500 "maximum card load" through.
+      expect(verificationReasonCode({ ...gift, amount: "500.00" }, "gift_card_purchase")).toBeNull();
+      expect(verificationReasonCode({ ...gift, amount: "500.00" }, "gift_card_purchase", learned)).toBe("outside_envelope");
+      expect(verificationReasonCode({ ...gift, amount: "4.95" }, "gift_card_purchase", learned)).toBeNull();
+      // Only the top is learned: a few cents stays a real price.
+      expect(verificationReasonCode({ ...gift, amount: "0.25" }, "gift_card_purchase", learned)).toBeNull();
+    });
+
     it("accepts $0 only when Knox read explicit free-fee language", () => {
       const statement = { ...row, fee_name: "Paper Statement" };
       expect(verificationReasonCode({ ...statement, amount: "0" }, "paper_statement")).toBe("invalid_amount");
@@ -247,6 +308,7 @@ describe("Darwin agentic verification", () => {
       db.mockImplementation((strings: TemplateStringsArray) => {
         const text = templateText(strings);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
         if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 1300 }]);
         return Promise.resolve([]);
       });
@@ -276,6 +338,42 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
       expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+    });
+
+    it("records the learned category model's dispute without changing the decision", async () => {
+      resetCategoryModelCache();
+      const catalog = [
+        { name: "overdraft fee", category_key: "overdraft", count: "40" },
+        { name: "paid overdraft item", category_key: "overdraft", count: "20" },
+        { name: "zipper bag", category_key: "night_deposit", count: "20" },
+        { name: "night deposit bag", category_key: "night_deposit", count: "20" },
+      ];
+      const db = learningDb([rawFee, { ...rawFee, fee_raw_id: 803, fee_name: "Zipper bag", amount: "5.00" }]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("FROM published_fee_catalog")
+          ? Promise.resolve(catalog)
+          : base(strings, ...values)) as never);
+
+      const result = await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
+
+      resetCategoryModelCache();
+      expect(result.categoryModelDisputes).toBe(1);
+      expect(result.results[1].categoryModel).toMatchObject({ disputed: true, suggested: "night_deposit" });
+      expect(result.results[1].decision).not.toBe("needs_review");
+      const shadow = attemptValues(db).filter((values) => values.includes(DARWIN_CATEGORY_MODEL_STRATEGY.strategy));
+      expect(shadow).toHaveLength(2);
+      expect(shadow[1]).toEqual(expect.arrayContaining(["raw:803", "evidence_mismatch"]));
+    });
+
+    it("re-checks category rejections once after the category guard changes", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
+      expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
     });
 
     it("selects rows whose flags are stored as a real JSON array", async () => {
@@ -355,6 +453,26 @@ describe("Darwin agentic verification", () => {
           const result = await runDarwinVerify({ runId: 503, stateCode: "VT", db: asVerifyDb(db) });
           expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0 });
           expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)).toHaveLength(0);
+        } finally {
+          overdraftPeers.forEach((level) => (level.institutions = 9));
+        }
+      });
+
+      it("falls back to national peers when the state has too few, and records it without holding", async () => {
+        const db = passTwoDb([{ ...vtFee, amount: "5.00" }]);
+        overdraftPeers.forEach((level) => (level.institutions = 7));
+        const national = [{ district: null, canonical_fee_key: "overdraft", tier: "all", p25: "30", median: "32", p75: "34", institutions: "900" }];
+        const base = db.unsafe.getMockImplementation() as (query: string) => Promise<unknown>;
+        db.unsafe.mockImplementation((query: string) =>
+          query.includes("districts(state_code") ? Promise.resolve(national) : base(query));
+        try {
+          const result = await runDarwinVerify({ runId: 506, stateCode: "VT", db: asVerifyDb(db) });
+          expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0, peerFallbackChecks: 1, peerFallbackOutliers: 1 });
+          expect(result.results[0].peerCheck).toMatchObject({ scope: "national", outlier: true, peerCount: 900 });
+          const peer = strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy);
+          expect(peer).toHaveLength(1);
+          expect(JSON.stringify(peer[0])).toContain('\\"peer_scope\\":\\"national\\"');
+          expect(JSON.stringify(peer[0])).toContain('\\"peer_held\\":false');
         } finally {
           overdraftPeers.forEach((level) => (level.institutions = 9));
         }

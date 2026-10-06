@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { HAMILTON_VOICE, HAMILTON_VERSION, HAMILTON_RULES, HAMILTON_FORBIDDEN, HAMILTON_SYSTEM_PROMPT } from "./voice";
+import { HAMILTON_VOICE, HAMILTON_VERSION, HAMILTON_ROLES, HAMILTON_RULES, HAMILTON_FORBIDDEN, HAMILTON_SYSTEM_PROMPT } from "./voice";
 
 describe("HAMILTON_VOICE", () => {
   it("exports a version string matching semver pattern", () => {
@@ -64,5 +64,35 @@ describe("HAMILTON_VOICE", () => {
 
   it("HAMILTON_VOICE.forbidden is the same reference as HAMILTON_FORBIDDEN", () => {
     expect(HAMILTON_VOICE.forbidden).toBe(HAMILTON_FORBIDDEN);
+  });
+});
+
+describe("consultant bar", () => {
+  it("tells Hamilton not to restate what the public site shows", () => {
+    expect(HAMILTON_VERSION).toBe("3.5.0");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Consultant, not restatement.");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Never answer by repeating them.");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("Never tell the institution to raise, lower or drop a fee.");
+  });
+});
+
+describe("implication, never prescription", () => {
+  it("never asks Hamilton for what the reader should do", () => {
+    expect(HAMILTON_SYSTEM_PROMPT).not.toMatch(/what to do about it|should the reader DO|language: 'Banks must'|or recommendation/);
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("You support the decision; you never make it.");
+  });
+});
+
+describe("the four roles", () => {
+  it("puts all four roles in the system prompt", () => {
+    expect(HAMILTON_ROLES.map((r) => r.role)).toEqual([
+      "Inquisitive Economist",
+      "Rigorous Consultant",
+      "Artistic Data Engineer",
+      "Technical yet Clear Writer",
+    ]);
+    for (const r of HAMILTON_ROLES) expect(HAMILTON_SYSTEM_PROMPT).toContain(`${r.role}: ${r.rule}`);
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("ask exactly one clarifying question");
+    expect(HAMILTON_SYSTEM_PROMPT).toContain("$209 thousand");
   });
 });

@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { readerFeeConditions } from "../fee-conditions";
 import { summarizeFeesBy } from "./fee-stats";
 import { VALID_US_CODES } from "../us-states";
 import {
@@ -101,6 +102,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
     institution_id: Number(r.institution_id),
     amount: r.amount !== null ? Number(r.amount) : null,
     extraction_confidence: Number(r.extraction_confidence),
+    conditions: readerFeeConditions(r.conditions),
   }));
 }
 
@@ -153,6 +155,8 @@ export async function getInstitutionsByFilter(filters: {
   asset_tiers?: string[];
   fed_districts?: number[];
   state_code?: string;
+  /** Exact city name, case-insensitive. */
+  city?: string;
   gap?: boolean;
   /** Only institutions with at least one published fee. */
   has_fees?: boolean;
@@ -180,6 +184,10 @@ export async function getInstitutionsByFilter(filters: {
   if (filters.state_code) {
     conditions.push(`ct.state_code = $${paramIdx++}`);
     params.push(filters.state_code);
+  }
+  if (filters.city) {
+    conditions.push(`LOWER(ct.city) = LOWER($${paramIdx++})`);
+    params.push(filters.city);
   }
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";

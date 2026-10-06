@@ -51,6 +51,14 @@ export function describeCaptureOffer(input: LeadCaptureNotificationInput): strin
   }
 }
 
+/** Readers with a state also get that state's monthly edition (the marketing agent's state_edition). */
+function stateEditionLine(stateCode: string | null): string {
+  const name = stateCode ? STATE_NAMES[stateCode] ?? stateCode : null;
+  return name
+    ? `Once you confirm, you'll also get the ${name} edition each month: ${name}'s fee medians against the national ones, once enough ${name} institutions publish them.`
+    : "";
+}
+
 function deliveryLines(input: LeadCaptureNotificationInput): string[] {
   if (deliversSampleReport(input.placement)) {
     return [
@@ -61,18 +69,20 @@ function deliveryLines(input: LeadCaptureNotificationInput): string[] {
   switch (input.placement) {
     case "institution_alerts":
       return [
-        "We'll email you when a verified change to this institution's published fee schedule lands in the index.",
+        `Fee-change alerts go to free accounts: create one and follow this institution to get an email when its published fee schedule changes: ${absolute(input.institutionId !== null ? `/register?from=${encodeURIComponent(`/institution/${input.institutionId}`)}` : "/register")}`,
         input.institutionId !== null ? `Current profile: ${absolute(`/institution/${input.institutionId}`)}` : "",
       ];
     case "state_benchmark":
       return [
-        "We'll send the benchmark each time the state medians are refreshed.",
-        input.stateCode ? `Current benchmark: ${absolute(`/research/state/${input.stateCode}`)}` : "",
+        "Here is the benchmark: state medians against national, updated as new fee schedules are verified.",
+        input.stateCode ? `${absolute(`/research/state/${input.stateCode}`)}` : "",
+        stateEditionLine(input.stateCode),
       ];
     case "national_index":
       return [
-        "New national medians, notable fee changes, and one chart — about once a month.",
+        "New national medians and one table worth bringing to a pricing meeting, no more than once a month.",
         `Current index: ${absolute("/research/national-fee-index")}`,
+        stateEditionLine(input.stateCode),
       ];
   }
 }
@@ -88,10 +98,10 @@ export function buildCaptureConfirmation(
     ...deliveryLines(input).filter(Boolean),
     "",
     links.confirmUrl
-      ? "Confirm your address with the button below so we can keep sending updates. If you didn't sign up, ignore this email and you won't hear from us again."
+      ? "Confirm your address with the button below. If you didn't sign up, ignore this email and you won't hear from us again."
       : "If you didn't sign up, reply to this email and we'll remove you.",
     "",
-    `Want this for your own institution and market? ${REPORT_OFFER_LINE}: ${absolute(REPORT_REQUEST_PATH)}`,
+    `Want your market or your own institution? ${REPORT_OFFER_LINE}: ${absolute(REPORT_REQUEST_PATH)}`,
   ];
   if (links.unsubscribeUrl) lines.push("", `Unsubscribe: ${links.unsubscribeUrl}`);
   return {

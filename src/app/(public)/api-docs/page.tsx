@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { MONTHLY_PRICE_LABEL } from "@/app/subscribe/pricing";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
@@ -12,7 +14,7 @@ const API_ACCESS_CTA = "Contact us about API access";
 export const metadata: Metadata = {
   title: "API Documentation",
   description:
-    `REST API for accessing bank and credit union fee benchmarking data. JSON endpoints are available with optional manual API keys; CSV exports require a signed-in ${PRO_LABEL} seat.`,
+    `REST API for accessing bank and credit union fee benchmarking data. Access is by invitation: every request needs an API key that Fee Insight issues by hand.`,
 };
 
 /* ---------- small reusable pieces ---------- */
@@ -158,7 +160,7 @@ function Endpoint({
         </div>
       )}
 
-      <CodeBlock title="Example response">{responseExample}</CodeBlock>
+      <CodeBlock title="Example response · illustrative values, not live data">{responseExample}</CodeBlock>
     </div>
   );
 }
@@ -243,6 +245,46 @@ export default async function ApiDocsPage() {
         and institution-level detail — all via a simple REST API.
       </p>
 
+      {/* Access first: what works today without a key, and how a Pro key is issued. */}
+      <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-[#E8DFD1] bg-white px-6 py-5">
+        <h2
+          id="getting-access"
+          className="text-[15px] font-bold text-[#1A1815]"
+          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        >
+          Getting access
+        </h2>
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-[#5A5347]">
+          <li>
+            <span className="font-semibold text-[#1A1815]">Free, no key.</span> Call any JSON endpoint
+            below. The free tier returns the 6 spotlight categories and allows 100 requests a month.
+          </li>
+          <li>
+            <span className="font-semibold text-[#1A1815]">{PRO_LABEL}, {MONTHLY_PRICE_LABEL} a month per seat.</span>{" "}
+            <Link href="/subscribe" className="font-medium text-[#A93D25] underline underline-offset-2">
+              Subscribe
+            </Link>{" "}
+            for all {categoriesLabel} categories and signed-in CSV exports from Account.
+          </li>
+          <li>
+            <span className="font-semibold text-[#1A1815]">API key.</span> Keys are issued by hand to{" "}
+            {PRO_LABEL} workspaces; there is no self-serve key page yet.{" "}
+            <a href={API_ACCESS_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+              Email us to request one
+            </a>{" "}
+            and we reply with the key and its limits.
+          </li>
+        </ol>
+        <p className="mt-3 text-[12px] text-[#6B6255]">
+          Example responses on this page show the real field names and shapes with illustrative
+          numbers. For today&apos;s figures, see the{" "}
+          <Link href="/fees" className="font-medium text-[#A93D25] underline underline-offset-2">
+            Fee Index
+          </Link>
+          . {summary.freshnessLabel}.
+        </p>
+      </section>
+
       {/* Quick links */}
       <div className="mt-5 flex flex-wrap gap-3 text-[13px]">
         <a href="#authentication" className="rounded-md border border-[#E8DFD1] px-3 py-1.5 text-[#5A5347] hover:bg-[#FAF7F2] transition-colors">
@@ -284,7 +326,7 @@ export default async function ApiDocsPage() {
       <SectionHeading id="authentication">Authentication</SectionHeading>
       <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
         <p className="text-[13px] text-[#6B6255]">
-          JSON endpoints can be called without credentials and are rate-limited on the free tier. If Fee Insight manually issues an API key for your workspace, pass it in the{" "}
+          Every request needs an API key. Fee Insight issues keys by hand to invited partners. Pass yours in the{" "}
           <code className="rounded bg-[#E8DFD1]/40 px-1 text-[12px]">Authorization</code>{" "}
           header as a Bearer token, or as an{" "}
           <code className="rounded bg-[#E8DFD1]/40 px-1 text-[12px]">api_key</code>{" "}
@@ -306,12 +348,12 @@ export default async function ApiDocsPage() {
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
       <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
         <p className="text-[13px] text-[#6B6255]">
-          Rate limits are enforced per API key when present and by anonymous request source otherwise. Current window information is returned in response headers.
+          Each API key gets one monthly allowance shared across all endpoints. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />
           <ResponseField name="X-RateLimit-Remaining" type="header" note="Requests remaining" />
-          <ResponseField name="X-RateLimit-Reset" type="header" note="UTC epoch timestamp when the window resets" />
+          <ResponseField name="X-RateLimit-Reset" type="header" note="ISO 8601 UTC time when the monthly window resets" />
         </div>
         <div className="mt-4 overflow-hidden rounded-lg border border-[#E8DFD1]/60">
           <table className="w-full text-left text-[13px]">
@@ -323,11 +365,6 @@ export default async function ApiDocsPage() {
               </tr>
             </thead>
             <tbody className="text-[#5A5347]">
-              <tr className="border-t border-[#E8DFD1]/60">
-                <td className="px-4 py-2">Free</td>
-                <td className="px-4 py-2">100 requests</td>
-                <td className="px-4 py-2">10/min</td>
-              </tr>
               <tr className="border-t border-[#E8DFD1]/60">
                 <td className="px-4 py-2 font-medium">{PRO_LABEL} key</td>
                 <td className="px-4 py-2">10,000 requests</td>
@@ -351,7 +388,7 @@ export default async function ApiDocsPage() {
           method="GET"
           path="/fees"
           summary="List all fee categories"
-          description={`Returns all ${categoriesLabel} fee categories with national median, P25/P75 percentiles, min/max, and institution counts. Free tier returns 6 spotlight categories.`}
+          description={`Returns all ${categoriesLabel} fee categories with national median, P25/P75 percentiles, min/max, and institution counts.`}
           params={[
             {
               name: "format",
@@ -608,18 +645,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       {/* ---- PRICING ---- */}
       <SectionHeading id="pricing">API Pricing</SectionHeading>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <TierCard
-          name="Free"
-          price="$0"
-          features={[
-            "100 requests/month",
-            "6 spotlight categories",
-            "National medians only",
-            "JSON responses",
-          ]}
-          cta="Get started -- no card required"
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
         <TierCard
           name={PRO_LABEL}
           price={`${MONTHLY_PRICE_LABEL}/mo per seat`}
@@ -671,16 +697,16 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Status.</span>{" "}
-            Each category carries a status: Strong (20+ institutions with verified fees), Provisional (5 to 19), or Too few to benchmark (under 5, no median shown).
+            Each category carries a status: Strong ({STRONG_INSTITUTION_COUNT}+ institutions with published fees), Provisional ({MIN_INSTITUTIONS_FOR_MEDIAN} to {STRONG_INSTITUTION_COUNT - 1}), or Too few to benchmark (under {MIN_INSTITUTIONS_FOR_MEDIAN}, no median shown).
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}
             Categories are organized into 4 tiers: spotlight, core, extended, and comprehensive.
-            The Free API tier returns only spotlight categories.
           </li>
           <li>
             <span className="font-medium text-[#5A5347]">Coverage.</span>{" "}
-            The dataset covers {summary.institutionsLabel} institutions with verified fees and is
+            The dataset covers {summary.institutionsLabel} institutions with published fees (of{" "}
+            {summary.monitoredLabel} monitored) and is
             refreshed on a rolling calendar. {summary.freshnessLabel}.
           </li>
         </ul>

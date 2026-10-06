@@ -53,8 +53,13 @@ export function narrateStepFinished(
     }
     case "discover-paid":
     case "read-paid":
-    case "extract-paid": {
-      const job = stepKey === "discover-paid" ? "find fee schedules" : stepKey === "read-paid" ? "read documents" : "extract fees";
+    case "extract-paid":
+    case "verify-paid": {
+      const job = stepKey === "discover-paid"
+        ? "find fee schedules"
+        : stepKey === "read-paid"
+          ? "read documents"
+          : stepKey === "extract-paid" ? "extract fees" : "review disputed fees";
       const processed = n(detail, "processed");
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
@@ -69,24 +74,26 @@ export function narrateStepFinished(
         n(detail, "retry_after") > 0 && `${n(detail, "retry_after")} to retry later`,
         n(detail, "dead_institutions") > 0 && `${n(detail, "dead_institutions")} with no schedule found`,
         n(detail, "needs_human") > 0 && `${n(detail, "needs_human")} need a person`,
-        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "second fee document")} for banks with few fees`,
+        n(detail, "second_documents_found") > 0 && `${count(n(detail, "second_documents_found"), "more fee page")} (account pages, fee documents, agreements) for banks with few fees`,
       ])}.`;
     }
     case "fetch": {
       const processed = n(detail, "processed_institutions");
-      if (processed === 0) return `Checked fee schedules ${scope}; none were due for a refresh.`;
+      const companions = n(detail, "companion_pages_fetched") + n(detail, "companion_pages_unchanged");
+      const companionNote = companions > 0 ? ` Also checked ${count(companions, "account page or fee document")}, ${n(detail, "companion_pages_fetched")} new.` : "";
+      if (processed === 0) return `Checked fee schedules ${scope}; none were due for a refresh.${companionNote}`;
       if (n(detail, "unchanged_documents") > 0) {
         return `Checked ${count(processed, "fee schedule")} ${scope}: ${n(detail, "fetched_documents").toLocaleString("en-US")} new, ${n(detail, "unchanged_documents").toLocaleString("en-US")} unchanged${joinParts([
           n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
           n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
           n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
-        ]).replace(/^: /, ", ")}.`;
+        ]).replace(/^: /, ", ")}.${companionNote}`;
       }
       return `Downloaded ${count(n(detail, "fetched_documents"), "fee schedule")} ${scope}${joinParts([
         n(detail, "failed_fetches") > 0 && `${n(detail, "failed_fetches")} failed`,
         n(detail, "skipped_fetches") > 0 && `${n(detail, "skipped_fetches")} skipped`,
         n(detail, "stored_documents") > 0 && `${n(detail, "stored_documents")} saved to the vault`,
-      ])}.`;
+      ])}.${companionNote}`;
     }
     case "read": {
       const processed = n(detail, "processed_documents");
@@ -182,6 +189,30 @@ export function narrateStepFinished(
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
       return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+    }
+    case "marketing-score": {
+      const scored = n(detail, "scored");
+      return scored === 0 ? "Stored this month's market snapshot; no sent campaigns to score yet." : `Scored ${count(scored, "sent campaign")} and stored this month's market snapshot.`;
+    }
+    case "marketing-write": {
+      const drafts = Array.isArray(detail.drafts) ? detail.drafts.length : 0;
+      if (detail.already_drafted === true || detail.alreadyDrafted === true) return "This month's campaigns are already drafted and waiting for James.";
+      return `Drafted ${count(drafts, "marketing campaign")} for James to approve.`;
+    }
+    case "marketing-states": {
+      const drafts = Array.isArray(detail.drafts) ? detail.drafts.length : 0;
+      return drafts ? `Drafted ${count(drafts, "state edition")} for James to approve.` : "No state editions to draft this month.";
+    }
+    case "marketing-send": {
+      const sent = Array.isArray(detail.sent) ? detail.sent.length : 0;
+      return `Sent ${count(sent, "approved marketing campaign")}.`;
+    }
+    case "lead-watch": {
+      const owed = n(detail, "overdue") + n(detail, "email_failed");
+      if (owed === 0) return "Checked the leads; none is waiting on a reply.";
+      return detail.alert === "sent"
+        ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
+        : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
     }
     case "daily-brief":
       return detail.delivery_status === "sent"
@@ -279,6 +310,11 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "state-expert": "atlas",
   "daily-brief": "atlas",
+  "lead-watch": "atlas",
+  "marketing-score": "hamilton",
+  "marketing-write": "hamilton",
+  "marketing-send": "hamilton",
+  "marketing-states": "hamilton",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
   discover: "magellan",
@@ -304,11 +340,14 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "extract-paid": "knox",
   review: "knox",
   classify: "darwin",
+  "verify-paid": "darwin",
   verify: "darwin",
   "public-cluster": "darwin",
   publish: "hamilton",
   "publish-index": "hamilton",
   "publish-context": "hamilton",
+  "report-render": "hamilton",
+  "report-close": "hamilton",
   "category-guard": "hamilton",
   "public-diagnose": "hamilton",
 };

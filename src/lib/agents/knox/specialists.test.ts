@@ -45,6 +45,62 @@ describe("Knox pass 2a: extract.table", () => {
     expect(held(text)).toEqual([["zero", "Paper statement", 0, "paper_statement"]]);
   });
 
+  it("keeps the name above a qualifier line, and lets an ATM heading name a cash withdrawal row", () => {
+    // Community Bank (Longview, TX) and Wells Fargo summary pages, as Rosetta stores them.
+    const text = [
+      "Community Bank Debit Card (replacement or PIN)",
+      "$5.00",
+      "Temporary Checks",
+      "If checks are not on order (10 maximum)",
+      "$2.00",
+      "Overdraft Item Fee",
+      "(for each overdraft item, overdraft debit or overdraft check paid)",
+      "$30.00",
+      "Deposited checks (and other items) returned unpaid",
+      "$3.00",
+      "ATM fees per transaction – At Wells Fargo ATMs",
+      "Cash withdrawals",
+      "$0",
+      "ATM fees per transaction – At non-Wells Fargo ATMs",
+      "(non-Wells Fargo ATM operator fees may also apply)",
+      "Cash withdrawals - Within U.S. / U.S. territories",
+      "$3.00",
+      "Cash withdrawals - Outside U.S.",
+      "$5.00",
+      "Money order footnote 2",
+      "(up to $1,000)",
+      "$5",
+      "each",
+    ].join("\n");
+
+    expect(fees(text)).toEqual([
+      ["Community Bank Debit Card (replacement or PIN)", 5, "card_replacement"],
+      // The shared accuracy check reads a price two lines under its name, past a note
+      // line ("If checks are not on order", "(up to $1,000)").
+      ["Temporary Checks", 2, "counter_check"],
+      ["Overdraft Item Fee", 30, "overdraft"],
+      ["Deposited checks (and other items) returned unpaid", 3, "deposited_item_return"],
+      ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Within U.S. / U.S. territories", 3, "atm_non_network"],
+      ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Outside U.S.", 5, "atm_international"],
+      ["Money order footnote 2", 5, "money_order"],
+    ]);
+    // The bank's own ATMs are not out-of-network, so nothing is held.
+    expect(held(text)).toEqual([]);
+  });
+
+  it("self-checks each find against its line and drops one that doesn't trace", () => {
+    // The family pass read the business price as the consumer one; the shared accuracy
+    // check finds no row that names "Consumer" at $5.00.
+    const text = ["Counter-Temporary Checks", "$1.50 -Consumer", "$5.00 - Business", "Stop Payment", "$30.00"].join("\n");
+    const result = runFreeSpecialists(text);
+
+    expect(result.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([
+      ["Counter-Temporary Checks", 1.5, "counter_check"],
+      ["Stop Payment", 30, "stop_payment"],
+    ]);
+    expect(result.runs.find((run) => run.strategy === "extract.family.checks")?.selfCheckFailed).toBe(1);
+  });
+
   it("re-pairs dot-leader rows whose prices were pushed onto the next line", () => {
     const text = [
       "Wire Transfer (outgoing).................................................",
@@ -56,12 +112,18 @@ describe("Knox pass 2a: extract.table", () => {
     ].join("\n");
 
     // v3 read "$10.00 Outgoing International Wire" as a $10 international wire.
-    expect(fees(text)).toEqual([
+    const reads = [
       ["Wire Transfer (outgoing)", 20, "wire_domestic_outgoing"],
       ["Outgoing International Wire (in foreign currency)", 50, "wire_intl_outgoing"],
       ["Garnishments", 100, "garnishment_levy"],
       ["Levies", 20, "garnishment_levy"],
-    ]);
+    ];
+    const table = runFreeSpecialists(text).runs.find((run) => run.strategy === "extract.table");
+    expect(table?.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual(reads);
+    // The shared accuracy check pairs each dot-leader name with the price that opens the
+    // next line, so all four trace.
+    expect(fees(text)).toEqual(reads);
+    expect(held(text)).toEqual([]);
   });
 
   it("reads structured rows through a small adapter over Rosetta's cell lines", () => {
@@ -112,7 +174,8 @@ describe("Knox pass 2b: fee-family experts", () => {
       ["extract.family.services", "Notary - Non Member", 5, "notary_fee"],
       ["extract.family.services", "Levy/Writ", 50, "garnishment_levy"],
     ]);
-    // Explicit NONE/FREE next to a fee name is a $0 price Darwin can verify.
+    // Explicit NONE/FREE next to a fee name is read as $0; the shared accuracy check ties
+    // the word to the words before it, as it does a price.
     expect(held(flattened)).toEqual([
       ["zero", "Continuous Overdraft Fee (Per Day)", 0, "continuous_od"],
       ["zero", "Wire Transfer - Domestic Incoming", 0, "wire_domestic_incoming"],
@@ -130,6 +193,7 @@ describe("Knox pass 2b: fee-family experts", () => {
       ["Overdraft fee (2nd and subsequent items)", 35, "overdraft"],
       ["Paid overdraft item daily maximum", 175, "od_daily_cap"],
     ]);
+    expect(held(text)).toEqual([]);
   });
 
   it("reads prices after dot leaders that dropped the dollar sign", () => {

@@ -4,10 +4,16 @@ import {
   type LeadNotificationOutcome,
 } from "@/lib/email/report-request";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
+import { sendBenchmarkReportNotifications } from "@/lib/email/benchmark-report";
+import { isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import type { EmailDeliveryStatus } from "@/lib/email/resend";
+import { handleLeadDeliveryOutcome } from "@/lib/leads/lead-alerts";
 import { NEWSLETTER_SOURCE, placementForSource, type LeadCapturePlacement } from "@/lib/lead-capture";
 
 export const REPORT_SOURCE = "report";
+/** The free, instant reports picked on the request form; never owed a reply. */
+export const NATIONAL_REPORT_SOURCE = "report_national";
+export const DISTRICT_REPORT_SOURCE = "report_district";
 const CONTACT_SOURCE_PATTERN = /^contact(?:_([a-z0-9-]+))?$/;
 const ENTERPRISE_SOURCE = "enterprise";
 
@@ -15,6 +21,8 @@ const MAX_INSTITUTION_ID = 2_147_483_647;
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 export interface StoredLead {
+  /** The row this submission created; null when it filled gaps on an existing lead. */
+  leadId?: number | null;
   name: string;
   email: string;
   company: string | null;
@@ -26,6 +34,18 @@ export interface StoredLead {
   /** Capture placements only: state context and the institution name for email copy. */
   stateCode?: string | null;
   institutionName?: string | null;
+  /** Free benchmark requests only: which report to send. */
+  benchmarkScope?: BenchmarkScope | null;
+  /** Institution report requests only: the data check line for James. */
+  quoteCheck?: string | null;
+  /**
+   * Institution report requests the data check held (market not ready): the requester's
+   * Fed district for their free report, or null when unknown. Undefined when not held.
+   */
+  heldDistrict?: number | null;
+  /** Institution report requests only: optional state and named competitors from the form. */
+  reportState?: string | null;
+  competitors?: string | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -38,6 +58,24 @@ export function parseInstitutionId(value: unknown): number | null {
   const numeric = typeof value === "string" ? Number(value) : value;
   if (typeof numeric !== "number" || !Number.isInteger(numeric)) return null;
   return numeric > 0 && numeric <= MAX_INSTITUTION_ID ? numeric : null;
+}
+
+const MAX_COMPETITORS_LENGTH = 300;
+
+/**
+ * The competitors a requester names, made safe for the `; key=value` use_case format:
+ * separators become commas and the text is capped. Null when empty.
+ */
+export function parseCompetitors(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value
+    .replace(/[;=\n\r]+/g, ", ")
+    .replace(/\s+/g, " ")
+    .replace(/(,\s*)+/g, ", ")
+    .replace(/^[,\s]+|[,\s]+$/g, "")
+    .slice(0, MAX_COMPETITORS_LENGTH)
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 export function parseSrc(value: unknown): string | null {
@@ -54,12 +92,36 @@ export function buildReportUseCase(
   useCase: string | null,
   institutionId: number | null,
   src: string | null,
+  extra: { stateCode?: string | null; competitors?: string | null } = {},
 ): string | null {
   const parts = [useCase];
   if (institutionId !== null) parts.push(`institution_id=${institutionId}`);
   if (src) parts.push(`src=${src}`);
+  if (extra.stateCode) parts.push(`state=${extra.stateCode}`);
+  if (extra.competitors) parts.push(`competitors=${extra.competitors}`);
   const joined = parts.filter((part): part is string => Boolean(part)).join("; ");
   return joined.length > 0 ? joined : null;
+}
+
+/**
+ * The free report a benchmark source asks for, or null when the source is not one or the
+ * district is missing or not 1-12 (the route then rejects the request).
+ */
+export function parseBenchmarkRequest(source: string, district: unknown): BenchmarkScope | null {
+  if (source === NATIONAL_REPORT_SOURCE) return { kind: "national" };
+  if (source !== DISTRICT_REPORT_SOURCE) return null;
+  const numeric = typeof district === "string" ? Number(district) : district;
+  return typeof numeric === "number" && isFedDistrict(numeric) ? { kind: "district", district: numeric } : null;
+}
+
+export function isBenchmarkSource(source: string): boolean {
+  return source === NATIONAL_REPORT_SOURCE || source === DISTRICT_REPORT_SOURCE;
+}
+
+export function buildBenchmarkUseCase(scope: BenchmarkScope, src: string | null): string {
+  const parts = ["benchmark-report", `scope=${scope.kind === "national" ? "national" : `district-${scope.district}`}`];
+  if (src) parts.push(`src=${src}`);
+  return parts.join("; ");
 }
 
 export function contactInquiryType(source: string): string | null {
@@ -75,6 +137,7 @@ function captureOfferFor(source: string): LeadCapturePlacement | null {
 export function shouldNotify(source: string) {
   return (
     source === REPORT_SOURCE ||
+    isBenchmarkSource(source) ||
     captureOfferFor(source) !== null ||
     source === ENTERPRISE_SOURCE ||
     CONTACT_SOURCE_PATTERN.test(source)
@@ -89,13 +152,21 @@ function deliveryReason(result: LeadNotificationOutcome["notification"]) {
 
 /**
  * The lead is stored either way; an email that did not go out is logged with its reason
- * (e.g. "RESEND_API_KEY is not configured.") so it is visible in the deployment logs.
+ * (e.g. "RESEND_API_KEY is not configured.") and handed to the lead loop, which alerts
+ * James or marks the lead email_failed so the hourly lead watch alerts on it.
  */
-function logUndelivered(source: string, outcome: LeadNotificationOutcome) {
+async function handleUndelivered(lead: StoredLead, outcome: LeadNotificationOutcome) {
   const notification = deliveryReason(outcome.notification);
   const confirmation = deliveryReason(outcome.confirmation);
-  if (notification || confirmation) {
-    console.warn("[api/leads] lead email not delivered", { source, notification, confirmation });
+  if (!notification && !confirmation) return;
+  console.warn("[api/leads] lead email not delivered", { source: lead.source, notification, confirmation });
+  try {
+    await handleLeadDeliveryOutcome({ ...lead, id: lead.leadId ?? null }, outcome);
+  } catch (error) {
+    console.error("[api/leads] failed-email alert failed", {
+      source: lead.source,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -119,7 +190,16 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionName: lead.institutionName ?? null,
         stateCode: lead.stateCode ?? null,
       });
-      logUndelivered(lead.source, outcome);
+      await handleUndelivered(lead, outcome);
+      return toStatus(outcome);
+    }
+    if (lead.benchmarkScope) {
+      const outcome = await sendBenchmarkReportNotifications({
+        email: lead.email,
+        scope: lead.benchmarkScope,
+        src: lead.src,
+      });
+      await handleUndelivered(lead, outcome);
       return toStatus(outcome);
     }
     if (lead.source === REPORT_SOURCE) {
@@ -130,8 +210,12 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         role: lead.role,
         institutionId: lead.institutionId,
         src: lead.src,
+        quoteCheck: lead.quoteCheck ?? null,
+        stateCode: lead.reportState ?? null,
+        competitors: lead.competitors ?? null,
+        ...(lead.heldDistrict !== undefined ? { held: { district: lead.heldDistrict } } : {}),
       });
-      logUndelivered(lead.source, outcome);
+      await handleUndelivered(lead, outcome);
       return toStatus(outcome);
     }
     const outcome = await sendContactRequestNotifications({
@@ -143,13 +227,13 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
       inquiryType:
         lead.source === ENTERPRISE_SOURCE ? ENTERPRISE_SOURCE : contactInquiryType(lead.source),
     });
-    logUndelivered(lead.source, outcome);
+    await handleUndelivered(lead, outcome);
     return toStatus(outcome);
   } catch (error) {
-    console.error("[api/leads] notification failed", {
-      source: lead.source,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[api/leads] notification failed", { source: lead.source, error: message });
+    const failed = { status: "failed", error: message } as const;
+    await handleUndelivered(lead, { notification: failed, confirmation: failed });
     return { notification: "failed", confirmation: "failed" };
   }
 }

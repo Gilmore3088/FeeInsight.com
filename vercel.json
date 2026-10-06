@@ -10,15 +10,31 @@
     },
     {
       "path": "/api/admin/crew/daily-brief",
-      "schedule": "47 12 * * *"
+      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/admin/crew/fee-alerts",
       "schedule": "23 13 * * *"
     },
     {
+      "path": "/api/admin/crew/lead-watch",
+      "schedule": "41 * * * *"
+    },
+    {
       "path": "/api/admin/crew/scoreboard",
       "schedule": "17 12 * * *"
+    },
+    {
+      "path": "/api/admin/reports/schedule?type=monthly_pulse",
+      "schedule": "30 14 3 * *"
+    },
+    {
+      "path": "/api/admin/reports/schedule?type=national_index",
+      "schedule": "30 14 5 1,4,7,10 *"
+    },
+    {
+      "path": "/api/admin/crew/marketing",
+      "schedule": "7 14 1 * *"
     }
   ]
 }

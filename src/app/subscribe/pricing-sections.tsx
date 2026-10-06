@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { REPORT_BULLETS, REPORT_PRICE_LABEL } from "./pricing";
 
@@ -11,10 +11,11 @@ const SECONDARY_BUTTON_CLASS =
   "block w-full rounded-md border border-[#D5CBBF] px-4 py-2.5 text-center text-sm font-medium text-[#1A1815] hover:border-[#1A1815] transition-colors";
 const CHECK = "✓";
 
-const REPORT_ANCHOR_HREF = "/for-institutions#report";
+const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const WALKTHROUGH_HREF = `mailto:${CONTACT_EMAIL}?subject=Walkthrough`;
-const ADVISORY_HREF = `mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Advisory`;
+// Contact form, not mailto, so every ask lands in /admin/leads with a due time.
+const WALKTHROUGH_HREF = "/contact?source=enterprise";
+const ADVISORY_HREF = "/contact?source=advisory";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
@@ -48,7 +49,7 @@ export function ReportCard() {
             {REPORT_OFFER.name}
           </div>
           <h2 className="text-xl text-[#1A1815]" style={SERIF}>
-            {REPORT_PRICE_LABEL} ({REPORT_OFFER.valueLabel}), {REPORT_OFFER.turnaround}
+            {REPORT_PRICE_LABEL}
           </h2>
           <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm text-[#5A5347] sm:grid-cols-2">
             {REPORT_BULLETS.map((bullet) => (
@@ -60,25 +61,31 @@ export function ReportCard() {
           </ul>
           <p className="mt-3 text-sm text-[#5A5347]">
             One institution, one peer set, one PDF for your pricing committee.{" "}
-            <TrackLink
-              event="see_sample_report"
-              eventProps={{ placement: "pricing_report" }}
-              href={SAMPLE_REPORT_HREF}
-              className="font-medium text-[#1A1815] underline underline-offset-2"
-            >
-              See the sample report
-            </TrackLink>
-            .
+            {REPORT_OFFER.nextStep}.
+            {SAMPLE_REPORT_LIVE && (
+              <>
+                {" "}
+                <TrackLink
+                  event="see_sample_report"
+                  eventProps={{ placement: "pricing_report" }}
+                  href={SAMPLE_REPORT_HREF}
+                  className="font-medium text-[#1A1815] underline underline-offset-2"
+                >
+                  See the sample report
+                </TrackLink>
+                .
+              </>
+            )}
           </p>
         </div>
         <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
           <TrackLink
-            event="request_report"
+            event="request_report_click"
             eventProps={{ placement: "pricing_report" }}
             href={REPORT_ANCHOR_HREF}
             className={PRIMARY_BUTTON_CLASS}
           >
-            {REPORT_OFFER.ctaLabel}
+            Request your institution report
           </TrackLink>
         </div>
       </div>

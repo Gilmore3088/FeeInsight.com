@@ -24,10 +24,10 @@ describe("reviewAnswerPage", () => {
     expect(reviewAnswerPage({ ...base, narrative })).toEqual([
       "The headline must name Example Bank.",
       "The headline must carry its key figure from DATA.",
-      "Decision 1 must name the price to move to or hold at.",
+      "Decision 1 must name this institution's price or the anchor it is weighed against.",
       "Decision 1's WHY must cite at least one figure from DATA.",
       "Decision 1 needs a confidence level (High, Medium or Low) and the reason for it.",
-      "Each decision must name the fee it changes, using the fee names in DATA.",
+      "Each decision must name its fee, using the fee names in DATA.",
       "Name at least one local competitor from DATA and its price where it supports a decision.",
     ]);
   });

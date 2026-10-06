@@ -9,25 +9,17 @@ interface Props {
 interface ImpactRow {
   label: string;
   value: string;
-  barPct: number;
-  isPositive: boolean;
+  note: string;
 }
 
+// Rows carry only what the simulation computed: the price change and the peer position
+// change, each with its own note. No bar: there is no measured scale to draw it against.
 function deriveImpactRows(tradeoffs: TradeoffDeltas): ImpactRow[] {
-  return [
-    {
-      label: "Revenue Projection",
-      value: tradeoffs.revenueImpact.value,
-      barPct: 42,
-      isPositive: false,
-    },
-    {
-      label: "Risk Mitigation",
-      value: tradeoffs.riskMitigation.value,
-      barPct: 88,
-      isPositive: true,
-    },
-  ];
+  return [tradeoffs.revenueImpact, tradeoffs.riskMitigation].map(({ label, value, note }) => ({
+    label,
+    value,
+    note,
+  }));
 }
 
 export function StrategicTradeoffs({ tradeoffs }: Props) {
@@ -88,22 +80,13 @@ export function StrategicTradeoffs({ tradeoffs }: Props) {
               {row.value}
             </span>
           </div>
-          <div
-            className="w-full h-1 mt-3 rounded"
-            style={{ background: "rgb(245 245 244)" }}
-          >
-            <div
-              className="h-1 rounded"
-              style={{
-                width: `${row.barPct}%`,
-                background: "var(--hamilton-primary)",
-              }}
-            />
-          </div>
+          <p className="mt-2 text-xs" style={{ color: "rgb(120 113 108)" }}>
+            {row.note}
+          </p>
         </div>
       ))}
 
-      {/* Recommendation Engine box */}
+      {/* Peer band: where the proposed fee sits among peers */}
       <div
         className="p-5 border rounded"
         style={{
@@ -115,13 +98,13 @@ export function StrategicTradeoffs({ tradeoffs }: Props) {
           className="font-label text-[9px] uppercase tracking-widest mb-2 block"
           style={{ color: "var(--hamilton-on-primary-fixed-variant, #703714)" }}
         >
-          Recommendation Engine
+          {tradeoffs.operationalImpact.label}: {tradeoffs.operationalImpact.value}
         </label>
         <p
           className="font-headline text-sm italic leading-snug"
           style={{ color: "var(--hamilton-on-primary-fixed, #331200)" }}
         >
-          &ldquo;{tradeoffs.operationalImpact.note}&rdquo;
+          {tradeoffs.operationalImpact.note}
         </p>
       </div>
     </div>

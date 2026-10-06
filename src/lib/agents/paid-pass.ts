@@ -1,6 +1,8 @@
 import { getAnthropicMessagesClient, type Anthropic } from "@/lib/ai-provider";
 import type { sql } from "@/lib/data-store/connection";
-import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD } from "@/lib/ai-provider-usage";
+
+export { WEB_SEARCH_COST_MICROUSD };
 
 /**
  * Pass 3, the paid last pass. Free methods (pass 1) and heavier free methods (pass 2)
@@ -11,16 +13,14 @@ import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-p
  * the step; it never stalls the state run.
  */
 
-export type PaidPassAgent = "magellan" | "rosetta" | "knox";
-
-/** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
-export const WEB_SEARCH_COST_MICROUSD = 10_000;
+export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton";
 
 /** Models per paid job; override per environment. */
 export const PAID_PASS_MODELS = {
   find: () => process.env.PIPELINE_PAID_FIND_MODEL?.trim() || "claude-haiku-4-5-20251001",
   read: () => process.env.PIPELINE_PAID_READ_MODEL?.trim() || "claude-sonnet-5-5",
   extract: () => process.env.PIPELINE_PAID_EXTRACT_MODEL?.trim() || "claude-sonnet-5-5",
+  verify: () => process.env.PIPELINE_PAID_VERIFY_MODEL?.trim() || "claude-haiku-4-5-20251001",
 } as const;
 
 /** Items one paid step may send to the model per run. Keeps a single run's spend small. */
@@ -55,7 +55,7 @@ export async function paidModelCall({
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
 }): Promise<PaidCallResult> {
-  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`).messages.create(body));
+  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, agent).messages.create(body));
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata },
     () => send(params),
@@ -63,17 +63,20 @@ export async function paidModelCall({
   return { message, costMicrousd: paidCallCostMicrousd(params.model, message) };
 }
 
-/** Token cost plus server-tool charges (web search) for one response. */
+/**
+ * Token cost plus server-tool charges (web search) for one response: the same estimate
+ * trackAnthropicRequest writes to ai_api_usage_events, so the attempt log and the ledger
+ * the budget caps read agree.
+ */
 export function paidCallCostMicrousd(model: string, message: Pick<Anthropic.Message, "usage">): number {
   const usage = message.usage;
-  const tokens = estimateAnthropicCostMicrousd(model, {
+  return estimateAnthropicCostMicrousd(model, {
     inputTokens: usage?.input_tokens ?? 0,
     outputTokens: usage?.output_tokens ?? 0,
     cacheReadInputTokens: usage?.cache_read_input_tokens ?? 0,
     cacheCreationInputTokens: usage?.cache_creation_input_tokens ?? 0,
+    webSearchRequests: usage?.server_tool_use?.web_search_requests ?? 0,
   }) ?? 0;
-  const searches = Number(usage?.server_tool_use?.web_search_requests ?? 0);
-  return tokens + (Number.isFinite(searches) ? searches * WEB_SEARCH_COST_MICROUSD : 0);
 }
 
 /** Text of a model response, joined across text blocks. */

@@ -314,7 +314,6 @@ describe("Hamilton Reports generateReport", () => {
       expect(input.context).toContain("do not treat it as a verified benchmark score");
       expect(input.data.selected_institution).toMatchObject({
         id: 2945,
-        evidence_policy: "provisional-first",
         benchmark_scope: "Custom CU peers",
         can_generate_verified_benchmark_conclusions: false,
       });
@@ -322,7 +321,7 @@ describe("Hamilton Reports generateReport", () => {
 
     const selectedPayload = calls[0].data.selected_institution as {
       fee_rows: Array<Record<string, unknown>>;
-      pipeline_fee_rows: Array<Record<string, unknown>>;
+      fees_under_review: Array<Record<string, unknown>>;
       fee_peer_deltas: Array<Record<string, unknown>>;
       financials: Record<string, unknown>;
     };
@@ -331,10 +330,12 @@ describe("Hamilton Reports generateReport", () => {
       evidence_tier: "provisional",
       excluded_from_verified_benchmark: true,
     });
-    expect(selectedPayload.pipeline_fee_rows[0]).toMatchObject({
+    expect(selectedPayload.fees_under_review[0]).toEqual({
       fee_name: "Cashier check",
+      fee_category: "cashiers_check",
+      amount: 10,
+      frequency: "per check",
       evidence_tier: "provisional",
-      pipeline_stage: "verified_unpublished",
     });
     expect(selectedPayload.fee_peer_deltas[0]).toMatchObject({
       fee_category: "wire_transfer",
@@ -343,7 +344,7 @@ describe("Hamilton Reports generateReport", () => {
       evidence_tier: "provisional",
       excluded_from_verified_benchmark: true,
     });
-    expect(selectedPayload.financials.service_charge_income).toBe(1_500_000);
+    expect(selectedPayload.financials.service_charge_income_dollars).toBe(1_500_000_000);
 
     const recommendationInput = calls.find((input) => input.type === "recommendation");
     expect(recommendationInput?.data.peer_anchored_fees).toEqual(
@@ -357,14 +358,14 @@ describe("Hamilton Reports generateReport", () => {
     );
     expect(result.report.snapshot).toContainEqual({
       label: "wire transfer",
-      current: "$35.00 provisional",
-      proposed: "$20.00 Custom CU peers median",
+      current: "$35.00 (provisional)",
+      proposed: "$20.00 peer median",
     });
     expect(result.report.implementationNotes).toEqual(
       expect.arrayContaining([
-        "Selected institution evidence policy: provisional-first",
-        "Selected institution deterministic fee deltas available: 1",
-        "Verified benchmark conclusions exclude provisional rows unless explicitly labeled otherwise.",
+        "Peer group: Custom CU peers",
+        "1 of Hamilton Federal Credit Union's fees compared with the peer median",
+        "Verified benchmark conclusions exclude provisional fees; provisional figures are labeled.",
       ]),
     );
     expect(result.artifactMetadata).toMatchObject({

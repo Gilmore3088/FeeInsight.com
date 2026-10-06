@@ -31,12 +31,11 @@ describe("brand constants", () => {
 });
 
 describe("report offer", () => {
-  it("is free, with its value stated once", async () => {
+  it("prices the institution report on request and never promises a turnaround", async () => {
     const { REPORT_OFFER, REPORT_OFFER_LINE } = await import("./constants");
     expect(REPORT_OFFER.priceUsd).toBe(0);
-    expect(REPORT_OFFER.priceLabel).toBe("Free");
-    expect(REPORT_OFFER_LINE).toBe(
-      "Competitive Fee Position Report — free (a $300 value), delivered in 48 hours",
-    );
+    expect(REPORT_OFFER.priceLabel).toBe("Priced on request");
+    expect(REPORT_OFFER_LINE).toBe("National and Fed district fee reports — free, and ready in a minute");
+    expect(JSON.stringify(REPORT_OFFER)).not.toMatch(/48 hours/);
   });
 });

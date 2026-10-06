@@ -99,7 +99,7 @@ export type ReportNarrativeTone = "consulting" | "academic" | "executive" | "tec
 
 const TONE_GUIDANCE: Record<ReportNarrativeTone, string> = {
   executive: "AUDIENCE: the board. Lead with the headline and the decision; keep it short; no methodology detail.",
-  consulting: "AUDIENCE: the internal pricing team. Action-oriented; name the next step for each finding.",
+  consulting: "AUDIENCE: the internal pricing team. Decision-oriented; name the decision each finding raises.",
   technical: "AUDIENCE: analysts. Data-first; state the sample size and maturity behind every benchmark.",
   academic: "AUDIENCE: research readers. Fuller context; explain the method and its limits.",
 };
@@ -228,7 +228,7 @@ export async function previewReportPeerCoverage(
  */
 /**
  * Shared no-fluff rules. Same banned phrases + grounding requirements as
- * RECOMMENDATION_RULES. The model can be funny in its choice of how to
+ * DECISION_POINT_RULES. The model can be funny in its choice of how to
  * express things — but it cannot be vague, can't invent numbers, and can't
  * reach for consultancy-speak when it has nothing to say.
  */
@@ -256,17 +256,17 @@ function buildExecutiveSummaryContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Write the answer page for ${institutionName}'s fee benchmark. Decide which fees to change, which to hold, and where it sits against its local competitors (exhibits.local_market) and peers. Period: ${period}.`;
+        return `Write the answer page for ${institutionName}'s fee benchmark. Show where it sits against its local competitors (exhibits.local_market) and peers, and the decisions that puts in front of management. Period: ${period}.`;
       case "regional_landscape":
         return `Write the answer page on ${institutionName}'s regional market. Lead with how its prices compare with the named local competitors in exhibits.local_market, then the decisions that follow. Period: ${period}.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Write the answer page on ${institutionName}'s ${cat} pricing: where it sits against local competitors and peers, and whether to raise, hold, lower or restructure it. Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s ${cat} pricing: where it sits against local competitors and peers, and the decision it puts in front of management. Period: ${period}.`;
       }
       case "competitive_positioning":
-        return `Write the answer page on ${institutionName}'s competitive position: the fees where it is most exposed against named local competitors and peers, and what to do about each. Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s competitive position: the fees where it is most exposed against named local competitors and peers, and the decision each raises. Period: ${period}.`;
     }
   })();
 
@@ -301,17 +301,19 @@ function buildStrategicContext(
 }
 
 /**
- * Recommendation-specific rules (layered on top of NO_FLUFF_RULES).
- * Recommendations have stricter shape requirements than the descriptive
- * sections (Executive Summary, Strategic Analysis).
+ * Decision-point rules (layered on top of NO_FLUFF_RULES). Hamilton is decision support
+ * (James, 2026-10-05 23:27 UTC): this section lays out what management could weigh and
+ * what each option would do, and never says which to choose. An opinion is given only on
+ * an explicit ask, through the Ask bar, with its objective named.
  */
-const RECOMMENDATION_RULES = `
+const DECISION_POINT_RULES = `
 ${NO_FLUFF_RULES}
 
-TRADE-OFF RULES:
-13. Cover the decisions on the answer page, in its order, and no others. At most 3.
-14. Each trade-off names the fee, the price it moves toward, and one concrete consequence: who notices, the attrition, complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
-15. If you can ground only 0 or 1 decisions, write only that many. Better short than generic.
+DECISION-POINT RULES:
+13. Cover the decision points on the answer page, in its order, and no others. At most 3.
+14. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+15. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
+16. If you can ground only 0 or 1 decision points, write only that many. Better short than generic.
 `.trim();
 
 function buildRecommendationContext(
@@ -321,21 +323,21 @@ function buildRecommendationContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Write the trade-offs for ${institutionName}'s fee decisions: for each fee to change (largest value in exhibits.fee_impacts first), who notices, what it risks, and how to phase it.`;
+        return `Write the trade-offs for ${institutionName}'s fee decision points: for each (largest value in exhibits.fee_impacts first), the options management could weigh, who notices, and what each option risks.`;
       case "regional_landscape":
-        return `Write the trade-offs for ${institutionName}'s regional moves: for each, the named local competitors customers will compare it with, what it risks, and how to phase it.`;
+        return `Write the trade-offs for ${institutionName}'s regional decision points: for each, the named local competitors customers will compare it with and what each option risks.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Write the trade-offs for ${institutionName}'s ${cat} decision (raise, hold, lower or restructure against the local and peer anchors): who notices, what it risks, and how to phase it.`;
+        return `Write the trade-offs for ${institutionName}'s ${cat} decision point (keep the price, move toward the local or peer anchor, or restructure it): who notices and what each option risks.`;
       }
       case "competitive_positioning":
-        return `Write the trade-offs for ${institutionName}'s repositioning moves, most exposed fees first: which local competitors customers will compare it with, what each move risks, and how to phase it.`;
+        return `Write the trade-offs for ${institutionName}'s positioning decision points, most exposed fees first: which local competitors customers will compare it with and what each option risks.`;
     }
   })();
 
-  return `${head}\n\n${TRADEOFF_SECTION_FORMAT}\n\n${RECOMMENDATION_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
+  return `${head}\n\n${TRADEOFF_SECTION_FORMAT}\n\n${DECISION_POINT_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
 }
 
 /**
@@ -431,7 +433,8 @@ export async function generateReport(
       selectedVerifiedFees.length > 0 ||
       selectedProvisionalFees.length > 0 ||
       pipelineFeeCount > 0;
-    const latestFinancial = selectedFinancials[0] ?? null;
+    // ffiec rows duplicate fdic quarters at other scales; reports read the thousands-scale sources.
+    const latestFinancial = selectedFinancials.find((record) => record.source !== "ffiec") ?? null;
 
     if (
       params.institutionId &&
@@ -498,6 +501,7 @@ export async function generateReport(
       latestFinancial: latestFinancial
         ? {
             report_date: latestFinancial.report_date,
+            source: latestFinancial.source,
             total_assets: latestFinancial.total_assets,
             total_deposits: latestFinancial.total_deposits,
             service_charge_income: latestFinancial.service_charge_income,
@@ -619,10 +623,10 @@ export async function generateReport(
       {
         type: "recommendation",
         title: "Trade-offs and What to Watch",
-        // Pass actual peer-anchored fee data so the model can write
-        // specific recommendations instead of consultancy fluff. The
-        // RECOMMENDATION_RULES context block forbids inventing figures
-        // not present in this payload.
+        // Pass actual peer-anchored fee data so the model can lay out
+        // specific decision points instead of consultancy fluff. The
+        // DECISION_POINT_RULES context block forbids inventing figures
+        // not present in this payload, and forbids choosing an option.
         data: {
           report_type: params.templateType,
           institution_name: institutionName,
@@ -769,15 +773,15 @@ export async function generateReport(
 
     const snapshotRows = selectedFeeDeltas.slice(0, 5).map((delta) => ({
       label: delta.fee_category.replace(/_/g, " "),
-      current: `${formatAmount(delta.institution_amount)} ${delta.evidence_tier}`,
-      proposed: `${formatAmount(delta.peer_median)} ${peerIndex.label} median`,
+      current: `${formatAmount(delta.institution_amount)} (${delta.evidence_tier})`,
+      proposed: `${formatAmount(delta.peer_median)} peer median`,
     }));
     const tradeoffRows =
       selectedInstitution && selectedFeeDeltas.length > 0
         ? selectedFeeDeltas.slice(0, 3).map((delta) => ({
             label: delta.fee_category.replace(/_/g, " "),
             value:
-              `${formatAmount(delta.institution_amount)} vs ${formatAmount(delta.peer_median)} ${peerIndex.label} median ` +
+              `${formatAmount(delta.institution_amount)} vs ${formatAmount(delta.peer_median)} peer median ` +
               `(${formatSignedAmount(delta.delta_amount)})`,
           }))
         : topCategories.slice(0, 3).map((c) => ({
@@ -812,16 +816,13 @@ export async function generateReport(
       implementationNotes: [
         `Report generated ${new Date().toLocaleDateString()}`,
         `Analysis period: ${period}`,
-        `Peer baseline: ${peerIndex.label}`,
-        peerIndex.fallbackReason ? `Peer fallback: ${peerIndex.fallbackReason}` : "Peer baseline did not require fallback",
-        `Data covers ${indexData.length} fee categories across the selected peer baseline`,
+        `Peer group: ${peerIndex.label}`,
+        ...(peerIndex.fallbackReason ? [`Peer group note: ${peerIndex.fallbackReason}`] : []),
+        `Covers ${indexData.length} fee categories in the peer group`,
         selectedInstitution
-          ? `Selected institution evidence policy: ${evidencePolicy}`
-          : "All figures are pipeline-verified from published fee schedules",
-        selectedInstitution
-          ? `Selected institution deterministic fee deltas available: ${selectedFeeDeltas.length}`
-          : "No selected institution deltas were requested",
-        "Verified benchmark conclusions exclude provisional rows unless explicitly labeled otherwise.",
+          ? `${selectedFeeDeltas.length} of ${selectedInstitution.institution_name}'s fees compared with the peer median`
+          : "Figures come from published fee schedules",
+        "Verified benchmark conclusions exclude provisional fees; provisional figures are labeled.",
       ],
       exportControls: {
         pdfEnabled: true,

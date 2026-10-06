@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { htmlToScoringText, scoreFeePage } from "./fee-page";
+import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "./fee-page";
 
 const FEE_SCHEDULE = [
   "Schedule of Fees and Charges",
@@ -51,5 +51,41 @@ describe("scoreFeePage", () => {
       <tr><td>NSF fee</td><td>$35.00</td></tr>
       <tr><td>Stop payment fee</td><td>$30.00</td></tr></table></body></html>`;
     expect(scoreFeePage(htmlToScoringText(html))).toMatchObject({ verdict: "fee_page", feeLines: 3 });
+  });
+
+  it("counts cent amounts and dollar amounts without a leading zero", () => {
+    const text = ["Coin counting fee 75¢ per roll", "Check printing charge $.50 per check", "Paper statement fee 50 cents"].join("\n");
+    expect(scoreFeePage(text)).toMatchObject({ verdict: "fee_page", feeLines: 3, dollarAmounts: 3 });
+  });
+
+  it("treats a news or investor article as not the fee schedule", () => {
+    const text = ["Overdraft fee $34", "NSF fee $34", "Stop payment fee $30"].join("\n");
+    const chase = "https://www.jpmorganchase.com/ir/news/2021/chase-helps-more-than-two-million-customers-avoid-overdraft-service-fees";
+    expect(scoreFeePage(text, chase)).toMatchObject({ verdict: "wrong_document" });
+    expect(scoreFeePage(text, "https://bank.example/news/fee-schedule.pdf").verdict).toBe("fee_page");
+    expect(scoreFeePage(text, "https://bank.example/articles/schedule-of-fees/").verdict).toBe("fee_page");
+    expect(scoreFeePage(text, "https://bank.example/media/fees.pdf").verdict).toBe("fee_page");
+    expect(scoreFeePage(text).verdict).toBe("fee_page");
+  });
+});
+
+describe("urlNamesFeePage", () => {
+  it("is true for links that name the fee page", () => {
+    for (const url of [
+      "https://www.atfcu.org/fees",
+      "https://www.firstcommand.com/banking/personal/checking/fees/",
+      "https://www.cnbstl.com/fee-schedule",
+      "https://www.texasbankandtrust.com/account-fees",
+      "https://www.valley.com/personal/schedule-of-fees",
+      "https://www.bank.example/Fees-and-Charges.aspx",
+    ]) {
+      expect(urlNamesFeePage(url), url).toBe(true);
+    }
+  });
+
+  it("is false for other pages", () => {
+    for (const url of ["https://www.bank.example/about-us", "https://www.bank.example/coffee-club", "https://www.bank.example/", null, "not a url"]) {
+      expect(urlNamesFeePage(url), String(url)).toBe(false);
+    }
   });
 });

@@ -10,6 +10,13 @@ export const PUBLIC_NAV_ITEMS = [
   { label: "For Institutions", href: "/for-institutions" },
 ] as const;
 
+/**
+ * Public items the desktop header groups under one "Explore data" menu so the bar stays
+ * scannable. The mobile drawer still lists them individually.
+ */
+export const EXPLORE_NAV_LABEL = "Explore data";
+export const EXPLORE_NAV_HREFS: readonly string[] = ["/fees", "/research", "/guides"];
+
 export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
 
 export const PRO_NAV_ITEMS = HAMILTON_NAV.filter((item) => item.label !== "Admin");

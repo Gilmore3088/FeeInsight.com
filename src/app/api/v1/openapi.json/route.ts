@@ -6,9 +6,9 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.0.0",
+    version: "1.3.0",
     description:
-      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Unauthenticated JSON reads are supported with free-tier rate limits; API keys are manually issued and are not self-serve from Account yet.",
+      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
       name: SITE_NAME,
       email: "hello@bankfeeindex.com",
@@ -22,7 +22,7 @@ const spec = {
       description: "Production",
     },
   ],
-  security: [{}, { BearerAuth: [] }, { ApiKeyQuery: [] }],
+  security: [{ BearerAuth: [] }, { ApiKeyQuery: [] }],
   components: {
     securitySchemes: {
       BearerAuth: {
@@ -35,16 +35,42 @@ const spec = {
         type: "apiKey",
         in: "query",
         name: "api_key",
-        description: "Pass a manually issued API key as a query parameter.",
+        description:
+          "Pass a manually issued API key as a query parameter. Prefer the Authorization header: keys in URLs end up in logs and browser history.",
       },
     },
     schemas: {
+      Attribution: {
+        type: "object",
+        description: "Credit line to display with the data.",
+        properties: {
+          text: { type: "string", example: "Source: Bank Fee Index, feeinsight.com" },
+          url: { type: "string", example: "https://feeinsight.com" },
+        },
+      },
       Error: {
         type: "object",
+        description: "Every error has a readable message and a stable machine code.",
         properties: {
-          error: { type: "string" },
+          error: { type: "string", example: "state must be a two-letter code such as TX" },
+          code: {
+            type: "string",
+            enum: [
+              "api_key_required",
+              "data_unavailable",
+              "invalid_api_key",
+              "invalid_parameter",
+              "not_found",
+              "plan_required",
+              "rate_limited",
+              "rate_limit_unavailable",
+            ],
+          },
+          upgrade_url: { type: "string", description: "Present on plan_required errors." },
+          limit: { type: "integer", description: "Present on rate_limited errors." },
+          reset: { type: "string", format: "date-time", description: "Present on rate_limited errors." },
         },
-        required: ["error"],
+        required: ["error", "code"],
       },
       FeeSummary: {
         type: "object",
@@ -247,7 +273,37 @@ const spec = {
         },
       },
     },
+    responses: {
+      BadRequest: {
+        description: "A query parameter is malformed or out of range (code invalid_parameter)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      Unauthorized: {
+        description: "No API key was sent (code api_key_required), or it is unknown or revoked (code invalid_api_key)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      PlanRequired: {
+        description: "The request needs a Pro or Enterprise key (code plan_required)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      RateLimited: {
+        description: "The monthly allowance is used up (code rate_limited)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      Unavailable: {
+        description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable)",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+    },
     parameters: {
+      AssetTierParam: {
+        name: "asset_tier",
+        in: "query",
+        schema: { type: "string" },
+        description:
+          "Asset-size tier(s), comma-separated: community_small (under $300M), community_mid ($300M-$1B), community_large ($1B-$10B), regional ($10B-$50B), large_regional ($50B-$250B), super_regional (over $250B)",
+        example: "community_small,community_mid",
+      },
       FormatParam: {
         name: "format",
         in: "query",
@@ -262,25 +318,39 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free tier is limited to 6 spotlight categories.",
+          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free-tier keys are limited to 6 spotlight categories. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
         tags: ["Fees"],
         parameters: [
+          {
+            name: "category",
+            in: "query",
+            required: false,
+            schema: { type: "string" },
+            description:
+              "Fee category slug (e.g., overdraft, nsf, monthly_maintenance). When set, returns that category's detail instead of the list.",
+            example: "overdraft",
+          },
           { $ref: "#/components/parameters/FormatParam" },
         ],
         responses: {
           "200": {
-            description: "Fee category list",
+            description: "Fee category list, or one category's detail when `category` is set",
             content: {
               "application/json": {
                 schema: {
-                  type: "object",
-                  properties: {
-                    total: { type: "integer", example: 60 },
-                    data: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/FeeSummary" },
+                  oneOf: [
+                    {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer", example: 60 },
+                        data: {
+                          type: "array",
+                          items: { $ref: "#/components/schemas/FeeSummary" },
+                        },
+                      },
                     },
-                  },
+                    { $ref: "#/components/schemas/FeeCategoryDetail" },
+                  ],
                 },
               },
               "text/csv": {
@@ -288,46 +358,11 @@ const spec = {
               },
             },
           },
-          "403": {
-            description: "CSV export requires a Seat License",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Error" },
-              },
-            },
-          },
-        },
-      },
-    },
-    "/fees?category={category}": {
-      get: {
-        operationId: "getFeeCategoryDetail",
-        summary: "Get fee category detail",
-        description:
-          "Detailed breakdown for a single fee category including segmentation by charter type, asset tier, Fed district, and state. Pro and Enterprise only.",
-        tags: ["Fees"],
-        parameters: [
-          {
-            name: "category",
-            in: "query",
-            required: true,
-            schema: { type: "string" },
-            description:
-              "Fee category slug (e.g., overdraft, nsf, monthly_maintenance)",
-            example: "overdraft",
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Category detail with segmentation breakdowns",
-            content: {
-              "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/FeeCategoryDetail",
-                },
-              },
-            },
-          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
           "404": {
             description: "Category not found",
             content: {
@@ -344,7 +379,7 @@ const spec = {
         operationId: "getFeeIndex",
         summary: "National & peer fee index",
         description:
-          "Returns the national fee index for all categories. Apply filters for peer benchmarking by state, charter type, or Fed district. Includes maturity indicators and bank/CU counts.",
+          "Returns the national fee index. The free tier gets the spotlight categories; Pro and Enterprise keys get every category. Apply filters for peer benchmarking by state, charter type, or Fed district. Includes maturity indicators and bank/CU counts.",
         tags: ["Index"],
         parameters: [
           {
@@ -371,6 +406,7 @@ const spec = {
               "Fed district number(s), comma-separated (1-12). Example: 7 or 2,7,12",
             example: "7",
           },
+          { $ref: "#/components/parameters/AssetTierParam" },
           { $ref: "#/components/parameters/FormatParam" },
         ],
         responses: {
@@ -400,6 +436,10 @@ const spec = {
                           type: "string",
                           nullable: true,
                         },
+                        asset_tier: {
+                          type: "string",
+                          nullable: true,
+                        },
                       },
                     },
                     total: { type: "integer" },
@@ -417,6 +457,11 @@ const spec = {
               },
             },
           },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
         },
       },
     },
@@ -425,9 +470,17 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions with fee data. Filter by state and charter type. Maximum 200 results per page.",
+          "Paginated list of financial institutions with fee data. Filter by state and charter type. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only).",
         tags: ["Institutions"],
         parameters: [
+          {
+            name: "id",
+            in: "query",
+            required: false,
+            schema: { type: "integer" },
+            description: "Institution ID. When set, returns that institution's detail instead of the list.",
+            example: 123,
+          },
           {
             name: "state",
             in: "query",
@@ -447,8 +500,43 @@ const spec = {
           {
             name: "has_fees",
             in: "query",
-            schema: { type: "string", enum: ["true"] },
-            description: "Only institutions with at least one published fee",
+            schema: { type: "string", enum: ["true", "false"] },
+            description: "Only institutions with at least one published fee (not applied with q)",
+          },
+          {
+            name: "q",
+            in: "query",
+            schema: { type: "string", minLength: 2, maxLength: 100 },
+            description:
+              "Search by institution name, e.g. Frost. Institutions with published fees sort first; fed_district is null in name-search results.",
+          },
+          {
+            name: "fee_category",
+            in: "query",
+            schema: { type: "string" },
+            description:
+              "Rank institutions by one fee (Pro and Enterprise only), e.g. overdraft. Each row gains fee_amount: the institution's lowest published amount, or null when it has none (those sort last). Combines with state, charter and q.",
+            example: "overdraft",
+          },
+          {
+            name: "sort",
+            in: "query",
+            schema: { type: "string", enum: ["highest", "lowest"], default: "highest" },
+            description: "Ranking order with fee_category",
+          },
+          { $ref: "#/components/parameters/AssetTierParam" },
+          {
+            name: "city",
+            in: "query",
+            schema: { type: "string", maxLength: 80 },
+            description: "Exact city name, case-insensitive (list only, not with q or fee_category)",
+            example: "Austin",
+          },
+          {
+            name: "quarters",
+            in: "query",
+            schema: { type: "integer", default: 8, minimum: 1, maximum: 66 },
+            description: "With id: how many call report quarters to return, newest first (back to 2010)",
           },
           {
             name: "page",
@@ -474,66 +562,38 @@ const spec = {
         ],
         responses: {
           "200": {
-            description: "Paginated institution list",
+            description: "Paginated institution list, or one institution's detail when `id` is set",
             content: {
               "application/json": {
                 schema: {
-                  type: "object",
-                  properties: {
-                    total: { type: "integer" },
-                    page: { type: "integer" },
-                    page_size: { type: "integer" },
-                    pages: { type: "integer" },
-                    data: {
-                      type: "array",
-                      items: {
-                        $ref: "#/components/schemas/InstitutionSummary",
+                  oneOf: [
+                    {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        page_size: { type: "integer" },
+                        pages: { type: "integer" },
+                        has_more: { type: "boolean", description: "True when a later page exists" },
+                        data: {
+                          type: "array",
+                          items: {
+                            $ref: "#/components/schemas/InstitutionSummary",
+                          },
+                        },
                       },
                     },
-                  },
+                    { $ref: "#/components/schemas/InstitutionDetail" },
+                  ],
                 },
               },
             },
           },
-        },
-      },
-    },
-    "/institutions?id={id}": {
-      get: {
-        operationId: "getInstitutionDetail",
-        summary: "Get institution detail",
-        description:
-          "Returns a single institution's profile with all extracted fees. Pro and Enterprise only.",
-        tags: ["Institutions"],
-        parameters: [
-          {
-            name: "id",
-            in: "query",
-            required: true,
-            schema: { type: "integer" },
-            description: "Institution ID",
-            example: 123,
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Institution profile with fees",
-            content: {
-              "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/InstitutionDetail",
-                },
-              },
-            },
-          },
-          "400": {
-            description: "Invalid ID",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Error" },
-              },
-            },
-          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
           "404": {
             description: "Institution not found",
             content: {
@@ -542,6 +602,127 @@ const spec = {
               },
             },
           },
+        },
+      },
+    },
+    "/revenue": {
+      get: {
+        operationId: "getRevenueTrend",
+        summary: "Market-wide fee revenue by quarter",
+        description:
+          "Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of US dollars per quarter, newest first. view=national splits banks and credit unions and adds year-over-year change; view=districts gives one row per Fed district per quarter. Pro and Enterprise only.",
+        tags: ["Revenue"],
+        parameters: [
+          {
+            name: "view",
+            in: "query",
+            schema: { type: "string", enum: ["national", "districts"], default: "national" },
+          },
+          {
+            name: "quarters",
+            in: "query",
+            schema: { type: "integer", default: 8, minimum: 1, maximum: 66 },
+            description: "Quarters to return, back to 2010",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Quarterly service-charge income",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    view: { type: "string" },
+                    units: { type: "string" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          quarter: { type: "string", example: "2026-Q1" },
+                          fed_district: { type: "integer", description: "districts view only" },
+                          service_charges: { type: "number" },
+                          bank_service_charges: { type: "number", description: "national view only" },
+                          credit_union_service_charges: { type: "number", description: "national view only" },
+                          institutions: { type: "integer" },
+                          yoy_change_pct: { type: "number", nullable: true, description: "national view only" },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
+    "/fee-changes": {
+      get: {
+        operationId: "getFeeChanges",
+        summary: "Detected fee changes",
+        description:
+          "Fee changes our monitoring detected when an institution's published schedule changed between reads, newest first, at most 200. Coverage is still small and growing. Pro and Enterprise only.",
+        tags: ["Fees"],
+        parameters: [
+          {
+            name: "days",
+            in: "query",
+            schema: { type: "integer", default: 90, minimum: 1, maximum: 365 },
+          },
+          {
+            name: "category",
+            in: "query",
+            schema: { type: "string" },
+            description: "Fee category key, e.g. overdraft",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Detected fee changes",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    days: { type: "integer" },
+                    category: { type: "string", nullable: true },
+                    note: { type: "string" },
+                    count: { type: "integer" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          institution_id: { type: "integer" },
+                          institution_name: { type: "string" },
+                          category: { type: "string" },
+                          display_name: { type: "string" },
+                          previous_amount: { type: "number", nullable: true },
+                          new_amount: { type: "number", nullable: true },
+                          change: { type: "string" },
+                          detected_at: { type: "string", format: "date-time" },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
         },
       },
     },
@@ -562,14 +743,18 @@ const spec = {
       description:
         "Institution profiles and their individual fee schedules.",
     },
+    {
+      name: "Revenue",
+      description: "Market-wide deposit service-charge income from FDIC and NCUA call reports.",
+    },
   ],
   "x-rateLimit": {
     description:
-      "Rate limits are applied per API key when present and by anonymous request source otherwise. Free: 100 requests/month. Manually issued Pro keys: 10,000 requests/month. Enterprise: custom.",
+      "One monthly allowance per API key, shared across all endpoints. Free keys: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted.",
     headers: {
       "X-RateLimit-Limit": "Maximum requests allowed in the current window",
       "X-RateLimit-Remaining": "Requests remaining in the current window",
-      "X-RateLimit-Reset": "UTC epoch timestamp when the window resets",
+      "X-RateLimit-Reset": "ISO 8601 UTC time when the monthly window resets",
     },
   },
 };

@@ -1,8 +1,8 @@
-A one-page agenda for your next pricing committee, plus where to get a peer report.
+A one-page agenda for your next pricing committee, and where to get a report on your own fees.
 
 Run a fee review your committee will actually finish
 [ FEE REVIEW AGENDA (60 MINUTES) ]
-1. Position (15 min): our 13 headline fees vs peer low 25% / median / high 25%. List every fee above the high quarter.
+1. Position (15 min): our headline fees against the market's 25th percentile, median and 75th percentile. List every fee above the 75th.
 2. Revenue (10 min): service charges on deposit accounts from our Call Report (Schedule RI) or NCUA 5300 fee income. Which 3 fees drive most of it?
 3. Risk (10 min): re-presentment NSF, authorize-positive/settle-negative, overdraft caps, Reg E opt-in records.
 4. Customer (10 min): complaints and reviews that mention a fee by name in the last 12 months.
@@ -12,5 +12,4 @@ Full email with tables and charts: {$url}
 
 --
 Fee Insight · feeinsight.com · reply with questions
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

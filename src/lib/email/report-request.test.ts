@@ -112,10 +112,36 @@ describe("sendReportRequestNotifications", () => {
     expect(reply.to).toBe("dana@examplecu.org");
     expect(reply.reply_to).toBe("hello@bankfeeindex.com");
     expect(reply.subject).toBe("We received your request for Example Credit Union");
-    expect(reply.text).toContain(
-      "We confirm your peer set within one business day and deliver the Competitive Fee Position Report within 48 hours of confirmation.",
-    );
+    expect(reply.text).toContain("The institution report is paid");
+    expect(reply.text).toContain("2. We reply within one business day with the report's scope and price.");
+    expect(reply.text).toContain("3. You pay by card once you agree to the quote. Nothing is charged before that.");
     expect(reply.html).toContain("Example Credit Union");
+  });
+
+  it("answers a held request at once with the free district report", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("em_internal")).mockResolvedValueOnce(okResponse("em_reply"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications({ ...REQUEST, held: { district: 11 } });
+
+    const [internal, reply] = sentBodies(fetchMock);
+    expect(internal.subject).toContain("Held report request: Example Credit Union");
+    expect(internal.text).toContain("Set to Held automatically.");
+    expect(internal.text).not.toContain("reply with scope and price");
+    expect(reply.subject).toBe("About your request for Example Credit Union");
+    expect(reply.text).toContain("we are not quoting this report yet, and nothing has been charged");
+    expect(reply.text).toContain("/reports/benchmark/district-11");
+    expect(reply.html).toContain("Open the free District 11 report");
+  });
+
+  it("falls back to the national report when the district is unknown", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("a")).mockResolvedValueOnce(okResponse("b"));
+    vi.stubGlobal("fetch", fetchMock);
+    await sendReportRequestNotifications({ ...REQUEST, held: { district: null } });
+    const [, reply] = sentBodies(fetchMock);
+    expect(reply.text).toContain("/reports/benchmark/national");
   });
 
   it("prefers REPORT_REQUEST_EMAIL_FROM over the workspace invite address", async () => {
@@ -213,5 +239,38 @@ describe("sendContactRequestNotifications", () => {
     const [internal] = sentBodies(fetchMock);
     expect(internal.html).not.toContain("<script>");
     expect(internal.html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("request confirmations offer an email opt-in", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("adds a confirm link to the requester's email only, never James's", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("n_1")).mockResolvedValueOnce(okResponse("c_1"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications(REQUEST);
+
+    const [notification, confirmation] = sentBodies(fetchMock);
+    expect(confirmation.text).toContain("Confirm your address:");
+    expect(confirmation.text).toContain("action=confirm");
+    expect(notification.text).not.toContain("action=confirm");
+  });
+
+  it("leaves the opt-in out when no token secret is set", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "");
+    vi.stubEnv("BFI_COOKIE_SECRET", "");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("n_1")).mockResolvedValueOnce(okResponse("c_1"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications(REQUEST);
+
+    expect(sentBodies(fetchMock)[1].text).not.toContain("Confirm your address");
   });
 });

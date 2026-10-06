@@ -41,7 +41,7 @@ export function reviewAnswerPage(input: PartnerReviewInput): string[] {
   if (!/\d/.test(answer.headline)) problems.push("The headline must carry its key figure from DATA.");
   answer.decisions.forEach((decision, index) => {
     const n = index + 1;
-    if (!/\$\s?\d/.test(decision.action)) problems.push(`Decision ${n} must name the price to move to or hold at.`);
+    if (!/\$\s?\d/.test(decision.action)) problems.push(`Decision ${n} must name this institution's price or the anchor it is weighed against.`);
     if (!/\d/.test(decision.why)) problems.push(`Decision ${n}'s WHY must cite at least one figure from DATA.`);
     if (!decision.confidence || !decision.confidenceReason) {
       problems.push(`Decision ${n} needs a confidence level (High, Medium or Low) and the reason for it.`);
@@ -49,7 +49,7 @@ export function reviewAnswerPage(input: PartnerReviewInput): string[] {
   });
   const page = [answer.headline, ...answer.decisions.flatMap((d) => [d.action, d.why])].join(" ");
   if (input.feeNames.length > 0 && !answer.decisions.some((d) => mentions(`${d.action} ${d.why}`, input.feeNames, true))) {
-    problems.push("Each decision must name the fee it changes, using the fee names in DATA.");
+    problems.push("Each decision must name its fee, using the fee names in DATA.");
   }
   if (input.competitorNames.length > 0 && !mentions(page, input.competitorNames)) {
     problems.push("Name at least one local competitor from DATA and its price where it supports a decision.");

@@ -1,31 +1,24 @@
-National medians to hold your state up against.
+Hold your state up against the national line.
 
-ALERTS · 2 OF 3
+WATCHERS · 2 OF 3
 
 Hold your state up against the national line
 ============================================
 
-State pages on Fee Insight show local medians. To know if they're high, you need the national line to compare against. Here it is for the four fees people search most:
+State reports show each headline fee in your state next to the national median, with banks and credit unions side by side.
 
-Fee | low 25% | median | high 25% | banks | CUs | n
-Overdraft (paid item) | $9 | $29 | $34 | $30 | $25 | 88
-NSF (returned item) | $10 | $25 | $30 | $18 | $25 | 173
-Monthly maintenance | $2 | $5 | $15 | $8 | $5 | 133
-Out-of-network ATM | $1 | $2 | $3 | $2 | $1.50 | 69
-Bank Fee Index, October 3, 2026. One headline amount per institution (lowest published amount for that fee). "Low 25%" and "High 25%" are the 25th and 75th percentiles; n = institutions with that fee published. Banks and CUs columns are medians.
+Find your state's report: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=state-vs-national
+Free, no login. The national numbers are in the national report (https://feeinsight.com/reports/benchmark/national?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=state-vs-national).
 
 
 [ READ SMALL SAMPLES CAREFULLY ]
-In smaller states a median can rest on a handful of institutions. Check the n on the state page. Under 10, treat the number as a signal, not a verdict.
-
-Compare yours: state benchmarks (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=state-vs-national) · city-level fees (https://feeinsight.com/fees?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=state-vs-national).
+In smaller states a median can rest on a handful of institutions. Check how many institutions stand behind each number before you treat it as a verdict.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 
 ----
-Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

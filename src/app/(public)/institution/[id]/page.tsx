@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getFinancialsByInstitution, getNationalIndexCached } from "@/lib/data-store";
-import { getFinancialHistory, getPeerFinancialMedians } from "@/lib/data-store/financial";
+import { getFinancialsByInstitution } from "@/lib/data-store";
+import { getFinancialHistory, getPeerFinancialMedians, getPeerPercentiles } from "@/lib/data-store/financial";
 import {
   getBranchFootprint,
   getComplaintTrend,
@@ -17,6 +17,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
+import { HEADLINE_FEE_KEYS, getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
 import { InfoTip } from "@/components/public/info-tip";
@@ -24,13 +25,19 @@ import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
-import { formatAbsoluteDate } from "@/lib/public-stats";
+import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
 import { FeeScheduleTable, type FeeBenchmarks } from "./fee-schedule-table";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { FinancialContext } from "./financial-context";
-import { buildFinancialSeries, toPeerMedianPoints } from "./financial-history";
+import {
+  buildFinancialSeries,
+  computeGrowth,
+  findOutliers,
+  toPeerMedianPoints,
+  toPeerRankRows,
+} from "./financial-history";
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
@@ -38,11 +45,13 @@ import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./
 import {
   buildProfileTitle,
   getPublicInstitutionForPage,
+  getRateFeesForPage,
   getVisibleFeesForPage,
   isVerifiedFee,
   pickHeadlineFees,
   toDisplayFees,
   toPipelineDisplayFees,
+  toRateDisplayFees,
 } from "./profile-data";
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
@@ -88,7 +97,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Thin profiles (no verified fees yet) stay reachable but out of the index.
     robots: verifiedFees.length === 0 ? { index: false, follow: true } : undefined,
     title: buildProfileTitle(inst.institution_name, headline),
-    description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, verified against its own fee schedule, with peer benchmarks from ${SITE_NAME}.`,
+    description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, from its own fee schedule, with national benchmarks from ${SITE_NAME}.`,
     keywords: [
       inst.institution_name,
       `${inst.institution_name} fees`,
@@ -114,8 +123,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, evidence, financials, user] = await Promise.all([
+  const [visibleFees, rateFees, evidence, financials, user, headlineCoverage] = await Promise.all([
     catalogVisibleFeeCount > 0 ? getVisibleFeesForPage(instId) : Promise.resolve([]),
+    getRateFeesForPage(instId),
     shouldLoadPipelineEvidence
       ? getInstitutionFeeScheduleEvidence(instId).catch(fallbackTo("fee evidence", null))
       : Promise.resolve(null),
@@ -123,6 +133,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       fallbackTo("financial context", []),
     ),
     getCurrentUser().catch(() => null),
+    getInstitutionHeadlineCoverage([instId]).catch(fallbackTo("headline coverage", null)),
   ]);
 
   const alertSubscription = user
@@ -135,21 +146,30 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
   // Financial history is Pro-only; free users never receive it in the RSC payload.
   const isPro = canAccessPremium(user);
-  const [financialHistory, peerMedians, footprint, complaints, holdingCompany] = isPro
+  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany] = isPro
     ? await Promise.all([
         getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
         getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
+        getPeerPercentiles(instId).catch(fallbackTo("peer percentiles", null)),
         getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
         getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
         getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
       ])
-    : [[], null, null, null, null];
+    : [[], null, null, null, null, null];
   const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
+  const financialGrowth = computeGrowth(financialSeries);
+  const insights = {
+    growth: financialGrowth,
+    ranks: toPeerRankRows(peerPercentiles),
+    flags: findOutliers(financialSeries, financialGrowth, peerPercentiles),
+    peerCount: peerPercentiles?.peer_count ?? null,
+    peerQuarter: formatReportQuarter(peerPercentiles?.report_date),
+  };
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
-  const catalogRows = toDisplayFees(visibleFees);
+  const catalogRows = [...toDisplayFees(visibleFees), ...toRateDisplayFees(rateFees)];
   const displayFees = catalogRows.length > 0 ? catalogRows : toPipelineDisplayFees(evidence);
   const pipelineCounts = evidence?.pipeline_counts ?? null;
   const pipelineUnderReview = pipelineCounts
@@ -163,7 +183,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
 
   const nationalIndex =
-    verifiedFees.length > 0 ? await getNationalIndexCached().catch(fallbackTo("national index", [])) : [];
+    verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
   const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
   // Medians for the per-row comparison: the same verified-only index the rating uses, and
   // only where enough institutions publish the fee for a median to mean something.
@@ -267,8 +287,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
                   <div className="flex items-center gap-1.5">
                     <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
-                    <InfoTip label="About verified fees">
-                      Verified fees power benchmarks; fees under review do not.
+                    <InfoTip label="About published fees">
+                      Published fees power benchmarks; fees under review do not.
                     </InfoTip>
                   </div>
                 </div>
@@ -294,7 +314,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                       </p>
                       <p className="mt-1 text-sm leading-relaxed text-[#6B6255]">
                         {underReviewCount > 0
-                          ? "Verified fees will appear here once review is complete."
+                          ? "Fees will appear here once review is complete."
                           : "Fee comparisons are withheld until a published fee schedule has been reviewed."}
                       </p>
                     </div>
@@ -313,7 +333,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   saved: alertSubscription !== null,
                   feeCategories: alertSubscription?.fee_categories ?? null,
                 }}
-                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Benchmark it against peers, free" }}
+                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Request a report against local competitors" }}
               />
 
               {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
@@ -328,6 +348,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               )}
 
               <InstitutionMetricRow
+                headlineCategories={headlineCoverage?.get(instId) ?? null}
+                headlineTotal={HEADLINE_FEE_KEYS.length}
                 verifiedCount={verifiedCount}
                 underReviewCount={underReviewCount}
                 assetsDollars={assetsDollars}
@@ -357,6 +379,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   isPro={isPro}
                   points={financialSeries}
                   peers={peerMedianPoints}
+                  insights={insights}
                   charterLabel={charterLabel}
                   footprint={footprint}
                   complaints={complaints}

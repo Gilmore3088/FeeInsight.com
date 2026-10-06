@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   BarChart,
   Bar,
@@ -9,84 +10,22 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import type { FeeInstance } from "@/lib/data-store";
+import {
+  buildHistogramBuckets,
+  bucketFor,
+  type HistogramBucket,
+  type HistogramPoint,
+} from "@/lib/fee-histogram-buckets";
 
 interface FeeHistogramProps {
-  fees: FeeInstance[];
+  /** One point per institution: the value the index counts for it. */
+  points: HistogramPoint[];
   median: number | null;
-}
-
-interface Bucket {
-  label: string;
-  rangeStart: number;
-  rangeEnd: number;
-  banks: number;
-  creditUnions: number;
-  total: number;
-}
-
-function buildBuckets(fees: FeeInstance[], bucketCount: number): Bucket[] {
-  const amounts = fees
-    .filter((f) => f.amount !== null && f.amount >= 0)
-    .map((f) => ({ amount: f.amount!, isBank: f.charter_type === "bank" }));
-
-  if (amounts.length === 0) return [];
-
-  const values = amounts.map((a) => a.amount).sort((a, b) => a - b);
-  // Use P5-P95 range to exclude outliers from distorting the chart
-  const p5Idx = Math.floor(values.length * 0.05);
-  const p95Idx = Math.min(Math.floor(values.length * 0.95), values.length - 1);
-  const min = values[p5Idx];
-  const max = values[p95Idx];
-  // Count outliers excluded
-  const outlierCount = amounts.filter((a) => a.amount < min || a.amount > max).length;
-
-  if (min === max) {
-    return [
-      {
-        label: `$${min.toFixed(0)}`,
-        rangeStart: min,
-        rangeEnd: max,
-        banks: amounts.filter((a) => a.isBank).length,
-        creditUnions: amounts.filter((a) => !a.isBank).length,
-        total: amounts.length,
-      },
-    ];
-  }
-
-  // Round step to clean numbers for readable labels
-  const rawStep = (max - min) / bucketCount;
-  const step = rawStep <= 1 ? 1 : rawStep <= 5 ? 5 : rawStep <= 10 ? 10 : Math.ceil(rawStep / 5) * 5;
-  const roundedMin = Math.floor(min / step) * step;
-
-  const buckets: Bucket[] = [];
-
-  for (let i = 0; i < bucketCount; i++) {
-    const rangeStart = roundedMin + i * step;
-    const rangeEnd = roundedMin + (i + 1) * step;
-    buckets.push({
-      label: `$${rangeStart.toFixed(0)}`,
-      rangeStart,
-      rangeEnd,
-      banks: 0,
-      creditUnions: 0,
-      total: 0,
-    });
-  }
-
-  // Place all amounts into buckets (including outliers into first/last)
-  for (const a of amounts) {
-    let idx = Math.floor((a.amount - roundedMin) / step);
-    idx = Math.max(0, Math.min(idx, bucketCount - 1));
-    if (a.isBank) {
-      buckets[idx].banks++;
-    } else {
-      buckets[idx].creditUnions++;
-    }
-    buckets[idx].total++;
-  }
-
-  return buckets;
+  /**
+   * Clicking a bar opens this URL (the Institutions tab) with the bar's amounts added
+   * as `min` and `max`.
+   */
+  drillDownBase?: string;
 }
 
 function CustomTooltip({
@@ -94,16 +33,14 @@ function CustomTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: { payload: Bucket; name: string; value: number }[];
+  payload?: { payload: HistogramBucket; name: string; value: number }[];
 }) {
   if (!active || !payload?.[0]) return null;
   const d = payload[0].payload;
 
   return (
     <div className="rounded-lg border bg-white dark:bg-[oklch(0.24_0_0)] dark:border-white/[0.1] px-3 py-2 text-xs shadow-md">
-      <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
-        ${d.rangeStart.toFixed(2)} - ${d.rangeEnd.toFixed(2)}
-      </p>
+      <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{d.label}</p>
       <div className="flex flex-col gap-0.5 text-gray-600">
         <span>
           <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1" />
@@ -116,22 +53,35 @@ function CustomTooltip({
         <span className="font-semibold text-gray-900 mt-0.5">
           Total: {d.total}
         </span>
+        {d.total > 0 && <span className="text-blue-600 mt-0.5">Click to see who</span>}
       </div>
     </div>
   );
 }
 
-export function FeeHistogram({ fees, median }: FeeHistogramProps) {
-  const bucketCount = Math.min(12, Math.max(5, Math.ceil(fees.length / 5)));
-  const buckets = buildBuckets(fees, bucketCount);
+export function FeeHistogram({ points, median, drillDownBase }: FeeHistogramProps) {
+  const router = useRouter();
+  const buckets = buildHistogramBuckets(points);
 
   if (buckets.length === 0) return null;
+
+  const medianBucket = median !== null ? bucketFor(buckets, median) : undefined;
+  const open = (bucket: HistogramBucket | undefined) => {
+    if (!bucket || bucket.total === 0 || !drillDownBase) return;
+    const params = new URLSearchParams();
+    if (bucket.min !== null) params.set("min", String(bucket.min));
+    if (bucket.max !== null) params.set("max", String(Math.round(bucket.max * 100) / 100));
+    router.push(`${drillDownBase}${drillDownBase.includes("?") ? "&" : "?"}${params}`);
+  };
 
   return (
     <div className="admin-card mb-6">
       <div className="px-4 py-3 border-b bg-gray-50 dark:bg-white/[0.03] flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-700">
           Fee Distribution
+          <span className="ml-2 text-xs font-normal text-gray-400">
+            one bar count per institution, at the value the index counts
+          </span>
         </h3>
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span>
@@ -173,9 +123,9 @@ export function FeeHistogram({ fees, median }: FeeHistogramProps) {
               content={<CustomTooltip />}
               cursor={{ fill: "rgba(0,0,0,0.04)" }}
             />
-            {median !== null && (
+            {median !== null && medianBucket && (
               <ReferenceLine
-                x={`$${median.toFixed(0)}`}
+                x={medianBucket.label}
                 stroke="#f87171"
                 strokeDasharray="4 3"
                 strokeWidth={1.5}
@@ -192,15 +142,22 @@ export function FeeHistogram({ fees, median }: FeeHistogramProps) {
               stackId="a"
               fill="#3b82f6"
               radius={[0, 0, 0, 0]}
+              cursor={drillDownBase ? "pointer" : undefined}
+              onClick={(data: { payload?: HistogramBucket }) => open(data?.payload)}
             />
             <Bar
               dataKey="creditUnions"
               stackId="a"
               fill="#10b981"
               radius={[4, 4, 0, 0]}
+              cursor={drillDownBase ? "pointer" : undefined}
+              onClick={(data: { payload?: HistogramBucket }) => open(data?.payload)}
             />
           </BarChart>
         </ResponsiveContainer>
+        {drillDownBase && (
+          <p className="mt-1 text-xs text-gray-400">Click a bar to list every institution in that range.</p>
+        )}
       </div>
     </div>
   );
