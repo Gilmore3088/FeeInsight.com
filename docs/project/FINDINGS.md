@@ -1264,3 +1264,11 @@ and 119 late payment rates at 87 banks verify (both median 5%).
 filed some under atm_non_network), so a rate publishes only in an allow-listed category, on a
 row that says fee or charge and does not say APY, APR, interest or dividend.
 
+
+## 2026-10-06: The e2e schema snapshot lags prod
+**What happened:** CI's end-to-end test builds its database from `tests/e2e/production-schema.sql`
+(taken 2026-10-04). A PR that reads a new column fails there even when its migration is right,
+and the snapshot's `published_fee_catalog` still lacks PR 215's 3-fee rule, so the test's
+one-fee peer banks would vanish under the real view.
+**Fix:** PR 278 appends its columns to the snapshot. Open: refresh the whole snapshot from prod,
+and give the test's peer banks 3 fees each so it runs under the real catalog rule.
