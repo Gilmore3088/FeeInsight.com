@@ -20,12 +20,15 @@ failed two or more fetches in a row (one 11 times). Separately, 42 banks' fee li
 homepage in the week to 2026-10-06 (for example a credit union's old fee PDF now landing on a renamed
 credit union's home page), and Magellan stored each homepage as the bank's fee document.
 **Cause:** a failed fetch only counted a failure and retried later (24 hours, then weekly). Discovery
-searches only banks with no fee link, so nothing looked for the bank's new page. Only Rosetta sent dead
-links back, and only for documents it was re-reading. A redirect was followed blindly, and the final
-address (the homepage) became the profile's fetch address.
-**Fix:** this PR: a 404/410, or a deep link that redirects to a homepage, now clears the fee link
-(unless a person locked it), records the URL as rejected and marks the bank due a search
-(`failure_reason = 'magellan_dead_link'`). 403 is left alone because a bot block can pass.
+searches banks with no fee link, plus (PR 165) a failed link whose `last_crawl_at` is over 30 days
+old and holds no live fee. That PR 165 path never reaches a link the fetch queue keeps retrying,
+because every retry resets `last_crawl_at`: none of the 75 was older than 30 days. Rosetta sends a
+dead link back only for a document it re-reads (PR 155). A redirect was followed blindly, and the
+final address (the homepage) became the profile's fetch address.
+**Fix:** this PR closes the gap at the fetch itself, with the same hand-back Rosetta uses: a 404/410,
+or a deep link that redirects to a homepage, clears the fee link (unless a person locked it), records
+the URL as rejected and marks the bank due a search (`failure_reason = 'magellan_dead_link'`). A 403
+is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
 **Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
 loop on a dead address is a silent failure.
 
