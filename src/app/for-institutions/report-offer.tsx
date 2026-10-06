@@ -1,15 +1,10 @@
 import { CheckCircle2 } from "lucide-react";
-import { CONTACT_EMAIL, SAMPLE_REPORT_LIVE } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 import { RequestReportForm } from "./request-report-form";
 
 
-const REPORT_CONTENTS = [
-  "15 headline fees benchmarked against your true peer cohort (charter, asset tier, district)",
-  "Named competitors on the same lines — no anonymous averages",
-  "Outlier flags where you sit above or below the peer band",
-  "A source citation for every figure: the disclosure, the page, the date collected",
-  "PDF, board-ready, with your complete published schedule as an appendix",
-];
+// The same list as the homepage offer and the pay page, so the paid report is described one way.
+const REPORT_CONTENTS = REPORT_INCLUDES;
 
 export function ReportOfferSection() {
   return (

@@ -7,7 +7,7 @@ import {
   type ReportRuleCheck,
 } from "@/lib/data-store/market-readiness";
 import { analyzeMarket, type ReadinessResult } from "./analysis";
-import { LINK_LIFETIME_DAYS, createReportToken, reportPath } from "./link";
+import { createReportToken, reportPath } from "./link";
 
 /**
  * What James sees when an institution report is requested: whether we can build that
@@ -61,8 +61,10 @@ export function describeQuoteCheck(check: QuoteCheck, siteUrl: string): string {
     const reason = r.ready ? "" : ` ${r.reason ?? "Local data is too thin."}`;
     return `Report check: not ready to quote (${counts}).${reason}${rule}`;
   }
+  // Never the private link itself: this line goes in an email the requester can be sent
+  // in a reply. The link is issued only when they pay (/pay/report and the Stripe webhook).
   const link = check.path
-    ? ` Private report link to send after they agree (works for ${LINK_LIFETIME_DAYS} days): ${siteUrl.replace(/\/$/, "")}${check.path}`
+    ? ` Quote a price at ${siteUrl.replace(/\/$/, "")}/admin/leads; the private report link goes to them when they pay by card.`
     : " No private link: CUSTOM_REPORT_LINK_SECRET is not set.";
   return `Report check: ready to quote (${counts}).${rule}${link}`;
 }
