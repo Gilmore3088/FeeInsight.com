@@ -1,4 +1,4 @@
-import { findInstitutionIdByName, getCustomReportMarketData } from "@/lib/data-store/custom-report-market";
+import { findInstitutionIdByName, getCustomReportMarketData, type CustomReportMarketData } from "@/lib/data-store/custom-report-market";
 import {
   HEADLINE_FEE_KEYS,
   MIN_RICH_COMPETITORS,
@@ -17,7 +17,14 @@ import { createReportToken, reportPath } from "./link";
  * (market-readiness.ts), the same rule the public reports grid and /admin/leads count use.
  */
 export type QuoteCheck =
-  | { status: "ready"; readiness: ReadinessResult; rule?: ReportRuleCheck | null; path: string | null }
+  | {
+      status: "ready";
+      readiness: ReadinessResult;
+      rule?: ReportRuleCheck | null;
+      path: string | null;
+      /** The market data that passed, so a paid report can keep exactly these numbers. */
+      data?: CustomReportMarketData;
+    }
   | { status: "thin"; readiness: ReadinessResult; rule?: ReportRuleCheck | null }
   | { status: "unmatched"; reason: string };
 
@@ -41,7 +48,7 @@ export async function checkInstitutionReport(request: {
     if (!readiness.ready || !rule?.passes) return { status: "thin", readiness, rule };
     // The link needs CUSTOM_REPORT_LINK_SECRET; without it James still learns the report is buildable.
     const token = createReportToken(institutionId);
-    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null };
+    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null, data };
   } catch (error) {
     console.error("[custom-report] quote check failed", {
       institutionId,

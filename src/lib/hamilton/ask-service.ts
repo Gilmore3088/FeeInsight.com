@@ -1,7 +1,8 @@
 /**
  * Server side of the Ask bar: resolves the institution, loads the fee's research and the
  * bank's memory, builds the answer (workspace/ask.ts) and logs the exchange to the
- * decision it belongs to. Deterministic: no provider calls.
+ * decision it belongs to. The answer itself is deterministic; only answerAskMemo calls the
+ * model, to write over the storyline.
  */
 
 import { recordProRequest } from "@/lib/agents/run-store";
@@ -15,10 +16,12 @@ import {
   testedPrices,
   workspaceSchemaReady,
 } from "@/lib/data-store/hamilton-workspace";
+import { writeStorylineMemo } from "./memo";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch } from "./workspace/research";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
+import type { StorylineMemoResult } from "./workspace/storyline-types";
 import type { AskObjective, AskResponse, DecisionEventKind, DecisionRecord, MemoryFact } from "./workspace/types";
 
 const OBJECTIVES: AskObjective[] = ["revenue", "customer_treatment", "competitive_position"];
@@ -230,4 +233,59 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     },
   });
   return { status: 200, body: { ...response, ...(decision ? { decisionId: decision.id } : {}) } };
+}
+
+export interface AskMemoResult {
+  status: number;
+  body: StorylineMemoResult | { error: string };
+}
+
+/**
+ * The written memo for an Ask: rebuilds the same deterministic storyline the Ask bar
+ * returned (from the institution, the question and the reader's memory, never from the
+ * browser) and has Hamilton write over it. Logged to the run ledger; nothing is saved.
+ */
+export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemoResult> {
+  const resolved = await resolveHamiltonInstitutionContext({
+    userId: user.id,
+    instId: typeof body.institutionId === "number" || typeof body.institutionId === "string" ? body.institutionId : null,
+    persistUrlSelection: false,
+  });
+  const institution = resolved.institution;
+  if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
+  const institutionId = Number(institution.id);
+  const question = cleanText(body.question, MAX_QUESTION_CHARS);
+  if (!question) return { status: 400, body: { error: "Ask a question." } };
+  const ready = await workspaceSchemaReady();
+  const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
+  const intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
+  if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
+  const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment });
+  if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
+  const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
+  const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
+  const response = buildAskResponse({ question, intent, research, memory, objective });
+  const storyline = response.answer?.storyline;
+  if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
+
+  const result = await writeStorylineMemo(storyline, question, { institutionId });
+  await recordProRequest({
+    operation: "ask_memo",
+    title: `Hamilton memo: ${intent.feeCategory}`,
+    status: result.status === "written" ? "completed" : result.status === "withheld" ? "completed" : "failed",
+    summary:
+      result.status === "written"
+        ? `Memo written; ${result.memo.figureCheck.checked} figures traced to the storyline.`
+        : `Memo ${result.status}: ${result.reason}`,
+    userId: user.id,
+    institutionId,
+    detail: {
+      fee_category: intent.feeCategory,
+      storyline_kind: storyline.kind,
+      memo_status: result.status,
+      figures_checked: result.status === "written" ? result.memo.figureCheck.checked : null,
+      model: result.status === "written" ? result.memo.model : null,
+    },
+  });
+  return { status: 200, body: result };
 }
