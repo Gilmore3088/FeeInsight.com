@@ -30,6 +30,12 @@ KNOX, DARWIN, HAMILTON) and falls back to the shared `ANTHROPIC_API_KEY`, so not
 the keys are being added. Every model call names the agent it bills to. The Atlas details page
 shows which key each agent is using.
 
+**The site shows a bank only while it has at least 3 distinct live fees.** James, 05:50 UTC, after
+the Hamilton publish audit found 163 banks left with 1 or 2 live fees by takedowns (120 of them)
+or from before the rule (82). `published_fee_catalog` hides such a bank's fees and shows them
+again on their own once it has 3; nothing is deleted. This replaces "already-live thin
+institutions stay live" from 2026-10-04.
+
 **Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
 incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
 scenario and implementation plan carries its provenance: sources with links to the banks' own

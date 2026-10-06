@@ -241,12 +241,15 @@ export interface RunSecondDocumentFindResult {
 async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: number): Promise<ThinBankRow[]> {
   return db<ThinBankRow[]>`
     WITH thin AS (
+      -- Every live row, not the catalog: the catalog hides banks with fewer than 3 fees,
+      -- which are the banks this finder exists for.
       SELECT c.institution_id,
-             count(DISTINCT c.fee_category)::int AS categories,
-             bool_or(c.fee_category = 'monthly_maintenance') AS has_monthly_fee
-        FROM published_fee_catalog c
+             count(DISTINCT c.canonical_fee_key)::int AS categories,
+             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee
+        FROM published_fee_records c
         JOIN institution_sources scoped ON scoped.id = c.institution_id
-       WHERE (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
+       WHERE c.rolled_back_at IS NULL
+         AND (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
        GROUP BY c.institution_id
     )
     SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, thin.categories

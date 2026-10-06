@@ -717,3 +717,18 @@ dumped from production on 2026-10-04, run only on a database without `institutio
 files that rewrote pre-2026-08-13 legacy tables skip themselves on such a database. The full history now
 replays on an empty database. Production never re-runs applied versions, so nothing changes there.
 Details in `docs/runbooks/supabase-migration-baseline.md`.
+
+## 2026-10-06: Banks below the 3-fee rule stayed on the site after takedowns
+**What happened:** the Hamilton publish audit (read-only, 05:35 UTC) found 163 banks with fewer than 3
+distinct live fees: 93 showing one fee (110 fees), 70 showing two (157 fees). 120 got there through
+takedowns (source check, rules re-check, category guard); 82 had fees live before the rule existed.
+They showed on the site and counted in every median as full banks.
+**Cause:** the 3-fee rule (PR 66) gated only a bank's first publish. Nothing re-applied it when
+takedowns removed fees later.
+**Fix:** same PR: `published_fee_catalog` shows a bank's live fees only while it has at least 3 distinct
+canonical fee keys live (migration 20270110000000, view only, no data change). The rows stay live in
+`published_fee_records`, so the publish gate still counts them and the bank reappears on its own.
+Magellan's thin-bank finder now reads `published_fee_records`, since the catalog hides the banks it
+looks for.
+**Lesson:** a publish rule that only gates entry drifts once takedowns run; put the rule where readers
+read.

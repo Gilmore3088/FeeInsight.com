@@ -141,7 +141,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   not published and not written to `pipeline_attempts`, so they publish on the run
   where Knox's later finds bring the institution to the minimum. The step detail lists
   them as `held_thin_institutions`. The gate applies to new publishes only; it does not
-  close rows already live.
+  close rows already live. Readers get the same rule from `published_fee_catalog`, which
+  shows a bank's live fees only while it has at least 3 distinct fees live (migration
+  20270110000000): a bank that takedowns leave thinner drops off the site and returns on
+  its own at 3. Agents that need every live row read `published_fee_records`.
 - Batches take whole source documents (`agents/document-batch.ts`), oldest first, so a
   document's fees publish together; Darwin batches the same way. A batch can exceed the
   limit by one document.
