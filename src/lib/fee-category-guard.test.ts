@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { checkFeeCategory, GUARDED_CATEGORIES } from "./fee-category-guard";
+import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -88,6 +88,11 @@ describe("checkFeeCategory", () => {
       "Overdraft Balance Threshold",
       "Cushion before overdraft fee is charged",
       "If your consumer account is overdrawn by",
+      "Fresh Start Checking is not eligible for Courtesy Pay | 5 x 10 Box",
+      "OVERDRAFT PRIVILEGE | Outgoing International",
+      "Check Printing & Account Supplies Fee varies based on style | Overdraft Protection Via: | 2 x 10",
+      "Overdraft Protection | Outgoing (Domestic)",
+      "Overdraft Protection Items - Negative or less",
     ]) {
       expect(checkFeeCategory("overdraft", name).ok).toBe(false);
     }
@@ -98,6 +103,7 @@ describe("checkFeeCategory", () => {
       "Overdraft Fee (Max 5 items per day)",
       "Overdraft Item on Lifeline 18/65 Checking",
       "Overdraft Protection – ODP (per item presentment)",
+      "Courtesy Pay (item paid against incoming funds)",
     ]) {
       expect(checkFeeCategory("overdraft", name)).toEqual({ ok: true });
     }
@@ -110,6 +116,9 @@ describe("checkFeeCategory", () => {
       "ATM Card Re-activation (due to NSF)",
       "Returned ACH Origination Item (per item)",
       "NSF Fee (Reg D)",
+      "fees if the same item is presented multiple times against insufficient funds. Items presented in the amount of",
+      "Size of Box | Annual Rent | Non-Sufficient Funds Item (NSF)",
+      "Check Printing Fee Varies by Style Ordered | NSF Fee",
     ]) {
       expect(checkFeeCategory("nsf", name).ok).toBe(false);
     }
@@ -119,6 +128,8 @@ describe("checkFeeCategory", () => {
       "Non-Sufficient Funds Item (NSF) - ACH/ATM/Bill Pay/Zelle Payment/ACH Origination",
       "Returned checks due to NSF, UCF or Reg D",
       "NSF Return item (per Item)",
+      "Bill Pay NSF Fees",
+      "Non Sufficient Funds - Transactions $10.00 or less",
     ]) {
       expect(checkFeeCategory("nsf", name)).toEqual({ ok: true });
     }
@@ -138,6 +149,107 @@ describe("checkFeeCategory", () => {
     ]) {
       expect(checkFeeCategory("night_deposit", name)).toEqual({ ok: true });
     }
+  });
+
+  it("keeps other banks' customers at our ATMs out of non-network ATM fees (live rows, Oct 6)", () => {
+    for (const name of [
+      "Non-Member ATM Transaction Fee",
+      "Non-OMNI Card used at OMNI ATM",
+      "Democracy FCU ATM Withdrawals with Non-Proprietary Card",
+      "ATM Surcharge Fee (foreign cards used at our ATM machine)",
+      "ATM Transactions at WCTFCU-Owned ATMs",
+      "ATM Usage Fee/In-network",
+      "ATM Transfer Between Accounts",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Non-Owned ATM Fee",
+      "NON-owned ATM machines",
+      "Non CUA-Owned ATMs/CO-OP ATMs Fees may be charged by the ATM owner.",
+      "Withdrawal at other owned ATM",
+      "Out of Our Network ATM Fee: per Transaction",
+      "Foreign ATM Withdrawal Fee (not within network)",
+      "ATM w/d (free at our ATM's, or 5 free elsewhere)",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps a gift card's reload, replacement and inactivity fees out of its purchase price", () => {
+    for (const name of [
+      "Visa Gift Card Reload Fee",
+      "Gift Card Monthly Inactivity Fee (after 12 mo. non-use)",
+      "Monthly Share Account Fee",
+      "Card delivery",
+    ]) {
+      expect(checkFeeCategory("gift_card_purchase", name).ok).toBe(false);
+    }
+    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card"]) {
+      expect(checkFeeCategory("gift_card_purchase", name)).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("card_replacement", "Replacement VISA® Gift Card Fee").ok).toBe(false);
+    expect(checkFeeCategory("card_replacement", "Debit Card Replacement")).toEqual({ ok: true });
+  });
+
+  it("keeps transaction charges and earnings-credit notes out of monthly maintenance", () => {
+    for (const name of [
+      "Card Services POS PIN-Based Transaction Service Charge | Charges",
+      "Earnings credit available to offset following service charge",
+      "Monthly Fee for Transactions Performed by Member Care or in a Member Center (more than 2 per month)",
+    ]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    for (const name of ["Monthly Service Fee (unlimited transactions)", "CBCa$hflow Monthly Fee (Transaction Fees May Apply)"]) {
+      expect(checkFeeCategory("monthly_maintenance", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps deposited-item and loan chargebacks out of card disputes", () => {
+    for (const name of ["Chargeback on Deposit Account", "Chargeback Item Fee", "Chargeback on Loan", "Return/Chargeback Item Fee"]) {
+      expect(checkFeeCategory("card_dispute", name).ok).toBe(false);
+    }
+    for (const name of ["Debit Card Dispute", "Debit Card Chargeback Fee", "Charged Back Debit Card Disputes", "Chargeback Fee"]) {
+      expect(checkFeeCategory("card_dispute", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps balances to open, earn APY or avoid a fee out of minimum balance fees (live rows, Oct 6)", () => {
+    for (const name of [
+      "Minimum balance to open the account - You must deposit",
+      "Minimum balance to obtain the annual percentage yield disclosed - You must maintain a minimum balance of",
+      "Minimum Balance to Earn APY",
+      "Minimum Balance Required",
+      "Minimum balance to avoid fee",
+      "Membership Share",
+    ]) {
+      expect(checkFeeCategory("minimum_balance", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Minimum Balance Fee",
+      "Low Balance Fee (for Money Market Accounts)",
+      "Below minimum ADB fee (per month)",
+      "minimum monthly direct deposit or electronic deposit is required to avoid a monthly minimum balance fee of",
+      "Savings (if balances falls below minimum) (Balance Requirement Fee)",
+      "Share Draft Minimum Balance Fee (must maintain a balance of at all times)",
+    ]) {
+      expect(checkFeeCategory("minimum_balance", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("re-files a fee whose own name names the neighbouring category, never loosening a guard", () => {
+    expect(refileCategory("overdraft", "Overdraft Transfer from Savings")).toBe("od_protection_transfer");
+    expect(refileCategory("wire_domestic_outgoing", "International Wire Transfer (Outgoing)")).toBe("wire_intl_outgoing");
+    expect(refileCategory("atm_non_network", "ATM/Debit Card Replacement")).toBe("card_replacement");
+    expect(refileCategory("nsf", "Paid NSF Item Fee")).toBe("overdraft");
+    expect(refileCategory("nsf", "Deposited Item Returned")).toBe("deposited_item_return");
+    // Already right, or no better home: the hinted category stays and the guard decides.
+    expect(refileCategory("overdraft", "Overdraft Fee")).toBe("overdraft");
+    expect(refileCategory("overdraft", "Overdraft Fee - Daily Maximum")).toBe("overdraft");
+    expect(refileCategory("wire_domestic_outgoing", "Domestic Wire Transfers (outgoing) [International wires not available]")).toBe(
+      "wire_domestic_outgoing",
+    );
+    expect(refileCategory("atm_non_network", "Replacement ATM PIN numbers")).toBe("atm_non_network");
   });
 
   it("leaves amounts to Darwin's envelopes, the one definition of a plausible price", () => {

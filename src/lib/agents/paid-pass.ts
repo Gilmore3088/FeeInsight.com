@@ -11,7 +11,7 @@ import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-p
  * the step; it never stalls the state run.
  */
 
-export type PaidPassAgent = "magellan" | "rosetta" | "knox";
+export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin";
 
 /** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
 export const WEB_SEARCH_COST_MICROUSD = 10_000;
@@ -21,6 +21,7 @@ export const PAID_PASS_MODELS = {
   find: () => process.env.PIPELINE_PAID_FIND_MODEL?.trim() || "claude-haiku-4-5-20251001",
   read: () => process.env.PIPELINE_PAID_READ_MODEL?.trim() || "claude-sonnet-5-5",
   extract: () => process.env.PIPELINE_PAID_EXTRACT_MODEL?.trim() || "claude-sonnet-5-5",
+  verify: () => process.env.PIPELINE_PAID_VERIFY_MODEL?.trim() || "claude-haiku-4-5-20251001",
 } as const;
 
 /** Items one paid step may send to the model per run. Keeps a single run's spend small. */
@@ -55,7 +56,7 @@ export async function paidModelCall({
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
 }): Promise<PaidCallResult> {
-  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`).messages.create(body));
+  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, agent).messages.create(body));
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata },
     () => send(params),

@@ -21,8 +21,22 @@ Magellan owns institution source discovery and source fetching.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 - A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and
   `last_rescue_attempt_at > last_crawl_at`) is fetched first, regardless of the retry
-  window, and the state's hourly backlog run fetches those links only
-  (`new_links_only`), so a link found mid-month is read the same hour, not next month.
+  window. The state's hourly backlog run (`new_links_only`) fetches those links and any
+  link last fetched over 30 days ago (`MAGELLAN_STALE_LINK_REFETCH_DAYS`), so a link found
+  mid-month is read the same hour and no schedule goes months without a fetch.
+- A fetch that finds the link gone (HTTP 404/410, or a deep link whose redirects end on a
+  homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
+  `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
+  again. A locked correction is kept; a 403 is retried, since a bot block can pass.
+- Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
+  fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
+  (not `business`) are downloaded when new and again after 30 days, each as its own source
+  document with `companion_source_id` set. It never touches the bank's fee link, fetch
+  state or profile, and its attempts stay out of the playbook. Two 404/410s in a row, or
+  five failures, retire a page (`rejected`). Before fetching, it re-applies today's finder
+  rules to the state's stored pages (`reviewStoredCompanions`, up to 500): a page now ruled
+  out (loan, HELOC, derivatives notice) is retired with reason `not_consumer_fee_page`, and
+  a page named after its link text ("Download", "Product Details") is renamed from its URL.
 - The free `discover` step runs in every hourly backlog run, not only the full pass, while
   the state has a bank due a free search; discovery's own backoff decides who is due. The
   paid find (`discover-paid`) stays on the full pass.
@@ -30,8 +44,9 @@ Magellan owns institution source discovery and source fetching.
 ## Discovery (the find team)
 
 The `discover` step (`discovery.ts`) searches banks with a website but no fee link.
-For one bank it reads the homepage once, then calls the specialists in `finders.ts`
-in order and stops at the first link that passes the fee-page check. Each specialist
+For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
+homepage once, then calls the specialists in `finders.ts` in order and stops at the first
+link that passes the fee-page check. Each specialist
 that runs writes one `pipeline_attempts` row (stage `discover`, its own strategy and
 version, a typed outcome, the URLs it tried with their verdicts in `detail.trail`,
 and `detail.method_version`).
@@ -41,19 +56,37 @@ and `detail.method_version`).
 | 1 | `discover.rejected_page_links` | Fee links on pages Rosetta ruled out (newest two), boosted because the page is about fees. Runs before the homepage is read, so a bot-blocking homepage does not stop it; off-site PDFs (CDNs) count. |
 | 1 | `discover.known_link` | The bank's previous (unlocked) link. A locked correction is used as is, without a fetch. |
 | 1 | `discover.homepage_links` | Fee-like links on the homepage (homepage request logged here). |
-| 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`; an index opens its page/document children. |
+| 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`, then `/sitemap_index.xml`; an index opens its page/document children. robots.txt Disallow rules for FeeInsightBot are respected for every same-site request. Fee links and PDFs whose name says fee, schedule, disclosure or truth-in-savings are opened (version 2). |
 | 1 | `discover.hub_pages` | One hop through Disclosures / Rates & Fees / Documents / Forms pages. |
-| 1 | `discover.platform_paths` | Paths for the detected platform (`platform-learning.ts`). |
+| 1 | `discover.platform_paths` | Version 2. Paths for the detected platform (`platform-learning.ts`): the registry's seeds plus paths that are the fee link at 2+ banks, each bank's link scored by the outcome ledger (good +2, not judged +1, thin -1, rejected or dead -2). A seed whose links keep failing drops out. |
 | 1 | `discover.common_paths` | Guessed common paths, last. |
-| 2 | `discover.peer_hint` | Paths that worked for banks on the same platform in the same state. |
+| 2 | `discover.peer_hint` | Version 2. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
-| 2 | `discover.second_document` | `second-document.ts`, after the main loop: live banks with fewer than 5 published fee categories get a search for a business or other-services fee document, stored in `institution_additional_sources` (never replaces the fee link). Each bank at most monthly. |
-| 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below). |
+| 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop: live banks with fewer than 8 published fee categories, or an HTML fee link and no monthly fee, get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists a fee (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least one fee with a dollar amount (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped. Never replaces the fee link. Each bank at most monthly. |
+| 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; the other 3 rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". One attempt row per query (`detail.query`, `candidates`, `kept`; not folded into the playbook): `ok` when a page it found was kept, `rejected` when its hits were all dropped, `no_candidates` when it linked to nothing useful. |
+| 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
+| 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, once a month per bank. |
 
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
   and their first pages read, so a rate sheet or press release is rejected. A PDF with
-  no readable text (a scan) is accepted only on a strong fee label.
+  no readable text (a scan) is accepted only on a strong fee label. Fee words are counted
+  on the page's own content (menus, header and footer stripped). Below the fee-page bar
+  (3 fee lines) HTML passes only when its address names the fee page, or its label is
+  strong and it lists a fee; an account or product page (`looksLikeProductPage`) is
+  rejected as `product_page` and belongs to the companion finder as an account page.
+- Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
+  link is a product page are searched once per version for the real schedule
+  (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
+  companion `account_page`; a miss leaves the link and rescue state untouched.
+- Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
+  link looks out of date are searched once per version for a newer schedule
+  (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
+  schedule's own "Effective ..." date (first 4,000 characters of its latest stored text),
+  or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
+  Only the hour's slot of banks (id mod 24, as the outcome ledger) is checked each step.
+  A different page that passes the fee-page check replaces the link (the old one is not
+  kept); the same page or a miss changes nothing.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
   their path in per-platform learning, and their links are searched first.
@@ -64,12 +97,41 @@ and `detail.method_version`).
   at two or more banks on the platform, minus paths Rosetta rejected. A find updates
   `platform_registry` (validated count, institution count, promoted paths).
 - A redirect to a new domain searches the new site and updates `website_url`.
+- Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
+  `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending
+  ("www.bankcom"), scheme typos ("http//"), uppercase, spaces, trailing punctuation and
+  misspelled endings (".con"). An unfamiliar ending is flagged (`warnings`), not changed.
+  A repair is saved to `website_url` by `recordDiscoveryResult` and logged as its own attempt
+  (`discover.website_repair`, `detail.original/repaired/changes/saved`), except when
+  `institution_source_profiles.locked_by_correction` is set: then it is used for the search
+  but never saved. Adding only a scheme is not saved or logged. A website that still cannot be
+  read is `needs_human` (code `website_unrepairable`, outcome `invalid_url`). There is no other
+  stored website to fall back on: `registry-fdic-universe` only fills an empty `website_url`
+  and the NCUA sync stores none.
+- A homepage that blocks bots (HTTP 401/403, or a challenge page served with 200) does not end
+  the search: the known link and the site map still run (nothing else needs the homepage).
+  Nothing tries to get past the wall: same crawler name, no proxies, no browser. A find is
+  code `found_blocked_homepage` (`detail.rescue = 'blocked_homepage'` on the finding attempt),
+  every attempt for that bank carries `detail.homepage_blocked = true`, and the step detail
+  counts `blocked_homepage_rescues` and `websites_repaired`. A 429 asks us to slow down, so
+  nothing more is requested from that site that time (`blocked`).
 - Nothing is dead forever: pending/`retry_after` banks are re-checked after 12 hours;
   misses (`dead`) after 30 days, then 90 days after two misses in a row; and every
   miss at once (after 12 hours) when `DISCOVERY_METHOD_VERSION` is newer than its last
-  search. Bump that version whenever a specialist changes. A search cut short by the
-  per-bank (45 s) or per-step budget is `retry_after` (`out_of_time`), then a miss after
-  repeated cut-offs.
+  search. Bump that version whenever a specialist changes.
+- A search cut short by the per-bank (45 s) or per-step budget is `retry_after`
+  (`out_of_time`) and resumes where it stopped. Its last `pipeline_attempts` row carries
+  `detail.resume` (`DiscoveryResume`: specialists done, the one the clock stopped inside,
+  cut-off searches so far); a search that ends writes `resume: null`. The next search of
+  that bank (selected when `rescue_status = 'retry_after'` and the failure note starts
+  `out_of_time:`) reads the newest row with a `resume` key, skips the finished
+  specialists, and logs `detail.resumed_from`. A specialist the clock stops inside twice
+  on a full per-bank budget is skipped (`RESUME_MAX_CUTS_PER_FINDER`); after 12 cut-off
+  searches (`RESUME_MAX_TICKS`) the bank is a miss. The first such bank in each step
+  (`RESUME_FIRST_PER_STEP`) goes to the front so it gets the whole 45 s; the rest keep
+  their place. A resume from another `DISCOVERY_METHOD_VERSION` is ignored. The step's
+  `resumed_searches` counts resumed banks. Without the learning schema there is no
+  resume, and two cut-offs make a miss as before.
 - Pass 3 (`runMagellanPaidFind`): up to `PAID_PASS_ITEMS_PER_RUN` banks in the state
   that are `dead` after a search with the current method version and had no paid try
   this month. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
@@ -77,6 +139,40 @@ and `detail.method_version`).
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
+
+## Outcome ledger (`outcomes.ts`)
+
+Every discover step judges one 24th of the banks (bank id mod 24 = the UTC hour, so each
+bank once a day) by what their links produced downstream, and writes the judgement to
+the shared learning store (`pipeline_feedback`, `check_name = magellan.link_yield`,
+dedupe `magellan.link_yield:doc:<first source_document_id of the link>`). A link is the
+bank's main fee link or a companion page; all fetches of the same address count as one.
+
+| Label | Rule | Signal, kind, weight |
+|---|---|---|
+| good | 3 or more distinct fees from it are live | right, `produced_live_fees`, live fee count |
+| dead | last fetch 404/410, or Rosetta's last read was a 404 | wrong, `dead_link`, 1 |
+| rejected | Rosetta's last read ruled it the wrong document | wrong, `wrong_document`, 1 |
+| thin | Knox extracted it over 24 hours ago, fewer than 3 live fees | wrong, `thin_link`, 1 |
+
+Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
+is the Magellan specialist whose attempt found the address (null for links the old
+crawler left). Only changed judgements are written; the step's `link_outcomes` detail
+reports the counts. Finders, the fee-page classifier and Darwin read these rows.
+
+## Fee-page classifier, in shadow (`page-classifier.ts`)
+
+A learned check on whether an opened page is the bank's fee schedule, trained on the ledger
+above: links with 3+ live fees are fee pages, thin and rejected links are not, dead links are
+left out. The text is what Rosetta stored (`agent_source_texts`, first 8,000 characters). It is
+a naive Bayes over word stems, address words and the rule check's own counts; no model call.
+
+- The discover step retrains it when the newest stored copy is 6+ hours old (up to 300 links of
+  each label) and writes one row to `magellan_page_classifier`: weights, label counts and its
+  score on every fifth document held out, beside the rule check on the same pages. It needs 30 of
+  each label to train. The step's `page_classifier` detail reports what happened.
+- SHADOW: each candidate a finder opens gets `page_p` on its trail entry (the probability it is
+  a fee page). It changes no decision. Switching `mode` to deciding waits for James's review.
 
 ## Boundaries
 

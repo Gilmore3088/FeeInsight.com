@@ -1,6 +1,96 @@
 # Hamilton Agent Guide
 
-Hamilton owns publication and analysis surfaces.
+Hamilton is the last agent in the pipeline and the one people meet. It has four faces,
+all built on the same live published fees, and one rule across them: every output can be
+retraced without asking Hamilton (see Audit trail).
+
+## Hamilton's faces (James, 2026-10-06 00:08 UTC)
+
+1. **Fee verifier and publisher.** Publishes Darwin-verified fees and keeps the live
+   catalog honest: category guard, outlier rollback, duplicate collapse, rules re-check
+   and source check (sections below). Accuracy is the share of live fees whose amount and
+   category match the bank's own current schedule.
+2. **Research publisher.** Writes the national and district reporting from the live
+   catalog and the economic layers: the National Fee Index, state indexes, peer briefs
+   and the Monthly Pulse (`src/lib/report-engine`, report types in `types.ts`). Reports
+   are queued as `report_jobs` and live in `published_reports` once published.
+3. **Industry expert and research assistant.** Answers questions about fees, regulation
+   and the economy with cited facts, at every data layer the project holds: national,
+   Fed district, regional, state, regulatory and institutional. Overdraft and NSF are
+   reported separately wherever a filing separates them (NCUA does; the bank call
+   report combines them on one line, which Hamilton always says).
+4. **Decision-support workspace for paid clients** (`src/lib/hamilton/workspace`). See
+   the next section.
+
+## Decision-support workspace (James, 2026-10-05 23:27 UTC)
+
+Hamilton supports the decision; it does not make it.
+
+- Flow: research, explore, model, decide, implement. The Briefing surfaces what is worth
+  a look (market position, competitor moves, revenue shifts); salience orders items and
+  never implies a price direction.
+- Never tell the institution to raise, lower or drop a fee, and never offer to "approve a
+  recommendation". Model the prices the reader asks about; the tested price is always
+  the reader's.
+- Every scenario is labeled with its evidence level: `market` (position and
+  per-1,000-items arithmetic, no dollar total), `working_estimate` (the bank's reported
+  income for that fee line divided by its published fee), or `institution` (items and
+  waiver rate the bank gave Hamilton). The scenario names the one figure that would
+  move it up a level.
+- Implementation is a separate step that runs only after management chooses an amount:
+  notice (Reg DD / NCUA Part 707 30 days for an adverse change, Reg E 21 days for EFT
+  fees, the overdraft opt-in notice), approvals, systems, earliest effective date and
+  monitoring. The compliance caveat is always shown.
+- An opinion is given only when the reader explicitly asks, after they pick the
+  objective (revenue, customer treatment or competitive position), and it names that
+  objective.
+- The Ask bar is `POST /api/hamilton/ask` (`ask-service.ts`, pure logic in
+  `workspace/ask.ts`). It returns `{kind, shortAnswer, pageChange, answer?, scenario?,
+  opinion?, question?, savedFact?, decisionId}` with kinds research, scenario, saved_fact,
+  deliverable_draft, opinion and clarifying_question. A reply to Hamilton's question is
+  sent back as `answer: {fieldKey, value}` and saved to memory. Each exchange is logged to
+  the fee's open decision (question_asked, scenario_tested, answer_given); a remembered
+  objective holds until the reader gives another. No provider calls.
+- Every fee answer plays four roles (James, 2026-10-06): Inquisitive Economist, Rigorous
+  Consultant, Artistic Data Engineer, Technical yet Clear Writer. `buildFeeAnswer`
+  (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
+  question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
+  checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
+- The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
+  CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
+  what was read; unmatched lines are listed, never guessed, and the file is not stored.
+  Nothing is used until `POST /api/hamilton/uploads/apply`, which saves the figures to
+  memory with the upload named as their source.
+- `POST /api/hamilton/decisions/[id]` records the amount management chose (Hamilton never
+  chooses), with its implementation plan and watch conditions (a competitor change, a
+  5% peer-median move, a regulator release). A watch that trips is logged once as
+  `watch_tripped`. The ledger (`GET /api/hamilton/decisions`) is a sum over decisions;
+  dollars count only from options chosen on institution evidence.
+- Decisions, their event log, client-given facts and uploads are kept in
+  `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
+  `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
+  (`superseded_at`), so the history of what the bank told Hamilton survives.
+- The workspace builders are deterministic and make no provider calls.
+
+## Audit trail (James, 2026-10-06 00:08 UTC)
+
+Regulatory work needs a defensible position, so nothing Hamilton produces is a black box.
+
+- Every workspace output (Briefing, Research, Scenario, Implementation plan) carries a
+  `Provenance` (`workspace/types.ts`): engine version, when it was built, evidence
+  level, the peer group and its size, the newest date each data source contributed,
+  every source (table or rule, with links), every assumption in plain words, and each
+  client-given figure with who gave it and when.
+- Each peer value names the schedule documents it was read from (`sourceDocumentIds`,
+  `documentUrls`) and when it was published, so any figure can be traced to the bank's
+  own document.
+- Bump `WORKSPACE_ENGINE_VERSION` whenever a builder's math or wording changes, so a
+  saved output names the engine that made it.
+- When a decision event is saved, its provenance is saved with it, so the record shows
+  what Hamilton showed at the time, not what it would show today.
+- Pages show the provenance in a "How this was built" disclosure under each output, and
+  deliverables carry it as an appendix.
+- Never fill a gap with an invented number. A missing input stays missing and is named.
 
 ## Authority
 
@@ -53,7 +143,17 @@ Hamilton owns publication and analysis surfaces.
   normalized name) at a new amount in a newer source document (`source_documents.crawled_at`).
   Other lines of the same schedule, or differently named lines from another document,
   publish side by side with no change record. A row from an older document than a live
-  line is skipped (`Older document than the live price`).
+  line is skipped (`Older document than the live price`). When either document lists that
+  name at both prices (two products or tiers), the new line publishes beside the old one
+  and no change is recorded (`listsBothPrices`).
+- Document age is compared only within one stream (`src/lib/agents/companion-streams.ts`):
+  the main fee link with its own earlier copies, each companion page (one account's page,
+  a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
+  outdates Value Checking's line, or the main schedule's; it publishes beside them.
+- Each publish step rolls back live fees read from companion pages Magellan retired as not
+  a consumer fee page (`companion-retire.ts`, reason `companion_page_retired`, up to 500 a
+  step) and rejects their verified rows, so they never publish again. Pages retired for a
+  dead link keep the fees they gave.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.
@@ -65,7 +165,10 @@ Hamilton owns publication and analysis surfaces.
   not published and not written to `pipeline_attempts`, so they publish on the run
   where Knox's later finds bring the institution to the minimum. The step detail lists
   them as `held_thin_institutions`. The gate applies to new publishes only; it does not
-  close rows already live.
+  close rows already live. Readers get the same rule from `published_fee_catalog`, which
+  shows a bank's live fees only while it has at least 3 distinct fees live (migration
+  20270110000000): a bank that takedowns leave thinner drops off the site and returns on
+  its own at 3. Agents that need every live row read `published_fee_records`.
 - Batches take whole source documents (`agents/document-batch.ts`), oldest first, so a
   document's fees publish together; Darwin batches the same way. A batch can exceed the
   limit by one document.
@@ -107,11 +210,23 @@ newest stays. The attempt's `missing_fees` counts fees today's rules read from t
 document's latest text that are not live; Knox extracts such a text again, so a rules
 fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only removes.
 
+The re-check also undoes its own takedowns (strategy version 2). A fee it took down comes
+back (verified row too) when today's rules read it again from its text under the same name,
+category and price, it still traces to that text (`checkFeeAgainstSource`), and no live fee
+of the institution has that category and price. Knox cannot bring that fee back itself:
+re-extracting would insert the same raw row, which the raw-row dedupe index (document, name,
+price) refuses. A fee read again under a new name returns the normal way, through Darwin.
+Documents whose live fees were all taken down are re-checked too. Step detail:
+`rules_recheck_restores`.
+
 ## Source Check
 
-Every live fee must be stated in the bank's own stored schedule. After publishing, each
-state-lane (or single-institution) publish step runs `source-check.ts` on up to 40
-institutions not checked since their newest live fee. Each live fee, from any source,
+Every live fee must be stated in the bank's own stored schedule. After publishing, every
+publish step runs `source-check.ts` on up to 40 institutions not checked since their
+newest live fee: its own state's (or institution's) first, then any state's to fill
+the batch, institutions never checked first. A new strategy version (bumped whenever
+the shared reader changes) re-checks every institution and restores fees an older
+reader took down that now trace. Each live fee, from any source,
 goes through `checkFeeAgainstSource` (`src/lib/custom-report/source-check.ts`, the same
 rule the report gate uses): one row of the document names the fee and states the
 amount as its price, not a limit. When one line carries several fees (a flattened

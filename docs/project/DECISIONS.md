@@ -5,6 +5,72 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
+stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
+pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; the price comes from
+the request row, never the link. The Stripe webhook marks the request Paid, alerts James, and emails
+the requester their private report link. A quote is saved only when the report check says "ready to
+quote", so no one pays for a report built on thin data. The report stays "priced on request".
+
+**Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
+shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan
+(https://claude.ai/code/artifact/12c7e165-b7af-4aee-a356-cc0c4f5c15a8): tighten the main-link
+check and re-search (agreed), a $250 paid-find trial (yes), classifier weights kept in a table that
+a Magellan run step retrains ("Yes. Consistently reinforced"), no further plan upgrades, and the
+thread runs it. The classifier (`magellan_page_classifier`) only records its opinion until James
+reviews it; letting it decide is his call.
+
+**Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
+abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
+Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges
+still need green CI, and anything that can take down live fees still gets a dry run first.
+
+**One shared learning store for every agent: `pipeline_feedback`.** Agreed by the Knox, Magellan
+and Darwin threads at 05:50 UTC, following James's "knowledge flow through to other agents, to and
+from" (05:41 UTC). One row is one judgement about one agent's output (a takedown, a Darwin
+category reject, an answer-key fee, a link's live-fee count), upserted on `dedupe_key`. No agent
+keeps its own copy. Fields and keys: `src/lib/agents/learning/AGENTS.md`.
+
+**The admin becomes one console with six rooms, opening on a Needs-you list.** James, 05:57 UTC,
+answering the console brainstorm (https://claude.ai/artifact/9xib8VUnETMBh1u4txabzW). /admin opens
+on Today: everything waiting on a person, with the button that clears it. Every other screen
+lives in one of six rooms: Agents, Data, Customers, Publishing (reports, briefs and monthly
+updates; James asked where published content lives) and Controls (spend, stop switches, launch
+checklist). The morning brief emails the same list at 7am Central to hello@bankfeeindex.com, with
+jlgilmore2@gmail.com copied. Every room works on a phone. James said to "run without me": the
+console pieces are built and merged when CI is green without waiting for his review.
+
+**Darwin is rebuilt as a full verification layer, with Claude as the last resort.** James, 05:29
+UTC ("i want to build the entire Darwin layer. But the API call should be last result"). Free
+methods run first: reading the schedule as rows, a learned category model, learned price ranges,
+peer checks and the shared source check. Only fees those methods disagree on go to a Claude
+call, and only within Darwin's own budget. An internal validation team (the "solutions team")
+may be added to grade Darwin against an answer key. Knowledge flows to and from every agent
+(James, 05:41 UTC): Darwin's learning reads and writes the same shared corrections store Knox and
+Magellan use, never a Darwin-only copy. The build plan is in the Darwin v2 design
+artifact (https://claude.ai/artifact/Ta2Nv3YRVCZ55orVTsNMjL).
+
+**Every agent gets its own Anthropic API key so spend is tracked and capped per agent.** James,
+05:29 UTC. `src/lib/ai-provider.ts` reads `ANTHROPIC_API_KEY_<AGENT>` (ATLAS, MAGELLAN, ROSETTA,
+KNOX, DARWIN, HAMILTON) and falls back to the shared `ANTHROPIC_API_KEY`, so nothing stops while
+the keys are being added. Every model call names the agent it bills to. The Atlas details page
+shows which key each agent is using.
+
+**The site shows a bank only while it has at least 3 distinct live fees.** James, 05:50 UTC, after
+the Hamilton publish audit found 163 banks left with 1 or 2 live fees by takedowns (120 of them)
+or from before the rule (82). `published_fee_catalog` hides such a bank's fees and shows them
+again on their own once it has 3; nothing is deleted. This replaces "already-live thin
+institutions stay live" from 2026-10-04.
+
+**Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
+incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
+scenario and implementation plan carries its provenance: sources with links to the banks' own
+schedule documents, data as-of dates, the peer group and its size, assumptions, evidence level,
+and each client-given figure with who gave it and when. Saved decisions keep the provenance from
+the moment they were made. The same message set out Hamilton's faces (fee verifier and
+publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
+describes all four. Built in PR 170.
+
 **The institution report has no fixed price yet; the granular data stays paid.** James, 23:31 UTC
 Oct 5 and 00:15 UTC Oct 6. It will be a $300 report once it is ready, but for now a request is
 quoted by hand. Free reports give value away (national and district medians only); per-bank fees
@@ -18,7 +84,21 @@ report I've ever seen". Each report shows key findings, headline-fee ranges, the
 national, banks vs credit unions, and a locked "your institution" section that leads to the paid
 report.
 
+**No booking tool and no paid tools before the first sale; James emails clients directly.**
+James, 00:57 UTC Oct 6 ("I don't need to book 15 minutes to talk to somebody ... I can just
+email them"). He uses Outlook and is already paying for several small services with no revenue
+yet. Pages offer an email link, never a scheduler; PR 178 changed the private report page's
+"Book 15 minutes" button to "Email us about this report". Any new paid service waits until a
+report has sold.
+
 ## 2026-10-05
+
+**Package all 16 years of call reports on institution pages, deeper for Pro.** James, 22:25 and
+22:38 UTC ("Go: phases 1 and 2"). Phase 1 shows the stored-but-hidden figures plus growth, peer
+rank and outliers. Phase 2 widens the FDIC and NCUA pulls (overdraft-related service charges and
+other deposit-fee lines) and re-pulls all 66 quarters as visible runs. Only figures the source
+reports: no overdraft/NSF split unless a filing reports one. Phases 3 (a Pro institution
+workspace) and 4 (free page tune-up) wait for his go-ahead.
 
 **The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else
 gets in.** James, 23:28 UTC ("nobody else should have access to API"). Every `/api/v1` request

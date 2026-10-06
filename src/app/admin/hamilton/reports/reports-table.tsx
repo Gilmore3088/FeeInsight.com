@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { SortableTable, type Column } from "@/components/sortable-table";
 import { timeAgo } from "@/lib/format";
 import type { ReportJob, ReportType } from "@/lib/report-engine/types";
+import { ReportActions } from "./report-actions";
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   national_index: "National Index",
@@ -34,13 +35,12 @@ type ReportRow = ReportJob & Record<string, unknown>;
 
 export function ReportsTable({
   jobs,
-  publishedSet,
-  renderActions,
+  publishedJobIds,
 }: {
   jobs: ReportJob[];
-  publishedSet: Set<string>;
-  renderActions: (job: ReportJob, title: string, isPublished: boolean) => React.ReactNode;
+  publishedJobIds: string[];
 }) {
+  const publishedSet = new Set(publishedJobIds);
   if (jobs.length === 0) {
     return (
       <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-500">
@@ -109,9 +109,7 @@ export function ReportsTable({
       sortable: false,
       format: (_, row) => {
         const job = row as unknown as ReportJob;
-        const title = getReportTitle(job);
-        const isPublished = publishedSet.has(job.id);
-        return renderActions(job, title, isPublished);
+        return <ReportActions job={job} title={getReportTitle(job)} isPublished={publishedSet.has(job.id)} />;
       },
     },
   ];

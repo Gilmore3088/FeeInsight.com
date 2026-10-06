@@ -23,6 +23,9 @@ export interface FeeChangeFilters {
   charter_type?: string;
   asset_tiers?: string[];
   fed_districts?: number[];
+  state_code?: string;
+  /** Only changes seen on or after this ISO date. */
+  since?: string;
   limit?: number;
 }
 
@@ -73,6 +76,18 @@ export async function getFeeChangeEvents(
       .join(", ");
     conditions.push(`ct.fed_district IN (${placeholders})`);
     params.push(...filters.fed_districts);
+  }
+
+  if (filters.state_code) {
+    paramIdx++;
+    conditions.push(`ct.state_code = $${paramIdx}`);
+    params.push(filters.state_code);
+  }
+
+  if (filters.since) {
+    paramIdx++;
+    conditions.push(`fce.changed_at >= $${paramIdx}`);
+    params.push(filters.since);
   }
 
   const where =

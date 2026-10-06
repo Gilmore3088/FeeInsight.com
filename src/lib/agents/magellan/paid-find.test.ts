@@ -9,7 +9,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 
 import { DISCOVERY_METHOD_VERSION } from "./discovery";
-import { onBankDomain, PAID_FIND_STRATEGY, runMagellanPaidFind } from "./paid-find";
+import { onBankDomain, PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, runMagellanPaidFind } from "./paid-find";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -76,7 +76,7 @@ describe("Magellan paid find (pass 3)", () => {
         : new Response("<h1>Rates</h1><p>Savings 0.50% APY</p>", { headers: { "content-type": "text/html" } }),
     );
 
-    const result = await runMagellanPaidFind({ runId: 9, stepId: 4, stateCode: "VT", db: asDb(db), create, fetchImpl });
+    const result = await runMagellanPaidFind({ runId: 9, stepId: 4, stateCode: "VT", db: asDb(db), create, fetchImpl, pick: false });
 
     expect(result).toMatchObject({ selected: 3, processed: 3, succeeded: 1, failed: 2, budgetStopped: false });
     expect(result.costMicrousd).toBeGreaterThan(0);
@@ -108,7 +108,7 @@ describe("Magellan paid find (pass 3)", () => {
       .mockResolvedValueOnce(answer({ url: null }))
       .mockRejectedValueOnce(new ProviderBudgetBlockedError("budget_monthly_exhausted", "Magellan monthly cap reached"));
 
-    const result = await runMagellanPaidFind({ runId: 10, db: asDb(db), create, fetchImpl: vi.fn() });
+    const result = await runMagellanPaidFind({ runId: 10, db: asDb(db), create, fetchImpl: vi.fn(), pick: false });
 
     expect(result).toMatchObject({ processed: 1, failed: 1, budgetStopped: true, budgetReason: "Magellan monthly cap reached" });
     expect(create).toHaveBeenCalledTimes(2);
@@ -127,5 +127,62 @@ describe("Magellan paid find (pass 3)", () => {
     expect(onBankDomain("https://docs.alpha.example/fees.pdf", "www.alpha.example")).toBe(true);
     expect(onBankDomain("https://alpha.example.evil.example/fees.pdf", "alpha.example")).toBe(false);
     expect(onBankDomain("ftp://alpha.example/fees.pdf", "alpha.example")).toBe(false);
+  });
+
+  describe("pick from homepage links", () => {
+    const pickAnswer = (json: Record<string, unknown>) =>
+      ({ content: [{ type: "text", text: JSON.stringify(json) }], usage: { input_tokens: 3000, output_tokens: 40 } }) as never;
+    const home = '<a href="/about">About us</a> <a href="/resources/forms">Forms &amp; Documents</a> <a href="/docs/tis-2026.pdf">Account Disclosures</a>';
+
+    it("stores a picked link that passes the fee-page check and skips the web search", async () => {
+      const db = createDb([banks[0]]);
+      const create = vi.fn().mockResolvedValueOnce(pickAnswer({ picks: [3, 2], reason: "disclosures" }));
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "https://www.alpha.example/") return new Response(home, { headers: { "content-type": "text/html" } });
+        if (url === "https://www.alpha.example/docs/tis-2026.pdf") return new Response(FEE_TABLE, { headers: { "content-type": "text/html" } });
+        return new Response("missing", { status: 404, headers: { "content-type": "text/html" } });
+      });
+
+      const result = await runMagellanPaidFind({ runId: 11, db: asDb(db), create, fetchImpl });
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][0].tools).toBeUndefined();
+      expect(result).toMatchObject({ processed: 1, succeeded: 1 });
+      const logged = attempts(db);
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({ strategy: PAID_PICK_STRATEGY.strategy, outcome: "ok" });
+      expect(logged[0].detail.picks).toEqual(["https://www.alpha.example/docs/tis-2026.pdf", "https://www.alpha.example/resources/forms"]);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(true);
+    });
+
+    it("falls back to the web search when every pick fails", async () => {
+      const db = createDb([banks[0]]);
+      const create = vi
+        .fn()
+        .mockResolvedValueOnce(pickAnswer({ picks: [1] }))
+        .mockResolvedValueOnce(answer({ url: null }));
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "https://www.alpha.example/"
+          ? new Response(home, { headers: { "content-type": "text/html" } })
+          : new Response("<p>About our bank</p>", { headers: { "content-type": "text/html" } }),
+      );
+
+      await runMagellanPaidFind({ runId: 12, db: asDb(db), create, fetchImpl });
+
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(attempts(db).map((attempt) => attempt.strategy)).toEqual([PAID_PICK_STRATEGY.strategy, PAID_FIND_STRATEGY.strategy]);
+    });
+
+    it("does not search the web twice in a month when only the pick was due", async () => {
+      const db = createDb([{ ...banks[0], web_searched: true } as never]);
+      const create = vi.fn().mockResolvedValueOnce(pickAnswer({ picks: [] }));
+      const fetchImpl = vi.fn(async () => new Response(home, { headers: { "content-type": "text/html" } }));
+
+      await runMagellanPaidFind({ runId: 13, db: asDb(db), create, fetchImpl });
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(attempts(db).map((attempt) => attempt.strategy)).toEqual([PAID_PICK_STRATEGY.strategy]);
+    });
   });
 });

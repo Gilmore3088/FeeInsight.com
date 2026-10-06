@@ -1,13 +1,11 @@
-Where overdraft and NSF pricing sit now, and what changed since 2021.
+Four rules that shape these fees, and the questions to ask about your own.
 
 Overdraft and NSF: the market split in two
-* $29 — median overdraft fee (n=88)
-* 24% — charge $5 or less for overdraft
-* $25 — median NSF fee (n=173)
+See today's overdraft and NSF numbers: https://feeinsight.com/fees/overdraft?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf
+Median, middle half and bank vs credit union, from published schedules. NSF is here (https://feeinsight.com/fees/nsf?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf).
 [ THE RULES THAT SHAPE THESE FEES ]
 - Reg E opt-in (2010): an overdraft fee on ATM and one-time debit card transactions requires the consumer's affirmative opt-in.
 - CFPB Circular 2022-06: overdraft fees on transactions authorized against a positive balance ("authorize positive, settle negative") can be an unfair practice.
-- FDIC FIL-40-2022: charging an NSF fee every time the same item is re-presented carries consumer-compliance risk; the FDIC expects institutions to correct the practice and may require restitution.
 
 Full email with tables and charts: {$url}
 

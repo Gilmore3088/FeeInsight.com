@@ -18,7 +18,10 @@ import { assetSizeTier } from "./fdic";
  * leases, 131 fee income, 661A net income, 115 interest income, 117 non-interest
  * income, 671 non-interest expense, 550/551 YTD charge-offs/recoveries, 041B
  * delinquent loans, 997/998 net worth and net worth ratio, 083 members,
- * 703A + 386A + 386B real estate, 396 credit card, 385 + 370 vehicle loans.
+ * 703A + 386A + 386B real estate, 396 credit card, 385 + 370 vehicle loans, IS0048
+ * overdraft fee income and IS0049 non-sufficient funds fee income (blank in quarters
+ * filed before NCUA added them; a quarter where no credit union reports a nonzero
+ * value is stored as null, never as zero: see blankUnreportedFeeIncome).
  * Every mapped account's raw value is kept in raw_json so a mapping correction
  * never needs a re-fetch.
  */
@@ -56,6 +59,8 @@ export const NCUA_ACCOUNTS = {
   credit_card: "ACCT_396",
   new_vehicle: "ACCT_385",
   used_vehicle: "ACCT_370",
+  overdraft_fee_income_ytd: "ACCT_IS0048",
+  nsf_fee_income_ytd: "ACCT_IS0049",
 } as const;
 
 type Row = Record<string, string>;
@@ -101,33 +106,48 @@ export interface NcuaArchive {
   foicu: Row[];
   /** CU_NUMBER -> merged ACCT_* values across every FS220*.txt file. */
   accounts: Map<string, Row>;
+  /** Wanted account -> the files that carry it, so a mapping question can be answered from the run log. */
+  accountFiles: Record<string, string[]>;
+}
+
+function isZeroOrBlank(value: string | undefined): boolean {
+  return value === undefined || value === "" || Number(value) === 0;
 }
 
 const WANTED_ACCOUNTS = new Set<string>(Object.values(NCUA_ACCOUNTS));
 
 export function readNcuaArchive(zip: Uint8Array): NcuaArchive {
   const files = unzipSync(zip, {
-    filter: (file) => /(^|\/)(foicu|fs220[a-z]?)\.txt$/i.test(file.name),
+    filter: (file) => /(^|\/)(foicu|fs220[a-z0-9_]*)\.txt$/i.test(file.name),
   });
   let foicu: Row[] = [];
   const accounts = new Map<string, Row>();
-  for (const [name, bytes] of Object.entries(files)) {
+  const accountFiles: Record<string, string[]> = {};
+  for (const [name, bytes] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     const rows = parseCsv(strFromU8(bytes, true));
     if (/foicu\.txt$/i.test(name)) {
       foicu = rows;
       continue;
+    }
+    const file = name.split("/").pop() ?? name;
+    for (const key of Object.keys(rows[0] ?? {})) {
+      if (WANTED_ACCOUNTS.has(key)) (accountFiles[key] ??= []).push(file);
     }
     for (const row of rows) {
       const cu = row.CU_NUMBER;
       if (!cu) continue;
       const merged = accounts.get(cu) ?? {};
       for (const [key, value] of Object.entries(row)) {
-        if (WANTED_ACCOUNTS.has(key)) merged[key] = value;
+        // An account carried by two files keeps the reported figure: a blank or zero
+        // in a second file never overwrites a nonzero value from the first.
+        if (WANTED_ACCOUNTS.has(key) && (merged[key] === undefined || isZeroOrBlank(merged[key]) || !isZeroOrBlank(value))) {
+          merged[key] = value;
+        }
       }
       accounts.set(cu, merged);
     }
   }
-  return { foicu, accounts };
+  return { foicu, accounts, accountFiles };
 }
 
 export async function fetchNcuaArchive(
@@ -198,6 +218,9 @@ export interface NcuaFinancialRow {
   /** Year-to-date values (thousands); quarterly figures are derived by the worker. */
   net_income_ytd: number | null;
   fee_income_ytd: number | null;
+  /** Overdraft and NSF fee income reported separately (YTD thousands); null before NCUA added the accounts. */
+  overdraft_fee_income_ytd: number | null;
+  nsf_fee_income_ytd: number | null;
   net_charge_offs_ytd: number | null;
   noninterest_expense_ytd: number | null;
   total_revenue_ytd: number | null;
@@ -245,6 +268,8 @@ export function parseNcuaFinancial(charterRaw: string, row: Row, q: Quarter): Nc
     total_equity: thousands(a("net_worth")),
     net_income_ytd: thousands(netIncome),
     fee_income_ytd: thousands(a("fee_income_ytd")),
+    overdraft_fee_income_ytd: thousands(a("overdraft_fee_income_ytd")),
+    nsf_fee_income_ytd: thousands(a("nsf_fee_income_ytd")),
     net_charge_offs_ytd: thousands(nco),
     noninterest_expense_ytd: thousands(expense),
     total_revenue_ytd: thousands(revenue),
@@ -267,3 +292,23 @@ export function parseNcuaFinancial(charterRaw: string, row: Row, q: Quarter): Nc
 }
 
 export { assetSizeTier };
+
+const SEPARATE_FEE_INCOME = ["overdraft_fee_income_ytd", "nsf_fee_income_ytd"] as const;
+
+/**
+ * Overdraft (IS0048) and NSF (IS0049) income are new accounts. When the file carries the
+ * column but no credit union in the quarter reports a nonzero value, the column is not
+ * a real report (Navy Federal and every other large credit union charging these fees
+ * would show income), so those values are stored as null rather than as zero income.
+ * Returns the rows and the accounts it blanked, for the run log.
+ */
+export function blankUnreportedFeeIncome(rows: NcuaFinancialRow[]): { rows: NcuaFinancialRow[]; blanked: string[] } {
+  const blanked = SEPARATE_FEE_INCOME.filter(
+    (key) => rows.some((r) => r[key] !== null) && !rows.some((r) => (r[key] ?? 0) !== 0),
+  );
+  if (blanked.length === 0) return { rows, blanked: [] };
+  return {
+    rows: rows.map((r) => ({ ...r, ...Object.fromEntries(blanked.map((key) => [key, null])) })),
+    blanked: blanked.map((key) => NCUA_ACCOUNTS[key]),
+  };
+}

@@ -16,6 +16,7 @@ import {
   cleanFeeName,
   composableTail,
   looksLikeHeading,
+  qualifiesName,
   passesDarwinChecks,
   QUALIFIER,
   splitCapsHeading,
@@ -59,19 +60,19 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 2,
+    version: 4,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
       { key: "overdraft", pattern: /\b(overdraft privilege|courtesy pay|paid items?|bounce)\b/i },
     ],
   },
-  { family: "wires", strategy: "extract.family.wires", version: 2, keys: familyKeys("Wire Transfers"), patterns: [] },
-  { family: "atm_card", strategy: "extract.family.atm_card", version: 2, keys: familyKeys("ATM & Card"), patterns: [] },
+  { family: "wires", strategy: "extract.family.wires", version: 3, keys: familyKeys("Wire Transfers"), patterns: [] },
+  { family: "atm_card", strategy: "extract.family.atm_card", version: 3, keys: familyKeys("ATM & Card"), patterns: [] },
   {
     family: "account",
     strategy: "extract.family.account",
-    version: 2,
+    version: 3,
     keys: familyKeys("Account Maintenance"),
     patterns: [
       {
@@ -80,11 +81,11 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
       },
     ],
   },
-  { family: "checks", strategy: "extract.family.checks", version: 2, keys: familyKeys("Check Services"), patterns: [] },
+  { family: "checks", strategy: "extract.family.checks", version: 3, keys: familyKeys("Check Services"), patterns: [] },
   {
     family: "services",
     strategy: "extract.family.services",
-    version: 2,
+    version: 3,
     keys: familyKeys(...Object.keys(FEE_FAMILIES).filter((family) => !EXPERT_FAMILIES.includes(family))),
     patterns: [],
   },
@@ -150,7 +151,8 @@ export function priceWindows(text: string): PriceWindow[] {
     if (windows.length >= MAX_WINDOWS) return;
     const values = valuesIn(line);
     if (values.length === 0) {
-      pending = line.length <= 160 ? line : null;
+      // "(for each overdraft item paid)" under "Overdraft Item Fee": the name stays the one above.
+      if (!(pending != null && qualifiesName(line))) pending = line.length <= 160 ? line : null;
       // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.
       if (looksLikeHeading(line) && !line.includes(CELL_SEPARATOR)) heading = line;
       return;
@@ -205,6 +207,8 @@ const TIER_LABEL = new RegExp(
 );
 const CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?)\b[^$]{0,30}$/i;
 const CAP_AFTER = /^\s*\)?\s*(?:per|a|each)\s+(?:business\s+)?day\b|^\s*\)?\s*daily\b/i;
+/** A cap named after its figure: "$25 per item ($50 maximum per day)". */
+const CAP_NAMED_AFTER = /^\s*(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b/i;
 const NEGATIVE_NAME = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i;
 
 /** "Overdraft fee 1st item" → "Overdraft fee": the fee a later tier row belongs to. */
@@ -264,8 +268,7 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     if (window.condition) {
       if (
         expert.family === "overdraft_nsf" &&
-        CAP_BEFORE.test(window.before) &&
-        CAP_AFTER.test(window.after) &&
+        ((CAP_BEFORE.test(window.before) && CAP_AFTER.test(window.after)) || CAP_NAMED_AFTER.test(window.after)) &&
         recent &&
         (recent.hint === "overdraft" || recent.hint === "nsf")
       ) {

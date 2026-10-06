@@ -3,6 +3,7 @@ import {
   type ReasoningTraceRow,
 } from "@/lib/data-store/agent-console";
 import { Timeline } from "./timeline";
+import { ScreenHeader } from "../../room-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function AgentsReplayPage({
 
   return (
     <section className="flex flex-col gap-3">
+      <ScreenHeader title="Replay" lede="A read-only timeline of what an agent did." />
       <form
         method="GET"
         action="/admin/agents/replay"

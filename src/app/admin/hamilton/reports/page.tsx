@@ -1,8 +1,9 @@
 import { getSql } from "@/lib/data-store/connection";
 import type { ReportJob } from "@/lib/report-engine/types";
 import { ReportControls } from "../report-controls";
-import { publishReport, retryReport, cancelReport, cancelAllPending } from "../actions";
+import { cancelAllPending } from "../actions";
 import { ReportsTable } from "./reports-table";
+import { ScreenHeader } from "../../room-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +50,10 @@ export default async function HamiltonReportsPage({
   `.catch(() => [] as Array<{ job_id: string }>);
 
   const publishedJobIds = publishedRows.map((r) => r.job_id);
-  const publishedSet = new Set(publishedJobIds);
 
   return (
     <div className="space-y-6">
+      <ScreenHeader title="Reports" lede="Generate the National Index, Monthly Pulse and state reports, then publish them." />
       {/* Generation controls -- client component */}
       <ReportControls publishedJobIds={publishedJobIds} />
 
@@ -119,78 +120,7 @@ export default async function HamiltonReportsPage({
           </form>
         </div>
 
-        <ReportsTable
-          jobs={jobs}
-          publishedSet={publishedSet}
-          renderActions={(job, title, isPublished) => (
-            <div className="flex items-center gap-2 flex-wrap">
-              {job.status === "complete" && (
-                <a
-                  href={`/api/reports/${job.id}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-[12px] font-medium transition-colors"
-                >
-                  Preview PDF
-                </a>
-              )}
-
-              {job.status === "complete" && !isPublished && (
-                <form
-                  action={async () => {
-                    "use server";
-                    await publishReport(job.id, title, job.report_type, true);
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="px-2.5 py-1 text-[11px] font-medium rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                  >
-                    Publish
-                  </button>
-                </form>
-              )}
-
-              {job.status === "complete" && isPublished && (
-                <span className="text-emerald-600 dark:text-emerald-400 text-[11px] font-medium">
-                  Published
-                </span>
-              )}
-
-              {["pending", "assembling", "rendering"].includes(job.status) && (
-                <form
-                  action={async () => {
-                    "use server";
-                    await cancelReport(job.id);
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="px-2.5 py-1 text-[11px] font-medium rounded bg-gray-500 text-white hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )}
-
-              {job.status === "failed" && (
-                <form
-                  action={async () => {
-                    "use server";
-                    await retryReport(job.id);
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="px-2.5 py-1 text-[11px] font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors ml-2"
-                  >
-                    Retry
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-        />
+        <ReportsTable jobs={jobs} publishedJobIds={publishedJobIds} />
       </div>
     </div>
   );

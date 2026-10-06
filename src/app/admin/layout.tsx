@@ -4,11 +4,12 @@ import { redirect } from "next/navigation";
 import { BarChart3, ExternalLink } from "lucide-react";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
-import { AdminNav, AdminNavInline } from "./admin-nav";
+import { AdminNavInline, AdminRoomTabs, AdminSidebar } from "./admin-nav";
 import { getSourceSubmissionCounts } from "@/lib/admin-queries";
 import { getKnoxReviewCounts } from "@/lib/data-store/knox-reviews";
 import {
   CommandPalette,
+  CommandPaletteIconTrigger,
   CommandPaletteTrigger,
 } from "@/components/command-palette";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
@@ -98,12 +99,16 @@ async function AdminLayoutInner({
                 {SITE_NAME}
               </span>
             </Link>
-            <AdminNavInline />
+            <AdminRoomTabs badges={{ knoxPending, trustPending }} />
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
             <CommandPaletteTrigger />
-            <DarkModeToggle />
+            <CommandPaletteIconTrigger />
+            {/* On a phone the theme switch and sign-out sit at the foot of the page, so the bar stays one row. */}
+            <div className="hidden md:flex">
+              <DarkModeToggle />
+            </div>
             <div className="hidden sm:block h-3.5 w-px bg-gray-200/80 dark:bg-white/[0.06] mx-1" />
             <div className="hidden sm:block text-right">
               <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 leading-none">
@@ -115,32 +120,48 @@ async function AdminLayoutInner({
                 {user.role}
               </span>
             </div>
-            <LogoutButton />
+            <div className="hidden md:block">
+              <LogoutButton />
+            </div>
           </div>
         </div>
       </header>
 
       <div className="flex">
-        {/* Sidebar */}
-        <aside className="hidden md:flex flex-col w-[180px] shrink-0 sticky top-[var(--admin-nav-h)] h-[calc(100vh-var(--admin-nav-h))] border-r border-black/[0.04] dark:border-white/[0.04] bg-white/60 dark:bg-[oklch(0.15_0_0)]/60 backdrop-blur-sm overflow-y-auto">
-          <nav aria-label="Admin navigation" className="flex-1 py-2.5">
-            <AdminNav badges={{ knoxPending, trustPending }} />
-          </nav>
-          <div className="border-t border-black/[0.04] dark:border-white/[0.04] px-3 py-2.5">
-            <Link
-              href="/"
-              prefetch={false}
-              className="flex items-center gap-2 text-[11px] text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors font-medium"
-            >
-              <ExternalLink className="size-3" strokeWidth={1.5} />
-              Public site
-            </Link>
-          </div>
-        </aside>
+        <AdminSidebar
+          badges={{ knoxPending, trustPending }}
+          footer={
+            <div className="border-t border-black/[0.04] dark:border-white/[0.04] px-3 py-2.5">
+              <Link
+                href="/"
+                prefetch={false}
+                className="flex items-center gap-2 text-[11px] text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors font-medium"
+              >
+                <ExternalLink className="size-3" strokeWidth={1.5} />
+                Public site
+              </Link>
+            </div>
+          }
+        />
 
         {/* Main content */}
         <main id="main-content" className="admin-content flex-1 min-w-0 px-5 py-5 lg:px-7">
-          <div className="mx-auto max-w-[1600px]">{children}</div>
+          <div className="mx-auto max-w-[1600px]">
+            <AdminNavInline badges={{ knoxPending, trustPending }} />
+            {children}
+            <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-black/[0.06] pt-3 text-xs text-gray-500 md:hidden dark:border-white/[0.06]">
+              <span>
+                Signed in as {user.display_name} ({user.role})
+              </span>
+              <span className="flex items-center gap-1">
+                <Link href="/" prefetch={false} className="inline-flex min-h-11 items-center px-2 hover:text-gray-900 dark:hover:text-gray-200">
+                  Public site
+                </Link>
+                <DarkModeToggle />
+                <LogoutButton />
+              </span>
+            </footer>
+          </div>
         </main>
       </div>
 

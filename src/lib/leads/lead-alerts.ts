@@ -14,7 +14,7 @@ import {
   type LeadNotificationOutcome,
 } from "@/lib/email/lead-notification";
 import { sendResendEmail, type EmailDeliveryResult } from "@/lib/email/resend";
-import { LEAD_RESPONSE_HOURS } from "./lead-status";
+import { LEAD_RESPONSE_HOURS, isLeadOverdue } from "./lead-status";
 
 function failureReason(result: EmailDeliveryResult): string | null {
   if (result.status === "not_configured") return result.reason;
@@ -113,7 +113,7 @@ export function leadWatchAlert(overdue: LeadWatchLead[], emailFailed: LeadWatchL
   }
   if (overdue.length > 0) {
     lines.push(
-      `${overdue.length} request${overdue.length === 1 ? "" : "s"} unanswered for more than ${LEAD_RESPONSE_HOURS} hours:`,
+      `${overdue.length} request${overdue.length === 1 ? "" : "s"} unanswered past the one-business-day reply time:`,
       ...overdue.map(describe),
       "",
     );
@@ -158,7 +158,8 @@ export async function runLeadWatch(options: { dryRun?: boolean } = {}): Promise<
     },
     kind: row.kind,
   }));
-  const overdue = leads.filter((l) => l.kind === "overdue").map((l) => l.lead);
+  // SQL finds requests older than 24 hours; the business-day clock (weekends skipped) decides.
+  const overdue = leads.filter((l) => l.kind === "overdue" && isLeadOverdue(l.lead)).map((l) => l.lead);
   const emailFailed = leads.filter((l) => l.kind === "email_failed").map((l) => l.lead);
   const content = leadWatchAlert(overdue, emailFailed);
   if (!content || dryRun) {

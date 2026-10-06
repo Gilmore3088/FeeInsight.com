@@ -104,6 +104,22 @@ describe("takeDownUntraceableFees", () => {
     expect(calls[0]).toContain("rolled_back_reason LIKE");
   });
 
+  it("checks any state's institutions when the step has no state, never-checked ones first", async () => {
+    const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
+    const result = await takeDownUntraceableFees(db, { runId: 7, batchId: "b", dryRun: true });
+    expect(result.institutionsChecked).toBe(1);
+    expect(calls[0]).toMatch(/ORDER BY NOT[\s\S]*EXISTS[\s\S]*live\.institution_id/);
+  });
+
+  it("fills a state step's batch from other states once its own state is done", async () => {
+    const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
+    await takeDownUntraceableFees(db, { runId: 8, batchId: "b", dryRun: true, stateCode: "TX" });
+    const due = calls[0];
+    // The step's state sorts first; it never limits which institutions are due.
+    expect(due.split("ORDER BY")[0]).not.toContain("state_code");
+    expect(due.split("ORDER BY")[1]).toContain("state_code");
+  });
+
   it("writes nothing on a dry run", async () => {
     const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
     const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });

@@ -1,26 +1,25 @@
-How fee change alerts work, and how to read an institution profile.
+What each part of a profile means, and how to get an email when a fee changes.
 
-ALERTS · 1 OF 3
+WATCHERS · 1 OF 3
 
-You're set up. Here's what you'll hear about
-============================================
+How to read an institution's fee profile
+========================================
 
-When a fee schedule you follow changes, we tell you what changed, by how much, and where that puts it against peers. No noise in between.
+Every bank and credit union we track has a free public profile built from its own published fee schedule. Here's what to look at.
 
 
-[ HOW TO READ AN INSTITUTION PROFILE ]
-- The fee table: each fee next to the peer median. Arrows mark above or below.
-- Source links: the published document and the date we read it.
-- Peer group: institutions of the same charter type and similar size.
-- Coverage note: which fees the schedule didn't publish. A missing fee isn't a $0 fee.
+[ READING A PROFILE ]
+- The fee table: each fee next to the national median.
+- Source: the published document and the date we read it.
+- Coverage: how many of the 15 headline fees the schedule publishes. A missing fee isn't a $0 fee.
 
-While you wait for the first alert, a good place to start is your state: state fee benchmarks (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch) and the National Fee Index (https://feeinsight.com/research/national-fee-index?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch).
+Want an email when a fee changes? Create a free account and save the institution: find it here (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch). Saved institutions get a change alert when a fee you follow is published or changes.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 
 ----
-Fee Insight publishes the Bank Fee Index: fee schedules from 1,232 U.S. banks and credit unions.
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
 [Fee Insight mailing address]

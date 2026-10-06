@@ -8,11 +8,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
-import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 import { analyzeMarket, MIN_LOCAL_PEERS_PER_LINE, type LinePosition, type ReportLine } from "@/lib/custom-report/analysis";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { verifyReportToken } from "@/lib/custom-report/link";
 import { getCustomReportMarketDataCached } from "@/lib/data-store/public-cached-reads";
+import { TrackView } from "@/components/track-view";
 import { PrintButton } from "./print-button";
 
 export const dynamic = "force-dynamic";
@@ -48,8 +49,10 @@ const POSITION_CLASS: Record<LinePosition, string> = {
   free: "bg-[#E8EEF6] text-[#2F5585]",
 };
 
-function bookingHref(institutionName: string): string {
-  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Competitive Fee Position Report — ${institutionName}`)}`;
+// No booking tool yet, so the page offers the contact form (stored and answered like every
+// request), never "book". The institution is filled in for them.
+function contactHref(institutionName: string): string {
+  return `/contact?${new URLSearchParams({ source: "report", company: institutionName }).toString()}`;
 }
 
 function PositionChip({ line }: { line: ReportLine }) {
@@ -78,6 +81,10 @@ export default async function MarketReportPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
+      <TrackView
+        event="market_report_view"
+        eventProps={{ institution_id: verified.institutionId, ready: analysis.readiness.ready ? "yes" : "no" }}
+      />
       <ReportChrome preparedFor={name} />
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-10">
         <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
@@ -95,10 +102,10 @@ export default async function MarketReportPage({ params }: PageProps) {
           <div className="flex flex-wrap gap-3 print:hidden">
             <PrintButton className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]" />
             <a
-              href={bookingHref(name)}
+              href={contactHref(name)}
               className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
             >
-              Book 15 minutes
+              Ask us about this report
             </a>
           </div>
         </section>
@@ -109,10 +116,9 @@ export default async function MarketReportPage({ params }: PageProps) {
               This market is being refreshed
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">
-              {analysis.readiness.reason} We only show a comparison when the local data supports it. We will email you
-              when it is back; questions to{" "}
-              <a href={bookingHref(name)} className="underline">
-                {CONTACT_EMAIL}
+              {analysis.readiness.reason} We only show a comparison when the local data supports it.{" "}
+              <a href={contactHref(name)} className="underline">
+                Send us a question
               </a>
               .
             </p>
@@ -265,9 +271,9 @@ export default async function MarketReportPage({ params }: PageProps) {
                   ))}
               </ul>
               <p className="mt-3">
-                If a figure does not match your current schedule, reply to{" "}
-                <a href={bookingHref(name)} className="underline">
-                  {CONTACT_EMAIL}
+                If a figure does not match your current schedule,{" "}
+                <a href={contactHref(name)} className="underline">
+                  tell us through the contact form
                 </a>{" "}
                 and we will correct it. This link resolves until {DATE.format(verified.expiresOn)}.
               </p>
@@ -275,6 +281,10 @@ export default async function MarketReportPage({ params }: PageProps) {
           </>
         )}
       </main>
+      <p className="mx-auto max-w-6xl px-6 pb-6 text-[12px] leading-relaxed text-[#6B6255]">
+        Compiled from each institution&apos;s published fee schedule. It is market information, not financial, legal
+        or compliance advice; confirm current fees with the institution.
+      </p>
       <ReportChromeFooter />
     </div>
   );

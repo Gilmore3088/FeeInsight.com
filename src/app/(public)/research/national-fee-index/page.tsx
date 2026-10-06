@@ -15,7 +15,7 @@ import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { SAMPLE_REPORT_LIVE, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
@@ -121,11 +121,11 @@ export default async function NationalFeeIndexPage() {
       <LeadCapture
         placement="national_index"
         className="mt-5"
-        eyebrow="Monthly index update"
+        eyebrow="National index updates"
         headline="Get the national fee index in your inbox"
-        body="New national medians, the fee changes that moved them, and one chart — about once a month."
+        body="New national medians, the fee changes that moved them, and one chart. No more than once a month."
         buttonLabel="Subscribe"
-        secondaryLink={{ href: "/reports/sample-competitive-fee-position", label: "See the sample report" }}
+        secondaryLink={SAMPLE_REPORT_LIVE ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
       />
 
       {/* CPI context strip */}

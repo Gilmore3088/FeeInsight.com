@@ -16,6 +16,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
+import { anthropicKeySources } from "@/lib/ai-provider";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import {
   ADMIN_ATLAS_COMMAND_CENTER_CACHE_TAG,
@@ -845,6 +846,11 @@ function ProviderReadinessBanner({
           ANTHROPIC_API_KEY={readiness.apiKeyConfigured ? "configured" : "missing"}
         </span>
       </div>
+      <p className="mt-2 font-mono text-[11px] tracking-wide" aria-label="Key each agent bills to">
+        {anthropicKeySources()
+          .map(({ agent, source }) => `${agent}: ${source === "own" ? "own key" : source === "shared" ? "shared key" : "no key"}`)
+          .join(" · ")}
+      </p>
       {readiness.lastCreditFailureAt && (
         <p className="mt-2 text-xs">
           Last provider credit failure: {dateTime(readiness.lastCreditFailureAt)}

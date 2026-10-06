@@ -22,6 +22,7 @@ import {
   parseSrc,
 } from "./lead-notifications";
 import { isRequestLead } from "@/lib/leads/lead-status";
+import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_SOURCE = "website";
@@ -29,6 +30,12 @@ const DEFAULT_SOURCE = "website";
 const NEWSLETTER_PLACEHOLDER_NAME = EMAIL_ONLY_LEAD_NAME;
 const MAX_INSTITUTION_NAME_LENGTH = 160;
 const NEW_LEAD_STATUS = "new";
+
+/** leads.id is bigint, which the Postgres driver returns as a string. */
+function parseLeadId(value: unknown): number | null {
+  const id = typeof value === "string" ? Number(value) : value;
+  return typeof id === "number" && Number.isSafeInteger(id) ? id : null;
+}
 
 function cleanText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -94,13 +101,13 @@ async function handlePOST(request: NextRequest) {
     // A signup folds into the newest signup row for this email. Request rows are never
     // touched by a signup: appending capture sources to them changed their history and
     // could reopen an answered request.
-    const known = await sql<{ id: number; source: string | null }[]>`
+    const known = await sql<{ id: number | string; source: string | null }[]>`
       SELECT id, source FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
     const existing = isRequestLead(source) ? undefined : known.find((row) => !isRequestLead(row.source));
     let leadId: number | null = null;
 
     if (existing) {
-      leadId = typeof existing.id === "number" ? existing.id : null;
+      leadId = parseLeadId(existing.id);
       // Fill gaps only: never overwrite a qualified lead's name/company/role/use_case,
       // and never let the newsletter placeholder replace a real name. Sources accumulate
       // as a comma-separated list (exact-member match, so "report" is not hidden by
@@ -137,23 +144,27 @@ async function handlePOST(request: NextRequest) {
         INSERT INTO leads (name, email, company, role, use_case, source)
         VALUES (${name}, ${email}, ${company}, ${role}, ${useCase}, ${source})
         RETURNING id`;
-      leadId = typeof inserted?.id === "number" ? inserted.id : null;
+      leadId = parseLeadId(inserted?.id);
     }
 
     // An institution report is paid and quoted by James, so the requester gets nothing
     // automatic. James's email and the lead row say whether we can build it from live data.
+    // When the local data is too thin, the request is answered at once: the row is Held
+    // and the requester is told so, with their free Fed district report.
     let quoteCheck: string | null = null;
+    let heldDistrict: number | null | undefined;
     if (source === REPORT_SOURCE) {
-      quoteCheck = describeQuoteCheck(
-        await checkInstitutionReport({ institutionId, institutionName: company }),
-        SITE_URL,
-      );
+      const check = await checkInstitutionReport({ institutionId, institutionName: company });
+      quoteCheck = describeQuoteCheck(check, SITE_URL);
+      const held = check.status === "thin";
+      if (held) heldDistrict = (check.rule?.state_code && STATE_TO_DISTRICT[check.rule.state_code]) || null;
       if (leadId !== null) {
         await sql`
           UPDATE leads SET use_case = CASE
             WHEN use_case IS NULL OR use_case = '' THEN ${quoteCheck}
             ELSE use_case || '; ' || ${quoteCheck}
-          END
+          END,
+          status = CASE WHEN ${held} AND status = ${NEW_LEAD_STATUS} THEN 'held' ELSE status END
           WHERE id = ${leadId}`;
       }
     }
@@ -173,6 +184,7 @@ async function handlePOST(request: NextRequest) {
       institutionName,
       benchmarkScope,
       quoteCheck,
+      heldDistrict,
     });
 
     return NextResponse.json(notifications ? { success: true, notifications } : { success: true });
