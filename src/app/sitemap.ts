@@ -104,6 +104,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/research", dataUpdated, "weekly", 0.7),
     entry("/contact", now, "yearly", 0.5),
     entry("/api-docs", now, "monthly", 0.5),
+    entry("/submit-fees", now, "monthly", 0.4),
     entry("/privacy", now, "yearly", 0.3),
     entry("/terms", now, "yearly", 0.3),
   ];
@@ -129,6 +130,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const researchPages: Entry[] = [
     entry("/research/national-fee-index", dataUpdated, "weekly", 0.9),
+    entry("/research/data-sources", now, "monthly", 0.5),
   ];
 
   // Consumer guides live at /guides/[slug]; professional guides at /guides/pro/[slug],

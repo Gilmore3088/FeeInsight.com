@@ -27,6 +27,10 @@ export type AnalyticsEvent =
   | "benchmark_report_view"
   /** A private institution report link (/market-report/[token]) opened. */
   | "market_report_view"
+  /** The private pay page for a quoted institution report (/pay/report/[token]) opened. */
+  | "report_pay_view"
+  /** The pay page shown after Stripe confirmed the card payment. */
+  | "report_pay_complete"
   | "hosted_report_request"
   | "contact_sales"
   | "fee_alert_save"

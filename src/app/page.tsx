@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
-import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
@@ -14,7 +14,7 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getInstitutionStateDirectorySummariesCached } from "@/lib/data-store/public-cached-reads";
 
-const HOME_TITLE = `${SITE_NAME} — The ${PRODUCT_NAME}`;
+const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the source`;
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { aggregationBuckets, fetchCfpbCompanyBreakdown, normalizeCompanyName } from "./cfpb";
 import { parseFdicSod } from "./fdic";
 import { isFredNativeSeries, parseBeigeBookPage, parseBeigeBookReleaseCodes, parseFredCsv } from "./fed";
-import { ncuaZipUrl, parseCsv, parseNcuaFinancial, parseNcuaInstitution, readNcuaArchive } from "./ncua";
+import { blankUnreportedFeeIncome, ncuaZipUrl, parseCsv, parseNcuaFinancial, parseNcuaInstitution, readNcuaArchive } from "./ncua";
 import { parseSecCompanyFacts, parseSecSubmissions } from "./sec";
 import { chartering, STATE_REGULATORS } from "./state-regulators";
 
@@ -38,6 +38,34 @@ describe("NCUA 5300", () => {
     expect(row).toMatchObject({ overdraft_fee_income_ytd: 413, nsf_fee_income_ytd: 96 });
     const old = parseNcuaFinancial("2000", archive.accounts.get("2000")!, { year: 2026, quarter: 2 })!;
     expect(old).toMatchObject({ overdraft_fee_income_ytd: null, nsf_fee_income_ytd: null });
+  });
+
+  it("keeps a reported overdraft figure when a second file carries the account as zero, and logs both files", () => {
+    const zip = zipSync({
+      "FOICU.txt": strToU8('CU_NUMBER,CU_NAME,CITY,STATE,CU_TYPE,RSSD\n"1034","Marisol FCU","Phoenix","AZ","1","0"\n'),
+      "FS220P.txt": strToU8("CU_NUMBER,ACCT_IS0048,ACCT_IS0049\n1034,412500,96300\n"),
+      "FS220S.txt": strToU8("CU_NUMBER,ACCT_IS0048,ACCT_IS0049\n1034,0,\n"),
+    });
+    const archive = readNcuaArchive(zip);
+    expect(archive.accounts.get("1034")).toMatchObject({ ACCT_IS0048: "412500", ACCT_IS0049: "96300" });
+    expect(archive.accountFiles.ACCT_IS0048).toEqual(["FS220P.txt", "FS220S.txt"]);
+  });
+
+  it("stores overdraft and NSF income as null when no credit union in the quarter reports a nonzero value", () => {
+    const q = { year: 2026, quarter: 2 as const };
+    const rows = ["1", "2"].map((cu) => parseNcuaFinancial(cu, { ACCT_010: "1000000", ACCT_IS0048: "0", ACCT_IS0049: "0" }, q)!);
+    const { rows: out, blanked } = blankUnreportedFeeIncome(rows);
+    expect(blanked).toEqual(["ACCT_IS0048", "ACCT_IS0049"]);
+    expect(out.map((r) => [r.overdraft_fee_income_ytd, r.nsf_fee_income_ytd])).toEqual([[null, null], [null, null]]);
+
+    // A real zero stays zero when other credit unions in the same quarter report income.
+    const mixed = [
+      parseNcuaFinancial("1", { ACCT_IS0048: "0", ACCT_IS0049: "0" }, q)!,
+      parseNcuaFinancial("2", { ACCT_IS0048: "412500", ACCT_IS0049: "0" }, q)!,
+    ];
+    const kept = blankUnreportedFeeIncome(mixed);
+    expect(kept.blanked).toEqual(["ACCT_IS0049"]);
+    expect(kept.rows.map((r) => r.overdraft_fee_income_ytd)).toEqual([0, 413]);
   });
 
   it("merges FOICU and every FS220 file from the quarterly zip", () => {
