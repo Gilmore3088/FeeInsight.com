@@ -14,6 +14,7 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { markCurrentCopy } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
@@ -128,6 +129,8 @@ export interface RunMagellanFetchResult {
   storedDocuments: number;
   vault: "on" | "not_configured" | "schema_pending";
   outcomes: Partial<Record<AttemptOutcome, number>>;
+  /** Older copies of fetched pages newly marked as history (superseded_by_id). */
+  supersededCopies: number;
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
   results: FetchResult[];
@@ -807,12 +810,17 @@ export async function runMagellanFetch(
   const vaultOn = vaultSchema && vault.configured;
 
   const results: FetchResult[] = [];
+  let supersededCopies = 0;
   for (const row of rows) {
     const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
     const result = await fetchCandidate(row, fetchImpl, previous);
     results.push(result);
     if (dryRun) continue;
     const sourceDocumentId = await recordFetchResult(db, result, learning);
+    // The copy this fetch stored or confirmed is the page's current one.
+    if (result.outcome === "success" || result.outcome === "unchanged") {
+      supersededCopies += await markCurrentCopy(db, sourceDocumentId);
+    }
     if (linkIsGone(result)) {
       result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
     }
@@ -883,6 +891,7 @@ export async function runMagellanFetch(
     storedDocuments: results.filter((result) => result.vaultStatus === "stored" || result.vaultStatus === "already_stored").length,
     vault: vaultOn ? "on" : vaultSchema ? "not_configured" : "schema_pending",
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
+    supersededCopies,
     companions,
     results,
   };

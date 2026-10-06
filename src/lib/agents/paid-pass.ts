@@ -11,7 +11,7 @@ import { estimateAnthropicCostMicrousd, trackAnthropicRequest } from "@/lib/ai-p
  * the step; it never stalls the state run.
  */
 
-export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin";
+export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton";
 
 /** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
 export const WEB_SEARCH_COST_MICROUSD = 10_000;

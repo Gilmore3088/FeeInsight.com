@@ -9,7 +9,7 @@ import {
   computeStateFindings,
   type CharterPair,
   type StateComparison,
-} from "../../../research/state/[code]/state-findings";
+} from "@/lib/research-report/state-findings";
 
 /** A headline fee is shown only when at least this many institutions publish it. */
 export const MIN_BENCHMARK_INSTITUTIONS = 20;

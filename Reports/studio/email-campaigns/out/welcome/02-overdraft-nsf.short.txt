@@ -3,13 +3,14 @@ Four rules that shape these fees, and the questions to ask about your own.
 Overdraft and NSF: the market split in two
 See today's overdraft and NSF numbers: https://feeinsight.com/fees/overdraft?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf
 Median, middle half and bank vs credit union, from published schedules. NSF is here (https://feeinsight.com/fees/nsf?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=overdraft-nsf).
-[ THE RULES THAT SHAPE THESE FEES ]
-- Reg E opt-in (2010): an overdraft fee on ATM and one-time debit card transactions requires the consumer's affirmative opt-in.
-- CFPB Circular 2022-06: overdraft fees on transactions authorized against a positive balance ("authorize positive, settle negative") can be an unfair practice.
+[ QUESTIONS TO ASK ABOUT YOUR OWN SCHEDULE ]
+[ ] Do we charge NSF on re-presented items? How many times?
+[ ] Is our overdraft fee above the market's middle half?
+[ ] Do we cap daily overdraft fees? Is the cap on the published schedule?
+[ ] Is there a de minimis threshold (no fee on overdrafts under $X)?
 
 Full email with tables and charts: {$url}
 
 --
 Fee Insight · feeinsight.com · reply with questions
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

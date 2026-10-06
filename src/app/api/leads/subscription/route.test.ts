@@ -48,8 +48,21 @@ describe("POST /api/leads/subscription", () => {
     expect(res.status).toBe(200);
     expect(issuedText(0)).toContain("email_confirmed_at = COALESCE(email_confirmed_at, now())");
     expect(issuedText(0)).toContain("email_unsubscribed_at = NULL");
-    expect(sqlMock.mock.calls[0].slice(1)).toEqual(["vp@bank.example"]);
-    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "capture_state" });
+    expect(sqlMock.mock.calls[0].slice(1)).toEqual([null, null, null, "vp@bank.example"]);
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "capture_state", state: null });
+  });
+
+  it("stores a state picked on the confirm page and syncs it, using every row's sources", async () => {
+    sqlMock.mockResolvedValueOnce([
+      { source: "newsletter", use_case: "state=TX" },
+      { source: "report", use_case: "placement=report" },
+    ]);
+    const token = signSubscriptionToken("confirm", "vp@bank.example", SECRET);
+    const res = await postJson({ action: "confirm", email: "vp@bank.example", token, state: "tx" });
+    expect(res.status).toBe(200);
+    expect(sqlMock.mock.calls[0].slice(1)).toEqual(["state=TX", "state=TX", "state=TX", "vp@bank.example"]);
+    expect(issuedText(0)).toContain("contact(_[a-z0-9-]+)?");
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,report", state: "TX" });
   });
 
   it("supports RFC 8058 one-click unsubscribe with query parameters", async () => {

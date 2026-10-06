@@ -415,6 +415,71 @@ export async function getInstitutionPeerRanking(
   };
 }
 
+export interface DistrictIncomeQuarter {
+  quarter: string;
+  fed_district: number;
+  /** Quarterly deposit service-charge income, in thousands. */
+  total_service_charges: number;
+  institutions: number;
+}
+
+/**
+ * Quarterly service-charge income by Fed district, newest quarter first, for the last
+ * `quarterCount` quarters. NCUA year-to-date figures are split into quarters the same
+ * way as getRevenueTrend; only positive quarterly income counts.
+ */
+export async function getDistrictIncomeTrend(quarterCount = 20): Promise<DistrictIncomeQuarter[]> {
+  const sql = getSql();
+  try {
+    const rows = await sql.unsafe(
+      `WITH filed AS (
+         SELECT inf.institution_id,
+                inf.source,
+                inf.report_date::date AS rd,
+                inf.service_charge_income AS amount,
+                LAG(inf.service_charge_income) OVER w AS prior_amount,
+                LAG(inf.report_date::date) OVER w AS prior_rd
+           FROM institution_financial_records inf
+          WHERE ${SAME_SCALE_SOURCES}
+         WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
+                      ORDER BY inf.report_date::date)
+       ),
+       quarterly AS (
+         SELECT institution_id, rd,
+                CASE
+                  WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
+                  WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
+                  ELSE NULL
+                END AS income
+           FROM filed
+       ),
+       recent AS (
+         SELECT DISTINCT DATE_TRUNC('quarter', rd) AS q FROM quarterly ORDER BY 1 DESC LIMIT $1
+       )
+       SELECT TO_CHAR(DATE_TRUNC('quarter', q.rd), 'YYYY-"Q"Q') AS quarter,
+              ct.fed_district,
+              SUM(q.income) AS total_service_charges,
+              COUNT(DISTINCT q.institution_id) AS institutions
+         FROM quarterly q
+         JOIN institution_sources ct ON ct.id = q.institution_id
+        WHERE q.income > 0
+          AND ct.fed_district IS NOT NULL
+          AND DATE_TRUNC('quarter', q.rd) IN (SELECT q FROM recent)
+        GROUP BY 1, 2
+        ORDER BY 1 DESC, 2`,
+      [quarterCount],
+    ) as { quarter: string; fed_district: string | number; total_service_charges: string; institutions: string }[];
+    return rows.map((r) => ({
+      quarter: r.quarter,
+      fed_district: Number(r.fed_district),
+      total_service_charges: Number(r.total_service_charges),
+      institutions: Number(r.institutions),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export interface DistrictFeeRevenue {
   fed_district: number;
   institution_count: number;

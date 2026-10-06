@@ -11,9 +11,21 @@ import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
+import {
+  currentMonth,
+  mailingAddress,
+  runMarketingScore,
+  runMarketingSend,
+  runMarketingWrite,
+  summarizeScore,
+  summarizeSend,
+  summarizeWrite,
+} from "@/lib/agents/marketing/monthly";
+import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing/state-edition";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
+import { recheckHeldRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -28,6 +40,7 @@ import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
+import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -536,6 +549,11 @@ async function executeAgenticStep(
           reopened_fee_pages: read.reopenedFeePages,
           reopened_bans_lifted: read.reopenedBansLifted,
           reopened_links_restored: read.reopenedLinksRestored,
+          text_survival_refreshed: read.textSurvivalRefreshed,
+          texts_held_up: read.textsHeldUp,
+          texts_lost_fees: read.textsLostFees,
+          reader_escalations: read.readerEscalations,
+          reader_escalations_used: read.readerEscalationsUsed,
           formats_backfilled: read.formatsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
@@ -568,10 +586,17 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Lines older rules held as unclassified get today's rules too.
+      const heldRecheck = await recheckHeldRows(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped).`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin.`,
         detail: {
+          held_recheck: heldRecheck,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
@@ -626,6 +651,15 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Held fees get a way out: each is judged against the bank's schedule.
+      const release = await runDarwinReleaseHeld({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+        db: tx,
+      });
       return {
         status: "completed",
         summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
@@ -636,6 +670,16 @@ async function executeAgenticStep(
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
           category_model_disputes: verification.categoryModelDisputes,
+          peer_fallback_checks: verification.peerFallbackChecks,
+          peer_fallback_outliers: verification.peerFallbackOutliers,
+          learned_envelope_holds: verification.learnedEnvelopeHolds,
+          held_release: {
+            selected: release.selected,
+            acted: release.acted,
+            verdicts: release.verdicts,
+            released: release.released,
+            feedback_written: release.feedbackWritten,
+          },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
@@ -1165,8 +1209,44 @@ async function executeAgenticStep(
           stored: result.stored,
           snapshot_date: result.snapshotDate,
           ...result.numbers,
+          agent_health: result.agentHealth ?? null,
         },
       };
+    }
+    case "marketing-score": {
+      const result = await runMarketingScore({
+        db: tx,
+        runId: run.id,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeScore(result), detail: { ...result } };
+    }
+    case "marketing-write": {
+      const result = await runMarketingWrite({
+        db: tx,
+        runId: run.id,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeWrite(result), detail: { ...result } };
+    }
+    case "marketing-states": {
+      const result = await runStateEditions({
+        db: tx,
+        month: stringRunParam(params, ["month"]) ?? currentMonth(),
+        mailingAddress: mailingAddress(),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeStateEditions(result), detail: { ...result } };
+    }
+    case "marketing-send": {
+      const month = stringRunParam(params, ["month"]);
+      if (!month) throw new Error("marketing-send needs a month (YYYY-MM).");
+      const result = await runMarketingSend({ month });
+      // A refused or partly failed send fails the step, so it shows red in the run ledger.
+      if (result.refused || result.failures.length) throw new Error(summarizeSend(result));
+      return { status: "completed", summary: summarizeSend(result), detail: { ...result } };
     }
     case "report-render":
       return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
