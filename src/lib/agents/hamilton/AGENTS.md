@@ -44,8 +44,13 @@ Hamilton supports the decision; it does not make it.
 - An opinion is given only when the reader explicitly asks, after they pick the
   objective (revenue, customer treatment or competitive position), and it names that
   objective.
-- The Ask bar returns `{kind, shortAnswer, pageChange, savedFact?}` with kinds research,
-  scenario, saved_fact, deliverable_draft, opinion and clarifying_question.
+- The Ask bar is `POST /api/hamilton/ask` (`ask-service.ts`, pure logic in
+  `workspace/ask.ts`). It returns `{kind, shortAnswer, pageChange, answer?, scenario?,
+  opinion?, question?, savedFact?, decisionId}` with kinds research, scenario, saved_fact,
+  deliverable_draft, opinion and clarifying_question. A reply to Hamilton's question is
+  sent back as `answer: {fieldKey, value}` and saved to memory. Each exchange is logged to
+  the fee's open decision (question_asked, scenario_tested, answer_given); a remembered
+  objective holds until the reader gives another. No provider calls.
 - Every fee answer plays four roles (James, 2026-10-06): Inquisitive Economist, Rigorous
   Consultant, Artistic Data Engineer, Technical yet Clear Writer. `buildFeeAnswer`
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
