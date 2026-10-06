@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-05: Credit union capital ratio shown as about 1,100%
+**What happened:** Pro institution pages, the API and Hamilton's briefings showed credit union
+"Tier 1 capital ratio" around 1,100% (a $1.1B credit union showed 1,090 for Q2 2026). The NCUA
+median is 1,054 to 1,254 in every year from 2010 to 2026 (read-only query, 22:40 UTC).
+**Cause:** the NCUA pull stores the 5300 net worth ratio (ACCT_998) as filed, in basis points,
+while FDIC ratios are percent. The medians match net worth / assets x 100 (10.5 to 12.5).
+**Fix:** a fix PR converts it once in `src/lib/data-store/financial.ts`
+(`capitalRatioPct`), so every reader gets percent, and labels it "Net worth ratio" for credit unions.
+Stored rows are unchanged.
+**Lesson:** check each regulator field's unit against an independent figure before showing it;
+a ratio that is right for banks may be in different units for credit unions.
+
 ## 2026-10-05: The public API gave away what its docs called Pro-only
 **What happened:** the API docs and spec said the free tier gets 6 spotlight categories and that
 category detail and institution detail (per-bank fees, call reports, complaints) need a Pro or

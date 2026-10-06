@@ -265,3 +265,25 @@ describe("getRevenueIndexByDate - thousands scaling", () => {
     expect(result!.avg_service_charge).toBeNull();
   });
 });
+
+describe("capital ratios", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+  });
+
+  it("converts NCUA net worth ratio from basis points to percent and leaves FDIC as is", async () => {
+    const { capitalRatioPct } = await import("./financial");
+    expect(capitalRatioPct(1090, "ncua")).toBeCloseTo(10.9, 9);
+    expect(capitalRatioPct("1254", "NCUA")).toBeCloseTo(12.54, 9);
+    expect(capitalRatioPct(12.07, "fdic")).toBe(12.07);
+    expect(capitalRatioPct(null, "ncua")).toBeNull();
+  });
+
+  it("returns credit union capital as percent from getFinancialsByInstitution", async () => {
+    getMock().mockResolvedValueOnce([
+      { institution_id: 7, report_date: "2026-06-30", source: "ncua", tier1_capital_ratio: 1090 },
+    ]);
+    const [r] = await getFinancialsByInstitution(7);
+    expect(r.tier1_capital_ratio).toBeCloseTo(10.9, 9);
+  });
+});
