@@ -15,7 +15,9 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 3: the shared reader learned six layouts (PR 195), so every institution is
 // checked again and fees the older reader took down are restored when they now trace.
 // Bump this whenever checkFeeAgainstSource changes what it can read.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 3 } as const;
+// Version 4: a daily cap traces to the cap figure on its fee's row ("Maximum of $120.00 per day"),
+// so the caps the older check took down as thresholds are checked again and restored.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 4 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -69,7 +71,7 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
   for (const text of ordered) {
     const result = isPercentFee(fee)
       ? checkRateAgainstSource(text.normalized_text, fee.fee_name, rate as number, ".")
-      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".");
+      : checkFeeAgainstSource(text.normalized_text, fee.fee_name, amount, ".", fee.canonical_fee_key);
     if (result.ok || result.reason === "tiered_fee") {
       const documentId = Number(text.source_document_id);
       return documentId === ownId ? { kind: "traced", sourceDocumentId: documentId } : { kind: "relinked", sourceDocumentId: documentId };

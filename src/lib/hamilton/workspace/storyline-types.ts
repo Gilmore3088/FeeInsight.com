@@ -113,3 +113,29 @@ export type StorylineExhibit =
   | StructureMatrixExhibit
   | MoneyAtStakeExhibit
   | ArchetypeMapExhibit;
+
+// ─── The written memo over a storyline ───────────────────────────────────────
+
+/**
+ * Hamilton's written memo on top of a storyline: prose a partner would hand a client,
+ * drawn only from the storyline's own figures. Every dollar figure and percentage is
+ * traced back to the storyline before it is shown; a memo that fails is withheld.
+ */
+export interface StorylineMemo {
+  /** Three or four sentences: the answer, why it holds, the decision it raises. */
+  summary: string;
+  /** For the CFO or board. */
+  board: string;
+  /** For product and marketing. */
+  market: string;
+  /** Questions the reader should be able to answer before deciding; never a recommendation. */
+  questions: string[];
+  model: string;
+  generatedAt: string;
+  figureCheck: { checked: number; unmatched: string[] };
+}
+
+export type StorylineMemoResult =
+  | { status: "written"; memo: StorylineMemo }
+  | { status: "withheld"; reason: string }
+  | { status: "unavailable"; reason: string };
