@@ -14,6 +14,8 @@ import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hami
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { annualItemsQuestion, waiverRateQuestion } from "@/lib/hamilton/workspace/scenario";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
+import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import {
   AuditPanel,
@@ -73,8 +75,11 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
   const current = ws.ownAmount;
-  const paidItems = parseCount(params.paid);
-  const waiverRate = parsePercent(params.waiver);
+  // Figures typed here win; otherwise the ones the bank saved (an answer or an upload).
+  const memory = inst ? await getMemoryFacts(user.id, Number(inst.id)).catch(() => []) : [];
+  const savedFigures = institutionFactsFrom(memory, ws.fee);
+  const paidItems = parseCount(params.paid) ?? savedFigures?.annualItems ?? null;
+  const waiverRate = parsePercent(params.waiver) ?? savedFigures?.waiverRate ?? null;
   const typed = parsePrices(params.prices);
   const prices = typed.length
     ? typed
@@ -201,15 +206,16 @@ export default async function ModelPage({ searchParams }: PageProps) {
         </div>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Items you charge a year (your figure)
-          <input id="paid" name="paid" inputMode="numeric" defaultValue={params.paid ?? ""} className={inputClass} placeholder="For example 14,500" />
+          <input id="paid" name="paid" inputMode="numeric" defaultValue={params.paid ?? (savedFigures?.annualItems != null ? String(savedFigures.annualItems) : "")} className={inputClass} placeholder="For example 14,500" />
         </label>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Share you waive or refund, in percent (your figure)
-          <input name="waiver" inputMode="decimal" defaultValue={params.waiver ?? ""} className={inputClass} placeholder="For example 12" />
+          <input name="waiver" inputMode="decimal" defaultValue={params.waiver ?? (savedFigures?.waiverRate != null ? String(Math.round(savedFigures.waiverRate * 1000) / 10) : "")} className={inputClass} placeholder="For example 12" />
         </label>
         <p className="text-xs text-warm-600 md:col-span-4">
-          Your figures stay in this page&apos;s link and aren&apos;t saved anywhere yet. Without them Hamilton shows the change per 1,000 items
-          rather than guessing your volume.
+          {savedFigures
+            ? "Filled in from the figures your team saved in My bank and data. Change them here to try other volumes; that doesn't change what's saved."
+            : "Figures typed here stay in this page's link. To keep them, upload them in My bank and data. Without them Hamilton shows the change per 1,000 items rather than guessing your volume."}
         </p>
       </form>
 

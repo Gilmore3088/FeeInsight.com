@@ -25,6 +25,7 @@ import {
 } from "@/lib/hamilton/institution-membership";
 import { WorkspaceAccessManager } from "./WorkspaceAccessManager";
 import { LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
+import { FeeFiguresUpload } from "@/components/hamilton/settings/FeeFiguresUpload";
 
 export const metadata: Metadata = {
   title: "My bank and data",
@@ -161,6 +162,14 @@ export default async function SettingsPage({
             selectedMembership={selectedMembership}
           />
         </div>
+      </MemoSection>
+
+      <MemoSection
+        id="your-figures"
+        title="Your own figures"
+        note="Fee income, item counts and waivers from your own books turn Hamilton's estimates into figures for your institution."
+      >
+        <FeeFiguresUpload institutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
       </MemoSection>
 
       <MemoSection
