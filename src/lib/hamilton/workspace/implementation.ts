@@ -13,7 +13,7 @@
  */
 
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
-import type { ImplementationPlan, PlanStep, PriceDirection, SourceRef } from "./types";
+import { WORKSPACE_ENGINE_VERSION, type ImplementationPlan, type PlanStep, type PriceDirection, type SourceRef } from "./types";
 
 export const ADVERSE_CHANGE_NOTICE_DAYS = 30;
 export const EFT_FEE_NOTICE_DAYS = 21;
@@ -69,6 +69,8 @@ export function buildImplementationPlan(input: {
   charterType: "bank" | "credit_union";
   /** False for fees charged only on business accounts, which Reg DD does not cover. */
   consumer?: boolean;
+  /** ISO time the plan is built; defaults to now. */
+  generatedAt?: string;
 }): ImplementationPlan {
   const { feeCategory, current, chosen, decidedOn, charterType } = input;
   const consumer = input.consumer ?? true;
@@ -130,6 +132,15 @@ export function buildImplementationPlan(input: {
     { text: "Fee income in the next two quarterly call reports." },
   ];
 
+  const rules = [...notice, ...approvals, ...systems]
+    .map((step) => step.rule)
+    .filter((rule): rule is SourceRef => !!rule)
+    .filter((rule, i, all) => all.findIndex((r) => r.label === rule.label) === i);
+  const assumptions = [
+    `${consumer ? "Consumer" : "Business"} accounts at a ${charterType === "credit_union" ? "credit union" : "bank"}.`,
+    `The notice period counts from ${decidedOn}, the date the amount was chosen; notice must actually go out that day for the earliest date to hold.`,
+  ];
+
   return {
     feeCategory,
     current,
@@ -142,5 +153,13 @@ export function buildImplementationPlan(input: {
     earliestEffectiveDate: addDays(decidedOn, noticeRequiredDays),
     monitoring,
     caveat: "Hamilton cites the federal rules that commonly apply. Your compliance team confirms what applies to your accounts and products.",
+    provenance: {
+      engineVersion: WORKSPACE_ENGINE_VERSION,
+      generatedAt: input.generatedAt ?? new Date().toISOString(),
+      dataAsOf: {},
+      sources: rules,
+      assumptions,
+      clientFacts: [],
+    },
   };
 }

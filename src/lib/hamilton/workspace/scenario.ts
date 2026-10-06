@@ -13,7 +13,16 @@
  */
 
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import type { ClarifyingQuestion, Scenario, ScenarioInput } from "./types";
+import {
+  WORKSPACE_ENGINE_VERSION,
+  type ClarifyingQuestion,
+  type ClientFactRef,
+  type EvidenceLevel,
+  type Provenance,
+  type Scenario,
+  type ScenarioInput,
+  type SourceRef,
+} from "./types";
 
 /** Fewer peers than this and a percentile says more than the data does. */
 export const MIN_PEERS_FOR_POSITION = 5;
@@ -75,6 +84,30 @@ function volumeAssumption(tested: number, volumeChangePct: [number, number] | nu
   return `Item volume at ${fmtMoney(tested)} changes by ${Math.min(a, b)}% to ${Math.max(a, b)}%, as you set it.`;
 }
 
+const PEER_SOURCE: SourceRef = {
+  label: "Fees on each peer's own published schedule (verified, live)",
+  table: "published_fee_catalog",
+};
+
+function scenarioProvenance(
+  input: ScenarioInput,
+  evidenceLevel: EvidenceLevel,
+  assumptions: string[],
+  clientFacts: ClientFactRef[],
+): Provenance {
+  const line = evidenceLevel === "working_estimate" ? input.revenueLine : null;
+  return {
+    engineVersion: WORKSPACE_ENGINE_VERSION,
+    generatedAt: input.generatedAt ?? new Date().toISOString(),
+    evidenceLevel,
+    peerGroup: { label: input.peerLabel, n: input.peers.length },
+    dataAsOf: { fees: input.feesAsOf ?? null, financials: line?.quarterEnd ?? null },
+    sources: line ? [PEER_SOURCE, line.source] : [PEER_SOURCE],
+    assumptions,
+    clientFacts,
+  };
+}
+
 export function buildScenario(input: ScenarioInput): Scenario {
   const { feeCategory, current, tested, peers, peerLabel } = input;
   let peersMore = 0;
@@ -118,7 +151,8 @@ export function buildScenario(input: ScenarioInput): Scenario {
       revenueEffect: revenueRange(paidItems, current, tested, input.volumeChangePct),
       evidenceLevel: "institution",
       assumptions,
-      factIds: facts.factIds ?? [],
+      factIds: (facts.refs ?? []).map((r) => r.factId),
+      provenance: scenarioProvenance(input, "institution", assumptions, facts.refs ?? []),
       missingInput: facts.waiverRate === undefined ? waiverRateQuestion(feeCategory) : null,
     };
   }
@@ -141,21 +175,24 @@ export function buildScenario(input: ScenarioInput): Scenario {
       evidenceLevel: "working_estimate",
       assumptions,
       factIds: [],
+      provenance: scenarioProvenance(input, "working_estimate", assumptions, []),
       missingInput: annualItemsQuestion(feeCategory),
     };
   }
 
+  const assumptions = [
+    peerAssumption,
+    line === undefined || line === null
+      ? "No filing reports income for this fee on its own, so there is no dollar estimate from public data."
+      : "The reported income for this fee cannot support an estimate at the current price.",
+  ];
   return {
     ...base,
     revenueEffect: null,
     evidenceLevel: "market",
-    assumptions: [
-      peerAssumption,
-      line === undefined || line === null
-        ? "No filing reports income for this fee on its own, so there is no dollar estimate from public data."
-        : "The reported income for this fee cannot support an estimate at the current price.",
-    ],
+    assumptions,
     factIds: [],
+    provenance: scenarioProvenance(input, "market", assumptions, []),
     missingInput: annualItemsQuestion(feeCategory),
   };
 }

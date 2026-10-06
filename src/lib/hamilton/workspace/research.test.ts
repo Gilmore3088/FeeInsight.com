@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { choosePeers } from "./research";
 
-const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount });
+const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
 describe("choosePeers", () => {
   it("takes the narrowest group with enough peers for each fee, falling back to national", () => {

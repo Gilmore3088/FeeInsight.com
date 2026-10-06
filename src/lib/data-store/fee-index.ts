@@ -610,6 +610,11 @@ export interface PeerFeeValue {
   institution_name: string;
   state_code: string | null;
   amount: number;
+  /** The source documents behind this value, so every peer figure can be checked. */
+  source_document_ids: number[];
+  document_urls: string[];
+  /** When the newest row behind this value was published (ISO). */
+  published_at: string | null;
 }
 
 /**
@@ -626,14 +631,20 @@ export async function getPeerFeeValues(
   if (categories.length === 0 || filterSets.length === 0) return filterSets.map(() => new Map());
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
-            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
+            ef.source_document_id, ef.document_url, ef.created_at
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
         AND ef.review_status = 'approved'
         AND ${STATS_ROW_FILTER}`,
     [categories] as never[],
-  ) as (PeerRow & { institution_name: string })[];
+  ) as (PeerRow & {
+    institution_name: string;
+    source_document_id: number | string | null;
+    document_url: string | null;
+    created_at: Date | string | null;
+  })[];
   const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
   const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
   return filterSets.map((filters) => {
@@ -649,7 +660,23 @@ export async function getPeerFeeValues(
       const values: PeerFeeValue[] = [];
       for (const [id, amount] of valuePerInstitution(list)) {
         const row = meta.get(id);
-        values.push({ institution_id: id, institution_name: row?.institution_name ?? `Institution ${id}`, state_code: row?.state_code ?? null, amount });
+        const own = list.filter((r) => Number(r.institution_id) === id);
+        const docIds = [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))];
+        const urls = [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))];
+        const published = own
+          .map((r) => ((r.created_at as unknown) instanceof Date ? (r.created_at as unknown as Date).toISOString() : r.created_at ? String(r.created_at) : null))
+          .filter((v): v is string => !!v)
+          .sort()
+          .pop() ?? null;
+        values.push({
+          institution_id: id,
+          institution_name: row?.institution_name ?? `Institution ${id}`,
+          state_code: row?.state_code ?? null,
+          amount,
+          source_document_ids: docIds,
+          document_urls: urls,
+          published_at: published,
+        });
       }
       result.set(category, values.sort((a, b) => a.amount - b.amount));
     }

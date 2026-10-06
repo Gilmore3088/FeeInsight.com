@@ -20,6 +20,34 @@ export interface SourceRef {
   asOf?: string | null;
 }
 
+/** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
+export const WORKSPACE_ENGINE_VERSION = "1.0.0";
+
+/** A figure the bank gave Hamilton, with who gave it and when. */
+export interface ClientFactRef {
+  factId: string;
+  fieldKey: string;
+  value: unknown;
+  givenBy: string | null;
+  givenAt: string;
+}
+
+/**
+ * How an output was built, shown under every Hamilton answer and saved with every
+ * decision event, so a regulator or board can retrace it without asking Hamilton.
+ */
+export interface Provenance {
+  engineVersion: string;
+  generatedAt: string;
+  evidenceLevel?: EvidenceLevel;
+  peerGroup?: { label: string; n: number };
+  /** Newest data each source contributed (ISO dates). */
+  dataAsOf: { fees?: string | null; financials?: string | null; changes?: string | null };
+  sources: SourceRef[];
+  assumptions: string[];
+  clientFacts: ClientFactRef[];
+}
+
 export interface Fact {
   text: string;
   source: SourceRef;
@@ -49,6 +77,7 @@ export interface Briefing {
   feesReviewed: number;
   peerLabel: string;
   generatedAt: string;
+  provenance: Provenance;
 }
 
 export interface PeerValue {
@@ -56,6 +85,9 @@ export interface PeerValue {
   institutionName: string;
   amount: number;
   stateCode: string | null;
+  sourceDocumentIds: number[];
+  documentUrls: string[];
+  publishedAt: string | null;
 }
 
 export interface PriceBand {
@@ -94,6 +126,7 @@ export interface FeeResearch {
   recentChanges: Fact[];
   /** Reported income for this fee, when a filing carries a line for it. */
   revenueLine: RevenueLine | null;
+  provenance: Provenance;
 }
 
 export type EvidenceLevel = "market" | "working_estimate" | "institution";
@@ -105,8 +138,8 @@ export interface InstitutionFeeFacts {
   /** Share of charged items waived or reversed, 0 to 1. */
   waiverRate?: number;
   affectedAccounts?: number;
-  /** Ids of the memory facts these figures came from. */
-  factIds?: string[];
+  /** The memory facts these figures came from, with who gave them and when. */
+  refs?: ClientFactRef[];
 }
 
 export interface ScenarioInput {
@@ -122,6 +155,10 @@ export interface ScenarioInput {
    * [-10, 0]). Only the bank sets this; Hamilton has no public source for it.
    */
   volumeChangePct?: [number, number] | null;
+  /** ISO time the scenario is built; defaults to now. */
+  generatedAt?: string;
+  /** Newest published date among the peer values. */
+  feesAsOf?: string | null;
 }
 
 export interface Scenario {
@@ -144,6 +181,7 @@ export interface Scenario {
   factIds: string[];
   /** The figure that would move the scenario to the next evidence level. */
   missingInput: ClarifyingQuestion | null;
+  provenance: Provenance;
 }
 
 export type PriceDirection = "increase" | "decrease" | "eliminate" | "no_change";
@@ -166,6 +204,7 @@ export interface ImplementationPlan {
   monitoring: PlanStep[];
   /** Always shown: the bank's compliance team confirms what applies to it. */
   caveat: string;
+  provenance: Provenance;
 }
 
 export type ClarifyingInputKind = "number" | "percent" | "file" | "text";

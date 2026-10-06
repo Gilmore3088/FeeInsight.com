@@ -55,7 +55,11 @@ describe("buildScenario", () => {
   it("uses the bank's own figures and a volume range it sets", () => {
     const s = buildScenario({
       feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "p",
-      institutionFacts: { annualItems: 41_000, waiverRate: 0.18, factIds: ["m1"] },
+      institutionFacts: {
+        annualItems: 41_000,
+        waiverRate: 0.18,
+        refs: [{ factId: "m1", fieldKey: "fee.overdraft.annual_items", value: 41_000, givenBy: "user-7", givenAt: "2026-10-05T12:00:00Z" }],
+      },
       volumeChangePct: [0, 10],
     });
     // paid = 33,620; at 0%: 33,620 x 25 - 33,620 x 30 = -168,100; at +10%: 36,982 x 25 - 1,008,600 = -84,050
@@ -63,6 +67,9 @@ describe("buildScenario", () => {
     expect(s.revenueEffect).toEqual({ low: -168_100, high: -84_050 });
     expect(s.factIds).toEqual(["m1"]);
     expect(s.missingInput).toBeNull();
+    expect(s.provenance.evidenceLevel).toBe("institution");
+    expect(s.provenance.clientFacts).toEqual([expect.objectContaining({ factId: "m1", givenBy: "user-7" })]);
+    expect(s.provenance.assumptions).toEqual(s.assumptions);
   });
 
   it("asks for the waiver rate when only volume is known", () => {

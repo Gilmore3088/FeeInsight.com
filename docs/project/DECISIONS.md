@@ -3,6 +3,17 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-06
+
+**Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
+incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
+scenario and implementation plan carries its provenance: sources with links to the banks' own
+schedule documents, data as-of dates, the peer group and its size, assumptions, evidence level,
+and each client-given figure with who gave it and when. Saved decisions keep the provenance from
+the moment they were made. The same message set out Hamilton's faces (fee verifier and
+publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
+describes all four. Built in PR 170.
+
 ## 2026-10-05
 
 **The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else

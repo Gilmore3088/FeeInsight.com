@@ -35,3 +35,17 @@ describe("buildImplementationPlan", () => {
     expect(text).not.toMatch(/recommend|you should|we suggest/);
   });
 });
+
+describe("implementation plan provenance", () => {
+  it("lists every rule it cites once and the date the notice counts from", () => {
+    const plan = buildImplementationPlan({
+      feeCategory: "overdraft", current: 30, chosen: 35, decidedOn: "2026-10-06", charterType: "credit_union",
+      generatedAt: "2026-10-06T00:00:00Z",
+    });
+    const labels = plan.provenance.sources.map((s) => s.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(labels).toContain("NCUA Truth in Savings, 12 CFR 707.5(a)");
+    expect(labels).toContain("Reg E, 12 CFR 1005.17");
+    expect(plan.provenance.assumptions.join(" ")).toContain("2026-10-06");
+  });
+});

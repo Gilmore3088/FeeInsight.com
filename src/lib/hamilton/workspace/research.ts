@@ -20,7 +20,7 @@ import {
 import { priceBands } from "./bands";
 import { MIN_PEERS_FOR_POSITION } from "./scenario";
 import { serviceChargeTrend, type ServiceChargeRow } from "./revenue";
-import type { Briefing, Fact, FeeResearch, PeerValue } from "./types";
+import { WORKSPACE_ENGINE_VERSION, type Briefing, type Fact, type FeeResearch, type PeerValue, type SourceRef } from "./types";
 
 /** Competitor moves older than this are history, not news. */
 export const COMPETITOR_MOVE_WINDOW_DAYS = 180;
@@ -87,6 +87,16 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
   };
 }
 
+const FEE_SOURCE: SourceRef = {
+  label: "Fees on each institution's own published schedule (verified, live)",
+  table: "published_fee_catalog",
+};
+const CHANGES_SOURCE: SourceRef = { label: "Fee changes seen on published schedules", table: "fee_change_records" };
+
+function newest(dates: (string | null | undefined)[]): string | null {
+  return dates.filter((d): d is string => !!d).sort().pop() ?? null;
+}
+
 function sinceDate(days: number, now = new Date()): string {
   const d = new Date(now);
   d.setUTCDate(d.getUTCDate() - days);
@@ -142,7 +152,8 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
       peerLabel: peers?.label ?? base.peerLabel,
     };
   });
-  const shift = revenueShiftObservation(serviceChargeTrend(financialRows));
+  const trend = serviceChargeTrend(financialRows);
+  const shift = revenueShiftObservation(trend);
   const observations = rankObservations([
     ...marketPositionObservations(positions),
     ...competitorMoveObservations(changes, new Set(base.ownValues.keys()), base.stateCode ?? "your state"),
@@ -155,6 +166,29 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
     feesReviewed: base.ownValues.size,
     peerLabel: base.peerLabel,
     generatedAt: now.toISOString(),
+    provenance: {
+      engineVersion: WORKSPACE_ENGINE_VERSION,
+      generatedAt: now.toISOString(),
+      peerGroup: { label: base.peerLabel, n: new Set([...base.peers.values()].flatMap((p) => p.values.map((v) => v.institution_id))).size },
+      dataAsOf: {
+        fees: newest([...base.peers.values()].flatMap((p) => p.values.map((v) => v.published_at))),
+        financials: trend?.quarterEnd ?? null,
+        changes: newest(changes.map((c) => c.changedAt.slice(0, 10))),
+      },
+      sources: [
+        FEE_SOURCE,
+        { ...CHANGES_SOURCE, label: `${CHANGES_SOURCE.label}, ${base.stateCode ?? "no state"}, last ${COMPETITOR_MOVE_WINDOW_DAYS} days` },
+        ...(trend
+          ? [{ label: trend.source === "ncua" ? "NCUA 5300 call report, fee income" : "FDIC call report, service charges on deposit accounts", table: "institution_financial_records", asOf: trend.quarterEnd }]
+          : []),
+      ],
+      assumptions: [
+        `Each fee is compared with the narrowest default peer group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish it, widening to national.`,
+        "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
+        "Observations are ranked by how unusual they are; ranking never implies a price direction.",
+      ],
+      clientFacts: [],
+    },
   };
 }
 
@@ -165,7 +199,11 @@ function quantile(sorted: number[], q: number): number {
   return Math.round((sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)) * 100) / 100;
 }
 
-export async function getFeeResearch(institutionId: number, feeCategory: string): Promise<FeeResearch | null> {
+export async function getFeeResearch(
+  institutionId: number,
+  feeCategory: string,
+  now = new Date(),
+): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
   const changes = await loadStateChanges(base.stateCode, feeCategory);
@@ -175,6 +213,9 @@ export async function getFeeResearch(institutionId: number, feeCategory: string)
     institutionName: p.institution_name,
     amount: p.amount,
     stateCode: p.state_code,
+    sourceDocumentIds: p.source_document_ids,
+    documentUrls: p.document_urls,
+    publishedAt: p.published_at,
   }));
   const sorted = peers.map((p) => p.amount).sort((a, b) => a - b);
   const current = base.ownValues.get(feeCategory) ?? null;
@@ -183,7 +224,7 @@ export async function getFeeResearch(institutionId: number, feeCategory: string)
     .slice(0, 10)
     .map((c) => ({
       text: `${c.institutionName}: $${c.oldAmount} to $${c.newAmount}, seen ${c.changedAt.slice(0, 10)}.`,
-      source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: c.changedAt.slice(0, 10) },
+      source: { ...CHANGES_SOURCE, asOf: c.changedAt.slice(0, 10) },
     }));
   return {
     institutionId,
@@ -203,5 +244,23 @@ export async function getFeeResearch(institutionId: number, feeCategory: string)
     // Per-fee income lines (NCUA overdraft and NSF fee income, the bank overdraft line)
     // are not stored yet; until they are, scenarios stay at the market level.
     revenueLine: null,
+    provenance: {
+      engineVersion: WORKSPACE_ENGINE_VERSION,
+      generatedAt: now.toISOString(),
+      peerGroup: { label: chosen?.label ?? base.peerLabel, n: peers.length },
+      dataAsOf: {
+        fees: newest(peers.map((p) => p.publishedAt)),
+        changes: newest(changes.map((c) => c.changedAt.slice(0, 10))),
+      },
+      sources: [FEE_SOURCE, CHANGES_SOURCE],
+      assumptions: [
+        peers.length < MIN_PEERS_FOR_POSITION
+          ? `Only ${peers.length} institutions publish this fee even nationally, too few for percentiles.`
+          : `Peers are the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish this fee.`,
+        "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
+        "Each peer's amount links to the schedule document it was read from.",
+      ],
+      clientFacts: [],
+    },
   };
 }
