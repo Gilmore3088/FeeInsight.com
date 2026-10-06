@@ -40,7 +40,7 @@ describe("lead alerts", () => {
 
   it("marks the lead email_failed when James's notification failed", async () => {
     await handleLeadDeliveryOutcome(LEAD, { notification: FAILED, confirmation: SENT });
-    expect(issued(0).text).toContain("UPDATE leads SET status = ? WHERE lower(email) = lower(?)");
+    expect(issued(0).text).toContain("UPDATE leads SET status = ? WHERE id = (SELECT id FROM leads WHERE lower(email) = lower(?) ORDER BY created_at DESC, id DESC LIMIT 1)");
     expect(issued(0).values[0]).toBe("email_failed");
     expect(sendMock).not.toHaveBeenCalled();
   });

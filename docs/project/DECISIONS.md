@@ -14,6 +14,19 @@ the moment they were made. The same message set out Hamilton's faces (fee verifi
 publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
 describes all four. Built in PR 170.
 
+**The institution report has no fixed price yet; the granular data stays paid.** James, 23:31 UTC
+Oct 5 and 00:15 UTC Oct 6. It will be a $300 report once it is ready, but for now a request is
+quoted by hand. Free reports give value away (national and district medians only); per-bank fees
+and named competitors are never in a free report. PR 107 was reshaped to match: a request tells
+James whether that bank's report can be built and gives him a private link to send after the
+requester agrees. There is no checkout, and nothing is sent to the requester automatically.
+
+**Free district and national reports use the state-report consulting format.** James approved
+PR 166 at 23:44 UTC Oct 5, after calling the old St. Louis district report "the worst type of
+report I've ever seen". Each report shows key findings, headline-fee ranges, the district vs
+national, banks vs credit unions, and a locked "your institution" section that leads to the paid
+report.
+
 ## 2026-10-05
 
 **The API is invitation only: David Bressler (betteranalyst.com) gets everything, nobody else

@@ -24,6 +24,19 @@ scratch. Prod is unaffected: it only runs files newer than its recorded history.
 replayed (or the preview is turned off); judge a migration by reading it against prod's schema.
 **Lesson:** a migration history must replay on an empty database for preview branches to work.
 
+## 2026-10-06: Fed districts are assigned by headquarters state, not by county
+**What happened:** the St. Louis district report covered only Missouri and Arkansas: 415
+institutions monitored, 113 with published fees, and 11 of the 15 headline fees had the 20
+institutions a median needs (live read of `institution_sources` and `published_fee_catalog`,
+23:40 UTC Oct 5). The real Eighth District also covers parts of Illinois, Indiana, Kentucky,
+Mississippi and Tennessee.
+**Cause:** `fed_district` comes from `STATE_TO_DISTRICT` in `src/lib/fed-districts.ts`, one
+district per headquarters state. States split between districts go wholly to one district.
+**Fix:** not fixed. PR 166's methodology section says districts are assigned by headquarters
+state. A county-level assignment would need county FIPS on each institution.
+**Lesson:** when a report names a Fed district, say which states it covers, and expect thin
+coverage in districts whose split states went elsewhere.
+
 ## 2026-10-05: Rosetta kept re-downloading dead links, and the live board miscounted
 **What happened:** James's screen recording of /admin/live (22:36 UTC) showed banks failing in
 Rosetta with "page not found" that had no working document, the same bank more than once, and
