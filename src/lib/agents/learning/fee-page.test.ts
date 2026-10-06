@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { htmlToScoringText, scoreFeePage } from "./fee-page";
+import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "./fee-page";
 
 const FEE_SCHEDULE = [
   "Schedule of Fees and Charges",
@@ -61,5 +61,26 @@ describe("scoreFeePage", () => {
     expect(scoreFeePage(text, "https://bank.example/articles/schedule-of-fees/").verdict).toBe("fee_page");
     expect(scoreFeePage(text, "https://bank.example/media/fees.pdf").verdict).toBe("fee_page");
     expect(scoreFeePage(text).verdict).toBe("fee_page");
+  });
+});
+
+describe("urlNamesFeePage", () => {
+  it("is true for links that name the fee page", () => {
+    for (const url of [
+      "https://www.atfcu.org/fees",
+      "https://www.firstcommand.com/banking/personal/checking/fees/",
+      "https://www.cnbstl.com/fee-schedule",
+      "https://www.texasbankandtrust.com/account-fees",
+      "https://www.valley.com/personal/schedule-of-fees",
+      "https://www.bank.example/Fees-and-Charges.aspx",
+    ]) {
+      expect(urlNamesFeePage(url), url).toBe(true);
+    }
+  });
+
+  it("is false for other pages", () => {
+    for (const url of ["https://www.bank.example/about-us", "https://www.bank.example/coffee-club", "https://www.bank.example/", null, "not a url"]) {
+      expect(urlNamesFeePage(url), String(url)).toBe(false);
+    }
   });
 });

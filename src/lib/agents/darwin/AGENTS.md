@@ -9,7 +9,7 @@ Darwin owns verification and classification.
 - Darwin may skip or challenge raw rows when canonical category, amount, duplicate, source lineage, or policy checks fail.
 - Darwin may emit Monitor signals for verified rows and verification-review states.
 
-## Current Implementation (2026-10-04, verify.rules version 2)
+## Current Implementation (2026-10-06, verify.rules version 3)
 
 `darwin/verify.ts` checks, in order, and records the first failure as a reason code:
 
@@ -21,12 +21,17 @@ Darwin owns verification and classification.
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range (`envelopes.ts`) | needs_review |
+| `not_in_source` | the fee is stated in the stored text of the document Knox read it from (`checkFeeAgainstSource`, the shared accuracy check; a tiered price counts) | rejected |
 | `peer_outlier` | pass 2: not far outside the state's peer range (below) | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, source) not already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 
 - Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
   as `category_mismatch` under an older guard are selected once more. No other decided row is.
+- `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
+  fee the bank's schedule does not state is stopped before it is verified instead of being
+  published and then taken down. It joined version 3 without a bump: a bump re-selects every
+  decided row, and rows once held as `duplicate_in_batch` would be verified as second copies.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.

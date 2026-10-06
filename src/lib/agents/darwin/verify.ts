@@ -6,6 +6,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -38,6 +39,9 @@ type SqlTag = typeof sql;
  * v3 added the category guard (src/lib/fee-category-guard.ts): a fee name must support
  * the category it was filed under.
  */
+// The `not_in_source` check joined version 3 without a bump on purpose: a new version
+// re-selects every decided row, and rows once held back as `duplicate_in_batch` would
+// then be verified as second copies of an already verified fee (only `fee_raw_id` is unique).
 export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } as const;
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
@@ -55,6 +59,7 @@ export type DarwinReasonCode =
   | "category_mismatch"
   | "missing_lineage"
   | "invalid_amount"
+  | "not_in_source"
   | "outside_envelope"
   | "peer_outlier"
   | "duplicate_in_batch"
@@ -74,6 +79,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   category_mismatch: "Fee name does not support its category",
   missing_lineage: "Missing source lineage",
   invalid_amount: "Missing or invalid amount",
+  not_in_source: "Fee and amount not found in the bank's own stored schedule",
   outside_envelope: "Amount outside the category's plausible range",
   peer_outlier: "Amount far outside the state's peer range for this fee and asset size",
   duplicate_in_batch: "Same fee already verified in this batch",
@@ -222,6 +228,37 @@ export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string |
   }
   if (!withinAmountEnvelope(canonicalFeeKey, amount)) return "outside_envelope";
   return null;
+}
+
+/**
+ * Is the fee stated in the stored text of the document Knox read it from? The shared
+ * accuracy check (`checkFeeAgainstSource`), with Hamilton's reading: a tiered price is the
+ * bank's real price for its band. A row with no stored text cannot be traced. Exported for tests.
+ */
+export function statedInOwnSource(
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id">,
+  texts: ReadonlyMap<number, string>,
+): boolean {
+  const amount = normalizedAmount(row.amount);
+  if (amount == null || row.source_document_id == null) return false;
+  const text = texts.get(Number(row.source_document_id));
+  if (!text) return false;
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".");
+  return result.ok || result.reason === "tiered_fee";
+}
+
+/** The newest completed text of each document, as Hamilton's source check reads it. */
+async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
+  if (documentIds.length === 0) return new Map();
+  const texts = await db<{ source_document_id: number | string; normalized_text: string }[]>`
+    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${documentIds}::bigint[])
+       AND status = 'completed'
+       AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `;
+  return new Map(texts.map((text) => [Number(text.source_document_id), text.normalized_text]));
 }
 
 /** Same institution, category, amount, frequency and source: the same fee line. */
@@ -583,6 +620,10 @@ export async function runDarwinVerify(
   const results: DarwinVerificationResult[] = [];
 
   const verifiedInBatch = new Set<string>();
+  const sourceTexts = await loadSourceTexts(
+    db,
+    Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
+  );
 
   // Pass 2 evidence, loaded once per batch: state peer levels and the banks' other
   // stored documents for the same fees.
@@ -600,6 +641,7 @@ export async function runDarwinVerify(
   for (const row of rows) {
     const canonicalFeeKey = categoryOf(row);
     let reasonCode = verificationReasonCode(row, canonicalFeeKey);
+    if (!reasonCode && !statedInOwnSource(row, sourceTexts)) reasonCode = "not_in_source";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }
