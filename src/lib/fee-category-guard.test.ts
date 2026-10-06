@@ -135,11 +135,15 @@ describe("checkFeeCategory", () => {
     }
   });
 
-  it("v10 accepts a returned deposit draft and a service fee named by the balance that avoids it (Air Academy FCU)", () => {
+  it("v10 accepts a returned deposit draft, a service fee named by the balance that avoids it (Air Academy FCU) and an NSF item paid as an overdraft (Santander)", () => {
     expect(checkFeeCategory("deposited_item_return", "Deposit Drafts Returned Unpaid Fee (when payor and payee are the same)").ok).toBe(true);
     expect(
       checkFeeCategory("monthly_maintenance", "Basic Checking Fee | Minimum daily balance of $500.00 required to avoid a $5.00 service fee").ok,
     ).toBe(true);
+    // Santander: "Insufficient Funds Fee – Item Paid" is an overdraft (the item was paid).
+    expect(checkFeeCategory("overdraft", "Insufficient Funds Fee – Item Paid").ok).toBe(true);
+    expect(refileCategory("nsf", "Non Sufficient Funds (NSF) Item Paid")).toBe("overdraft");
+    expect(refileCategory("nsf", "per item paid Returned Item Fee")).not.toBe("overdraft");
     // A service fee with no balance that avoids it is still not the monthly fee.
     expect(checkFeeCategory("monthly_maintenance", "Business ACH Payments Origination Service Fee").ok).toBe(false);
   });
