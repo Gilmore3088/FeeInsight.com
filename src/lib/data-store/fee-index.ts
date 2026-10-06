@@ -93,6 +93,29 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
   ) as ContractFeeRow[];
 }
 
+export interface SegmentFeeRow extends ContractFeeRow {
+  fed_district: number | null;
+}
+
+/**
+ * Approved, sourced published rows for the given categories with each institution's
+ * Fed district and asset tier, for district, state and size-tier breakdowns.
+ */
+export async function getSegmentFeeRows(categories: string[]): Promise<SegmentFeeRow[]> {
+  if (categories.length === 0) return [];
+  const rows = await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ct.institution_name,
+            ct.state_code, ct.charter_type, ct.asset_size_tier, ct.fed_district
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ANY($1::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [categories] as never[],
+  ) as (ContractFeeRow & { fed_district: number | string | null })[];
+  return rows.map((r) => ({ ...r, fed_district: r.fed_district === null ? null : Number(r.fed_district) }));
+}
+
 /**
  * One institution's value per category under the statistics contract (the median of its
  * approved, sourced amounts; overdraft's highest tier), so "your fee" is measured the same way as the benchmark.

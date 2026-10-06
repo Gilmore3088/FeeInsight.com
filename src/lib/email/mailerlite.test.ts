@@ -36,6 +36,23 @@ describe("MailerLite sync", () => {
     });
   });
 
+  it("adds a reader who picked a state to that state's group, creating it the first time", async () => {
+    vi.stubEnv("MAILERLITE_SYNC_ENABLED", "true");
+    vi.stubEnv("MAILERLITE_API_KEY", "key");
+    vi.stubEnv("MAILERLITE_GROUP_ID", "123");
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/groups?")) return new Response(JSON.stringify({ data: [{ id: "9", name: "Fee Insight · State · CA" }], meta: { last_page: 1 } }));
+      if (url.endsWith("/groups") && init?.method === "POST") return new Response(JSON.stringify({ data: { id: "77" } }), { status: 201 });
+      return new Response(JSON.stringify({ data: { id: "sub_1" } }), { status: 201 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await syncLeadToMailerLite({ email: "a@b.co", subscribed: true, source: "newsletter", state: "TX" });
+    const created = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/groups") && init?.method === "POST");
+    expect(JSON.parse(String(created?.[1]?.body))).toEqual({ name: "Fee Insight · State · TX" });
+    const upsert = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/subscribers"));
+    expect(JSON.parse(String(upsert?.[1]?.body)).groups).toEqual(["123", "77"]);
+  });
+
   it("marks unsubscribes without re-adding the group", () => {
     vi.stubEnv("MAILERLITE_GROUP_ID", "123");
     expect(buildMailerLitePayload({ email: "a@b.co", subscribed: false })).toEqual({

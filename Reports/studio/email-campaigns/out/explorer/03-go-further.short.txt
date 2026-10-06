@@ -8,5 +8,4 @@ Full email with tables and charts: {$url}
 
 --
 Fee Insight · feeinsight.com · reply with questions
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

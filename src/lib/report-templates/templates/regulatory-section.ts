@@ -1,48 +1,35 @@
 /**
- * "Regulation and Complaints" chapter shared by the national and state reports.
- * Renders only what the regulatory context holds; an empty part says so plainly.
+ * CFPB complaints, the fee-change rules and (for a state) its Fed district's Beige Book
+ * line, shown in the reports' regulatory developments section. Agency releases are listed
+ * by ./developments. Renders only what the regulatory context holds; an empty part says so.
  */
 
-import { chapterDivider, compactTable, pageBreak, statCardRow, keyFinding } from "../index";
+import { compactTable, escapeHtml, keyFinding, statCardRow } from "../index";
 import type { StatCard } from "../index";
-import type { RegulatoryContext, RegulatoryRelease } from "@/lib/report-assemblers/regulatory-context";
+import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 
-const SUBHEAD_STYLE =
-  "font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #7A7062; margin: 28px 0 10px 0;";
-const LIST_STYLE = "font-size: 13px; line-height: 1.6; color: #1A1815; margin: 0; padding-left: 18px;";
-const EMPTY_STYLE = "font-size: 13px; color: #7A7062; font-style: italic; margin: 0;";
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function subhead(text: string): string {
+  return `<div class="release-group-title">${escapeHtml(text)}</div>`;
 }
 
-function releaseList(releases: RegulatoryRelease[], emptyText: string): string {
-  if (releases.length === 0) return `<p style="${EMPTY_STYLE}">${escapeHtml(emptyText)}</p>`;
-  const items = releases
-    .map(
-      (r) =>
-        `<li style="margin-bottom: 6px;"><strong>${escapeHtml(r.source)}</strong>${r.publishedAt ? ` · ${r.publishedAt}` : ""} — <a href="${escapeHtml(r.link)}">${escapeHtml(r.title)}</a></li>`,
-    )
-    .join("\n");
-  return `<ul style="${LIST_STYLE}">${items}</ul>`;
+function empty(text: string): string {
+  return `<p class="report-empty">${escapeHtml(text)}</p>`;
 }
 
-function complaintCards(ctx: RegulatoryContext, place: string): string {
+function complaints(ctx: RegulatoryContext, place: string): string {
   const c = ctx.complaints;
-  if (!c) return `<p style="${EMPTY_STYLE}">No CFPB complaint records are on file for ${escapeHtml(place)}.</p>`;
-  const change =
-    c.priorTotal && c.priorTotal > 0 ? ((c.total - c.priorTotal) / c.priorTotal) * 100 : null;
+  if (!c) return empty(`No CFPB complaint records are on file for ${place}.`);
+  // The yearly pull names a different set of institutions each year, so the change compares
+  // only institutions named in both years.
+  const same = c.sameInstitutions;
+  const change = same && same.priorTotal > 0 ? ((same.total - same.priorTotal) / same.priorTotal) * 100 : null;
   const cards: StatCard[] = [
     {
       label: `CFPB complaints, ${c.latestYear}`,
       value: c.total.toLocaleString("en-US"),
-      delta: change === null ? undefined : `${change > 0 ? "+" : ""}${change.toFixed(0)}% vs ${c.priorYear}`,
+      delta: change === null ? undefined : `${change > 0 ? "+" : ""}${change.toFixed(0)}% vs ${c.priorYear} at the same ${same?.institutions.toLocaleString("en-US")}`,
       deltaColor: change === null ? undefined : change > 0 ? "negative" : "positive",
-      source: `${c.institutionCount.toLocaleString("en-US")} institutions named`,
+      source: `against ${c.institutionCount.toLocaleString("en-US")} institutions we track`,
     },
     {
       label: "Fee and account issues",
@@ -50,6 +37,12 @@ function complaintCards(ctx: RegulatoryContext, place: string): string {
       source: `${c.feeRelated.toLocaleString("en-US")} complaints on low funds, fees or account management`,
     },
   ];
+  const products =
+    c.topProducts.length > 0
+      ? `<p class="release-note">Top products: ${c.topProducts
+          .map((p) => `${escapeHtml(p.product)} (${p.count.toLocaleString("en-US")})`)
+          .join(", ")}.</p>`
+      : "";
   const institutions =
     c.topInstitutions.length > 0
       ? compactTable({
@@ -61,38 +54,20 @@ function complaintCards(ctx: RegulatoryContext, place: string): string {
           rows: c.topInstitutions.map((i) => ({ name: i.name, complaints: i.complaints })),
         })
       : "";
-  const products =
-    c.topProducts.length > 0
-      ? `<p style="font-size: 12px; color: #7A7062; margin: 8px 0 0 0;">Top products: ${c.topProducts
-          .map((p) => `${escapeHtml(p.product)} (${p.count.toLocaleString("en-US")})`)
-          .join(", ")}.</p>`
-      : "";
-  return [statCardRow(cards), products, institutions].join("\n");
+  const coverage = `<p class="release-note">Counts cover only institutions we track that the CFPB names, for ${escapeHtml(c.latestYear)}, the latest full year on file${change === null ? "" : `. The change compares the ${same?.institutions.toLocaleString("en-US")} institutions named in both ${escapeHtml(String(c.priorYear))} and ${escapeHtml(c.latestYear)}`}.</p>`;
+  return [statCardRow(cards), products, institutions, coverage].join("\n");
 }
 
-export function renderRegulatorySection(
-  ctx: RegulatoryContext,
-  options: { number: string; place: string },
-): string {
-  const { number, place } = options;
+/** Complaints, fee-change rules and the Beige Book line, under small headings. */
+export function regulatoryExtras(ctx: RegulatoryContext | null | undefined, place: string): string {
+  if (!ctx) return "";
   const rules = ctx.rules
-    .map((r) => `<li style="margin-bottom: 6px;">${escapeHtml(r.text)} <em>(${escapeHtml(r.source.label)})</em></li>`)
-    .join("\n");
-
+    .map((r) => `<li class="release-item"><span class="release-body">${escapeHtml(r.text)} <em>(${escapeHtml(r.source.label)})</em></span></li>`)
+    .join("");
   return [
-    pageBreak(),
-    chapterDivider(number, "Regulation and Complaints"),
-    ctx.beigeBook
-      ? keyFinding(`${ctx.beigeBook.text} (Beige Book, ${ctx.beigeBook.releaseDate})`, "Regional economy")
-      : "",
-    `<h4 style="${SUBHEAD_STYLE}">Fee-related regulator releases, last ${ctx.windowDays} days</h4>`,
-    releaseList(ctx.feeReleases, `No Federal Reserve, FDIC, OCC or CFPB release in the last ${ctx.windowDays} days names fees, overdraft, NSF, Reg E or Reg DD.`),
-    `<h4 style="${SUBHEAD_STYLE}">Enforcement actions and settlements</h4>`,
-    releaseList(ctx.enforcement, `No enforcement action, consent order or penalty release in the last ${ctx.windowDays} days.`),
-    `<h4 style="${SUBHEAD_STYLE}">Consumer complaints (CFPB)</h4>`,
-    complaintCards(ctx, place),
-    `<h4 style="${SUBHEAD_STYLE}">Rules that apply when a penalty fee changes</h4>`,
-    `<ul style="${LIST_STYLE}">${rules}</ul>`,
+    ctx.beigeBook ? keyFinding(`${ctx.beigeBook.text} (Beige Book, ${ctx.beigeBook.releaseDate})`, "Regional economy") : "",
+    `<div class="release-group">${subhead("Consumer complaints (CFPB)")}${complaints(ctx, place)}</div>`,
+    rules ? `<div class="release-group">${subhead("Rules that apply when a penalty fee changes")}<ul class="release-list">${rules}</ul></div>` : "",
   ]
     .filter(Boolean)
     .join("\n");
