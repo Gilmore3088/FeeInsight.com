@@ -94,8 +94,15 @@ const paragraphs = (text: string) =>
  * The full email in the Fee Insight layout: Fee Insight alone in the header, the product named once in the footer.
  * Without a mailing address the footer simply leaves that line out, so drafts can be reviewed and shown;
  * the send step adds the address (`withMailingAddress`) before anything goes out.
+ * `whatsNew` (from `whats-new.ts`) adds one short "What's new" line above the footer when it has entries.
  */
-export function renderEmail(copy: EmailCopy, bundle: FactBundle, format: string, mailingAddress: string | null): string {
+export function renderEmail(
+  copy: EmailCopy,
+  bundle: FactBundle,
+  format: string,
+  mailingAddress: string | null,
+  whatsNew: string[] = [],
+): string {
   const table = renderTable(copy.table, bundle);
   const sources = `National figures as of ${esc(bundle.asOf)}, from ${bundle.liveFees.toLocaleString("en-US")} live fees across ${bundle.liveInstitutions.toLocaleString("en-US")} institutions. The middle half is the 25th to 75th percentile.`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(copy.headline)}</title></head>
@@ -117,6 +124,7 @@ ${copy.sections.map((s) => `<h2 style="font-family:Georgia,'Times New Roman',ser
 <table role="presentation" width="100%" cellpadding="16" cellspacing="0" style="background:#f6f3ec;border-left:3px solid #b3261e;"><tr><td style="font-size:15px;line-height:1.55;">
 <strong>Want your own institution against the competitors you name?</strong> We check that your market has enough published data, then reply with scope and price. ${link("/for-institutions?report=institution#report", bundle.month, format, "Request your report")}
 </td></tr></table>
+${whatsNew.length ? `<p style="font-size:14px;line-height:1.55;margin:20px 0 0 0;"><strong>What's new:</strong> ${esc(whatsNew.join(" "))}</p>` : ""}
 <p style="font-size:15px;line-height:1.55;margin:20px 0 0 0;">Questions, or a fee you want us to look at? Just reply.<br>James Gilmore, Founder</p>
 </td></tr>
 <tr><td style="background:#f6f3ec;padding:20px 32px;font-size:12px;line-height:1.6;color:#5a5a5a;border-top:1px solid #e6e0d4;">

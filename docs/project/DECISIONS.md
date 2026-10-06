@@ -5,6 +5,11 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets
+that state's edition instead of the national email; everyone else (and readers in a state too
+thin for its own edition) gets one national email. Product and site updates ride in a one-line
+"What's new" in that email, never as their own sends. Built in `src/lib/agents/marketing/`.
+
 **Darwin's held-fee pass acts on rejects only; every release stays held.** James, 16:49 UTC,
 chose "Reject only" on the Darwin thread's card after the v1 spot check found 12 of 20 releases
 right. Held fees the bank's schedule doesn't state leave the held pile with a `not_on_schedule`

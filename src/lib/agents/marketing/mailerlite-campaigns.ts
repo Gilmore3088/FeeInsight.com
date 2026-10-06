@@ -11,14 +11,11 @@ const API = "https://connect.mailerlite.com/api";
 export const MARKETING_SENDER = { from: "hello@bankfeeindex.com", fromName: "Fee Insight", replyTo: "hello@bankfeeindex.com" };
 
 /**
- * Who gets the monthly emails: MAILERLITE_MARKETING_GROUP_ID when set, else every signup
- * group (newsletter, report requests, watchers), so no confirmed reader is left out.
- * Each lead sits in one of those groups, so their counts add up without double counting.
+ * MAILERLITE_MARKETING_GROUP_ID, when set, replaces the national audience with that one group
+ * (for a test list). Unset, the national email goes to `NATIONAL_GROUP_NAME`.
  */
-export function marketingGroupIds(): string[] {
-  const env = (name: string) => (process.env[name] || "").trim();
-  if (env("MAILERLITE_MARKETING_GROUP_ID")) return [env("MAILERLITE_MARKETING_GROUP_ID")];
-  return [...new Set(["MAILERLITE_GROUP_ID", "MAILERLITE_REPORT_GROUP_ID", "MAILERLITE_WATCHER_GROUP_ID"].map(env).filter(Boolean))];
+export function marketingGroupOverride(): string | null {
+  return (process.env.MAILERLITE_MARKETING_GROUP_ID || "").trim() || null;
 }
 
 export function mailerLiteConfigured(): boolean {
@@ -169,6 +166,7 @@ export async function getCampaign(id: string, fetcher?: FetchLike): Promise<Agen
 
 export interface DraftContent {
   name: string;
+  type: string;
   subjects: string[];
   html: string;
   groupIds: string[];
@@ -188,6 +186,7 @@ export async function getDraftContent(id: string, fetcher?: FetchLike): Promise<
   const groupArg = raw.filter?.[0]?.[0]?.args?.[1];
   return {
     name: raw.name,
+    type: raw.type,
     subjects: (raw.emails ?? []).map((email) => email.subject ?? "").filter(Boolean),
     html: raw.emails?.[0]?.content ?? "",
     groupIds: Array.isArray(groupArg) ? groupArg.map(String) : [],
@@ -195,25 +194,26 @@ export async function getDraftContent(id: string, fetcher?: FetchLike): Promise<
   };
 }
 
-/** Replaces an A/B draft's html (both variants share it), keeping its subjects, audience and test settings. */
-export async function updateAbDraftHtml(id: string, draft: DraftContent, html: string, fetcher?: FetchLike): Promise<void> {
+/**
+ * Replaces a draft's html, keeping its subjects, audience and (for an A/B draft, whose two
+ * variants share the html) its test settings. State editions are regular drafts.
+ */
+export async function updateDraftHtml(id: string, draft: DraftContent, html: string, fetcher?: FetchLike): Promise<void> {
   const [subjectA, subjectB] = draft.subjects;
   const s = draft.settings;
-  await call(
-    `campaigns/${encodeURIComponent(id)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({
+  const email = {
+    subject: subjectA,
+    from_name: MARKETING_SENDER.fromName,
+    from: MARKETING_SENDER.from,
+    reply_to: MARKETING_SENDER.replyTo,
+    content: html,
+  };
+  const body = draft.type === "ab"
+    ? {
         name: draft.name,
         type: "ab",
         groups: draft.groupIds,
-        emails: [{
-          subject: subjectA,
-          from_name: MARKETING_SENDER.fromName,
-          from: MARKETING_SENDER.from,
-          reply_to: MARKETING_SENDER.replyTo,
-          content: html,
-        }],
+        emails: [email],
         ab_settings: {
           test_type: s.test_type ?? "subject",
           select_winner_by: s.select_winner_by ?? "c",
@@ -222,10 +222,9 @@ export async function updateAbDraftHtml(id: string, draft: DraftContent, html: s
           test_split: s.test_split ?? 20,
           b_value: { subject: subjectB },
         },
-      }),
-    },
-    fetcher,
-  );
+      }
+    : { name: draft.name, type: "regular", groups: draft.groupIds, emails: [email] };
+  await call(`campaigns/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }, fetcher);
 }
 
 /** Sends a draft now. Only the approval run calls this. */
@@ -283,28 +282,68 @@ export interface StateGroup {
   activeCount: number;
 }
 
-/** Every state group, with its active subscriber count. */
-export async function listStateGroups(fetcher?: FetchLike): Promise<StateGroup[]> {
-  const groups: StateGroup[] = [];
+export interface MailerLiteGroup {
+  id: string;
+  name: string;
+  activeCount: number;
+}
+
+/** Every MailerLite group, with its active subscriber count. */
+export async function listGroups(fetcher?: FetchLike): Promise<MailerLiteGroup[]> {
+  const groups: MailerLiteGroup[] = [];
   for (let page = 1; page <= 10; page += 1) {
     const body = await call<{ data?: Array<{ id: string; name: string; active_count?: number }>; meta?: { last_page?: number } }>(
       `groups?limit=100&page=${page}`,
       {},
       fetcher,
     );
-    for (const group of body.data ?? []) {
-      if (!group.name.startsWith(STATE_GROUP_PREFIX)) continue;
-      groups.push({ stateCode: group.name.slice(STATE_GROUP_PREFIX.length), groupId: String(group.id), activeCount: group.active_count ?? 0 });
-    }
+    for (const group of body.data ?? []) groups.push({ id: String(group.id), name: group.name, activeCount: group.active_count ?? 0 });
     if (!body.meta?.last_page || page >= body.meta.last_page) break;
   }
   return groups;
 }
 
+export function toStateGroups(groups: MailerLiteGroup[]): StateGroup[] {
+  return groups
+    .filter((group) => group.name.startsWith(STATE_GROUP_PREFIX))
+    .map((group) => ({ stateCode: group.name.slice(STATE_GROUP_PREFIX.length), groupId: group.id, activeCount: group.activeCount }));
+}
+
+/** Every state group, with its active subscriber count. */
+export async function listStateGroups(fetcher?: FetchLike): Promise<StateGroup[]> {
+  return toStateGroups(await listGroups(fetcher));
+}
+
+/** The group's id by name, creating it the first time. */
+export async function ensureGroupNamed(name: string, fetcher?: FetchLike, known?: MailerLiteGroup[]): Promise<string> {
+  const existing = (known ?? (await listGroups(fetcher))).find((group) => group.name === name);
+  if (existing) return existing.id;
+  const body = await call<{ data: { id: string } }>("groups", { method: "POST", body: JSON.stringify({ name }) }, fetcher);
+  return String(body.data.id);
+}
+
 /** The state's group id, creating the group the first time a reader picks that state. */
 export async function ensureStateGroup(stateCode: string, fetcher?: FetchLike): Promise<string> {
-  const existing = (await listStateGroups(fetcher)).find((group) => group.stateCode === stateCode);
-  if (existing) return existing.groupId;
-  const body = await call<{ data: { id: string } }>("groups", { method: "POST", body: JSON.stringify({ name: stateGroupName(stateCode) }) }, fetcher);
-  return String(body.data.id);
+  return ensureGroupNamed(stateGroupName(stateCode), fetcher);
+}
+
+// ---------------------------------------------------------------- national audience
+
+/**
+ * Readers who haven't picked a state. The monthly national email goes to this group (plus the
+ * state groups whose state has too little data for its own edition), so each reader gets one
+ * marketing email a month: their state's edition, or the national one. The lead sync keeps a
+ * reader in this group exactly while they are in no state group.
+ */
+export const NATIONAL_GROUP_NAME = "Fee Insight · Monthly · National";
+
+/**
+ * The national email's own group: the override when set, else the national group, made the
+ * first time unless `create` is false (a dry run), when a missing group gives null.
+ */
+export async function nationalGroupId(fetcher?: FetchLike, known?: MailerLiteGroup[], create = true): Promise<string | null> {
+  const override = marketingGroupOverride();
+  if (override) return override;
+  if (create) return ensureGroupNamed(NATIONAL_GROUP_NAME, fetcher, known);
+  return (known ?? (await listGroups(fetcher))).find((group) => group.name === NATIONAL_GROUP_NAME)?.id ?? null;
 }
