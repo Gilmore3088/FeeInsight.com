@@ -33,6 +33,12 @@ const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
 const PRICE_BELOW_LINES = 2;
 const PRICE_BELOW_MAX_LENGTH = 40;
+/**
+ * A longer price line is still the price when its first cell is only the price and the
+ * rest is a lowercase note about it ("$30.00 | everyday debit card transactions ... are
+ * not covered unless you opt in"), never another fee's name.
+ */
+const PRICE_THEN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per \w+|each)?\s*\|\s*[a-z]/;
 const CATEGORY_LOOKBACK_LINES = 3;
 const NAME_HEADING_LINES = 8;
 const NAME_WORD_SHARE = 0.75;
@@ -207,7 +213,7 @@ function feeRow(lines: string[], index: number): string {
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
-    .find((next) => next.length <= PRICE_BELOW_MAX_LENGTH && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
+    .find((next) => (next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next)) && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   // Units ("/Item") and notes that only qualify the name ("If checks are not on order
@@ -219,6 +225,12 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   const before = line.slice(Math.max(0, token.start - 16), token.start);
   const after = line.slice(token.end, token.end + 12);
   return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after);
+}
+
+/** The fee's name carries a band figure that sits in its row as a threshold. */
+function namesItsBand(row: string, feeName: string): boolean {
+  const bands = moneyTokens(row).filter((t) => isThreshold(row, t));
+  return moneyTokens(feeName).some((named) => bands.some((t) => Math.abs(t.value - named.value) < 0.005));
 }
 
 // Callers check many fees against one text in a row (Knox's self-check, a document's
@@ -278,6 +290,9 @@ export function checkFeeAgainstSource(
     if (!namesFee(line, stems) && !underHeading) continue;
     let row = feeRow(lines, i);
     let amountProblem = statesAmount(row, rounded, stems);
+    // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
+    // tier's price, not a band standing in for the whole fee.
+    if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;
     const leader = leaderRow(lines, i);
     if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
       row = leader;
