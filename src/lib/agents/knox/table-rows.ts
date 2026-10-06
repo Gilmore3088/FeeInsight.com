@@ -32,7 +32,7 @@ import {
  * the adapter; the extractor only sees `KnoxTableRow`.
  */
 
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 3 } as const;
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 4 } as const;
 
 export interface KnoxTableRow {
   cells: string[];

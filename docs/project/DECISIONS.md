@@ -5,6 +5,22 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Darwin is rebuilt as a full verification layer, with Claude as the last resort.** James, 05:29
+UTC ("i want to build the entire Darwin layer. But the API call should be last result"). Free
+methods run first: reading the schedule as rows, a learned category model, learned price ranges,
+peer checks and the shared source check. Only fees those methods disagree on go to a Claude
+call, and only within Darwin's own budget. An internal validation team (the "solutions team")
+may be added to grade Darwin against an answer key. Knowledge flows to and from every agent
+(James, 05:41 UTC): Darwin's learning reads and writes the same shared corrections store Knox and
+Magellan use, never a Darwin-only copy. The build plan is in the Darwin v2 design
+artifact (https://claude.ai/artifact/Ta2Nv3YRVCZ55orVTsNMjL).
+
+**Every agent gets its own Anthropic API key so spend is tracked and capped per agent.** James,
+05:29 UTC. `src/lib/ai-provider.ts` reads `ANTHROPIC_API_KEY_<AGENT>` (ATLAS, MAGELLAN, ROSETTA,
+KNOX, DARWIN, HAMILTON) and falls back to the shared `ANTHROPIC_API_KEY`, so nothing stops while
+the keys are being added. Every model call names the agent it bills to. The Atlas details page
+shows which key each agent is using.
+
 **The site shows a bank only while it has at least 3 distinct live fees.** James, 05:50 UTC, after
 the Hamilton publish audit found 163 banks left with 1 or 2 live fees by takedowns (120 of them)
 or from before the rule (82). `published_fee_catalog` hides such a bank's fees and shows them

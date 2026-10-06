@@ -21,7 +21,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.1.0";
+export const WORKSPACE_ENGINE_VERSION = "1.2.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -70,7 +70,7 @@ export interface Observation {
 }
 
 /** Where one fee sits in a market layer. */
-export type MarketLayerScope = "national" | "fed_district" | "state" | "charter_size";
+export type MarketLayerScope = "national" | "fed_district" | "state" | "charter_size" | "local";
 
 export interface MarketLayer {
   scope: MarketLayerScope;
@@ -84,7 +84,23 @@ export interface MarketLayer {
   p75: number | null;
   /** Percentile of the bank's own amount within the layer; null without enough peers or no own amount. */
   position: number | null;
+  /** Every institution's value in the layer, lowest first, for distribution charts. */
+  amounts: number[];
+  /** The same values counted into price bands, the bank's band included. */
+  bands: PriceBand[];
   asOf: string | null;
+  source: SourceRef;
+}
+
+/** The bank's local market: who has branches in its counties (or its headquarters city). */
+export interface LocalMarketInfo {
+  /** "branch_counties" for institutions in the FDIC Summary of Deposits; "hq_city" otherwise (credit unions). */
+  basis: "branch_counties" | "hq_city";
+  places: string[];
+  /** Summary of Deposits year the market was drawn from. */
+  sodYear: number;
+  /** Institutions in the market, the bank itself excluded, whether or not they publish this fee. */
+  institutions: number;
   source: SourceRef;
 }
 
@@ -107,6 +123,15 @@ export interface InstitutionFinancials {
   priorTtm: number | null;
   yoyPct: number | null;
   quarterEnd: string;
+  sourceRef: SourceRef;
+  /** Median quarterly income of filers with the same charter and asset size, newest first. */
+  peerMedian: PeerIncomeSeries | null;
+}
+
+export interface PeerIncomeSeries {
+  /** e.g. "Credit unions, $300M to $1B in assets". */
+  label: string;
+  quarters: (IncomeQuarter & { institutions: number })[];
   sourceRef: SourceRef;
 }
 
@@ -131,6 +156,8 @@ export interface Briefing {
   institutionFinancials: InstitutionFinancials | null;
   /** National deposit service charge income, newest quarter; null when none is on file. */
   nationalIncome: MarketIncome | null;
+  /** The same, the last eight quarters on file, newest first. */
+  nationalIncomeSeries: MarketIncome[];
   /** Fees on the bank's published schedule that Hamilton reviewed. */
   feesReviewed: number;
   peerLabel: string;
@@ -142,6 +169,8 @@ export interface PeerValue {
   institutionId: number;
   institutionName: string;
   amount: number;
+  /** Deposits held in the bank's market counties (FDIC Summary of Deposits), dollars; local competitors only. */
+  marketDeposits?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
   documentUrls: string[];
@@ -185,8 +214,9 @@ export interface FeeResearch {
    * null percentiles when too few institutions publish the fee.
    */
   layers: MarketLayer[];
-  /** Named competitors in the bank's market; null until the local-market reader lands. */
+  /** Named competitors in the bank's local market that publish this fee, largest deposits first; null when no market is on file. */
   localCompetitors: PeerValue[] | null;
+  localMarket: LocalMarketInfo | null;
   recentChanges: Fact[];
   /** Reported income for this fee, when a filing carries a line for it. */
   revenueLine: RevenueLine | null;

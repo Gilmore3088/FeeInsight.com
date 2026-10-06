@@ -19,6 +19,19 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(text, "Wire Transfers Incoming Domestic", 26, ".").ok).toBe(false);
   });
 
+  it("reads a line under a heading that names most of the fee", () => {
+    const text = "CASHIERS CHECK | $5.00 / EACH\n\nWIRE TRANSFERS (OUTGOING)\n\nDOMESTIC WIRE | $35.00\n\nINTERNATIONAL | $55.00";
+    expect(checkFeeAgainstSource(text, "WIRE TRANSFERS (OUTGOING): DOMESTIC WIRE", 35, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "WIRE TRANSFERS (OUTGOING): DOMESTIC WIRE", 55, ".").ok).toBe(false);
+    const overdraft = "Account Fees\nOverdraft/Non-Sufficient Funds\n...Item Paid $30.00\n...Item Returned $30.00";
+    expect(checkFeeAgainstSource(overdraft, "Overdraft/Non-Sufficient Funds: Item Paid", 30, ".").ok).toBe(true);
+  });
+
+  it("reads a price printed under its name after a bullet or a tilde", () => {
+    expect(checkFeeAgainstSource("Photocopies\n• $1.00 per page", "Photocopies", 1, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Stop Payment (per request)\n\n~$25\n\nFREE", "Stop Payment (per request)", 25, ".").ok).toBe(true);
+  });
+
   it("takes the row's first figure that is not a limit as the price", () => {
     const text = "Official Teller Check | $4.00 | per check, if not made payable to member, minimum $500";
     expect(checkFeeAgainstSource(text, "Official Teller Check", 4, ".").ok).toBe(true);

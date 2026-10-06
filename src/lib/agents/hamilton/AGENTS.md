@@ -126,6 +126,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   line is skipped (`Older document than the live price`). When either document lists that
   name at both prices (two products or tiers), the new line publishes beside the old one
   and no change is recorded (`listsBothPrices`).
+- Document age is compared only within one stream (`src/lib/agents/companion-streams.ts`):
+  the main fee link with its own earlier copies, each companion page (one account's page,
+  a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
+  outdates Value Checking's line, or the main schedule's; it publishes beside them.
 - Insert and supersede share one SAVEPOINT; the change record, prior-row read, signals
   and guide flags each have their own, so an optional write that fails never aborts the
   run transaction.
@@ -186,8 +190,10 @@ fix adds what it newly reads (Texar's $20 and $35 overdraft tiers), not only rem
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
 publish step runs `source-check.ts` on up to 40 institutions not checked since their
-newest live fee: its own state's (or institution's) when it has one, any state's
-otherwise, institutions never checked first. Each live fee, from any source,
+newest live fee: its own state's (or institution's) first, then any state's to fill
+the batch, institutions never checked first. A new strategy version (bumped whenever
+the shared reader changes) re-checks every institution and restores fees an older
+reader took down that now trace. Each live fee, from any source,
 goes through `checkFeeAgainstSource` (`src/lib/custom-report/source-check.ts`, the same
 rule the report gate uses): one row of the document names the fee and states the
 amount as its price, not a limit. When one line carries several fees (a flattened

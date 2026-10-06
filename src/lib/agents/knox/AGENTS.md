@@ -38,8 +38,9 @@ Knox owns conservative raw fee extraction.
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
 only on what the free team could not read.
 
-- Pass 1, free (`extract.rules`, `rules.ts`): line rules. A threshold, cap or rate base
-  ("balances below $2,500", "up to $29", "maximum of $175") is never read as the fee. New
+- Pass 1, free (`extract.rules`, `rules.ts`): line rules. A threshold, cap, limit, rate base
+  or refundable deposit ("balances below $2,500", "up to $29", "maximum of $175", "($1,000 Limit)")
+  is never read as the fee. New
   patterns map only to existing canonical keys and each has a fixture in `rules.test.ts`.
 - Pass 1 reads a price's name from the words nearest before it: in a flattened table row
   the nearest cell ("STOP PAYMENT ORDER | NOTARY FEE | $6.00" is a notary fee), widened
