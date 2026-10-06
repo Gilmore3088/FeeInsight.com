@@ -93,6 +93,42 @@ $0. It runs on every text Rosetta reads and on every HTML page discovery conside
 download, under the strategy `read.page_check@<FEE_PAGE_CHECK_VERSION>`. It never
 rejects a text Knox already pulled fees from.
 
+## Shared learning store (`pipeline_feedback`)
+
+One store every agent reads and writes, so what one agent learns reaches the others
+(James, 6 Oct 2026: "knowledge flow through to other agents, to and from"). One row is
+one judgement about one agent's output; `pipeline_attempts` says what an agent did, this
+says whether it turned out right.
+
+| Field | Meaning |
+|---|---|
+| `about_stage`, `about_strategy`, `about_version`, `about_attempt_id` | The output being judged and the attempt that produced it. |
+| `signal` | `wrong`, `right`, `missed` or `restored`. |
+| `kind` | Why, e.g. `wrong_category`, `threshold`, `unreproduced`, `answer_key`, `produced_live_fees`, `thin_link`, `dead_link` (list in `feedback.ts`). |
+| `reported_by`, `check_name` | Which agent judged it and with which check. |
+| `institution_id`, `source_document_id`, `source_url`, `fee_raw_id`, `fee_verified_id`, `fee_published_id`, `canonical_fee_key`, `amount` | What it is about. Join a document on `source_document_id`, a fee on `fee_raw_id` / `fee_published_id`, a link on `source_url`. |
+| `weight`, `evidence` | 1 by default (a link's live-fee count, below 1 when not proof); the line or numbers the judgement rests on. |
+| `dedupe_key` | Unique; writers upsert, so a re-judgement replaces the row. |
+
+Writers use `recordFeedback` (`feedback.ts`) and check `feedbackSchemaReady` first.
+Dedupe keys in use:
+- `hamilton.takedown:pub:<id>:extract` and `:verify`: a live fee Hamilton took down,
+  charged both to the Knox strategy that read it and to the Darwin attempt that approved it.
+- `hamilton.restore:pub:<id>`: that takedown is live again.
+- `darwin.verify:raw:<fee_raw_id>`: Darwin's judgement of a Knox read. Only
+  `category_mismatch` rejects are written today; holds (peer, range) are not proof.
+- `answer_key:fee:<id>`: a confirmed answer-key fee (`right`, reported by a human).
+- `magellan.link_yield:doc:<source_document_id>`: a link's live-fee outcome (Magellan).
+
+`syncPipelineFeedback` (`feedback-sync.ts`) runs in every Hamilton publish step after
+the source check. It fills the store from takedowns, restores, Darwin category rejects
+and answer-key fees, 1,000 source rows each per step, oldest first, and reports the counts
+in the step's `learning_feedback` detail.
+
+Atlas's scoreboard reports **Knox survival**: of Knox fees ever published, the share still
+live, overall and per strategy (`detail.knox_survival`). Yield rewards finding more fees;
+survival rewards finding fees that stay right.
+
 ## JSON parameters
 
 `src/lib/data-store/connection.ts` passes JSON text through unchanged
