@@ -53,9 +53,12 @@ function SortIcon({
 export function InstitutionTable({
   fees,
   median,
+  highestTier = false,
 }: {
   fees: FeeInstance[];
   median: number | null;
+  /** The category counts a bank at its highest tier (overdraft), not its median. */
+  highestTier?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("amount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -98,16 +101,18 @@ export function InstitutionTable({
       if (amounts.length > 0) {
         group.min_amount = amounts[0];
         group.max_amount = amounts[amounts.length - 1];
-        // Primary = median of this institution's fees
-        group.primary_amount =
-          amounts.length % 2 === 0
+        // Primary = the value the index counts for this institution: its highest tier
+        // for overdraft, otherwise the median of its fees.
+        group.primary_amount = highestTier
+          ? amounts[amounts.length - 1]
+          : amounts.length % 2 === 0
             ? (amounts[amounts.length / 2 - 1] + amounts[amounts.length / 2]) / 2
             : amounts[Math.floor(amounts.length / 2)];
       }
     }
 
     return Array.from(map.values());
-  }, [fees]);
+  }, [fees, highestTier]);
 
   const filtered = useMemo(() => {
     let result = groups;
@@ -320,15 +325,14 @@ export function InstitutionTable({
                       }`}
                     >
                       {group.primary_amount !== null ? (
-                        hasMultiple && group.min_amount !== group.max_amount ? (
-                          <span>
-                            {formatAmount(group.min_amount)}{" "}
-                            <span className="text-gray-400 font-normal">-</span>{" "}
-                            {formatAmount(group.max_amount)}
-                          </span>
-                        ) : (
-                          formatAmount(group.primary_amount)
-                        )
+                        <span>
+                          {formatAmount(group.primary_amount)}
+                          {hasMultiple && group.min_amount !== group.max_amount && (
+                            <span className="block text-xs font-normal text-gray-400">
+                              {formatAmount(group.min_amount)} to {formatAmount(group.max_amount)}
+                            </span>
+                          )}
+                        </span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}

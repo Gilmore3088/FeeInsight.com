@@ -91,6 +91,25 @@ public page reads, plus one per-institution population for the chart.
 **Lesson:** a public figure has one reader. New public pages read the snapshot, never their own
 aggregate or cache, and say what the number measures and when it was taken.
 
+## 2026-10-06: Banks showing several different overdraft or NSF fees
+**What happened:** James saw Siskiyou FCU and University FCU with three different fees each on
+the national index. Read-only queries at 00:50 UTC Oct 6: 82 banks have more than one live
+overdraft amount and 218 have more than one NSF amount.
+**Cause:** mostly different fees filed under one category: savings or loan overdraft protection,
+collection and recurring charges, balance thresholds ("cushion before overdraft fee $50") as
+overdraft; third-party, foreign, self-to-self, card re-activation and returned loan payments as
+NSF (106 live rows). The rest are real variants on the bank's page (18/65 or business accounts,
+ATM vs check, tiers by item amount), stale page versions are rare (9 of 2,832 fees from an older
+copy of a page lost their price), and "University Federal Credit Union" is two credit unions (ME
+and CA). Siskiyou now has one live $14 overdraft; its $25 and $30 rows came down at 18:38 Oct 5.
+UCU California prints NSF $14 for personal and $30 for organizational accounts; Knox does not yet
+tag the business section, so both count.
+**Fix:** category guard v6 rejects those names (PR on `claude/state-accuracy-95-0psznq`); the
+admin catalog shows the value the index counts (highest overdraft tier) with the range below.
+Live rows come down with /admin/atlas/details > Misfiled fees.
+**Lesson:** more than one live amount per bank and category is a signal to check, not an error
+by itself; read the names before assuming duplicates.
+
 ## 2026-10-05: Big Texas banks stuck behind bad links
 **What happened:** of the 14 largest banks in Texas National Bank of Jacksonville's five counties,
 only 5 had a live overdraft fee. Read-only queries at 23:50 UTC showed four different gaps:

@@ -77,6 +77,53 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_unsupported" });
   });
 
+  it("keeps transfers, collections, thresholds and other banks' items out of overdraft and NSF", () => {
+    for (const name of [
+      "Savings Overdraft Protection",
+      "Overdraft (covered by loan advance)",
+      "Overdraft Collection Fee",
+      "Recurring Overdraft (every 7 days overdrawn)",
+      "Overdraft Charge (beginning second day of overdraft)",
+      "Account Closed in Overdraft",
+      "Overdraft Balance Threshold",
+      "Cushion before overdraft fee is charged",
+      "If your consumer account is overdrawn by",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Courtesy Pay Fee (per item)",
+      "Overdraft Advance Fee (ACH, Card, or Check)",
+      "Recurring Debit Overdraft",
+      "Overdraft Fee (Max 5 items per day)",
+      "Overdraft Item on Lifeline 18/65 Checking",
+      "Overdraft Protection – ODP (per item presentment)",
+    ]) {
+      expect(checkFeeCategory("overdraft", name)).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Self-to-Self Returned Item",
+      "3rd Party Returned Check Fee",
+      "Foreign Return Item",
+      "NSF Check (drawn on other inst.)",
+      "Returned Payment (MasterCard)",
+      "ATM Card Re-activation (due to NSF)",
+      "Returned ACH Origination Item (per item)",
+      "NSF Fee (Reg D)",
+    ]) {
+      expect(checkFeeCategory("nsf", name).ok).toBe(false);
+    }
+    for (const name of [
+      "Insufficient Funds/Uncollected Funds (per presentment of items returned unpaid due to insufficient funds)",
+      "Visa® Non-Sufficient Funds (NSF) Fee",
+      "Non-Sufficient Funds Item (NSF) - ACH/ATM/Bill Pay/Zelle Payment/ACH Origination",
+      "Returned checks due to NSF, UCF or Reg D",
+      "NSF Return item (per Item)",
+    ]) {
+      expect(checkFeeCategory("nsf", name)).toEqual({ ok: true });
+    }
+  });
+
   it("keeps deposit bag and other supply prices out of night deposit", () => {
     for (const name of ["Zipper Bags", "Night Deposit Lock Bag", "Deposit Bag - Locking", "Strapped currency"]) {
       expect(checkFeeCategory("night_deposit", name).ok).toBe(false);

@@ -15,6 +15,7 @@ import {
   DISPLAY_NAMES,
 } from "@/lib/fee-taxonomy";
 import { InstitutionTable } from "./institution-table";
+import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { FeeHistogram } from "@/components/fee-histogram";
 import { BreakdownChart } from "@/components/breakdown-chart";
 
@@ -388,7 +389,7 @@ export default async function FeeCategoryDetailPage({
       )}
 
       {tab === "institutions" && (
-        <InstitutionTable fees={detail.fees} median={stats.median} />
+        <InstitutionTable fees={detail.fees} median={stats.median} highestTier={HIGHEST_TIER_CATEGORIES.has(category)} />
       )}
     </>
   );
