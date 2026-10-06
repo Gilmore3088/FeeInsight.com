@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Every daily overdraft cap was taken down, and none of the largest banks had one
+**What happened:** of 185 active institutions with $10B or more in assets, 40 had a live overdraft
+fee and 0 a daily cap (prod read-only, 14:00 UTC). Nationwide, all 251 dollar caps
+(`od_daily_cap`, `nsf_daily_cap`) the source check reviewed were taken down; 16 were live. The
+145 large institutions without an overdraft fee were lost mostly before extraction: 130 at
+Magellan (76 of them read a product or marketing page, not the fee schedule). Breakdown:
+`/mnt/project-files/accuracy/largest-banks-od-gap-2026-10-06.md`.
+**Cause:** `checkFeeAgainstSource` reads a row's price as its first figure after the name, so a
+cap ("$20.00 | Per Item | Maximum of $120.00 per day") always failed as `amount_is_a_threshold` or
+`amount_not_the_fee`. Count limits ("Maximum 3 Overdraft fees per day") had no reader at all.
+**Fix:** this PR. The shared check reads a daily cap's figure after cap wording and before "per
+day" (source check v4 re-checks and restores; dry run restores 29 caps at 23 institutions, 0
+before), and `src/lib/fee-daily-limit.ts` reads count limits for Hamilton's segment answer (dry
+run: 11 of the 40 large banks with a live overdraft fee).
+**Lesson:** a check that defines a fee's price as "not a limit" must special-case fees whose
+value is a limit. Measure coverage on the institutions buyers look for first, not only by state.
+
 ## 2026-10-06: Institutions with no website were never searched
 **What happened:** 585 active institutions have no `website_url` (510 credit unions, 75 banks; 45
 in TX, 27 in CA, prod read-only query 13:30 UTC). Every finder and the paid pass start from the

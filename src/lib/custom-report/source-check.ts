@@ -6,7 +6,10 @@
  * balance band, and sit under wording of the fee's category. A row is a line, plus the
  * next short lines when the price sits under the name ("Overnight Courier Service" /
  * "$50.00" / "/Item"). When one line carries several fees, each price belongs to the words
- * since the previous price. Anything else is dropped rather than shown with a value we can't
+ * since the previous price. A daily cap (`od_daily_cap`, `nsf_daily_cap`) is the opposite
+ * case: its figure is the limit on the fee's own row ("$20.00 | Per Item | Maximum of $120.00
+ * per day", "$30.00 (max $180.00 daily)"), so it must sit after cap wording and before "per
+ * day" or "daily". Anything else is dropped rather than shown with a value we can't
  * point to.
  */
 
@@ -41,6 +44,12 @@ const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
 const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+/** Categories whose value is a daily limit on another fee, not a price. */
+export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap", "nsf_daily_cap"]);
+/** Words that make a name a cap; the row names the fee, not the cap. */
+const CAP_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
+const CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
+const CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
@@ -138,6 +147,20 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
+/**
+ * A daily cap is stated on the fee's row: the amount follows cap wording ("Maximum of",
+ * "max", "up to", "not to exceed") or "daily", and is followed by "per day" or "daily"
+ * ("$30.00 (max $180.00 daily)"; "Daily maximum $120 per day"). Exported for tests.
+ */
+export function statesDailyCap(line: string, amount: number): boolean {
+  return moneyTokens(line).some((t) => {
+    if (Math.abs(t.value - amount) >= 0.005) return false;
+    const before = line.slice(Math.max(0, t.start - 40), t.start);
+    const after = line.slice(t.end, t.end + 30);
+    return CAP_BEFORE.test(before) && (CAP_AFTER.test(after) || /\bdaily\b/i.test(before));
+  });
+}
+
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
 function feeRow(lines: string[], index: number): string {
   const line = lines[index];
@@ -161,17 +184,34 @@ function isThreshold(line: string, token: MoneyToken): boolean {
 /**
  * Pure: is this published fee stated in its source text? Returns the source line that
  * carries it, or the first reason it is not traceable. `categoryPattern` is the report
- * line's include regex (Postgres word anchors \m \M are accepted).
+ * line's include regex (Postgres word anchors \m \M are accepted). A fee in a daily cap
+ * category (`canonicalFeeKey` in DAILY_CAP_CATEGORIES) that does not trace as a price is
+ * read once more as a cap on its fee's row, so the cap can only gain a trace, never lose one.
  */
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
+  canonicalFeeKey?: string | null,
+): SourceCheckResult {
+  const asPrice = checkAgainstLines(text, feeName, amount, categoryPattern, false);
+  if (asPrice.ok || !canonicalFeeKey || !DAILY_CAP_CATEGORIES.has(canonicalFeeKey)) return asPrice;
+  const asCap = checkAgainstLines(text, feeName, amount, categoryPattern, true);
+  return asCap.ok ? asCap : asPrice;
+}
+
+function checkAgainstLines(
+  text: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  dailyCap: boolean,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
   const lines = sourceLines(text);
-  const stems = nameStems(feeName);
+  // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
+  const stems = dailyCap ? nameStems(feeName).filter((stem) => !CAP_WORDS.has(stem)) : nameStems(feeName);
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
   const rounded = Math.round(amount * 100) / 100;
 
@@ -201,7 +241,9 @@ export function checkFeeAgainstSource(
       !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !` ${comparable(line)} `.includes(stem) || ` ${comparable(above)} `.includes(stem))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
-    const amountProblem = statesAmount(feeRow(lines, i), rounded, stems);
+    const amountProblem = dailyCap
+      ? statesDailyCap(feeRow(lines, i), rounded) ? null : "amount_not_the_fee"
+      : statesAmount(feeRow(lines, i), rounded, stems);
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;

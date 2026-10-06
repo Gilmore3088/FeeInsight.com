@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
@@ -782,7 +783,13 @@ export async function getSegmentFeeValues(
   feeCategory: string,
   capCategory: string | null,
   excludeInstitutionId?: number,
-): Promise<{ institutionsInSegment: number; ownInSegment: boolean; values: SegmentFeeValue[]; caps: Map<number, number> }> {
+): Promise<{
+  institutionsInSegment: number;
+  ownInSegment: boolean;
+  values: SegmentFeeValue[];
+  caps: Map<number, number>;
+  limits: Map<number, DailyFeeLimit>;
+}> {
   const params = [filter.minAssets, filter.maxAssets, filter.charterType, filter.stateCode, filter.largest ?? null];
   const segmentSql = `
     SELECT ct.id
@@ -846,5 +853,46 @@ export async function getSegmentFeeValues(
   }
   const capRows = capCategory ? kept.filter((r) => r.fee_category === capCategory) : [];
   const caps = valuePerInstitution(capRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })));
-  return { institutionsInSegment: Number(countRow?.n ?? 0), ownInSegment: Boolean(countRow?.own), values, caps };
+  const limits = await getDailyFeeLimits(values, feeCategory);
+  return { institutionsInSegment: Number(countRow?.n ?? 0), ownInSegment: Boolean(countRow?.own), values, caps, limits };
+}
+
+/**
+ * The daily limit on how many overdraft or NSF fees each institution charges ("Maximum 3
+ * Overdraft fees per day"), read from the stored text of the documents its live fee came
+ * from. Only the lines that mention a day (and the line above each) leave the database.
+ */
+export async function getDailyFeeLimits(
+  values: Pick<PeerFeeValue, "institution_id" | "source_document_ids">[],
+  feeCategory: string,
+): Promise<Map<number, DailyFeeLimit>> {
+  const limits = new Map<number, DailyFeeLimit>();
+  if (feeCategory !== "overdraft" && feeCategory !== "nsf") return limits;
+  const documentIds = [...new Set(values.flatMap((v) => v.source_document_ids))];
+  if (documentIds.length === 0) return limits;
+  const rows = (await sql.unsafe(
+    `SELECT t.source_document_id,
+            (SELECT string_agg(left(l.prev, 300) || E'\\n' || left(l.line, 1200), E'\\n' ORDER BY l.n)
+               FROM (SELECT x.line, x.n, lag(x.line, 1, '') OVER (ORDER BY x.n) AS prev
+                       FROM unnest(string_to_array(t.normalized_text, E'\\n')) WITH ORDINALITY AS x(line, n)) l
+              WHERE l.line ~* '\\mday\\M') AS day_lines
+       FROM (SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+               FROM agent_source_texts
+              WHERE source_document_id = ANY($1::bigint[])
+                AND status = 'completed'
+                AND normalized_text IS NOT NULL
+              ORDER BY source_document_id, id DESC) t`,
+    [documentIds] as never[],
+  )) as { source_document_id: number | string; day_lines: string | null }[];
+  const byDocument = new Map(rows.map((r) => [Number(r.source_document_id), r.day_lines]));
+  for (const value of values) {
+    for (const documentId of value.source_document_ids) {
+      const limit = dailyFeeLimitFor(byDocument.get(documentId), feeCategory);
+      if (limit) {
+        limits.set(value.institution_id, limit);
+        break;
+      }
+    }
+  }
+  return limits;
 }

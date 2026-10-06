@@ -295,7 +295,7 @@ export async function rollBackUnreproducedFees(
       if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
       const text = textFor(row);
       if (!readsFrom(text).get(key)?.has((row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
-      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".");
+      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
       if (!traced.ok && traced.reason !== "tiered_fee") continue;
       keptKeys.add(key);
       restoredKeys.add(`${institutionId}:${key}`);

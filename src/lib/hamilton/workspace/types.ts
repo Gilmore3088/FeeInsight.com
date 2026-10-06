@@ -243,6 +243,11 @@ export interface SegmentMember extends PeerValue {
   charterType: string | null;
   /** The published daily cap on this fee (overdraft or NSF), when the schedule states one. */
   dailyCap: number | null;
+  /**
+   * How many of these fees the schedule charges at most in a day ("Maximum 3 Overdraft fees
+   * per day"), with the line that states it; null when the fee's own document states none.
+   */
+  dailyFeeLimit: { count: number; line: string } | null;
 }
 
 /** The fee across a segment, with the bank's own place in it. */
@@ -257,6 +262,8 @@ export interface SegmentResearch {
   zeroCount: number;
   /** Members that publish a daily cap. */
   withDailyCap: number;
+  /** Members whose schedule limits how many of these fees it charges in a day. */
+  withDailyFeeLimit: number;
   /** Percentile of the bank's own fee among members; null without a fee or enough members. */
   ownPosition: number | null;
   /** Whether the asking bank itself fits the segment. */
