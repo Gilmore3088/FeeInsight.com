@@ -5,6 +5,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { detectFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import {
@@ -25,9 +26,11 @@ import {
   PAGE_CHECK_STRATEGY,
   recordReadResult,
   ROSETTA_READ_VERSION,
+  rungTextNotWorse,
   sendBackToMagellan,
   type ReadResult,
 } from "@/lib/agents/rosetta/read";
+import { ALTERNATE_READERS, PRIMARY_READERS, TEXT_SURVIVAL_CHECK } from "@/lib/agents/rosetta/text-survival";
 import {
   ROSETTA_TABLE_ROWS_VERSION,
   rosettaTextColumnsReady,
@@ -45,6 +48,11 @@ type SqlTag = typeof sql;
  * joined by " | ". The text is stored like any other read, so Knox extracts it with the
  * same rules. Every call is budget-checked and cost-logged by paidModelCall; a budget cap
  * or the automation stop ends the step cleanly.
+ *
+ * Learning plan step 4: a text PDF whose fees did not hold up after both free readers had
+ * it (the layout reader, then free OCR) comes here too. Its transcription replaces the
+ * stored text only when it lists at least as many fees with an amount; otherwise the
+ * earlier text stays and the attempt is logged `low_yield`, so it is not paid for again.
  *
  * JavaScript-only pages are not sent here: with no headless browser configured, the free
  * read hands them to Magellan's paid finder (see AGENTS.md).
@@ -79,6 +87,10 @@ interface PaidReadRow {
   content_hash: string;
   document_r2_key?: string | null;
   stored_content_type?: string | null;
+  /** `needs_ocr` for a scan; `completed` for a text whose fees did not hold up. */
+  text_status?: string | null;
+  /** The stored text of a completed document, to compare the transcription with. */
+  current_text?: string | null;
 }
 
 export interface RosettaPaidReadOptions extends PaidStepOptions {
@@ -100,14 +112,16 @@ async function countPdfPages(bytes: Uint8Array): Promise<number> {
 }
 
 /**
- * Scans still `needs_ocr` after the current free reader (and its OCR) had them, with no
- * settled paid attempt for these bytes.
+ * Scans still `needs_ocr` after the current free reader (and its OCR) had them, and (with
+ * the text-survival record) text PDFs whose fees did not hold up after free OCR had them
+ * too, with no settled paid attempt for these bytes. Scans come first.
  */
 async function selectPaidReadCandidates(
   db: SqlTag,
   limit: number,
   stateCode: string | undefined,
   vaultSchema: boolean,
+  textSurvival = false,
 ): Promise<PaidReadRow[]> {
   const params: Array<number | string | string[]> = [];
   const limitParam = `$${params.push(limit)}`;
@@ -119,30 +133,67 @@ async function selectPaidReadCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   if (normalizedState) stateFilter = `AND upper(btrim(inst.state_code)) = $${params.push(normalizedState)}`;
   const vaultColumns = vaultSchema ? ", doc.document_r2_key, doc.content_type AS stored_content_type" : "";
+  let lostAfterFreeReaders = "FALSE";
+  if (textSurvival) {
+    const survivalParam = `$${params.push(TEXT_SURVIVAL_CHECK)}`;
+    const ocrParam = `$${params.push(ALTERNATE_READERS.pdf)}`;
+    const layoutParam = `$${params.push(PRIMARY_READERS.pdf)}`;
+    lostAfterFreeReaders = `(
+             adt.status = 'completed'
+             AND adt.document_type = 'pdf'
+             AND EXISTS (
+               SELECT 1 FROM pipeline_feedback lost
+                WHERE lost.check_name = ${survivalParam}
+                  AND lost.signal = 'wrong'
+                  AND lost.source_document_id = adt.source_document_id
+                  AND lost.evidence->>'text_hash' = adt.text_hash
+             )
+             AND (
+               adt.reader = ${ocrParam}
+               OR (
+                 adt.reader = ${layoutParam}
+                 AND EXISTS (
+                   SELECT 1 FROM pipeline_attempts rung
+                    WHERE rung.stage = 'read'
+                      AND rung.institution_id = doc.institution_id
+                      AND rung.input_fingerprint = doc.content_hash
+                      AND rung.strategy = ${ocrParam}
+                 )
+               )
+             )
+           )`;
+  }
   return db.unsafe<PaidReadRow[]>(
     `
       SELECT doc.id AS source_document_id,
              doc.institution_id,
              inst.institution_name,
              doc.document_url,
-             doc.content_hash${vaultColumns}
+             doc.content_hash,
+             adt.status AS text_status,
+             CASE WHEN adt.status = 'completed' THEN adt.normalized_text END AS current_text${vaultColumns}
         FROM agent_source_texts adt
         JOIN source_documents doc
           ON doc.id = adt.source_document_id
          AND doc.content_hash = adt.source_hash
         JOIN institution_sources inst ON inst.id = doc.institution_id
-       WHERE adt.status = 'needs_ocr'
-         AND doc.status = 'success'
+       WHERE doc.status = 'success'
          AND doc.document_url IS NOT NULL
          ${stateFilter}
-         AND EXISTS (
-           -- Free first: the current reader (which escalates to free OCR) already tried.
-           SELECT 1 FROM pipeline_attempts free_read
-            WHERE free_read.stage = 'read'
-              AND free_read.institution_id = doc.institution_id
-              AND free_read.input_fingerprint = doc.content_hash
-              AND free_read.strategy <> ALL(${auxiliaryParam}::text[])
-              AND free_read.strategy_version >= ${versionParam}
+         AND (
+           (
+             adt.status = 'needs_ocr'
+             AND EXISTS (
+               -- Free first: the current reader (which escalates to free OCR) already tried.
+               SELECT 1 FROM pipeline_attempts free_read
+                WHERE free_read.stage = 'read'
+                  AND free_read.institution_id = doc.institution_id
+                  AND free_read.input_fingerprint = doc.content_hash
+                  AND free_read.strategy <> ALL(${auxiliaryParam}::text[])
+                  AND free_read.strategy_version >= ${versionParam}
+             )
+           )
+           OR ${lostAfterFreeReaders}
          )
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts paid
@@ -152,7 +203,7 @@ async function selectPaidReadCandidates(
               AND paid.strategy = ${paidParam}
               AND paid.outcome <> ALL(${retryableParam}::text[])
          )
-       ORDER BY adt.updated_at DESC, adt.id DESC
+       ORDER BY (adt.status = 'needs_ocr') DESC, adt.updated_at DESC, adt.id DESC
        LIMIT ${limitParam}
     `,
     params,
@@ -179,7 +230,10 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
   const vault = vaultSchema ? options.vault ?? getDocumentVault() : null;
   const textColumns = !dryRun && (await rosettaTextColumnsReady(db));
   const limit = Math.min(Math.max(1, Math.floor(options.limit ?? PAID_PASS_ITEMS_PER_RUN)), PAID_PASS_ITEMS_PER_RUN);
-  const rows = await selectPaidReadCandidates(db, limit, options.stateCode, vaultSchema);
+  // The text-survival record needs the shared store and the reader column.
+  // A dry run lists these too: the selection only reads.
+  const textSurvival = (await rosettaTextColumnsReady(db)) && (await feedbackSchemaReady(db));
+  const rows = await selectPaidReadCandidates(db, limit, options.stateCode, vaultSchema, textSurvival);
   result.selected = rows.length;
   if (dryRun) {
     result.results = rows.map((row) => ({ source_document_id: Number(row.source_document_id), institution_id: Number(row.institution_id), would_send: true }));
@@ -290,6 +344,17 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
       continue;
     }
 
+    // A text PDF already has a stored text with live fees: keep it unless this one is no thinner.
+    const replacesText = row.text_status === "completed";
+    if (replacesText && !rungTextNotWorse(text, row.current_text ?? "")) {
+      result.processed += 1;
+      result.succeeded += 1;
+      result.costMicrousd += costMicrousd;
+      result.results.push({ source_document_id: sourceDocumentId, institution_id: institutionId, outcome: "low_yield", chars: text.length, pages, cost_microusd: costMicrousd });
+      await record("low_yield", costMicrousd, text.length, { pages, truncated, kept_earlier_text: true });
+      continue;
+    }
+
     const pageCheck = vaultSchema ? scoreFeePage(text) : null;
     const wrong = pageCheck?.verdict === "wrong_document";
     const rows = rowsInText(tableRowsFromText(text, "paid_transcription"), text);
@@ -308,8 +373,8 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
       error: wrong ? pageCheck.reason : null,
       attemptOutcome: wrong ? "wrong_document" : truncated ? "ok_partial" : "ok",
       strategy: PAID_READ_STRATEGY,
-      format: "pdf_scanned",
-      routerReason: null,
+      format: replacesText ? "pdf_text" : "pdf_scanned",
+      routerReason: replacesText ? "fees from the free readers' texts did not hold up" : null,
       fromVault: loaded.fromVault,
       pageCheck,
       tableRows: rows.length,
