@@ -17,7 +17,7 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
-| `category_mismatch` | for the 13 report categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`) | rejected |
+| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range (`envelopes.ts`) | needs_review |
@@ -26,6 +26,8 @@ Darwin owns verification and classification.
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, source) not already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 
+- Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
+  as `category_mismatch` under an older guard are selected once more. No other decided row is.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every

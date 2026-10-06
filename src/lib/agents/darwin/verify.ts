@@ -5,7 +5,7 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
-import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -295,12 +295,20 @@ async function selectRawFees(
     // rows cannot starve the batch.
     const strategyParam = `$${params.push(DARWIN_VERIFY_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(DARWIN_VERIFY_STRATEGY.version)}`;
+    // A category rejection under an older guard version is the exception: a guard change
+    // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
+    // rejected, or one a new re-file rule now places, is not lost.
+    const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
               AND pa.strategy = ${strategyParam}
               AND pa.strategy_version = ${versionParam}
+              AND NOT (
+                pa.detail->>'reason_code' = 'category_mismatch'
+                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
+              )
          )`);
   }
   return db.unsafe<RawFeeRow[]>(
@@ -620,6 +628,8 @@ export async function runDarwinVerify(
   // Pass 2 evidence, loaded once per batch: state peer levels and the banks' other
   // stored documents for the same fees.
   const peers = new PeerLevelCache(db);
+  // A row Knox filed under a neighbouring category is checked under the one its name says.
+  const categoryOf = (row: RawFeeRow) => refileCategory(canonicalHintFrom(row), row.fee_name);
   const hintedRows = rows.filter((row) => canonicalHintFrom(row) != null);
   const sourceCopies = await loadSourceCopies(
     db,
@@ -629,7 +639,7 @@ export async function runDarwinVerify(
   );
 
   for (const row of rows) {
-    const canonicalFeeKey = canonicalHintFrom(row);
+    const canonicalFeeKey = categoryOf(row);
     let reasonCode = verificationReasonCode(row, canonicalFeeKey);
     if (!reasonCode && !statedInOwnSource(row, sourceTexts)) reasonCode = "not_in_source";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
@@ -722,6 +732,7 @@ export async function runDarwinVerify(
           decision: result.decision,
           reason_code: result.reasonCode,
           reason: result.reason,
+          category_guard_version: CATEGORY_GUARD_VERSION,
         },
       });
       await recordPassTwoAttempts(db, options, result);
