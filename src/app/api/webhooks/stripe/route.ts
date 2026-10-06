@@ -3,6 +3,7 @@ import { getStripe, getWebhookSecret } from "@/lib/stripe";
 import { withTransaction } from "@/lib/data-store/connection";
 import { applyStripeEvent, type StripeEventEffects } from "@/lib/stripe-webhook";
 import { sendProWelcomeEmail } from "@/lib/email/pro-welcome";
+import { deliverPaidReport } from "@/lib/leads/report-paid";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
 
@@ -50,6 +51,9 @@ async function handlePOST(req: Request) {
   // After commit, so a rolled-back event never sends; never throws.
   for (const welcome of (effects as StripeEventEffects | null)?.welcome ?? []) {
     await sendProWelcomeEmail(welcome);
+  }
+  for (const paid of (effects as StripeEventEffects | null)?.reportPaid ?? []) {
+    await deliverPaidReport(paid);
   }
 
   return new Response(JSON.stringify({ received: true }), { status: 200 });

@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import type { sql as sqlClient } from "@/lib/data-store/connection";
 import { acceptPendingWorkspaceInvitationsForUser } from "@/lib/hamilton/institution-membership";
 import type { User } from "@/lib/auth";
+import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 
 type Tx = typeof sqlClient;
 export type SubscriptionStatus = User["subscription_status"];
@@ -44,9 +45,23 @@ async function endSubscription(tx: Tx, customerId: string): Promise<void> {
   `;
 }
 
-/** What the caller does after the transaction commits: a welcome email per new Pro. */
+/** A paid institution report request, for the emails sent after commit. */
+export interface ReportPaidEffect {
+  leadId: number;
+  name: string;
+  email: string;
+  institutionId: number | null;
+  cents: number;
+  checkoutSessionId: string;
+}
+
+/**
+ * What the caller does after the transaction commits: a welcome email per new Pro, and
+ * James's alert plus the requester's report link per paid institution report.
+ */
 export interface StripeEventEffects {
   welcome: Array<{ email: string; name: string | null }>;
+  reportPaid: ReportPaidEffect[];
 }
 
 /**
@@ -55,15 +70,47 @@ export interface StripeEventEffects {
  * reset by later failures) and clears whenever the subscription is active or ends.
  */
 export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<StripeEventEffects> {
-  const effects: StripeEventEffects = { welcome: [] };
+  const effects: StripeEventEffects = { welcome: [], reportPaid: [] };
   await applyEvent(tx, event, effects);
   return effects;
+}
+
+/**
+ * An institution report paid by card (/pay/report). Marks the request Paid once; a
+ * redelivered or second session for an already-paid request changes nothing. The amount
+ * recorded is what Stripe charged, which is what James is told.
+ */
+async function applyReportPayment(tx: Tx, session: Stripe.Checkout.Session, effects: StripeEventEffects): Promise<void> {
+  if (session.mode !== "payment" || session.payment_status !== "paid") return;
+  const leadId = Number(session.metadata?.lead_id);
+  if (!Number.isSafeInteger(leadId) || leadId <= 0) return;
+  const paid = await tx<Array<{ id: string | number; name: string; email: string; quote_institution_id: string | number | null }>>`
+    UPDATE leads
+    SET paid_at = NOW(), status = 'paid', stripe_checkout_session_id = ${session.id}
+    WHERE id = ${leadId} AND paid_at IS NULL
+    RETURNING id, name, email, quote_institution_id
+  `;
+  for (const lead of paid) {
+    const institutionId = lead.quote_institution_id === null ? null : Number(lead.quote_institution_id);
+    effects.reportPaid.push({
+      leadId: Number(lead.id),
+      name: lead.name,
+      email: lead.email,
+      institutionId: Number.isSafeInteger(institutionId) && (institutionId ?? 0) > 0 ? institutionId : null,
+      cents: session.amount_total ?? 0,
+      checkoutSessionId: session.id,
+    });
+  }
 }
 
 async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffects): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.kind === REPORT_PAYMENT_KIND) {
+        await applyReportPayment(tx, session, effects);
+        return;
+      }
       const customerId = customerIdOf(session.customer);
       const email = session.customer_email || session.customer_details?.email || session.metadata?.email;
       const userId = Number(session.metadata?.user_id);

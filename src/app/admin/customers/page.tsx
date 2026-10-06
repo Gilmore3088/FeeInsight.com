@@ -13,7 +13,8 @@ import { RoomHeader, RoomScreens, Unreadable } from "../room-hub";
 const LANES: { title: string; note: string; statuses: LeadStatus[] }[] = [
   { title: "Waiting on us", note: "Owed a reply", statuses: ["new", "needs_reply", "overdue", "email_failed", "in_progress"] },
   { title: "Held", note: "Their market isn't ready", statuses: ["held"] },
-  { title: "Report sent", note: "Answered", statuses: ["sent", "followed_up"] },
+  { title: "Quoted", note: "Waiting on their payment", statuses: ["quoted"] },
+  { title: "Paid or sent", note: "Answered", statuses: ["paid", "sent", "followed_up"] },
   { title: "Closed", note: "Done", statuses: ["closed"] },
 ];
 

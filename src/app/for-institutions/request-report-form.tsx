@@ -389,7 +389,7 @@ function RequestReportFormInner({
       </button>
       <p className="text-xs leading-relaxed text-[#6B6255]">
         {institution
-          ? "A paid report. We reply within one business day with scope and price; nothing is charged until you agree."
+          ? "A paid report. We reply within one business day with scope and price, and you pay by card once you agree to the quote."
           : "Free, no card. The report opens right away and the link comes by email."}
       </p>
     </form>

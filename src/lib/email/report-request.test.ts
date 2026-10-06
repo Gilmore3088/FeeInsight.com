@@ -114,7 +114,7 @@ describe("sendReportRequestNotifications", () => {
     expect(reply.subject).toBe("We received your request for Example Credit Union");
     expect(reply.text).toContain("The institution report is paid");
     expect(reply.text).toContain("2. We reply within one business day with the report's scope and price.");
-    expect(reply.text).toContain("3. Nothing is charged until you agree.");
+    expect(reply.text).toContain("3. You pay by card once you agree to the quote. Nothing is charged before that.");
     expect(reply.html).toContain("Example Credit Union");
   });
 

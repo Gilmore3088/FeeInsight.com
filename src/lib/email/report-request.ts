@@ -88,7 +88,7 @@ export async function sendReportRequestNotifications(
         items: [
           `We check the fee data we hold for ${input.institution} and its local competitors.`,
           "We reply within one business day with the report's scope and price.",
-          "Nothing is charged until you agree.",
+          "You pay by card once you agree to the quote. Nothing is charged before that.",
         ],
       },
       closing: ["Reply to this email with questions.", ...emailOptInLines(input.email)],

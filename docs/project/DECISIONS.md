@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
+stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
+pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; the price comes from
+the request row, never the link. The Stripe webhook marks the request Paid, alerts James, and emails
+the requester their private report link. A quote is saved only when the report check says "ready to
+quote", so no one pays for a report built on thin data. The report stays "priced on request".
+
 **Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
 abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
 Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges

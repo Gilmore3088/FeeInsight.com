@@ -39,6 +39,14 @@ export const REPORT_OFFER = {
 // (rows copied from the sample) are hidden.
 export const SAMPLE_REPORT_LIVE = false;
 /** The free offer, in one line: the instant national and Fed district reports. */
+/** What the institution report contains; the bank landing offer and the pay page list it. */
+export const REPORT_INCLUDES = [
+  "Your published fees next to your competitors', line by line",
+  "Each fee marked above, inside or below the market range",
+  "Named peers, not anonymous averages",
+  "A source for every figure: the document, the page, the date",
+] as const;
+
 export const REPORT_OFFER_LINE = "National and Fed district fee reports — free, and ready in a minute";
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".

@@ -125,3 +125,49 @@ describe("applyStripeEvent", () => {
     });
   });
 });
+
+describe("institution report payments", () => {
+  beforeEach(() => {
+    tx.mockReset();
+    tx.mockResolvedValue([]);
+  });
+
+  const paidSession = (overrides: Record<string, unknown> = {}) =>
+    event("checkout.session.completed", {
+      id: "cs_test_1",
+      mode: "payment",
+      payment_status: "paid",
+      amount_total: 30000,
+      customer: null,
+      metadata: { kind: "institution_report", lead_id: "18" },
+      ...overrides,
+    });
+
+  it("marks the request paid once and queues the emails", async () => {
+    tx.mockResolvedValueOnce([{ id: "18", name: "Pat Lee", email: "pat@example.com", quote_institution_id: "201" }]);
+    const effects = await applyStripeEvent(tx as never, paidSession());
+    const [sql] = issued();
+    expect(sql).toContain("SET paid_at = NOW(), status = 'paid'");
+    expect(sql).toContain("paid_at IS NULL");
+    expect(effects.reportPaid).toEqual([
+      { leadId: 18, name: "Pat Lee", email: "pat@example.com", institutionId: 201, cents: 30000, checkoutSessionId: "cs_test_1" },
+    ]);
+    expect(effects.welcome).toEqual([]);
+  });
+
+  it("never grants Pro for a report payment", async () => {
+    await applyStripeEvent(tx as never, paidSession({ customer: "cus_1", metadata: { kind: "institution_report", lead_id: "18", user_id: "5" } }));
+    expect(issued().join(" ")).not.toContain("users");
+  });
+
+  it("ignores an unpaid session and a missing lead id", async () => {
+    await applyStripeEvent(tx as never, paidSession({ payment_status: "unpaid" }));
+    await applyStripeEvent(tx as never, paidSession({ metadata: { kind: "institution_report" } }));
+    expect(tx).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing again for an already-paid request", async () => {
+    const effects = await applyStripeEvent(tx as never, paidSession());
+    expect(effects.reportPaid).toEqual([]);
+  });
+});
