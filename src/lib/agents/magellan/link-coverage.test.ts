@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isBusinessOnlyLink, isBusinessOnlyText, refersElsewhere } from "./link-coverage";
+import { hasOverdraftPrice, isBusinessOnlyLink, isBusinessOnlyText, isStaleDatedLink, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -39,5 +39,20 @@ describe("overdraft prices that are not thresholds", () => {
     expect(hasOverdraftPrice("Overdraft fees will be waived. Maximum of $250.00")).toBe(false);
     expect(hasOverdraftPrice("Non-Sufficient Funds/Overdrafts (For each item) $ 35.00")).toBe(true);
     expect(hasOverdraftPrice("Overdrafts Paid $30.00")).toBe(true);
+  });
+});
+
+describe("documents dated years ago", () => {
+  const now = new Date("2026-10-06T00:00:00Z");
+
+  it("flags a schedule whose address carries a year three or more back", () => {
+    expect(isStaleDatedLink("https://www.enterprisebank.com/sites/default/files/2019-05/2019-05-15.pdf", now)).toBe(true);
+    expect(isStaleDatedLink("https://bank.example/docs/2023/fee-schedule.pdf", now)).toBe(true);
+  });
+
+  it("keeps recent or undated documents", () => {
+    expect(isStaleDatedLink("https://bank.example/docs/2025-01/fee-schedule.pdf", now)).toBe(false);
+    expect(isStaleDatedLink("https://bank.example/personal/fee-schedule.pdf", now)).toBe(false);
+    expect(isStaleDatedLink("https://bank.example/forms/form2019.pdf", now)).toBe(false);
   });
 });
