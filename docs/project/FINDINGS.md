@@ -387,3 +387,15 @@ the maintenance guard (no savings, business, statement, withdrawal, card or box 
 inactivity and dormancy charges as dormant-account fees. The version bump makes Hamilton's rules
 re-check and Knox's re-extract gate read documents again; the new fees go through Darwin as usual.
 **Still open:** held lines with no report category stay held; a new category is a taxonomy decision.
+
+## 2026-10-06: A daily cap and a box price read as NSF fees
+**What happened:** the NSF tail at $50 included Bath State Bank ("$25 per return item ($50 maximum
+per day)" read as a $50 fee) and Hawaii Community FCU (the next column's "5" X 10" X 22" box ....
+$50.00" paired with "NSF Fee").
+**Cause:** Knox treated a figure named a maximum after an earlier price as a second fee, and the
+table reader paired a fee name with a value cell that named a fee of its own (a box size).
+**Fix:** same PR: Knox rules v10, table v3 and overdraft/NSF family v3. A "$X maximum" after an
+earlier price or rate on the line is that fee's cap, and is read as a daily cap when it says "per
+day"; a lone "$10.00 maximum" stays the fee's own price. A value cell a rule names on its own is
+left to the line rules. Read-only check at 02:25 UTC Oct 6: 8 live fees came from a "$X maximum"
+figure; the version bump re-checks them and the 4 that follow an earlier price or rate will stop reproducing.

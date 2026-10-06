@@ -325,9 +325,18 @@ export function amountsIn(segment: string): AmountMatch[] {
 }
 
 /** True when the amount at [start, end) is a threshold, cap or rate base, not a price. */
+/**
+ * "$25 per return item ($50 maximum per day)": a figure named a maximum after an earlier
+ * price or rate on the line is that fee's cap. A lone "$10.00 maximum" is the fee's own
+ * (up-to) price.
+ */
+const MAX_AFTER = /^\s*(?:maximum|max\b)/i;
+const EARLIER_PRICE = /\$\s?\d|\d\s*%/;
+
 export function isConditionAmount(text: string, amount: Pick<AmountMatch, "start" | "end">): boolean {
   return CONDITION_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
-    CONDITION_AFTER.test(text.slice(amount.end, amount.end + 30));
+    CONDITION_AFTER.test(text.slice(amount.end, amount.end + 30)) ||
+    (MAX_AFTER.test(text.slice(amount.end, amount.end + 12)) && EARLIER_PRICE.test(text.slice(0, amount.start)));
 }
 
 export function detectFrequency(segment: string): string | null {

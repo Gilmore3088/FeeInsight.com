@@ -1,12 +1,28 @@
 import { describe, expect, it } from "vitest";
 
 import { amountsIn, classifyFeeText, extractCandidatesFromText, extractFromSegment, stripFootnoteMarks } from "./rules";
+import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
 }
 
 describe("Knox extract.rules", () => {
+  it("v10 never pairs a fee name with the next column's box price (Hawaii Community FCU)", () => {
+    const text = "NSF Fee* (Non-Sufficient Funds Fee) | 5” X 10” X 22” box...................................................... $50.00\n";
+    const found = runFreeSpecialists(text).candidates.map((c) => [c.amount, c.canonicalHint]);
+    expect(found).not.toContainEqual([50, "nsf"]);
+  });
+
+  it("v10 never reads a cap named after its figure as a second fee (Bath State Bank)", () => {
+    const text = "Non-Sufficient Fund Returned Item(s) Charge | $25 per return item ($50 maximum per day)\n\nBounce Paid Item(s) Charge | $25 per item paid ($100 maximum per day)";
+    const found = extractCandidatesFromText(text).candidates.map((c) => [c.amount, c.canonicalHint]);
+    expect(found).toContainEqual([25, "nsf"]);
+    expect(found.some(([amount]) => amount === 50 || amount === 100)).toBe(false);
+    // A lone "maximum" figure is the fee's own up-to price.
+    expect(extractFromSegment("Dormant Account Fee…………………….$10.00 maximum*").candidates.map((c) => c.amount)).toEqual([10]);
+  });
+
   it("v9 reads an account's monthly service charge written as prose (Evergreen Federal Bank)", () => {
     const evergreen = extractFromSegment(
       "Evergreen Non-Interest Checking | n/a | n/a | n/a | $500 minimum daily balance, otherwise $8 service charge per statement cycle",
