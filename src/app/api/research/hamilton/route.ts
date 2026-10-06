@@ -101,7 +101,7 @@ async function handlePOST(request: Request) {
     );
   }
 
-  if (!hasAnthropicApiKey()) {
+  if (!hasAnthropicApiKey("hamilton")) {
     return Response.json(
       { error: MISSING_ANTHROPIC_API_KEY_MESSAGE },
       { status: 503 }
@@ -239,7 +239,7 @@ async function handlePOST(request: Request) {
       const result = await trackAnthropicRequest(
         providerContext,
         async () => generateText({
-          model: getAnthropicLanguageModel(agent.model),
+          model: getAnthropicLanguageModel(agent.model, "hamilton"),
           system: systemPrompt,
           messages: await convertToModelMessages(messages),
           tools: agent.tools,
@@ -288,7 +288,7 @@ async function handlePOST(request: Request) {
 
     providerStartedAt = await guardProviderCall(providerContext);
     const result = streamText({
-      model: getAnthropicLanguageModel(agent.model),
+      model: getAnthropicLanguageModel(agent.model, "hamilton"),
       system: systemPrompt,
       messages: await convertToModelMessages(messages),
       tools: agent.tools,
