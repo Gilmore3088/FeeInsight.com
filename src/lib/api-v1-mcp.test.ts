@@ -18,6 +18,8 @@ function handlers(): McpV1Handlers {
     fees: vi.fn(async () => Response.json({ data: [] })),
     index: vi.fn(async () => Response.json({ scope: "filtered", data: [{ category: "overdraft", median: 30 }] })),
     institutions: vi.fn(async () => Response.json({ error: "Institution not found", code: "not_found" }, { status: 404 })),
+    revenue: vi.fn(async () => Response.json({ view: "national", data: [] })),
+    feeChanges: vi.fn(async () => Response.json({ count: 0, data: [] })),
   };
 }
 
@@ -54,12 +56,45 @@ describe("MCP connector", () => {
     expect(response.status).toBe(202);
   });
 
-  it("lists the five read-only tools", async () => {
+  it("ranks institutions by a fee through the institutions route", async () => {
+    const h = handlers();
+    await handleMcpPost(
+      rpc({
+        jsonrpc: "2.0",
+        id: 9,
+        method: "tools/call",
+        params: { name: "rank_institutions_by_fee", arguments: { category: "overdraft", sort: "lowest", state: "TX" } },
+      }),
+      h,
+    );
+
+    const forwarded = vi.mocked(h.institutions).mock.calls[0][0];
+    expect(forwarded.nextUrl.searchParams.get("fee_category")).toBe("overdraft");
+    expect(forwarded.nextUrl.searchParams.get("sort")).toBe("lowest");
+    expect(forwarded.nextUrl.searchParams.get("limit")).toBe("25");
+  });
+
+  it("sends revenue and fee-change tools to their own routes", async () => {
+    const h = handlers();
+    await handleMcpPost(
+      rpc([
+        { jsonrpc: "2.0", id: 10, method: "tools/call", params: { name: "get_revenue_trend", arguments: { view: "districts", quarters: 12 } } },
+        { jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "get_fee_changes", arguments: { days: 30 } } },
+      ]),
+      h,
+    );
+
+    expect(vi.mocked(h.revenue).mock.calls[0][0].nextUrl.pathname).toBe("/api/v1/revenue");
+    expect(vi.mocked(h.revenue).mock.calls[0][0].nextUrl.searchParams.get("quarters")).toBe("12");
+    expect(vi.mocked(h.feeChanges).mock.calls[0][0].nextUrl.pathname).toBe("/api/v1/fee-changes");
+  });
+
+  it("lists the read-only tools", async () => {
     const response = await handleMcpPost(rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }), handlers());
     const body = await response.json();
 
     expect(body.result.tools.map((t: { name: string }) => t.name)).toEqual(MCP_TOOL_NAMES);
-    expect(MCP_TOOL_NAMES).toHaveLength(5);
+    expect(MCP_TOOL_NAMES).toHaveLength(8);
     expect(body.result.tools.every((t: { annotations: { readOnlyHint: boolean } }) => t.annotations.readOnlyHint)).toBe(true);
   });
 
