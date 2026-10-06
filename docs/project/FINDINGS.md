@@ -1445,3 +1445,27 @@ specialists don't pair a heading with a row whose own cell is an account type.
 **Lesson:** score a rule change on the specific banks a report depends on, not only on the
 answer keys; the answer keys had none of these layouts.
 
+
+## 2026-10-06: Knox kept reading older copies of a page
+**What happened:** Magellan marks one current document per page (`superseded_by_id`, PR 265),
+and its contract says Knox reads the current copy, but Knox's text selection never checked
+it. At 17:55 UTC, 2,520 texts on older copies had a current copy with its own text (934 were
+read again in the last 24 hours), and 8,689 unverified Knox rows from older copies were still
+queued for Darwin, where a stale price competes with today's.
+**Fix:** `src/lib/agents/knox/extract.ts`. Knox skips an older copy once the current copy has
+a text, and each extract step retires up to 2,000 unverified older-copy rows
+(`superseded_by_newer_copy`) for categories Knox already read from the current copy. Read-only
+count on prod: 3,887 rows at 419 banks qualify today, 3,412 of them at the same price as the
+current copy's row. The other 4,802 wait (their current copy is not read yet, or does not show
+that category), so no fee is lost to a weaker newer read. Verified and live fees are untouched.
+**Also found:** a page re-fetched with unchanged text was never read again. Knox skipped it as
+"the same text under another document id was already extracted", and the older copy that held
+the rows was itself blocked by its identical siblings. Navy Federal's re-check had reported 21
+missing fees on its page at every rules version since v7, but no re-read followed. Separately,
+the re-extract triggers (a thin text, or the rules re-check) only reach documents with live
+fees. So 9 of the largest banks' stored schedules priced an overdraft fee that was never live.
+Now an older copy's rows never block the current copy, and $10B+ banks' current pages are
+re-read once per rules version, first in line. Read-only check at 18:20 UTC: the current pages
+of all 11 flagged banks are selected, and 1,977 texts in total (183 at $10B+ banks) are due.
+**Lesson:** when one agent adds a "current" marker, check every reader of the table honours it;
+a comment saying "Knox reads the current copy" was not the same as Knox doing it.
