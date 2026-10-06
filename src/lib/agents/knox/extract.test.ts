@@ -200,6 +200,52 @@ describe("Knox agentic extraction", () => {
     expect(unsafeSql).toContain("prior.text_hash = adt.text_hash");
   });
 
+  describe("one document per page", () => {
+    function currentCopyDb(rows: Array<Record<string, unknown>>, retired: number[]): DbMock {
+      const db = createDbMock(rows);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        if (text.includes("INSERT INTO raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 900 }]);
+        if (text.includes("superseded_by_newer_copy")) return Promise.resolve(retired.map((id) => ({ fee_raw_id: id })));
+        if (text.includes("old_copy.superseded_by_id IS NOT NULL")) return Promise.resolve(retired.map((id) => ({ fee_raw_id: id })));
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    it("reads the current copy of a page, not an older copy", async () => {
+      const db = currentCopyDb([], []);
+
+      await runKnoxExtract({ runId: 106, db: asExtractDb(db) });
+
+      const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(unsafeSql).toContain("current_text.source_document_id = old_copy.superseded_by_id");
+    });
+
+    it("retires older-copy rows only for a category the current copy has", async () => {
+      const db = currentCopyDb([textArtifact], [11, 12]);
+
+      const result = await runKnoxExtract({ runId: 107, db: asExtractDb(db) });
+
+      expect(result.retiredOlderCopyRows).toBe(2);
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("cur.source_document_id = old_copy.superseded_by_id");
+      expect(sqlText).toContain("NOT EXISTS (\n         SELECT 1 FROM verified_fee_observations fv");
+      expect(sqlText).toContain('|| \'["superseded_by_newer_copy"]\'::jsonb');
+    });
+
+    it("leaves older copies alone before the current-copy column exists", async () => {
+      const db = createDbMock([textArtifact]);
+
+      const result = await runKnoxExtract({ runId: 109, db: asExtractDb(db) });
+
+      expect(result.retiredOlderCopyRows).toBe(0);
+      const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(unsafeSql).not.toContain("old_copy.superseded_by_id");
+    });
+  });
+
   describe("with the learning core", () => {
     function learningDb(rows: Array<Record<string, unknown>>): DbMock {
       const db = createDbMock(rows);

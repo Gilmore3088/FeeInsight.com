@@ -1423,3 +1423,18 @@ reads change, so no live fee is taken down.
 **Lesson:** an agent that writes corrections to a shared store must also read them, or the same
 mistake comes back with the next rule change.
 
+
+## 2026-10-06: Knox kept reading older copies of a page
+**What happened:** Magellan marks one current document per page (`superseded_by_id`, PR 265),
+and its contract says Knox reads the current copy, but Knox's text selection never checked
+it. At 17:55 UTC, 2,520 texts on older copies had a current copy with its own text (934 were
+read again in the last 24 hours), and 8,689 unverified Knox rows from older copies were still
+queued for Darwin, where a stale price competes with today's.
+**Fix:** `src/lib/agents/knox/extract.ts`. Knox skips an older copy once the current copy has
+a text, and each extract step retires up to 2,000 unverified older-copy rows
+(`superseded_by_newer_copy`) for categories Knox already read from the current copy. Read-only
+count on prod: 3,887 rows at 419 banks qualify today, 3,412 of them at the same price as the
+current copy's row. The other 4,802 wait (their current copy is not read yet, or does not show
+that category), so no fee is lost to a weaker newer read. Verified and live fees are untouched.
+**Lesson:** when one agent adds a "current" marker, check every reader of the table honours it;
+a comment saying "Knox reads the current copy" was not the same as Knox doing it.

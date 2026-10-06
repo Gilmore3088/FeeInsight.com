@@ -11,6 +11,7 @@ import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
+import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
@@ -101,6 +102,8 @@ export interface RunKnoxExtractResult {
   heldForReview: number;
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
+  /** Unverified rows from an older copy of a page whose current copy Knox has read. */
+  retiredOlderCopyRows: number;
   /** Texts the router refused because this extractor version already failed on them. */
   skippedKnownInputs: number;
   limit: number;
@@ -137,6 +140,7 @@ async function selectTextArtifacts(
   db: SqlTag,
   limit: number,
   learning: boolean,
+  currentCopy: boolean,
   institutionId?: number,
   stateCode?: string,
 ): Promise<TextArtifactRow[]> {
@@ -150,6 +154,20 @@ async function selectTextArtifacts(
   if (normalizedState) {
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  if (currentCopy) {
+    // One document per page: an older copy of a page Magellan fetched again is history
+    // once the current copy has a text, so Knox reads the current copy instead.
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM source_documents old_copy
+             JOIN agent_source_texts current_text
+               ON current_text.source_document_id = old_copy.superseded_by_id
+              AND current_text.status = 'completed'
+              AND current_text.char_count > 0
+            WHERE old_copy.id = adt.source_document_id
+              AND old_copy.superseded_by_id IS NOT NULL
+         )`);
   }
   let playbookColumns = "";
   let playbookJoin = "";
@@ -265,6 +283,56 @@ export async function retireRowsFromOlderText(db: SqlTag, row: KnoxTextRow): Pro
        AND NOT EXISTS (
          SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
        )
+    RETURNING fr.fee_raw_id
+  `;
+  return retired.length;
+}
+
+/** Older-copy rows retired per extract step. */
+export const OLDER_COPY_RETIRE_LIMIT = 2000;
+
+/**
+ * One document per page: when Magellan stores a newer copy of a page, the unverified rows
+ * Knox read from an older copy stop going to Darwin, but only once Knox has read the same
+ * category from the current copy. The current copy's row then stands for the fee, at the
+ * price the bank shows today. A category the current copy does not show is left for
+ * Darwin, so a fee the newer read misses is not lost. Rows Darwin already verified are
+ * left alone; live fees a newer copy dropped are Hamilton's (`hamilton/newer-copy-retire.ts`).
+ */
+export async function retireRowsFromOlderCopies(
+  db: SqlTag,
+  options: { limit?: number } = {},
+): Promise<number> {
+  if (!(await currentCopySchemaReady(db))) return 0;
+  const limit = Math.max(0, Math.min(options.limit ?? OLDER_COPY_RETIRE_LIMIT, OLDER_COPY_RETIRE_LIMIT));
+  if (limit === 0) return 0;
+  const eligible = db`
+    SELECT fr.fee_raw_id
+      FROM raw_fee_observations fr
+      JOIN source_documents old_copy ON old_copy.id = fr.source_document_id
+     WHERE fr.source = 'knox'
+       AND old_copy.superseded_by_id IS NOT NULL
+       AND fr.outlier_flags ? 'needs_darwin_verification'
+       AND NOT EXISTS (
+         SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
+       )
+       AND EXISTS (
+         SELECT 1
+           FROM raw_fee_observations cur
+          WHERE cur.source = 'knox'
+            AND cur.source_document_id = old_copy.superseded_by_id
+            AND NOT (COALESCE(cur.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
+            AND substring(cur.conditions FROM 'canonical_hint=([a-z_]+)')
+                = substring(fr.conditions FROM 'canonical_hint=([a-z_]+)')
+       )
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+  `;
+  const retired = await db`
+    UPDATE raw_fee_observations fr
+       SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'needs_darwin_verification')
+                           || '["superseded_by_newer_copy"]'::jsonb
+     WHERE fr.fee_raw_id IN (${eligible})
     RETURNING fr.fee_raw_id
   `;
   return retired.length;
@@ -628,7 +696,9 @@ export async function runKnoxExtract(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
-  const rows = await selectTextArtifacts(db, limit, learning, options.institutionId, options.stateCode);
+  // Dry runs stay off the database beyond the text read, like the lessons below.
+  const currentCopy = !dryRun && (await currentCopySchemaReady(db));
+  const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
@@ -744,6 +814,7 @@ export async function runKnoxExtract(
   if (!dryRun) {
     await recordExtractionSignals(db, options.runId, results, rowByDocumentTextId);
   }
+  const retiredOlderCopyRows = currentCopy ? await retireRowsFromOlderCopies(db) : 0;
 
   return {
     selectedDocuments: rows.length,
@@ -754,6 +825,7 @@ export async function runKnoxExtract(
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     retiredOlderRows,
+    retiredOlderCopyRows,
     skippedKnownInputs,
     limit,
     dryRun,

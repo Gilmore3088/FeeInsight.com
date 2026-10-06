@@ -26,6 +26,13 @@ Knox owns conservative raw fee extraction.
   re-read changes a document's text, Knox extracts the new text and retires the
   unverified rows it took from the older text (`needs_darwin_verification` removed,
   `superseded_by_reread` added). Rows Darwin already verified are left alone.
+- One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
+  `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
+  a text. Each extract step also retires up to 2,000 unverified rows from older copies
+  (`needs_darwin_verification` removed, `superseded_by_newer_copy` added), but only for a
+  category Knox has already read from the current copy, so a fee the newer read misses
+  still goes to Darwin. Verified rows are left alone; live fees a newer copy dropped are
+  Hamilton's (`hamilton/newer-copy-retire.ts`).
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
   name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
