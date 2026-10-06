@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROOMS, findRoomPage, roomForPath } from "./admin-rooms";
+import { ROOMS, findRoomPage, roomForPath, searchScreens } from "./admin-rooms";
 
 describe("admin rooms", () => {
   it("has six rooms, each with a landing page listed first", () => {
@@ -29,5 +29,14 @@ describe("admin rooms", () => {
     expect(findRoomPage("/admin/institutions")?.page.label).toBe("Institutions");
     expect(findRoomPage("/admin/datafoo")).toBeNull();
     expect(roomForPath("/admin/datafoo").key).toBe("today");
+  });
+});
+
+describe("searchScreens", () => {
+  it("finds screens by name, purpose or room", () => {
+    expect(searchScreens("learn")[0]).toEqual({ href: "/admin/agents/learning", label: "Learning", room: "Agents" });
+    expect(searchScreens("spend").map((match) => match.href)).toContain("/admin/api-trust");
+    expect(searchScreens("controls")[0]).toEqual({ href: "/admin/controls", label: "Controls", room: "Controls" });
+    expect(searchScreens("   ")).toEqual([]);
   });
 });
