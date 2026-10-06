@@ -608,6 +608,8 @@ async function executeAgenticStep(
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
+          lessons_loaded: extraction.lessonsLoaded,
+          lesson_refiles: extraction.lessonRefiles,
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
           institution_results: institutionResults(

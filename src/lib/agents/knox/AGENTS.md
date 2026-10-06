@@ -127,6 +127,17 @@ the item" / "Greater than $5.00: $5.00") are read per tier, and a price whose ne
 prose ("$30.00 | ... unless you opt in") is never named by that prose. The shared check now
 reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
 
+## Learning reader (`lessons.ts`)
+Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
+(lowercase, letters only) that the category guards rejected under one category at 2 or more banks
+and never verified there, while the same name was verified under one other category at 2 or more
+banks and never rejected there ("Overdraft Transfers": overdraft -> od_protection_transfer). When
+today's rules file that exact name under the rejected category, Knox files it under the verified
+one and flags the row `knox_lesson:<wrong>-><right>`; Darwin still checks it. Hamilton's rules
+re-check treats a read under the rejected category as reproducing such a row, so the lesson is
+not undone. Lessons grow as Darwin and Hamilton record corrections; no rules version bump is
+needed, and they apply to texts read from then on. Dry runs don't read the store.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs

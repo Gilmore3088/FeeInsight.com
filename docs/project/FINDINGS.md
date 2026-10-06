@@ -1304,3 +1304,19 @@ and the snapshot's `published_fee_catalog` still lacks PR 215's 3-fee rule, so t
 one-fee peer banks would vanish under the real view.
 **Fix:** PR 278 appends its columns to the snapshot. Open: refresh the whole snapshot from prod,
 and give the test's peer banks 3 fees each so it runs under the real catalog rule.
+
+## 2026-10-06: Knox never read its own corrections
+**What happened:** Darwin and Hamilton write every category rejection and verification to the
+shared learning store (`pipeline_feedback`, 5,835 Darwin category rejects at 15:30 UTC), but Knox
+never read it. Fixes came only as hand rules, and a hand rule can regress: v19's plural
+"overdrafts" rule filed "Overdraft Transfers" under overdraft again, a name the guards had
+already rejected at 13 banks and verified as od_protection_transfer at 7.
+**Fix:** `src/lib/agents/knox/lessons.ts`. Each extract step reads the store's clear lessons (47
+at 15:30 UTC: statement copies, overdraft transfers, outgoing international wires, ATM card
+replacements, paid NSF items) and re-files an exact name that today's rules still put in the
+rejected category, flagged `knox_lesson:`. The rules re-check accepts the rejected-category read
+for such a row. Answer keys: 2 fees re-filed, 1 fixed, 0 broken; flat gates unchanged. Only new
+reads change, so no live fee is taken down.
+**Lesson:** an agent that writes corrections to a shared store must also read them, or the same
+mistake comes back with the next rule change.
+

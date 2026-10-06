@@ -94,6 +94,17 @@ interface LiveKnoxRow {
   raw_fee_name?: string | null;
   /** Taken down by an earlier re-check; restored when today's rules read it again. */
   pulled?: boolean | null;
+  /** `knox_lesson:<wrong>-><right>`: Knox's learning reader re-filed the rules' read (knox/lessons.ts). */
+  lesson_flag?: string | null;
+}
+
+/**
+ * The key today's rules read for a fee Knox's learning reader re-filed: a row stored
+ * under the lesson's verified category is reproduced by a read under the rejected one.
+ */
+function lessonReadKey(row: LiveKnoxRow, amount: number): string | null {
+  const match = /^knox_lesson:([a-z_]+)->([a-z_]+)$/.exec(row.lesson_flag ?? "");
+  return match && match[2] === row.canonical_fee_key ? feeKey(match[1], amount) : null;
 }
 
 interface DocumentText {
@@ -168,7 +179,9 @@ export async function rollBackUnreproducedFees(
           SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id,
                  substring(fr.conditions from 'text_hash=([^;]+);') AS text_hash,
                  fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name,
-                 fp.rolled_back_at IS NOT NULL AS pulled
+                 fp.rolled_back_at IS NOT NULL AS pulled,
+                 (SELECT flag FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) flag
+                   WHERE flag LIKE 'knox_lesson:%' LIMIT 1) AS lesson_flag
             FROM published_fee_records fp
             JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -284,7 +297,8 @@ export async function rollBackUnreproducedFees(
       result.liveFeesChecked += 1;
       const fee = asFee(row);
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
-      if (key != null && reads.has(key) && !keptKeys.has(key)) {
+      const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
+      if (key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey))) && !keptKeys.has(key)) {
         keptKeys.add(key);
         continue;
       }
