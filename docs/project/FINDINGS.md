@@ -886,7 +886,7 @@ Commonwealth Federal Credit Union returned deposited item $10 to $32 (both readi
 The Monthly Pulse rule confirmed both.
 **Cause:** the confirm rule checks each reading line by line. A PDF read twice can come out in a
 different column order, pairing a fee with its neighbour's price, and both readings then "state" a price.
-**Fix:** PR 233 (also carried in PR 220): `confirmFeeChange` drops a change when both texts
+**Fix:** PR 235 (also carried in PR 220): `confirmFeeChange` drops a change when both texts
 state exactly the same dollar amounts (one edition read twice) or when the earlier schedule already
 stated the new price. The Hamilton Briefing's competitor moves now read only these confirmed
 changes, so a misread schedule no longer shows as a competitor's price move. Of the five recorded changes, the two at New Hampshire Federal Credit Union
