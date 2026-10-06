@@ -132,6 +132,17 @@ Foreign Transaction") as `atm_non_network`: it is what a customer pays at anothe
 a card's foreign transaction fee. "ATM/Debit Card International/Foreign Transaction Fee" and
 "Debit/ATM Foreign Transaction" name the card and are unchanged.
 
+Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee
+(`amount_kind = 'percent'`, `rate_percent`, optional `rate_min_amount` / `rate_max_amount` /
+`rate_basis`, `amount` NULL, flag `knox_rate_fee`) only when its category publishes rates
+(`percentFeeAllowed` in `src/lib/percent-fees.ts`, the list Darwin applies) and the rate traces
+with the shared `checkRateAgainstSource`. A balance transfer rate is filed under cash_advance.
+It stays held when the line is an interest or dividend rate, says "up to", states two different
+rates, falls outside the category's range, or has no clean name. Names come from the category's
+own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conversion Fee"). New
+texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
+(`knox_rate_recheck:v1`, 100 per extract step). No rules version bump: flat reads are unchanged.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
