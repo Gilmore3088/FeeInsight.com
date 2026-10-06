@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Darwin's held fees get a way out: release or reject against the bank's schedule.** James, 13:20
+UTC ("i need you to close all those gaps with the agents"), taken as the go-ahead on the
+held-fees card's recommended option. Each fee Darwin holds (outside its range or far from peers)
+is checked with the shared accuracy check: not stated is rejected with the reason; stated and held
+only as a peer outlier is released; stated but outside the hand-set range stays for a person,
+since Hamilton's publish gate uses that range. It runs as a dry run on live data first
+(`verify.release` v1 records verdicts only) and acts only after the dry run is reported.
+
 **The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
 stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
 pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; the price comes from

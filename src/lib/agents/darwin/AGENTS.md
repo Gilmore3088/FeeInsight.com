@@ -81,6 +81,15 @@ Darwin owns verification and classification.
   caps are set. Each verdict (is it a fee, which category) is recorded per fee with its
   side (`knox`, `model`, `other`, `not_a_fee`); it never changes a decision yet. On live
   data at 2026-10-06 07:20 UTC, 23 approvals and 477 rejects qualified.
+- Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
+  held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
+  with `checkFeeAgainstSource`. Not stated: `reject`. Stated and a peer hold: `release`
+  (verified, so Hamilton can publish it). Stated but outside the hand-set range: `keep`
+  for a person (Hamilton's publish gate uses that range). Same fee already verified:
+  `duplicate`. `verify.release` v1 is a dry run (`DARWIN_RELEASE_ACTS` false): verdicts are
+  recorded, nothing changes. Acting is v2, which judges every held fee again, inserts
+  releases and writes both verdicts to `pipeline_feedback` (`darwin.release`). Step detail:
+  `held_release`.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

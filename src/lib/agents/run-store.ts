@@ -27,6 +27,7 @@ import { runRosettaRead } from "@/lib/agents/rosetta/read";
 import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
+import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -622,6 +623,15 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Held fees get a way out: each is judged against the bank's schedule.
+      const release = await runDarwinReleaseHeld({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+        db: tx,
+      });
       return {
         status: "completed",
         summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
@@ -635,6 +645,13 @@ async function executeAgenticStep(
           peer_fallback_checks: verification.peerFallbackChecks,
           peer_fallback_outliers: verification.peerFallbackOutliers,
           learned_envelope_holds: verification.learnedEnvelopeHolds,
+          held_release: {
+            selected: release.selected,
+            acted: release.acted,
+            verdicts: release.verdicts,
+            released: release.released,
+            feedback_written: release.feedbackWritten,
+          },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,

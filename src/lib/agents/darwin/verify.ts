@@ -275,7 +275,7 @@ export function statedInOwnSource(
 }
 
 /** The newest completed text of each document, as Hamilton's source check reads it. */
-async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
+export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
   if (documentIds.length === 0) return new Map();
   const texts = await db<{ source_document_id: number | string; normalized_text: string }[]>`
     SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
@@ -376,7 +376,7 @@ async function selectRawFees(
   );
 }
 
-async function insertVerifiedFee(
+export async function insertVerifiedFee(
   db: SqlTag,
   options: {
     runId: number;
