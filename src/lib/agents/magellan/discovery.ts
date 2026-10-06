@@ -29,7 +29,8 @@ import {
 } from "./finders";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
-import { countAnchors, detectPlatform, looksJavaScriptBuilt } from "./site-signals";
+import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
+import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -49,8 +50,18 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * site maps, hub pages, platform paths, guessed paths; peer hint and bounded crawl).
  * 3: links on pages Rosetta ruled out are followed first (even when the homepage
  * blocks bots), "fee sheet" is a strong link phrase, and rejections expire.
+ * 4: a homepage that blocks bots (HTTP 401/403 or a challenge page) no longer ends the
+ * search: the known link and the site map (robots.txt rules respected) still run; the
+ * stored website is repaired first ("wwwbank.com", "www.bankcom").
  */
-export const DISCOVERY_METHOD_VERSION = 3;
+export const DISCOVERY_METHOD_VERSION = 4;
+/** The website repair, logged as its own attempt when it changes the stored address. */
+export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
+/**
+ * Specialists that need no homepage: run when the homepage blocks bots. Nothing here
+ * tries to get past the wall; it reads what the site publishes for crawlers.
+ */
+const BLOCKED_HOMEPAGE_FINDERS = new Set<FinderKey>(["knownLink", "sitemap"]);
 /**
  * Banks whose fee link is an account or product page get one search for the real fee
  * schedule per version (`detail.upgrade_search`), in spare discovery capacity. Bump it
@@ -203,9 +214,12 @@ export type DiscoveryOutcome = "discovered" | "dead" | "needs_human" | "retry_af
 export type DiscoveryCode =
   | "locked"
   | "no_website"
+  | "website_unrepairable"
   | "unreachable"
   | "blocked"
   | (typeof FOUND_CODES)[FinderKey]
+  /** Found by the site map or known link although the homepage blocked bots. */
+  | "found_blocked_homepage"
   | "found_paid_search"
   | "js_homepage"
   | "no_fee_links"
@@ -244,12 +258,29 @@ export interface CandidateDiscoveryResult {
   platform: string | null;
   /** sha256 of the homepage HTML: the input fingerprint of this search. */
   homepageHash: string | null;
+  /** The homepage refused us (HTTP 401/403 or a bot challenge page). */
+  homepageBlocked: boolean;
+  /** The stored website as repaired before the search, when it needed repair. */
+  websiteRepair: WebsiteRepairSummary | null;
   finders: FinderRunSummary[];
   durationMs: number;
   /** The search continued from an earlier cut-off search (the state it started from). */
   resumedFrom: DiscoveryResume | null;
   /** Where the next search continues; null unless this search was cut short by time with resume on. */
   resume: DiscoveryResume | null;
+}
+
+export interface WebsiteRepairSummary {
+  original: string | null;
+  /** The repaired address; null when it could not be read at all. */
+  repaired: string | null;
+  changes: string[];
+  warnings: string[];
+  reason: string | null;
+  /** True when the repaired address is written to `institution_sources.website_url`. */
+  save: boolean;
+  /** A person's correction locks this bank's source: the repair is used but never saved. */
+  locked: boolean;
 }
 
 export interface RunMagellanDiscoveryOptions {
@@ -282,6 +313,10 @@ export interface RunMagellanDiscoveryResult {
   resumed: number;
   /** Finds per specialist. */
   foundBy: Partial<Record<FinderKey, number>>;
+  /** Banks whose stored website was repaired (and saved) before the search. */
+  websitesRepaired: number;
+  /** Banks found although their homepage blocked bots. */
+  blockedHomepageRescues: number;
   learning: boolean;
   methodVersion: number;
   secondDocuments: RunSecondDocumentFindResult | null;
@@ -294,20 +329,6 @@ function boundedLimit(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return MAGELLAN_DISCOVERY_DEFAULT_LIMIT;
   return Math.min(Math.max(Math.floor(parsed), 1), MAGELLAN_DISCOVERY_MAX_LIMIT);
-}
-
-function normalizeWebsiteUrl(value: string | null): URL | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  for (const candidate of [trimmed, `https://${trimmed}`]) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") return url;
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 function normalizeHttpUrl(value: string | null | undefined): string | null {
@@ -424,6 +445,8 @@ async function discoverForInstitution(
   const resumedFrom = options.resume ?? null;
   const alreadyDone = new Set<FinderKey>(resumedFrom?.done ?? []);
   let resume: DiscoveryResume | null = null;
+  let homepageBlocked = false;
+  let websiteRepair: WebsiteRepairSummary | null = null;
   const finish = (
     fields: Pick<CandidateDiscoveryResult, "outcome" | "code" | "reason"> &
       Partial<Pick<CandidateDiscoveryResult, "url" | "documentType" | "confidence" | "foundBy">>,
@@ -440,6 +463,8 @@ async function discoverForInstitution(
     movedTo,
     platform,
     homepageHash,
+    homepageBlocked,
+    websiteRepair,
     finders,
     durationMs: Date.now() - startedAt,
     resumedFrom,
@@ -459,10 +484,33 @@ async function discoverForInstitution(
     });
   }
 
-  const baseUrl = normalizeWebsiteUrl(row.website_url);
-  if (!baseUrl) {
-    return finish({ outcome: "needs_human", code: "no_website", reason: "Invalid or missing website_url" });
+  // Repair obvious typos in the stored website before searching it. No other stored
+  // website exists to fall back on: the FDIC registry step only fills an empty
+  // website_url and the NCUA step stores none, so an unreadable one goes to a person.
+  const repair = repairWebsiteUrl(row.website_url);
+  if (repair.status === "empty") {
+    return finish({ outcome: "needs_human", code: "no_website", reason: "Missing website_url" });
   }
+  const locked = lockedByCorrection(row);
+  if (repair.status === "unparseable" || repairIsWorthSaving(repair)) {
+    websiteRepair = {
+      original: repair.original,
+      repaired: repair.url,
+      changes: repair.changes,
+      warnings: repair.warnings,
+      reason: repair.reason ?? null,
+      save: repair.status === "repaired" && !locked,
+      locked,
+    };
+  }
+  if (repair.status === "unparseable" || !repair.url) {
+    return finish({
+      outcome: "needs_human",
+      code: "website_unrepairable",
+      reason: `Website "${row.website_url}" cannot be read (${repair.reason ?? "unknown"}); no registry website is stored to fall back on`,
+    });
+  }
+  const baseUrl = new URL(repair.url);
 
   const ctx: SearchContext = {
     institutionId,
@@ -513,6 +561,108 @@ async function discoverForInstitution(
     completed.push("rejectedPageLinks");
   }
 
+  let lastReason = resumedFrom
+    ? `Resumed after ${resumedFrom.done.length} finished specialists; no candidate validated`
+    : "No candidate validated";
+  /**
+   * Runs specialists in order until one finds a validated link or time runs out. Skips
+   * specialists a resumed search already finished and records which ones finish now.
+   */
+  const runFinders = async (
+    order: typeof FINDER_ORDER,
+    homepageRead: boolean,
+  ): Promise<{ found: { key: FinderKey; document: FoundDocument } | null; ranOutOfTime: boolean; lastReason: string }> => {
+    if (cutIn !== null) return { found: null, ranOutOfTime: true, lastReason };
+    for (const { key, run } of order) {
+      if (alreadyDone.has(key)) continue;
+      if (Date.now() > options.deadline) return { found: null, ranOutOfTime: true, lastReason };
+      const finderStarted = Date.now();
+      let result: FinderResult;
+      try {
+        result = await run(ctx);
+      } catch (error) {
+        result = { found: null, trail: [], fetches: 0, ran: true, outOfTime: false, note: `error: ${error instanceof Error ? error.message : String(error)}` };
+      }
+      const logsHomepage = homepageRead && key === "homepageLinks";
+      if (logsHomepage) {
+        result = { ...result, trail: [homepageTrail, ...result.trail], fetches: result.fetches + 1 };
+      }
+      attemptedUrls += result.fetches - (logsHomepage ? 1 : 0);
+      if (!result.ran) {
+        completed.push(key);
+        continue;
+      }
+      finders.push({
+        key,
+        ...FINDERS[key],
+        outcome: finderOutcome(result),
+        fetches: result.fetches,
+        durationMs: Date.now() - finderStarted,
+        note: result.note,
+        trail: result.trail.slice(0, MAX_TRAIL),
+      });
+      const lastVerdict = [...result.trail].reverse().find((entry) => entry.verdict && !["robots", "sitemap_file", "homepage"].includes(entry.source));
+      if (lastVerdict) lastReason = `${FINDERS[key].strategy}: ${lastVerdict.url} ${lastVerdict.verdict}`;
+      if (result.found) return { found: { key, document: result.found }, ranOutOfTime: false, lastReason };
+      if (result.outOfTime) {
+        cutIn = key;
+        return { found: null, ranOutOfTime: true, lastReason };
+      }
+      completed.push(key);
+    }
+    return { found: null, ranOutOfTime: false, lastReason };
+  };
+  const sawCandidatesNow = () =>
+    finders.some((finder) =>
+      finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page", "rejected_page"].includes(entry.source)),
+    );
+  const outOfTimeResult = (reason: string) => {
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    if (options.resumable) {
+      // Cut short: the next search (12 hours on) continues at the next specialist, so a
+      // slow site is searched across several steps instead of restarting each time.
+      const next = nextDiscoveryResume(resumedFrom, {
+        completed,
+        cutIn,
+        fullBudget: options.fullBudget ?? true,
+        sawCandidates: sawCandidatesNow(),
+      });
+      resume = next;
+      const remaining = SEARCH_ORDER.filter((key) => !next.done.includes(key));
+      return finish({
+        outcome: next.ticks > RESUME_MAX_TICKS ? "dead" : "retry_after",
+        code: "out_of_time",
+        reason: `Search stopped after ${seconds}s (cut-off search ${next.ticks}, ${next.done.length} specialists done, next ${remaining[0] ?? "none"}); ${reason}`,
+      });
+    }
+    // No attempt log to resume from: search again in 12 hours, unless the site keeps running out of time.
+    const failures = Number(row.profile_consecutive_failures ?? 0);
+    return finish({
+      outcome: failures >= OUT_OF_TIME_RETRIES ? "dead" : "retry_after",
+      code: "out_of_time",
+      reason: `Search stopped after ${seconds}s; ${reason}`,
+    });
+  };
+  /**
+   * The homepage refused us. Its links are out of reach, but the bank's previous link
+   * and its site map (named in robots.txt, else /sitemap.xml or /sitemap_index.xml) often
+   * are not; every request follows robots.txt and keeps our crawler's own name.
+   */
+  const searchPastBlockedHomepage = async (why: string): Promise<CandidateDiscoveryResult> => {
+    homepageBlocked = true;
+    const blocked = await runFinders(FINDER_ORDER.filter(({ key }) => BLOCKED_HOMEPAGE_FINDERS.has(key)), false);
+    if (blocked.found) {
+      return finish({
+        ...foundResult(finish, blocked.found.key, blocked.found.document),
+        code: "found_blocked_homepage",
+        reason: `${blocked.found.document.reason} (homepage ${why}; found by ${FINDERS[blocked.found.key].strategy})`,
+      });
+    }
+    if (blocked.ranOutOfTime) return outOfTimeResult(`homepage ${why}; ${blocked.lastReason}`);
+    // A bot wall is a miss (re-checked on the monthly schedule).
+    return finish({ outcome: "dead", code: "blocked", reason: `Homepage ${why}; site map and known link found nothing (${blocked.lastReason})` });
+  };
+
   // The homepage is read once and shared by every specialist; its request is logged on
   // the homepage-links attempt.
   const homepageTrail: TrailEntry = { url: baseUrl.toString(), source: "homepage", foundOn: null, label: "", score: 0, verdict: "" };
@@ -540,7 +690,13 @@ async function discoverForInstitution(
   if (!homepage.ok) {
     const blocked = blockedStatus(homepage.status);
     homepageFailure(homepage.status === 429 ? "http_429" : blocked ? "http_403" : homepage.status >= 500 ? "http_5xx" : homepage.status === 404 ? "http_404" : "http_other");
-    // A bot wall is a miss (re-checked on the monthly schedule); anything else is transient.
+    // A 401/403 bot wall: try what the site publishes for crawlers. A 429 asks us to slow
+    // down, so nothing more is requested from that site this time.
+    if (homepage.status === 401 || homepage.status === 403) {
+      await homepage.body?.cancel().catch(() => undefined);
+      return searchPastBlockedHomepage(`HTTP ${homepage.status}`);
+    }
+    // A rate limit is a miss (re-checked on the monthly schedule); anything else is transient.
     return finish({
       outcome: blocked ? "dead" : "retry_after",
       code: blocked ? "blocked" : "unreachable",
@@ -561,6 +717,11 @@ async function discoverForInstitution(
   }
 
   const html = await homepage.text();
+  if (looksLikeBotChallenge(html)) {
+    homepageTrail.verdict = "bot_challenge";
+    homepageFailure("blocked_bot");
+    return searchPastBlockedHomepage("served a bot challenge page");
+  }
   homepageHash = sha256Text(html);
   platform = detectPlatform(html);
   ctx.site = site;
@@ -570,83 +731,10 @@ async function discoverForInstitution(
   ctx.platform = platform;
   ctx.pages.set(urlIdentity(site.toString()), html);
 
-  let lastReason = resumedFrom
-    ? `Resumed after ${resumedFrom.done.length} finished specialists; no candidate validated`
-    : "No candidate validated";
-  let ranOutOfTime = cutIn !== null;
-  for (const { key, run } of FINDER_ORDER) {
-    if (ranOutOfTime) break;
-    if (alreadyDone.has(key)) continue;
-    if (Date.now() > options.deadline) {
-      ranOutOfTime = true;
-      break;
-    }
-    const finderStarted = Date.now();
-    let result: FinderResult;
-    try {
-      result = await run(ctx);
-    } catch (error) {
-      result = { found: null, trail: [], fetches: 0, ran: true, outOfTime: false, note: `error: ${error instanceof Error ? error.message : String(error)}` };
-    }
-    if (key === "homepageLinks") {
-      result = { ...result, trail: [homepageTrail, ...result.trail], fetches: result.fetches + 1 };
-    }
-    attemptedUrls += result.fetches - (key === "homepageLinks" ? 1 : 0);
-    if (!result.ran) {
-      completed.push(key);
-      continue;
-    }
-    finders.push({
-      key,
-      ...FINDERS[key],
-      outcome: finderOutcome(result),
-      fetches: result.fetches,
-      durationMs: Date.now() - finderStarted,
-      note: result.note,
-      trail: result.trail.slice(0, MAX_TRAIL),
-    });
-    const lastVerdict = [...result.trail].reverse().find((entry) => entry.verdict && !["robots", "sitemap_file", "homepage"].includes(entry.source));
-    if (lastVerdict) lastReason = `${FINDERS[key].strategy}: ${lastVerdict.url} ${lastVerdict.verdict}`;
-    if (result.found) return foundResult(finish, key, result.found);
-    if (result.outOfTime) {
-      cutIn = key;
-      ranOutOfTime = true;
-      break;
-    }
-    completed.push(key);
-  }
-
-  const sawCandidatesNow = finders.some((finder) =>
-    finder.trail.some((entry) => !["homepage", "robots", "sitemap_file", "hub_page", "crawl_page", "rejected_page"].includes(entry.source)),
-  );
-  if (ranOutOfTime) {
-    const seconds = Math.round((Date.now() - startedAt) / 1000);
-    if (options.resumable) {
-      // Cut short: the next search (12 hours on) continues at the next specialist, so a
-      // slow site is searched across several steps instead of restarting each time.
-      const next = nextDiscoveryResume(resumedFrom, {
-        completed,
-        cutIn,
-        fullBudget: options.fullBudget ?? true,
-        sawCandidates: sawCandidatesNow,
-      });
-      resume = next;
-      const remaining = SEARCH_ORDER.filter((key) => !next.done.includes(key));
-      return finish({
-        outcome: next.ticks > RESUME_MAX_TICKS ? "dead" : "retry_after",
-        code: "out_of_time",
-        reason: `Search stopped after ${seconds}s (cut-off search ${next.ticks}, ${next.done.length} specialists done, next ${remaining[0] ?? "none"}); ${lastReason}`,
-      });
-    }
-    // No attempt log to resume from: search again in 12 hours, unless the site keeps running out of time.
-    const failures = Number(row.profile_consecutive_failures ?? 0);
-    return finish({
-      outcome: failures >= OUT_OF_TIME_RETRIES ? "dead" : "retry_after",
-      code: "out_of_time",
-      reason: `Search stopped after ${seconds}s; ${lastReason}`,
-    });
-  }
-  const sawCandidates = sawCandidatesNow || Boolean(resumedFrom?.sawCandidates);
+  const search = await runFinders(FINDER_ORDER, true);
+  if (search.found) return foundResult(finish, search.found.key, search.found.document);
+  if (search.ranOutOfTime) return outOfTimeResult(search.lastReason);
+  const sawCandidates = sawCandidatesNow() || Boolean(resumedFrom?.sawCandidates);
   if (!sawCandidates && looksJavaScriptBuilt(html) && countAnchors(html) < 5) {
     return finish({ outcome: "dead", code: "js_homepage", reason: "Homepage is built by JavaScript; no links to follow without a browser" });
   }
@@ -883,12 +971,22 @@ export async function recordDiscoveryResult(
           : "retry_after";
   const failureReason = result.outcome === "discovered" ? null : `magellan_${result.outcome}`;
   const failureNote = result.outcome === "discovered" ? null : `${result.code}: ${result.reason}`;
+  const repairedWebsite = result.websiteRepair?.save ? result.websiteRepair.repaired : null;
 
+  // A repaired website is saved only while no person's correction locks the bank's source.
   await db`
     UPDATE institution_sources
        SET fee_schedule_url = COALESCE(${result.url}, fee_schedule_url),
            document_type = COALESCE(${result.documentType}, document_type),
-           website_url = COALESCE(${result.movedTo}, website_url),
+           website_url = COALESCE(
+             ${result.movedTo},
+             CASE WHEN ${repairedWebsite}::text IS NOT NULL AND NOT EXISTS (
+               SELECT 1 FROM institution_source_profiles held
+                WHERE held.institution_id = ${result.institutionId}
+                  AND held.locked_by_correction IS TRUE
+             ) THEN ${repairedWebsite}::text END,
+             website_url
+           ),
            cms_platform = COALESCE(cms_platform, ${result.platform}),
            rescue_status = ${rescueStatus},
            last_rescue_attempt_at = NOW(),
@@ -1012,9 +1110,43 @@ async function recordFinderAttempts(
     method_version: DISCOVERY_METHOD_VERSION,
     ...(row.upgrade ? { upgrade_search: UPGRADE_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
     website: row.website_url,
+    searched_website: result.websiteRepair?.repaired ?? row.website_url,
     moved_to: result.movedTo,
     platform: result.platform,
+    // Countable: a search that went on past a homepage that blocked bots.
+    homepage_blocked: result.homepageBlocked,
+    // An unfamiliar domain ending is left as is but flagged ("unfamiliar_tld_xyz").
+    website_warnings: repairWebsiteUrl(row.website_url).warnings,
   };
+  if (result.websiteRepair) {
+    const repair = result.websiteRepair;
+    await recordAttempt(db, {
+      institutionId: result.institutionId,
+      stage: "discover",
+      strategy: WEBSITE_REPAIR_STRATEGY.strategy,
+      version: WEBSITE_REPAIR_STRATEGY.version,
+      fingerprint: null,
+      outcome: repair.repaired ? "ok" : "invalid_url",
+      yieldCount: repair.save ? 1 : 0,
+      costMicrousd: 0,
+      durationMs: 0,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: {
+        method_version: DISCOVERY_METHOD_VERSION,
+        original: repair.original,
+        repaired: repair.repaired,
+        changes: repair.changes,
+        warnings: repair.warnings,
+        reason: repair.reason,
+        saved: repair.save,
+        locked_by_correction: repair.locked,
+        // No stored registry website exists to fall back on (see discovery.ts).
+        registry_fallback: repair.repaired ? null : "none_stored",
+      },
+    });
+  }
+  if (result.code === "website_unrepairable") return;
   if (result.finders.length === 0) {
     // Locked correction, no website, or a resumed search the clock stopped before its
     // next specialist: one attempt for the search as a whole.
@@ -1054,6 +1186,7 @@ async function recordFinderAttempts(
         pass: finder.pass,
         // The search's end code goes on its last specialist only.
         code: index === last ? result.code : null,
+        rescue: found && result.homepageBlocked ? "blocked_homepage" : null,
         url: found ? result.url : null,
         document_type: found ? result.documentType : null,
         confidence: found ? result.confidence : null,
@@ -1157,6 +1290,8 @@ export async function runMagellanDiscovery(
     codes,
     resumed: results.filter((result) => result.resumedFrom !== null).length,
     foundBy,
+    websitesRepaired: results.filter((result) => result.websiteRepair?.save).length,
+    blockedHomepageRescues: results.filter((result) => result.code === "found_blocked_homepage").length,
     learning,
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,

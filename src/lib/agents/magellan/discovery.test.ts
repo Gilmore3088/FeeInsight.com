@@ -455,14 +455,201 @@ describe("Magellan agentic discovery", () => {
     expect(db.mock.calls.some((call) => call.includes("https://newname.example"))).toBe(true);
   });
 
-  it("records a bot wall as blocked, to be re-checked on schedule", async () => {
-    const db = createDbMock([bank(71, "https://wall.example")]);
-    const fetchImpl = vi.fn(async () => response("denied", "text/html", 403));
+  describe("homepage that blocks bots (MG-7)", () => {
+    it("records a bot wall as blocked after trying only robots.txt and the site maps", async () => {
+      const db = createDbMock([bank(71, "https://wall.example")]);
+      const fetchImpl = vi.fn(async () => response("denied", "text/html", 403));
 
-    const result = await runMagellanDiscovery({ runId: 141, db: asDiscoveryDb(db), fetchImpl });
+      const result = await runMagellanDiscovery({ runId: 141, db: asDiscoveryDb(db), fetchImpl });
 
-    expect(result.results[0]).toMatchObject({ outcome: "dead", code: "blocked" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result.results[0]).toMatchObject({ outcome: "dead", code: "blocked", homepageBlocked: true });
+      expect(fetched(fetchImpl)).toEqual([
+        "https://wall.example/",
+        "https://wall.example/robots.txt",
+        "https://wall.example/sitemap.xml",
+        "https://wall.example/sitemap_index.xml",
+      ]);
+      // Our crawler's own name on every request; nothing pretends to be a browser.
+      for (const call of fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>) {
+        expect(String((call[1].headers as Record<string, string>)["User-Agent"])).toContain("FeeInsightBot");
+      }
+    });
+
+    it("finds a fee PDF listed in the site map although the homepage answers 403, within robots.txt rules", async () => {
+      const db = createDbMock([bank(72, "https://walled.example")], learningHandler());
+      const fetchImpl = site({
+        "https://walled.example/": () => response("denied", "text/html", 403),
+        "https://walled.example/robots.txt": () => response(
+          "User-agent: *\nDisallow: /private/\nSitemap: https://walled.example/sitemap_index.xml",
+          "text/plain",
+        ),
+        "https://walled.example/sitemap_index.xml": () => response(
+          "<sitemapindex><sitemap><loc>https://walled.example/media-sitemap.xml</loc></sitemap></sitemapindex>",
+          "application/xml",
+        ),
+        "https://walled.example/media-sitemap.xml": () => response(
+          "<urlset><url><loc>https://walled.example/private/fee-schedule.pdf</loc></url>" +
+            "<url><loc>https://walled.example/files/privacy-notice.pdf</loc></url>" +
+            "<url><loc>https://walled.example/files/tis-disclosure.pdf</loc></url></urlset>",
+          "application/xml",
+        ),
+        "https://walled.example/private/fee-schedule.pdf": () => response("%PDF-1.4", "application/pdf"),
+        "https://walled.example/files/tis-disclosure.pdf": () => response("%PDF-1.4 scanned", "application/pdf"),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 142, db: asDiscoveryDb(db), fetchImpl });
+
+      // The disclosure PDF is opened (its name looks like one), but a scan with a weak
+      // name is never accepted unread; the disallowed fee schedule is never requested.
+      expect(fetched(fetchImpl)).toContain("https://walled.example/files/tis-disclosure.pdf");
+      expect(fetched(fetchImpl)).not.toContain("https://walled.example/private/fee-schedule.pdf");
+      expect(fetched(fetchImpl)).not.toContain("https://walled.example/files/privacy-notice.pdf");
+      expect(result.results[0]).toMatchObject({ outcome: "dead", code: "blocked" });
+      const logged = attempts(db);
+      expect(logged.map((attempt) => [attempt.strategy, attempt.outcome])).toEqual([
+        ["discover.homepage_links", "http_403"],
+        ["discover.sitemap", "wrong_document"],
+      ]);
+      expect(logged.every((attempt) => attempt.detail.homepage_blocked === true)).toBe(true);
+      const trail = logged[1].detail.trail as Array<{ url: string; verdict: string }>;
+      expect(trail).toContainEqual(expect.objectContaining({ url: "https://walled.example/private/fee-schedule.pdf", verdict: "robots_disallow" }));
+    });
+
+    it("counts a find past a blocked homepage as its own code and attempt detail", async () => {
+      const db = createDbMock([bank(73, "https://walled2.example")], learningHandler());
+      const fetchImpl = site({
+        "https://walled2.example/": () => response("denied", "text/html", 403),
+        "https://walled2.example/sitemap.xml": () => response(
+          "<urlset><url><loc>https://walled2.example/disclosures/schedule-of-fees</loc></url></urlset>",
+          "application/xml",
+        ),
+        "https://walled2.example/disclosures/schedule-of-fees": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 143, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({
+        outcome: "discovered",
+        code: "found_blocked_homepage",
+        foundBy: "sitemap",
+        homepageBlocked: true,
+        url: "https://walled2.example/disclosures/schedule-of-fees",
+      });
+      expect(result.blockedHomepageRescues).toBe(1);
+      expect(result.codes).toEqual({ found_blocked_homepage: 1 });
+      const logged = attempts(db);
+      expect(logged.map((attempt) => [attempt.strategy, attempt.outcome])).toEqual([
+        ["discover.homepage_links", "http_403"],
+        ["discover.sitemap", "ok"],
+      ]);
+      expect(logged[1].detail).toMatchObject({ code: "found_blocked_homepage", rescue: "blocked_homepage", homepage_blocked: true });
+      // /sitemap.xml answered, so /sitemap_index.xml is not requested.
+      expect(fetched(fetchImpl)).not.toContain("https://walled2.example/sitemap_index.xml");
+    });
+
+    it("treats a bot challenge page served with HTTP 200 like a 403", async () => {
+      const db = createDbMock([bank(74, "https://challenge.example")], learningHandler());
+      const fetchImpl = site({
+        "https://challenge.example/": () => response("<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>"),
+        "https://challenge.example/sitemap_index.xml": () => response(
+          "<urlset><url><loc>https://challenge.example/docs/schedule-of-fees.pdf</loc></url></urlset>",
+          "application/xml",
+        ),
+        "https://challenge.example/docs/schedule-of-fees.pdf": () => response("%PDF-1.4 scanned", "application/pdf"),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ code: "found_blocked_homepage", documentType: "pdf", homepageBlocked: true });
+      expect(attempts(db)[0]).toMatchObject({ strategy: "discover.homepage_links", outcome: "blocked_bot" });
+      // Homepage-based specialists (hub pages, common paths, crawl) never run behind the wall.
+      expect(fetched(fetchImpl)).not.toContain("https://challenge.example/fees");
+    });
+
+    it("asks nothing more of a site that rate-limits us (HTTP 429)", async () => {
+      const db = createDbMock([bank(75, "https://busy.example")]);
+      const fetchImpl = vi.fn(async () => response("slow down", "text/html", 429));
+
+      const result = await runMagellanDiscovery({ runId: 145, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ outcome: "dead", code: "blocked", homepageBlocked: false });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("website repair (MG-8)", () => {
+    function websiteUpdate(db: DbMock): unknown[] {
+      return db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE institution_sources")) ?? [];
+    }
+
+    it("repairs a website missing the dot after www, searches it, saves it and logs the repair", async () => {
+      const db = createDbMock([bank(80, "wwwrepairbank.com")], learningHandler());
+      const fetchImpl = site({
+        "https://www.repairbank.com/": () => response('<a href="/fee-schedule">Fee Schedule</a>'),
+        "https://www.repairbank.com/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 150, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://www.repairbank.com/fee-schedule" });
+      expect(result.results[0].websiteRepair).toMatchObject({ original: "wwwrepairbank.com", repaired: "https://www.repairbank.com", save: true });
+      expect(result.websitesRepaired).toBe(1);
+      expect(websiteUpdate(db)).toContain("https://www.repairbank.com");
+      expect(templateText(websiteUpdate(db)[0])).toContain("locked_by_correction IS TRUE");
+      const repair = attempts(db).find((attempt) => attempt.strategy === "discover.website_repair");
+      expect(repair).toMatchObject({ outcome: "ok" });
+      expect(repair?.detail).toMatchObject({ original: "wwwrepairbank.com", repaired: "https://www.repairbank.com", saved: true });
+      expect(repair?.detail.changes).toContain("added_dot_after_www");
+    });
+
+    it("repairs a website missing the dot before .com", async () => {
+      const db = createDbMock([bank(81, "www.gluedbankcom")]);
+      const fetchImpl = site({ "https://www.gluedbank.com/": () => response("<p>Home</p>") });
+
+      const result = await runMagellanDiscovery({ runId: 151, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(fetched(fetchImpl)[0]).toBe("https://www.gluedbank.com/");
+      expect(result.results[0].websiteRepair).toMatchObject({ repaired: "https://www.gluedbank.com", save: true });
+    });
+
+    it("uses but never saves a repair for a bank locked by a person's correction", async () => {
+      const db = createDbMock([bank(82, "wwwlockedbank.com", { profile_locked_by_correction: true })], learningHandler());
+      const fetchImpl = site({ "https://www.lockedbank.com/": () => response("<p>Home</p>") });
+
+      const result = await runMagellanDiscovery({ runId: 152, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(fetched(fetchImpl)[0]).toBe("https://www.lockedbank.com/");
+      expect(result.results[0].websiteRepair).toMatchObject({ save: false, locked: true });
+      expect(result.websitesRepaired).toBe(0);
+      expect(websiteUpdate(db)).not.toContain("https://www.lockedbank.com");
+      const repair = attempts(db).find((attempt) => attempt.strategy === "discover.website_repair");
+      expect(repair?.detail).toMatchObject({ saved: false, locked_by_correction: true });
+    });
+
+    it("sends a website it cannot read to a person, with no registry website to fall back on", async () => {
+      const db = createDbMock([bank(83, "www")], learningHandler());
+      const fetchImpl = vi.fn();
+
+      const result = await runMagellanDiscovery({ runId: 153, db: asDiscoveryDb(db), fetchImpl });
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(result.results[0]).toMatchObject({ outcome: "needs_human", code: "website_unrepairable" });
+      expect(result.results[0].reason).toContain("no registry website is stored");
+      const logged = attempts(db);
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({ strategy: "discover.website_repair", outcome: "invalid_url" });
+      expect(logged[0].detail).toMatchObject({ original: "www", repaired: null, saved: false, registry_fallback: "none_stored" });
+    });
+
+    it("does not log or save a website that only lacks its scheme", async () => {
+      const db = createDbMock([bank(84, "plainbank.example")], learningHandler());
+      const fetchImpl = site({ "https://plainbank.example/": () => response("<p>Home</p>") });
+
+      const result = await runMagellanDiscovery({ runId: 154, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0].websiteRepair).toBeNull();
+      expect(attempts(db).some((attempt) => attempt.strategy === "discover.website_repair")).toBe(false);
+    });
   });
 
   describe("product-page upgrade search", () => {
@@ -592,7 +779,12 @@ describe("Magellan agentic discovery", () => {
       const clock = { now: 1_000_000, costMs: 10_000 };
       const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
       try {
-        const pages = { ...hubSite("slow.example"), "https://slow.example/schedule-of-fees": () => response(FEE_TABLE) };
+        const pages = {
+          ...hubSite("slow.example"),
+          // One declared site map, so the site-map specialist makes a single request.
+          "https://slow.example/robots.txt": () => response("User-agent: *\nSitemap: https://slow.example/sitemap.xml\n", "text/plain"),
+          "https://slow.example/schedule-of-fees": () => response(FEE_TABLE),
+        };
 
         // Search 1: homepage, robots.txt and site map take 30 s; the clock stops inside the hub pages.
         const db1 = createDbMock([bank(80, "https://slow.example")], learningHandler());

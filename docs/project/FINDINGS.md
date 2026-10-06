@@ -13,6 +13,29 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
+**What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
+our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
+have malformed `website_url` values (16 "www" with no dot, such as "wwwbank.com" or "www.bankcom";
+27 odd domain endings). Those counts are the audit's; they were not re-measured here.
+**Cause:** `discovery.ts` returned `blocked` as soon as the homepage answered 401/403, so the site
+map specialist, which needs no homepage, never ran. A 200 challenge page was searched as if it
+were the homepage. Discovery read `website_url` as stored: "wwwbank.com" is a valid host, so it
+was fetched and failed as unreachable (retried every 12 hours) instead of being fixed. There is
+no other stored website to fall back on: the FDIC registry step reads `WEBADDR` but only fills an
+empty `website_url`, and the NCUA step stores no website at all.
+**Fix:** discovery method version 4. A 401/403 or a challenge page now runs the known link and the
+site map (robots.txt `Sitemap:` lines, else `/sitemap.xml`, then `/sitemap_index.xml`, with
+robots.txt Disallow rules respected and fee-named PDFs opened); a find is code
+`found_blocked_homepage` with `detail.rescue = 'blocked_homepage'`, and every attempt carries
+`detail.homepage_blocked`. A 429 still stops. The website is repaired first
+(`website-repair.ts`, attempt `discover.website_repair`), saved unless a correction locks the
+bank, and an unreadable one is `needs_human` (`website_unrepairable`). Branch
+`magellan/mg7-mg8-blocked-homepage-url-repair`, not merged.
+**Lesson:** a specialist that needs no homepage must not sit behind the homepage fetch. If a
+registry website should back up a bad stored one, the registry steps must store it in its own
+column; today they do not.
+
 ## 2026-10-06: Product pages became banks' fee links
 **What happened:** the Magellan audit (read-only queries on prod, Oct 6) found 853 of 4,451 fee
 links were account or product pages ("/personal/checking"), not fee schedules; those banks had a

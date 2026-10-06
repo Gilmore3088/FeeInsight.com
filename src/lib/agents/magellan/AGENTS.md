@@ -41,8 +41,9 @@ Magellan owns institution source discovery and source fetching.
 ## Discovery (the find team)
 
 The `discover` step (`discovery.ts`) searches banks with a website but no fee link.
-For one bank it reads the homepage once, then calls the specialists in `finders.ts`
-in order and stops at the first link that passes the fee-page check. Each specialist
+For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
+homepage once, then calls the specialists in `finders.ts` in order and stops at the first
+link that passes the fee-page check. Each specialist
 that runs writes one `pipeline_attempts` row (stage `discover`, its own strategy and
 version, a typed outcome, the URLs it tried with their verdicts in `detail.trail`,
 and `detail.method_version`).
@@ -52,7 +53,7 @@ and `detail.method_version`).
 | 1 | `discover.rejected_page_links` | Fee links on pages Rosetta ruled out (newest two), boosted because the page is about fees. Runs before the homepage is read, so a bot-blocking homepage does not stop it; off-site PDFs (CDNs) count. |
 | 1 | `discover.known_link` | The bank's previous (unlocked) link. A locked correction is used as is, without a fetch. |
 | 1 | `discover.homepage_links` | Fee-like links on the homepage (homepage request logged here). |
-| 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`; an index opens its page/document children. |
+| 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`, then `/sitemap_index.xml`; an index opens its page/document children. robots.txt Disallow rules for FeeInsightBot are respected for every same-site request. Fee links and PDFs whose name says fee, schedule, disclosure or truth-in-savings are opened (version 2). |
 | 1 | `discover.hub_pages` | One hop through Disclosures / Rates & Fees / Documents / Forms pages. |
 | 1 | `discover.platform_paths` | Paths for the detected platform (`platform-learning.ts`). |
 | 1 | `discover.common_paths` | Guessed common paths, last. |
@@ -85,6 +86,24 @@ and `detail.method_version`).
   at two or more banks on the platform, minus paths Rosetta rejected. A find updates
   `platform_registry` (validated count, institution count, promoted paths).
 - A redirect to a new domain searches the new site and updates `website_url`.
+- Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
+  `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending
+  ("www.bankcom"), scheme typos ("http//"), uppercase, spaces, trailing punctuation and
+  misspelled endings (".con"). An unfamiliar ending is flagged (`warnings`), not changed.
+  A repair is saved to `website_url` by `recordDiscoveryResult` and logged as its own attempt
+  (`discover.website_repair`, `detail.original/repaired/changes/saved`), except when
+  `institution_source_profiles.locked_by_correction` is set: then it is used for the search
+  but never saved. Adding only a scheme is not saved or logged. A website that still cannot be
+  read is `needs_human` (code `website_unrepairable`, outcome `invalid_url`). There is no other
+  stored website to fall back on: `registry-fdic-universe` only fills an empty `website_url`
+  and the NCUA sync stores none.
+- A homepage that blocks bots (HTTP 401/403, or a challenge page served with 200) does not end
+  the search: the known link and the site map still run (nothing else needs the homepage).
+  Nothing tries to get past the wall: same crawler name, no proxies, no browser. A find is
+  code `found_blocked_homepage` (`detail.rescue = 'blocked_homepage'` on the finding attempt),
+  every attempt for that bank carries `detail.homepage_blocked = true`, and the step detail
+  counts `blocked_homepage_rescues` and `websites_repaired`. A 429 asks us to slow down, so
+  nothing more is requested from that site that time (`blocked`).
 - Nothing is dead forever: pending/`retry_after` banks are re-checked after 12 hours;
   misses (`dead`) after 30 days, then 90 days after two misses in a row; and every
   miss at once (after 12 hours) when `DISCOVERY_METHOD_VERSION` is newer than its last

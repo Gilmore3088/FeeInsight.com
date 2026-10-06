@@ -374,6 +374,8 @@ async function executeAgenticStep(
           discovery_codes: discovery.codes,
           resumed_searches: discovery.resumed,
           found_by: discovery.foundBy,
+          websites_repaired: discovery.websitesRepaired,
+          blocked_homepage_rescues: discovery.blockedHomepageRescues,
           method_version: discovery.methodVersion,
           learning_log: discovery.learning,
           second_documents_status: discovery.secondDocuments?.status ?? null,

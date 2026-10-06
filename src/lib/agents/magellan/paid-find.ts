@@ -241,6 +241,8 @@ function paidDiscovery(row: PaidFindRow, fields: Partial<CandidateDiscoveryResul
     movedTo: null,
     platform: null,
     homepageHash: null,
+    homepageBlocked: false,
+    websiteRepair: null,
     finders: [],
     durationMs: 0,
     resumedFrom: null,
