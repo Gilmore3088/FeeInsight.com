@@ -296,7 +296,7 @@ export async function rollBackUnreproducedFees(
       const text = textFor(row);
       // Knox reads names tidied; a row stored under an older untidy name is the same read.
       if (!readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
-      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".");
+      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
       if (!traced.ok && traced.reason !== "tiered_fee") continue;
       keptKeys.add(key);
       restoredKeys.add(`${institutionId}:${key}`);
@@ -390,7 +390,6 @@ export async function rollBackUnreproducedFees(
             restored: result.restores.filter((fee) => fee.sourceDocumentId === document.sourceDocumentId).length,
             [MISSING_FEES_DETAIL]: document.missing ?? 0,
           },
-          foldIntoPlaybook: false,
         });
       }
       await scope`

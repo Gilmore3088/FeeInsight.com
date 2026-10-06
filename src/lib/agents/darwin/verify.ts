@@ -265,12 +265,13 @@ export function verificationReasonCode(
 export function statedInOwnSource(
   row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id">,
   texts: ReadonlyMap<number, string>,
+  canonicalFeeKey?: string | null,
 ): boolean {
   const amount = normalizedAmount(row.amount);
   if (amount == null || row.source_document_id == null) return false;
   const text = texts.get(Number(row.source_document_id));
   if (!text) return false;
-  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".");
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
   return result.ok || result.reason === "tiered_fee";
 }
 
@@ -695,7 +696,7 @@ export async function runDarwinVerify(
   for (const row of rows) {
     const canonicalFeeKey = categoryOf(row);
     let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
-    if (!reasonCode && !statedInOwnSource(row, sourceTexts)) reasonCode = "not_in_source";
+    if (!reasonCode && !statedInOwnSource(row, sourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }
