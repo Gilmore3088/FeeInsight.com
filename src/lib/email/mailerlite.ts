@@ -80,7 +80,7 @@ function authHeaders() {
   };
 }
 
-/** The chosen state's group (made the first time) and every other state group with readers. */
+/** The chosen state's group (made the first time) and every other state group. */
 async function stateGroups(state: string): Promise<{ target: string; others: string[] }> {
   const all = await listStateGroups();
   let target = all.find((group) => group.stateCode === state)?.groupId ?? null;
@@ -94,7 +94,7 @@ async function stateGroups(state: string): Promise<{ target: string; others: str
     if (!response.ok || body?.data?.id === undefined) throw new Error(`MailerLite group create failed: HTTP ${response.status}`);
     target = String(body.data.id);
   }
-  return { target, others: all.filter((group) => group.groupId !== target && group.activeCount > 0).map((group) => group.groupId) };
+  return { target, others: all.filter((group) => group.groupId !== target).map((group) => group.groupId) };
 }
 
 /** Upserts the subscriber (MailerLite's POST /subscribers is create-or-update). */
@@ -113,7 +113,7 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
       body: JSON.stringify(buildMailerLitePayload(input, state?.target ?? null)),
     });
     const body = (await response.json().catch(() => null)) as {
-      data?: { id?: unknown; status?: unknown };
+      data?: { id?: unknown; status?: unknown; groups?: Array<{ id?: unknown; name?: unknown }> };
       message?: unknown;
     } | null;
     if (!response.ok) {
@@ -129,7 +129,12 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
     }
     // A reader belongs to the one state they picked last: leave every other state group.
     if (id && state) {
-      await Promise.all(state.others.map((groupId) =>
+      // The upsert answers with the subscriber's groups; when it does, only those are touched.
+      const joined = Array.isArray(body?.data?.groups)
+        ? new Set(body.data.groups.map((group) => String(group.id)))
+        : null;
+      const leave = joined ? state.others.filter((groupId) => joined.has(groupId)) : state.others;
+      await Promise.all(leave.map((groupId) =>
         fetch(`${apiBase()}/subscribers/${id}/groups/${groupId}`, { method: "DELETE", headers: authHeaders() }).catch(() => null),
       ));
     }
