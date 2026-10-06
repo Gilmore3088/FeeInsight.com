@@ -175,7 +175,9 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
               </form>
               <p className="mt-3 text-[13px] leading-relaxed text-[#6B6255]">
                 You pay on Stripe&apos;s secure checkout page; we never see your card number. Your private report link opens
-                as soon as the payment goes through.
+                as soon as the payment goes through. By paying you agree to the{" "}
+                <Link href="/terms" className="underline">Terms</Link> and{" "}
+                <Link href="/privacy" className="underline">Privacy Policy</Link>.
               </p>
             </section>
             <p className="mt-6 text-[13px] text-[#6B6255]">
@@ -187,6 +189,10 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
             </p>
           </>
         )}
+        <p className="mt-10 text-[12px] leading-relaxed text-[#6B6255]">
+          The report is compiled from each institution&apos;s published fee schedule. It is market information, not
+          financial, legal or compliance advice; confirm current fees with the institution.
+        </p>
       </main>
     </div>
   );

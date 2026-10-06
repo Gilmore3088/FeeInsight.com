@@ -281,6 +281,10 @@ export default async function MarketReportPage({ params }: PageProps) {
           </>
         )}
       </main>
+      <p className="mx-auto max-w-6xl px-6 pb-6 text-[12px] leading-relaxed text-[#6B6255]">
+        Compiled from each institution&apos;s published fee schedule. It is market information, not financial, legal
+        or compliance advice; confirm current fees with the institution.
+      </p>
       <ReportChromeFooter />
     </div>
   );
