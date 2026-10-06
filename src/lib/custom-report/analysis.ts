@@ -259,3 +259,61 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
   }
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
+
+export interface ReportChange {
+  key: string;
+  label: string;
+  /** Whose figure moved: the institution's own fee, the local median, or a named competitor's fee. */
+  subject: "own" | "median" | "competitor";
+  /** The competitor's name when subject is "competitor". */
+  who: string | null;
+  before: number | null;
+  after: number | null;
+}
+
+/**
+ * What moved between the copy saved at payment and today's live report: the institution's own
+ * fees, the local medians, and the named competitors' fees. Figures only, straight from the two
+ * analyses; a line present on one side only shows as added or dropped (null on the other side).
+ */
+export function diffReports(saved: CustomReportAnalysis, live: CustomReportAnalysis): ReportChange[] {
+  const changes: ReportChange[] = [];
+  const label = (key: string) => FEE_LINE_LABELS[key] ?? key;
+  const savedLines = new Map(saved.lines.map((l) => [l.key, l]));
+  for (const line of live.lines) {
+    const before = savedLines.get(line.key);
+    const ownBefore = before?.own?.amount ?? null;
+    const ownAfter = line.own?.amount ?? null;
+    if (ownBefore !== ownAfter) {
+      changes.push({ key: line.key, label: label(line.key), subject: "own", who: null, before: ownBefore, after: ownAfter });
+    }
+    const medianBefore = before?.comparable ? before.peers?.median ?? null : null;
+    const medianAfter = line.comparable ? line.peers?.median ?? null : null;
+    if (medianBefore !== null && medianAfter !== null && medianBefore !== medianAfter) {
+      changes.push({ key: line.key, label: label(line.key), subject: "median", who: null, before: medianBefore, after: medianAfter });
+    }
+  }
+  const savedNamed = new Map(saved.named.map((c) => [c.institution_id, c]));
+  for (const competitor of live.named) {
+    const before = savedNamed.get(competitor.institution_id);
+    if (!before) continue;
+    for (const key of new Set([...Object.keys(before.fees), ...Object.keys(competitor.fees)])) {
+      const was = before.fees[key] ?? null;
+      const now = competitor.fees[key] ?? null;
+      if (was !== now) {
+        changes.push({ key, label: label(key), subject: "competitor", who: competitor.institution_name, before: was, after: now });
+      }
+    }
+  }
+  return changes;
+}
+
+/** How many comparable lines sit above, inside and below the local middle half (free counts as below). */
+export function positionCounts(lines: ReportLine[]): { above: number; inside: number; below: number } {
+  const comparable = lines.filter((l) => l.comparable && l.position);
+  return {
+    above: comparable.filter((l) => l.position === "above_market").length,
+    inside: comparable.filter((l) => l.position === "in_market").length,
+    below: comparable.filter((l) => l.position === "below_market" || l.position === "free").length,
+  };
+}
