@@ -12,6 +12,7 @@ const withStoryline: AskResponse = {
   pageChange: { screen: "research", feeCategory: "overdraft" },
   answer: buildFeeAnswer(overdraftResearch()),
   decisionId: "d1",
+  savedAnalysisId: "sa1",
 };
 
 function mockFetch(ask: AskResponse, memo: unknown) {
@@ -42,7 +43,7 @@ describe("StructuredAsk", () => {
     render(<StructuredAsk question="how does my overdraft fee compare?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
     await screen.findByText("Memo summary line.");
     expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask", "/api/hamilton/ask/memo"]);
-    expect(calls[1].body).toMatchObject({ institutionId: "8109", question: "how does my overdraft fee compare?", decisionId: "d1" });
+    expect(calls[1].body).toMatchObject({ institutionId: "8109", question: "how does my overdraft fee compare?", decisionId: "d1", savedAnalysisId: "sa1" });
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
 

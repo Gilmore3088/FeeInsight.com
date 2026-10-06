@@ -22,7 +22,14 @@ const OBJECTIVES: { key: AskObjective; label: string }[] = [
   { key: "competitive_position", label: "Competitive position" },
 ];
 
-type AskBody = { institutionId: string | null; question?: string; decisionId?: string; answer?: { fieldKey: string; value: string | number } };
+type AskBody = {
+  institutionId: string | null;
+  question?: string;
+  decisionId?: string;
+  /** The saved analysis the Ask filed; the memo is added to that row. */
+  savedAnalysisId?: string;
+  answer?: { fieldKey: string; value: string | number };
+};
 
 async function postAsk(body: AskBody): Promise<AskResponse> {
   const res = await fetch("/api/hamilton/ask", {
@@ -209,7 +216,7 @@ export function StructuredAsk({
       if (res?.answer?.storyline) {
         memoFor.current = asked;
         setMemo({ state: "writing" });
-        void postMemo({ institutionId, question: asked, decisionId: decisionId.current }).then((m) => {
+        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
           if (memoFor.current === asked) setMemo(m);
         });
         return;
