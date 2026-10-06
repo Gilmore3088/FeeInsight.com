@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { searchDashboard, type SearchResult } from "@/app/admin/actions/search";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { searchScreens } from "@/lib/admin-rooms";
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -86,7 +87,7 @@ export function CommandPalette() {
       items.push({
         label: inst.name,
         sub: `${inst.charter === "bank" ? "Bank" : "CU"} | ${inst.state ?? ""}`,
-        href: `/admin/peers/${inst.id}`,
+        href: `/admin/institution/${inst.id}`,
       });
     }
     for (const cat of results.categories) {
@@ -110,8 +111,12 @@ export function CommandPalette() {
         href: `/admin/hamilton/research/${conv.agent_id}`,
       });
     }
+    for (const screen of searchScreens(query)) {
+      items.push({ label: screen.label, sub: screen.room, href: screen.href });
+    }
     return items;
-  }, [results]);
+  }, [results, query]);
+  const screens = results ? searchScreens(query) : [];
 
   const navigate = useCallback(
     (href: string) => {
@@ -149,7 +154,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search institutions, fee categories, fee names..."
+            placeholder="Search banks, fees, or any screen..."
             className="w-full py-3 text-sm outline-none placeholder:text-gray-400 dark:bg-transparent dark:text-gray-100 dark:placeholder:text-gray-500"
           />
           {loading && (
@@ -169,7 +174,7 @@ export function CommandPalette() {
                   return (
                     <button
                       key={`inst-${inst.id}`}
-                      onClick={() => navigate(`/admin/peers/${inst.id}`)}
+                      onClick={() => navigate(`/admin/institution/${inst.id}`)}
                       className={`w-full px-4 py-2 flex items-center justify-between text-sm text-left hover:bg-gray-50 dark:hover:bg-white/[0.06] ${
                         selectedIndex === idx ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" : "dark:text-gray-200"
                       }`}
@@ -274,6 +279,34 @@ export function CommandPalette() {
                       <span className="text-xs text-gray-400 dark:text-gray-500">
                         {conv.agent_id}
                       </span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+
+            {(() => {
+              sectionStart += (results.conversations ?? []).length;
+              return null;
+            })()}
+
+            {screens.length > 0 && (
+              <>
+                <p className="px-4 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-1">
+                  Screens
+                </p>
+                {screens.map((screen, i) => {
+                  const idx = sectionStart + i;
+                  return (
+                    <button
+                      key={`screen-${screen.href}`}
+                      onClick={() => navigate(screen.href)}
+                      className={`w-full px-4 py-2 flex items-center justify-between text-sm text-left hover:bg-gray-50 dark:hover:bg-white/[0.06] ${
+                        selectedIndex === idx ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" : "dark:text-gray-200"
+                      }`}
+                    >
+                      <span className="font-medium">{screen.label}</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">{screen.room}</span>
                     </button>
                   );
                 })}

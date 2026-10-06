@@ -209,6 +209,16 @@ describe("POST /api/leads", () => {
     expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ quoteCheck: "Report check: No match." }));
   });
 
+  it("records the report data check when the driver returns the bigint id as a string", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "18" }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
+    const update = issued(2);
+    expect(update.text).toContain("UPDATE leads SET use_case");
+    expect(update.values).toContain("Report check: No match.");
+    expect(update.values).toContain(18);
+  });
+
   it("sends the footer newsletter signup the monthly-index confirmation", async () => {
     sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const res = await post({ name: "Newsletter signup", email: "a@b.co", source: "newsletter" });

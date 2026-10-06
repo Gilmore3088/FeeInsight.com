@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 
-import { validateFeeCandidate } from "./find-validate";
+import { looksLikeProductPage, mainContentText, validateFeeCandidate } from "./find-validate";
 
 /** A minimal one-page PDF with real text objects (no lines: an image-only "scan"). */
 function pdf(lines: string[]): Uint8Array {
@@ -76,5 +76,39 @@ describe("Magellan fee-page check", () => {
   it("rejects an HTML page served as a .pdf link", async () => {
     const result = await validateFeeCandidate(candidate("https://a.example/fees.pdf"), serve("<p>Page not found</p>", "application/pdf"));
     expect(result).toMatchObject({ ok: false, verdict: "not_a_pdf" });
+  });
+
+  it("rejects a checking account page whose footer names the fee schedule", async () => {
+    const html = `<html><body><nav><a href="/fees">Fee Schedule</a> <a href="/tis">Truth in Savings</a></nav>
+      <h1>Simple Checking</h1><p>Earn rewards with every swipe.</p><p>Monthly service charge $5, waived with direct deposit.</p>
+      <footer>Fee Schedule | Truth in Savings | Privacy</footer></body></html>`;
+    const result = await validateFeeCandidate(candidate("https://a.example/personal/checking/simple-checking", 0.9), serve(html, "text/html"));
+    expect(result).toMatchObject({ ok: false, verdict: "product_page" });
+  });
+
+  it("still accepts a product address that lists the full fee schedule", async () => {
+    const html = `<html><body><h1>Checking accounts</h1><ul><li>Overdraft fee $32</li><li>NSF fee $30</li><li>Stop payment fee $25</li><li>Monthly service charge $8</li></ul></body></html>`;
+    const result = await validateFeeCandidate(candidate("https://a.example/personal/checking", 0.6), serve(html, "text/html"));
+    expect(result).toMatchObject({ ok: true, verdict: "accepted_html" });
+  });
+
+  it("accepts a fee-named page with fee words but few amounts", async () => {
+    const html = `<html><body><h1>Schedule of Fees</h1><p>Overdraft fee and NSF fee: see the table below.</p><p>Wire transfer fee $25</p></body></html>`;
+    const result = await validateFeeCandidate(candidate("https://a.example/schedule-of-fees", 0.7), serve(html, "text/html"));
+    expect(result).toMatchObject({ ok: true, verdict: "accepted_html" });
+  });
+
+  it("does not count menu and footer fee words", () => {
+    const text = mainContentText("<nav>Fee Schedule</nav><main>Hello</main><footer>Truth in Savings</footer>").toLowerCase();
+    expect(text).not.toContain("fee schedule");
+    expect(text).not.toContain("truth in savings");
+  });
+
+  it("tells product pages from fee pages by address", () => {
+    expect(looksLikeProductPage("https://a.example/personal/checking-accounts")).toBe(true);
+    expect(looksLikeProductPage("https://a.example/savings")).toBe(true);
+    expect(looksLikeProductPage("https://a.example/personal/checking/fee-schedule")).toBe(false);
+    expect(looksLikeProductPage("https://a.example/checking-disclosures.pdf")).toBe(false);
+    expect(looksLikeProductPage("https://a.example/fees")).toBe(false);
   });
 });

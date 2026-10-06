@@ -18,6 +18,9 @@ import { learningSchemaReady } from "@/lib/agents/learning/attempts";
  *   accuracy             the newest answer-key score (end-to-end precision and recall)
  *   freshness            median age in days of live fees, from the last time their
  *                        source document was fetched or checked
+ *   Knox survival        of Knox fees ever published, the share still live, overall and
+ *                        per Knox strategy. Yield rewards finding more fees; survival
+ *                        rewards finding fees that stay right. Stored in `detail`.
  */
 
 type SqlTag = typeof sql;
@@ -32,6 +35,14 @@ export interface ScoreboardNumbers {
   depth: { median: number | null; liveInstitutions: number };
   accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null } | null;
   freshness: { medianDays: number | null; liveFees: number };
+  knoxSurvival: KnoxSurvival;
+}
+
+export interface KnoxSurvival {
+  rate: number | null;
+  live: number;
+  published: number;
+  byStrategy: Array<{ strategy: string; rate: number | null; live: number; published: number }>;
 }
 
 const RIGHT_DOCUMENT_WINDOW_DAYS = 30;
@@ -160,16 +171,49 @@ async function readFreshness(db: SqlTag): Promise<ScoreboardNumbers["freshness"]
   return { medianDays: numberOrNull(row?.median_days), liveFees: Number(row?.live_fees ?? 0) };
 }
 
+/** Knox's strategy for a published fee, from its raw row's flags (as `knoxStrategyFromFlags`). */
+async function readKnoxSurvival(db: SqlTag): Promise<KnoxSurvival> {
+  const rows = await db<Array<{ strategy: string; published: number | string; live: number | string }>>`
+    SELECT CASE
+             WHEN fr.outlier_flags ? 'knox_paid_extraction' THEN 'extract.paid'
+             ELSE COALESCE((
+               SELECT substr(flag, length('knox_specialist:') + 1)
+                 FROM jsonb_array_elements_text(fr.outlier_flags) flag
+                WHERE flag LIKE 'knox_specialist:%'
+                LIMIT 1
+             ), 'extract.rules')
+           END AS strategy,
+           COUNT(*)::int AS published,
+           (COUNT(*) FILTER (WHERE fp.rolled_back_at IS NULL))::int AS live
+      FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+     WHERE fr.source = 'knox'
+     GROUP BY 1
+     ORDER BY 2 DESC
+  `;
+  const byStrategy = rows.map((row) => ({
+    strategy: row.strategy,
+    published: Number(row.published),
+    live: Number(row.live),
+    rate: rate(Number(row.live), Number(row.published)),
+  }));
+  const live = byStrategy.reduce((sum, row) => sum + row.live, 0);
+  const published = byStrategy.reduce((sum, row) => sum + row.published, 0);
+  return { rate: rate(live, published), live, published, byStrategy };
+}
+
 export async function readScoreboardNumbers(db: SqlTag = sql): Promise<ScoreboardNumbers> {
-  const [coverage, rightDocument, knoxYield, depth, accuracy, freshness] = await Promise.all([
+  const [coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival] = await Promise.all([
     readCoverage(db),
     readRightDocument(db),
     readKnoxYield(db),
     readDepth(db),
     readAccuracy(db),
     readFreshness(db),
+    readKnoxSurvival(db),
   ]);
-  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness };
+  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival };
 }
 
 export interface ScoreboardSnapshotResult {
@@ -212,7 +256,11 @@ export async function runScoreboardSnapshot({
       ${numbers.depth.median}, ${numbers.depth.liveInstitutions},
       ${numbers.accuracy?.precision ?? null}, ${numbers.accuracy?.recall ?? null}, ${numbers.accuracy?.scoreRunId ?? null},
       ${numbers.freshness.medianDays}, ${numbers.freshness.liveFees},
-      ${JSON.stringify({ right_document_window_days: numbers.rightDocument?.windowDays ?? null, accuracy_scored_at: numbers.accuracy?.scoredAt ?? null })}::jsonb
+      ${JSON.stringify({
+        right_document_window_days: numbers.rightDocument?.windowDays ?? null,
+        accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
+        knox_survival: numbers.knoxSurvival,
+      })}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
       agent_run_id = EXCLUDED.agent_run_id,
@@ -253,6 +301,7 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
     `depth ${n.depth.median == null ? "n/a" : `${n.depth.median} categories`}`,
     `accuracy ${pct(n.accuracy?.precision)} precision / ${pct(n.accuracy?.recall)} recall`,
     `freshness ${n.freshness.medianDays == null ? "n/a" : `${n.freshness.medianDays} days`}`,
+    `Knox survival ${pct(n.knoxSurvival.rate)} of ${n.knoxSurvival.published.toLocaleString("en-US")} published fees still live`,
   ];
   const prefix = result.stored
     ? `Atlas recorded the ${result.snapshotDate} scoreboard`

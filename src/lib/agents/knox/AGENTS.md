@@ -33,6 +33,21 @@ Knox owns conservative raw fee extraction.
   recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
+## Rule-change gate
+
+`answer-key-gate.test.ts` scores the free team plus Darwin's rule checks (the set the rules
+re-check keeps live) against 43 hand-checked Texas schedules (`__fixtures__/texas-answer-keys.json.gz`,
+26 used while writing rules, 17 held out). CI fails a change that loses a right fee or adds a
+wrong read. When a change really improves Knox, raise the floors in the same PR; lower one only
+with the reason in the PR. Baseline at v12: 436 right of 454 reads (96.0%), 436 of 772 key fees
+found (56.5%); held out: 41 of 47 (87.2%), 41 of 99 found.
+
+Texas is the test bed; `state-answer-key-gate.test.ts` holds the same gate on 38 schedules from
+CA, FL, GA, IL, MI, MN and NY (`__fixtures__/state-answer-keys.json.gz`, never used to write
+rules), with a floor per state. Baseline at v12: 665 right of 724 reads (91.9%), 665 of 1,215 key
+fees found (54.7%); 56 of the 59 wrong reads are the right price under another category. A rules
+change scores both gates; a fix that helps Texas and hurts another state fails.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
@@ -48,7 +63,9 @@ only on what the free team could not read.
   the line opens with the price and says it is a fee, or the line states an account's
   monthly service charge in prose ("otherwise $8 service charge per statement cycle",
   "avoid the $10 monthly fee"; `maintenanceFromProse`, guarded like Darwin). A free in-network ATM or an
-  allowance ("two per year: Free") is not a $0 price. All three specialists follow the
+  allowance ("two per year: Free", "2 free cashiers checks monthly") or a condition
+  ("Monthly Service Charge if any of the following qualifications are met", "to waive") is not
+  a $0 price (v13). All three specialists follow the
   same rules, and table and family rows whose name opens mid-sentence (agreement prose
   in columns) are skipped.
 - Pass 2, free and heavier (`specialists.ts` runs the team and merges its finds):

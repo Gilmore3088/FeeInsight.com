@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/admin/crew/daily-brief",
-      "schedule": "47 12 * * *"
+      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/admin/crew/fee-alerts",
