@@ -215,3 +215,36 @@ describe("sendContactRequestNotifications", () => {
     expect(internal.html).toContain("&lt;script&gt;");
   });
 });
+
+describe("request confirmations offer an email opt-in", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("adds a confirm link to the requester's email only, never James's", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("n_1")).mockResolvedValueOnce(okResponse("c_1"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications(REQUEST);
+
+    const [notification, confirmation] = sentBodies(fetchMock);
+    expect(confirmation.text).toContain("Confirm your address:");
+    expect(confirmation.text).toContain("action=confirm");
+    expect(notification.text).not.toContain("action=confirm");
+  });
+
+  it("leaves the opt-in out when no token secret is set", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "");
+    vi.stubEnv("BFI_COOKIE_SECRET", "");
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse("n_1")).mockResolvedValueOnce(okResponse("c_1"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendReportRequestNotifications(REQUEST);
+
+    expect(sentBodies(fetchMock)[1].text).not.toContain("Confirm your address");
+  });
+});

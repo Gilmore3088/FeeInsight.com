@@ -5,6 +5,7 @@
 import { REPORT_OFFER } from "@/lib/constants";
 import {
   adminLeadsUrl,
+  emailOptInLines,
   sendLeadNotificationPair,
   type LeadNotificationOutcome,
 } from "./lead-notification";
@@ -74,6 +75,7 @@ export async function sendReportRequestNotifications(
         `We received your request for ${input.institution}. ${REPORT_REQUEST_CONFIRMATION_LINE}`,
         "",
         "Reply to this email with questions.",
+        ...emailOptInLines(input.email),
       ],
     },
   });

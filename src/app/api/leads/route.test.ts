@@ -151,7 +151,30 @@ describe("POST /api/leads", () => {
     expect(update.text).toContain("status = COALESCE(status, ?)");
     expect(update.text).not.toContain("status = 'updated'");
     expect(update.values).toContain("newsletter");
-    expect(update.values[update.values.length - 1]).toBe("cmo@bank.com");
+    expect(update.text).toContain("WHERE id = ?");
+    expect(update.values[update.values.length - 1]).toBe(7);
+  });
+
+  it("never folds a signup into a request row for the same email", async () => {
+    sqlMock
+      .mockResolvedValueOnce([{ id: 9, source: "report" }])
+      .mockResolvedValueOnce([{ id: 10 }]);
+    await post({ email: "cmo@bank.com", source: "capture_national_index" });
+    const insert = issued(1);
+    expect(insert.text).toContain("INSERT INTO leads");
+    const texts = sqlMock.mock.calls.map((_, i) => issued(i).text);
+    expect(texts.some((text) => text.startsWith("UPDATE leads"))).toBe(false);
+  });
+
+  it("updates only the newest signup row, skipping request rows", async () => {
+    sqlMock
+      .mockResolvedValueOnce([{ id: 9, source: "report" }, { id: 7, source: "newsletter" }])
+      .mockResolvedValueOnce([]);
+    await post({ email: "cmo@bank.com", source: "capture_homepage" });
+    const update = issued(1);
+    expect(update.text).toContain("UPDATE leads SET");
+    expect(update.text).toContain("WHERE id = ?");
+    expect(update.values[update.values.length - 1]).toBe(7);
   });
 
   it("uses a real name as the fill candidate for a placeholder-only lead", async () => {
@@ -205,7 +228,7 @@ describe("POST /api/leads", () => {
     await post({ email: "JLGilmore2@Gmail.com", source: "capture_homepage" });
     expect(issued(0).text).toContain("WHERE lower(email) = lower(?)");
     expect(issued(1).text).toContain("UPDATE leads SET");
-    expect(issued(1).text).toContain("WHERE lower(email) = lower(?)");
+    expect(issued(1).text).toContain("WHERE id = ?");
   });
 
   it("stores institution_id and src on use_case and notifies for report requests", async () => {
@@ -408,7 +431,7 @@ describe("POST /api/leads", () => {
       expect(append.text).toContain("UPDATE leads SET use_case = use_case || '; ' || ?");
       expect(append.text).toContain("position(? in use_case) = 0");
       const attribution = "placement=state_benchmark; state=OH";
-      expect(append.values).toEqual([attribution, "cmo@bank.com", attribution]);
+      expect(append.values).toEqual([attribution, 7, attribution]);
     });
 
     it("keeps a returning lead's new report request on its own row", async () => {

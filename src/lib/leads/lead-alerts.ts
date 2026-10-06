@@ -74,7 +74,10 @@ async function setDeliveryStatus(lead: { id?: number | null; email: string }, st
     await sql`UPDATE leads SET status = ${status} WHERE id = ${lead.id}`;
     return;
   }
-  await sql`UPDATE leads SET status = ${status} WHERE lower(email) = lower(${lead.email})`;
+  // No row id: mark only the newest row for this email, never earlier (possibly answered) ones.
+  await sql`
+    UPDATE leads SET status = ${status}
+    WHERE id = (SELECT id FROM leads WHERE lower(email) = lower(${lead.email}) ORDER BY created_at DESC, id DESC LIMIT 1)`;
 }
 
 export interface LeadWatchLead {

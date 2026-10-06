@@ -29,7 +29,7 @@ export function isMailerLiteSyncEnabled() {
 
 // Each lead joins one group, so it runs one nurture sequence at a time. Highest intent
 // wins: report requests, then institution/state watchers, then the newsletter group.
-const REPORT_GROUP_SOURCES = new Set(["report", "capture_report_sample"]);
+const REPORT_GROUP_SOURCES = new Set(["report", "report_national", "report_district", "capture_report_sample"]);
 const WATCHER_GROUP_SOURCES = new Set(["capture_institution", "capture_state"]);
 
 export function mailerLiteGroupForSource(source?: string | null): string {
