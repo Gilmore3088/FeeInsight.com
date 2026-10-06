@@ -16,6 +16,7 @@ import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -361,10 +362,18 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
         stateCode,
       });
+      // Outcome ledger: judge one slot of banks' links by the live fees they produced and
+      // write the judgements to the shared learning store.
+      const linkOutcomes = await recordLinkOutcomes(tx, {
+        runId: run.id,
+        stateCode,
+        dryRun: run.runKind === "dry_run",
+      });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
+          link_outcomes: linkOutcomes,
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -374,7 +383,10 @@ async function executeAgenticStep(
           failures: discovery.failures,
           attempted_urls: discovery.attemptedUrls,
           discovery_codes: discovery.codes,
+          resumed_searches: discovery.resumed,
           found_by: discovery.foundBy,
+          websites_repaired: discovery.websitesRepaired,
+          blocked_homepage_rescues: discovery.blockedHomepageRescues,
           method_version: discovery.methodVersion,
           learning_log: discovery.learning,
           second_documents_status: discovery.secondDocuments?.status ?? null,
@@ -616,6 +628,7 @@ async function executeAgenticStep(
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
           category_model_disputes: verification.categoryModelDisputes,
+          feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
           learning_log: verification.learning,

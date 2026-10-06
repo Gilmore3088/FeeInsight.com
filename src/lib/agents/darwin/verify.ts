@@ -7,6 +7,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -167,6 +168,8 @@ export interface RunDarwinVerifyResult {
   secondSourceDisagreements: number;
   /** Layer 2 (shadow): rows whose category the learned model disputes. */
   categoryModelDisputes: number;
+  /** Judgements written to `pipeline_feedback`; null when skipped (dry run, no store yet, or a write error). */
+  feedbackWritten: number | null;
   results: DarwinVerificationResult[];
 }
 
@@ -779,6 +782,14 @@ export async function runDarwinVerify(
     await recordVerificationSignals(db, options.runId, results, rowByRawFeeId);
   }
 
+  // Each decision goes to the shared learning store as a judgement on Knox's read.
+  const feedbackWritten = !dryRun && learning
+    ? await recordDarwinFeedback(
+        db,
+        darwinFeedbackRows(results, rowByRawFeeId, { runId: options.runId, verifyVersion: DARWIN_VERIFY_STRATEGY.version }),
+      )
+    : null;
+
   const reasonCounts: Partial<Record<DarwinReasonCode, number>> = {};
   for (const result of results) {
     if (result.reasonCode) reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] ?? 0) + 1;
@@ -799,6 +810,7 @@ export async function runDarwinVerify(
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
     categoryModelDisputes: results.filter((result) => result.categoryModel?.disputed).length,
+    feedbackWritten,
     results,
   };
 }

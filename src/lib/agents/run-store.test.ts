@@ -98,6 +98,10 @@ vi.mock("@/lib/agents/magellan/discovery", () => ({
   runMagellanDiscovery: runMagellanDiscoveryMock,
 }));
 
+vi.mock("@/lib/agents/magellan/outcomes", () => ({
+  recordLinkOutcomes: vi.fn(async () => ({ ready: false, slot: 0, links: 0, judged: { good: 0, thin: 0, rejected: 0, dead: 0 }, undecided: 0, unchanged: 0, written: 0 })),
+}));
+
 vi.mock("@/lib/agents/magellan/fetch", () => ({
   runMagellanFetch: runMagellanFetchMock,
 }));
