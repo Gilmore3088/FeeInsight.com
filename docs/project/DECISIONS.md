@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Hamilton is auditable: every output shows how it was built.** James, 00:08 UTC ("Auditing is
+incredibly important... we don't want to hide behind a black box"). Every Briefing, Research view,
+scenario and implementation plan carries its provenance: sources with links to the banks' own
+schedule documents, data as-of dates, the peer group and its size, assumptions, evidence level,
+and each client-given figure with who gave it and when. Saved decisions keep the provenance from
+the moment they were made. The same message set out Hamilton's faces (fee verifier and
+publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
+describes all four. Built in PR 170.
+
 **The institution report has no fixed price yet; the granular data stays paid.** James, 23:31 UTC
 Oct 5 and 00:15 UTC Oct 6. It will be a $300 report once it is ready, but for now a request is
 quoted by hand. Free reports give value away (national and district medians only); per-bank fees
