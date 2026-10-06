@@ -7,6 +7,42 @@ function fees(text: string): Array<[string, number, string]> {
 }
 
 describe("Knox extract.rules", () => {
+  it("v9 reads an account's monthly service charge written as prose (Evergreen Federal Bank)", () => {
+    const evergreen = extractFromSegment(
+      "Evergreen Non-Interest Checking | n/a | n/a | n/a | $500 minimum daily balance, otherwise $8 service charge per statement cycle",
+    );
+    expect(evergreen.held).toEqual([]);
+    expect(evergreen.candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([
+      ["Evergreen Non-Interest Checking Monthly service charge", 8, "monthly_maintenance"],
+    ]);
+    for (const [line, amount] of [
+      ["Maintain a $2,000 minimum daily balance to avoid a $10 monthly fee", 10],
+      ["If you do not, a monthly $29 fee will be assessed.", 29],
+      ["*Maintain a $1,500 daily minimum balance, and we'll waive the $10.00 monthly service charge.", 10],
+      ["Daily minimum balance of $2,500 to avoid $5.95 monthly service charge", 5.95],
+      ["Cornerstone Checking is subject to a $25 monthly fee", 25],
+    ] as const) {
+      const result = extractFromSegment(line);
+      expect(result.candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[amount, "monthly_maintenance"]]);
+    }
+  });
+
+  it("v9 leaves statement, withdrawal, savings and card charges out of maintenance", () => {
+    for (const line of [
+      "Additional $3 monthly charge for all printed statements",
+      "6 withdrawals allowed per statement cycle, $5.00 service charge for each additional withdrawal thereafter.",
+      "Savings accounts below $100 pay a $3 monthly service charge",
+      "Debit card program: $2 monthly fee",
+    ]) {
+      expect(extractFromSegment(line).candidates.filter((c) => c.canonicalHint === "monthly_maintenance")).toEqual([]);
+    }
+  });
+
+  it("v9 names inactivity and dormancy charges as dormant-account fees", () => {
+    expect(classifyFeeText("Account Inactivity Fee")).toBe("dormant_account");
+    expect(classifyFeeText("Dormancy Charge (Savings Accounts with Balances Less than $25)")).toBe("dormant_account");
+  });
+
   it("v8 drops footnote numbers glued to a fee name (SoFi fee sheet)", () => {
     expect(fees("Outgoing domestic wire transfer3 $30 per wire transfer")).toEqual([["Outgoing domestic wire transfer", 30, "wire_domestic_outgoing"]]);
     expect(extractFromSegment("Return Item fee2 $0").held.map((held) => held.feeName)).toEqual(["Return Item fee"]);

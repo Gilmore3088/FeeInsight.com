@@ -1,5 +1,5 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail } from "@/lib/agents/knox/layout";
+import { composableTail, passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 /**
@@ -193,7 +193,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "early_closure",
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
-  { key: "dormant_account", pattern: /\b(dormant|inactive|escheat\w*|abandoned)\b/i },
+  { key: "dormant_account", pattern: /\b(dorman(?:t|cy)|inactiv(?:e|ity)|escheat\w*|abandoned)\b/i },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",
@@ -369,6 +369,40 @@ export function usableName(name: string): boolean {
 }
 
 /** "$5.00 Monthly fee for paper statements": the words after an opening price name it only when they say it is a fee ("$5 gift cards" is a gift card worth $5). */
+/**
+ * An account's monthly service charge written as prose, named by the words right after its
+ * price: "otherwise $8 service charge per statement cycle", "avoid the $10 monthly fee",
+ * "a monthly $29 fee will be assessed". The price is the figure the wording names; balance
+ * thresholds elsewhere on the line are conditions.
+ */
+const MAINTENANCE_PROSE =
+  /(?:\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s*(?:monthly\s+(?:service|maintenance)\s+(?:fee|charge)|monthly\s+(?:fee|charge)|(?:service|maintenance)\s+(?:fee|charge))|\bmonthly\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s+(?:(?:service|maintenance)\s+)?(?:fee|charge))s?\b/i;
+
+export function maintenanceFromProse(segment: string, cells: string[] | null): ExtractedFeeCandidate | null {
+  const match = segment.match(MAINTENANCE_PROSE);
+  if (!match) return null;
+  const amount = Number(match[1] ?? match[2]);
+  if (!(amount > 0)) return null;
+  // The whole line passes the maintenance guard: no savings, business, statement-copy,
+  // card, loan or excess-withdrawal charge.
+  if (!passesDarwinChecks("monthly_maintenance", segment.replace(/\$\s?[\d.,]+\s*/g, ""), amount)) return null;
+  // A card, bill pay or safe deposit box charge is not the account's maintenance fee.
+  if (/\b(cards?|bill ?pay|safe deposit|box)\b/i.test(segment)) return null;
+  const label = cells ? normalizeSegment(cells[0]) : "";
+  const account = /\b(checking|account)\b/i.test(label) && !/\$/.test(label) && label.length <= 80 ? `${label} ` : "";
+  const feeName = `${account}Monthly service charge`;
+  if (!passesDarwinChecks("monthly_maintenance", feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: "monthly",
+    canonicalHint: "monthly_maintenance",
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: WAIVER_LANGUAGE.test(segment) || /\bavoid\b/i.test(segment),
+  };
+}
+
 function priceFirstHint(after: string): string | null {
   // A price that ends its table cell ("... $1 | Overdraft Charge ....... $35") belongs
   // to the cell before it, never to the next cell's fee.
@@ -440,6 +474,16 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     return result;
   }
   if (!firstAmount) return result;
+
+  // A line no rule names by the words before its price may still state the account's
+  // monthly service charge in prose, with the fee named after the price.
+  if (!hint) {
+    const maintenance = maintenanceFromProse(segment, cells);
+    if (maintenance) {
+      result.candidates.push(maintenance);
+      return result;
+    }
+  }
 
   // "$20.00 Wire Agreement Fee ......": in a dot-leader schedule split across lines, a
   // price that opens the line belongs to the name on the line above (pass 2 pairs it).
