@@ -4,6 +4,7 @@
  */
 
 import type { HamiltonPersistedContextSource } from "@/lib/hamilton/context-source";
+import type { Storyline, StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
 
 export type SectionType =
   | "overview"
@@ -207,6 +208,10 @@ export interface AnalyzeResponse {
     chart?: unknown;
   };
   exploreFurther: string[];
+  /** Set when the Ask engine answered: the storyline it built, and Hamilton's checked memo once written. */
+  storyline?: Storyline;
+  memo?: StorylineMemo;
+  engineVersion?: string;
   // NOTE: No recommendedPosition — screen boundary rule (ARCH-05)
 }
 

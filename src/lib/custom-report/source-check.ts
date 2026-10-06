@@ -353,3 +353,57 @@ function checkAgainstLines(
   }
   return { ok: false, reason: best };
 }
+
+/** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.
+ * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
+const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
+const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
+
+/**
+ * Pure: is this percentage fee stated in its source text? The rate's twin of
+ * `checkFeeAgainstSource`: one row has to name the fee, state the rate as a percent, say it
+ * is a fee or charge, and not be an interest or dividend rate. The rate never stands in for
+ * a dollar amount, so a "1%" row never confirms a $1.00 fee or the reverse.
+ */
+export function checkRateAgainstSource(
+  text: string | null | undefined,
+  feeName: string,
+  ratePercent: number,
+  categoryPattern: string,
+): SourceCheckResult {
+  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  const lines = cachedSourceLines(text);
+  const stems = nameStems(feeName);
+  const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
+  let best: SourceCheckFailure = "name_not_in_text";
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!namesFee(lines[i], stems)) continue;
+    // The rate may sit on the line under the name ("Foreign Transaction Fee" / "1.10%").
+    const next = lines[i + 1] ?? "";
+    const row = lines[i].match(RATE) || next.length > PRICE_BELOW_MAX_LENGTH ? lines[i] : `${lines[i]} | ${next}`;
+    // When one row states several rates ("Cash Advance 3.0% ... Foreign Transaction 1.0%"),
+    // each rate belongs to the words since the previous rate, as prices do.
+    const rates = [...row.matchAll(RATE)].map((match) => ({ value: Number(match[1]), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+    const own = rates.filter(
+      (rate, k) => rates.length === 1 || stemCount(row.slice(k === 0 ? 0 : rates[k - 1].end, rate.start), stems) > 0,
+    );
+    if (!own.some((rate) => Math.abs(rate.value - ratePercent) < 0.00005)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
+    // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
+    // Counting | 10% of total"); interest wording is judged on the row itself.
+    const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
+    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
+    if (!category.test(context)) {
+      best = "category_not_in_text";
+      continue;
+    }
+    return { ok: true, sourceLine: row.slice(0, 240) };
+  }
+  return { ok: false, reason: best };
+}

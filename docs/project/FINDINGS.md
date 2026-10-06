@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
+**What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
+at 14:41. The lead rows showed confirmed and not unsubscribed, but MailerLite subscriber
+200589712283404206 stayed "unsubscribed", and the sync returned "synced". The same reader also
+ended up in two state groups (FL from the confirm page, AL from an older row's use_case).
+**Cause:** MailerLite's upsert (POST /subscribers) does not bring back an unsubscribed address
+unless the request says to resubscribe, and it still answers 200. The sync checked only the HTTP
+status. A later form with no state re-sent a state read from an old row.
+**Fix:** this PR. A sync right after a confirm link sends `resubscribe: true`; every sync checks
+the status MailerLite stored and reports "failed" when it differs; a reader joins only the state
+they picked last and leaves other state groups; a form with no state leaves the group alone.
+**Lesson:** check what an external API stored, not only its status code.
+
 ## 2026-10-06: Every daily overdraft cap was taken down, and none of the largest banks had one
 **What happened:** of 185 active institutions with $10B or more in assets, 40 had a live overdraft
 fee and 0 a daily cap (prod read-only, 14:00 UTC). Nationwide, all 251 dollar caps
@@ -1304,3 +1317,31 @@ same schedule (a navigation page among them), which retire nothing.
 copies with a line reader measures the renderer, not the bank; a line is gone only when its words are.
 Open for Knox and Magellan: about half of these newer copies have no Knox read yet (446 of 969 had
 any raw rows at 13:22 UTC), so price changes in them do not publish.
+
+## 2026-10-06: Percentage fees could not publish
+**What happened:** a foreign transaction fee is "1% of the transaction", but every fee tier had
+only a dollar `amount`, so Knox held each rate as `knox_review:percentage` (515 foreign
+transaction rows across 358 banks at 14:40 UTC). Only 42 banks had a live foreign transaction
+fee, and most of those 42 were dollar ATM or wire fees filed under it.
+**Fix:** rate columns on all three tiers (`amount_kind`, `rate_percent`, `rate_min_amount`,
+`rate_max_amount`, `rate_basis`), a rate twin of the shared trace check
+(`checkRateAgainstSource`), and `published_fee_rate_catalog` beside the dollar catalog. Offline
+dry run on the held foreign transaction and cash advance rows with their stored texts: 322
+foreign transaction rates verify at 239 banks (median 1%), 40 cash advance rates at 35 banks
+(median 3%); 214 of the 239 banks already have 2 other live fees, so their rate publishes.
+Coin counting and late payment rates were added the same day, and a heading just above a row
+may supply its fee word ("Coin Counting Fees" / "Coin Counting | 10% of total"). Final dry run:
+foreign transaction 392 rates at 284 banks (median 1%), cash advance 61 at 53 (3%), coin counting
+134 at 99 (5%), late payment 139 at 103 (5%).
+**Lesson:** many "percent" lines on a schedule are interest or dividend rates, not fees (Knox
+filed some under atm_non_network), so a rate publishes only in an allow-listed category, on a
+row that says fee or charge and does not say APY, APR, interest or dividend.
+
+
+## 2026-10-06: The e2e schema snapshot lags prod
+**What happened:** CI's end-to-end test builds its database from `tests/e2e/production-schema.sql`
+(taken 2026-10-04). A PR that reads a new column fails there even when its migration is right,
+and the snapshot's `published_fee_catalog` still lacks PR 215's 3-fee rule, so the test's
+one-fee peer banks would vanish under the real view.
+**Fix:** PR 278 appends its columns to the snapshot. Open: refresh the whole snapshot from prod,
+and give the test's peer banks 3 fees each so it runs under the real catalog rule.
