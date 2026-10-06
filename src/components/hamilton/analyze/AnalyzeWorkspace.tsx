@@ -18,6 +18,7 @@ import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { StructuredAsk } from "./StructuredAsk";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
@@ -370,6 +371,16 @@ export function AnalyzeWorkspace({
           </MemoSection>
         </>
       )}
+
+      {askedQuestion ? (
+        <MemoSection title="The figures" note="From the Hamilton engine: published fees, filings and the economy, each with its source.">
+          <StructuredAsk
+            question={askedQuestion}
+            institutionId={instId}
+            modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
+          />
+        </MemoSection>
+      ) : null}
 
       {isLoading && !shown ? (
         <div role="status" aria-live="polite" className="flex flex-col gap-3">
