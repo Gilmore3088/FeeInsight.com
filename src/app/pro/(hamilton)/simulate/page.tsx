@@ -12,6 +12,8 @@ import { modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
+import { annualItemsQuestion, waiverRateQuestion } from "@/lib/hamilton/workspace/scenario";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
   AuditPanel,
   Callout,
@@ -23,6 +25,7 @@ import {
   MemoSection,
   PeerSplitBars,
   PriceStrip,
+  QuestionCard,
   Tabs,
   fmtMoney,
   fmtSignedMoney,
@@ -121,6 +124,9 @@ export default async function ModelPage({ searchParams }: PageProps) {
       "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts.",
     ],
   });
+  // Hamilton asks for one figure at a time: the volume first, then the waiver share.
+  const question = current == null ? null : paidItems == null ? { q: annualItemsQuestion(ws.fee), name: "paid" } : waiverRate == null ? { q: waiverRateQuestion(ws.fee), name: "waiver" } : null;
+  const evidenceLabel = (e: "market" | "institution") => (e === "institution" ? "Your figures" : "Market data only");
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
 
   const row = "border-b border-warm-200";
@@ -149,6 +155,21 @@ export default async function ModelPage({ searchParams }: PageProps) {
             href: hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(f.category)}&layer=${layer.key}`, instId),
             active: f.category === ws.fee,
           }))}
+        />
+      ) : null}
+
+      {question ? (
+        <QuestionCard
+          prompt={question.q.prompt.replace(getDisplayName(ws.fee), ws.feeName.toLowerCase())}
+          why={
+            question.name === "paid"
+              ? "With it, each price below shows a yearly fee income figure from your own volume instead of a change per 1,000 items."
+              : "With it, the yearly figures below count only the fees you actually keep."
+          }
+          name={question.name}
+          inputKind={question.q.inputKind === "percent" ? "percent" : "number"}
+          action="/pro/simulate"
+          keep={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, instId }}
         />
       ) : null}
 
@@ -262,6 +283,12 @@ export default async function ModelPage({ searchParams }: PageProps) {
                   <td key={c.label} className={cell}>
                     {c.today ? "—" : c.result.annualDelta != null ? fmtSignedMoney(c.result.annualDelta) : <a href="#your-figures" className="text-terra-text underline">Add your figures</a>}
                   </td>
+                ))}
+              </tr>
+              <tr className={row}>
+                <th scope="row" className="px-4 py-2.5 text-left font-normal">Evidence</th>
+                {columns.map((c) => (
+                  <td key={c.label} className={cell}>{c.today ? "—" : evidenceLabel(c.result.evidence)}</td>
                 ))}
               </tr>
               <tr className={row}>

@@ -540,6 +540,55 @@ export function Callout({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Hamilton's one clarifying question, answered in place. A plain GET form: the answer joins the
+ * page's link as `name`, with `keep` carried along so the rest of the page stays as it was.
+ */
+export function QuestionCard({
+  prompt,
+  why,
+  name,
+  inputKind,
+  action,
+  keep,
+}: {
+  prompt: string;
+  /** What the answer changes, in one sentence. */
+  why: string;
+  name: string;
+  inputKind: "number" | "percent" | "text";
+  action: string;
+  keep: Record<string, string | null | undefined>;
+}) {
+  const id = `ask-${name}`;
+  return (
+    <form method="get" action={action} className="flex flex-col gap-3 rounded-lg border border-terra/40 bg-white p-5 shadow-sm">
+      {Object.entries(keep).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
+      <p className="text-xs font-medium uppercase tracking-[0.1em] text-terra-text">Hamilton has one question</p>
+      <label htmlFor={id} className="text-lg leading-snug text-warm-900" style={SERIF}>
+        {prompt}
+      </label>
+      <p className="text-sm text-warm-700">{why}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-48">
+          <input
+            id={id}
+            name={name}
+            required
+            inputMode={inputKind === "text" ? "text" : inputKind === "percent" ? "decimal" : "numeric"}
+            autoComplete="off"
+            className={`w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra [font-variant-numeric:tabular-nums] ${inputKind === "percent" ? "pr-8" : ""}`}
+          />
+          {inputKind === "percent" ? <span className="pointer-events-none absolute right-3 top-2 text-sm text-warm-600">%</span> : null}
+        </div>
+        <button type="submit" className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark">
+          Use this figure
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function longDateOrRange(asOf: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(asOf)
     ? new Date(`${asOf}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
