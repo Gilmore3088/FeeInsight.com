@@ -491,11 +491,15 @@ export interface AskResponse {
   facts?: Fact[];
   /** The structured answer: headline, sourced claims, drivers, exhibit and question. */
   answer?: HamiltonAnswer;
+  /** The decision this exchange was logged to; send it back with the next question. */
+  decisionId?: string;
 }
 
 export interface AskRequest {
   institutionId: number;
-  question: string;
+  question?: string;
+  /** The reader's answer to Hamilton's clarifying question, saved to memory under fieldKey. */
+  answer?: { fieldKey: string; value: string | number };
   /** Set when the reader has picked one; required before Hamilton gives an opinion. */
   objective?: AskObjective;
   decisionId?: string;

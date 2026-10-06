@@ -214,7 +214,7 @@ export async function previewReportPeerCoverage(
  */
 /**
  * Shared no-fluff rules. Same banned phrases + grounding requirements as
- * RECOMMENDATION_RULES. The model can be funny in its choice of how to
+ * DECISION_POINT_RULES. The model can be funny in its choice of how to
  * express things — but it cannot be vague, can't invent numbers, and can't
  * reach for consultancy-speak when it has nothing to say.
  */
@@ -285,17 +285,19 @@ function buildStrategicContext(
 }
 
 /**
- * Recommendation-specific rules (layered on top of NO_FLUFF_RULES).
- * Recommendations have stricter shape requirements than the descriptive
- * sections (Executive Summary, Strategic Analysis).
+ * Decision-point rules (layered on top of NO_FLUFF_RULES). Hamilton is decision support
+ * (James, 2026-10-05 23:27 UTC): this section lays out what management could weigh and
+ * what each option would do, and never says which to choose. An opinion is given only on
+ * an explicit ask, through the Ask bar, with its objective named.
  */
-const RECOMMENDATION_RULES = `
+const DECISION_POINT_RULES = `
 ${NO_FLUFF_RULES}
 
-RECOMMENDATION-SPECIFIC RULES:
-6. Output AT MOST 3 recommendations. Generic advice about "establishing leadership" or "building frameworks" is forbidden.
-7. Each recommendation must include: (a) the fee category, (b) the peer median or P25/P75 anchor it should move toward, (c) one observable consequence (revenue direction, competitive percentile shift, or member-experience signal). If you cannot ground a recommendation in the DATA payload, omit it.
-8. If you can ground 0 or 1 recommendations, return only that many. Better empty than meaningless.
+DECISION-POINT RULES:
+6. Output AT MOST 3 decision points, largest distance from the peer median first. Generic advice about "establishing leadership" or "building frameworks" is forbidden.
+7. Each decision point names (a) the fee category, (b) the institution's amount and the peer P25, median and P75 with the institution count from the DATA payload, and (c) the options management could weigh (keep the price, move toward a peer anchor, restructure the fee), each with one observable consequence (revenue direction, percentile shift, or customer and regulatory exposure). If you cannot ground a decision point in the DATA payload, omit it.
+8. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
+9. If you can ground 0 or 1 decision points, return only that many. Better empty than meaningless.
 `.trim();
 
 function buildRecommendationContext(
@@ -305,21 +307,21 @@ function buildRecommendationContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Recommend up to 3 specific fee adjustments for ${institutionName}, each anchored to a peer-median or P75 figure from the DATA payload. Order by impact: largest variance from peer median first.`;
+        return `Lay out up to 3 fee decision points for ${institutionName}, each anchored to a peer-median or P75 figure from the DATA payload. Order by distance from the peer median, largest first.`;
       case "regional_landscape":
-        return `Recommend up to 3 regional moves for ${institutionName}, each tied to a specific market position visible in the DATA payload (e.g. "FL CU median is $X, ${institutionName} sits at $Y").`;
+        return `Lay out up to 3 regional decision points for ${institutionName}, each tied to a specific market position visible in the DATA payload (e.g. "FL CU median is $X, ${institutionName} sits at $Y").`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Recommend up to 3 specific actions for ${institutionName} in the ${cat} category. Each must name the current peer P25/median/P75 anchor and the directional move (raise, hold, lower, restructure).`;
+        return `Lay out up to 3 decision points for ${institutionName} in the ${cat} category. Each must name the current peer P25/median/P75 anchor and what keeping, moving toward an anchor, or restructuring the fee would change.`;
       }
       case "competitive_positioning":
-        return `Recommend up to 3 specific repositioning moves for ${institutionName}, prioritizing the categories with the largest distance from peer median in the DATA payload.`;
+        return `Lay out up to 3 positioning decision points for ${institutionName}, starting with the categories furthest from the peer median in the DATA payload.`;
     }
   })();
 
-  return `${head}\n\n${RECOMMENDATION_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
+  return `${head}\n\n${DECISION_POINT_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
 }
 
 /**
@@ -571,11 +573,11 @@ export async function generateReport(
       },
       {
         type: "recommendation",
-        title: "Recommended Position",
-        // Pass actual peer-anchored fee data so the model can write
-        // specific recommendations instead of consultancy fluff. The
-        // RECOMMENDATION_RULES context block forbids inventing figures
-        // not present in this payload.
+        title: "For management to weigh",
+        // Pass actual peer-anchored fee data so the model can lay out
+        // specific decision points instead of consultancy fluff. The
+        // DECISION_POINT_RULES context block forbids inventing figures
+        // not present in this payload, and forbids choosing an option.
         data: {
           report_type: params.templateType,
           institution_name: institutionName,
