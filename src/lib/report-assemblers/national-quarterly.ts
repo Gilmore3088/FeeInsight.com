@@ -21,6 +21,8 @@ import { getPublicStatsSummary } from "@/lib/public-stats";
 import { getBeigeBookHeadlines, getBeigeBookThemes, getFredSummary } from "@/lib/data-store/fed";
 import type { BeigeBookTheme } from "@/lib/data-store/fed";
 import { getDisplayName, FEE_TIERS } from "@/lib/fee-taxonomy";
+import { getNationalRateStats } from "@/lib/data-store/rate-fees";
+import { PERCENT_FEE_RANGES } from "@/lib/percent-fees";
 import type { DataManifest } from "@/lib/report-engine/types";
 import { loadDevelopments, loadFeeChanges, type DevelopmentsBlock, type FeeChangesBlock } from "./developments";
 import type { ThesisSummaryPayload } from "@/lib/hamilton/types";
@@ -98,6 +100,17 @@ export interface IncomeQuarterRow {
   yoy_change_pct: number | null;
 }
 
+/** A fee as institutions state it as a rate ("1% of the transaction"); never pooled with dollar amounts. */
+export interface NationalRateSection {
+  fee_category: string;
+  display_name: string;
+  institution_count: number;
+  median_rate: number | null;
+  p25_rate: number | null;
+  p75_rate: number | null;
+  maturity_tier: "strong" | "provisional" | "insufficient";
+}
+
 export interface NationalQuarterlyPayload {
   report_date: string;
   quarter: string;
@@ -105,6 +118,8 @@ export interface NationalQuarterlyPayload {
   total_bank_institutions: number;
   total_cu_institutions: number;
   categories: NationalQuarterlySection[];
+  /** Fees that may publish as a rate, by their rates; absent on older payloads. */
+  rate_categories?: NationalRateSection[];
   revenue: {
     latest_quarter: string;
     total_service_charges: number;
@@ -518,9 +533,35 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     console.error("[assembler] fee change read failed; the section says so:", e);
   }
 
+  // Query 10: fees stated as a rate, each on its own (published_fee_rate_catalog)
+  let rate_categories: NationalRateSection[] = [];
+  try {
+    rate_categories = await Promise.all(
+      Object.keys(PERCENT_FEE_RANGES).map(async (fee_category) => {
+        const stats = await getNationalRateStats(fee_category);
+        return {
+          fee_category,
+          display_name: getDisplayName(fee_category),
+          institution_count: stats.institution_count,
+          median_rate: stats.median_rate,
+          p25_rate: stats.p25_rate,
+          p75_rate: stats.p75_rate,
+          maturity_tier: stats.maturity_tier,
+        };
+      }),
+    );
+    manifestEntries.push({
+      sql: "published_fee_rate_catalog, national rates by category",
+      row_count: rate_categories.reduce((sum, r) => sum + r.institution_count, 0),
+      executed_at: assembled_at,
+    });
+  } catch (e) {
+    console.error("[assembler] rate fee read failed; the report leaves rates out:", e);
+  }
+
   // Compute data_hash over assembled payload content
   const data_hash = createHash("sha256")
-    .update(JSON.stringify({ categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, overdraft_distribution, developments, fee_changes }))
+    .update(JSON.stringify({ categories, rate_categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, overdraft_distribution, developments, fee_changes }))
     .digest("hex");
 
   const pipeline_commit = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
@@ -532,6 +573,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     total_bank_institutions,
     total_cu_institutions,
     categories,
+    rate_categories,
     revenue,
     fred,
     district_headlines,

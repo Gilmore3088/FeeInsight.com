@@ -9,6 +9,7 @@ import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox
 import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -33,7 +34,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 17 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 21 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -51,6 +52,8 @@ export interface SpecialistRun {
 
 export interface FreeExtractionResult extends ExtractionRulesResult {
   runs: SpecialistRun[];
+  /** Percentage fees that publish as rates and trace to the text (`percent.ts`); the rest stay held. */
+  rates: RateFeeCandidate[];
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
@@ -183,5 +186,18 @@ export function runFreeSpecialists(text: string): FreeExtractionResult {
       !candidates.some((candidate) => candidate.amount === row.amount && candidate.excerpt.includes(row.feeName))
     );
   });
-  return { candidates, held: kept, runs };
+  // A held percentage in a category that publishes rates, traced to the text, goes to
+  // Darwin as a rate fee; the same rate read twice is one fee.
+  const rates: RateFeeCandidate[] = [];
+  const stillHeld = kept.filter((row) => {
+    if (row.shape !== "percentage") return true;
+    const rate = rateFeeFromHeld(row, text);
+    if (typeof rate === "string") return true;
+    const duplicate = rates.some(
+      (prior) => prior.canonicalHint === rate.canonicalHint && prior.ratePercent === rate.ratePercent && prior.feeName.toLowerCase() === rate.feeName.toLowerCase(),
+    );
+    if (!duplicate) rates.push(rate);
+    return false;
+  });
+  return { candidates, held: stillHeld, rates, runs };
 }

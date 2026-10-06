@@ -56,4 +56,25 @@ describe("FeeScheduleTable", () => {
     expect(within(row as HTMLElement).getByText("Paid item overdraft")).toBeInTheDocument();
     expect(container.querySelectorAll('[data-fee-anchor="overdraft"]').length).toBe(2);
   });
+
+  it("shows a rate fee as its rate, with no dollar comparison", () => {
+    const rate = fee({
+      id: "rate-1",
+      feeName: "Foreign transaction fee",
+      feeCategory: "card_foreign_txn",
+      amount: null,
+      rate: { rate: "1.1%", detail: "of the transaction" },
+    });
+    render(
+      <FeeScheduleTable
+        fees={[rate]}
+        disclosureUrl={null}
+        medians={new Map([["card_foreign_txn", 3]])}
+        benchmarks={{ card_foreign_txn: { p25: 1, median: 3, p75: 5 } }}
+      />,
+    );
+    expect(screen.getAllByText("1.1%").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("of the transaction").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/(above|below|At) the national median/)).toBeNull();
+  });
 });

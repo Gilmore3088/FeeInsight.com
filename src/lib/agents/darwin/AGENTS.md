@@ -83,13 +83,22 @@ Darwin owns verification and classification.
   data at 2026-10-06 07:20 UTC, 23 approvals and 477 rejects qualified.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
-  with `checkFeeAgainstSource`. Not stated: `reject`. Stated and a peer hold: `release`
-  (verified, so Hamilton can publish it). Stated but outside the hand-set range: `keep`
-  for a person (Hamilton's publish gate uses that range). Same fee already verified:
-  `duplicate`. `verify.release` v1 is a dry run (`DARWIN_RELEASE_ACTS` false): verdicts are
-  recorded, nothing changes. Acting is v2, which judges every held fee again, inserts
-  releases and writes both verdicts to `pipeline_feedback` (`darwin.release`). Step detail:
-  `held_release`.
+  with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
+  `keep` for a person (Hamilton's publish gate uses that range). Stated only as a tier, or
+  filed under a category the category model disputes: `keep`. Same fee already verified:
+  `duplicate`. Otherwise `review`: in the next `verify-paid` step, before the adjudicator and
+  from the same call budget, `release-review.ts` (`verify.release_review`) has Claude read the
+  fee beside its schedule line and release it only if it is a price the bank charges, fits
+  the category it was filed under (the prompt lists the names the taxonomy files there), and
+  the amount is the price, not a cap or a misread number. Released rows carry the
+  `darwin_released_hold` flag so the whole release can be found and rolled back.
+  v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
+  fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
+  "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
+  writes a `darwin.release` note of kind `not_on_schedule` to `pipeline_feedback` and leaves
+  the held pile. Those fees were never live, so nothing comes down. Releases stay a dry run
+  while `DARWIN_RELEASE_ACTS` is false; switching it on needs James's word and a version bump,
+  and writes released fees as `darwin_verified` notes. Step detail: `held_release`.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

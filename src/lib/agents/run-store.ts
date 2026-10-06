@@ -10,6 +10,7 @@ import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollbac
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import {
   currentMonth,
   mailingAddress,
@@ -24,7 +25,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRows } from "@/lib/agents/knox/held-recheck";
+import { recheckHeldRates, recheckHeldRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -591,11 +592,18 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Held percentage fees in categories that publish rates go to Darwin as rate fees.
+      const rateRecheck = await recheckHeldRates(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin.`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
         detail: {
           held_recheck: heldRecheck,
+          held_rate_recheck: rateRecheck,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
@@ -607,6 +615,8 @@ async function executeAgenticStep(
           skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
+          lessons_loaded: extraction.lessonsLoaded,
+          lesson_refiles: extraction.lessonRefiles,
           extract_limit: extraction.limit,
           dry_run: extraction.dryRun,
           institution_results: institutionResults(
@@ -800,6 +810,17 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A fee line the bank removed from a newer copy of its page comes down (shadow
+      // mode until NEWER_COPY_RETIRE_LIVE is turned on: it reports and changes nothing).
+      const newerCopy = await retireFeesDroppedFromNewerCopy(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
+      const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
+      const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
@@ -853,6 +874,8 @@ async function executeAgenticStep(
               offTaxonomyRollbacks.length > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
+              newerCopyRetired > 0 ||
+              newerCopyRestored > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
               sourceTakedowns > 0 ||
@@ -881,13 +904,17 @@ async function executeAgenticStep(
         sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
           ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
           : "";
+      const newerCopyNote =
+        newerCopyRetired > 0 || newerCopyRestored > 0
+          ? ` ${published.dryRun ? "Would retire" : "Retired"} ${newerCopyRetired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${newerCopyRestored > 0 ? ` and ${published.dryRun ? "would restore" : "restored"} ${newerCopyRestored.toLocaleString()} a later copy states again` : ""}.`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${companionNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${companionNote}${newerCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -920,6 +947,22 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
             companion_source_id: rollback.companionSourceId,
+          })),
+          newer_copy_live: newerCopy.live,
+          newer_copy_documents: newerCopy.documentsChecked,
+          newer_copy_unrecognized: newerCopy.unrecognized,
+          newer_copy_still_stated: newerCopy.stillStated,
+          newer_copy_still_named: newerCopy.stillNamed,
+          newer_copy_retired: newerCopy.retired.length,
+          newer_copy_restored: newerCopy.restored,
+          newer_copy_samples: newerCopy.retired.slice(0, 10).map((fee) => ({
+            fee_published_id: Number(fee.fee_published_id),
+            institution_id: Number(fee.institution_id),
+            older_document_id: Number(fee.source_document_id),
+            newer_document_id: Number(fee.newer_document_id),
+            canonical_fee_key: fee.canonical_fee_key,
+            fee_name: fee.fee_name,
+            amount: fee.amount == null ? null : Number(fee.amount),
           })),
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
@@ -2381,7 +2424,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision";
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision" | "ask_memo";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;
