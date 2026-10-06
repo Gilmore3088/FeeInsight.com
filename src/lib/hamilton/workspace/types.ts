@@ -577,6 +577,8 @@ export interface AskResponse {
   segment?: SegmentResearch | null;
   /** The decision this exchange was logged to; send it back with the next question. */
   decisionId?: string;
+  /** The saved analysis this answer was filed as (history and "Add to report"); send it with the memo request. */
+  savedAnalysisId?: string;
 }
 
 export interface AskRequest {

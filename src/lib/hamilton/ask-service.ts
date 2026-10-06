@@ -16,13 +16,16 @@ import {
   testedPrices,
   workspaceSchemaReady,
 } from "@/lib/data-store/hamilton-workspace";
+import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisResponse } from "@/lib/data-store/hamilton-analyses";
+import { normalizeCanonicalInstitutionId } from "./context-link";
 import { writeStorylineMemo } from "./memo";
+import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch } from "./workspace/research";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
-import type { AskObjective, AskResponse, DecisionEventKind, DecisionRecord, MemoryFact } from "./workspace/types";
+import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
 
 const OBJECTIVES: AskObjective[] = ["revenue", "customer_treatment", "competitive_position"];
 const MAX_QUESTION_CHARS = 1_000;
@@ -36,6 +39,8 @@ export interface AskBody {
   objective?: unknown;
   decisionId?: unknown;
   answer?: unknown;
+  /** Memo requests only: the saved analysis the Ask answer was filed as. */
+  savedAnalysisId?: unknown;
 }
 
 export interface AskResult {
@@ -91,6 +96,30 @@ async function logEvents(
     events.map((e) => ({ ...e, actor })),
     moveToModeling && decision.status === "researching" ? "modeling" : undefined,
   ).catch((error) => console.error("[hamilton-ask] decision log failed", { decisionId: decision.id, error }));
+}
+
+/**
+ * Files a storyline answer as a saved analysis, so every Ask lands in the reader's history
+ * and can go into a report once, whichever screen asked it. Null when there is no storyline
+ * or the save fails; the answer is still returned.
+ */
+async function fileAnalysis(userId: number, institutionId: string | number, question: string, response: AskResponse): Promise<string | null> {
+  const storyline = response.answer?.storyline;
+  const canonical = normalizeCanonicalInstitutionId(institutionId);
+  if (!storyline || !canonical) return null;
+  try {
+    return await insertSavedAnalysis({
+      userId,
+      institutionId: canonical,
+      title: analysisTitle(storyline),
+      analysisFocus: analysisFocusFor(storyline),
+      prompt: question,
+      response: storylineAnalysis(storyline, WORKSPACE_ENGINE_VERSION),
+    });
+  } catch (error) {
+    console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
+    return null;
+  }
 }
 
 export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> {
@@ -181,6 +210,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
   const response = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
+  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
   const shown = response.scenario;
   const scenarioEvents =
     response.kind === "scenario"
@@ -230,9 +260,13 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
       segment: intent.segment?.label ?? null,
       segment_members: research?.segment?.members.length ?? null,
       decision_id: decision?.id ?? null,
+      saved_analysis_id: savedAnalysisId,
     },
   });
-  return { status: 200, body: { ...response, ...(decision ? { decisionId: decision.id } : {}) } };
+  return {
+    status: 200,
+    body: { ...response, ...(decision ? { decisionId: decision.id } : {}), ...(savedAnalysisId ? { savedAnalysisId } : {}) },
+  };
 }
 
 export interface AskMemoResult {
@@ -269,6 +303,16 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
   const result = await writeStorylineMemo(storyline, question, { institutionId });
+  let memoSaved = false;
+  const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
+  if (result.status === "written" && savedId) {
+    try {
+      const saved = await getSavedAnalysisResponse(user.id, savedId);
+      if (saved) memoSaved = await updateSavedAnalysisResponse(user.id, savedId, withMemo(saved, result.memo));
+    } catch (error) {
+      console.error("[hamilton-ask-memo] saving the memo failed", { savedId, error });
+    }
+  }
   await recordProRequest({
     operation: "ask_memo",
     title: `Hamilton memo: ${intent.feeCategory}`,
@@ -285,6 +329,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       memo_status: result.status,
       figures_checked: result.status === "written" ? result.memo.figureCheck.checked : null,
       model: result.status === "written" ? result.memo.model : null,
+      saved_analysis_id: savedId,
+      memo_saved: memoSaved,
     },
   });
   return { status: 200, body: result };
