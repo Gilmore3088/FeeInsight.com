@@ -1600,6 +1600,32 @@ Rosetta's read step runs `restoreReadableCopies` each pass (`thin_copies_set_asi
 detail). Read-only dry run: 6 pages qualify (these 5 plus one with no live fees).
 **Lesson:** "newest" is not "current" unless the newer copy is at least readable.
 
+## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
+**What happened:** some PDF schedules are stored as a single line holding every row
+("Stop Payment………………. $35.00 Dormant Account Fee……. $7.00/Month ..."). The shared check
+(`source-check.ts`) splits long lines into sentences after every period, and the last period of
+each dot leader counted as one. So each fee's name ended one piece and its price began the next.
+Knox read West Shore Bank's stop payment, cashier's check, dormant, overdraft and late charge
+correctly, then held every one as untraced. The bank stayed hidden behind the 3-fee rule.
+**Fix:** the shared check no longer splits inside a leader (Knox's own splitter already worked
+this way since v22). Knox v25 also files a box size in inches as a safe deposit box.
+**Also found:** of the 108 hidden banks under $10B, 61 have no fee schedule stored at all
+(checking, rate or Truth-in-Savings pages), so they went to Magellan. 49 have 128 Knox rows that
+Darwin hasn't judged yet.
+**Lesson:** Knox and the shared check must split text the same way. When one learns a layout,
+change the other in the same PR.
+
+**Same day, newer page copies:** 898 live fees on older page copies had no matching Knox row on the
+page's current copy, though the current text still carried the amount. The causes:
+- about 370 were read on the current copy under another category;
+- about 110 were held there;
+- 211 were read on a second document holding the identical text;
+- the remaining ~200 sat on current copies last read at rules v1 to v7.
+
+Nothing re-read a current copy, because the re-read triggers only reach thin texts, flagged texts
+and $10B+ banks. Knox now reads a current copy again once per rules version while an older copy
+still carries live fees.
+
 ## 2026-10-07: 14,133 live fees still pointed at a superseded copy of their page
 **What happened:** when Magellan fetches a newer copy of a fee page, Knox reads it and Darwin
 verifies its rows. A line whose amount did not change is skipped by Hamilton's publish rules as
@@ -1649,3 +1675,29 @@ in states the lanes had not reached (most in Texas 144, Illinois 108, California
 provider call.
 **Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
 sits in states it has not reached.
+
+## 2026-10-07: one page stored under two spellings kept two current copies
+**What happened:** Magellan marks a page's older copies as history only when the address matches
+exactly. "https://www.wailukufcu.com:443/about/rates-and-fees" and ".../about/rates-and-fees/" are
+the same page, so both stayed current. The newer copy's text was identical, Knox reads a text only
+once, and the newer copy got 0 fee rows while 41 live fees stayed on the older spelling, which
+nothing marked as older. Prod (read-only, 7 Oct ~01:30 UTC): 109 current copies at about 108 banks
+have a newer copy of the same page under another spelling (port :443, trailing slash, `#fragment`,
+www or not), with 666 live fees on them; 77 have identical text.
+**Fix:** `markCurrentCopy` also matches the page by host (no www or port) and path (no trailing
+slash or fragment), and `supersedeSamePageCopies` backfills existing pairs in each fetch step. Both
+start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.same_page_copies`
+events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
+newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
+**Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
+
+## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
+**What happened:** PR 314 rewrote the schedule-search query and lost the `''` after
+`btrim(inst.fee_schedule_url) <>`. Every `discover-paid` step failed with "syntax error at or near
+AND" from 01:21 UTC Oct 7 (4 failures before the fix). The unit tests mock the database, so they
+never parsed the SQL.
+**Fix:** the `''` is back, and a test now checks that no SQL sent by the schedule search leaves a
+comparison without its right-hand side. The fixed query was run read-only on prod and returned its
+12 rows.
+**Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
+merging.

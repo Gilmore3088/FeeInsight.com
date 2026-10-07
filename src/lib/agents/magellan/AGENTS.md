@@ -23,6 +23,10 @@ Magellan owns institution source discovery and source fetching.
   superseded_by_id IS NULL`. Failed fetches never supersede a good copy, nor does a copy Rosetta
   read as a bot check, script shell or bare title (a thin copy, `restoreReadableCopies`);
   nothing is deleted.
+  A page is matched by its normalized address (host without www or port, path without trailing
+  slash or `#fragment`, query kept) once `SAME_PAGE_SUPERSEDE_LIVE` is on; until then each fetch
+  step logs the current copies another spelling would supersede (`magellan.same_page_copies`,
+  `supersedeSamePageCopies`) and changes none.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 - A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and

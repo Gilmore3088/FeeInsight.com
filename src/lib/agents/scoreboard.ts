@@ -3,6 +3,7 @@ import { answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/an
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
+import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -23,6 +24,9 @@ import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@
  *   Knox survival        of Knox fees ever published, the share still live, overall and
  *                        per Knox strategy. Yield rewards finding more fees; survival
  *                        rewards finding fees that stay right. Stored in `detail`.
+ *   report-ready         institutions passing the report rule (state peers, or Fed
+ *                        district peers where the state has too few). Stored in
+ *                        `detail.report_ready`; /admin/leads shows it week over week.
  */
 
 type SqlTag = typeof sql;
@@ -38,6 +42,8 @@ export interface ScoreboardNumbers {
   accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null } | null;
   freshness: { medianDays: number | null; liveFees: number };
   knoxSurvival: KnoxSurvival;
+  /** Null when the count could not be read; the other numbers are still stored. */
+  reportReady: ReportReadyCount | null;
 }
 
 export interface KnoxSurvival {
@@ -205,6 +211,13 @@ async function readKnoxSurvival(db: SqlTag): Promise<KnoxSurvival> {
   return { rate: rate(live, published), live, published, byStrategy };
 }
 
+async function readReportReady(db: SqlTag): Promise<ReportReadyCount | null> {
+  return inSavepoint(db, async (scope) => summarizeReportReady(await getMarketReadiness(scope))).catch((error) => {
+    console.error("readReportReady failed:", error);
+    return null;
+  });
+}
+
 export async function readScoreboardNumbers(db: SqlTag = sql): Promise<ScoreboardNumbers> {
   const [coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival] = await Promise.all([
     readCoverage(db),
@@ -215,7 +228,9 @@ export async function readScoreboardNumbers(db: SqlTag = sql): Promise<Scoreboar
     readFreshness(db),
     readKnoxSurvival(db),
   ]);
-  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival };
+  // Its own savepoint, after the others: a failure here must not abort the snapshot.
+  const reportReady = await readReportReady(db);
+  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival, reportReady };
 }
 
 export interface ScoreboardSnapshotResult {
@@ -271,6 +286,15 @@ export async function runScoreboardSnapshot({
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
         knox_survival: numbers.knoxSurvival,
+        ...(numbers.reportReady
+          ? {
+              report_ready: {
+                institutions: numbers.reportReady.institutions,
+                via_district: numbers.reportReady.viaDistrict,
+                markets_ready: numbers.reportReady.marketsReady,
+              },
+            }
+          : {}),
         ...(agentHealth ? { agent_health: agentHealth } : {}),
       })}::jsonb
     )
@@ -314,6 +338,9 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
     `accuracy ${pct(n.accuracy?.precision)} precision / ${pct(n.accuracy?.recall)} recall`,
     `freshness ${n.freshness.medianDays == null ? "n/a" : `${n.freshness.medianDays} days`}`,
     `Knox survival ${pct(n.knoxSurvival.rate)} of ${n.knoxSurvival.published.toLocaleString("en-US")} published fees still live`,
+    n.reportReady
+      ? `${n.reportReady.institutions.toLocaleString("en-US")} institutions pass the report rule (${n.reportReady.viaDistrict.toLocaleString("en-US")} on Fed district peers)`
+      : "report-ready count n/a",
   ];
   const prefix = result.stored
     ? `Atlas recorded the ${result.snapshotDate} scoreboard`
