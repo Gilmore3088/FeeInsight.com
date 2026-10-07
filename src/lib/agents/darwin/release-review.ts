@@ -53,7 +53,7 @@ type SqlTag = typeof sql;
 // from jumbled rows passed. The prompt now names all three.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 7,
+  version: 8,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -235,6 +235,8 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "- category_fits: true only if this fee is what `filed_as` means in this index; `filed_as_includes` lists fee names it files there.",
     "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit,",
     "  nor a different service that shares a word with the category (a \"Smart Safe\" cash-deposit device is not a safe deposit box).",
+    "  A monthly charge for one service (online wires, bill pay) is not the account's monthly maintenance fee,",
+    "  and a fee for returning or re-clearing a check the customer deposited is not NSF.",
     "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
     "  (expedited, rush or overnight) do not fit the service's own category.",
     "  `not_these` lists neighbouring categories fees filed here often belong to; a fee that is one of those does not fit.",
@@ -243,6 +245,8 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
     "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55), including a footnote marker read",
     "  as a digit (\"$651\" in a list of $85, $100 and $120 boxes is $65 with footnote 1).",
+    "  Also false for a price the line marks as waived outright (\"$2.95 (FEE WAIVED)\"); a price waived",
+    "  only under a condition (\"waived with a $500 balance\") is still the price.",
     "When an item has `schedule_rows_around` (the rows above and below its line), use them: a price that",
     "belongs to the next row, another column or another account is not this fee's price. When the rows",
     "are jumbled text rather than a fee table and do not show what the fee is (a bare \"overdrafts | $5.00\"), is_fee is false.",

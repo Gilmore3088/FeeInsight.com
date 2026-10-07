@@ -144,6 +144,10 @@ Darwin owns verification and classification.
   v7 (2026-10-07): a hand check of 20 v6 passes had 17 right (a "Smart Safe" cash device passed
   as safe deposit box rent, a $65 box read with its footnote as $651, a bare "overdrafts $5.00"
   from jumbled rows). The prompt names all three.
+  v8 (2026-10-07): a hand check of 20 v7 passes had 17 right (an incoming wire priced "$2.95 (FEE
+  WAIVED)", an NSF check re-clear filed as NSF, an online-wire monthly fee filed as monthly maintenance).
+  The prompt names all three. `scheduleContext` no longer anchors on a bare price row ("$5.00"),
+  which had shown one item the rows around a different fee.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

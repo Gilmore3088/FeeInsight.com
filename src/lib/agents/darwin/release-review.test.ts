@@ -76,6 +76,9 @@ describe("Darwin held-fee release review", () => {
     expect(scheduleContext(text, "Return item $5.00")).toBe("Account Fees\nReturn item $5.00\nEarly close $10.00\nStop Payment $30.00\nWire $20.00");
     expect(scheduleContext(text, "Not on this page $1")).toBeNull();
     expect(scheduleContext(null, "Return item $5.00")).toBeNull();
+    expect(scheduleContext("Closed Savings Fee\n$5.00\nIncorrect Address Fee\n$5.00 per month", "Incorrect Address Fee | $5.00 per month")).toBe(
+      "Closed Savings Fee\n$5.00\nIncorrect Address Fee\n$5.00 per month",
+    );
     const prompt = releaseReviewPrompt([
       { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00", sourceContext: "Early close $10.00\nStop Payment $30.00" },
     ]);
@@ -97,6 +100,9 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("Smart Safe");
     expect(prompt).toContain("footnote marker");
     expect(prompt).toContain("jumbled text");
+    expect(prompt).toContain("FEE WAIVED");
+    expect(prompt).toContain("re-clearing a check");
+    expect(prompt).toContain("online wires");
   });
 
   it("puts the learning store's lessons for a batch's categories in the prompt", () => {

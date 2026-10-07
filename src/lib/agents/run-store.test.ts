@@ -987,11 +987,27 @@ describe("agentic run store", () => {
       .find((text) => text.includes("SELECT r.id"));
     const order = selection!.slice(selection!.indexOf("ORDER BY"));
     const underWay = order.indexOf("done.status <> 'queued'");
-    const direct = order.indexOf("COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC");
+    const direct = order.indexOf("COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false)");
     const retry = order.indexOf("= 'failed') DESC");
     expect(underWay).toBeGreaterThan(0);
     expect(direct).toBeGreaterThan(underWay);
     expect(retry).toBeGreaterThan(direct);
+  });
+
+  it("lets a waiting state lane go ahead of direct runs when no lane has started a step lately", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const direct = order.indexOf("'atlas.priority_state_research'), false)");
+    const gate = order.indexOf("lane_step.started_at > NOW() - INTERVAL '10 minutes'");
+    const retry = order.indexOf("= 'failed') DESC");
+    expect(gate).toBeGreaterThan(direct);
+    expect(retry).toBeGreaterThan(gate);
   });
 
   it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
