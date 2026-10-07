@@ -109,6 +109,9 @@ Darwin owns verification and classification.
   (`stated_on_later_look`). Raw rows, attempts and notes are never deleted. Releases stay a dry run
   while `DARWIN_RELEASE_ACTS` is false; switching it on needs James's word and a version bump,
   and writes released fees as `darwin_verified` notes. Step detail: `held_release`.
+  `verify.release_review` v5 (2026-10-07) is versioned on its own: a hand check of 20 v4
+  verdicts had 17 right; the prompt now says a stop payment's removal and an expedited
+  version of a service do not fit the service's category, and "Cost plus $8" is not a price.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
