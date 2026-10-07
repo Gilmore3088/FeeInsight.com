@@ -19,7 +19,7 @@ import {
 import { FED_PUBLICATIONS_PARTITION, FED_PUBLICATIONS_SOURCE, runRegistryFedPublications } from "./fed-publications";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
-import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
+import { STATE_BILLS_SOURCE, runRegistryStateBillsBatch } from "./state-bills";
 import { FEDERAL_BILLS_SOURCE, runRegistryFederalBills } from "./federal-bills";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import {
@@ -30,6 +30,7 @@ import {
   runRegistryNcuaBranches,
 } from "./ncua-branches";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARTITION, SEC_LINKS_SOURCE, runRegistrySecFilings, runRegistrySecLinks } from "./sec";
+import { ENFORCEMENT_PARTITION, ENFORCEMENT_SOURCE, runRegistryEnforcement } from "./enforcement";
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
 
 /**
@@ -445,17 +446,18 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     stepKey: "registry-state-bills",
     title: "Pull state bank fee bills",
     run: async (input) => {
-      const r = await runRegistryStateBills({ partitionKey: input.partitionKey, runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const r = await runRegistryStateBillsBatch({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      const failed = r.failedStates.length > 0 ? ` Failed: ${r.failedStates.join(", ")}.` : "";
       return {
         summary: r.missingKey
-          ? `Skipped ${r.partitionKey} state bills: OPEN_STATES_API_KEY is not set.`
-          : `Magellan found ${r.fetched} ${r.partitionKey} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+          ? "Skipped state bills: OPEN_STATES_API_KEY is not set."
+          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}`,
         detail: {
-          since: r.since,
           missing_key: r.missingKey,
-          searched: r.searched,
-          requests: r.requests,
+          states: r.states,
+          failed_states: r.failedStates,
+          remaining: r.remaining,
           fetched: r.fetched,
           stored: r.stored,
           stages: r.stages,
@@ -474,6 +476,21 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan synced ${r.agencies} state regulators and tagged ${r.creditUnionsTagged} credit unions with their chartering agency${dry(r.dryRun)}.`,
         detail: { agencies: r.agencies, credit_unions_tagged: r.creditUnionsTagged },
+      };
+    },
+  },
+  {
+    source: ENFORCEMENT_SOURCE,
+    stepKey: "registry-enforcement",
+    title: "Pull OCC and Federal Reserve enforcement actions",
+    fixedPartition: ENFORCEMENT_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryEnforcement({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const { OCC, FRB } = r.byAgency;
+      const failed = r.failed.length > 0 ? ` Failed: ${r.failed.join("; ")}.` : "";
+      return {
+        summary: `Magellan read ${n(OCC.actions)} OCC and ${n(FRB.actions)} Federal Reserve enforcement actions against institutions: ${n(OCC.matched + FRB.matched)} matched to a bank and ${n(OCC.holdingCompany + FRB.holdingCompany)} to a holding company${dry(r.dryRun)}.${failed}`,
+        detail: { by_agency: r.byAgency, upserted: r.upserted, failed: r.failed },
       };
     },
   },

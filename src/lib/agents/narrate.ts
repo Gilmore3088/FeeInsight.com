@@ -185,6 +185,7 @@ export function narrateStepFinished(
     case "registry-federal-bills":
     case "registry-state-bills":
     case "registry-state-regulators":
+    case "registry-enforcement":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -298,10 +299,13 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-state-bills": {
       if (detail.missing_key) return "Skipped state bills: the Open States key is not set.";
       const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
-      return `Found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
+      const states = Array.isArray(detail.states) ? detail.states.length : 0;
+      return `Read ${count(states, "state")} and found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
     }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
+    case "registry-enforcement":
+      return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
     default:
       return null;
   }
@@ -381,6 +385,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-federal-bills": "magellan",
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
+  "registry-enforcement": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",
