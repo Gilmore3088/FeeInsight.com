@@ -23,7 +23,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Bump this whenever checkFeeAgainstSource changes what it can read.
 // Version 4: a daily cap traces to the cap figure on its fee's row ("Maximum of $120.00 per day"),
 // so the caps the older check took down as thresholds are checked again and restored.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 4 } as const;
+// Version 5: a price with a note in parentheses under its name ("$29.00/presentment (applies
+// to ...)"), and figures in a name's note ("Gift Cards ($25 up to $500 Only) | $5"), are read,
+// so fees the older check took down for those layouts are checked again and restored.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 5 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

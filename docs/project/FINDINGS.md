@@ -13,6 +13,24 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The source check took down real fees whose price carried a note
+**What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
+UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned
+for Non-Sufficient Funds / $29.00/presentment (applies to transactions of $10 or more...)", "Debit
+Card Replacement / $10.00 per card replacement (normally up to 7 to 10 business days delivery)",
+"Non-Customer check cashing (or 1% if check is over $500) / $5" and "Gift Cards ($25 up to $500
+Only) | $5 per card". About 8 of the 24 were right to come down (wrong amount, wrong box size, a
+cap read as a fee), and the rest could not be judged from the stored text.
+**Cause:** `checkFeeAgainstSource` read a price printed under a name only when that line was short,
+so a price followed by a note in parentheses never joined its name. It also treated a limit inside
+the name's note ("over $500") as the row's price, and scored a figure inside a note
+("($25 up to $500 Only)") ahead of the price printed after it.
+**Fix:** the shared reader now accepts a price line that carries a note in parentheses. It ignores
+figures inside a name's note when the row prints a price outside it, and looks below a name whose
+only figures are limits. Hamilton's source check goes to v5, so every institution is checked again
+and fees the older check took down are restored when they now trace. Wrong amounts still fail.
+**Lesson:** sample takedowns as well as live rows; a strict check costs right fees too.
+
 ## 2026-10-07: The category guard was rejecting real check-card, teller's-check and charge-back fees
 **What happened:** Darwin's category guard rejects about 100-170 new Knox fees an hour. Sampling
 them (read-only, 00:50 UTC Oct 7) showed three groups of real fees it threw away: 82 check-card
@@ -21,7 +39,7 @@ replacements ("Visa Check Card Replacement": the card exclusion read "check" as 
 "Charge Back" fees (the rule knew only "chargeback"). The same check found 7 live rows in deposited
 item returns that are card disputes or loan payment chargebacks.
 **Fix:** category guard v14 reads curly quotes as straight ones, treats a "check card" as a debit
-card (checks, checkbooks, PINs and liability notes still fail), and reads "charge back" as a
+card (checks, checkbooks, PIN-only reissues and liability notes still fail), and reads "charge back" as a
 deposited-item return unless it names a card, dispute or loan; card chargebacks re-file to card
 disputes. A guard version bump makes Darwin re-check its rejected rows once, so about 150 rejected
 fees get another chance (each still has to pass the source check). The 7 wrong live rows come down.
