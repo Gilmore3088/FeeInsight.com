@@ -2011,6 +2011,14 @@ runs through the normal check, logged, with `hamilton.restore` rows in `pipeline
 12-hour second look (PR 324) has gated every source-check takedown since 02:32 UTC.
 **Lesson:** after a reader version bump, count how far the re-check has got before judging what
 it restores; and sample takedowns, not just live fees, each time the reader changes.
+**Follow-up (v7):** a two-column page flattened row by row interleaves two fee lists
+("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" / "($15.00 Minimum) | IRS or Court-ordered
+Garnishments ... $100.00"), so a right-column fee's name and price sit on rows of other fees. The
+reader now also reads each column top to bottom when most two-cell rows carry words in both cells
+(a table's "Name | $2.00 per page" price cell is never split off), and joins a name that runs onto
+the next row ("PROCESSING OF LEVIES IR"). Over the same 424 takedowns, 6 more trace (105): 5 real,
+1 a non-customer price. Still not read: two columns interleaved inside one cell ("Overnight Rush
+Check or Zelle | ..." / "$14.95/ ea.") and names glued to the previous fee's "Free for age 60+".
 
 ## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
 **What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
