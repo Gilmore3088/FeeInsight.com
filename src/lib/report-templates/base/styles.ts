@@ -1206,6 +1206,21 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   gap: 6px;
 }
 
+/* Each state chart is drawn for report width and for a phone; show the one that fits. */
+.sc-narrow {
+  display: none;
+}
+
+@media screen and (max-width: 640px) {
+  .sc-wide {
+    display: none;
+  }
+
+  .sc-narrow {
+    display: block;
+  }
+}
+
 .state-chart-pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

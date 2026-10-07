@@ -20,6 +20,7 @@ import {
   ladderLegend,
   lineLegend,
   mapLegend,
+  type ChartSize,
   type LadderRow,
   type LinePoint,
 } from "../base/state-charts";
@@ -46,6 +47,17 @@ function exhibit(chart: string, legend: string, className = "state-exhibit"): st
   return `<figure class="${className}">${legend}${chart}</figure>`;
 }
 
+/**
+ * A chart drawn twice: at report width for paper and desktop, and at phone width with larger
+ * type and stacked labels. CSS shows one or the other; print always uses the wide one.
+ */
+function responsive(draw: (size: ChartSize) => string | null): string | null {
+  const wide = draw({});
+  if (!wide) return null;
+  const narrow = draw({ narrow: true });
+  return narrow ? `<div class="sc-wide">${wide}</div><div class="sc-narrow">${narrow}</div>` : wide;
+}
+
 function monthYear(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -64,10 +76,8 @@ export function countyMapSection(data: StateReportData, visuals: StateReportVisu
       "county-map",
     );
   }
-  const map = countyFeeMap(
-    fips,
-    v.counties.map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits })),
-  );
+  const values = v.counties.map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));
+  const map = responsive((size) => countyFeeMap(fips, values, size));
   if (!map) {
     return reportSection(header, emptyNotice(`No county outlines are on file for ${data.stateName}.`), "county-map");
   }
@@ -111,7 +121,7 @@ export function ladderRows(data: StateReportData, v: StateVisualsData): LadderRo
 
 export function feeLadderSection(data: StateReportData, visuals: StateReportVisuals, label: string): string {
   const rows = visuals.data ? ladderRows(data, visuals.data) : [];
-  const chart = rows.length > 0 ? feeLadder(rows, data.stateCode) : null;
+  const chart = rows.length > 0 ? responsive((size) => feeLadder(rows, data.stateCode, size)) : null;
   const count = new Set(rows.flatMap((r) => r.points.map((p) => p.name))).size;
   return reportSection(
     {
@@ -140,7 +150,7 @@ export function holdersSection(data: StateReportData, visuals: StateReportVisual
     hqState: h.hq_state,
     overdraft: h.overdraft,
   }));
-  const chart = depositHolders(rows, data.stateName);
+  const chart = responsive((size) => depositHolders(rows, data.stateName, size));
   if (!chart || !v) {
     return reportSection(
       { label, title: `Who holds ${data.stateName} deposits` },
@@ -169,11 +179,10 @@ export function holdersSection(data: StateReportData, visuals: StateReportVisual
 // ─── Banks against credit unions ──────────────────────────────────────────────
 
 export function charterExhibit(data: StateReportData): string | null {
-  const chart = charterDumbbells(
-    data.charterPairs
-      .filter((p) => p.bank_median_amount != null && p.cu_median_amount != null)
-      .map((p) => ({ label: getDisplayName(p.fee_category), bank: p.bank_median_amount!, creditUnion: p.cu_median_amount! })),
-  );
+  const rows = data.charterPairs
+    .filter((p) => p.bank_median_amount != null && p.cu_median_amount != null)
+    .map((p) => ({ label: getDisplayName(p.fee_category), bank: p.bank_median_amount!, creditUnion: p.cu_median_amount! }));
+  const chart = responsive((size) => charterDumbbells(rows, size));
   return chart ? exhibit(chart, charterLegend()) : null;
 }
 
@@ -221,18 +230,18 @@ export function economySection(data: StateReportData, visuals: StateReportVisual
   const urValues = [...stateUr, ...usUr].map((p) => p.value);
   const urChart =
     urValues.length > 0
-      ? annotatedLines(
+      ? responsive((size) => annotatedLines(
           [
             { label: data.stateName, points: stateUr, primary: true },
             { label: "United States", points: usUr, primary: false },
           ],
-          { format: (v, end) => `${end ? v.toFixed(1) : v}%`, ticks: niceTicks(0, Math.max(...urValues)), label: "Unemployment rate" },
-        )
+          { format: (v, end) => `${end ? v.toFixed(1) : v}%`, ticks: niceTicks(0, Math.max(...urValues)), label: "Unemployment rate", ...size },
+        ))
       : null;
   const cpiValues = [...prices, ...funds].map((p) => p.value);
   const cpiChart =
     cpiValues.length > 0
-      ? annotatedLines(
+      ? responsive((size) => annotatedLines(
           [
             { label: "Consumer prices", points: prices, primary: true },
             { label: "Fed funds rate", points: funds, primary: false },
@@ -241,8 +250,9 @@ export function economySection(data: StateReportData, visuals: StateReportVisual
             format: (v, end) => `${v < 0 ? "−" : ""}${end ? Math.abs(v).toFixed(1) : Math.abs(v)}%`,
             ticks: niceTicks(Math.min(...cpiValues), Math.max(...cpiValues)),
             label: "Inflation and the Fed funds rate",
+            ...size,
           },
-        )
+        ))
       : null;
 
   const panels =
