@@ -212,7 +212,7 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       unit: "dollars",
       own: research.current,
       ownLabel: research.institutionName,
-      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null })),
+      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null })),
       sources: [research.localMarket?.source ?? feeSource(research)],
       note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
     },
@@ -719,7 +719,7 @@ function options(research: FeeResearch, kind: StorylineKind, intent: StoryIntent
     if (research.band.median !== research.current) prices.push({ label: `Peer median, ${money(research.band.median)}`, price: research.band.median });
     if (research.current !== 0) prices.push({ label: `Remove the ${name} fee`, price: 0 });
   }
-  const out = prices.map((p) => ({ label: p.label, consequences: priceConsequences(research, name, p.price) })).filter((o) => o.consequences.length > 0);
+  const out = prices.map((p) => ({ label: p.label, price: p.price, consequences: priceConsequences(research, name, p.price) })).filter((o) => o.consequences.length > 0);
   return out.length > 1 ? out : undefined;
 }
 

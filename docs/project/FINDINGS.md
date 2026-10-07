@@ -13,6 +13,38 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The source check took down real fees whose price carried a note
+**What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
+UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned
+for Non-Sufficient Funds / $29.00/presentment (applies to transactions of $10 or more...)", "Debit
+Card Replacement / $10.00 per card replacement (normally up to 7 to 10 business days delivery)",
+"Non-Customer check cashing (or 1% if check is over $500) / $5" and "Gift Cards ($25 up to $500
+Only) | $5 per card". About 8 of the 24 were right to come down (wrong amount, wrong box size, a
+cap read as a fee), and the rest could not be judged from the stored text.
+**Cause:** `checkFeeAgainstSource` read a price printed under a name only when that line was short,
+so a price followed by a note in parentheses never joined its name. It also treated a limit inside
+the name's note ("over $500") as the row's price, and scored a figure inside a note
+("($25 up to $500 Only)") ahead of the price printed after it.
+**Fix:** the shared reader now accepts a price line that carries a note in parentheses. It ignores
+figures inside a name's note when the row prints a price outside it, and looks below a name whose
+only figures are limits. Hamilton's source check goes to v5, so every institution is checked again
+and fees the older check took down are restored when they now trace. Wrong amounts still fail.
+**Lesson:** sample takedowns as well as live rows; a strict check costs right fees too.
+
+## 2026-10-07: The category guard was rejecting real check-card, teller's-check and charge-back fees
+**What happened:** Darwin's category guard rejects about 100-170 new Knox fees an hour. Sampling
+them (read-only, 00:50 UTC Oct 7) showed three groups of real fees it threw away: 82 check-card
+replacements ("Visa Check Card Replacement": the card exclusion read "check" as a paper check), 13
+"Teller’s Check" fees (the rule allowed "teller's" with a straight quote only) and 55 deposited-item
+"Charge Back" fees (the rule knew only "chargeback"). The same check found 7 live rows in deposited
+item returns that are card disputes or loan payment chargebacks.
+**Fix:** category guard v14 reads curly quotes as straight ones, treats a "check card" as a debit
+card (checks, checkbooks, PIN-only reissues and liability notes still fail), and reads "charge back" as a
+deposited-item return unless it names a card, dispute or loan; card chargebacks re-file to card
+disputes. A guard version bump makes Darwin re-check its rejected rows once, so about 150 rejected
+fees get another chance (each still has to pass the source check). The 7 wrong live rows come down.
+**Lesson:** a guard that rejects is also a coverage cost; sample its rejects, not just the live rows.
+
 ## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
 **What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
 MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
@@ -27,6 +59,20 @@ read before Knox v16 learned "Int'l").
 fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
 5; Hamilton's publish step takes them down.
 **Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
+
+## 2026-10-07: Big banks call it a "Schedule of Charges", on the parent company's site
+**What happened:** James, 00:52 UTC Oct 7. Citibank (institution 3) has no fee link and 0 live
+fees; its consumer schedule is "Schedule_of_Charges_Effective_February_26_2026.pdf" on
+citigroup.com, while its website is citi.com. Only the free finders' link phrases knew the
+words "schedule of charges"; the page check's fee words and the paid prompts did not, and the
+paid finders rejected any answer off the website's own host.
+**Cause:** Magellan's fee vocabulary and domain rule were written from small-bank sites.
+**Fix:** this PR. "Schedule of Charges", "Schedule of Service Charges", "Account Fee Schedule",
+"Consumer Fees" and "Deposit Account Agreement" in the page check, link phrases and paid
+prompts; `onBankDomain` (link-coverage.ts, shared by paid find and schedule search) accepts
+the website's name plus a corporate word (citigroup.com, citibank.com), not look-alikes
+(citizensbank.com).
+**Lesson:** test finders against the largest banks' own wording and hosting, not only community banks.
 
 ## 2026-10-06: A fee document dated 2019 counted as a finished link
 **What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
