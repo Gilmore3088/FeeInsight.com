@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildAskResponse, parseAsk } from "./ask";
 import { evaluateFourRoles } from "./four-roles";
 import { scheduleOverview } from "./schedule";
-import { incomeSplitData, withDepth } from "./story-extras";
+import { incomeSplitData, incomeTrendExhibit, withDepth } from "./story-extras";
 import { overdraftResearch } from "./test-fixtures";
 import { explainIncome, incomeSplit } from "./why";
 import type { FeePositionRow } from "./types";
@@ -56,5 +56,29 @@ describe("incomeSplitData", () => {
     const income = story.exhibits.find((e) => e.id === "income-split")!.exhibit;
     expect(income.kind === "structure_matrix" && income.incomeSplit?.priceIndex).toBe(74);
     expect(scheduleOverview(rows).positions.map((p) => p.band)).toEqual([{ p25: 25, p75: 32 }, { p25: 25.75, p75: 32 }]);
+  });
+});
+
+describe("incomeTrendExhibit", () => {
+  const q = (quarterEnd: string, own: number | null, peerMedian: number | null) => ({ quarterEnd, own, peerMedian, peers: 450 });
+  const trend = [q("2025-09-30", 4.9, 5.1), q("2025-12-31", 4.9, 5.0), q("2026-03-31", 4.6, 4.7), q("2026-06-30", 4.5, 4.9)];
+
+  it("draws the bank and its peer median as two quarterly series", () => {
+    const story = incomeTrendExhibit(trend, "credit unions with $1B to $10B in assets")!;
+    expect(story.actionTitle).toBe("Your fee income per $1,000 of deposits sat below the peer median in each of the last 4 quarters.");
+    expect(story.exhibit.kind).toBe("trend");
+    if (story.exhibit.kind !== "trend") return;
+    expect(story.exhibit.series.map((s) => s.label)).toEqual(["You", "Credit unions with $1B to $10B in assets median"]);
+    expect(story.exhibit.series[0].points[3]).toEqual({ date: "2026-06-30", value: 4.5 });
+  });
+
+  it("leaves the chart out with fewer than four quarters", () => {
+    expect(incomeTrendExhibit(trend.slice(1), "peers")).toBeNull();
+  });
+
+  it("follows the income split in the storyline", () => {
+    const built = buildAskResponse({ question: "Why is our fee income higher?", intent: { ...parseAsk("Why is our fee income higher?"), feeCategory: "overdraft" }, research: overdraftResearch(), memory: [] });
+    const story = withDepth(built, null, { ...why, trend }, "2026-09-30").answer!.storyline!;
+    expect(story.exhibits.slice(0, 2).map((e) => e.id)).toEqual(["income-split", "income-trend"]);
   });
 });
