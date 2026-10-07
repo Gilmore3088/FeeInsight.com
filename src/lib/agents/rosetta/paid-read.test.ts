@@ -92,7 +92,7 @@ describe("Rosetta paid read (pass 3)", () => {
       return db;
     }
 
-    it("selects them after scans, once free OCR has had the same bytes", async () => {
+    it("selects them after scans, with no free OCR rung first", async () => {
       const db = survivalDb([]);
 
       await runRosettaPaidRead({ runId: 910, db: asDb(db), create: vi.fn(), fetchImpl: pdfFetch() });
@@ -100,7 +100,8 @@ describe("Rosetta paid read (pass 3)", () => {
       const query = String(db.unsafe.mock.calls[0][0]);
       expect(query).toContain("adt.status = 'completed'");
       expect(query).toContain("lost.signal = 'wrong'");
-      expect(query).toContain("rung.strategy =");
+      expect(query).toContain("adt.reader IN (");
+      expect(query).not.toContain("rung.strategy =");
       expect(query).toContain("ORDER BY (adt.status = 'needs_ocr') DESC");
       expect(db.unsafe.mock.calls[0][1]).toEqual(expect.arrayContaining(["rosetta.text_survival", "read.ocr_tesseract", "read.pdf_layout"]));
     });

@@ -4,7 +4,9 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { PRODUCT_NAME, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -28,7 +30,7 @@ const HERO_BUTTON_BASE =
 const PRIMARY_BUTTON = `${HERO_BUTTON_BASE} bg-[#C44B2E] font-bold text-white hover:bg-[#A93D25]`;
 
 export default async function ForInstitutionsPage() {
-  const summary = await getPublicStatsSummary();
+  const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
@@ -59,7 +61,7 @@ export default async function ForInstitutionsPage() {
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">
                 {/* The sample is offline until it is re-rendered from source-checked data, so the
                     hero leads to the free reports instead of a "coming soon" page. */}
-                {SAMPLE_REPORT_LIVE ? (
+                {sampleLive ? (
                   <TrackLink
                     event="see_sample_report"
                     eventProps={{ placement: "for_institutions_hero" }}
@@ -103,7 +105,7 @@ export default async function ForInstitutionsPage() {
         <CompareTableSection summary={summary} />
         <AudienceSection />
         <AdvisorySection />
-        <FinalCtaSection />
+        <FinalCtaSection sampleLive={sampleLive} />
       </main>
       <CustomerFooter />
       <SearchModal />
@@ -201,7 +203,7 @@ function AdvisorySection() {
   );
 }
 
-function FinalCtaSection() {
+function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
   return (
     <section className="bg-warm-900">
       <div className="mx-auto max-w-6xl px-6 py-14 text-center">
@@ -212,12 +214,12 @@ function FinalCtaSection() {
           Ready to see where your fees stand?
         </h2>
         <p className="mt-3 text-[15px] text-[#D5CBBF]">
-          {SAMPLE_REPORT_LIVE
+          {sampleLive
             ? "Start with the sample, or request your own report today."
             : "Start with a free national or Fed district report, or ask us to quote your institution's own."}
         </p>
         <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
-          {SAMPLE_REPORT_LIVE ? (
+          {sampleLive ? (
             <>
               <TrackLink
                 event="see_sample_report"

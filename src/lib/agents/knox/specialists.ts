@@ -6,7 +6,7 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
@@ -34,7 +34,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 25 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 27 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -57,6 +57,12 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
+/** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
+const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
+const NSF_AND_OVERDRAFT = new RegExp(
+  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*overdrafts?\b|\boverdrafts?\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
+  "i",
+);
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
 
 function words(value: string): string {
@@ -169,6 +175,16 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       selfCheckFailed,
       candidates: found.candidates,
     });
+  }
+
+  // v27: one priced line that names both an NSF item and an overdraft ("Non-sufficient
+  // funds item (NSFs/Overdrafts) | $33.00 per item") is the bank's price for both.
+  for (const candidate of [...candidates]) {
+    const twin = candidate.canonicalHint === "nsf" ? "overdraft" : candidate.canonicalHint === "overdraft" ? "nsf" : null;
+    if (!twin || !NSF_AND_OVERDRAFT.test(candidate.feeName)) continue;
+    if (candidates.some((prior) => prior.canonicalHint === twin && prior.amount === candidate.amount)) continue;
+    if (candidates.length >= MAX_FEES_PER_DOCUMENT || !passesDarwinChecks(twin, candidate.feeName, candidate.amount)) continue;
+    candidates.push({ ...candidate, canonicalHint: twin });
   }
 
   // An untraced read is held once, and only when no specialist read the same fee traceably.

@@ -30,7 +30,8 @@ import {
   sendBackToMagellan,
   type ReadResult,
 } from "@/lib/agents/rosetta/read";
-import { ALTERNATE_READERS, PRIMARY_READERS, TEXT_SURVIVAL_CHECK } from "@/lib/agents/rosetta/text-survival";
+import { OCR_STRATEGY } from "@/lib/agents/rosetta/ocr";
+import { PRIMARY_READERS, TEXT_SURVIVAL_CHECK } from "@/lib/agents/rosetta/text-survival";
 import {
   ROSETTA_TABLE_ROWS_VERSION,
   rosettaTextColumnsReady,
@@ -136,7 +137,7 @@ async function selectPaidReadCandidates(
   let lostAfterFreeReaders = "FALSE";
   if (textSurvival) {
     const survivalParam = `$${params.push(TEXT_SURVIVAL_CHECK)}`;
-    const ocrParam = `$${params.push(ALTERNATE_READERS.pdf)}`;
+    const ocrParam = `$${params.push(OCR_STRATEGY)}`;
     const layoutParam = `$${params.push(PRIMARY_READERS.pdf)}`;
     lostAfterFreeReaders = `(
              adt.status = 'completed'
@@ -148,19 +149,8 @@ async function selectPaidReadCandidates(
                   AND lost.source_document_id = adt.source_document_id
                   AND lost.evidence->>'text_hash' = adt.text_hash
              )
-             AND (
-               adt.reader = ${ocrParam}
-               OR (
-                 adt.reader = ${layoutParam}
-                 AND EXISTS (
-                   SELECT 1 FROM pipeline_attempts rung
-                    WHERE rung.stage = 'read'
-                      AND rung.institution_id = doc.institution_id
-                      AND rung.input_fingerprint = doc.content_hash
-                      AND rung.strategy = ${ocrParam}
-                 )
-               )
-             )
+             -- Free OCR reads only page images, so a text-layer PDF goes straight here.
+             AND adt.reader IN (${ocrParam}, ${layoutParam})
            )`;
   }
   return db.unsafe<PaidReadRow[]>(

@@ -20,7 +20,7 @@ type SqlTag = typeof sql;
  *
  * The read step uses these rows to pick the next reader up the ladder (`nextReaderRung`)
  * for a document whose text lost fees, and for a bank whose texts from one reader keep
- * losing them. The paid pass takes PDFs whose free rungs all lost fees.
+ * losing them. The paid pass takes PDFs whose text lost fees.
  */
 
 export const TEXT_SURVIVAL_CHECK = "rosetta.text_survival";
@@ -41,11 +41,14 @@ export const PRIMARY_READERS = {
   pdf: "read.pdf_layout",
   html: "read.html_dom",
 } as const;
-/** The free reader one rung up from each primary reader. */
-export const ALTERNATE_READERS = {
-  pdf: "read.ocr_tesseract",
+/**
+ * The free reader one rung up from each primary reader. A PDF with a text layer has none:
+ * free OCR reads only page images, and of 96 text-layer PDFs sent to it (Oct 6 to 7) it
+ * replaced none of their texts, so a PDF whose text lost fees goes to the paid pass.
+ */
+export const ALTERNATE_READERS: Partial<Record<keyof typeof PRIMARY_READERS, string>> = {
   html: "read.js_fallback",
-} as const;
+};
 
 /** Texts written before readers were recorded. */
 export function legacyReader(documentType: string | null): string {
@@ -66,8 +69,8 @@ export interface ReaderRecord {
  * The reader a document should be read with, given the reader its last text came from
  * and the bank's record per reader:
  *   - a legacy text (no reader recorded) that lost fees → the current primary reader;
- *   - a primary-reader text that lost fees → the free alternate (OCR for a PDF, the
- *     JavaScript fallbacks for a web page);
+ *   - a primary-reader text that lost fees → the free alternate (the JavaScript
+ *     fallbacks for a web page; a PDF has none and goes to the paid pass);
  *   - a new document at a bank where the primary reader lost fees at least as often as
  *     it held → the alternate as well.
  * Otherwise null: the normal reader. The alternate's text replaces the primary's only
@@ -80,6 +83,7 @@ export function nextReaderRung(
   if (format !== "pdf" && format !== "html") return null;
   const primary = PRIMARY_READERS[format];
   const alternate = ALTERNATE_READERS[format];
+  if (!alternate) return null;
   if (options.lastTextLost) {
     if (options.lastReader === legacyReader(format)) return null; // The primary reader re-reads it.
     if (options.lastReader === primary) return alternate;

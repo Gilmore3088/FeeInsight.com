@@ -281,7 +281,7 @@ function revenueSentence(s: Scenario): string {
   }
   const delta = s.per1000ItemsDelta;
   if (delta === 0) return "Fee income per item would not change.";
-  return `Every 1,000 items would bring ${formatDollarsInWords(Math.abs(delta))} ${delta > 0 ? "more" : "less"} a year, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`;
+  return `Every 1,000 items charged would bring ${formatDollarsInWords(Math.abs(delta))} ${delta > 0 ? "more" : "less"} in fee income, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`;
 }
 
 /** One or two short sentences for a modeled price. */
