@@ -110,6 +110,27 @@ function amountOf(value: number | string | null): number | null {
 }
 
 /** Pure: the verdict for one held fee, given its stored schedule text and Darwin's category model. */
+/** Rows of the schedule on each side of the matched line that the review also reads. */
+export const SCHEDULE_CONTEXT_ROWS = 3;
+const SCHEDULE_CONTEXT_CHARS = 1200;
+
+/**
+ * The matched line with the rows around it in the stored text. One line alone can hide
+ * that its price belongs to the next row or another column: a hand check of 13 source-check
+ * takedowns (2026-10-07) found 5 whose price was a neighbouring row's ("Return item $5" next
+ * to "Early close $10") or another column's. Null when the line is not in the text.
+ */
+export function scheduleContext(text: string | null | undefined, line: string): string | null {
+  if (!text) return null;
+  const lines = text.split(/\r?\n/);
+  const target = line.trim();
+  const at = lines.findIndex((candidate) => candidate.includes(target) || (candidate.trim().length > 0 && target.includes(candidate.trim())));
+  if (at < 0) return null;
+  const from = Math.max(0, at - SCHEDULE_CONTEXT_ROWS);
+  const context = lines.slice(from, at + SCHEDULE_CONTEXT_ROWS + 1).map((row) => row.trim()).filter(Boolean).join("\n");
+  return context.slice(0, SCHEDULE_CONTEXT_CHARS);
+}
+
 export function releaseVerdict(
   row: Pick<HeldFeeRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
   text: string | null | undefined,
@@ -369,10 +390,15 @@ export async function runDarwinReleaseHeld(options: {
     const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id));
     const secondLook = row.first_look_at != null;
     let judged = releaseVerdict(row, text, categoryModel);
+    let judgedText = text;
     // A second look also reads the bank's current copy of the page.
     if (secondLook && judged.verdict === "reject" && row.current_document_id != null) {
-      const current = releaseVerdict(row, texts.get(Number(row.current_document_id)), categoryModel);
-      if (current.verdict !== "reject") judged = current;
+      const currentText = texts.get(Number(row.current_document_id));
+      const current = releaseVerdict(row, currentText, categoryModel);
+      if (current.verdict !== "reject") {
+        judged = current;
+        judgedText = currentText;
+      }
     }
     const amount = amountOf(row.amount);
     const key = duplicateKey(Number(row.institution_id), row.held_canonical_fee_key, amount, row.source_url);
@@ -425,6 +451,7 @@ export async function runDarwinReleaseHeld(options: {
           verdict,
           source_check: decision.sourceCheck,
           source_line: decision.sourceLine?.slice(0, 300) ?? null,
+          source_context: decision.sourceLine ? scheduleContext(judgedText, decision.sourceLine) : null,
           look: secondLook ? 2 : 1,
           first_look_at: row.first_look_at == null ? null : new Date(row.first_look_at).toISOString(),
           current_document_id: row.current_document_id == null ? null : Number(row.current_document_id),

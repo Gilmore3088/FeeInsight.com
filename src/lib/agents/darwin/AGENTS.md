@@ -116,8 +116,10 @@ Darwin owns verification and classification.
   a batch, the 3 latest live fees Hamilton's category checks took down as wrongly filed and
   the 2 latest takedowns a later check restored, each with its schedule line. A new takedown
   or restore is in the next review's prompt with no code change. The source check's amount
-  judgements are left out until they hold up (13 of 20 hand-checked were real prices).
-  Step detail: `lessons`.
+  judgements are left out until they hold up (of 20 read against the full page, 4 were real
+  prices wrongly taken down and 3 unreadable). The review also reads the 3 schedule rows on each
+  side of a fee's line (`scheduleContext`), since a price can belong to the next row or column.
+  Each review attempt's detail records `lessons` (how many were in its prompt).
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
