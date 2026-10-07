@@ -28,6 +28,20 @@ fee that names an overdraft line as a late payment fee. The dry run over live ro
 5; Hamilton's publish step takes them down.
 **Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
 
+## 2026-10-07: Big banks call it a "Schedule of Charges", on the parent company's site
+**What happened:** James, 00:52 UTC Oct 7. Citibank (institution 3) has no fee link and 0 live
+fees; its consumer schedule is "Schedule_of_Charges_Effective_February_26_2026.pdf" on
+citigroup.com, while its website is citi.com. Only the free finders' link phrases knew the
+words "schedule of charges"; the page check's fee words and the paid prompts did not, and the
+paid finders rejected any answer off the website's own host.
+**Cause:** Magellan's fee vocabulary and domain rule were written from small-bank sites.
+**Fix:** this PR. "Schedule of Charges", "Schedule of Service Charges", "Account Fee Schedule",
+"Consumer Fees" and "Deposit Account Agreement" in the page check, link phrases and paid
+prompts; `onBankDomain` (link-coverage.ts, shared by paid find and schedule search) accepts
+the website's name plus a corporate word (citigroup.com, citibank.com), not look-alikes
+(citizensbank.com).
+**Lesson:** test finders against the largest banks' own wording and hosting, not only community banks.
+
 ## 2026-10-06: A fee document dated 2019 counted as a finished link
 **What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
 links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
