@@ -126,6 +126,20 @@ a Magellan run step retrains ("Yes. Consistently reinforced"), no further plan u
 thread runs it. The classifier (`magellan_page_classifier`) only records its opinion until James
 reviews it; letting it decide is his call.
 
+**One Fee Insight header across the public site and Pro; Hamilton has four tabs.** James,
+00:22-00:33 UTC, on a decision card. Pro no longer swaps in its own header: the site header stays,
+and for Pro users its links are Hamilton's tabs, This month, My fees, Try a price and Reports ("a
+banker doesn't wake up wanting to model or watch"). The bank and its data, all changes, the
+reference pages, Admin and sign out sit in the account menu. No sidebar. Built in PR 89.
+
+**Every Hamilton output shows its audit trail; nothing is a black box.** James, 00:08 UTC. For
+regulatory work a figure has to be defensible. Each Briefing, Research, Model and Plan screen has a
+"How this was built" panel listing every source with its date, the method, every assumption
+(including figures the bank typed in) and whether it rests on market data alone. The bank's own fee
+lines link to its schedule with their publish date and verification record, and a CSV lists every
+institution behind a comparison with its source. The CEO one-pager and committee packet carry the
+same panel as an appendix. Built in PR 89; the stored audit record belongs to the Hamilton engine.
+
 **Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
 abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
 Force-pushes, pushes to main, Supabase db pushes and Vercel production commands still ask. Merges
@@ -176,6 +190,21 @@ and each client-given figure with who gave it and when. Saved decisions keep the
 the moment they were made. The same message set out Hamilton's faces (fee verifier and
 publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
 describes all four. Built in PR 170.
+
+## 2026-10-05
+
+**Hamilton is a neutral research and modeling workspace, never a fee recommender.** James,
+23:27-23:39 UTC. Hamilton follows the same path every time: research, compare, model any price
+the bank wants to test, refine with the bank's own figures, plan the change, then build the
+report. It never tells a bank to raise or change a fee. It gives an opinion only when asked, and
+then names the objective it assumes. Dollar totals rest on the bank's own volume. Implementation
+is its own step: approvals, customer notice (30 days for an increase under Reg DD, none for a
+decrease), systems, the Reg E opt-in notice, the effective date and monitoring.
+
+The nav is Briefing, Research, Model, Reports, Watch and Data. Ask Hamilton is a docked bar on
+every screen; its work lands on the page, not in a chat log. Overdraft is the flagship example.
+The look follows James's "living memo" option, rendered in the Fee Insight brand.
+Mockup: https://claude.ai/artifact/Cjx5VmTFS2zhpi6bM7YQv1. Built in PR 89.
 
 **The institution report has no fixed price yet; the granular data stays paid.** James, 23:31 UTC
 Oct 5 and 00:15 UTC Oct 6. It will be a $300 report once it is ready, but for now a request is

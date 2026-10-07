@@ -51,8 +51,9 @@ const UNFORMATTED_UNITS = [
 
 function words(sentence: string): number {
   // A quotation is the source's words, not Hamilton's, so it does not count.
+  // A lone "/" or "&" (as in "NSF / returned item") is punctuation, not a word.
   const own = sentence.replace(/"[^"]*"/g, "").trim();
-  return own ? own.split(/\s+/).length : 0;
+  return own ? own.split(/\s+/).filter((w) => /[\p{L}\p{N}$%]/u.test(w)).length : 0;
 }
 
 /** Split prose into sentences, keeping a quoted passage inside its sentence. */

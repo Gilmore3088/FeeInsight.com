@@ -83,8 +83,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   stop_payment: {
     include: /stop/i,
-    // "Cancel stop payment" removes a stop; "ACH Stop Payment/Cancellation" places one.
-    exclude: /(release|cancel\w*\s+(of\s+)?(a\s+|the\s+)?stop|revoc|line of credit|heloc|loan|cashier|official)/i,
+    // "Cancel stop payment" and "Stop Payment Removal" remove a stop; "ACH Stop
+    // Payment/Cancellation" and "Stop Payments (to put on or remove)" place one.
+    exclude:
+      /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
@@ -163,7 +165,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 15;
+export const CATEGORY_GUARD_VERSION = 16;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

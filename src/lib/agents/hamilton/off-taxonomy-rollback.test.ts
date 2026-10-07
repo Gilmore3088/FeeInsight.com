@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { rollBackOffTaxonomyFees, taxonomyFeeKeys } from "./off-taxonomy-rollback";
+import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees, taxonomyFeeKeys } from "./off-taxonomy-rollback";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -91,5 +91,19 @@ describe("Hamilton off-taxonomy rollback", () => {
       rollBackOffTaxonomyFees(asDb(db), { runId: 214, batchId: "agentic-run-214", dryRun: false }),
     ).resolves.toEqual([]);
     spy.mockRestore();
+  });
+
+  it("restores an earlier off-taxonomy takedown whose category is in the taxonomy today", async () => {
+    const db = createDbMock([{ ...offTaxonomy, canonical_fee_key: "safe_deposit_box" }]);
+
+    const restores = await restoreFeesNowInTaxonomy(asDb(db), { runId: 8, dryRun: false });
+
+    expect(restores.map((fee) => fee.feePublishedId)).toEqual([7001]);
+    const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("SET rolled_back_at = NULL");
+    expect(query).toContain("canonical_fee_key = ANY($1::text[])");
+    expect(query).toContain("NOT EXISTS");
+    expect(params[2]).toBe("category_outside_taxonomy");
+    expect(JSON.stringify(db.mock.calls)).toContain("hamilton.off_taxonomy_restored");
   });
 });

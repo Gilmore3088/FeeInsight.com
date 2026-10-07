@@ -129,6 +129,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - Persist report/scenario metadata for evidence policy, peer baseline source/label, fallback reason, peer-set ID, and selected-institution evidence counts.
 - Persist selected-institution source/source-label metadata on reports, scenarios, and watchlist rows.
 - Emit publication, refresh, and fee-movement Monitor signals with canonical institution IDs.
+- A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
 ## Publishing (publish.rules version 2)
@@ -329,6 +330,24 @@ playbook (as are the rules re-check's), so its record shows how many of its fees
 Hamilton's checks beside how many Knox read. The hourly scheduler
 tick wakes sleeping state lanes that still have unchecked live fees (source check or
 rules re-check), so a new rule reaches every state within hours.
+
+## Studies (James, 2026-10-07 05:03 UTC "Build it all")
+
+Statistical studies on the joined data, stored so Hamilton can cite a result and place one
+institution in it (`src/lib/agents/hamilton/studies`). One run a day
+(`/api/admin/crew/studies`), one step per study; a step stores only when its data period is new.
+
+- Tables: `hamilton_studies` (read the `is_current` row per `study_key`),
+  `hamilton_study_placements` (an institution against its peers), `inferred_fee_volume`.
+- `fee_dependence`: fee share of revenue every year since 2010, banks and credit unions side by
+  side, never pooled (their definitions differ), closed institutions included.
+- `local_income`, `market_concentration`, `fee_income_share`: price studies on live fees.
+  Cross-sectional only: fee prices are a current snapshot (fee moves over time are artifacts), so
+  a result describes how prices differ across institutions, never what a change would do.
+- `inferred_items_paid`: reported overdraft/NSF income divided by the published fee, a range,
+  always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
+  loads ($1B+ banks, overdraft and NSF together).
+- Nothing from a study is published on the site or sent until James says so.
 
 ## Marketing
 

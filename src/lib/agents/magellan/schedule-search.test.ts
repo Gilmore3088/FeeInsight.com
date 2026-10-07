@@ -6,7 +6,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
-import { runScheduleSearch, scheduleSearchPrompt, type ScheduleSearchRow } from "./schedule-search";
+import { runScheduleSearch, scheduleSearchPrompt, type ScheduleSearchRow, MAX_TRANSIENT_TRIES } from "./schedule-search";
 
 type DbMock = ReturnType<typeof vi.fn>;
 const text = (strings: unknown) => (Array.isArray(strings) ? strings.join(" ") : String(strings));
@@ -114,5 +114,15 @@ describe("market leaders in the priority lane", () => {
     expect(result.selected).toBe(0);
     const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"));
     expect(call!.slice(1)).toContainEqual([]);
+  });
+});
+
+describe("banks whose answer never opens", () => {
+  it("stops paying for a bank after a few timeouts in a month", async () => {
+    const db = createDb([]);
+    await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
+    const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"));
+    expect(text(call![0])).toMatch(/AND pa\.outcome <> 'budget_blocked'\s*\)\s*<\s*$/m);
+    expect(call!.slice(1)).toContain(MAX_TRANSIENT_TRIES);
   });
 });

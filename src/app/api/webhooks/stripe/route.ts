@@ -3,6 +3,7 @@ import { getStripe, getWebhookSecret } from "@/lib/stripe";
 import { withTransaction } from "@/lib/data-store/connection";
 import { applyStripeEvent, type StripeEventEffects } from "@/lib/stripe-webhook";
 import { sendProWelcomeEmail } from "@/lib/email/pro-welcome";
+import { trackServerEvent } from "@/lib/analytics-server";
 import { alertDuplicateReportPayment, deliverPaidReport } from "@/lib/leads/report-paid";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
@@ -49,8 +50,10 @@ async function handlePOST(req: Request) {
   }
 
   // After commit, so a rolled-back event never sends; never throws.
+  // One welcome per account checkout just activated, so it also counts activations.
   for (const welcome of (effects as StripeEventEffects | null)?.welcome ?? []) {
     await sendProWelcomeEmail(welcome);
+    await trackServerEvent("pro_activated", { source: "webhook" });
   }
   for (const paid of (effects as StripeEventEffects | null)?.reportPaid ?? []) {
     await deliverPaidReport(paid);

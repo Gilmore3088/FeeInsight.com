@@ -66,7 +66,7 @@ export default async function ProDistrictsPage() {
             >
               {/* District header */}
               <div className="flex items-center gap-3 mb-4">
-                <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-warm-100 text-[12px] font-bold text-warm-600 tabular-nums">
+                <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-warm-100 text-[12px] font-bold text-warm-600 [font-variant-numeric:tabular-nums]">
                   {m.district}
                 </span>
                 <h2
@@ -86,7 +86,7 @@ export default async function ProDistrictsPage() {
                     Institutions
                   </p>
                   <p
-                    className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"
+                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
                     style={{
                       fontFamily: "var(--font-newsreader), Georgia, serif",
                     }}
@@ -99,7 +99,7 @@ export default async function ProDistrictsPage() {
                     Fees
                   </p>
                   <p
-                    className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"
+                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
                     style={{
                       fontFamily: "var(--font-newsreader), Georgia, serif",
                     }}
@@ -115,7 +115,7 @@ export default async function ProDistrictsPage() {
                     Fee schedule on file
                   </p>
                   <p
-                    className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"
+                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
                     style={{
                       fontFamily: "var(--font-newsreader), Georgia, serif",
                     }}

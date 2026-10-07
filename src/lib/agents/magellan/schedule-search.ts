@@ -54,6 +54,8 @@ const MAX_OUTPUT_TOKENS = 1024;
 const ANSWER_SCORE = 0.85;
 const COVERAGE_TEXT_CHARS = 60_000;
 const TRANSIENT_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
+/** Paid tries a bank gets in a month when every one ends in a timeout or refusal. */
+export const MAX_TRANSIENT_TRIES = 3;
 
 export interface ScheduleSearchRow {
   id: number | string;
@@ -194,6 +196,8 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
          AND COALESCE(profile.locked_by_correction, false) = false
+         -- Searched this month: one real answer, or MAX_TRANSIENT_TRIES that timed out or
+         -- were refused (Morgan Stanley and Northern Trust timed out 35 times in 9 hours).
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
@@ -202,6 +206,14 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
               AND pa.created_at >= date_trunc('month', NOW())
               AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
          )
+         AND (
+           SELECT count(*) FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
+              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.outcome <> 'budget_blocked'
+         ) < ${MAX_TRANSIENT_TRIES}
     )
     , lanes AS (
       SELECT scoped.*,
