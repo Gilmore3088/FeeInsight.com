@@ -16,6 +16,10 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * - Adds newly chartered banks (status 'active', so the fee pipeline picks them up).
  * - Marks banks FDIC reports as closed or merged inactive instead of deleting
  *   them, so their fee and financial history stays queryable.
+ * - Takes each bank's Federal Reserve district from FDIC (its FED field, set by
+ *   the county of the head office, so split states such as Missouri or Tennessee
+ *   come out right), then gives every credit union and closed bank the district
+ *   most banks in its city have, or its state's when the city has no bank.
  */
 
 export const FDIC_UNIVERSE_SOURCE = "fdic-universe";
@@ -24,6 +28,12 @@ const UPDATE_CHUNK = 1_000;
 const CERT_LOOKUP_BATCH = 50;
 const MAX_CERT_LOOKUPS = 500;
 const REFRESH_HOURS = 24 * 7;
+/**
+ * Bumped when the step starts writing something new, so a finished partition runs
+ * again on the next registry tick. 2: FDIC's district replaces the stored one, and
+ * credit unions take theirs from nearby banks.
+ */
+export const FDIC_UNIVERSE_PARSER_VERSION = 2;
 
 export interface RegistryFdicUniverseOptions {
   runId?: number | null;
@@ -43,6 +53,10 @@ export interface RegistryFdicUniverseResult {
   deactivatedInstitutions: number;
   missingFromFdic: number;
   lookupsSkipped: number;
+  /** Active banks whose stored Fed district differed from FDIC's. */
+  banksDistrictChanged: number;
+  /** Credit unions and closed banks whose district changed to match the banks around them. */
+  othersDistrictChanged: number;
   dryRun: boolean;
 }
 
@@ -55,9 +69,12 @@ async function loadKnownCerts(db: RegistryDb): Promise<Map<string, string | null
   return new Map(rows.map((row) => [String(row.cert_number), row.regulatory_status ?? null]));
 }
 
-async function updateExisting(db: RegistryDb, rows: FdicInstitutionRow[]): Promise<number> {
+async function updateExisting(
+  db: RegistryDb,
+  rows: FdicInstitutionRow[],
+): Promise<{ updated: number; districtChanged: number }> {
   const payload = JSON.stringify(rows);
-  const result = await db`
+  const result = await db<{ id: number; district_changed: boolean | null }[]>`
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
         cert text, rssd_id text, holding_company_rssd text, holding_company_name text,
@@ -79,15 +96,56 @@ async function updateExisting(db: RegistryDb, rows: FdicInstitutionRow[]): Promi
       website_url = COALESCE(NULLIF(btrim(s.website_url), ''), r.website_url),
       asset_size = COALESCE(r.asset_size, s.asset_size),
       asset_size_tier = COALESCE(r.asset_size_tier, s.asset_size_tier),
-      fed_district = COALESCE(s.fed_district, r.fed_district),
+      -- FDIC's district is authoritative; a stored value only stands when FDIC sends none.
+      fed_district = COALESCE(r.fed_district, s.fed_district),
       cbsa_code = COALESCE(s.cbsa_code, r.cbsa_code),
       cbsa_name = COALESCE(s.cbsa_name, r.cbsa_name),
       established_date = COALESCE(s.established_date, r.established_date),
       regulatory_status = 'active',
       closed_date = NULL,
       registry_synced_at = NOW()
-    FROM r
-    WHERE s.source = 'fdic' AND s.cert_number = r.cert
+    FROM r, institution_sources o
+    WHERE s.source = 'fdic' AND s.cert_number = r.cert AND o.id = s.id
+    RETURNING s.id, (o.fed_district IS DISTINCT FROM s.fed_district) AS district_changed
+  `;
+  const out = [...result];
+  return { updated: out.length, districtChanged: out.filter((row) => row.district_changed === true).length };
+}
+
+/**
+ * Credit unions (NCUA has no district field) and closed banks (FDIC no longer sends
+ * them) take the district most active banks in the same city have, else the one most
+ * banks in the state have. Runs after the bank refresh so it reads FDIC's values.
+ */
+async function deriveOtherDistricts(db: RegistryDb): Promise<number> {
+  const result = await db`
+    WITH banks AS (
+      SELECT state_code, UPPER(BTRIM(city)) AS city, fed_district
+        FROM institution_sources
+       WHERE source = 'fdic' AND regulatory_status = 'active' AND fed_district BETWEEN 1 AND 12
+    ),
+    by_city AS (
+      SELECT state_code, city, fed_district,
+             ROW_NUMBER() OVER (PARTITION BY state_code, city ORDER BY COUNT(*) DESC, fed_district) AS rk
+        FROM banks WHERE city IS NOT NULL
+       GROUP BY state_code, city, fed_district
+    ),
+    by_state AS (
+      SELECT state_code, fed_district,
+             ROW_NUMBER() OVER (PARTITION BY state_code ORDER BY COUNT(*) DESC, fed_district) AS rk
+        FROM banks
+       GROUP BY state_code, fed_district
+    ),
+    target AS (
+      SELECT i.id, COALESCE(c.fed_district, st.fed_district) AS fed_district
+        FROM institution_sources i
+        LEFT JOIN by_city c ON c.rk = 1 AND c.state_code = i.state_code AND c.city = UPPER(BTRIM(i.city))
+        LEFT JOIN by_state st ON st.rk = 1 AND st.state_code = i.state_code
+       WHERE i.source <> 'fdic' OR i.regulatory_status IS DISTINCT FROM 'active'
+    )
+    UPDATE institution_sources s SET fed_district = t.fed_district
+      FROM target t
+     WHERE s.id = t.id AND t.fed_district IS NOT NULL AND s.fed_district IS DISTINCT FROM t.fed_district
     RETURNING s.id
   `;
   return [...result].length;
@@ -185,6 +243,8 @@ export async function runRegistryFdicUniverse(
     deactivatedInstitutions: 0,
     missingFromFdic: missing.length,
     lookupsSkipped: Math.max(0, missing.length - toLookup.length),
+    banksDistrictChanged: 0,
+    othersDistrictChanged: 0,
     dryRun,
   };
   if (dryRun) {
@@ -196,12 +256,15 @@ export async function runRegistryFdicUniverse(
   }
 
   for (const group of chunk(existing, UPDATE_CHUNK)) {
-    result.updatedInstitutions += await updateExisting(db, group);
+    const counts = await updateExisting(db, group);
+    result.updatedInstitutions += counts.updated;
+    result.banksDistrictChanged += counts.districtChanged;
   }
   for (const group of chunk(fresh, UPDATE_CHUNK)) {
     result.insertedInstitutions += await insertNew(db, group);
   }
   result.deactivatedInstitutions = await deactivate(db, closed);
+  result.othersDistrictChanged = await deriveOtherDistricts(db);
 
   await recordRegistryPartition(db, {
     source: FDIC_UNIVERSE_SOURCE,
@@ -219,6 +282,9 @@ export async function runRegistryFdicUniverse(
       inserted: result.insertedInstitutions,
       deactivated: result.deactivatedInstitutions,
       missing_from_fdic: result.missingFromFdic,
+      banks_district_changed: result.banksDistrictChanged,
+      others_district_changed: result.othersDistrictChanged,
+      parser_version: FDIC_UNIVERSE_PARSER_VERSION,
     },
   });
 
