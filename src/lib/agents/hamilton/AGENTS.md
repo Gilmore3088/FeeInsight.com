@@ -233,6 +233,19 @@ logged `takedown_cleared`. A limit takedown the current guard no longer fails co
 (`restorePassingLimitTakedowns`), unless the bank already has the same fee live, with a
 `hamilton.limit_guard_restored` event and the source check's restore marker.
 
+## Business Schedule
+
+Each publish step, `business-schedule.ts` looks at live fees read from a business-only document
+(the address names business, commercial, corporate or treasury and not personal or consumer, as
+`isBusinessOnlyLink`). A business fee beside a live consumer fee of the same bank and category
+comes down on its second look (check `hamilton.business_schedule`): `rolled_back_reason =
+'business_schedule: consumer fee #<id>'`, the verified row rejected with the `business_schedule`
+flag. A business fee with no consumer fee beside it stays live until Magellan finds the consumer
+schedule. The lesson is Magellan's: one `wrong_document` row per document (stage discover); the
+feedback sync writes no Knox or Darwin lesson for these. A takedown whose consumer fee is no
+longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
+banks, 61 beside a consumer fee.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another

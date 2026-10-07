@@ -185,6 +185,9 @@ export async function syncPipelineFeedback(
          -- The bank dropped the fee from a newer copy of its page: Knox and Darwin were
          -- right about the copy they read, so this is no lesson against them.
          AND fp.rolled_back_reason NOT LIKE 'newer_copy_drops_fee:%'
+         -- A business-schedule fee was read right from the wrong page: the lesson is
+         -- Magellan's (hamilton/business-schedule.ts writes it), not Knox's or Darwin's.
+         AND fp.rolled_back_reason NOT LIKE 'business_schedule:%'
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
             WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'
