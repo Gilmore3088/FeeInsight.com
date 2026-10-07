@@ -88,6 +88,16 @@ describe("same page under two spellings", () => {
     expect(statements(db).some((text) => text.includes("magellan.same_page_copies"))).toBe(true);
   });
 
+  it("runs live by default and never hands a page to a thin copy", async () => {
+    expect(SAME_PAGE_SUPERSEDE_LIVE).toBe(true);
+    const db = pairDb([{ older_id: 3307, current_id: 16035 }]);
+    const result = await supersedeSamePageCopies(db as unknown as Db, { runId: 7 });
+    expect(result.live).toBe(true);
+    expect(statements(db).some((text) => text.includes("SET superseded_by_id = pair.current_id"))).toBe(true);
+    const select = statements(db).find((text) => text.includes("same-page current copies"))!;
+    expect(select).toMatch(/ORDER BY thin, crawled_at DESC/);
+  });
+
   it("points each older spelling at the newest copy when live, and never deletes", async () => {
     const db = pairDb([{ older_id: 2917, current_id: 16048 }]);
     const result = await supersedeSamePageCopies(db as unknown as Db, { runId: 7, live: true });

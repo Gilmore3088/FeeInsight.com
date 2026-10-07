@@ -1786,6 +1786,14 @@ slash or fragment), and `supersedeSamePageCopies` backfills existing pairs in ea
 start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.same_page_copies`
 events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
 newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
+**Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
+same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
+including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 667 live fees sit
+on the older copies. Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
+taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
+because it included failed and already-superseded copies; only current copies need linking.
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
