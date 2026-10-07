@@ -13,6 +13,22 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
+**What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
+and near-ready markets. At 00:47 UTC Oct 7 all 55 lanes still had priority_score 0, so Atlas kept
+taking states in waiting order. Postgres logs show "operator is not unique: unknown - unknown" at
+hh:00:32 every hour from 18:00 through 00:00 UTC: the hourly refresh ran and failed each time.
+**Cause:** postgres.js sends JavaScript numbers as untyped parameters, and the near-ready rule wrote
+`${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}`. Postgres cannot pick a "-" for two unknowns, so the
+whole UPDATE failed to plan. The function catches, logs and returns 0, so nothing else noticed.
+**Fix:** every number and array in the refresh query now carries a cast (`::int`, `::text[]`); a
+unit test fails if one is sent uncast. The fixed query, prepared on prod with untyped parameters
+the way postgres.js sends them, plans and scores IL 2274, MO 2173, MA 2169, NJ 2128, CO 2022,
+WA 2017, then TX 299.
+**Lesson:** in a `sql` template, cast every interpolated number unless a column fixes its type
+(`${n}::int`). Arithmetic between two parameters always fails. To test a query, prepare it with
+untyped parameters (`PREPARE q AS ...`), not with the numbers pasted in.
+
 ## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
 **What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
 MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
