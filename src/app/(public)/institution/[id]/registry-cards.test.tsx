@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { BranchFootprintCard, EnforcementCard } from "./registry-cards";
+import { BranchFootprintCard, EnforcementCard, RegulatoryWatchCard } from "./registry-cards";
 import type { BranchFootprint, EnforcementRecord } from "@/lib/data-store/registry-profile";
 
 const CREDIT_UNION: BranchFootprint = {
@@ -85,5 +85,35 @@ describe("EnforcementCard", () => {
     expect(screen.getByRole("link", { name: "Order" })).toHaveAttribute("href", "https://www.federalreserve.gov/x.pdf");
     expect(screen.getByText(/latest 1 of 3/)).toBeInTheDocument();
     expect(screen.getByText(/Ended February 1, 2020/)).toBeInTheDocument();
+  });
+});
+
+describe("RegulatoryWatchCard", () => {
+  it("lists competitors' actions as public records, ties rules to the bank's fees, and links the export", () => {
+    render(
+      <RegulatoryWatchCard
+        exportHref="/api/v1/institutions?id=12&view=benchmark&format=csv"
+        watch={{
+          market: { places: ["Austin, TX"], peers_checked: 20 },
+          agencies_loaded: ["OCC", "FRB"],
+          as_of: "2026-10-07",
+          rules_tracked: true,
+          peer_actions: [
+            { peer_id: 4, peer_name: "Big Bank, N.A.", agency: "OCC", party_name: "Big Bank, N.A.", against_holding_company: false, action_type: "Civil Money Penalty (CMP)", subject: "Consumer Law; Unfair or Deceptive (UDAP)", consumer_law: true, no_end_date_on_file: false, start_date: "2024-12-01", termination_date: null, penalty_amount: 20_000_000, document_url: null },
+            { peer_id: 5, peer_name: "Other Bank", agency: "FRB", party_name: "Other Bancorp", against_holding_company: true, action_type: "Written Agreement", subject: null, consumer_law: false, no_end_date_on_file: true, start_date: "2025-02-01", termination_date: null, penalty_amount: null, document_url: null },
+          ],
+          rule_changes: [
+            { source: "federal_register", title: "Overdraft Lending: Very Large Financial Institutions", kind: "final_rule", stage: "in_effect", agencies: ["Consumer Financial Protection Bureau"], published_on: "2024-12-30", comments_close_on: null, effective_on: "2025-10-01", url: "https://www.federalregister.gov/x", topics: ["overdraft_nsf"], all_fees: false,
+              fees: [{ fee_category: "overdraft", display_name: "Overdraft (OD)", amount: 35, market_median: 32, market_count: 6 }] },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("2 actions against 2 of your 20 largest local competitors, 1 with no end date on file")).toBeInTheDocument();
+    expect(screen.getByText(/against the holding company, Other Bancorp/)).toBeInTheDocument();
+    expect(screen.getByText("Consumer law: Consumer Law; Unfair or Deceptive (UDAP)")).toBeInTheDocument();
+    expect(screen.getByText(/Overdraft \(OD\) \$35.00 \(local median \$32.00\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/\bactive\b/i)).toBeNull();
+    expect(screen.getByRole("link", { name: /Download your fees and peer benchmarks/ })).toHaveAttribute("href", "/api/v1/institutions?id=12&view=benchmark&format=csv");
   });
 });

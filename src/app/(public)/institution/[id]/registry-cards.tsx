@@ -12,6 +12,7 @@ import type {
   EnforcementRecord,
   HoldingCompanyProfile,
 } from "@/lib/data-store/registry-profile";
+import type { RegulatoryWatch, WatchRuleChange } from "@/lib/data-store/regulatory-watch";
 
 /*
  * Registry cards for the gated Financial profile. Colors reuse the validated
@@ -471,6 +472,127 @@ export function EnforcementCard({ record }: { record: EnforcementRecord }) {
           )}
         </div>
       )}
+    </Card>
+  );
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  comment_open: "Open for comment",
+  comment_closed: "Comment period closed",
+  final_not_yet_effective: "Final, not yet in effect",
+  in_effect: "In effect",
+  introduced: "Introduced",
+  in_committee: "In committee",
+  passed_chamber: "Passed one chamber",
+  passed_legislature: "Passed Congress",
+  signed: "Signed into law",
+};
+
+function money(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
+function RuleItem({ rule }: { rule: WatchRuleChange }) {
+  const date = rule.effective_on ?? rule.comments_close_on ?? rule.published_on;
+  return (
+    <li className="py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-medium text-[#1A1815]">
+          {rule.url ? (
+            <a href={rule.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              {rule.title}
+            </a>
+          ) : (
+            rule.title
+          )}
+        </span>
+        {date && <span className="shrink-0 tabular-nums text-[#6B6255]">{formatQuarterEnd(date)}</span>}
+      </div>
+      <p className="text-[#5A5347]">
+        {[rule.stage ? STAGE_LABEL[rule.stage] ?? rule.stage : null, rule.agencies.join(", ") || null].filter(Boolean).join(" · ")}
+      </p>
+      <p className="text-[#5A5347]">
+        {rule.all_fees ? "Touches every published fee, including: " : "Touches your "}
+        {rule.fees
+          .map((fee) => `${fee.display_name} ${money(fee.amount)}${fee.market_median !== null ? ` (local median ${money(fee.market_median)})` : ""}`)
+          .join("; ")}
+      </p>
+    </li>
+  );
+}
+
+const WATCH_SHOWN = 8;
+
+/** Pro: enforcement actions against local competitors and federal rule changes tied to this institution's fees. */
+export function RegulatoryWatchCard({ watch, exportHref }: { watch: RegulatoryWatch; exportHref?: string | null }) {
+  const peersChecked = watch.market?.peers_checked ?? 0;
+  const actions = watch.peer_actions;
+  const peersWithActions = new Set(actions.map((a) => a.peer_id)).size;
+  const open = actions.filter((a) => a.no_end_date_on_file).length;
+  const agencies = watch.agencies_loaded.map((a) => AGENCY_LABEL[a]).join(" and ");
+  const subtitle =
+    peersChecked === 0
+      ? "No local market on file"
+      : actions.length > 0
+        ? `${actions.length} ${actions.length === 1 ? "action" : "actions"} against ${peersWithActions} of your ${peersChecked} largest local competitors${open > 0 ? `, ${open} with no end date on file` : ""}`
+        : `No ${agencies} actions against your ${peersChecked} largest local competitors`;
+  return (
+    <Card
+      title="Regulatory watch"
+      subtitle={subtitle}
+      caption={`Sources: ${agencies || "OCC and Federal Reserve"} public enforcement action lists${watch.as_of ? `, read ${formatQuarterEnd(watch.as_of)}` : ""} (actions begun in the last three years; FDIC and NCUA orders are not included)${watch.rules_tracked ? ", and the Federal Register and Congress.gov" : ""}. Competitors are the largest by deposits in ${watch.market?.places.slice(0, 2).join("; ") ?? "the local market"} (FDIC Summary of Deposits).`}
+    >
+      <div className="text-[12px]">
+        {actions.length > 0 && (
+          <ul className="divide-y divide-[#F1EBE1]">
+            {actions.slice(0, WATCH_SHOWN).map((action, i) => (
+              <li key={i} className="py-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-medium text-[#1A1815]">{action.peer_name}</span>
+                  <span className="shrink-0 tabular-nums text-[#6B6255]">
+                    {action.start_date ? formatQuarterEnd(action.start_date) : "Date not given"}
+                  </span>
+                </div>
+                <p className="text-[#5A5347]">
+                  {AGENCY_LABEL[action.agency]} {action.action_type ?? "enforcement action"}
+                  {action.against_holding_company && <>, against the holding company, {action.party_name}</>}
+                  {action.penalty_amount !== null && <>, penalty {formatCompactDollars(action.penalty_amount)}</>}
+                  {action.termination_date ? <>. Ended {formatQuarterEnd(action.termination_date)}</> : action.no_end_date_on_file ? <>. No end date on file</> : null}
+                  {action.document_url && (
+                    <>
+                      {" · "}
+                      <a href={action.document_url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#A93D25] hover:underline">
+                        Order
+                      </a>
+                    </>
+                  )}
+                </p>
+                {action.consumer_law && action.subject && <p className="text-[#8A8174]">Consumer law: {action.subject}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {actions.length > WATCH_SHOWN && (
+          <p className="pt-1 text-[#8A8174]">Latest {WATCH_SHOWN} of {actions.length} shown; the API lists all of them.</p>
+        )}
+        {watch.rule_changes.length > 0 && (
+          <>
+            <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Federal rule changes on your fees</p>
+            <ul className="divide-y divide-[#F1EBE1]">
+              {watch.rule_changes.slice(0, 6).map((rule, i) => (
+                <RuleItem key={i} rule={rule} />
+              ))}
+            </ul>
+          </>
+        )}
+        {exportHref && (
+          <p className="mt-3">
+            <a href={exportHref} className="font-medium text-[#A93D25] hover:underline">
+              Download your fees and peer benchmarks (CSV)
+            </a>
+          </p>
+        )}
+      </div>
     </Card>
   );
 }
