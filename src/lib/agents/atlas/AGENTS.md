@@ -32,6 +32,15 @@ an older discovery method, and product-page links not yet searched for the real 
 or the request's `until` day has passed. Magellan's own selectors pick the banks, so a bank
 is never searched twice under one method. Tennessee is on it until 10 Oct 2026.
 
+## Direct runs for one institution (`priority-institutions.ts`)
+
+Up to two at a time, free steps only (fetch, read, extract, verify, publish) for one bank, in
+this order: a schedule found by hand and not yet fetched; a document Magellan's paid fetch
+stored that is still unread (the paid step fetches blocked links for banks in every state,
+while a state run reads only its own state, so these would wait for their state's lane); a
+bank asked for by name; a $10B+ bank or market leader with no live overdraft fee. A new
+hand-found link or paid-fetched document starts a new run even inside the retry window.
+
 ## State lanes: cadence and state experts
 
 - `state-lane-scheduler.ts`: one full pass per state per UTC calendar month. The first

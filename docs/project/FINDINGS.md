@@ -2931,3 +2931,15 @@ Rows already on file gain the fields only when Knox reads their document again.
   and keeps the stream running if the browser drops it. The row id goes back as message metadata
   under `savedAnalysisId`; the screen updates that row instead of inserting another.
 - **Watch.** Until the screen reads `savedAnalysisId`, both sides insert, so each answer gets two rows.
+
+## 2026-10-07: Documents from the paid fetch waited for their own state's lane
+
+- **Problem.** Magellan's paid fetch runs in whichever state's run holds the paid step and takes
+  blocked links from every state. A state run's read step reads only its own state. By 11:20,
+  12 documents were stored for 11 banks (First Horizon, Citizens, Fifth Third, Huntington,
+  KeyBank, Flagstar and others). Only the Tennessee ones were read (First Horizon: 16 fees
+  extracted, 9 live). The rest sat unread until their state's next pass.
+- **Fix.** `priority-institutions.ts` gives a bank with an unread paid-fetched document (stored
+  in the last 7 days) a direct run, ranked right after hand-found schedules.
+- **Watch.** `agent_runs` with `params_json->>'tier' = 'paid_fetched'`, and `agent_source_texts`
+  for documents 21028 (Citizens) and 21030 (Fifth Third).
