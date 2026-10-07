@@ -152,7 +152,7 @@ export function NewsFeed({
         )}
 
         {/* Count */}
-        <span className="ml-auto text-[11px] tabular-nums text-warm-500">
+        <span className="ml-auto text-[11px] [font-variant-numeric:tabular-nums] text-warm-500">
           {totalCount.toLocaleString()} articles
         </span>
       </div>
@@ -196,7 +196,7 @@ export function NewsFeed({
                         {topicLabels[article.topic] ?? article.topic}
                       </span>
                       <span className="text-warm-300">&middot;</span>
-                      <span className="text-warm-500 tabular-nums">
+                      <span className="text-warm-500 [font-variant-numeric:tabular-nums]">
                         {timeAgo(article.published_at || article.created_at)}
                       </span>
                     </div>
@@ -233,7 +233,7 @@ export function NewsFeed({
                 }`}
               >
                 <span>All Sources</span>
-                <span className="tabular-nums text-[10px] opacity-60">
+                <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">
                   {Object.values(sourceCounts).reduce((a, b) => a + b, 0)}
                 </span>
               </button>
@@ -249,7 +249,7 @@ export function NewsFeed({
                     <span className={`inline-block h-2 w-2 rounded-sm ${SOURCE_COLORS[key]?.split(" ")[0] ?? "bg-gray-800"}`} />
                     {label}
                   </span>
-                  <span className="tabular-nums text-[10px] opacity-60">
+                  <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">
                     {sourceCounts[key] ?? 0}
                   </span>
                 </button>
@@ -270,7 +270,7 @@ export function NewsFeed({
                 }`}
               >
                 <span>All Topics</span>
-                <span className="tabular-nums text-[10px] opacity-60">
+                <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">
                   {Object.values(topicCounts).reduce((a, b) => a + b, 0)}
                 </span>
               </button>
@@ -289,7 +289,7 @@ export function NewsFeed({
                       <span className={`text-[10px] ${TOPIC_COLORS[key] ?? ""}`}>&bull;</span>
                       {label}
                     </span>
-                    <span className="tabular-nums text-[10px] opacity-60">{count}</span>
+                    <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">{count}</span>
                   </button>
                 );
               })}
