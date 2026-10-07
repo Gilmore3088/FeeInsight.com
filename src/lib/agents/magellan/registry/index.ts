@@ -31,6 +31,7 @@ import {
 } from "./ncua-branches";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARTITION, SEC_LINKS_SOURCE, runRegistrySecFilings, runRegistrySecLinks } from "./sec";
 import { ENFORCEMENT_PARTITION, ENFORCEMENT_SOURCE, runRegistryEnforcement } from "./enforcement";
+import { STATE_ENFORCEMENT_PARTITION, STATE_ENFORCEMENT_SOURCE, runRegistryStateEnforcement } from "./state-enforcement";
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
 
 /**
@@ -449,14 +450,16 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       const r = await runRegistryStateBillsBatch({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
       const failed = r.failedStates.length > 0 ? ` Failed: ${r.failedStates.join(", ")}.` : "";
+      const limited = r.rateLimited ? " Open States rate limited the run; the rest stay due." : "";
       return {
         summary: r.missingKey
           ? "Skipped state bills: OPEN_STATES_API_KEY is not set."
-          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}`,
+          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}${limited}`,
         detail: {
           missing_key: r.missingKey,
           states: r.states,
           failed_states: r.failedStates,
+          rate_limited: r.rateLimited,
           remaining: r.remaining,
           fetched: r.fetched,
           stored: r.stored,
@@ -491,6 +494,23 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan read ${n(OCC.actions)} OCC and ${n(FRB.actions)} Federal Reserve enforcement actions against institutions: ${n(OCC.matched + FRB.matched)} matched to a bank and ${n(OCC.holdingCompany + FRB.holdingCompany)} to a holding company${dry(r.dryRun)}.${failed}`,
         detail: { by_agency: r.byAgency, upserted: r.upserted, failed: r.failed },
+      };
+    },
+  },
+  {
+    source: STATE_ENFORCEMENT_SOURCE,
+    stepKey: "registry-state-enforcement",
+    title: "Pull state banking departments' enforcement orders",
+    fixedPartition: STATE_ENFORCEMENT_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryStateEnforcement({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const read = r.byState.filter((s) => s.pages > 0);
+      const orders = r.byState.reduce((sum, s) => sum + s.orders, 0);
+      const matched = r.byState.reduce((sum, s) => sum + s.matched, 0);
+      const unread = r.byState.filter((s) => s.pages === 0).map((s) => s.state);
+      return {
+        summary: `Magellan read ${n(read.length)} state banking departments and found ${n(orders)} orders against banks, ${n(matched)} matched to a bank${dry(r.dryRun)}.${unread.length > 0 ? ` No page read for ${unread.join(", ")}.` : ""}`,
+        detail: { by_state: r.byState, upserted: r.upserted },
       };
     },
   },

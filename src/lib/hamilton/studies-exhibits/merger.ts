@@ -6,6 +6,7 @@
  * and 400 wide for a phone, in the shared chart style (src/lib/charts/style.ts). When a
  * figure is missing the exhibit says so; nothing is estimated.
  */
+import type { RdDocument } from "@/lib/report-design/html";
 import { geoBounds, geoConicConformal, geoPath } from "d3-geo";
 import { feature, mesh } from "topojson-client";
 import type { Feature, FeatureCollection, Geometry, MultiLineString } from "geojson";
@@ -65,7 +66,7 @@ function textWidth(body: string, size: number): number {
 }
 
 function svg(width: number, height: number, body: string, label: string): string {
-  return `<svg class="merger-chart" viewBox="0 0 ${width} ${Math.ceil(height)}" width="100%" role="img" aria-label="${escapeHtml(label)}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+  return `<svg class="rd-chart" viewBox="0 0 ${width} ${Math.ceil(height)}" width="100%" role="img" aria-label="${escapeHtml(label)}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
 }
 
 /**
@@ -686,7 +687,7 @@ export function feeChart(rows: FeeRow[], names: [string, string], size: ChartSiz
     const step = top > 1000 ? 250 : top > 400 ? 100 : 50;
     parts.push(feeGroup(big, names, niceCeil(top, step), step, narrow, small.length ? "Larger fees, on their own scale" : null));
   }
-  return `<div class="merger-fees">${parts.join("")}</div>`;
+  return `<div class="rd-stack">${parts.join("")}</div>`;
 }
 
 // ─── The screen: findings, titles and exhibits ───────────────────────────────
@@ -1158,46 +1159,22 @@ export function buildMergerScreen(data: MergerScreenData): MergerScreen {
  * `.sc-wide` shows on desktop and paper, `.sc-narrow` on a phone. Each exhibit stays whole on
  * paper and its heading never ends a page.
  */
-export const MERGER_CSS = `
-.ms{display:flex;flex-direction:column;gap:28px;color:${CHART.ink};font-family:var(--font-geist-sans),${CHART_FONTS.sans};min-width:0}
-.ms h1,.ms h2,.ms h3{font-family:var(--font-newsreader),${CHART_FONTS.serif};font-weight:500;margin:0;letter-spacing:-.01em;text-wrap:balance}
-.ms p{margin:0;text-wrap:pretty}
-.ms-cover{display:flex;flex-direction:column;gap:14px}
-.ms-eyebrow{font-family:var(--font-geist-mono),${CHART_FONTS.mono};font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:${CHART.terraText}}
-.ms-cover h1{font-size:clamp(32px,5.2vw,54px);line-height:1.04}
-.ms-deck{font-family:var(--font-newsreader),${CHART_FONTS.serif};font-size:clamp(18px,2.2vw,22px);color:${CHART.inkSoft};max-width:62ch;line-height:1.38}
-.ms-heroes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:2px solid ${CHART.ink};border-bottom:1px solid ${CHART.rule2};margin-top:8px}
-.ms-hero{padding:16px 16px 16px 0;display:flex;flex-direction:column;gap:6px;min-width:0}
-.ms-hero+.ms-hero{padding-left:16px;border-left:1px solid ${CHART.rule}}
-.ms-fig{font-family:var(--font-newsreader),${CHART_FONTS.serif};font-size:clamp(32px,4.4vw,50px);line-height:1;font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.02em}
-.ms-fig small{font-size:.45em;color:${CHART.inkSoft};letter-spacing:0}
-.ms-lab{font-size:13px;color:${CHART.inkSoft};line-height:1.35}
-.ms-vs{font-family:var(--font-geist-mono),${CHART_FONTS.mono};font-size:11.5px;color:${CHART.terraText};font-variant-numeric:tabular-nums}
-@media (max-width:760px){.ms-heroes{grid-template-columns:repeat(2,minmax(0,1fr))}.ms-hero:nth-child(3){padding-left:0;border-left:0}.ms-hero:nth-child(n+3){border-top:1px solid ${CHART.rule}}}
-.ms-ex{background:${CHART.paper};border:1px solid ${CHART.rule};border-radius:6px;padding:24px clamp(14px,3vw,32px) 18px;display:flex;flex-direction:column;gap:12px;min-width:0;break-inside:avoid;page-break-inside:avoid}
-.ms-kicker{font-family:var(--font-geist-mono),${CHART_FONTS.mono};font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:${CHART.inkSoft}}
-.ms-ex h2{font-size:clamp(22px,2.8vw,30px);line-height:1.15;max-width:36ch}
-.ms-sub{color:${CHART.inkSoft};max-width:68ch;font-size:15px;line-height:1.5}
-.ms-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:${CHART.inkSoft}}
-.ms-legend span{display:inline-flex;align-items:center;gap:7px}
-.ms-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}
-.ms-one{display:grid;grid-template-columns:minmax(0,1fr)}
-@media (max-width:760px){.ms-two{grid-template-columns:minmax(0,1fr)}}
-.ms-panel{display:flex;flex-direction:column;gap:8px;min-width:0}
-.ms-panel h3{font-size:19px;line-height:1.2}
-.ms .merger-chart{display:block;width:100%;height:auto;overflow:visible}
-.ms .merger-fees{display:flex;flex-direction:column;gap:22px}
-.ms-notice{font-size:14.5px;color:${CHART.inkSoft};background:${CHART.terraSoft};border-radius:4px;padding:12px 14px}
-.ms-source{font-family:var(--font-geist-mono),${CHART_FONTS.mono};font-size:11px;color:${CHART.inkSoft};border-top:1px solid ${CHART.rule};padding-top:10px;line-height:1.5}
-.ms .sc-narrow{display:none}
-@media screen and (max-width:640px){.ms .sc-wide{display:none}.ms .sc-narrow{display:block}.ms-ex{padding:20px 12px 16px}}
-@media print{
-  .ms{gap:18px}
-  .ms-ex{break-inside:avoid;page-break-inside:avoid;border-color:${CHART.rule2}}
-  .ms-kicker,.ms-ex h2,.ms-sub,.ms-panel h3{break-after:avoid;page-break-after:avoid}
-  .ms .sc-wide{display:block!important}.ms .sc-narrow{display:none!important}
-  .ms-two{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:20px}
-  .ms-heroes{grid-template-columns:repeat(4,minmax(0,1fr))!important}
-  .ms-hero:nth-child(n+3){border-top:0!important}.ms-hero:nth-child(3){padding-left:16px!important;border-left:1px solid ${CHART.rule}!important}
+/** The screen in the shared report design: the two banks keep their colours in every legend. */
+export function mergerDocument(screen: MergerScreen): RdDocument {
+  return {
+    eyebrow: "Hamilton · Merger screen",
+    title: screen.title,
+    deck: screen.deck,
+    heroes: screen.heroes.map((h) => ({ figure: h.figure, unit: h.unit, label: h.label, note: h.detail })),
+    exhibits: screen.exhibits.map((ex) => ({
+      key: ex.key,
+      label: ex.kicker,
+      title: ex.title,
+      sub: ex.sub,
+      legend: ex.legend?.map((label, i) => (i < 2 ? { label, color: BANK_COLORS[i], mark: "dot" as const } : { label })),
+      panels: ex.panels.map((p) => ({ heading: p.heading ?? undefined, html: p.html })),
+      notice: ex.notice,
+      source: ex.source,
+    })),
+  };
 }
-`;

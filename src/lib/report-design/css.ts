@@ -13,37 +13,49 @@ import { RD, RD_FONTS, RD_PHONE_MAX, RD_TYPE } from "./tokens";
  *   always shows the wide one.
  */
 export const REPORT_DESIGN_CSS = `
-.rd{color:${RD.ink};font-family:${RD_FONTS.sans};font-size:${RD_TYPE.body}px;line-height:1.6;max-width:960px;margin:0 auto}
+.rd{--rd-serif:var(--font-newsreader,"Newsreader"),${RD_FONTS.serif};--rd-sans:var(--font-geist-sans,"Geist"),${RD_FONTS.sans};--rd-mono:var(--font-geist-mono,"Geist Mono"),${RD_FONTS.mono}}
+.rd svg text[font-family^="'Newsreader'"]{font-family:var(--rd-serif)}
+.rd svg text[font-family^="'Geist'"]{font-family:var(--rd-sans)}
+.rd svg text[font-family^="'Geist Mono'"]{font-family:var(--rd-mono)}
+.rd{color:${RD.ink};font-family:var(--rd-sans);font-size:${RD_TYPE.body}px;line-height:1.6;max-width:960px;margin:0 auto}
 .rd h1,.rd h2,.rd h3,.rd h4{text-wrap:balance}
 .rd p,.rd li{text-wrap:pretty}
-.rd .rd-eyebrow,.rd .rd-label{font-family:${RD_FONTS.sans};font-size:${RD_TYPE.label}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${RD.terraText};margin:0}
-.rd h1.rd-title{font-family:${RD_FONTS.serif};font-weight:600;font-size:${RD_TYPE.title}px;line-height:1.15;letter-spacing:-.01em;margin:6px 0 8px}
-.rd .rd-deck{font-family:${RD_FONTS.serif};font-style:italic;font-size:${RD_TYPE.deck}px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
-.rd .rd-heroes{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:18px 0 8px}
-.rd .rd-hero{border-top:2px solid ${RD.ink};padding-top:8px}
-.rd .rd-hero-fig{font-family:${RD_FONTS.serif};font-size:${RD_TYPE.hero}px;line-height:1.1;font-variant-numeric:tabular-nums}
-.rd .rd-hero-lab{font-size:13px;color:${RD.ink};margin-top:4px}
-.rd .rd-hero-note{font-size:12px;color:${RD.inkSoft};margin-top:2px}
+.rd .rd-eyebrow,.rd .rd-label{font-family:var(--rd-sans);font-size:${RD_TYPE.label}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${RD.terraText};margin:0}
+.rd h1.rd-title{font-family:var(--rd-serif);font-weight:600;font-size:${RD_TYPE.title}px;line-height:1.15;letter-spacing:-.01em;margin:6px 0 8px}
+.rd .rd-deck{font-family:var(--rd-serif);font-style:italic;font-size:${RD_TYPE.deck}px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
+.rd .rd-heroes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:2px solid ${RD.ink};border-bottom:1px solid ${RD.rule2};margin:16px 0 8px}
+.rd .rd-hero{padding:14px 14px 14px 0;min-width:0}
+.rd .rd-hero+.rd-hero{padding-left:14px;border-left:1px solid ${RD.rule}}
+.rd .rd-hero-fig{font-family:var(--rd-serif);font-size:${RD_TYPE.hero}px;line-height:1.05;font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.02em}
+.rd .rd-hero-fig small{font-size:.5em;color:${RD.inkSoft};margin-left:1px;letter-spacing:0}
+.rd .rd-cover{padding:8px 0 6px}
+.rd .rd-panel-title{font-size:13px;font-weight:700;margin:0 0 8px}
+.rd .rd-hero-lab{font-size:13px;color:${RD.inkSoft};line-height:1.35;margin-top:6px}
+.rd .rd-hero-note{font-size:12px;color:${RD.terraText};margin-top:4px;font-variant-numeric:tabular-nums}
 .rd .rd-exhibit{border-top:1px solid ${RD.rule2};padding:22px 0 8px;margin:18px 0 0;break-inside:avoid;page-break-inside:avoid}
 .rd .rd-exhibit.rd-flow{break-inside:auto;page-break-inside:auto}
-.rd .rd-exhibit h2{font-family:${RD_FONTS.serif};font-weight:600;font-size:${RD_TYPE.headline}px;line-height:1.25;margin:4px 0 6px}
-.rd .rd-sub{font-family:${RD_FONTS.serif};font-style:italic;font-size:16px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
+.rd .rd-exhibit h2{font-family:var(--rd-serif);font-weight:600;font-size:${RD_TYPE.headline}px;line-height:1.25;margin:4px 0 6px}
+.rd .rd-sub{font-family:var(--rd-serif);font-style:italic;font-size:16px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
 .rd .rd-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:${RD_TYPE.legend}px;color:${RD.inkSoft};margin:6px 0 10px}
 .rd .rd-legend span{display:inline-flex;align-items:center;gap:6px}
 .rd .rd-swatch{display:inline-block;width:10px;height:10px;border-radius:2px}
-.rd .rd-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
-.rd .rd-chart{display:block;width:100%;height:auto}
+.rd .rd-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}
+.rd .rd-chart,.rd .rd-panel svg{display:block;width:100%;height:auto;overflow:visible}
+.rd .rd-one{display:grid;grid-template-columns:minmax(0,1fr)}
+.rd .rd-panel{min-width:0}
+.rd .rd-stack{display:flex;flex-direction:column;gap:22px}
 .rd .rd-source{font-size:${RD_TYPE.source}px;font-style:italic;color:${RD.muted};margin-top:8px;line-height:1.5}
 .rd .rd-notice{font-size:14px;color:${RD.inkSoft};background:${RD.terraSoft};padding:10px 12px;border-radius:4px;margin:8px 0}
 .rd .rd-prose{max-width:680px}
 .rd table.rd-table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
 .rd .rd-table th{font-size:${RD_TYPE.label}px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${RD.inkSoft};text-align:left;border-bottom:1px solid ${RD.ink};padding:6px 8px}
 .rd .rd-table td{border-bottom:1px solid ${RD.rule};padding:7px 8px;vertical-align:top}
-.rd .rd-table td.num,.rd .rd-table th.num{text-align:right;font-family:${RD_FONTS.mono};font-size:13px}
+.rd .rd-table td.num,.rd .rd-table th.num{text-align:right;font-family:var(--rd-mono);font-size:13px}
 .rd .rd-table tr.rd-subject td{background:${RD.terraSoft};font-weight:600}
 .rd .rd-table tr{break-inside:avoid;page-break-inside:avoid}
 .rd .rd-tag{display:inline-block;font-size:${RD_TYPE.label}px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:${RD.terraSoft};color:${RD.terraText}}
 .rd .sc-narrow{display:none}
+@media (max-width:760px){.rd .rd-heroes{grid-template-columns:repeat(2,minmax(0,1fr))}.rd .rd-hero:nth-child(3){padding-left:0;border-left:0}.rd .rd-hero:nth-child(n+3){border-top:1px solid ${RD.rule}}.rd .rd-pair{grid-template-columns:minmax(0,1fr)}}
 @media screen and (max-width:${RD_PHONE_MAX}px){
 .rd .sc-wide{display:none}.rd .sc-narrow{display:block}
 .rd h1.rd-title{font-size:${RD_TYPE.titlePhone}px}
@@ -54,6 +66,9 @@ export const REPORT_DESIGN_CSS = `
 @media print{
 .rd{max-width:none}
 .rd h1,.rd h2,.rd h3,.rd .rd-label,.rd .rd-eyebrow,.rd .rd-legend,.rd .rd-sub{break-after:avoid;page-break-after:avoid}
-.rd .rd-heroes{break-inside:avoid;page-break-inside:avoid}
+.rd .rd-heroes{break-inside:avoid;page-break-inside:avoid;grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.rd .rd-hero:nth-child(n+3){border-top:0!important}.rd .rd-hero:nth-child(3){padding-left:14px!important;border-left:1px solid ${RD.rule}!important}
+.rd .rd-pair{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:20px}
+.rd .sc-wide{display:block!important}.rd .sc-narrow{display:none!important}
 }
 `;

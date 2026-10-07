@@ -267,6 +267,40 @@ other finders (`loadDemotedFinders`, `demoteFinders`; the known link still runs 
 until a review comes back right. The step's `batch_review` detail and `finder_order.demoted`
 show the result. Nothing here changes a link or a fee.
 
+## Search-miss lessons (`search-misses.ts`)
+
+A bank searched from scratch whose search ends `dead` or `needs_human` gets one
+`pipeline_feedback` row (`check_name = magellan.search_miss`, signal `missed`, kind
+`search_miss`) per discovery method version, keyed on the bank's website: where the search
+stopped, how many addresses it tried, and each finder's outcome. The link ledger only
+judges links Magellan handed on, so these are the lessons for banks it gave up on. The
+step's `search_miss_lessons` detail counts them.
+
+## Paid fetch for refused links (`blocked-fetch.ts`)
+
+A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
+403), or timed out with at least `BLOCKED_TIMEOUT_MIN_FAILURES` (2) failures in a row (First
+Horizon), gets one paid server-side fetch in the `discover-paid` step:
+Anthropic's `web_fetch` tool, `max_uses` 1, `allowed_domains` the link's host. Up to
+`BLOCKED_FETCH_PER_RUN` (3) banks a step, largest first, each at most once per
+`BLOCKED_FETCH_RETRY_DAYS` (7). The page text or PDF it returns goes through the same
+fetch path as any fetch (`fetchAndRecordLink`: document row, vault copy, attempt with
+strategy `fetch.paid_web_fetch` and its cost), and Rosetta reads it next. A refused link on
+another site is a wrong link and is left to discovery. When the paid web search's answer
+is refused by the bank's site (HTTP 403), the answer is kept as the bank's link (confidence
+0.75) so this fetch reads it. A budget stop ends the step before anything is spent.
+
+## Foreign schedules
+
+A link on another country's domain (`isForeignHostLink`: .bd, .in, .ca, .co.uk and others;
+US territories and .us are not foreign) is refused without opening it, unless it is on the
+bank's own website's host (Natbank, N.A. publishes from nbc.ca). A page or PDF priced in
+another currency (`looksForeignSchedule`: Tk, BDT, Rs, INR, £, € amounts outnumbering
+dollar amounts, or a foreign central bank or VAT beside foreign amounts) is refused once
+read, verdict `foreign_schedule`. The companion finder skips foreign-domain links. SouthEast
+Bank's link led to southeastbank.com.bd and Citi's to Citi Bangladesh's schedule on
+citigroup.com (7 Oct 2026).
+
 ## Fee-page classifier, in shadow (`page-classifier.ts`)
 
 A learned check on whether an opened page is the bank's fee schedule, trained on the ledger

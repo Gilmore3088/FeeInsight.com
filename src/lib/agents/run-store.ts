@@ -54,7 +54,7 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
-import { runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
+import { PREVIEW_INSTITUTION_ID, runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
 import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
@@ -418,6 +418,7 @@ async function executeAgenticStep(
         mode: step.stepKey === "rescue" ? "rescue" : "discover",
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
+        upgradeSlots: numericRunParam(params, ["upgrade_slots"]),
         stateCode,
       });
       // Outcome ledger: judge one slot of banks' links by the live fees they produced and
@@ -456,6 +457,7 @@ async function executeAgenticStep(
           second_documents_found: discovery.secondDocuments?.found ?? 0,
           restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
+          search_miss_lessons: discovery.searchMisses,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,
@@ -1453,10 +1455,16 @@ async function executeAgenticStep(
         institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
         runId: run.id,
       });
+      const preview =
+        result.workspaces === 0 && !result.dryRun
+          ? await runBriefingRefresh({ dryRun: true, institutionId: PREVIEW_INSTITUTION_ID })
+          : null;
       return {
         status: "completed",
-        summary: summarizeBriefingRefresh(result),
-        detail: { ...result },
+        summary: [summarizeBriefingRefresh(result), preview && `Preview for institution ${PREVIEW_INSTITUTION_ID}: ${summarizeBriefingRefresh(preview)}`]
+          .filter(Boolean)
+          .join(" "),
+        detail: { ...result, preview },
       };
     }
     case "competitor-alerts": {
@@ -1465,10 +1473,16 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
       });
+      const preview =
+        result.banks === 0 && !result.dryRun
+          ? await runCompetitorAlerts({ dryRun: true, institutionId: PREVIEW_INSTITUTION_ID })
+          : null;
       return {
         status: "completed",
-        summary: summarizeCompetitorAlerts(result),
-        detail: { ...result },
+        summary: [summarizeCompetitorAlerts(result), preview && `Preview for institution ${PREVIEW_INSTITUTION_ID}: ${summarizeCompetitorAlerts(preview)}`]
+          .filter(Boolean)
+          .join(" "),
+        detail: { ...result, preview },
       };
     }
     case "pro-digest": {
@@ -2250,6 +2264,8 @@ async function providerStepGate(
 const STEP_EXPECTED_MS: Record<string, number> = {
   "discover-paid": 200_000,
   "registry-cfpb": 180_000,
+  // Paced to about ten Open States requests a minute; a run ends within about two minutes.
+  "registry-state-bills": 120_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,
@@ -2519,18 +2535,19 @@ export async function executeQueuedAgentRuns({
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
-     -- institution, then a retry of a failed
-     -- state lane, then a lane with a hand-found schedule to fetch, then any run waiting
-     -- over an hour, then state lanes by Atlas's priority score (open work, report
-     -- requests, near-ready markets), then launch order.
+     -- institution (hand-found schedules go that way, not by promoting their whole state
+     -- lane), then a retry of a failed state lane, then any run waiting over an hour,
+     -- then state lanes by Atlas's priority score (open work, report requests,
+     -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
               ) DESC,
               -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
-              -- a hand-found schedule or a large bank missing its overdraft fee.
-              COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC,
+              -- a hand-found schedule or a large bank missing its overdraft fee; and its
+              -- direct re-search of one state's missed banks (atlas/priority-state-research.ts).
+              COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
@@ -2540,16 +2557,6 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
-              -- A state holding a fee schedule found by hand (Magellan's operator list) that
-              -- has not been fetched yet goes next, so those links don't wait behind routine
-              -- passes. The lane's own fetch, read and extract steps then pick it up.
-              (r.run_kind = 'workflow_lane' AND EXISTS (
-                SELECT 1 FROM institution_additional_sources hand
-                  JOIN institution_sources inst ON inst.id = hand.institution_id
-                 WHERE hand.found_by_strategy = 'discover.operator_schedule'
-                   AND hand.status = 'found'
-                   AND upper(btrim(inst.state_code)) = upper(btrim(r.state_code))
-              )) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC

@@ -59,3 +59,35 @@ export const RD_TYPE = {
 export const RD_PHONE_MAX = 640;
 /** The viewBox widths charts are drawn at. */
 export const RD_CHART_WIDTH = { wide: 960, narrow: 400 } as const;
+
+/** The same palette under the names the React-PDF briefing uses (src/components/hamilton/reports). */
+export const RD_PDF = {
+  textPrimary: RD.ink,
+  textSecondary: RD.inkSoft,
+  textTertiary: RD.muted,
+  accent: RD.terraText,
+  surface: RD.cream,
+  surfaceElevated: RD.sand,
+  borderDark: RD.rule2,
+} as const;
+
+/** React-PDF chart marks: the bank in terra, peers' middle half as a light terra band, context bars grey. */
+export const RD_PDF_CHART = {
+  ink: RD.ink,
+  muted: RD.inkSoft,
+  faint: RD.muted,
+  accent: RD.terra,
+  band: "#F6DDD3",
+  bar: RD.context,
+  rule: RD.rule2,
+} as const;
+
+/** React-PDF has only its built-in fonts unless one is registered: serif headings use Times. */
+export const RD_PDF_FONTS = {
+  serif: "Times-Roman",
+  serifBold: "Times-Bold",
+  serifItalic: "Times-Italic",
+  sans: "Helvetica",
+  sansBold: "Helvetica-Bold",
+  sansItalic: "Helvetica-Oblique",
+} as const;

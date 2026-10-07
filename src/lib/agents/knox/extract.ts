@@ -8,6 +8,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
+import { groundLineup, LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
@@ -486,6 +487,9 @@ export async function insertCandidate(
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
+  // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
+  // monthly maintenance fee carries them.
+  const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
   // The dedupe index is (document, fee name, amount), so a line an older version held
   // as unclassified would block this fee forever. A held row with no category takes the
   // category instead; any other existing row stays as it is.
@@ -502,7 +506,11 @@ export async function insertCandidate(
       frequency,
       conditions,
       outlier_flags,
-      source
+      source,
+      product_name,
+      min_balance_to_avoid,
+      min_opening_deposit,
+      waiver_text
     )
     VALUES (
       ${institutionId},
@@ -516,7 +524,11 @@ export async function insertCandidate(
       ${options.candidate.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox'
+      'knox',
+      ${lineup?.productName ?? null},
+      ${lineup?.minBalanceToAvoid ?? null},
+      ${lineup?.minOpeningDeposit ?? null},
+      ${lineup?.waiverText ?? null}
     )
     ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric))
       WHERE source = 'knox' AND source_document_id IS NOT NULL
@@ -525,6 +537,10 @@ export async function insertCandidate(
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       conditions = EXCLUDED.conditions,
+      product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
+      min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
+      min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
+      waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
       outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
                       || EXCLUDED.outlier_flags
                       || '["knox_promoted_from_held"]'::jsonb
@@ -533,6 +549,21 @@ export async function insertCandidate(
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
     RETURNING fee_raw_id
   `;
+  if (inserted.length === 0 && lineup) {
+    // The same fee read again from the same document: fill lineup fields an earlier read
+    // left empty, and change nothing else about the row.
+    await db`
+      UPDATE raw_fee_observations
+         SET product_name = COALESCE(product_name, ${lineup.productName}),
+             min_balance_to_avoid = COALESCE(min_balance_to_avoid, ${lineup.minBalanceToAvoid}),
+             min_opening_deposit = COALESCE(min_opening_deposit, ${lineup.minOpeningDeposit}),
+             waiver_text = COALESCE(waiver_text, ${lineup.waiverText})
+       WHERE source = 'knox'
+         AND source_document_id = ${sourceDocumentId}
+         AND lower(fee_name) = lower(${options.candidate.feeName})
+         AND amount = ${options.candidate.amount}
+    `;
+  }
   return inserted.length > 0;
 }
 
@@ -876,7 +907,7 @@ export async function runKnoxExtract(
           await insertCandidate(db, {
             runId: options.runId,
             row,
-            candidate,
+            candidate: candidate.lineup ? { ...candidate, lineup: groundLineup(candidate.lineup, row.normalized_text) } : candidate,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
             takenDownBy,

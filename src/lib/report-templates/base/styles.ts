@@ -6,29 +6,33 @@
  * rendered by Playwright to PDF — no Next.js CSS variables available.
  */
 
+import { RD, RD_FONTS, RD_TYPE } from "@/lib/report-design/tokens";
+
+/** The state and national reports read the shared report design (src/lib/report-design). */
 export const PALETTE = {
-  text: "#1A1815",           // warm black — all body copy
-  textSecondary: "#7A7062",  // secondary text
-  textMuted: "#A09788",      // labels, captions, footnotes
-  background: "#FDFBF8",     // cream page background
-  sectionBg: "#F5EFE6",      // alternating section background
-  accent: "#C44B2E",         // terracotta — section labels, highlights
-  accentLight: "#FDF0ED",    // terracotta tint — callout backgrounds
-  border: "#E8DFD1",         // warm border — cards, tables
-  borderLight: "#F0E8DC",    // lighter border — table rows
-  textDark2: "#2D2A26",      // heading level 2
-  textDark3: "#3D3830",      // heading level 3
+  text: RD.ink,              // warm black — all body copy
+  textSecondary: RD.inkSoft, // secondary text
+  textMuted: RD.muted,       // labels, captions, footnotes
+  background: RD.cream,      // cream page background
+  sectionBg: RD.sand,        // alternating section background
+  accent: RD.terra,          // terracotta — rules, highlights
+  accentText: RD.terraText,  // terracotta for small text (labels)
+  accentLight: RD.terraSoft, // terracotta tint — callout backgrounds
+  border: RD.rule2,          // warm border — cards, tables
+  borderLight: RD.rule,      // lighter border — table rows
+  textDark2: RD.ink,         // heading level 2
+  textDark3: RD.ink2,        // heading level 3
 } as const;
 
 export const TYPOGRAPHY = {
-  // Newsreader loads via @import in REPORT_CSS — fallback for pre-load
-  serif: '"Newsreader", "Georgia", "Times New Roman", serif',
-  sans: '"Inter", "Helvetica Neue", system-ui, -apple-system, sans-serif',
-  mono: '"JetBrains Mono", "Courier New", monospace',
+  // Newsreader, Geist and Geist Mono load via @import in REPORT_CSS — fallbacks for pre-load
+  serif: RD_FONTS.serif,
+  sans: RD_FONTS.sans,
+  mono: RD_FONTS.mono,
 } as const;
 
 export const REPORT_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
 
 * {
   margin: 0;
@@ -132,17 +136,17 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 .report-section-label {
   font-family: ${TYPOGRAPHY.sans};
-  font-size: 10px;
+  font-size: ${RD_TYPE.label}px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: ${PALETTE.accent};
+  letter-spacing: 0.08em;
+  color: ${PALETTE.accentText};
   margin-bottom: 8px;
 }
 
 .report-heading {
   font-family: ${TYPOGRAPHY.serif};
-  font-size: 24px;
+  font-size: ${RD_TYPE.headline}px;
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
@@ -1196,7 +1200,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   gap: 6px 16px;
   margin: 0 0 10px;
   font-family: ${TYPOGRAPHY.sans};
-  font-size: 11.5px;
+  font-size: ${RD_TYPE.legend}px;
   color: ${PALETTE.textSecondary};
 }
 
@@ -1338,7 +1342,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 /* Exhibit source line and empty-data statement */
 .exhibit-source {
   font-family: ${TYPOGRAPHY.sans};
-  font-size: 10px;
+  font-size: ${RD_TYPE.source}px;
   color: ${PALETTE.textMuted};
   margin-top: 10px;
   font-style: italic;

@@ -23,6 +23,12 @@ import { confirmFeeChange, type RecordedChangeRow } from "@/lib/report-assembler
  */
 
 export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
+/**
+ * Space Coast CU, the demo institution. While no institution has an active workspace, the
+ * scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
+ * run ledger shows what they would write.
+ */
+export const PREVIEW_INSTITUTION_ID = 8109;
 const COMPETITOR_LIMIT = 20;
 
 export interface WorkspaceBank {
@@ -194,7 +200,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
            COALESCE(c.old_amount::float8, c.previous_amount) AS old_amount,
            c.new_amount, COALESCE(c.changed_at, c.detected_at) AS changed_at,
            n.fee_published_id AS new_fee_published_id, n.fee_name, n.source_url,
-           o.fee_name AS old_fee_name,
+           o.fee_name AS old_fee_name, o.source_url AS old_source_url,
            (SELECT t.normalized_text FROM agent_source_texts t
              WHERE t.source_document_id = o.source_document_id AND t.status = 'completed'
              ORDER BY t.id DESC LIMIT 1) AS old_document_text,
@@ -217,7 +223,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
          LIMIT 1
       ) n ON TRUE
       LEFT JOIN LATERAL (
-        SELECT fp.fee_name, fr.source_document_id
+        SELECT fp.fee_name, fp.source_url, fr.source_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id

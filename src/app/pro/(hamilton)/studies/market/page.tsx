@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { ReportDesign, ReportHeader } from "@/components/report-design";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
@@ -9,7 +10,7 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { getCountyDepositTotals, getInstitutionCounties, getMarketStudyData } from "@/lib/data-store/market-study";
 import { adjacentCandidateCounties, countyFeatures, countyLabel } from "@/lib/geo/counties";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
-import { buildMarketStudy, dollarsShort, MARKET_STUDY_CSS } from "@/lib/hamilton/studies-exhibits/market";
+import { buildMarketStudy, dollarsShort } from "@/lib/hamilton/studies-exhibits/market";
 import { PrintButton } from "@/components/hamilton/memo/PrintButton";
 
 export const metadata: Metadata = { title: "New Market Study" };
@@ -116,28 +117,17 @@ export default async function MarketStudyPage({
 
   return (
     <Shell>
-      <style>{MARKET_STUDY_CSS}</style>
       <div className="mb-4 flex items-center justify-between gap-3 print:hidden">
         <Link className="text-sm text-warm-700 underline" href={hrefWithInstitutionContext("/pro/studies/market", instId)}>
           Pick another county
         </Link>
         <PrintButton />
       </div>
-      <article className="study">
-        <div className="study-eyebrow">{study.eyebrow}</div>
-        <h1>{study.title}</h1>
-        <p className="study-deck">{study.deck}</p>
-        <div className="study-heroes">
-          {study.heroes.map((h) => (
-            <div key={h.label} className="study-hero">
-              <div className="fig">{h.figure}</div>
-              <div className="lab">{h.label}</div>
-              <div className="vs">{h.note}</div>
-            </div>
-          ))}
-        </div>
+      <ReportDesign>
+        <ReportHeader eyebrow={study.eyebrow} title={study.title} deck={study.deck} heroes={study.heroes} />
+        {/* Exhibits built by buildMarketStudy from escaped data. */}
         <div dangerouslySetInnerHTML={{ __html: study.html }} />
-      </article>
+      </ReportDesign>
     </Shell>
   );
 }

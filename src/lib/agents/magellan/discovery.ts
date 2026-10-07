@@ -47,6 +47,8 @@ import {
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { recordSearchMisses } from "./search-misses";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
@@ -72,8 +74,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * 4: a homepage that blocks bots (HTTP 401/403 or a challenge page) no longer ends the
  * search: the known link and the site map (robots.txt rules respected) still run; the
  * stored website is repaired first ("wwwbank.com", "www.bankcom").
+ * 5: one product's disclosure is never the schedule, finders that fail two error reviews
+ * in a row run last, and links to another country's schedule are refused (7 Oct 2026).
  */
-export const DISCOVERY_METHOD_VERSION = 4;
+export const DISCOVERY_METHOD_VERSION = 5;
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**
@@ -343,6 +347,12 @@ export interface RunMagellanDiscoveryOptions {
   stepId?: number;
   mode?: "discover" | "rescue";
   limit?: number;
+  /**
+   * Slots kept for product-page links searched for the real schedule (default
+   * UPGRADE_RESERVED_SLOTS). A direct state re-search raises it so thin links are not
+   * left behind dead banks.
+   */
+  upgradeSlots?: number;
   dryRun?: boolean;
   stateCode?: string;
   db?: SqlTag;
@@ -383,6 +393,8 @@ export interface RunMagellanDiscoveryResult {
   secondDocuments: RunSecondDocumentFindResult | null;
   /** Fee pages put back as the main link after a blank read had swapped them out. */
   restoredFeePages: RestoreFeePagesResult | null;
+  /** Search-miss lessons written (`magellan.search_miss`). */
+  searchMisses: number;
   limit: number;
   dryRun: boolean;
   results: CandidateDiscoveryResult[];
@@ -1535,8 +1547,9 @@ export async function runMagellanDiscovery(
   const business = learning
     ? await selectBusinessCandidates(db, Math.max(limit - found.length, reserved(BUSINESS_RESERVED_SLOTS)), options.stateCode)
     : [];
+  const upgradeSlots = Math.max(0, Math.floor(options.upgradeSlots ?? UPGRADE_RESERVED_SLOTS));
   const upgrades = learning
-    ? await selectUpgradeCandidates(db, Math.max(limit - found.length - business.length, reserved(UPGRADE_RESERVED_SLOTS)), options.stateCode)
+    ? await selectUpgradeCandidates(db, Math.max(limit - found.length - business.length, reserved(upgradeSlots)), options.stateCode)
     : [];
   const stale = learning
     ? await selectStaleCandidates(
@@ -1552,11 +1565,11 @@ export async function runMagellanDiscovery(
   const rows = [
     ...missing.slice(0, resumeCount),
     ...business.slice(0, BUSINESS_RESERVED_SLOTS),
-    ...upgrades.slice(0, UPGRADE_RESERVED_SLOTS),
+    ...upgrades.slice(0, upgradeSlots),
     ...stale.slice(0, FRESHNESS_RESERVED_SLOTS),
     ...missing.slice(resumeCount),
     ...business.slice(BUSINESS_RESERVED_SLOTS),
-    ...upgrades.slice(UPGRADE_RESERVED_SLOTS),
+    ...upgrades.slice(upgradeSlots),
     ...stale.slice(FRESHNESS_RESERVED_SLOTS),
   ];
   // A state with little left to search fills its spare slots with banks no finder has ever
@@ -1624,6 +1637,20 @@ export async function runMagellanDiscovery(
     }
   }
 
+  // Database work only (no fetches), so it runs before the companion search, which uses
+  // the rest of the step's time: behind it, the restore never ran on 7 Oct (0 of 58 due).
+  const restoredFeePages = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => restoreSwappedFeePages({
+        db: scope,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("restoreSwappedFeePages failed:", error);
+        return null;
+      })
+    : null;
   const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
   const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
     ? await runSecondDocumentFind({
@@ -1637,15 +1664,23 @@ export async function runMagellanDiscovery(
         learning,
       })
     : null;
-  const restoredFeePages = learning && options.mode !== "rescue" && Date.now() - startedAt < STEP_START_BUDGET_MS
-    ? await restoreSwappedFeePages({
+
+  // A bank searched from scratch that ended with nothing leaves a lesson (search-misses.ts).
+  const searchMisses = learning && !dryRun
+    ? await recordSearchMisses(
         db,
-        runId: options.runId,
-        stepId: options.stepId ?? null,
-        stateCode: options.stateCode ?? null,
-        dryRun,
-      })
-    : null;
+        results.filter((result) => {
+          const row = rows.find((candidate) => Number(candidate.id) === result.institutionId);
+          return row && !(row.upgrade || row.business || row.freshness);
+        }),
+        {
+          runId: options.runId,
+          method: DISCOVERY_METHOD,
+          methodVersion: DISCOVERY_METHOD_VERSION,
+          websites: new Map(rows.map((row) => [Number(row.id), row.website_url])),
+        },
+      )
+    : 0;
 
   const codes: Partial<Record<DiscoveryCode, number>> = {};
   const foundBy: Partial<Record<FinderKey, number>> = {};
@@ -1677,6 +1712,7 @@ export async function runMagellanDiscovery(
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
     restoredFeePages,
+    searchMisses,
     limit,
     dryRun,
     results,

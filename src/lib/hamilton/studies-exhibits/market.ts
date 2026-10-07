@@ -44,7 +44,7 @@ function text(x: number, y: number, body: string, o: { size?: number; anchor?: "
 }
 
 function svg(width: number, height: number, body: string, label: string): string {
-  return `<svg class="study-chart" viewBox="0 0 ${width} ${Math.ceil(height)}" width="100%" role="img" aria-label="${esc(label)}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+  return `<svg class="rd-chart" viewBox="0 0 ${width} ${Math.ceil(height)}" width="100%" role="img" aria-label="${esc(label)}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
 }
 
 /** Draw at report width and at phone width; CSS shows the one that fits. */
@@ -205,7 +205,7 @@ export function footprintLegend(d: MarketStudyData, styles: Map<number, BankStyl
     items.push(`<span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5.5" fill="${CHART.context}"/></svg>Other banks</span>`);
   }
   items.push("<span>Circle area shows deposits</span>");
-  return `<div class="study-legend">${items.join("")}</div>`;
+  return `<div class="rd-legend">${items.join("")}</div>`;
 }
 
 // ─── Exhibit 2: shares and history ────────────────────────────────────────────
@@ -377,7 +377,7 @@ export function feeLegend(d: MarketStudyData, styles: Map<number, BankStyle>): s
     ...[...ids].map((id) => styles.get(id)).filter((s): s is BankStyle => !!s).map((s) => `<span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5.5" fill="${s.colour}"/></svg>${esc(s.name)}</span>`),
     `<span><svg width="26" height="10" aria-hidden="true"><line x1="3" y1="5" x2="23" y2="5" stroke="${CHART.rule2}" stroke-width="6" stroke-linecap="round"/></svg>Competitor range</span>`,
   ];
-  return `<div class="study-legend">${items.join("")}</div>`;
+  return `<div class="rd-legend">${items.join("")}</div>`;
 }
 
 // ─── Exhibit 4: households ────────────────────────────────────────────────────
@@ -428,11 +428,11 @@ export function households(rows: MarketStudyHousehold[], size: ChartSize = {}): 
 // ─── The study ────────────────────────────────────────────────────────────────
 
 function section(label: string, title: string, sub: string | null, body: string, source: string): string {
-  return `<section class="study-exhibit"><div class="study-label">${esc(label)}</div><h2>${esc(title)}</h2>${sub ? `<p class="study-sub">${esc(sub)}</p>` : ""}${body}<div class="study-source">${esc(source)}</div></section>`;
+  return `<section class="rd-exhibit"><div class="rd-label">${esc(label)}</div><h2>${esc(title)}</h2>${sub ? `<p class="rd-sub">${esc(sub)}</p>` : ""}${body}<div class="rd-source">${esc(source)}</div></section>`;
 }
 
 function notice(text: string): string {
-  return `<p class="study-empty">${esc(text)}</p>`;
+  return `<p class="rd-notice">${esc(text)}</p>`;
 }
 
 function pctChange(now: number, before: number): string {
@@ -528,7 +528,7 @@ export function buildMarketStudy(d: MarketStudyData): MarketStudy {
       "Exhibit 2 · Market",
       shareTitle,
       null,
-      `<div class="study-pair"><div class="study-panel"><h3>Share of ${esc(countyShort)} deposits, ${d.sod_year}</h3>${shares ?? notice("No deposits on file.")}</div><div class="study-panel"><h3>County deposits by year</h3>${history ?? notice("Fewer than two years of deposits on file.")}</div></div>`,
+      `<div class="rd-pair"><div class="rd-panel"><h3 class="rd-panel-title">Share of ${esc(countyShort)} deposits, ${d.sod_year}</h3>${shares ?? notice("No deposits on file.")}</div><div class="rd-panel"><h3 class="rd-panel-title">County deposits by year</h3>${history ?? notice("Fewer than two years of deposits on file.")}</div></div>`,
       `FDIC Summary of Deposits, June 30 of each year, branches in ${fig.countyName}. HHI is the sum of squared deposit shares; the 2023 federal merger guidelines call a market above 1,800 highly concentrated. Credit unions do not report branch deposits to the FDIC.`,
     ),
   );
@@ -603,26 +603,4 @@ function titleCase(s: string): string {
 }
 
 /** Styles for the study page; light, print-friendly, phone-first. */
-export const MARKET_STUDY_CSS = `
-.study{max-width:960px;margin:0 auto;color:${CHART.ink};font-family:${CHART_FONTS.sans}}
-.study .study-eyebrow,.study .study-label{font-family:${CHART_FONTS.sans};font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${CHART.terraText}}
-.study h1{font-family:${CHART_FONTS.serif};font-size:34px;line-height:1.15;margin:6px 0 8px;text-wrap:balance}
-.study h2{font-family:${CHART_FONTS.serif};font-size:23px;line-height:1.25;margin:4px 0 6px;text-wrap:balance}
-.study h3{font-size:13px;font-weight:700;margin:0 0 8px}
-.study .study-deck,.study .study-sub{font-family:${CHART_FONTS.serif};font-style:italic;font-size:17px;line-height:1.5;color:${CHART.inkSoft};margin:0 0 12px;text-wrap:pretty}
-.study .study-heroes{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:18px 0 8px}
-.study .study-hero{border-top:2px solid ${CHART.ink};padding-top:8px}
-.study .study-hero .fig{font-family:${CHART_FONTS.serif};font-size:30px;font-variant-numeric:tabular-nums}
-.study .study-hero .lab{font-size:13px;color:${CHART.ink};margin-top:2px}
-.study .study-hero .vs{font-size:12px;color:${CHART.inkSoft};margin-top:2px}
-.study .study-exhibit{border-top:1px solid ${CHART.rule2};padding:22px 0 8px;margin-top:18px;break-inside:avoid;page-break-inside:avoid}
-.study .study-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:${CHART.inkSoft};margin:6px 0 10px}
-.study .study-legend span{display:inline-flex;align-items:center;gap:6px}
-.study .study-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
-.study .study-source{font-size:11.5px;font-style:italic;color:${CHART.muted};margin-top:8px;line-height:1.5}
-.study .study-empty{font-size:14px;color:${CHART.inkSoft};background:${CHART.terraSoft};padding:10px 12px;border-radius:4px}
-.study .study-chart{display:block;width:100%;height:auto}
-.study .sc-narrow{display:none}
-@media screen and (max-width:640px){.study .sc-wide{display:none}.study .sc-narrow{display:block}.study h1{font-size:28px}}
-@media print{.study h2,.study .study-label{break-after:avoid;page-break-after:avoid}}
-`;
+
