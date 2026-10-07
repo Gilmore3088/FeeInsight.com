@@ -13,6 +13,28 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Open States allows about ten requests a minute, so state bill runs hit 429
+**What happened:** the first two 12-state runs (05:32 and 07:12 UTC) read 16 states and failed 10 with
+HTTP 429 (CA, DE, FL, IA, ID, KS, MA, MD, MN, MO in `registry_ingest_partitions`). The failures came after
+about ten requests each time, and retries 6 and 12 seconds later were refused too.
+**Cause:** the step sent each state's four to six requests back to back. Open States' free tier allows
+about ten a minute, inferred from these runs since its docs aren't reachable from the cloud sandbox.
+A failed state then waited six hours.
+**Fix:** requests are paced 6.5 seconds apart. A run starts no new state after 60 seconds, and a 429 stops
+the run and leaves that state due instead of failing it.
+**Lesson:** pace any keyed free-tier API to its limit inside the step, and treat a 429 as "come back
+later", not as a failed item.
+
+## 2026-10-07: A hand-found link added after a bank's direct run waited a full day
+**What happened:** on prod (read-only, 07:22 UTC) Citi's corrected US fee chart (link 2070, added
+06:43) and First Horizon's TotalView guide (link 2101, added 07:12) sat unfetched. Both banks had
+already had a direct run that morning (Citi 06:25, First Horizon 07:07).
+**Cause:** the direct path (PR 408) skipped any bank with a run in the last 24 hours and keyed runs
+by bank and day, so a second link the same day reused the finished run.
+**Fix:** this PR keys a hand-found run by its link id and lets a link found after the last run start
+a new one. Merged, not yet proven until Citi's chart is fetched.
+**Lesson:** a retry window should only block retries of the same work; new input is new work.
+
 ## 2026-10-07: Enforcement lists rarely record an end date, so "no end date" is not "active"
 **What happened:** the Pro enforcement card (PR 372) called every action with no termination date
 "active". On prod (read-only, 07:05 UTC) that was 825 of 4,431 OCC and Fed actions: 651 are civil
@@ -187,6 +209,10 @@ search and paid read (140 to 290 seconds each), so serial runs top out near 6 an
 daily rule also put 36 of 55 states on daily full passes for any bank due a paid find (HI
 had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs weekly
 (21 daily states on the Oct 7 numbers).
+**Follow-up (07:15):** Atlas's direct runs for one institution (PR 408) now fetch hand-found
+schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
+lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
+direct runs already do, so it was removed.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2576,6 +2602,9 @@ funds-availability, checking and rates pages; the other 33 were not sampled).
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+**Follow-up (07:20 UTC Oct 7):** the first 28 live batches walked reads back to Oct 3, and 61 of
+the 76 web pages sent for a JavaScript reread were replaced copies the reader never selects. The
+review now judges only each bank's current document from the last 3 days.
 
 ## 2026-10-07: The Census income step recorded a published vintage as "not published"
 **What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
@@ -2624,6 +2653,38 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 - **Watch.** A reject whose only reason is `rules_recheck_unreproduced` is a newer Knox version
   replacing the read, so it is counted as superseded. Counting it as a miss put Oct 4's first batch
   at 58% wrong.
+
+## 2026-10-07: Fee links led to foreign banks of the same name
+
+- **Problem.** SouthEast Bank (TN) had a companion document on southeastbank.com.bd, a
+  Bangladesh bank's schedule priced in taka, and Citi's link was Citi Bangladesh's schedule
+  on citigroup.com. Nothing in Magellan's checks looked at the country or the currency.
+- **Fix.** Magellan refuses links on foreign country domains (unless the bank's own website
+  is on that domain) and pages priced mostly in another currency (`foreign_schedule`).
+- **Watch.** Fees already read from those two documents are Knox's and Hamilton's to take
+  down through the 12-hour second look; this fix stops new ones.
+
+## 2026-10-07: Dead-end banks waited a month after Magellan improved
+
+- **Problem.** 60 Tennessee banks with a website were `dead` and the state lane was hours
+  away. A dead end is searched again after 30 days, or at once when the discovery method
+  version changes, but the version was not bumped for the 7 Oct finder fixes, and a state
+  could not be re-searched outside its lane.
+- **Fix.** Discovery method 5, and a direct state re-search run (Atlas
+  `priority-state-research.ts`) for states that must not wait. Each miss now leaves a
+  `magellan.search_miss` lesson.
+
+## 2026-10-07: Bank sites that refuse our fetcher had no way in
+
+- **Problem.** 51 banks' fee links return HTTP 403 to Magellan's fetcher (Pinnacle's pnfp.com,
+  Citizens, Flagstar, Columbia), and the paid web search's answers for Huntington and KeyBank
+  failed the same way, so those banks stayed without a schedule. The JS fallback uses the same
+  fetcher, and Firecrawl is off-limits.
+- **Fix.** `magellan/blocked-fetch.ts` asks Anthropic's server-side web fetch for the exact
+  link (bank's own host only), inside Magellan's paid step and cap.
+- **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
+  (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
+  (an LPL disclosure, a car-price site); they are wrong links and are skipped.
 
 ## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
 

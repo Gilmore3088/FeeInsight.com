@@ -78,6 +78,27 @@ describe("planCompetitorAlerts", () => {
     expect(plan).toMatchObject({ alerts: [], notConfirmed: 2, alreadyShown: 1 });
   });
 
+  it("drops a price from a different schedule and a jumbled re-read of the same edition (prod, Oct 7)", () => {
+    // Tidemark FCU: old price from the business schedule, new from the consumer one.
+    const otherPage = change({
+      old_source_url: "https://tidemark.example/Business-Fee-Schedule.pdf",
+      source_url: "https://tidemark.example/Truth-in-Savings.pdf",
+    });
+    // Net FCU: one Feb 2026 schedule read twice; the second read paired the wrong column.
+    const sameEdition = change({
+      change_id: 502,
+      fee_key: "stop_payment",
+      fee_name: "Stop Payments",
+      old_fee_name: "Stop Payments",
+      old_amount: "35.00",
+      new_amount: "30.00",
+      old_document_text: "Duplicate Item Fee | $30.00\nStop Payments | $35.00 | Plastic Cards",
+      new_document_text: "Duplicate Item Fee $35.00Stop Payments $30.00 Plastic Cards",
+    });
+    const plan = planCompetitorAlerts({ bankId: 1, bankName: "Home Bank", ownFees: {}, changes: [otherPage, sameEdition], alreadyAlerted: new Set() });
+    expect(plan).toMatchObject({ alerts: [], notConfirmed: 2 });
+  });
+
   it("says when the bank has no published fee to compare", () => {
     const plan = planCompetitorAlerts({ bankId: 1, bankName: "Home Bank", ownFees: {}, changes: [change()], alreadyAlerted: new Set() });
     expect(plan.alerts[0].body).toContain("Home Bank has no published overdraft fee on file.");
