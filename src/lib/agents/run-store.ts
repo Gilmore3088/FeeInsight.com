@@ -11,7 +11,7 @@ import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
-import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
+import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import {
   currentMonth,
   mailingAddress,
@@ -841,6 +841,13 @@ async function executeAgenticStep(
       });
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
       const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
+      // A current copy whose text is identical to the superseded one has no rows of its
+      // own (Knox skips text it has read), so the superseded copy's rows move to it.
+      const identicalCopy = await moveRowsToIdenticalCopy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A live fee the current copy of its page still states at the same amount moves to
       // that copy, so it no longer points at a superseded copy and its date is current.
       const refreshCopy = await refreshFeesFromCurrentCopy(tx, {
@@ -1006,6 +1013,8 @@ async function executeAgenticStep(
           })),
           imported_twin_checked: importedTwins.checked,
           imported_twin_linked: importedTwins.linked,
+          identical_copy_documents: identicalCopy.documents,
+          identical_copy_rows_moved: identicalCopy.rowsMoved,
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
           refresh_copy_skipped: refreshCopy.skipped,

@@ -1550,9 +1550,16 @@ verified by Darwin and never published.
 (`hamilton/refresh-copy.ts`): it publishes the current copy's verified row under today's publish
 rules and category guard, and closes the old row as `refreshed by #<new id>`. Amounts are
 unchanged, so no price change is recorded and no fee comes down without its replacement.
-**Still open:** the other ~5,500 have no same-amount row in the current copy: a changed price
-(the publish rules supersede it), a line the newer-copy check is judging, or a row Knox did not
-read.
+**The other ~5,500, sorted (prod, read-only, 7 Oct ~01:05 UTC):** 2,104 are read by Knox from the
+current copy at the same name and amount but not yet verified by Darwin (1,108 held as
+`duplicate_in_batch`, 782 not reached yet, 172 peer outliers); 683 have a same-amount row Darwin did
+not verify or filed under another variant; 934 are not in the current copy's Knox rows, but the
+current copy's text still carries the amount for all but 1 (a Knox miss, not a dropped fee); 1,206
+sit on a current copy with no Knox rows: 972 of them because the current copy's text is identical
+(Knox skips text it has read), 147 because Knox read nothing from changed text, 87 because the copy
+has no stored text; 10 are real price changes. So none of the groups shows stale prices at scale.
+The identical-text copies are fixed here too: `moveRowsToIdenticalCopy` moves the superseded copy's
+rows to the identical current copy (912 live fees at 55 banks; one superseded copy per current copy).
 **Lesson:** a dedupe that only asks "is this value already live?" also has to ask "from which
 copy?", or freshness silently stops moving.
 

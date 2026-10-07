@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   REFRESH_COPY_REASON_PREFIX,
+  moveRowsToIdenticalCopy,
   planRefreshes,
   refreshCopyFingerprint,
   refreshFeesFromCurrentCopy,
@@ -132,5 +133,33 @@ describe("refreshFeesFromCurrentCopy", () => {
     const statements = writes(db);
     expect(statements.some((text) => text.includes("published_fee_records"))).toBe(false);
     expect(statements.some((text) => text.includes("INSERT INTO pipeline_attempts"))).toBe(true);
+  });
+});
+
+describe("moveRowsToIdenticalCopy", () => {
+  function identicalDb(pairs: unknown[]) {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("old_text.hash = current_text.hash")) return Promise.resolve(pairs);
+      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 1 }, { fee_raw_id: 2 }]);
+      return Promise.resolve([]);
+    });
+  }
+
+  it("moves the superseded copy's rows to the identical current copy", async () => {
+    const db = identicalDb([{ older_id: 500, current_id: 900, rows: 2 }]);
+    expect(await moveRowsToIdenticalCopy(asDb(db), { runId: 9, dryRun: false })).toEqual({ documents: 1, rowsMoved: 2 });
+    const statements = writes(db);
+    expect(statements.some((text) => text.includes("UPDATE raw_fee_observations"))).toBe(true);
+    expect(statements.some((text) => /(UPDATE|INSERT INTO) published_fee_records/.test(text))).toBe(false);
+  });
+
+  it("changes nothing in a dry run or when no copy is identical", async () => {
+    const dry = identicalDb([{ older_id: 500, current_id: 900, rows: 2 }]);
+    expect(await moveRowsToIdenticalCopy(asDb(dry), { runId: 9, dryRun: true })).toEqual({ documents: 1, rowsMoved: 2 });
+    expect(writes(dry)).toEqual([]);
+    const none = identicalDb([]);
+    expect(await moveRowsToIdenticalCopy(asDb(none), { runId: 9, dryRun: false })).toEqual({ documents: 0, rowsMoved: 0 });
+    expect(writes(none)).toEqual([]);
   });
 });

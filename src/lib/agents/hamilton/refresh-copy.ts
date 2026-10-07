@@ -282,3 +282,102 @@ export async function refreshFeesFromCurrentCopy(
   if (refreshed > 0) invalidatePublicReadCache();
   return { ...result, refreshed, samples };
 }
+
+/** Superseded copies whose fees move to an identical current copy, per publish step. */
+export const IDENTICAL_COPY_DOCUMENT_LIMIT = 25;
+
+export interface IdenticalCopyResult {
+  documents: number;
+  rowsMoved: number;
+}
+
+/**
+ * Hamilton repair: when the current copy of a page reads exactly like the superseded
+ * copy (the stored text is identical; only the page's markup changed), Knox skips it as
+ * text it has already read, so the current copy has no fee rows and the live fees stay
+ * on the superseded copy. Here every fee row read from the superseded copy is moved to
+ * the current copy (`raw_fee_observations.source_document_id`), which states every one
+ * of them word for word. Only copies with no fee rows of their own are touched, so no
+ * row collides with one Knox read. No fee is published or taken down; a dry run reports
+ * and writes nothing.
+ */
+export async function moveRowsToIdenticalCopy(
+  db: SqlTag,
+  options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number },
+): Promise<IdenticalCopyResult> {
+  const empty: IdenticalCopyResult = { documents: 0, rowsMoved: 0 };
+  let pairs: Array<{ older_id: number | string; current_id: number | string; rows: number | string }>;
+  try {
+    pairs = await inSavepoint(db, (scope) => scope<Array<{ older_id: number | string; current_id: number | string; rows: number | string }>>`
+      WITH older AS (
+        SELECT sd.id AS older_id, sd.superseded_by_id AS current_id
+          FROM source_documents sd
+         WHERE sd.superseded_by_id IS NOT NULL
+           AND sd.superseded_by_id <> sd.id
+           AND (${options.institutionId ?? null}::bigint IS NULL OR sd.institution_id = ${options.institutionId ?? null}::bigint)
+           AND EXISTS (
+             SELECT 1 FROM raw_fee_observations fr
+               JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
+               JOIN published_fee_records fp ON fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL
+              WHERE fr.source_document_id = sd.id
+           )
+           AND NOT EXISTS (SELECT 1 FROM raw_fee_observations cr WHERE cr.source_document_id = sd.superseded_by_id)
+      )
+      -- One superseded copy per current copy, the newest: two copies' rows moved into one
+      -- document would collide on the same fee line.
+      SELECT DISTINCT ON (older.current_id) older.older_id, older.current_id,
+             (SELECT COUNT(*) FROM raw_fee_observations fr WHERE fr.source_document_id = older.older_id) AS rows
+        FROM older
+        JOIN LATERAL (
+          SELECT md5(t.normalized_text) AS hash FROM agent_source_texts t
+           WHERE t.source_document_id = older.older_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+           ORDER BY t.id DESC LIMIT 1
+        ) old_text ON TRUE
+        JOIN LATERAL (
+          SELECT md5(t.normalized_text) AS hash FROM agent_source_texts t
+           WHERE t.source_document_id = older.current_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+           ORDER BY t.id DESC LIMIT 1
+        ) current_text ON TRUE
+       WHERE old_text.hash = current_text.hash
+       ORDER BY older.current_id, older.older_id DESC
+       LIMIT ${options.limit ?? IDENTICAL_COPY_DOCUMENT_LIMIT}
+    `);
+  } catch (error) {
+    console.error("moveRowsToIdenticalCopy select failed:", error);
+    return empty;
+  }
+  if (pairs.length === 0) return empty;
+  const result: IdenticalCopyResult = {
+    documents: pairs.length,
+    rowsMoved: pairs.reduce((total, pair) => total + Number(pair.rows), 0),
+  };
+  if (options.dryRun) return result;
+  try {
+    await inSavepoint(db, async (scope) => {
+      const moved = await scope<{ fee_raw_id: number | string }[]>`
+        UPDATE raw_fee_observations fr
+           SET source_document_id = pair.current_id,
+               document_r2_key = COALESCE(cur.document_r2_key, fr.document_r2_key)
+          FROM unnest(${pairs.map((pair) => Number(pair.older_id))}::bigint[], ${pairs.map((pair) => Number(pair.current_id))}::bigint[])
+               AS pair(older_id, current_id)
+          JOIN source_documents cur ON cur.id = pair.current_id
+         WHERE fr.source_document_id = pair.older_id
+        RETURNING fr.fee_raw_id
+      `;
+      result.rowsMoved = moved.length;
+      await scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, 'hamilton.identical_copy', 'completed',
+          ${`Moved ${moved.length} fee row(s) from ${pairs.length} superseded cop(ies) to a current copy with identical text`},
+          ${JSON.stringify({ pairs: pairs.map((pair) => ({ older_document_id: Number(pair.older_id), current_document_id: Number(pair.current_id) })), rows_moved: moved.length })}::jsonb
+        )
+      `;
+    });
+  } catch (error) {
+    console.error("moveRowsToIdenticalCopy write failed:", error);
+    return { ...result, rowsMoved: 0 };
+  }
+  if (result.rowsMoved > 0) invalidatePublicReadCache();
+  return result;
+}
