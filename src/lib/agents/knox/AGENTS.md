@@ -230,6 +230,19 @@ copies had last been read at rules v1 to v7, and none of the re-read triggers re
 current copies qualify. 211 of the 898 are read already, on a second document that holds the same
 text. Knox reads a text once, so their current copy has no rows of its own.
 
+v27 (rules 27) reads two-column schedules where the right column's footnotes run beside a left-column
+heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
+looks like a heading and whose right cell opens lowercase or with a footnote number, now sets the
+heading, so "Domestic Outgoing | $35.00" under it is an outgoing domestic wire. A stop payment
+heading also lends itself to the item it stops ("Online per check"). One price whose name joins NSF
+and overdraft ("NSFs/Overdrafts", "Overdraft or NSF") is filed under both, as the answer keys file
+it. A balance an account requires ("Minimum Daily Balance Requirement | $1,000") is never held as a
+fee, and an "Insufficient Funds Transfer" from savings is an overdraft protection transfer, not an
+overdraft. Found on First National Bank Alaska (doc 19925), which was 2 headline fees short of a
+report. Answer keys: Texas and held-out unchanged, seven states 713 right (712), the same 47 wrong.
+Live dry run: the same 1,412 of 1,437 kept. Across the 117 live-sample documents it adds 7 reads,
+each checked against its line, and moves one $2.50 transfer from NSF to overdraft protection.
+
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
 (lowercase, letters only) that the category guards rejected under one category at 2 or more banks
@@ -340,11 +353,13 @@ Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `te
 
 v28 (rules 28) never reads a limit as a price. A name that ends on a limit ("Zelle transfer limit",
 "Mobile Deposit Checks are limited to", "VISA Gift Cards: Maximum card load", "Cash Advance Fee
-(maximum") states the most a customer may move, not what they pay (`namesALimit` in `layout.ts`).
-A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), and a fee for going past a limit
-keeps its price ("Over Limit", "Limit Violation"). The paid reader rejects the same rows
+(maximum", "Zelle (Daily Limits)") states the most a customer may move, not what they pay
+(`namesALimit` in `layout.ts`). A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), a
+fee for going past a limit keeps its price ("Over Limit", "Limit Violation"), and a fee's own note
+keeps it a fee ("Mobile Deposit Fee (daily limits apply)"). The paid reader rejects the same rows
 (`limit_not_fee`). The shared check now also reads a price under a dollar written "$.50" or "75¢",
 and the paid reader counts those lines and skips an older copy of a page whose current copy has a
-text, as the free reader already did. Answer keys: Texas 494 right (491), 15 wrong (14). The new
-wrong read is "Check printing" at $.20 on a one-line schedule, where the $.20 belongs to "Temporary
-check". Seven states unchanged. Live dry run: the same 1,412 of 1,437 kept.
+text, as the free reader already did. A family expert names a fee after the previous fee's note
+("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
+keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
+Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.

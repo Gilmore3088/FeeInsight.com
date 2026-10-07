@@ -56,6 +56,8 @@ export interface ExtractionRulesResult {
   held: HeldFeeCandidate[];
 }
 
+const BALANCE_REQUIREMENT = /\bbalance (?:requirement|required)\b|\brequired (?:minimum |daily |average )*balance\b/i;
+
 interface FeePattern {
   key: string;
   pattern: RegExp;
@@ -147,7 +149,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b/i,
   },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
@@ -901,7 +903,9 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   }
 
   if (!hint) {
-    if (/\b(fee|charge)s?\b/i.test(segment) && usableName(feeName) && feeAmounts[0].value <= MAX_REASONABLE_FEE_AMOUNT) {
+    // v27: a balance an account requires ("Minimum Daily Balance Requirement | $1,000") is
+    // not a fee, even beside one on the same line.
+    if (/\b(fee|charge)s?\b/i.test(segment) && usableName(feeName) && !BALANCE_REQUIREMENT.test(feeName) && feeAmounts[0].value <= MAX_REASONABLE_FEE_AMOUNT) {
       result.held.push({ shape: "unclassified", feeName, amount: feeAmounts[0].value, amountMax: null, percent: null, frequency, canonicalHint: null, excerpt: segment });
     }
     return result;

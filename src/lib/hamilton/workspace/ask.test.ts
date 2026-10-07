@@ -82,7 +82,7 @@ describe("the Ask response", () => {
     expect(res.pageChange).toEqual({ screen: "model", feeCategory: "overdraft", tested: [25] });
     expect(res.scenario).toMatchObject({ current: 32, tested: 25, evidenceLevel: "market", positionBefore: 75 });
     expect(res.shortAnswer).toBe(
-      "At $25, your overdraft fee would sit at the 19th percentile of 16 peers, against the 75th today. Every 1,000 items would bring $7 thousand less a year, based on market data only.",
+      "At $25, your overdraft fee would sit at the 19th percentile of 16 peers, against the 75th today. Every 1,000 items charged would bring $7 thousand less in fee income, based on market data only.",
     );
     expect(res.question?.fieldKey).toBe("fee.overdraft.annual_items");
   });

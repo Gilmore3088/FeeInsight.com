@@ -156,14 +156,19 @@ const COMPOSABLE_WORDS = new Set(
     // "Cash withdrawals - Within U.S. / U.S. territories" under "ATM fees – At non-Wells Fargo ATMs".
     "cash withdrawal withdrawals within outside territories " +
     // "Business accounts only" under "Non-Sufficient Funds (NSF)".
-    "account accounts only"
+    "account accounts only " +
+    // "Service assisted" and "Online" under "Stop Payments".
+    "online service assisted branch series"
   ).split(" "),
 );
 
-export function composableTail(name: string): boolean {
+/** What a stop payment row is placed on ("Online per check", "Per ACH payment"); only a stop payment heading lends to these. */
+export const STOP_PAYMENT_ITEM_WORDS = new Set(["check", "checks", "ach", "payment", "payments", "draft", "drafts"]);
+
+export function composableTail(name: string, also: ReadonlySet<string> = new Set()): boolean {
   // Single letters are the pieces of an abbreviation ("U.S."), not words.
   const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
-  return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
+  return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || also.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 
 /** Categories whose price is itself a cap ("Overdraft daily maximum | $150"). */
@@ -172,7 +177,9 @@ const CAP_CATEGORIES = new Set(["od_daily_cap", "nsf_daily_cap"]);
 const PAST_A_LIMIT = /\b(?:over|above|exceed\w*|excess\w*|violat\w*|beyond)\b/i;
 /** A name that ends on a limit ("Zelle transfer limit", "Mobile Deposit Checks are limited to", "Cash Advance Fee (maximum"). */
 const ENDS_ON_LIMIT =
-  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:per|daily|each|for)\b[^)]*\)?)?\s*$|\(\s*(?:daily\s+)?limit\b[^)]*\)?\s*$|\(\s*maximum\s*$/i;
+  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:per|daily|each|for)\b[^)]*\)?)?\s*$|\(\s*maximum\s*$/i;
+/** A trailing note that names a limit ("Zelle (Daily Limits)"); a fee's own note ("Mobile Deposit Fee (daily limits apply)") does not count. */
+const LIMIT_NOTE = /\(\s*(?:daily\s+|transaction\s+)?limits?\b[^)]*\)?\s*$/i;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
 
 /**
@@ -181,7 +188,9 @@ const FEE_WORD = /\b(?:fees?|charges?)\b/i;
  * category keeps its cap, and a fee for going past a limit keeps its price.
  */
 export function namesALimit(feeName: string, canonicalKey: string): boolean {
-  if (PAST_A_LIMIT.test(feeName) || !ENDS_ON_LIMIT.test(feeName.trim())) return false;
+  const name = feeName.trim();
+  const limitNote = LIMIT_NOTE.test(name) && !FEE_WORD.test(name.replace(LIMIT_NOTE, ""));
+  if (PAST_A_LIMIT.test(name) || !(ENDS_ON_LIMIT.test(name) || limitNote)) return false;
   // "Overdraft daily maximum | $150" caps fees; "Courtesy Pay Limit | $600" caps the overdraft.
   return !CAP_CATEGORIES.has(canonicalKey) || (/\blimit(?:s|ed)?\b(?![\s\S]*\bmax)/i.test(feeName) && !FEE_WORD.test(feeName));
 }
