@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -328,9 +328,6 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
-    "Returned Mail Fee",
-    "Bad Address/Returned Statement",
-    "Fax Outgoing",
     "Debit PIN Replacement",
     "Visa Credit Card Replacement",
     "Credit Card Return Payment",
@@ -448,13 +445,34 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText(name)).toBe(key);
   });
 
-  it("v14 leaves names the answer keys file differently from the taxonomy unclassified", () => {
-    // Texas keys file returned mail under statements, the taxonomy under account research;
-    // a foreign item collection is unmapped in most keys. Knox waits for one answer.
-    expect(classifyFeeText("Returned Mail Fee")).toBeNull();
-    expect(classifyFeeText("Foreign Item Collection")).toBeNull();
+  it("v14 leaves a card reactivation unclassified", () => {
     // A card reactivation is not a dormant account fee.
     expect(classifyFeeText("Card Reactivation Fee")).toBeNull();
+  });
+
+  it.each([
+    ["Returned Mail Fee", "account_research"],
+    ["Bad Address Fee", "account_research"],
+    ["Fax Outgoing", "account_research"],
+    ["Excessive Withdrawal Fee", "account_research"],
+    ["Withdrawal Limit Fee", "account_research"],
+    ["Foreign Item Collection", "check_cashing"],
+    ["Canadian Check Processing Fee", "check_cashing"],
+    ["Collection Item", "check_cashing"],
+    ["Loan Cancellation Fee", "loan_origination"],
+    ["Loan Refinance Fee", "other_lending_fee"],
+  ])("v25 folds %s into %s (James, Oct 7 2026)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+    expect(foldedCategory(name)).toBe(key);
+  });
+
+  it.each([
+    "Returned Statement Fee",
+    "Membership Fee",
+    "Telephone Transfer Fee",
+    "Uncollected Funds Fee",
+  ])("v25 keeps %s held (no right home, or a featured fee it would skew)", (name) => {
+    expect(classifyFeeText(name)).toBeNull();
   });
 
   it("v14 reads a checking account's own monthly price", () => {
