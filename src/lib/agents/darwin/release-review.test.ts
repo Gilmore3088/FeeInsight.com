@@ -15,6 +15,7 @@ import {
   parseReleaseReviews,
   releaseReviewPrompt,
   reviewPasses,
+  premiumServiceMisfiled,
   runDarwinReleaseReview,
 } from "./release-review";
 
@@ -210,6 +211,14 @@ describe("Darwin held-fee release review", () => {
     expect((await runDarwinReleaseReview({ runId: 5, dryRun: true, db: asDb(db), create, calls: 2 })).selected).toBe(1);
     expect((await runDarwinReleaseReview({ runId: 5, db: asDb(db), create, calls: 0 })).selected).toBe(0);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("keeps a premium version of a service held outside a premium category", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string) => ({ row: row({ fee_name, held_canonical_fee_key }) as unknown as HeldFeeRow });
+    expect(premiumServiceMisfiled(held("Overnight Fee (Business Bill Pay)", "bill_pay"))).toBe(true);
+    expect(premiumServiceMisfiled(held("Emergency Card Replacement", "card_replacement"))).toBe(true);
+    expect(premiumServiceMisfiled(held("Debit Card Rush Delivery", "rush_card"))).toBe(false);
+    expect(premiumServiceMisfiled(held("Bill Pay", "bill_pay"))).toBe(false);
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {

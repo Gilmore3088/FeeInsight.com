@@ -51,9 +51,12 @@ type SqlTag = typeof sql;
 // Correction Notice" (a business cash device) passed as safe deposit box rent, a box price read
 // with its footnote marker ("$651" among $85 and $100 boxes) passed, and a bare "overdrafts | $5.00"
 // from jumbled rows passed. The prompt now names all three.
+// Version 10 (2026-10-07): a hand check of 20 v9 passes found "Overnight Fee (Business Bill Pay)"
+// passed as bill pay, the fourth premium-service miss since v5. A fee whose own name says it is the
+// faster version of a service now never passes outside a premium category (`premiumServiceMisfiled`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 9,
+  version: 10,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -87,6 +90,20 @@ export function lineRefilesTo({ row, sourceLine }: ReleaseReviewCandidate): stri
   const key = row.held_canonical_fee_key;
   const refiled = refileCategory(key, `${row.fee_name ?? ""} ${sourceLine}`);
   return refiled && refiled !== key ? refiled : null;
+}
+
+/** Categories that are themselves the faster version of a service. */
+const PREMIUM_CATEGORIES = new Set(["rush_card"]);
+const PREMIUM_SERVICE = /\b(expedit\w*|rush|overnight|emergency|same[- ]day|next[- ]day|second[- ]day)\b/i;
+
+/**
+ * A faster or premium version of a service ("Overnight Fee (Business Bill Pay)") filed under the
+ * service's own category. The prompt has said so since v5 and the model still passed them, so the
+ * fee's own name now decides: such a fee stays held.
+ */
+export function premiumServiceMisfiled({ row }: Pick<ReleaseReviewCandidate, "row">): boolean {
+  const key = row.held_canonical_fee_key;
+  return !PREMIUM_CATEGORIES.has(key) && PREMIUM_SERVICE.test(row.fee_name ?? "");
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -500,7 +517,8 @@ export async function runDarwinReleaseReview(
       }
       result.succeeded += 1;
       const refilesTo = lineRefilesTo(candidate);
-      const passes = reviewPasses(verdict) && refilesTo == null;
+      const premium = premiumServiceMisfiled(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null && !premium;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -522,6 +540,7 @@ export async function runDarwinReleaseReview(
           source_line: candidate.sourceLine.slice(0, 300),
           source_context: candidate.sourceContext ?? null,
           refiles_to: refilesTo,
+          premium_service: premium,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,
