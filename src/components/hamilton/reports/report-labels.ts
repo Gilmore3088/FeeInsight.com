@@ -22,9 +22,10 @@ export function reportTypeLabel(reportType: string): string {
 
 /** What the evidence policy means for the reader, in their words. */
 export function evidencePolicyLabel(policy: ReportArtifactMetadata["evidencePolicy"] | null | undefined): string {
-  if (policy === "verified-only") return "Verified fees only";
+  // Reports read published_fee_catalog, which holds only fees verified against the bank's own
+  // schedule, so a "provisional-first" report has nothing still in review to include.
   if (policy === "source-diligence") return "Built for source review";
-  return "Includes fees still in review";
+  return "Published, verified fees";
 }
 
 /**

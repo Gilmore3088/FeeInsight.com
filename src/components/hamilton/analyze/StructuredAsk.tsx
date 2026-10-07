@@ -135,7 +135,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
           </span>
         </div>
         <div className={cell}>
-          <span className={label}>Per 1,000 items a year</span>
+          <span className={label}>Change per 1,000 items charged</span>
           <span className={value}>{fmtSignedMoney(s.per1000ItemsDelta)}</span>
         </div>
         <div className={cell}>

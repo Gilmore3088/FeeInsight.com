@@ -328,9 +328,10 @@ export function ConfigSidebar({
               <div>
                 <dt className="text-xs text-warm-600">Your published fees</dt>
                 <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
-                  {peerCoveragePreview.selectedVerifiedFeeCount} verified,{" "}
-                  {peerCoveragePreview.selectedProvisionalFeeCount} still in
-                  review
+                  {peerCoveragePreview.selectedVerifiedFeeCount}
+                  {peerCoveragePreview.selectedProvisionalFeeCount > 0
+                    ? `, plus ${peerCoveragePreview.selectedProvisionalFeeCount} still in review`
+                    : ""}
                 </dd>
               </div>
             </dl>

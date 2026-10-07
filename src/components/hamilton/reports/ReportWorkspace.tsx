@@ -356,7 +356,7 @@ export function ReportWorkspace({
       <MemoHeader
         kicker="Reports"
         title="Write a fee report for your board or team"
-        dek="Choose a report and who will read it. Hamilton writes it from the fees institutions publish and marks which are verified against the institution's own schedule and which are still in review. It lays out the evidence; management makes the call."
+        dek="Choose a report and who will read it. Hamilton writes it from published fees, each verified against the institution's own schedule. It lays out the evidence; management makes the call."
         actions={
           reportGenerated ? (
             <>
@@ -387,8 +387,8 @@ export function ReportWorkspace({
           <span>{selectedInstitution.feePublicationLabel}</span>
           <span aria-hidden="true">·</span>
           <span className="[font-variant-numeric:tabular-nums]">
-            {selectedInstitution.publishedFeeCount.toLocaleString()} verified fees,{" "}
-            {selectedInstitution.provisionalFeeCount.toLocaleString()} still in review
+            {/* The report reads published fees only, so the header counts the same set. */}
+            {selectedInstitution.publishedFeeCount.toLocaleString()} published fees
           </span>
           {selectedInstitution.assetSizeLabel && (
             <>
