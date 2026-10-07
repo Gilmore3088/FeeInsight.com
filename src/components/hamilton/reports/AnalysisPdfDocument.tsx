@@ -16,8 +16,9 @@ import {
 } from "@react-pdf/renderer";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
-import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import type { AnswerBrief } from "@/lib/hamilton/answer-brief";
+import type { IncomeSplit } from "@/lib/hamilton/workspace/why";
+import { CompetitorBars, FeeRangeChart, IncomeTrendChart } from "./BriefCharts";
 import { headFigure, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "@/components/hamilton/analyze/parse-response";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
@@ -107,49 +108,6 @@ const styles = StyleSheet.create({
   },
   table: {
     marginTop: 10,
-  },
-  tableHead: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.textSecondary,
-    borderBottomStyle: "solid",
-    paddingBottom: 4,
-    marginBottom: 2,
-  },
-  th: {
-    fontSize: 7.5,
-    fontFamily: "Helvetica-Bold",
-    color: COLORS.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  tr: {
-    flexDirection: "row",
-    paddingTop: 3,
-    paddingBottom: 3,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderDark,
-    borderBottomStyle: "solid",
-  },
-  td: {
-    fontSize: 9.5,
-    fontFamily: "Helvetica",
-    color: COLORS.textPrimary,
-  },
-  tdNum: {
-    fontSize: 9.5,
-    fontFamily: "Helvetica",
-    color: COLORS.textPrimary,
-    textAlign: "right",
-  },
-  colWide: {
-    flex: 2.2,
-    paddingRight: 6,
-  },
-  colNum: {
-    flex: 1,
-    textAlign: "right",
-    paddingLeft: 4,
   },
   tableSource: {
     fontSize: 7.5,
@@ -270,11 +228,36 @@ interface AnalysisPdfDocumentProps {
   brief?: AnswerBrief | null;
 }
 
-const fee = (n: number): string => formatFeeAmount(n) ?? `$${n}`;
 
-function quarterLabel(iso: string): string {
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+
+/** Fees drawn on the range chart, furthest from their medians first; the rest are counted under it. */
+const RANGE_CHART_FEES = 12;
+
+/** Income, price and the price share as key-figure tiles. */
+function incomeFigures(split: IncomeSplit): { label: string; figure: string; comparison: string }[] {
+  const pctOf = (gap: number) => `${Math.round(Math.abs(gap) * 100)}% ${gap < 0 ? "lower" : "higher"}`;
+  const tiles = [
+    {
+      label: "Service charges per $1,000 of deposits",
+      figure: `$${split.own.toFixed(2)}`,
+      comparison: `vs $${split.peerMedian.toFixed(2)} median, ${split.peers.toLocaleString("en-US")} ${split.peerLabel}`,
+    },
+  ];
+  if (split.priceGap !== null) {
+    tiles.push({
+      label: "Published prices against peer medians",
+      figure: Math.abs(split.priceGap) < 0.01 ? "At median" : pctOf(split.priceGap),
+      comparison: `average across ${split.priceFees} compared fees`,
+    });
+  }
+  if (split.priceShare !== null) {
+    tiles.push({
+      label: "Share of the income gap from price",
+      figure: `About ${split.priceShare}%`,
+      comparison: split.priceShare >= 100 ? "price accounts for all of it" : "the rest is how often and which fees are charged",
+    });
+  }
+  return tiles;
 }
 
 export function AnalysisPdfDocument({
@@ -306,8 +289,10 @@ export function AnalysisPdfDocument({
   const meaningSentences = splitSentences(humanizeAnswerText(analysis.whatThisMeans ?? ""));
   const meaningAsList = meaningSentences.length > 3;
   const fin = brief?.financials ?? null;
-  const peerByQuarter = new Map((fin?.peerMedian?.quarters ?? []).map((q) => [q.quarterEnd, q]));
   const incomeLines = brief?.income ? splitSentences(brief.income.explained.shortAnswer) : [];
+  const incomeTiles = brief?.income ? incomeFigures(brief.income.split) : [];
+  // The sentence after the income, price and share figures: what the split means. The tiles carry the figures.
+  const incomeTakeaway = incomeLines.length > 3 ? incomeLines[3] : null;
   const hasBrief = Boolean(brief && (brief.positions.length > 0 || incomeLines.length > 0 || (fin && fin.quarters.length > 0)));
 
   const readOnlyLine = institutionName
@@ -398,80 +383,61 @@ export function AnalysisPdfDocument({
           </View>
         ) : null}
 
-        {/* The institution's standing figures, from the engine */}
+        {/* The institution's standing figures, from the engine, drawn as charts */}
         {hasBrief && brief ? (
           <View break>
             <Text style={styles.reportTypeBadge}>From the Bank Fee Index and call reports</Text>
             <Text style={styles.briefTitle}>{institutionName ? `${institutionName} at a glance` : "At a glance"}</Text>
 
+            {brief.positions.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionHeading} minPresenceAhead={80}>Where each fee sits against peers</Text>
+                <FeeRangeChart positions={brief.positions.slice(0, RANGE_CHART_FEES)} bands={brief.bands} />
+                <Text style={styles.tableSource}>
+                  Published fee schedules, verified and live; each fee against the narrowest default peer group with enough institutions publishing it. Peer count in brackets.
+                  {brief.positions.length > RANGE_CHART_FEES ? ` The ${brief.positions.length - RANGE_CHART_FEES} other compared fees sit closer to their medians.` : ""}
+                  {brief.uncompared > 0 ? ` ${brief.uncompared} more ${brief.uncompared === 1 ? "fee has" : "fees have"} too few peers publishing to compare.` : ""}
+                </Text>
+              </View>
+            ) : null}
+
             {incomeLines.length > 0 || (fin && fin.quarters.length > 0) ? (
               <View style={styles.section}>
-                <Text style={styles.sectionHeading} minPresenceAhead={80}>Fee income against peers</Text>
-                {incomeLines.map((line, i) => (
-                  <View key={i} style={styles.bulletRow} wrap={false}>
-                    <Text style={styles.bulletMark}>{"\u2022"}</Text>
-                    <Text style={styles.bulletText}>{line}</Text>
+                <Text style={styles.sectionHeading} minPresenceAhead={160}>Fee income against peers</Text>
+                {incomeTiles.length > 0 ? (
+                  <View style={styles.tileRow} wrap={false}>
+                    {incomeTiles.map((tile) => (
+                      <View key={tile.label} style={styles.tile}>
+                        <Text style={styles.tileLabel}>{tile.label}</Text>
+                        <Text style={styles.tileFigure}>{tile.figure}</Text>
+                        <Text style={styles.tileComparison}>{tile.comparison}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
+                ) : null}
+                {incomeTakeaway ? <Text style={styles.paragraph}>{incomeTakeaway}</Text> : null}
                 {fin && fin.quarters.length > 0 ? (
                   <View style={styles.table} wrap={false}>
-                    <View style={styles.tableHead}>
-                      <Text style={[styles.th, styles.colWide]}>Quarter</Text>
-                      <Text style={[styles.th, styles.colNum]}>{fin.label.split(" (")[0]}</Text>
-                      <Text style={[styles.th, styles.colNum]}>{fin.peerMedian ? `Median, ${fin.peerMedian.label}` : "Peer median"}</Text>
-                    </View>
-                    {fin.quarters.map((q) => {
-                      const peer = peerByQuarter.get(q.quarterEnd);
-                      return (
-                        <View key={q.quarterEnd} style={styles.tr}>
-                          <Text style={[styles.td, styles.colWide]}>{quarterLabel(q.quarterEnd)}</Text>
-                          <Text style={[styles.tdNum, styles.colNum]}>{formatDollarsInWords(q.amount)}</Text>
-                          <Text style={[styles.tdNum, styles.colNum]}>{peer ? `${formatDollarsInWords(peer.amount)} (${peer.institutions})` : "Not on file"}</Text>
-                        </View>
-                      );
-                    })}
+                    <IncomeTrendChart financials={fin} />
                     <Text style={styles.tableSource}>
-                      {[fin.sourceRef.label, fin.peerMedian?.sourceRef.label].filter(Boolean).join(". ")}.
+                      {fin.sourceRef.label}. Call reports do not separate how often from which fees are charged for most filers.
                     </Text>
                   </View>
                 ) : null}
               </View>
             ) : null}
 
-            {brief.positions.length > 0 ? (
+            {brief.competitors.length > 0 ? (
               <View style={styles.lastSection}>
-                {brief.positions.map((p, i) => (
-                  <View key={p.feeCategory} wrap={false}>
-                    {i === 0 ? (
-                      <>
-                        <Text style={styles.sectionHeading}>Every fee against its peer median</Text>
-                        <View style={styles.tableHead}>
-                          <Text style={[styles.th, styles.colWide]}>Fee</Text>
-                          <Text style={[styles.th, styles.colNum]}>Yours</Text>
-                          <Text style={[styles.th, styles.colNum]}>Peer median</Text>
-                          <Text style={[styles.th, styles.colNum]}>Peers</Text>
-                          <Text style={[styles.th, styles.colNum]}>Against median</Text>
-                        </View>
-                      </>
-                    ) : null}
-                    <View style={styles.tr}>
-                      <Text style={[styles.td, styles.colWide]}>{p.displayName}</Text>
-                      <Text style={[styles.tdNum, styles.colNum]}>{fee(p.current)}</Text>
-                      <Text style={[styles.tdNum, styles.colNum]}>{fee(p.peerMedian)}</Text>
-                      <Text style={[styles.tdNum, styles.colNum]}>{p.peerCount}</Text>
-                      <Text style={[styles.tdNum, styles.colNum]}>
-                        {p.direction === "at" ? "At median" : `${fee(Math.abs(Math.round((p.current - p.peerMedian) * 100) / 100))} ${p.direction}`}
-                      </Text>
-                    </View>
-                    {/* The source line travels with the last row, so it never lands alone on a page. */}
-                    {i === brief.positions.length - 1 ? (
-                      <Text style={styles.tableSource}>
-                        Published fee schedules, verified and live; each fee against the narrowest default peer group with enough institutions publishing it.
-                        {brief.uncompared > 0 ? ` ${brief.uncompared} more ${brief.uncompared === 1 ? "fee has" : "fees have"} too few peers publishing to compare.` : ""}
-                      </Text>
-                    ) : null}
+                {brief.competitors.map((item, i) => (
+                  <View key={item.feeCategory} wrap={false}>
+                    {i === 0 ? <Text style={styles.sectionHeading}>Local competitors</Text> : null}
+                    <CompetitorBars item={item} />
                   </View>
                 ))}
+                <Text style={styles.tableSource}>
+                  Institutions with branches in the market, largest local deposits first (FDIC Summary of Deposits); prices from their published fee schedules.
+                </Text>
               </View>
             ) : null}
           </View>
