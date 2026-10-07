@@ -192,19 +192,19 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
-    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwire\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b|\b(international|foreign|intl)\b.{0,10}\bwires?\b.{0,30}\b(out|outgoing)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwires?\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwires?\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b|\b(international|foreign|intl)\b.{0,10}\bwires?\b.{0,30}\b(out|outgoing)\b/i,
   },
   {
     key: "wire_intl_incoming",
-    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwire\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwires?\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwires?\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
   },
   {
     key: "wire_domestic_outgoing",
-    pattern: /\b(domestic)?\s*(outgoing|send|sent).{0,40}\bwire\b|\bwires?\b.{0,30}\b(outgoing|sent|out)\b/i,
+    pattern: /\b(domestic)?\s*(outgoing|send|sent).{0,40}\bwires?\b|\bwires?\b.{0,30}\b(outgoing|sent|out)\b/i,
   },
   {
     key: "wire_domestic_incoming",
-    pattern: /\b(domestic)?\s*(incoming|receive|received).{0,40}\bwire\b|\bwires?\b.{0,30}\b(incoming|received)\b/i,
+    pattern: /\b(domestic)?\s*(incoming|receive|received).{0,40}\bwires?\b|\bwires?\b.{0,30}\b(incoming|received)\b/i,
   },
   { key: "stop_payment", pattern: /\bstop payments?\b/i },
   { key: "money_order", pattern: /\bmoney orders?\b/i },
@@ -302,6 +302,14 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern:
       /\b(?:minimum|mininum|minumum) balance\b.{0,30}\b(?:fee|charge)\b|\blow[- ]balance\b.{0,30}\b(?:fee|charge)\b|\bbelow (?:the )?minimum(?: daily| average)? balance\b|\b(?:average|avg\.?|minimum|min\.?) (?:daily |monthly |ledger |collected )?balance\s*\(?\s*(?:falls? |drops? |is )?(?:below|under|less than)\b|\bless than (?:an? )?(?:avg\.?|average|minimum) (?:daily |monthly )?balance\b|\b(?:fee|charge) charged if (?:balance )?falls? below\b/i,
   },
+  // v32: an account named with the balance it must keep ("Money Market Savings Account
+  // (below $2,500) | $15/mo.", "Interest Checking (below $1,500)") is that account's
+  // low-balance fee.
+  {
+    key: "minimum_balance",
+    pattern:
+      /\b(?:checking|savings|money market|share|account|club)\b[^|()]{0,30}\(\s*(?:(?:average|avg\.?|daily|minimum|min\.?)\s+)*(?:balances?\s+)?(?:below|under|less than)\b/i,
+  },
   ...FOLDED_PATTERNS,
 ];
 
@@ -398,7 +406,8 @@ export function classifyPatternKey(value: string): string | null {
   const text = value
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
-    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international")
+    // v32: "(Outside U.S.)" ends on a dot, where \b does not match.
+    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)(?!\w)/gi, "international")
     // v18: "Non-Domestic Wire" is an international wire; one price for "Domestic or
     // International" is the domestic one.
     .replace(/\bnon[-\s]?domestic\b/gi, "international")
@@ -868,6 +877,14 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // v32: two fees' names in one row before one price ("Returned Check | Verification of
+  // Deposit | $20", a two-column page): the price is the nearest name's, and so is the name.
+  if (cells && hint && feeAmounts[0] === firstAmount) {
+    const nearest = nearestFeeText(prefix);
+    const earlier = prefix.slice(0, Math.max(0, prefix.lastIndexOf(nearest.split(CELL_SEPARATOR)[0]))).replace(/[\s|]+$/, "");
+    const earlierHint = earlier && nearest !== prefix.trim() ? classifyFeeText(earlier) : null;
+    if (earlierHint && earlierHint !== hint && usableName(nameFrom(nearest))) feeName = nameFrom(nearest);
+  }
   // A tiered label keeps its figures, so "$25 or less" and "$50.01 and more" stay apart,
   // and the whole label names the fee when the words before its first figure do not.
   if (cells && amounts.some(inLabel) && usableName(normalizeSegment(cells[0]))) {

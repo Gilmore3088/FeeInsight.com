@@ -410,3 +410,12 @@ First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`, `unreprodu
 because many are restored. The extract event carries `takedown_lessons_loaded` and `takedown_holds`.
 Before this, in the 48 hours to Oct 7 05:50 UTC, Knox re-read 208 taken-down fees, sent 49 back to
 Darwin, and 6 were published again.
+
+v32 (rules 32, from Space Coast CU's page, Oct 7):
+- "Incoming Wires" and "Outgoing Wires" read in the plural.
+- "(Outside U.S.)" is an international wire.
+- An account named with the balance it must keep ("Money Market Savings Account (below $2,500) | $15/mo.") is that account's low-balance fee.
+- When two fees' names share a row before one price ("Returned Check | Verification of Deposit | $20"), the price and the name are the nearest fee's.
+- A name that closes a parenthesis it never opened ("SCCU for using a non-SCCU ATM) | $60") is the end of a wrapped line, not a fee.
+- Answer keys: TX 503 right / 15 wrong (unchanged), 7 states 721 / 47 (was 719 / 47). Live dry run: 1,418 of 1,437 kept, the same as v31.
+- Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").

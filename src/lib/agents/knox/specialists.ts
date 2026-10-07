@@ -34,7 +34,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 31 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 32 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -93,6 +93,12 @@ function heldKey(held: HeldFeeCandidate): string {
   return `${held.shape}:${held.canonicalHint}:${held.feeName.toLowerCase()}:${held.amount}:${held.percent}`;
 }
 
+/** True when a ")" comes before any "(": the name is the tail of a wrapped line. */
+export function closesUnopenedParen(name: string): boolean {
+  const close = name.indexOf(")");
+  return close >= 0 && (name.indexOf("(") < 0 || name.indexOf("(") > close);
+}
+
 export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
@@ -125,6 +131,9 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       const candidate = { ...read, feeName: tidyFeeName(read.feeName) };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
+      // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
+      // ATM) | $60") is the end of the line above, and the price is another column's.
+      if (closesUnopenedParen(candidate.feeName)) continue;
       if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
         selfCheckFailed += 1;
         untraced.push({

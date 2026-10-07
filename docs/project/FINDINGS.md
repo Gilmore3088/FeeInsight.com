@@ -2373,3 +2373,13 @@ records the count on the extract event. First-look takedowns don't teach: Darwin
 recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
+
+## 2026-10-07: Plural "Wires" and balance-named account rows were missed by Knox
+**What happened:** Space Coast CU (James's demo bank) had 7 live fees. Its 1,279-character page lists 22 prices.
+**Cause:**
+- The directional wire patterns required the singular "wire", so "Incoming Wires | $10" was read as no fee.
+- "(Outside U.S.)" fell through the international rewrite, because `\b` does not match after a dot.
+- An account row named with its balance ("(below $2,500) | $15/mo.") was held as unclassified.
+- Two names in one row were glued into one name.
+**Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
+**Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.

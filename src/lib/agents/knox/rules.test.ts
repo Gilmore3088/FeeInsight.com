@@ -670,4 +670,27 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("Overdraft Loan Late Fee (no grace period)")).toBe("late_payment");
     expect(classifyFeeText("Overdraft Fee")).toBe("overdraft");
   });
+
+  it("v32 reads plural wires, outside-U.S. wires and account rows named with their balance", () => {
+    expect(classifyFeeText("Incoming Wires")).toBe("wire_domestic_incoming");
+    expect(classifyFeeText("Outgoing Wires (Outside U.S.)")).toBe("wire_intl_outgoing");
+    const sccu = [
+      "Money Market Savings Account (below $2,500) | $15/mo. | Dormant Fee (no member activity for 24 months) | $5/mo.",
+      "Interest Checking (below $1,500) | $15/mo. | Levies and Writs per document $75",
+      "Returned Check | Verification of Deposit | $20",
+      "Non-SCCU ATM Fee (transaction fee charged by | $2.50 | 3x5 | 5x5",
+      "SCCU for using a non-SCCU ATM) | $60 | $80",
+      "Out of SCCU to another financial institution | $2 | Incoming Wires | $10",
+    ].join("\n");
+    const read = runFreeSpecialists(sccu).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+    expect(read).toEqual(
+      expect.arrayContaining([
+        ["Money Market Savings Account (below $2,500)", 15, "minimum_balance"],
+        ["Interest Checking (below $1,500)", 15, "minimum_balance"],
+        ["Verification of Deposit", 20, "account_verification"],
+        ["Incoming Wires", 10, "wire_domestic_incoming"],
+      ]),
+    );
+    expect(read.some(([name]) => String(name).startsWith("SCCU for using"))).toBe(false);
+  });
 });
