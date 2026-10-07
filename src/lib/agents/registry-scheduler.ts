@@ -3,13 +3,18 @@ import { startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
 import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
+import { FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/magellan/registry/ffiec-overdraft";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
+import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
+import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
+import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -77,17 +82,28 @@ function years(from: number, to: number): string[] {
 }
 
 /** Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES. */
-export function registryPartitionsBySource(now: Date, from: Quarter = backfillStart()): Array<{ source: string; partitions: string[] }> {
+export function registryPartitionsBySource(
+  now: Date,
+  from: Quarter = backfillStart(),
+  env: NodeJS.ProcessEnv = process.env,
+): Array<{ source: string; partitions: string[] }> {
   const quarters = (lagDays: number) =>
     quartersNewestFirst(from, latestPublishableQuarter(now, lagDays)).map(quarterKey);
   const dynamic: Record<string, string[]> = {
     [FDIC_FINANCIALS_SOURCE]: quarters(FDIC_FILING_LAG_DAYS),
     [NCUA_FINANCIALS_SOURCE]: quarters(NCUA_FILING_LAG_DAYS),
+    [FFIEC_OVERDRAFT_SOURCE]: ffiecOverdraftPartitions(now),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
+    [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),
+    [IRS_ZIP_INCOME_SOURCE]: irsZipIncomePartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
+    // No key, no runs: state bills wait for OPEN_STATES_API_KEY rather than queue skips.
+    // One partition; each run works through the states that are due (state-bills.ts).
+    [STATE_BILLS_SOURCE]: env.OPEN_STATES_API_KEY?.trim() ? [STATE_BILLS_PARTITION] : [],
+    [FEDERAL_BILLS_SOURCE]: env.CONGRESS_GOV_API_KEY?.trim() ? [FEDERAL_BILLS_PARTITION] : [],
   };
   return REGISTRY_SOURCES.map((definition) => ({
     source: definition.source,

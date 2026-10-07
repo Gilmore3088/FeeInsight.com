@@ -87,7 +87,7 @@ describe("Hamilton home signal data", () => {
     });
     expect(sqlCalls).toHaveLength(3);
     expect(sqlCalls.every((call) => call.text.includes("ANY"))).toBe(true);
-    expect(sqlCalls[0].values).toEqual([["2945"], 5]);
+    expect(sqlCalls[0].values).toEqual([["2945"], 25]);
     expect(sqlCalls[1].values).toEqual([7, ["2945"], 3]);
     expect(sqlCalls[2].values).toEqual([["2945"], 3]);
   });

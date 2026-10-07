@@ -52,6 +52,10 @@ Rosetta owns source text normalization.
     scan. Over the allowance the scan is `deferred` (nothing written, read next run).
     OCR that fails, is too long, or has mean confidence under `OCR_MIN_CONFIDENCE` leaves
     the text `needs_ocr` for pass 3. OCR fixes only unambiguous `$` misreads (`#35.00`).
+    Each page image is turned the way the page draws it (placement matrix and /Rotate);
+    a page that still reads poorly is probed at the other quarter turns and read in the
+    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
+    version rejected or found empty gets one read with the current version.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
