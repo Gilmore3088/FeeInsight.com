@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets
+that state's edition instead of the national email; everyone else (and readers in a state too
+thin for its own edition) gets one national email. Product and site updates ride in a one-line
+"What's new" in that email, never as their own sends. Built in `src/lib/agents/marketing/`.
+
+**Darwin's held-fee pass acts on rejects only; every release stays held.** James, 16:49 UTC,
+chose "Reject only" on the Darwin thread's card after the v1 spot check found 12 of 20 releases
+right. Held fees the bank's schedule doesn't state leave the held pile with a `not_on_schedule`
+note (`verify.release` v3). Releases stay a dry run until the stricter Claude review passes its
+own spot check (at least 19 of 20 right), and switching them on needs James's word.
+
 **Darwin's held fees get a way out: release or reject against the bank's schedule.** James, 13:20
 UTC ("i need you to close all those gaps with the agents"), taken as the go-ahead on the
 held-fees card's recommended option. Each fee Darwin holds (outside its range or far from peers)
@@ -12,6 +23,16 @@ is checked with the shared accuracy check: not stated is rejected with the reaso
 only as a peer outlier is released; stated but outside the hand-set range stays for a person,
 since Hamilton's publish gate uses that range. It runs as a dry run on live data first
 (`verify.release` v1 records verdicts only) and acts only after the dry run is reported.
+
+**Institution reports may compare thin states against Fed district peers.** James picked "District
+fallback" on the decision card at 14:34 UTC: when a state has too few peers with rich fee data, the
+report compares against same-charter peers in the bank's Fed district, labelled as such. Only 6 of
+109 state markets passed the state-only rule (card context, 14:11 UTC). The build is question 1 of
+the funnel thread's plan and waits for his answers there.
+
+**The mailing address stays blank until the state registration comes through.** James, 13:03 UTC
+("its blank for right now. im waiting on the state"). `MARKETING_MAILING_ADDRESS` is not set and
+nobody asks him for it; until it exists no marketing email can send, which is the intended state.
 
 **Every agent gets the same fixed daily health check, compared with yesterday.** James, about
 05:40 UTC ("a clear process to break this into manageable chunks that stay consistent so any new
@@ -41,6 +62,11 @@ pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; 
 the request row, never the link. The Stripe webhook marks the request Paid, alerts James, and emails
 the requester their private report link. A quote is saved only when the report check says "ready to
 quote", so no one pays for a report built on thin data. The report stays "priced on request".
+
+**Work keeps going overnight without Allow taps.** James, 07:13 UTC ("i dont want it to stop because
+i have to check allow"). Threads skip any step that needs a tap and use a safe alternative (no
+force-push, reset or push to main; after a merge, merge `origin/main` and push normally). Reviews,
+merges to main, database and production changes wait in a list for him.
 
 **Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
 shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan

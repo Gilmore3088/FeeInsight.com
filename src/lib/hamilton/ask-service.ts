@@ -31,7 +31,7 @@ const OBJECTIVES: AskObjective[] = ["revenue", "customer_treatment", "competitiv
 const MAX_QUESTION_CHARS = 1_000;
 const MAX_ANSWER_CHARS = 200;
 /** Memory keys an answer may set. */
-const FIELD_KEY = /^(fee\.[a-z0-9_]{2,60}\.(annual_items|waiver_rate|current_amount|tested_prices)|decision\.objective|ask\.fee_category)$/;
+const FIELD_KEY = /^(fee\.[a-z0-9_]{2,60}\.(annual_items|annual_volume|waiver_rate|current_amount|tested_prices)|decision\.objective|ask\.fee_category)$/;
 
 export interface AskBody {
   institutionId?: unknown;
@@ -71,7 +71,7 @@ function numericAnswer(text: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-const NUMERIC_KEYS = /\.(annual_items|waiver_rate|current_amount)$/;
+const NUMERIC_KEYS = /\.(annual_items|annual_volume|waiver_rate|current_amount)$/;
 
 function savedSentence(fieldKey: string, value: unknown): string {
   const fee = fieldKey.match(/^fee\.([a-z0-9_]+)\./)?.[1];
@@ -80,6 +80,7 @@ function savedSentence(fieldKey: string, value: unknown): string {
   if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${name} items a year. Scenarios now use it.`;
   if (fieldKey.endsWith(".waiver_rate")) return `Saved: ${n > 1 ? n : Math.round(n * 1000) / 10}% of ${name} fees waived or refunded. Scenarios now use it.`;
   if (fieldKey.endsWith(".current_amount")) return `Saved: you charge $${n} for one ${name} item.`;
+  if (fieldKey.endsWith(".annual_volume")) return `Saved: your ${name} rate applied to about $${n.toLocaleString("en-US")} over the last 12 months.`;
   if (fieldKey === "decision.objective") return `Saved: weigh the options for ${String(value).replace(/_/g, " ")}.`;
   return "Saved.";
 }

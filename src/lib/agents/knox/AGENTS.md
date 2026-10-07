@@ -26,6 +26,19 @@ Knox owns conservative raw fee extraction.
   re-read changes a document's text, Knox extracts the new text and retires the
   unverified rows it took from the older text (`needs_darwin_verification` removed,
   `superseded_by_reread` added). Rows Darwin already verified are left alone.
+- One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
+  `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
+  a text. Each extract step also retires up to 2,000 unverified rows from older copies
+  (`needs_darwin_verification` removed, `superseded_by_newer_copy` added), but only for a
+  category Knox has already read from the current copy, so a fee the newer read misses
+  still goes to Darwin. Verified rows are left alone; live fees a newer copy dropped are
+  Hamilton's (`hamilton/newer-copy-retire.ts`).
+- An older copy's rows never stop the current copy from being read: a page re-fetched with
+  the same text used to be skipped as "already extracted under another document", so it was
+  never read again by a newer rules version.
+- Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
+  once per rules version, ahead of other texts. The rules re-check only reaches documents
+  with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
   name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
@@ -126,6 +139,98 @@ name. Fee cards tiered by the item's value ("Fee Type" / "charged a fee based on
 the item" / "Greater than $5.00: $5.00") are read per tier, and a price whose next cell is
 prose ("$30.00 | ... unless you opt in") is never named by that prose. The shared check now
 reads such a price line under its name and accepts a tier named by its own band. Gates unchanged.
+
+v20 (rules 20) files "ATM Foreign Transaction Fee" (and "ATM – Foreign Transaction", "Debit ATM
+Foreign Transaction") as `atm_non_network`: it is what a customer pays at another bank's ATM, not
+a card's foreign transaction fee. "ATM/Debit Card International/Foreign Transaction Fee" and
+"Debit/ATM Foreign Transaction" name the card and are unchanged.
+
+Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee
+(`amount_kind = 'percent'`, `rate_percent`, optional `rate_min_amount` / `rate_max_amount` /
+`rate_basis`, `amount` NULL, flag `knox_rate_fee`) only when its category publishes rates
+(`percentFeeAllowed` in `src/lib/percent-fees.ts`, the list Darwin applies) and the rate traces
+with the shared `checkRateAgainstSource`. A balance transfer rate is filed under cash_advance.
+It stays held when the line is an interest or dividend rate, says "up to", states two different
+rates, falls outside the category's range, or has no clean name. Names come from the category's
+own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conversion Fee"). New
+texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
+(`knox_rate_recheck:v1`, 100 per extract step).
+
+v21 (rules 21) reads more of those rate lines: the card's currency fee under its other names
+("Foreign Transactions", "International Point of Sale Fee", "Cross-Border Assessment",
+"International Service Assessment", "Multi currency"), coin counting under "Coin Counter",
+"Coin Machine", "Loose Coin" and "Count and roll coins", and a rate whose dollar minimum follows
+it ("Cash Advance | 3% of each advance ($5.00 minimum)"). Flat gates and the live dry run are
+unchanged; on the answer keys Knox reads 20 rates, 18 keyed and 2 real fees the keys leave out.
+
+v22 (rules 22, family experts +1) reads the overdraft layouts that left several of the largest
+banks with a stored overdraft fee that was never live:
+- a fee charged to customers in a sentence ("Customers are charged a fee of $30 each time an
+  overdraft transaction is paid"), even after a question that names it;
+- one-line PDF dot-leader schedules: a period inside a leader no longer ends a sentence, and
+  a leader row ends after its price ("Overdrafts fee (per item)……………$36");
+- a long description row whose only other cell is its price ("Overdraft Fee Assessed when ...
+  per day. | $36.00"), named by the row's title. The shared check reads the same row the same
+  way;
+- a row's price cell repeating the price in the same cell is not a second fee;
+- "Overdrafts Returned" is NSF, and "Maximum daily Overdraft ... fees" is the daily cap.
+
+Answer keys: Texas 454 of 468 (main 452 of 467), held out 45 of 50 (43 of 49), seven states
+674 of 720 (673 of 719). Live dry run: 1,414 of 1,437 kept, the same fees as main.
+
+v23 (rules 23, table 6) reads two layouts the audit found missing fees:
+- labeled fee cards, one field per line ("Fee TypeCourtesy Pay Overdraft Fee" / "Description..." /
+  "Fee$5.00"), as ESL prints them. The card's name and price are joined into one row before
+  any specialist reads the text, and the shared check (`joinLabeledFeeCards` in
+  `source-check.ts`) joins them the same way. A card never takes the next card's price;
+- a two-column schedule flattened row by row, where the right column's fee heading ends a
+  left-column row ("• Business | $5.00 | Overdrafts (OD)") and its bulleted sub-rows follow
+  ("• Personal | $36.00"), as Trustmark prints NSF and overdraft. A two-cell sub-row belongs to
+  the heading only directly under it or its last sub-row; a line with both columns places it by
+  position; a right-column row of its own ends the heading. The shared check reads such a
+  heading only over a bulleted line under it.
+
+Answer keys and the live dry run are unchanged from v22. The shared check accepts exactly the
+same (name, amount) pairs as before across the answer-key and live texts (5,678 of every read
+name tried at every price in its document).
+
+## Learning reader (`lessons.ts`)
+Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
+(lowercase, letters only) that the category guards rejected under one category at 2 or more banks
+and never verified there, while the same name was verified under one other category at 2 or more
+banks and never rejected there ("Overdraft Transfers": overdraft -> od_protection_transfer). When
+today's rules file that exact name under the rejected category, Knox files it under the verified
+one and flags the row `knox_lesson:<wrong>-><right>`; Darwin still checks it. Hamilton's rules
+re-check treats a read under the rejected category as reproducing such a row, so the lesson is
+not undone. Lessons grow as Darwin and Hamilton record corrections; no rules version bump is
+needed, and they apply to texts read from then on. Dry runs don't read the store.
+
+**Per-bank memory.** A bank's own verdicts are enough for that bank: a name rejected under one
+category and verified under another at the same bank, with no verdict the other way there, is
+re-filed at that bank only (369 lessons at 307 banks, 6 Oct 2026). The bank's lesson comes
+first, then a person's label, then the global lessons.
+
+**Weekly labels (`label-queue.ts`, /admin/knox/labels).** Names the store can't settle on its
+own (rejected at 2 or more banks and never verified, or judged both ways) are listed for a
+person, 25 at a time, most-judged first. A label is a `name_label` row in the store; from the
+next extract Knox files that exact name under the labelled category from any other. "No category
+fits" only takes the name off the queue. A label that agrees with the rules stops a global
+lesson from moving the fee.
+
+## Calibrated confidence (`calibration.ts`, shadow)
+Knox's confidence is a fixed formula (0.82 to 0.94), so every read clears Hamilton's 0.8 floor.
+Each extract step reads how many of Knox's fees published in the last 14 days are still live,
+by the strategy that read them and their category, and writes the formula's value blended with
+that survival (weighted as 20 fees) into the audit text as `calibrated_confidence=`. The step
+reports `calibration_groups` and `calibrated_below_publish_floor`. `extraction_confidence` is
+unchanged until someone reviews the calibrated values; switching it over is a separate change.
+
+## Layout spotting (`layout-signature.ts`)
+Each extract attempt records the text's layout signature (`table/short`, `leaders/short`,
+`sentences/long`, `split/short`, `plain/long`, ...) and how many lines carry a price. The step's
+`layouts` detail counts texts per signature and how many read thin (fewer than 5 fees from 5 or
+more priced lines), so a layout the rules miss shows up as one group instead of scattered bad
+documents.
 
 ## Extraction Passes
 

@@ -5,7 +5,7 @@ describe("/api/v1/openapi.json", () => {
   it("keeps query parameters out of path keys", async () => {
     const spec = await (await GET()).json();
     const paths = Object.keys(spec.paths);
-    expect(paths).toEqual(["/fees", "/index", "/institutions"]);
+    expect(paths).toEqual(["/fees", "/index", "/institutions", "/revenue", "/fee-changes", "/branches", "/market"]);
     const institutionParams = spec.paths["/institutions"].get.parameters.map(
       (p: { name?: string }) => p.name,
     );

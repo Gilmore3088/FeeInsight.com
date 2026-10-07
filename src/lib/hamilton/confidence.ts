@@ -36,3 +36,23 @@ export function canSimulate(
   }
   return { allowed: true };
 }
+
+const TIER_LABEL: Record<ConfidenceTier, string> = {
+  strong: "Strong data",
+  provisional: "Provisional data",
+  insufficient: "Insufficient data",
+};
+
+/**
+ * The grounding line under a simulation: the tier and the data actually behind it,
+ * so the label changes with the peer set instead of always claiming the same sources.
+ */
+export function describeSimulationBasis(
+  tier: ConfidenceTier,
+  institutionCount: number,
+  peerLabel?: string | null
+): string {
+  const institutions = `${institutionCount.toLocaleString("en-US")} institution${institutionCount === 1 ? "" : "s"}`;
+  const peers = peerLabel ? ` (${peerLabel})` : "";
+  return `${TIER_LABEL[tier]}: published fee schedules from ${institutions}${peers}.`;
+}

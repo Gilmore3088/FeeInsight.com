@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/quote-check";
+import { recordRequestedInstitution } from "@/lib/data-store/report-payments";
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
@@ -184,6 +185,8 @@ async function handlePOST(request: NextRequest) {
           END,
           status = CASE WHEN ${held} AND status = ${NEW_LEAD_STATUS} THEN 'held' ELSE status END
           WHERE id = ${leadId}`;
+        const requested = check.status === "unmatched" ? null : check.institutionId ?? null;
+        if (requested) await recordRequestedInstitution(leadId, requested);
       }
     }
 

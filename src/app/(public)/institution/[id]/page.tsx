@@ -45,11 +45,13 @@ import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./
 import {
   buildProfileTitle,
   getPublicInstitutionForPage,
+  getRateFeesForPage,
   getVisibleFeesForPage,
   isVerifiedFee,
   pickHeadlineFees,
   toDisplayFees,
   toPipelineDisplayFees,
+  toRateDisplayFees,
 } from "./profile-data";
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
@@ -121,8 +123,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, evidence, financials, user, headlineCoverage] = await Promise.all([
+  const [visibleFees, rateFees, evidence, financials, user, headlineCoverage] = await Promise.all([
     catalogVisibleFeeCount > 0 ? getVisibleFeesForPage(instId) : Promise.resolve([]),
+    getRateFeesForPage(instId),
     shouldLoadPipelineEvidence
       ? getInstitutionFeeScheduleEvidence(instId).catch(fallbackTo("fee evidence", null))
       : Promise.resolve(null),
@@ -166,7 +169,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   };
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
-  const catalogRows = toDisplayFees(visibleFees);
+  const catalogRows = [...toDisplayFees(visibleFees), ...toRateDisplayFees(rateFees)];
   const displayFees = catalogRows.length > 0 ? catalogRows : toPipelineDisplayFees(evidence);
   const pipelineCounts = evidence?.pipeline_counts ?? null;
   const pipelineUnderReview = pipelineCounts

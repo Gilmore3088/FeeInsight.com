@@ -7,10 +7,15 @@ import { CAMPAIGN_NAME_PREFIX, campaignName, parseCampaignName } from "./formats
 import {
   createRegularDraft,
   listCampaigns,
+  listGroups,
   listStateGroups,
   mailerLiteConfigured,
+  nationalGroupId,
+  toStateGroups,
   type FetchLike,
+  type StateGroup,
 } from "./mailerlite-campaigns";
+import { whatsNewFor } from "./whats-new";
 
 type SqlTag = typeof sql;
 
@@ -18,7 +23,9 @@ type SqlTag = typeof sql;
  * State editions: the same monthly email in one version per state, sent to readers who
  * chose that state. Written from the data with fixed wording (no model call), so every
  * number is the state's own median against the national one. They go out with the
- * month's approval, alongside the two rotating formats.
+ * month's approval. A reader in a state group gets that edition instead of the national email;
+ * a state with too little data for its own edition gets the national email instead
+ * (`nationalAudience`), so every reader gets one marketing email a month.
  */
 
 export const STATE_EDITION_FORMAT = "state_edition";
@@ -82,6 +89,66 @@ export function stateEditionCopy(bundle: FactBundle): EmailCopy | null {
   };
 }
 
+/** The facts behind one state's edition. */
+export function stateBundle(
+  month: string,
+  state: { code: string; fees: FeeStat[] },
+  national: FeeStat[],
+  totals: { institutions: number; fees: number },
+): FactBundle {
+  return {
+    month,
+    asOf: new Date().toISOString().slice(0, 10),
+    liveInstitutions: totals.institutions,
+    liveFees: totals.fees,
+    national,
+    previousCoverage: null,
+    byCharter: [],
+    state: { code: state.code, name: STATE_NAMES[state.code] ?? state.code, fees: state.fees },
+  };
+}
+
+/** True when the state has enough data for its own edition this month. */
+export async function stateHasEdition(
+  db: SqlTag,
+  month: string,
+  code: string,
+  national: FeeStat[],
+  totals: { institutions: number; fees: number },
+): Promise<boolean> {
+  const fees = await readStateFees(db, code, STATE_EDITION_MIN_INSTITUTIONS);
+  return stateEditionCopy(stateBundle(month, { code, fees }, national, totals)) !== null;
+}
+
+export interface NationalAudience {
+  groupIds: string[];
+  /** States with readers but too little data for their own edition; their readers get the national email. */
+  thinStates: string[];
+}
+
+/**
+ * Who gets the national email: readers with no state (the national group), plus readers whose
+ * state has no edition this month. Readers in a state with an edition are left out; they get
+ * that edition from `marketing-states`.
+ */
+export async function nationalAudience(
+  db: SqlTag,
+  month: string,
+  { fetcher, dryRun = false }: { fetcher?: FetchLike; dryRun?: boolean } = {},
+): Promise<NationalAudience> {
+  const groups = await listGroups(fetcher);
+  const national = await nationalGroupId(fetcher, groups, !dryRun);
+  const base = national ? [national] : [];
+  const withReaders = toStateGroups(groups).filter((group) => group.activeCount > 0);
+  if (!withReaders.length) return { groupIds: base, thinStates: [] };
+  const [nationalFees, totals] = await Promise.all([readNational(), readTotals(db)]);
+  const thin: StateGroup[] = [];
+  for (const group of withReaders) {
+    if (!(await stateHasEdition(db, month, group.stateCode, nationalFees, totals))) thin.push(group);
+  }
+  return { groupIds: [...base, ...thin.map((group) => group.groupId)], thinStates: thin.map((group) => group.stateCode) };
+}
+
 export interface StateEditionResult {
   month: string;
   states: number;
@@ -134,16 +201,7 @@ export async function runStateEditions({
     }
     try {
       const fees = await readStateFees(db, code, STATE_EDITION_MIN_INSTITUTIONS);
-      const bundle: FactBundle = {
-        month,
-        asOf: new Date().toISOString().slice(0, 10),
-        liveInstitutions: totals.institutions,
-        liveFees: totals.fees,
-        national,
-        previousCoverage: null,
-        byCharter: [],
-        state: { code, name, fees },
-      };
+      const bundle = stateBundle(month, { code, fees }, national, totals);
       const copy = stateEditionCopy(bundle);
       if (!copy) {
         result.skipped.push({ state: code, reason: `fewer than ${STATE_EDITION_MIN_FEES} fees with ${STATE_EDITION_MIN_INSTITUTIONS}+ institutions` });
@@ -166,7 +224,7 @@ export async function runStateEditions({
         {
           name: campaignName(month, STATE_EDITION_FORMAT, `${code} · ${name}`),
           subject: copy.subjectA,
-          html: renderEmail(copy, bundle, STATE_EDITION_FORMAT, mailingAddress),
+          html: renderEmail(copy, bundle, STATE_EDITION_FORMAT, mailingAddress, whatsNewFor(month)),
           groupId: group.groupId,
         },
         fetcher,
@@ -183,7 +241,7 @@ export function summarizeStateEditions(result: StateEditionResult): string {
   if (result.skippedAll) return `No state editions: ${result.skippedAll}.`;
   const parts = [`Drafted ${result.drafts.length} state edition${result.drafts.length === 1 ? "" : "s"} for ${result.states} state${result.states === 1 ? "" : "s"} with readers.`];
   const thin = result.skipped.filter((row) => row.reason.startsWith("fewer"));
-  if (thin.length) parts.push(`Not enough data yet for ${thin.map((row) => row.state).join(", ")}.`);
+  if (thin.length) parts.push(`Not enough data yet for ${thin.map((row) => row.state).join(", ")}; their readers get the national email.`);
   if (result.failures.length) parts.push(`Failed: ${result.failures.map((row) => `${row.state} (${row.reason})`).join("; ")}.`);
   return parts.join(" ");
 }

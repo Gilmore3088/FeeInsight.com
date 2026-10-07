@@ -93,10 +93,12 @@ Darwin owns verification and classification.
   the amount is the price, not a cap or a misread number. Released rows carry the
   `darwin_released_hold` flag so the whole release can be found and rolled back.
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
-  fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. Both record
-  verdicts only while `DARWIN_RELEASE_ACTS` is false; switching it on bumps the version so
-  every held fee is judged again, and writes `darwin.release` notes to `pipeline_feedback`
-  (rejects as `not_on_schedule`, releases as `darwin_verified`). Step detail: `held_release`.
+  fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
+  "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
+  writes a `darwin.release` note of kind `not_on_schedule` to `pipeline_feedback` and leaves
+  the held pile. Those fees were never live, so nothing comes down. Releases stay a dry run
+  while `DARWIN_RELEASE_ACTS` is false; switching it on needs James's word and a version bump,
+  and writes released fees as `darwin_verified` notes. Step detail: `held_release`.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

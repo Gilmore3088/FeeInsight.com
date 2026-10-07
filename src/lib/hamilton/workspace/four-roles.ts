@@ -14,6 +14,14 @@
 import type { Exhibit, Fact, HamiltonAnswer, HamiltonRole } from "./types";
 
 export const MAX_SENTENCE_WORDS = 25;
+/** Storyline lines sit in cards and table rows on the Pro page: one short sentence each. */
+export const MAX_STORY_LINE_WORDS = 20;
+/** The governing thought is the one line the reader sees first. */
+export const MAX_GOVERNING_WORDS = 16;
+/** Exhibit titles sit on one line above the chart. */
+export const MAX_TITLE_WORDS = 10;
+/** Exhibit notes sit under the chart. */
+export const MAX_NOTE_WORDS = 16;
 
 export interface RoleCheck {
   role: HamiltonRole;
@@ -177,8 +185,38 @@ function checkDataEngineer(answer: HamiltonAnswer): RoleCheck {
   return { role: "data_engineer", pass: failures.length === 0, failures };
 }
 
+/** Clean, precise storyline copy (James, 2026-10-06): one idea per line, short, never said twice. */
+function checkStoryCopy(answer: HamiltonAnswer, failures: string[]): void {
+  const story = answer.storyline;
+  if (!story) return;
+  const lines = [
+    story.governingThought,
+    ...[...story.situation, ...story.complication, ...story.lenses.finance, ...story.lenses.market, ...story.watch].map((f) => f.text),
+    ...(story.options ?? []).flatMap((o) => o.consequences.map((c) => c.text)),
+    ...story.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]),
+  ].filter(Boolean);
+  const g = words(story.governingThought);
+  if (g > MAX_GOVERNING_WORDS) failures.push(`${g}-word governing thought: "${story.governingThought}"`);
+  const seen = new Set<string>();
+  for (const line of lines) {
+    if (sentences(line).length !== 1) failures.push(`Storyline line is not one sentence: "${line}"`);
+    const n = words(line);
+    if (n > MAX_STORY_LINE_WORDS) failures.push(`${n}-word storyline line: "${line}"`);
+    const key = line.toLowerCase().replace(/[^a-z0-9$%.]+/g, " ").trim();
+    if (seen.has(key)) failures.push(`Storyline says this twice: "${line}"`);
+    seen.add(key);
+  }
+  for (const e of story.exhibits) {
+    const t = words(e.exhibit.title);
+    if (t > MAX_TITLE_WORDS) failures.push(`${t}-word exhibit title: "${e.exhibit.title}"`);
+    const note = e.exhibit.note ?? "";
+    if (note && words(note) > MAX_NOTE_WORDS) failures.push(`${words(note)}-word exhibit note: "${note}"`);
+  }
+}
+
 function checkWriter(answer: HamiltonAnswer): RoleCheck {
   const failures: string[] = [];
+  checkStoryCopy(answer, failures);
   const head = sentences(answer.headline);
   if (head.length !== 1) failures.push("The headline is not one sentence.");
   if (!/\$\d|\d%|\d/.test(answer.headline)) failures.push("The headline carries no number.");
