@@ -29,9 +29,24 @@ describe("buildLocalOfficeMap", () => {
     expect(ids).not.toContain("ME");
   });
 
+  it("draws other institutions' offices in view as one layer and reports which landed", () => {
+    const map = buildLocalOfficeMap(
+      ["NJ"],
+      [{ latitude: 40.77, longitude: -74.14 }],
+      [
+        { latitude: 40.75, longitude: -74.1 },
+        { latitude: 34.05, longitude: -118.24 },
+      ],
+    )!;
+    expect(map.othersCount).toBe(1);
+    expect(map.othersInFrame).toEqual([true, false]);
+    expect(map.othersPath).toMatch(/^M\d+ \d+h0$/);
+  });
+
   it("leaves wide footprints and territories to the national map", () => {
     expect(buildLocalOfficeMap(["TX", "OK", "LA", "AR"].slice(0, LOCAL_MAP_MAX_STATES + 1), [])).toBeNull();
     expect(buildLocalOfficeMap(["GU"], [])).toBeNull();
     expect(buildLocalOfficeMap([], [])).toBeNull();
   });
 });
+

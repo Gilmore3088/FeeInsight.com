@@ -58,6 +58,13 @@ export interface LocalOfficeMap {
   dots: Array<{ x: number; y: number }>;
   /** Dot radius in viewBox units. */
   dotRadius: number;
+  /** Other banks' and credit unions' offices in view, as one path of dots (empty when none). */
+  othersPath: string;
+  othersCount: number;
+  /** For each `others` input, whether it landed inside the map. Server-side only; the card ignores it. */
+  othersInFrame: boolean[];
+  /** Sum of the institution's own office weights inside the map (deposits for banks). Server-side only. */
+  ownWeightInFrame: number;
   /** The towns that weigh most (deposits for banks, offices otherwise), placed at the middle of their offices. */
   labels: Array<{ x: number; y: number; text: string }>;
 }
@@ -79,15 +86,11 @@ function stateFeatures() {
   return cachedFeatures;
 }
 
-/**
- * The zoomed map for these states and office coordinates, or null when the
- * offices span more than LOCAL_MAP_MAX_STATES states or none of the states can
- * be drawn (territories such as Puerto Rico or Guam).
- */
-export function buildLocalOfficeMap(
-  stateCodes: string[],
-  points: Array<{ latitude: number; longitude: number; city?: string | null; weight?: number | null }>,
-): LocalOfficeMap | null {
+type OfficeInput = { latitude: number; longitude: number; city?: string | null; weight?: number | null };
+type PointInput = { latitude: number; longitude: number };
+
+/** The projection framing these states and offices, or null when the zoomed map doesn't apply. */
+function frameFor(stateCodes: string[], points: OfficeInput[]) {
   const own = new Set(stateCodes.map((s) => s.toUpperCase()));
   if (own.size === 0 || own.size > LOCAL_MAP_MAX_STATES) return null;
   const all = stateFeatures();
@@ -108,6 +111,54 @@ export function buildLocalOfficeMap(
     ],
     frame,
   );
+  return { own, all, valid, projection };
+}
+
+const inFrame = (x: number, y: number) => x >= 0 && y >= 0 && x <= WIDTH && y <= HEIGHT;
+
+/**
+ * The latitude/longitude box the zoomed map shows, for reading the other banks' and
+ * credit unions' offices in view; null when the zoomed map doesn't apply.
+ */
+export function localMapBounds(
+  stateCodes: string[],
+  points: OfficeInput[],
+): { south: number; north: number; west: number; east: number } | null {
+  const plan = frameFor(stateCodes, points);
+  if (!plan) return null;
+  const corners = [
+    [0, 0],
+    [WIDTH, 0],
+    [0, HEIGHT],
+    [WIDTH, HEIGHT],
+    [WIDTH / 2, 0],
+    [WIDTH / 2, HEIGHT],
+    [0, HEIGHT / 2],
+    [WIDTH, HEIGHT / 2],
+  ]
+    .map(([x, y]) => plan.projection.invert?.([x, y]))
+    .filter((c): c is [number, number] => Array.isArray(c) && c.every(Number.isFinite));
+  if (corners.length < 4) return null;
+  const lons = corners.map((c) => c[0]);
+  const lats = corners.map((c) => c[1]);
+  return { south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) };
+}
+
+/**
+ * The zoomed map for these states and office coordinates, or null when the
+ * offices span more than LOCAL_MAP_MAX_STATES states or none of the states can
+ * be drawn (territories such as Puerto Rico or Guam). `others` are other
+ * institutions' offices, drawn as one grey layer; `othersInFrame` says which
+ * of them landed inside the map, in the same order.
+ */
+export function buildLocalOfficeMap(
+  stateCodes: string[],
+  points: OfficeInput[],
+  others: PointInput[] = [],
+): LocalOfficeMap | null {
+  const plan = frameFor(stateCodes, points);
+  if (!plan) return null;
+  const { own, all, valid, projection } = plan;
   const path = geoPath(projection).digits(1);
 
   const states: LocalMapState[] = [];
@@ -121,13 +172,15 @@ export function buildLocalOfficeMap(
   }
 
   const dots: LocalOfficeMap["dots"] = [];
+  let ownWeight = 0;
   const towns = new Map<string, { x: number; y: number; n: number; w: number }>();
   for (const p of valid) {
     const xy = projection([p.longitude, p.latitude]);
     if (!xy) continue;
     const [x, y] = xy;
-    if (x < 0 || y < 0 || x > WIDTH || y > HEIGHT) continue;
+    if (!inFrame(x, y)) continue;
     dots.push({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+    ownWeight += p.weight ?? 1;
     const town = p.city?.trim();
     if (town) {
       const t = towns.get(town) ?? { x: 0, y: 0, n: 0, w: 0 };
@@ -144,5 +197,26 @@ export function buildLocalOfficeMap(
     labels.push({ x, y, text });
   }
 
-  return { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, states, dots, dotRadius: 7, labels };
+  // Other institutions' offices as one path of zero-length strokes (round caps draw the dots).
+  const othersInFrame: boolean[] = [];
+  const segments: string[] = [];
+  for (const o of others) {
+    const xy = Number.isFinite(o.latitude) && Number.isFinite(o.longitude) ? projection([o.longitude, o.latitude]) : null;
+    const ok = Boolean(xy && inFrame(xy[0], xy[1]));
+    othersInFrame.push(ok);
+    if (ok && xy) segments.push(`M${Math.round(xy[0])} ${Math.round(xy[1])}h0`);
+  }
+
+  return {
+    viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
+    states,
+    dots,
+    dotRadius: 7,
+    labels,
+    othersPath: segments.join(""),
+    othersCount: segments.length,
+    othersInFrame,
+    ownWeightInFrame: ownWeight,
+  };
 }
+

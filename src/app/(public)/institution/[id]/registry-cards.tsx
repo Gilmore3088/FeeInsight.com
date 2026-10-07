@@ -86,6 +86,8 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
   const isCu = footprint.source === "ncua";
   const localMap = footprint.localMap ?? null;
   const mapped = footprint.mappedOffices ?? 0;
+  const nearby = footprint.nearby ?? [];
+  const nearbyCount = footprint.nearbyCount ?? nearby.length;
   const stateCount = `${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}`;
   const subtitle = isCu
     ? `${latest.branches.toLocaleString("en-US")} ${latest.branches === 1 ? "office" : "offices"} in ${stateCount}${footprint.reportDate ? ` (${formatQuarterEnd(footprint.reportDate)})` : ""}`
@@ -115,6 +117,9 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                   onMouseLeave={() => setHovered(null)}
                 />
               ))}
+              {localMap.othersPath && (
+                <path d={localMap.othersPath} stroke="#8A8174" strokeOpacity={0.45} strokeWidth={8} strokeLinecap="round" fill="none" pointerEvents="none" />
+              )}
               {localMap.dots.map((dot, i) => (
                 <circle key={i} cx={dot.x} cy={dot.y} r={localMap.dotRadius} fill={RAMP[RAMP.length - 1]} fillOpacity={0.75} stroke="#FFFFFF" strokeWidth={1} />
               ))}
@@ -141,8 +146,20 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                 ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
                 : hovered
                   ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
-                  : `Each dot is one ${isCu ? "office" : "branch"}.`}
+                  : `Each dot is one office.`}
             </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[#6B6255]">
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: RAMP[RAMP.length - 1] }} />
+                {isCu ? "This credit union" : "This bank"}
+              </span>
+              {localMap.othersCount > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[#8A8174] opacity-60" />
+                  Other banks and credit unions
+                </span>
+              )}
+            </div>
             {mapped < latest.branches && (
               <p className="text-[10px] text-[#6B6255]">
                 {mapped.toLocaleString("en-US")} of {latest.branches.toLocaleString("en-US")} {isCu ? "offices" : "branches"} placed on the map so far.
@@ -195,6 +212,32 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
               ))}
             </tbody>
           </table>
+          {nearby.length > 0 && (
+            <>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Largest competitors nearby</p>
+              <table className="mt-1 w-full text-left text-[11px] tabular-nums">
+                <thead className="text-[10px] text-[#6B6255]">
+                  <tr>
+                    <th className="py-1 pr-2 font-normal">{nearbyCount.toLocaleString("en-US")} in its local market</th>
+                    <th className="py-1 pl-2 text-right font-normal">Deposit share</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[#1A1815]">
+                  {nearby.map((n) => (
+                    <tr key={n.name} className="border-t border-[#F1EBE1]">
+                      <td className="py-1 pr-2">{n.name}</td>
+                      <td className="py-1 pl-2 text-right">{n.depositSharePct === null ? "Credit union" : `${n.depositSharePct}%`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {footprint.ownDepositSharePct != null && (
+                <p className="mt-1 text-[11px] text-[#5A5347]">
+                  This bank holds {footprint.ownDepositSharePct}% of the deposits in its local market.
+                </p>
+              )}
+            </>
+          )}
           {trend.length > 1 && (
             <>
               <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Branch count by year</p>

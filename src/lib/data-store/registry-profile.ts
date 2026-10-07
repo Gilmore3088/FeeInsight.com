@@ -1,5 +1,6 @@
 import { sql } from "./connection";
-import { buildLocalOfficeMap, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
+import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
+import { getLocalMarketMembers } from "./custom-report-market";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
@@ -42,20 +43,119 @@ export interface BranchFootprint {
   byState: BranchState[];
   topMarkets: BranchMarket[];
   /** A zoomed map with a dot per office when the offices sit in a few states; else null (national map). */
-  localMap?: LocalOfficeMap | null;
+  localMap?: CardLocalMap | null;
+  /**
+   * The largest competitors in the institution's local market, by the definition the
+   * custom report and the API use (getLocalMarketMembers): deposit share first.
+   */
+  nearby?: NearbyInstitution[];
+  /** How many other institutions are in the local market. */
+  nearbyCount?: number;
+  /** Banks only: this bank's share of the bank deposits in its local market, in percent. */
+  ownDepositSharePct?: number | null;
   /** Offices placed on the zoomed map (credit union coordinates are added over time). */
   mappedOffices?: number;
 }
 
 type OfficePoint = { latitude: number | string; longitude: number | string; city: string | null; weight?: number | string | null };
 
-function localMapFor(states: string[], points: OfficePoint[]): { localMap: LocalOfficeMap | null; mappedOffices: number } {
+/** The zoomed map as the card receives it (server-only fields removed). */
+export type CardLocalMap = Omit<LocalOfficeMap, "othersInFrame" | "ownWeightInFrame">;
+
+export interface NearbyInstitution {
+  name: string;
+  charter: "bank" | "credit_union";
+  /** Share of the bank deposits in the local market, in percent; null for credit unions (no branch deposits). */
+  depositSharePct: number | null;
+}
+
+const NEARBY_LIMIT = 5;
+
+interface OtherOffice {
+  institution_id: number | string | null;
+  name: string | null;
+  kind: "bank" | "credit_union";
+  latitude: number | string;
+  longitude: number | string;
+  deposits: number | string | null;
+}
+
+/** Every other bank branch (latest SOD year) and credit union office with coordinates in the box. */
+async function otherOfficesIn(
+  institutionId: number,
+  box: { south: number; north: number; west: number; east: number },
+): Promise<OtherOffice[]> {
+  const rows = await sql<OtherOffice[]>`
+    SELECT b.institution_id, s.institution_name AS name, 'bank'::text AS kind, b.latitude, b.longitude, b.deposits
+      FROM institution_branch_deposits b
+      LEFT JOIN institution_sources s ON s.id = b.institution_id
+     WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+       AND b.latitude BETWEEN ${box.south} AND ${box.north}
+       AND b.longitude BETWEEN ${box.west} AND ${box.east}
+       AND b.institution_id IS DISTINCT FROM ${institutionId}
+    UNION ALL
+    SELECT c.institution_id, COALESCE(s.institution_name, c.cu_name), 'credit_union', c.latitude, c.longitude, NULL
+      FROM credit_union_branches c
+      LEFT JOIN institution_sources s ON s.id = c.institution_id
+     WHERE c.latitude BETWEEN ${box.south} AND ${box.north}
+       AND c.longitude BETWEEN ${box.west} AND ${box.east}
+       AND c.institution_id IS DISTINCT FROM ${institutionId}`;
+  return [...rows];
+}
+
+/** The largest competitors in the institution's local market, and a bank's own deposit share there. */
+async function marketCompetitors(
+  institutionId: number,
+): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+  const market = await getLocalMarketMembers(institutionId).catch(() => null);
+  if (!market) return { nearby: [], nearbyCount: 0, ownDepositSharePct: null };
+  const total = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
+  const share = (deposits: number | null) =>
+    deposits === null || total <= 0 ? null : Math.round((deposits / total) * 1000) / 10;
+  const rivals = market.members.filter((m) => !m.is_subject);
+  const subject = market.members.find((m) => m.is_subject);
+  return {
+    nearby: rivals.slice(0, NEARBY_LIMIT).map((m) => ({
+      name: m.institution_name,
+      charter: m.charter_type === "credit_union" ? "credit_union" : "bank",
+      depositSharePct: share(m.market_deposits),
+    })),
+    nearbyCount: rivals.length,
+    ownDepositSharePct: subject ? share(subject.market_deposits) : null,
+  };
+}
+
+/**
+ * The zoomed map with other institutions' offices on it, the few with the most offices
+ * in view, and (for a bank) its share of bank deposits in view. Empty when the
+ * institution's offices span too many states for the zoomed map.
+ */
+async function localMapFor(
+  institutionId: number,
+  states: string[],
+  points: OfficePoint[],
+  isBank: boolean,
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
   if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
+  const own = points.map((p) => ({
+    latitude: Number(p.latitude),
+    longitude: Number(p.longitude),
+    city: p.city,
+    weight: p.weight == null ? 1 : Number(p.weight),
+  }));
+  const box = localMapBounds(states, own);
+  const others = box ? await otherOfficesIn(institutionId, box) : [];
   const map = buildLocalOfficeMap(
     states,
-    points.map((p) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude), city: p.city, weight: p.weight == null ? 1 : Number(p.weight) })),
+    own,
+    others.map((o) => ({ latitude: Number(o.latitude), longitude: Number(o.longitude) })),
   );
-  return { localMap: map, mappedOffices: map?.dots.length ?? 0 };
+  if (!map) return { localMap: null, mappedOffices: 0 };
+
+  const { othersInFrame: _inFrame, ownWeightInFrame, ...localMap } = map;
+  void _inFrame;
+  void ownWeightInFrame;
+  return { localMap, mappedOffices: map.dots.length, ...(await marketCompetitors(institutionId)) };
 }
 
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
@@ -97,7 +197,7 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
     topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
-    ...localMapFor(byState.map((r) => r.state), [...points]),
+    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true)),
   };
 }
 
@@ -144,7 +244,7 @@ async function getCreditUnionFootprint(institutionId: number): Promise<BranchFoo
     byYear: [{ year, branches: total, deposits: 0 }],
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: 0 })),
     topMarkets: topCities.map((r) => ({ msa_name: r.city, branches: Number(r.branches), deposits: 0 })),
-    ...localMapFor(byState.map((r) => r.state), [...points]),
+    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], false)),
   };
 }
 
