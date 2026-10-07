@@ -117,13 +117,55 @@ function longLineParts(line: string): string[] {
   return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
 }
 
+/** A fee card's name field ("Fee TypeCheckOK Fee", "Fee Name: Rush Order") and its price field ("Fee$5.00"). */
+const CARD_NAME = /^\s*fee\s*(?:type|name)\s*:?\s*(?=[A-Za-z])([^|]+)$/i;
+const CARD_PRICE = /^\s*(?:fee|price|cost|amount)\s*:?\s*(?=\$|\d|free\b|none\b|no charge\b)(.+)$/i;
+/** How many filled lines (a description, "Ways to avoid fees" bullets) may sit between them. */
+const CARD_FIELD_LINES = 8;
+
+/**
+ * Fees laid out as labeled cards, one field per line, as some credit union pages print
+ * them ("Fee TypeCourtesy Pay Overdraft Fee" / "DescriptionOverdraft Service for ..." /
+ * "Fee$5.00"): the card's name and price are one row ("Courtesy Pay Overdraft Fee | $5.00"),
+ * and the price line is emptied so it is not read again as a fee named "Fee". The card
+ * ends at the next card's name, so one card never takes another's price. Lines keep
+ * their positions; only the name line and the price line change. Shared with Knox.
+ */
+export function joinLabeledFeeCards(lines: string[]): string[] {
+  const out = [...lines];
+  for (let i = 0; i < out.length; i += 1) {
+    const name = out[i].match(CARD_NAME)?.[1]?.trim();
+    if (!name) continue;
+    let filled = 0;
+    for (let j = i + 1; j < out.length && filled < CARD_FIELD_LINES; j += 1) {
+      if (!out[j].trim()) continue;
+      filled += 1;
+      if (CARD_NAME.test(out[j])) break;
+      const price = out[j].match(CARD_PRICE)?.[1]?.trim();
+      if (!price) continue;
+      out[i] = `${name} | ${price}`;
+      out[j] = "";
+      break;
+    }
+  }
+  return out;
+}
+
+/** `joinLabeledFeeCards` over a whole text; the text is returned as is when it has no cards. */
+export function joinLabeledFeeCardText(text: string): string {
+  if (!/^\s*fee\s*(?:type|name)\s*:?\s*[A-Za-z]/im.test(text)) return text;
+  return joinLabeledFeeCards(text.split(/\r?\n/)).join("\n");
+}
+
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 0);
+  return joinLabeledFeeCards(
+    text
+      .split(/\r?\n/)
+      .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line) => line.length > 0),
+  ).filter((line) => line.length > 0);
 }
 
 function nameStems(feeName: string): string[] {
@@ -237,6 +279,22 @@ export function statesDailyCap(line: string, amount: number): boolean {
   });
 }
 
+/**
+ * A two-column schedule flattened row by row puts the right column's heading at the end
+ * of a left-column row ("• Business | $5.00 | Overdrafts (OD)"); its sub-rows follow
+ * ("• Personal | $36.00"). The heading is the last cell when that cell states no price
+ * and reads as a title, not a bullet or a lowercase note. It names only a bulleted line under it.
+ */
+/** A bulleted sub-row ("• Personal | $36.00"), the only line a right-column heading names. */
+const SUB_ROW = /^[•·▪◦‣*-]\s*[A-Za-z]/;
+
+function rightColumnHeading(line: string): string | null {
+  const cells = line.split("|").map((cell) => cell.trim());
+  const last = cells.at(-1) ?? "";
+  if (cells.length < 2 || !/^[A-Z]/.test(last) || last.length > 60) return null;
+  return moneyTokens(last).length === 0 && !ZERO_WORDS.test(last) ? last : null;
+}
+
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
 function feeRow(lines: string[], index: number): string {
   const line = lines[index];
@@ -337,6 +395,10 @@ function checkAgainstLines(
     const headings: string[] = [];
     for (let j = Math.max(0, i - NAME_HEADING_LINES); j < i; j += 1) {
       if (feeRow(lines, j) === lines[j] && moneyTokens(lines[j]).length === 0 && !ZERO_WORDS.test(lines[j])) headings.push(lines[j]);
+      else if (SUB_ROW.test(line)) {
+        const columnHeading = rightColumnHeading(lines[j]);
+        if (columnHeading) headings.push(columnHeading);
+      }
     }
     const underHeading =
       namesFee(line, stems, 1) &&

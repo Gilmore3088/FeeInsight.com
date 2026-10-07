@@ -6,7 +6,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.3.0",
+    version: "1.4.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
@@ -726,6 +726,128 @@ const spec = {
         },
       },
     },
+    "/branches": {
+      get: {
+        operationId: "getBranches",
+        summary: "Bank branch locations",
+        description:
+          "Bank branches from the FDIC Summary of Deposits, latest survey year, with address and latitude/longitude. Give institution_id for one bank, or state (optionally with city or zip) for an area. Credit unions are not included. Pro and Enterprise only.",
+        tags: ["Branches"],
+        parameters: [
+          { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 } },
+          { name: "state", in: "query", schema: { type: "string", pattern: "^[A-Za-z]{2}$" } },
+          { name: "city", in: "query", schema: { type: "string", maxLength: 80 }, description: "Exact city name, with state" },
+          { name: "zip", in: "query", schema: { type: "string", pattern: "^\\d{5}$" }, description: "Five-digit ZIP, with state" },
+          { name: "page", in: "query", schema: { type: "integer", default: 1, minimum: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", default: 100, minimum: 1, maximum: 500 } },
+        ],
+        responses: {
+          "200": {
+            description: "Branches, largest deposits first",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    sod_year: { type: "integer", nullable: true },
+                    note: { type: "string" },
+                    total: { type: "integer" },
+                    page: { type: "integer" },
+                    page_size: { type: "integer" },
+                    pages: { type: "integer" },
+                    has_more: { type: "boolean" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          institution_id: { type: "integer", nullable: true },
+                          institution_name: { type: "string", nullable: true },
+                          branch_name: { type: "string", nullable: true },
+                          is_main_office: { type: "boolean" },
+                          address: { type: "string", nullable: true },
+                          city: { type: "string", nullable: true },
+                          state: { type: "string", nullable: true },
+                          zip: { type: "string", nullable: true },
+                          county_fips: { type: "integer", nullable: true },
+                          msa_name: { type: "string", nullable: true },
+                          latitude: { type: "number", nullable: true },
+                          longitude: { type: "number", nullable: true },
+                          deposits: { type: "number", nullable: true, description: "Whole US dollars" },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
+    "/market": {
+      get: {
+        operationId: "getLocalMarket",
+        summary: "Local market competitors",
+        description:
+          "Who competes in an institution's local market: the counties holding most of its deposits (or its headquarters city's counties for credit unions), with each competitor's deposits there and deposit share. Credit unions have no deposit figure, so their share is null. Pro and Enterprise only.",
+        tags: ["Branches"],
+        parameters: [{ name: "institution_id", in: "query", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: {
+          "200": {
+            description: "Market members, largest deposits first",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    institution_id: { type: "integer" },
+                    basis: { type: "string", enum: ["branch_counties", "hq_city"] },
+                    places: { type: "array", items: { type: "string" } },
+                    sod_year: { type: "integer" },
+                    note: { type: "string" },
+                    competitor_count: { type: "integer" },
+                    total_market_deposits: { type: "number" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          institution_id: { type: "integer" },
+                          name: { type: "string" },
+                          city: { type: "string", nullable: true },
+                          state: { type: "string", nullable: true },
+                          charter_type: { type: "string", nullable: true },
+                          is_subject: { type: "boolean" },
+                          market_deposits: { type: "number", nullable: true },
+                          deposit_share_pct: { type: "number", nullable: true },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "404": {
+            description: "No local market on file for that institution (code not_found)",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+          },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
   },
   tags: [
     {
@@ -746,6 +868,10 @@ const spec = {
     {
       name: "Revenue",
       description: "Market-wide deposit service-charge income from FDIC and NCUA call reports.",
+    },
+    {
+      name: "Branches",
+      description: "Bank branch locations and local market competitors from the FDIC Summary of Deposits.",
     },
   ],
   "x-rateLimit": {

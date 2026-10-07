@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
+**What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
+MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
+Reading each of the 25 misses against the bank's own text: about 13 are real fees the key left out
+or mapped elsewhere (a $10 late fee, a loan modification fee, a lien release, a replacement card),
+and the rest are wrong. Two of the wrong ones are a shared-rule gap seen across all live rows: loan
+late fees filed as overdraft (3 live: "Overdraft Loan Late Fee", "Late Payment fee (Overdraft
+L-O-C)", "Loan Late Fee ... Overdraft") and "Int’l Wire Fee Out" filed as a domestic wire (2 live,
+read before Knox v16 learned "Int'l").
+**Fix:** category guard v13 fails a late fee filed as overdraft and an "Int'l" wire filed as domestic
+(one price for "Domestic & Int'l" stays domestic), and Darwin re-files both. Knox v24 files a late
+fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
+5; Hamilton's publish step takes them down.
+**Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
+
 ## 2026-10-06: A fee document dated 2019 counted as a finished link
 **What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
 links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
@@ -59,6 +74,10 @@ never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and
 it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
 the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
 foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows waited on someone starting the admin category guard repair run, so every publish step now runs the category guard itself (up to 100 rollbacks a step, PR after 280).
+The first step (17:56 UTC, run 1787) rolled back 42: the 29 flat foreign fees plus 13 that
+failed older rules no repair run had applied since 06:18 (night deposit bag purchases, foreign
+returned items, an overdraft loan's annual fee). One of the 13 was wrong: "Foreign Owned ATM
+Fees" read as a bank's own ATM; guard v12 lets "foreign-owned ATM" through as non-network.
 **Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
 under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
 
@@ -1501,3 +1520,21 @@ fixture banks' own lessons (guard and Darwin verdicts only, not the keys themsel
 fee is taken down, and stored confidence is unchanged.
 **Lesson:** a learning store that only learns from agreement across banks misses most of what it
 is told; one bank's own verdicts are the strongest evidence for that bank.
+
+
+## 2026-10-07: Two page layouts hid Trustmark's and ESL's overdraft fees
+**What happened:** Trustmark's fee schedule PDF prints two columns, and the stored text flattens
+them row by row, so the right column's "Overdrafts (OD)" heading ends a left-column row and its
+"• Personal | $36.00" sub-row sits on the next line. ESL's checking page prints each fee as a card
+("Fee TypeCourtesy Pay Overdraft Fee", a description, then "Fee$5.00"). Knox read neither:
+Trustmark's NSF and overdraft ($36) were missed, and ESL's prices were held under the name "Fee".
+The shared accuracy check would also have failed both, since name and price are on different lines.
+**Fix:** Knox v23 (`table-rows.ts` right-column headings; card joining before the specialists) and
+the shared check (`joinLabeledFeeCards`, and a right-column heading over the bulleted line under
+it) read both. Answer keys and the live dry run are unchanged, and the shared check accepts
+exactly the same pairs as before on every other text tried.
+**Still open:** ESL's own fees index page keeps its fees in collapsed sections the stored text
+does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
+**Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
+same way; otherwise Knox's find is held as untraced and never reaches Darwin.
+
