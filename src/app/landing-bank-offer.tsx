@@ -17,7 +17,7 @@ const NEXT_STEPS = [
  * The bank and credit union path: what the report is, the real first pages of the public
  * sample, and the same request form as /for-institutions, so the lead is captured right here.
  */
-export function LandingBankOffer() {
+export function LandingBankOffer({ sampleLive = false }: { sampleLive?: boolean }) {
   return (
     <section id="for-banks" className="scroll-mt-16 border-b border-[#E0D7C9] bg-white">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
@@ -44,10 +44,12 @@ export function LandingBankOffer() {
           </ul>
 
           {SAMPLE_REPORT_LIVE && (
+            <div className="mt-6">
+              <SamplePages />
+            </div>
+          )}
+          {sampleLive && (
             <>
-              <div className="mt-6">
-                <SamplePages />
-              </div>
               <TrackLink
                 event="see_sample_report"
                 eventProps={{ placement: "home_bank_section" }}

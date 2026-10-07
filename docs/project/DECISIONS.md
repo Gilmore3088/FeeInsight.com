@@ -3,6 +3,14 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-07
+
+**The public sample report names a real bank.** James, 01:00 UTC, in the value funnel thread.
+The sample is a live report for one real community bank and its named competitors, with the
+source link on every fee, rather than an anonymized copy without links. Every figure on it is
+already public on the institution pages. James approved the previews and said to move forward
+at 01:37 UTC, so links to the sample show across the site whenever a sample market qualifies.
+
 ## 2026-10-06
 
 **Value funnel answers.** James, 23:49 UTC, in the value funnel thread.

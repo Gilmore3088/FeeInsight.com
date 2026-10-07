@@ -32,12 +32,12 @@ export const REPORT_OFFER = {
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
 } as const;
-// The sample report page (/reports/sample-competitive-fee-position) is now a live report
-// rendered from published data (src/lib/custom-report/sample-report.ts) and shows itself
-// whenever a candidate market passes the readiness bar. This flag still gates the old
-// static sample (Reports/studio/sample + public/reports/sample-*): its PDF redirects to the
-// sample page (next.config.ts), and the homepage previews, the Hamilton benchmark example
-// and the "see the sample" links (rows copied from the old sample) stay hidden while false.
+// The sample report page (/reports/sample-competitive-fee-position) is a live report rendered
+// from published data (src/lib/custom-report/sample-report.ts); links to it show whenever
+// sampleReportAvailable() is true. This flag gates only the OLD static sample
+// (Reports/studio/sample + public/reports/sample-*): its PDF redirects to the live page
+// (next.config.ts), and the homepage page images, the reports-hub position preview and the
+// Hamilton benchmark example (rows copied from the old sample) stay hidden while false.
 export const SAMPLE_REPORT_LIVE = false;
 /** The free offer, in one line: the instant national and Fed district reports. */
 /** What the institution report contains; the bank landing offer and the pay page list it. */
