@@ -57,6 +57,14 @@ export const economyContext: StateEconomicContext = {
     themes: [],
   },
   regulatory: [],
+  fomc: {
+    meeting_date: "2026-07-29",
+    policy_action: "In support of the Committee's dual-mandate goals, nine members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent.",
+    source_url: "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm",
+  },
+  district_research: [
+    { bank: "Atlanta", title: "Who Pays Overdraft Fees?", link: "https://fedinprint.org/item/fedawp/1", published_at: "2026-09-15" },
+  ],
 };
 
 export function overdraftResearch(overrides: Partial<FeeResearch> = {}): FeeResearch {
