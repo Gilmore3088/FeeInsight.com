@@ -135,7 +135,7 @@ describe("shared learning store", () => {
     const { db, calls } = mockDb([
       ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
       ["FROM published_fee_records fp", [takedown]],
-      ["hamilton.restore:pub:", [{ fee_published_id: 70, about_strategy: "extract.rules", institution_id: 9, source_document_id: 4, fee_raw_id: 50, fee_verified_id: 60, canonical_fee_key: "nsf", amount: "30" }]],
+      ["hamilton.restore:pub:", [{ fee_published_id: 70, about_strategy: "extract.rules", institution_id: 9, source_document_id: 4, fee_raw_id: 50, fee_verified_id: 60, canonical_fee_key: "nsf", amount: "30", fee_name: "NSF fee", taken_down_for: "rules_recheck_unreproduced", restored_by: "rules_recheck_restored:restore_bar" }]],
       ["category_mismatch", [{ id: 900, institution_id: 9, source_document_id: 4, strategy_version: 3, fee_raw_id: 51, canonical_fee_key: "nsf", amount: "20", reason: "Fee name does not support its category", category_guard_version: "9", fee_name: "Returned mail", outlier_flags: [], source_url: null }]],
       ["FROM answer_key_fees", [{ id: 3, institution_id: 9, canonical_key: "stop_payment", amount: "30", amount_kind: "flat", source_line: "Stop payment $30", uncertain: false, document_url: null }]],
       ["INSERT INTO pipeline_feedback", [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]],
@@ -153,6 +153,7 @@ describe("shared learning store", () => {
       "darwin.verify:raw:51",
       "answer_key:fee:3",
     ]);
+    expect(rows[2].evidence).toEqual({ fee_name: "NSF fee", taken_down_for: "rules_recheck_unreproduced", restored_by: "rules_recheck_restored:restore_bar" });
     expect(rows[3]).toMatchObject({ signal: "wrong", kind: "wrong_category", reported_by: "darwin", check_name: "darwin.category_guard" });
     expect(rows[3].evidence).toMatchObject({ verify_attempt_id: 900, fee_name: "Returned mail" });
     expect(rows[4]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "human" });

@@ -64,6 +64,9 @@ interface RestoreRow {
   fee_verified_id: number | string | null;
   canonical_fee_key: string | null;
   amount: number | string | null;
+  fee_name?: string | null;
+  taken_down_for?: string | null;
+  restored_by?: string | null;
 }
 
 interface CategoryRejectRow {
@@ -194,7 +197,12 @@ export async function syncPipelineFeedback(
 
     const restores = await inSavepoint(db, (scope) => scope<RestoreRow[]>`
       SELECT f.fee_published_id, f.about_strategy, f.institution_id, f.source_document_id, f.fee_raw_id,
-             f.fee_verified_id, f.canonical_fee_key, f.amount
+             f.fee_verified_id, f.canonical_fee_key, f.amount, fp.fee_name, f.evidence->>'reason' AS taken_down_for,
+             (SELECT flag #>> '{}'
+                FROM verified_fee_observations fv, jsonb_array_elements(COALESCE(fv.outlier_flags, '[]'::jsonb)) flag
+               WHERE fv.fee_verified_id = f.fee_verified_id
+                 AND flag #>> '{}' LIKE 'rules_recheck_restored:%'
+               LIMIT 1) AS restored_by
         FROM pipeline_feedback f
         JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
        WHERE f.dedupe_key LIKE 'hamilton.takedown:pub:%:extract'
@@ -223,6 +231,13 @@ export async function syncPipelineFeedback(
         amount: num(row.amount),
         runId: options.runId,
         dedupeKey: `hamilton.restore:pub:${row.fee_published_id}`,
+        // Why it came back and what took it down, so the readers learn which checks were
+        // wrong and which fees today's rules miss ("rules_recheck_restored:restore_bar").
+        evidence: {
+          fee_name: row.fee_name ?? null,
+          taken_down_for: row.taken_down_for ?? null,
+          restored_by: row.restored_by ?? null,
+        },
       });
     }
     result.restores = restores.length;
