@@ -23,6 +23,12 @@ import { confirmFeeChange, type RecordedChangeRow } from "@/lib/report-assembler
  */
 
 export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
+/**
+ * Space Coast CU, the demo institution. While no institution has an active workspace, the
+ * scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
+ * run ledger shows what they would write.
+ */
+export const PREVIEW_INSTITUTION_ID = 8109;
 const COMPETITOR_LIMIT = 20;
 
 export interface WorkspaceBank {
