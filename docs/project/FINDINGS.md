@@ -2841,3 +2841,16 @@ Rows already on file gain the fields only when Knox reads their document again.
   wasn't found.
 - **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
   Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
+
+## 2026-10-07: The paid fetch for blocked sites got only the call cap's leftovers
+
+- **Problem.** After PR 444 the paid fetch ran last in Magellan's paid step. On its first real
+  run (08:23, run 1964) the searches before it used the run's provider call cap, so it fetched
+  one bank of three (Morgan Stanley, stored for $0.018) and First Horizon waited. Separately,
+  53.com answers Fifth Third's fee PDFs with a "page doesn't exist" web page. The companion fetch
+  stored that page and Rosetta set the PDFs aside as blank reads, so nothing marked them blocked.
+- **Fix.** The paid fetch runs first in the step. The companion fetch refuses a PDF link
+  answered with a web page (`blocked_bot`), and the paid fetch also takes blocked companion pages
+  (one slot of three kept for them), including PDFs already set aside after reading that page.
+- **Watch.** `pipeline_attempts` with strategy `fetch.paid_web_fetch_companion` for Fifth Third
+  (institution 19) and `fetch.paid_web_fetch` for First Horizon (37).

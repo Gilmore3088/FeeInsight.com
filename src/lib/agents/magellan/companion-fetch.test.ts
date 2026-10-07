@@ -71,6 +71,18 @@ describe("Magellan companion fetch", () => {
     expect(failure).toContain(true);
   });
 
+  it("does not store a PDF link answered with a web page (the bot wall), and marks it blocked", async () => {
+    const pdf = { ...freedom, url: "https://www.53.com/content/dam/fifth-third/docs/legal/fee-schedule.pdf" };
+    const db = createDb([pdf]);
+    const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("<html><body>This page doesn't exist</body></html>")), vault: null, runId: 7 });
+
+    expect(result).toMatchObject({ fetched: 0, failed: 1 });
+    expect(result.results[0]).toMatchObject({ attemptOutcome: "blocked_bot" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO source_documents"))).toBe(false);
+    const attempt = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
+    expect(attempt).toContain("blocked_bot");
+  });
+
   it("waits for its migration", async () => {
     const fetchImpl = vi.fn();
     const result = await runCompanionFetch({ db: asDb(createDb([freedom], { ready: false })), fetchImpl, vault: null, runId: 7 });
