@@ -62,7 +62,7 @@ describe("StructuredAsk", () => {
     expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask"]);
   });
 
-  it("offers fee buttons and a written answer, and says why when an answer isn't a fee", async () => {
+  it("answers a question that names no fee in writing at once, and keeps fee charts optional", async () => {
     const which: AskResponse = {
       kind: "clarifying_question" as AskResponse["kind"],
       shortAnswer: "Which fee do you want to look at?",
@@ -71,18 +71,16 @@ describe("StructuredAsk", () => {
     };
     mockFetch(which, {});
     const onNoStoryline = vi.fn();
-    render(<StructuredAsk question="how does our fee revenue compare?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
-    await screen.findByText("Hamilton has one question");
-    // The question shows once, on the card, not again as a heading above it.
-    expect(screen.getAllByText("Which fee do you want to look at?")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Overdraft" })).toBeTruthy();
+    render(<StructuredAsk question="how does this compare nationally?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    await waitFor(() => expect(onNoStoryline).toHaveBeenCalledWith("how does this compare nationally?"));
+    // No question card, no text box: the reader is never asked again before getting an answer.
+    expect(screen.queryByText("Hamilton has one question")).toBeNull();
+    expect(screen.queryByText("Which fee do you want to look at?")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("See the charts for one fee:")).toBeTruthy();
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "all" } });
-    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
-    await screen.findByText(/couldn.t find a fee in/);
-
-    fireEvent.click(screen.getByRole("button", { name: "Answer my question in writing" }));
-    expect(onNoStoryline).toHaveBeenCalledWith("how does our fee revenue compare?");
-    await waitFor(() => expect(screen.queryByText("Hamilton has one question")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Overdraft" }));
+    await screen.findByText(/no charts for .Overdraft. yet/);
   });
+
 });

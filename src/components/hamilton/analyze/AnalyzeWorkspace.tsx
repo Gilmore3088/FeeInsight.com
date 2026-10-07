@@ -134,6 +134,15 @@ interface AnalyzeWorkspaceProps {
  * question as the heading, Hamilton's answer, why it matters, the evidence, where to look next
  * and how it was built. Hamilton shows evidence; it never recommends a price.
  */
+/**
+ * Each Ask starts a fresh written answer, so a follow-up ("how does this compare nationally?")
+ * carries the question before it; otherwise "this" has nothing to point at.
+ */
+export function withEarlierQuestion(question: string, earlier: string): string {
+  if (!earlier || earlier === question) return question;
+  return `${question}\n\n(For context, my previous question was: "${earlier}")`;
+}
+
 export function AnalyzeWorkspace({
   userId,
   institutionId,
@@ -169,6 +178,8 @@ export function AnalyzeWorkspace({
   const [exportError, setExportError] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
   const lastPromptRef = useRef<string>("");
+  // The question before this one, so a follow-up's written answer knows what "this" refers to.
+  const previousPromptRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { messages, sendMessage, status, setMessages, error: chatError, clearError } = useChat({
@@ -233,7 +244,8 @@ export function AnalyzeWorkspace({
 
   const answerInProse = useCallback(
     (question: string) => {
-      if (question === lastPromptRef.current) sendMessage({ text: question });
+      if (question !== lastPromptRef.current) return;
+      sendMessage({ text: withEarlierQuestion(question, previousPromptRef.current) });
     },
     [sendMessage],
   );
@@ -242,6 +254,7 @@ export function AnalyzeWorkspace({
     (question: string) => {
       const trimmed = question.trim();
       if (!trimmed || isLoading) return;
+      if (lastPromptRef.current && lastPromptRef.current !== trimmed) previousPromptRef.current = lastPromptRef.current;
       lastPromptRef.current = trimmed;
       clearError();
       setParsedResponse(null);

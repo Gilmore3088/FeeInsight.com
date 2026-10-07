@@ -65,20 +65,52 @@ async function postMemo(body: AskBody): Promise<MemoState> {
 /** The fees offered as one-tap answers when Hamilton asks which fee. */
 const FEE_CHOICES = getSpotlightCategories().map((c) => ({ key: c, label: getDisplayName(c).replace(/\s*\([^)]*\)/g, "") }));
 
+/**
+ * When a question names no fee, Hamilton answers it in writing straight away; this quiet row
+ * only offers charts for one fee on top of that answer. It never stands in the reader's way.
+ */
+function FeeCharts({ busy, notFound, onPick }: { busy: boolean; notFound: string | null; onPick: (label: string) => void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-warm-700">See the charts for one fee:</p>
+      <div className="flex flex-wrap gap-2">
+        {FEE_CHOICES.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            disabled={busy}
+            onClick={() => onPick(f.label)}
+            className="rounded-md border border-warm-300 bg-white px-3 py-1.5 text-sm text-warm-900 hover:border-terra hover:text-terra-text disabled:opacity-50"
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {busy ? (
+        <p role="status" className="flex items-center gap-2 text-sm text-warm-700">
+          <Loader2 className="h-4 w-4 animate-spin" /> Working on it...
+        </p>
+      ) : null}
+      {notFound ? (
+        <p role="status" className="text-sm text-terra-text">
+          Hamilton has no charts for &ldquo;{notFound}&rdquo; yet.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function QuestionForm({
   question,
   onAnswer,
   busy,
   notFound,
-  onWrite,
 }: {
   question: ClarifyingQuestion;
   onAnswer: (value: string) => void;
   busy: boolean;
   /** The last answer Hamilton could not use, so the reader sees why it asked again. */
   notFound?: string | null;
-  /** Answers the whole question in writing instead, when it is not about one fee. */
-  onWrite?: () => void;
 }) {
   const [value, setValue] = useState("");
   const submit = (e: FormEvent) => {
@@ -94,33 +126,8 @@ function QuestionForm({
       </p>
       {notFound ? (
         <p role="status" className="text-sm text-terra-text">
-          Hamilton couldn&apos;t find a fee in &ldquo;{notFound}&rdquo;. Pick one below{onWrite ? " or get a written answer" : ""}.
+          Hamilton couldn&apos;t read &ldquo;{notFound}&rdquo;. Please try again.
         </p>
-      ) : null}
-      {question.fieldKey === "ask.fee_category" ? (
-        <div className="flex flex-wrap gap-2">
-          {FEE_CHOICES.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              disabled={busy}
-              onClick={() => onAnswer(f.label)}
-              className="rounded-md border border-warm-300 bg-white px-3.5 py-2 text-sm text-warm-900 hover:border-terra hover:text-terra-text disabled:opacity-50"
-            >
-              {f.label}
-            </button>
-          ))}
-          {onWrite ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onWrite}
-              className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
-            >
-              Answer my question in writing
-            </button>
-          ) : null}
-        </div>
       ) : null}
       {busy ? (
         <p role="status" className="flex items-center gap-2 text-sm text-warm-700">
@@ -243,8 +250,6 @@ export function StructuredAsk({
   const [memo, setMemo] = useState<MemoState | undefined>(undefined);
   // An answer Hamilton could not use: it asks again, and the card says why.
   const [notFound, setNotFound] = useState<string | null>(null);
-  // The reader chose a written answer instead of picking a fee.
-  const [handedOff, setHandedOff] = useState(false);
   // The question the memo was asked for; a newer question drops an older memo's result.
   const memoFor = useRef<string | null>(null);
 
@@ -278,7 +283,9 @@ export function StructuredAsk({
         });
         return;
       }
-      if (res?.question) return;
+      // "Which fee?" is never a wall: a question that names no fee (often a follow-up such as
+      // "how does this compare nationally?") gets a written answer at once.
+      if (res?.question && res.question.fieldKey !== "ask.fee_category") return;
       onNoStoryline?.(asked);
     },
     [institutionId, onNoStoryline],
@@ -291,7 +298,6 @@ export function StructuredAsk({
     setMemo(undefined);
     setResponse(null);
     setNotFound(null);
-    setHandedOff(false);
     void run({ question }).then((res) => {
       if (res) setResponse(res);
       follow(question, res);
@@ -386,21 +392,16 @@ export function StructuredAsk({
       {response.scenario ? (
         <ScenarioSummary s={response.scenario} modelHref={modelHrefFor(response.scenario.feeCategory, response.scenario.tested)} />
       ) : null}
-      {q && q.inputKind !== "file" && !handedOff ? (
+      {q && q.fieldKey === "ask.fee_category" ? (
+        <FeeCharts busy={busy} notFound={notFound} onPick={(label) => void answerQuestion(q, label)} />
+      ) : null}
+      {q && q.fieldKey !== "ask.fee_category" && q.inputKind !== "file" ? (
         <QuestionForm
           key={q.fieldKey}
           question={q}
           busy={busy}
           notFound={notFound}
           onAnswer={(v) => void answerQuestion(q, v)}
-          onWrite={
-            onNoStoryline && lastQuestion.current
-              ? () => {
-                  setHandedOff(true);
-                  onNoStoryline(lastQuestion.current!);
-                }
-              : undefined
-          }
         />
       ) : null}
       {error ? <p className="text-sm text-terra-text">{error}</p> : null}
