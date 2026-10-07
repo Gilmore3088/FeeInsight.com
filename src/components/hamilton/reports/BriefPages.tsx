@@ -28,13 +28,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 12,
   },
-  section: {
-    marginBottom: 22,
-    paddingBottom: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderDark,
-    borderBottomStyle: "solid",
-  },
   sectionHeading: {
     fontSize: 13,
     fontFamily: "Helvetica-Bold",
@@ -49,8 +42,14 @@ const styles = StyleSheet.create({
     lineHeight: 1.6,
     marginBottom: 10,
   },
-  lastSection: {
-    marginBottom: 0,
+  // Sections are siblings, not wrapping Views: react-pdf moves a whole nested View holding an
+  // unbreakable chart to the next page, leaving the page before it half empty.
+  sectionRule: {
+    marginTop: 18,
+    marginBottom: 22,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderDark,
+    borderBottomStyle: "solid",
   },
   briefTitle: {
     fontSize: 18,
@@ -173,31 +172,36 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
       <Text style={styles.briefTitle}>{institutionName ? `${institutionName} at a glance` : "At a glance"}</Text>
 
       {brief.positions.length > 0 ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading} minPresenceAhead={80}>Where each fee sits against peers</Text>
-          <FeeRangeChart positions={brief.positions.slice(0, RANGE_CHART_FEES)} bands={brief.bands} />
+        <>
+          <View wrap={false}>
+            <Text style={styles.sectionHeading}>Where each fee sits against peers</Text>
+            <FeeRangeChart positions={brief.positions.slice(0, RANGE_CHART_FEES)} bands={brief.bands} />
+          </View>
           <Text style={styles.tableSource}>
             Published fee schedules, verified and live; each fee against the narrowest default peer group with enough institutions publishing it. Peer count in brackets.
             {brief.positions.length > RANGE_CHART_FEES ? ` The ${brief.positions.length - RANGE_CHART_FEES} other compared fees sit closer to their medians.` : ""}
             {brief.uncompared > 0 ? ` ${brief.uncompared} more ${brief.uncompared === 1 ? "fee has" : "fees have"} too few peers publishing to compare.` : ""}
           </Text>
-        </View>
+          <View style={styles.sectionRule} />
+        </>
       ) : null}
 
       {incomeLines.length > 0 || (fin && fin.quarters.length > 0) ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading} minPresenceAhead={160}>Fee income against peers</Text>
-          {incomeTiles.length > 0 ? (
-            <View style={styles.tileRow} wrap={false}>
-              {incomeTiles.map((tile) => (
-                <View key={tile.label} style={styles.tile}>
-                  <Text style={styles.tileLabel}>{tile.label}</Text>
-                  <Text style={styles.tileFigure}>{tile.figure}</Text>
-                  <Text style={styles.tileComparison}>{tile.comparison}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
+        <>
+          <View wrap={false}>
+            <Text style={styles.sectionHeading}>Fee income against peers</Text>
+            {incomeTiles.length > 0 ? (
+              <View style={styles.tileRow}>
+                {incomeTiles.map((tile) => (
+                  <View key={tile.label} style={styles.tile}>
+                    <Text style={styles.tileLabel}>{tile.label}</Text>
+                    <Text style={styles.tileFigure}>{tile.figure}</Text>
+                    <Text style={styles.tileComparison}>{tile.comparison}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
           {incomeTakeaway ? <Text style={styles.paragraph}>{incomeTakeaway}</Text> : null}
           {fin && fin.quarters.length > 0 ? (
             <View style={styles.table} wrap={false}>
@@ -207,25 +211,28 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
               </Text>
             </View>
           ) : null}
-        </View>
+          <View style={styles.sectionRule} />
+        </>
       ) : null}
 
       {economy ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading} minPresenceAhead={160}>
-            {economy.districtName ? `The ${economy.place} and ${economy.districtName} Fed district economy` : `The ${economy.place} economy`}
-          </Text>
-          {economy.tiles.length > 0 ? (
-            <View style={styles.tileRow} wrap={false}>
-              {economy.tiles.map((tile) => (
-                <View key={tile.label} style={styles.tile}>
-                  <Text style={styles.tileLabel}>{tile.label}</Text>
-                  <Text style={styles.tileFigure}>{tile.figure}</Text>
-                  <Text style={styles.tileComparison}>{tile.comparison}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
+        <>
+          <View wrap={false}>
+            <Text style={styles.sectionHeading}>
+              {economy.districtName ? `The ${economy.place} and ${economy.districtName} Fed district economy` : `The ${economy.place} economy`}
+            </Text>
+            {economy.tiles.length > 0 ? (
+              <View style={styles.tileRow}>
+                {economy.tiles.map((tile) => (
+                  <View key={tile.label} style={styles.tile}>
+                    <Text style={styles.tileLabel}>{tile.label}</Text>
+                    <Text style={styles.tileFigure}>{tile.figure}</Text>
+                    <Text style={styles.tileComparison}>{tile.comparison}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
           {economy.unemployment.length > 1 ? <UnemploymentChart points={economy.unemployment} place={economy.place} /> : null}
           {economy.commentary.length > 0 ? <Text style={[styles.paragraph, { marginTop: 10 }]}>{economy.commentary.join(" ")}</Text> : null}
           {economy.beigeBook ? (
@@ -243,21 +250,25 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
             </View>
           ) : null}
           <Text style={styles.tableSource}>Sources: {economy.sources.join("; ")}.</Text>
-        </View>
+          <View style={styles.sectionRule} />
+        </>
       ) : null}
 
       {market || localIncome ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading} minPresenceAhead={160}>Your local market</Text>
+        <>
           {market ? (
             <>
-              <MarketShareBars shares={market.shares} />
+              <View wrap={false}>
+                <Text style={styles.sectionHeading}>Your local market</Text>
+                <MarketShareBars shares={market.shares} />
+              </View>
               <Text style={[styles.paragraph, { marginTop: 8 }]}>{market.commentary.join(" ")}</Text>
               <Text style={styles.tableSource}>
                 FDIC Summary of Deposits, {market.sodYear}, branches in {market.places.join("; ")}. HHI is the sum of squared deposit shares.
               </Text>
             </>
           ) : null}
+          {!market ? <Text style={styles.sectionHeading}>Your local market</Text> : null}
           {localIncome ? (
             <>
               <IncomeCompareBars counties={localIncome.counties} state={localIncome.state} />
@@ -265,11 +276,11 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
               <Text style={styles.tableSource}>U.S. Census Bureau, American Community Survey 5-year estimates, {localIncome.year}.</Text>
             </>
           ) : null}
-        </View>
+        </>
       ) : null}
 
       {brief.competitors.length > 0 ? (
-        <View style={styles.lastSection}>
+        <>
           {brief.competitors.map((item, i) => (
             <View key={item.feeCategory} wrap={false}>
               {i === 0 ? <Text style={styles.sectionHeading}>Local competitors</Text> : null}
@@ -279,7 +290,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
           <Text style={styles.tableSource}>
             Institutions with branches in the market, largest local deposits first (FDIC Summary of Deposits); prices from their published fee schedules.
           </Text>
-        </View>
+        </>
       ) : null}
     </View>
   );
