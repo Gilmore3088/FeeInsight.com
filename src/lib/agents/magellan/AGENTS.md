@@ -32,6 +32,10 @@ Magellan owns institution source discovery and source fetching.
   homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
   `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
   again. A locked correction is kept; a 403 is retried, since a bot block can pass.
+- Schedules found by hand (`operator-schedules.ts`, strategy `discover.operator_schedule`): a
+  checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
+  Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added
+  as a `consumer_supplement` companion, once, with an attempt row. Add a bank by adding a line.
 - Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
   fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
   (not `business`) are downloaded when new and again after 30 days, each as its own source
