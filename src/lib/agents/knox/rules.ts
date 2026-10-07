@@ -363,7 +363,7 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
-  // v23: "Overdraft Loan Late Fee" and "Late Payment fee (Overdraft L-O-C)" are a loan's
+  // v24: "Overdraft Loan Late Fee" and "Late Payment fee (Overdraft L-O-C)" are a loan's
   // late payment fee, not an overdraft fee.
   if (key === "overdraft" && /\blate (?:payment|charge|fee)\b/i.test(text)) {
     key = "late_payment";

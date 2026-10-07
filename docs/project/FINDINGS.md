@@ -23,7 +23,7 @@ late fees filed as overdraft (3 live: "Overdraft Loan Late Fee", "Late Payment f
 L-O-C)", "Loan Late Fee ... Overdraft") and "Int’l Wire Fee Out" filed as a domestic wire (2 live,
 read before Knox v16 learned "Int'l").
 **Fix:** category guard v13 fails a late fee filed as overdraft and an "Int'l" wire filed as domestic
-(one price for "Domestic & Int'l" stays domestic), and Darwin re-files both. Knox v23 files a late
+(one price for "Domestic & Int'l" stays domestic), and Darwin re-files both. Knox v24 files a late
 fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
 5; Hamilton's publish step takes them down.
 **Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
