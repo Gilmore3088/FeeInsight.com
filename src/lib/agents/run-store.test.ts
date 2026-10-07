@@ -1090,6 +1090,37 @@ describe("agentic run store", () => {
     ).resolves.toMatchObject({ executedSteps: 0 });
   });
 
+  it("starts no lower lane in a tick once a higher lane is held for the deadline", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([
+          { id: 101, run_kind: "manual_repair" },
+          { id: 102, run_kind: "workflow_lane" },
+          { id: 103, run_kind: "workflow_lane" },
+          { id: 104, run_kind: "workflow" },
+        ]);
+      }
+      if (text.includes("SELECT step_key")) {
+        // Lane 102 needs discover (110 s) first; lane 103 and the workflow need 30 s.
+        return Promise.resolve(values[0] === 102
+          ? [{ step_key: "enhance" }, { step_key: "discover" }]
+          : [{ step_key: "public-discovery" }]);
+      }
+      if (text.includes("FROM agent_runs")) {
+        // The held lane is still queued; the others are already finished, so they do nothing.
+        return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 102 ? "queued" : "completed" }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000 });
+
+    expect(result.results.map((run) => run.runId)).toEqual([101, 102, 104]);
+    expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
+  });
+
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
