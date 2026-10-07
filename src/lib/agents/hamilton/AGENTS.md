@@ -261,6 +261,16 @@ feedback sync writes no Knox or Darwin lesson for these. A takedown whose consum
 longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
 banks, 61 beside a consumer fee.
 
+## Article Page
+
+`article-page.ts`: a page whose address has an article segment (articles, blog, stories,
+news) and does not name a schedule is an article (`isArticlePage`). Its prices are national
+averages or examples, not the bank's price: Space Coast CU's $4.73 ATM fee came from a blog
+post (its schedule says $2.50). Publish never puts such a row live; a live one comes down only
+on its second look (check `hamilton.article_page`), archived as `article_page: #<document id>`,
+with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
+is not an article.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
