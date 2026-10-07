@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { activateIfPaid } from "@/lib/subscription-activation";
@@ -115,8 +116,12 @@ export default async function SubscribePage({
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
             <p className="mt-1">
-              Activate a Pro seat with the invited email and Hamilton will attach the delegated
-              institution workspace automatically.
+              You don&apos;t need to buy a seat to accept it: an institution account includes up to
+              five teammates. Sign in with the invited email and{" "}
+              <Link href="/workspace-invite" className="font-semibold underline">
+                accept the invitation
+              </Link>
+              .
             </p>
             {pendingInvitations.length > 0 && (
               <div className="mt-3 grid gap-2">

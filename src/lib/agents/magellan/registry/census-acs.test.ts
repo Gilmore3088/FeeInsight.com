@@ -59,4 +59,24 @@ describe("census-acs registry step", () => {
     expect(r.empty).toBe(true);
     expect(statements.some((s) => s.values.includes("empty"))).toBe(true);
   });
+
+  it("skips a vintage with a no-key reason when Census asks for a key", async () => {
+    const { db, statements } = createDb();
+    const page = '<html><body>Missing Key $(document).ready(function () {})</body></html>';
+    const fetchImpl = vi.fn(async () => new Response(page, { status: 200 })) as unknown as typeof fetch;
+    const r = await runRegistryCensusAcs({ partitionKey: "2024", db, tractStates: ["01"], fetchOptions: { fetchImpl, retries: 0 } });
+    expect(r).toMatchObject({ empty: true, skippedNoKey: true, upsertedRows: 0 });
+    const record = statements.find((s) => s.text.includes("registry_ingest_partitions"))!;
+    expect(record.values).toContain("empty");
+    expect(JSON.parse(String(record.values.find((v) => typeof v === "string" && v.includes("no_key"))))).toMatchObject({ no_key: true });
+    expect(statements.some((s) => s.text.includes("INSERT INTO demographics"))).toBe(false);
+  });
+
+  it("still fails on any other non-data reply", async () => {
+    const { db } = createDb();
+    const fetchImpl = vi.fn(async () => new Response("<html>Service Unavailable</html>", { status: 200 })) as unknown as typeof fetch;
+    await expect(
+      runRegistryCensusAcs({ partitionKey: "2024", db, tractStates: ["01"], fetchOptions: { fetchImpl, retries: 0 } }),
+    ).rejects.toThrow(/Census returned no data/);
+  });
 });

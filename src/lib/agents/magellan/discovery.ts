@@ -47,6 +47,7 @@ import {
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordSearchMisses } from "./search-misses";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
@@ -1636,6 +1637,20 @@ export async function runMagellanDiscovery(
     }
   }
 
+  // Database work only (no fetches), so it runs before the companion search, which uses
+  // the rest of the step's time: behind it, the restore never ran on 7 Oct (0 of 58 due).
+  const restoredFeePages = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => restoreSwappedFeePages({
+        db: scope,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("restoreSwappedFeePages failed:", error);
+        return null;
+      })
+    : null;
   const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
   const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
     ? await runSecondDocumentFind({
@@ -1647,15 +1662,6 @@ export async function runMagellanDiscovery(
         deadline: stepDeadline,
         dryRun,
         learning,
-      })
-    : null;
-  const restoredFeePages = learning && options.mode !== "rescue" && Date.now() - startedAt < STEP_START_BUDGET_MS
-    ? await restoreSwappedFeePages({
-        db,
-        runId: options.runId,
-        stepId: options.stepId ?? null,
-        stateCode: options.stateCode ?? null,
-        dryRun,
       })
     : null;
 

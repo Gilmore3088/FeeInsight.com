@@ -278,8 +278,9 @@ step's `search_miss_lessons` detail counts them.
 
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
-A fee link on the bank's own site whose last fetch was refused (`failure_reason =
-magellan_fetch_http_403`) gets one paid server-side fetch in the `discover-paid` step:
+A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
+403), or timed out with at least `BLOCKED_TIMEOUT_MIN_FAILURES` (2) failures in a row (First
+Horizon), gets one paid server-side fetch in the `discover-paid` step:
 Anthropic's `web_fetch` tool, `max_uses` 1, `allowed_domains` the link's host. Up to
 `BLOCKED_FETCH_PER_RUN` (3) banks a step, largest first, each at most once per
 `BLOCKED_FETCH_RETRY_DAYS` (7). The page text or PDF it returns goes through the same
