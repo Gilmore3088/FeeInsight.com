@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The category guard was rejecting real check-card, teller's-check and charge-back fees
+**What happened:** Darwin's category guard rejects about 100-170 new Knox fees an hour. Sampling
+them (read-only, 00:50 UTC Oct 7) showed three groups of real fees it threw away: 82 check-card
+replacements ("Visa Check Card Replacement": the card exclusion read "check" as a paper check), 13
+"Teller’s Check" fees (the rule allowed "teller's" with a straight quote only) and 55 deposited-item
+"Charge Back" fees (the rule knew only "chargeback"). The same check found 7 live rows in deposited
+item returns that are card disputes or loan payment chargebacks.
+**Fix:** category guard v14 reads curly quotes as straight ones, treats a "check card" as a debit
+card (checks, checkbooks, PINs and liability notes still fail), and reads "charge back" as a
+deposited-item return unless it names a card, dispute or loan; card chargebacks re-file to card
+disputes. A guard version bump makes Darwin re-check its rejected rows once, so about 150 rejected
+fees get another chance (each still has to pass the source check). The 7 wrong live rows come down.
+**Lesson:** a guard that rejects is also a coverage cost; sample its rejects, not just the live rows.
+
 ## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
 **What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
 MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
