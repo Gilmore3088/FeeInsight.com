@@ -2227,3 +2227,17 @@ showed it and the peer median counted it. The missing tier 1 ratio itself is cor
 bank page and peer median skip a stored 0. Older rows correct themselves as quarters refresh.
 **Lesson:** a regulator's 0 can mean "not filed". Check a field's zeros against the filing rules
 before storing them as values.
+
+## 2026-10-07: The FFIEC overdraft step ran out of memory on prod
+**What happened:** after PR 369 merged, `registry-ffiec-overdraft` failed for 2026Q1 (04:32 UTC)
+and 2026Q2 (05:07 UTC) about a second into each run, with "Array buffer allocation failed". No H032
+values were written.
+**Cause:** the step buffered the whole all-schedules bulk zip and unzipped it in one call, which
+sizes each output buffer from the zip headers. Which of the two allocations failed was not
+confirmed, because the cloud sandbox cannot download from FFIEC. Unit tests used small zips, so
+they did not catch it. A failed registry step also leaves its partition `scheduled`, and that
+partition is retried only after the 6-hour claim expires.
+**Fix:** `unzipScheduleRi` reads the download as a stream, inflates only the Schedule RI files,
+and grows each buffer with the data. The whole zip is never held in memory.
+**Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
+that the loader will fit in a function's memory.
