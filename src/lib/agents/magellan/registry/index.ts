@@ -5,6 +5,7 @@ import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
+import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import {
   NCUA_BRANCH_GEOCODE_PARTITION,
@@ -278,6 +279,29 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan read ${r.fetched} regulator press releases and stored ${r.inserted} new ones${dry(r.dryRun)}.${failed}`,
         detail: { fetched: r.fetched, inserted: r.inserted, failed_feeds: r.failedFeeds },
+      };
+    },
+  },
+  {
+    source: FEDERAL_REGISTER_SOURCE,
+    stepKey: "registry-federal-register",
+    title: "Pull the banking regulators' proposed and final rules",
+    fixedPartition: FEDERAL_REGISTER_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryFederalRegister({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      return {
+        summary: `Magellan read ${r.fetched} Federal Register rules since ${r.since}: ${r.stages.comment_open} open for comment, ${r.stages.final_not_yet_effective} final but not yet in effect; stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+        detail: {
+          since: r.since,
+          fetched: r.fetched,
+          reported_total: r.reported_total,
+          pages: r.pages,
+          stored: r.stored,
+          stages: r.stages,
+          fee_related: r.fee_related,
+          shadow: r.shadow,
+        },
       };
     },
   },

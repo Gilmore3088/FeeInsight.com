@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "./families";
-import { composableTail, splitCapsHeading, titleTail } from "./layout";
+import { composableTail, namesALimit, splitCapsHeading, titleTail } from "./layout";
 import { runFreeSpecialists } from "./specialists";
 import { extractFromTableRows, tableRowsFromText } from "./table-rows";
 
@@ -344,5 +344,32 @@ describe("Knox v27 two-column headings and joined NSF/overdraft rows", () => {
   it("lends a stop payment heading only to the item it stops", () => {
     expect(composableTail("Online per check")).toBe(false);
     expect(fees("Loan Modification\nForeign check fee | $25.00")).not.toContainEqual(expect.arrayContaining(["mortgage_modification"]));
+  });
+});
+
+describe("Knox v28 limits are not prices", () => {
+  it("does not read a limit the name states as a fee", () => {
+    const text = [
+      "Digital Banking | Zelle® transfer limit | $1,000.00",
+      "Mobile Deposit Checks are limited to $1,000 per day.",
+      "VISA Gift Cards: Maximum card load | $500.00",
+      "No Bounce Courtesy Pay Limit | $600.00",
+      "Stop Payment | $30.00",
+      "Overdraft and NSF Daily Maximum | $150.00",
+      "Visa Late Fee/ Over Limit | $39.00",
+    ].join("\n");
+    const read = fees(text).map(([, amount, key]) => `${key}:${amount}`);
+    expect(read).toEqual(expect.arrayContaining(["stop_payment:30", "late_payment:39"]));
+    for (const limit of ["zelle_fee:1000", "mobile_deposit:1000", "gift_card_purchase:500", "od_daily_cap:600"]) expect(read).not.toContain(limit);
+  });
+});
+
+describe("Knox v30 limits are not prices", () => {
+  it("does not read a rising limit or an ATM limits row as a fee", () => {
+    expect(namesALimit("calendar day, the Overdraft Privilege limit will increase to", "overdraft")).toBe(true);
+    expect(namesALimit("On the sixtieth (60th) calendar day, the limit will increase to", "overdraft")).toBe(true);
+    expect(namesALimit("Daily ATM Limits ($/#)", "atm_non_network")).toBe(true);
+    expect(namesALimit("Over Limit Fee", "overdraft")).toBe(false);
+    expect(namesALimit("Mobile Deposit Fee (daily limits apply)", "mobile_deposit")).toBe(false);
   });
 });

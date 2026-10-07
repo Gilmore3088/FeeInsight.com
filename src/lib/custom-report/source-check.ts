@@ -66,7 +66,8 @@ const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
 const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
-const THRESHOLD_AFTER = /^\s*(\+|or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+// "$200+" (attached) is a threshold; "$100.00 + Locksmith Fee" (spaced) adds a cost to a price.
+const THRESHOLD_AFTER = /^\+|^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
 const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
@@ -82,8 +83,8 @@ export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap"
 const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
 const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
 const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
-// "$.50" (no leading zero) is a price too: "Coin Counting---$.50/Per 100 Coins".
-const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])|\$\s*\.(\d{2})(?!\d)/g;
+const CENTS = /\$\s*\.(\d{2})(?!\d)|(?<![\d.,$])(\d{1,2})\s*(?:¢|cents?\b)/gi;
+const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
   value: number;
@@ -104,11 +105,16 @@ function comparable(value: string): string {
 function moneyTokens(line: string): MoneyToken[] {
   const tokens: MoneyToken[] = [];
   for (const match of line.matchAll(MONEY)) {
-    const whole = (match[1] ?? match[3] ?? "0").replace(/,/g, "");
-    const cents = match[2] ?? match[4] ?? match[5] ?? "00";
+    const whole = (match[1] ?? match[3]).replace(/,/g, "");
+    const cents = match[2] ?? match[4] ?? "00";
     tokens.push({ value: Number(`${whole}.${cents}`), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
   }
-  return tokens;
+  // A price under a dollar written without the zero ("$.50") or in cents ("75¢", "25 cents").
+  for (const match of line.matchAll(CENTS)) {
+    const value = Number(match[1] ?? match[2]) / 100;
+    tokens.push({ value, start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
+  }
+  return tokens.sort((a, b) => a.start - b.start);
 }
 
 /** Free words as $0 prices, for a line that also states other prices. */
