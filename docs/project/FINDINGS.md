@@ -2268,3 +2268,15 @@ showed it and the peer median counted it. The missing tier 1 ratio itself is cor
 bank page and peer median skip a stored 0. Older rows correct themselves as quarters refresh.
 **Lesson:** a regulator's 0 can mean "not filed". Check a field's zeros against the filing rules
 before storing them as values.
+
+## 2026-10-07: State bills would have taken about four days to cover 52 states
+**What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
+only Alaska had run.
+**Cause:** the registry scheduler starts one step every five minutes. It works round-robin across about
+20 sources and picks the first partition that is due. A source with 52 small partitions gets one
+turn per round, behind every other source's history and retries.
+**Fix:** state bills now has one scheduled partition, `current`. Each run reads the next 12 states
+whose weekly check is due and records each state under its own partition row. The step comes back
+within the hour while states are still due, so all 52 are covered in five runs.
+**Lesson:** for a registry source with many small, quick items, batch them inside one partition.
+Use per-item partitions only when each item is a heavy download.

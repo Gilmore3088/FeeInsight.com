@@ -13,7 +13,7 @@ import { cikBatch, runRegistrySecLinks } from "./sec";
 import { runRegistryRegNews } from "./reg-news";
 import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
-import { runRegistryStateBills } from "./state-bills";
+import { runRegistryStateBills, runRegistryStateBillsBatch } from "./state-bills";
 import { runRegistryFederalBills } from "./federal-bills";
 import { runRegistryFedPublications } from "./fed-publications";
 
@@ -537,6 +537,28 @@ describe("registry state bills worker", () => {
     expect(result.stored).toBe(1);
     const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
     expect(rows[0]).toMatchObject({ id: "ocd-bill/1", state_code: "CA", stage: "passed_chamber", stage_date: "2026-05-01" });
+  });
+
+  it("reads the next states that are due in one run and records each state plus the batch", async () => {
+    const { db, statements } = createDb([["FROM registry_ingest_partitions", () => [{ partition_key: "AK" }, { partition_key: "AL" }]]]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      String(url).includes("state%3Aaz") ? new Response("nope", { status: 400 }) : json(page),
+    );
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 3, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result.states).toEqual(["AR", "AZ", "CA"]);
+    expect(result.failedStates).toEqual(["AZ"]);
+    expect(result).toMatchObject({ fetched: 2, remaining: 52 - 2 - 3 });
+    const partitions = statements.filter((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partitions.map((s) => s.values[1])).toEqual(["AR", "AZ", "CA", "current"]);
+    expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
+  });
+
+  it("fails the run when every state in it fails", async () => {
+    const { db } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("bad key", { status: 401 }));
+    await expect(
+      runRegistryStateBillsBatch({ db, now, apiKey: "k", statesPerRun: 2, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } }),
+    ).rejects.toThrow(/Every state in this run failed/);
   });
 });
 

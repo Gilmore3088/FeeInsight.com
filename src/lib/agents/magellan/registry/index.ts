@@ -19,7 +19,7 @@ import {
 import { FED_PUBLICATIONS_PARTITION, FED_PUBLICATIONS_SOURCE, runRegistryFedPublications } from "./fed-publications";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
-import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
+import { STATE_BILLS_SOURCE, runRegistryStateBillsBatch } from "./state-bills";
 import { FEDERAL_BILLS_SOURCE, runRegistryFederalBills } from "./federal-bills";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import {
@@ -445,17 +445,18 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     stepKey: "registry-state-bills",
     title: "Pull state bank fee bills",
     run: async (input) => {
-      const r = await runRegistryStateBills({ partitionKey: input.partitionKey, runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const r = await runRegistryStateBillsBatch({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      const failed = r.failedStates.length > 0 ? ` Failed: ${r.failedStates.join(", ")}.` : "";
       return {
         summary: r.missingKey
-          ? `Skipped ${r.partitionKey} state bills: OPEN_STATES_API_KEY is not set.`
-          : `Magellan found ${r.fetched} ${r.partitionKey} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+          ? "Skipped state bills: OPEN_STATES_API_KEY is not set."
+          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}`,
         detail: {
-          since: r.since,
           missing_key: r.missingKey,
-          searched: r.searched,
-          requests: r.requests,
+          states: r.states,
+          failed_states: r.failedStates,
+          remaining: r.remaining,
           fetched: r.fetched,
           stored: r.stored,
           stages: r.stages,
