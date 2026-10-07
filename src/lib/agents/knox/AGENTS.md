@@ -126,6 +126,16 @@ of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
 stay held.
 
+v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
+02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
+collection fee on charged-off accounts and a collection phone call are debt collection, not a
+check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
+report to open an account is not a loan fee. Those lines now stay held. Each extract step also
+re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
+today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
+and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
+already verified are Hamilton's rules re-check's to take down.
+
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the
 account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
@@ -229,6 +239,19 @@ current copy's Knox rows, though the current text still showed the amount. Most 
 copies had last been read at rules v1 to v7, and none of the re-read triggers reached them. 1,017
 current copies qualify. 211 of the 898 are read already, on a second document that holds the same
 text. Knox reads a text once, so their current copy has no rows of its own.
+
+v27 (rules 27) reads two-column schedules where the right column's footnotes run beside a left-column
+heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
+looks like a heading and whose right cell opens lowercase or with a footnote number, now sets the
+heading, so "Domestic Outgoing | $35.00" under it is an outgoing domestic wire. A stop payment
+heading also lends itself to the item it stops ("Online per check"). One price whose name joins NSF
+and overdraft ("NSFs/Overdrafts", "Overdraft or NSF") is filed under both, as the answer keys file
+it. A balance an account requires ("Minimum Daily Balance Requirement | $1,000") is never held as a
+fee, and an "Insufficient Funds Transfer" from savings is an overdraft protection transfer, not an
+overdraft. Found on First National Bank Alaska (doc 19925), which was 2 headline fees short of a
+report. Answer keys: Texas and held-out unchanged, seven states 713 right (712), the same 47 wrong.
+Live dry run: the same 1,412 of 1,437 kept. Across the 117 live-sample documents it adds 7 reads,
+each checked against its line, and moves one $2.50 transfer from NSF to overdraft protection.
 
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
@@ -337,3 +360,43 @@ Change this table and `agent-health.ts` in the same PR.
 | Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_EXTRACT_STRATEGY`, 24 h) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `textsExtracted`, `evidenceMismatch`.
+
+v28 (rules 28) never reads a limit as a price. A name that ends on a limit ("Zelle transfer limit",
+"Mobile Deposit Checks are limited to", "VISA Gift Cards: Maximum card load", "Cash Advance Fee
+(maximum", "Zelle (Daily Limits)") states the most a customer may move, not what they pay
+(`namesALimit` in `layout.ts`). A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), a
+fee for going past a limit keeps its price ("Over Limit", "Limit Violation"), and a fee's own note
+keeps it a fee ("Mobile Deposit Fee (daily limits apply)"). The paid reader rejects the same rows
+(`limit_not_fee`). The shared check now also reads a price under a dollar written "$.50" or "75¢",
+and the paid reader counts those lines and skips an older copy of a page whose current copy has a
+text, as the free reader already did. A family expert names a fee after the previous fee's note
+("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
+keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
+Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.
+
+v29 (rules 29) tidies names that ran on into their price. A short name loses the connector before
+the price ("Visa Lost/Stolen Replacement Card Fee of", "Non-Bank of America ATM Fee for",
+"Debit Card Replacement A fee of") and a leading article ("A minimum balance fee" becomes "Minimum
+balance fee"), and a "None" or "Free" cell between two names is the previous row's price, so the name
+starts after it (`tidyFeeName`). A sentence of more than eight words keeps its ending, because the
+category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
+right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
+of 1,437 kept, the same fees.
+
+v30 (rules 30) reads two more limit wordings as ceilings, not prices: a limit that "will increase
+to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
+"($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
+
+Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
+from the second look or the restore bar) counts as verified under the category it came back with,
+and a takedown under that same category no longer counts against the name. A takedown under another
+category stands, since a fee taken down as a domestic wire and restored as an international wire
+confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
+`wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
+this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.
+
+v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 12-month cycle $240",
+ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
+Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.

@@ -4,9 +4,11 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
+import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
-import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
+import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
@@ -26,7 +28,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRates, recheckHeldRows } from "@/lib/agents/knox/held-recheck";
+import { recheckHeldRates, recheckHeldRows, recheckPromotedRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -591,6 +593,12 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Lines promoted from held that today's rules no longer file the same go back on hold.
+      const promotionRecheck = await recheckPromotedRows(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
       // Lines older rules held as unclassified get today's rules too.
       const heldRecheck = await recheckHeldRows(tx, {
         runId: run.id,
@@ -606,9 +614,10 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged). Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
         detail: {
           held_recheck: heldRecheck,
+          promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
@@ -792,6 +801,18 @@ async function executeAgenticStep(
       // same rows in opposite orders; the lock ends with this step's transaction.
       await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
       const institutionId = numericRunParam(params, ["institution_id"]);
+      // A takedown is never final: fees an earlier sweep took down come back once a range
+      // widens or the taxonomy gains their category.
+      const outlierRestores = await restoreOutliersNowInRange(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -799,6 +820,20 @@ async function executeAgenticStep(
         institutionId,
       });
       const offTaxonomyRollbacks = await rollBackOffTaxonomyFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A transfer or deposit limit read as a price ("Zelle® transfer limit | $1,000").
+      const limitRollbacks = await rollBackLimitsPublishedAsFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A business schedule's fee beside the bank's consumer fee in the same category.
+      const businessSchedule = await retireBusinessScheduleFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -918,6 +953,11 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              outlierRestores.length > 0 ||
+              offTaxonomyRestores.length > 0 ||
+              limitRollbacks.length > 0 ||
+              businessSchedule.rolledBack.length > 0 ||
+              businessSchedule.restored > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
@@ -933,8 +973,19 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
           : "";
       const offTaxonomyNote =
-        offTaxonomyRollbacks.length > 0
+        (offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
+          : "") +
+        (outlierRestores.length + offTaxonomyRestores.length > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${(outlierRestores.length + offTaxonomyRestores.length).toLocaleString()} earlier range or taxonomy takedown(s) that pass today.`
+          : "");
+      const limitNote =
+        limitRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${limitRollbacks.length.toLocaleString()} live fee(s) whose figure is a transaction limit, not a price.`
+          : "";
+      const businessNote =
+        businessSchedule.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${businessSchedule.rolledBack.length.toLocaleString()} business-schedule fee(s) beside the bank's consumer fee.`
           : "";
       const categoryGuardNote =
         categoryGuardRollbacks > 0
@@ -969,7 +1020,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -977,6 +1028,8 @@ async function executeAgenticStep(
           skipped_verified_fees: published.skippedFees,
           superseded_fees: published.supersededFees,
           outlier_rollbacks: outlierRollbacks.length,
+          outlier_restores: outlierRestores.length,
+          off_taxonomy_restores: offTaxonomyRestores.length,
           outlier_rollback_samples: outlierRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,
@@ -992,6 +1045,23 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          business_schedule: {
+            business_fees: businessSchedule.businessFees,
+            with_consumer_fee: businessSchedule.withConsumerFee,
+            flagged: businessSchedule.flagged,
+            waiting: businessSchedule.waiting,
+            rolled_back: businessSchedule.rolledBack.length,
+            restored: businessSchedule.restored,
+          },
+          limit_rollbacks: limitRollbacks.length,
+          limit_rollback_samples: limitRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            reason: rollback.reason,
           })),
           category_guard_rollbacks: categoryGuardRollbacks,
           category_guard_failing: categoryGuard.failingFees,
@@ -1057,6 +1127,7 @@ async function executeAgenticStep(
                 category_rejects: feedbackSync.categoryRejects,
                 answer_key_fees: feedbackSync.answerKeyFees,
                 written: feedbackSync.written,
+                relabeled: feedbackSync.relabeled,
               }
             : false,
           source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
@@ -2181,6 +2252,8 @@ export async function executeQueuedAgentRuns({
   const rows = await sql`
     SELECT r.id
       FROM agent_runs r
+      LEFT JOIN agent_state_lanes lane
+        ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
      WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.status = 'queued'
        AND (
@@ -2199,9 +2272,18 @@ export async function executeQueuedAgentRuns({
               )
          )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page, while
-     -- the pipeline backlog keeps ~20 lane runs queued (about 50 minutes of work).
-     ORDER BY (r.run_kind = 'report') DESC, r.started_at ASC, r.id ASC
+     -- Report runs go first: someone pressed Generate and is watching the page. Then a
+     -- run already under way finishes before a new one starts, then any run waiting over
+     -- an hour, then state lanes by Atlas's priority score (open work, report requests,
+     -- near-ready markets), then launch order.
+     ORDER BY (r.run_kind = 'report') DESC,
+              EXISTS (
+                SELECT 1 FROM agent_run_steps done
+                 WHERE done.agent_run_id = r.id AND done.status <> 'queued'
+              ) DESC,
+              (r.started_at < NOW() - INTERVAL '1 hour') DESC,
+              COALESCE(lane.priority_score, 0) DESC,
+              r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
   // Runs advance one after another. Running state lanes side by side held several

@@ -73,6 +73,14 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof retireFeesDroppe
 
 describe("Hamilton newer-copy check", () => {
 
+  it("never retires a fee Knox read from the newer text under any name or category", () => {
+    const fees = olderFees.map((row) => (row.fee_published_id === 4 ? { ...row, newer_row_match: true } : row));
+    const result = judgeNewerCopy(fees, newerText, olderText);
+    expect(result.recognized).toBe(true);
+    expect(result.dropped).toBe(0);
+    expect(result.retire).toEqual([]);
+  });
+
   it("separates fees still stated, still named and dropped", () => {
     expect(newerCopyVerdict({ fee_name: "Overdraft Fee", amount: 32 }, newerText, olderText)).toBe("still_stated");
     expect(newerCopyVerdict({ fee_name: "Wire Transfer Outgoing Domestic", amount: 20 }, newerText, olderText)).toBe("still_named");

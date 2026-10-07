@@ -71,6 +71,17 @@ function numericAnswer(text: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/**
+ * A waiver rate is stored as a share (0.08), which scenarios use directly. "8%", "8" and "0.08"
+ * all mean 8%; "1%" is 0.01, not 100%. Null above 100%.
+ */
+export function waiverShare(text: string): number | null {
+  const n = numericAnswer(text);
+  if (n === null) return null;
+  const share = text.includes("%") || n > 1 ? n / 100 : n;
+  return share <= 1 ? share : null;
+}
+
 const NUMERIC_KEYS = /\.(annual_items|annual_volume|waiver_rate|current_amount)$/;
 
 function savedSentence(fieldKey: string, value: unknown): string {
@@ -78,7 +89,7 @@ function savedSentence(fieldKey: string, value: unknown): string {
   const name = fee ? proseFeeName(fee) : "";
   const n = typeof value === "number" ? value : NaN;
   if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${name} items a year. Scenarios now use it.`;
-  if (fieldKey.endsWith(".waiver_rate")) return `Saved: ${n > 1 ? n : Math.round(n * 1000) / 10}% of ${name} fees waived or refunded. Scenarios now use it.`;
+  if (fieldKey.endsWith(".waiver_rate")) return `Saved: ${Math.round(n * 1000) / 10}% of ${name} fees waived or refunded. Scenarios now use it.`;
   if (fieldKey.endsWith(".current_amount")) return `Saved: you charge $${n} for one ${name} item.`;
   if (fieldKey.endsWith(".annual_volume")) return `Saved: your ${name} rate applied to about $${n.toLocaleString("en-US")} over the last 12 months.`;
   if (fieldKey === "decision.objective") return `Saved: weigh the options for ${String(value).replace(/_/g, " ")}.`;
@@ -156,7 +167,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
       question = text;
       fallbackFee = fieldKey.split(".")[1];
     } else {
-      const parsed = fieldKey === "decision.objective" ? parseObjective(text) : NUMERIC_KEYS.test(fieldKey) ? numericAnswer(text) : text;
+      const parsed = fieldKey === "decision.objective" ? parseObjective(text) : fieldKey.endsWith(".waiver_rate") ? waiverShare(text) : NUMERIC_KEYS.test(fieldKey) ? numericAnswer(text) : text;
       if (parsed === null) return { status: 200, body: { ...clarifyAgain(fieldKey), decisionId: decision?.id } };
       let saved: MemoryFact | null = null;
       if (ready) {
@@ -165,7 +176,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
       }
       const response: AskResponse = {
         kind: "saved_fact",
-        shortAnswer: ready ? savedSentence(fieldKey, parsed) : "Hamilton could not save that yet; the workspace tables are not set up.",
+        shortAnswer: ready ? savedSentence(fieldKey, parsed) : "Hamilton could not save that just now. Please try again in a few minutes.",
         pageChange: fieldKey === "decision.objective" ? { screen: "none" } : { screen: "data", fieldKey },
         ...(saved ? { savedFact: saved } : {}),
         ...(decision ? { decisionId: decision.id } : {}),

@@ -56,6 +56,8 @@ export interface ExtractionRulesResult {
   held: HeldFeeCandidate[];
 }
 
+const BALANCE_REQUIREMENT = /\bbalance (?:requirement|required)\b|\brequired (?:minimum |daily |average )*balance\b/i;
+
 interface FeePattern {
   key: string;
   pattern: RegExp;
@@ -77,7 +79,7 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   {
     key: "account_research",
     pattern:
-      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b|\bfax(?:es|ing)?\b/i,
+      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b|^(?![\s\S]*\btransfers?\b)[\s\S]*\bfax(?:es|ing)?\b/i,
   },
   {
     key: "account_research",
@@ -86,12 +88,14 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   },
   {
     key: "check_cashing",
+    // A collection fee on a charged-off or past-due account, or a collection phone call,
+    // is debt collection, not a check sent for collection (v30, from prod's first v26 pass).
     pattern:
-      /\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
+      /^(?![\s\S]*\b(?:charged[- ]?off|past[- ]due|delinquen\w*|calls?)\b)[\s\S]*?\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
   },
   {
     key: "loan_origination",
-    pattern: /\bloan cancell?ation\b|\bcredit report fee\b|\bUCC (?:filing|release|lien)\b|\buniform commercial code\b/i,
+    pattern: /\bloan cancell?ation\b|\bcredit report fee\b(?!.{0,20}\bopen)|\bUCC (?:filing|release|lien)\b|\buniform commercial code\b/i,
   },
   {
     key: "other_lending_fee",
@@ -147,7 +151,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b/i,
   },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
@@ -901,7 +905,9 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   }
 
   if (!hint) {
-    if (/\b(fee|charge)s?\b/i.test(segment) && usableName(feeName) && feeAmounts[0].value <= MAX_REASONABLE_FEE_AMOUNT) {
+    // v27: a balance an account requires ("Minimum Daily Balance Requirement | $1,000") is
+    // not a fee, even beside one on the same line.
+    if (/\b(fee|charge)s?\b/i.test(segment) && usableName(feeName) && !BALANCE_REQUIREMENT.test(feeName) && feeAmounts[0].value <= MAX_REASONABLE_FEE_AMOUNT) {
       result.held.push({ shape: "unclassified", feeName, amount: feeAmounts[0].value, amountMax: null, percent: null, frequency, canonicalHint: null, excerpt: segment });
     }
     return result;

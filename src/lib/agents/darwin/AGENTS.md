@@ -23,7 +23,7 @@ Darwin owns verification and classification.
 | `outside_envelope` | a positive amount inside its category's range: hand-set (`envelopes.ts`), else learned (`learned-envelopes.ts`), else $0.01-$2,500 | needs_review |
 | `not_in_source` | the fee is stated in the stored text of the document Knox read it from (`checkFeeAgainstSource`, the shared accuracy check; a tiered price counts) | rejected |
 | `peer_outlier` | pass 2: not far outside the state's peer range (below); a district or national comparison never holds | needs_review |
-| `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, source) not already verified in this batch | duplicate |
+| `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 
 - Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
@@ -32,6 +32,10 @@ Darwin owns verification and classification.
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
   decided row, and rows once held as `duplicate_in_batch` would be verified as second copies.
+- The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,
+  2026-10-07). Version 1 named the URL, so a fee on a bank's current copy of a page was held
+  as a duplicate of the same fee on an older copy and never verified. A version 1 duplicate on
+  a current copy with no verified twin on that same document is selected once more.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
@@ -96,9 +100,26 @@ Darwin owns verification and classification.
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
   writes a `darwin.release` note of kind `not_on_schedule` to `pipeline_feedback` and leaves
-  the held pile. Those fees were never live, so nothing comes down. Releases stay a dry run
+  the held pile. Those fees were never live, so nothing comes down. v4 (James, 2026-10-07:
+  scrapping is a last resort, looked at more than once, logged, never deleted) takes two
+  looks: the first "not stated" is `reject_pending` (logged, no note, still held); at least
+  `DARWIN_REJECT_SECOND_LOOK_HOURS` later the fee is read again against its own document and
+  the bank's current copy, and only a second "not stated" is a final `reject` with its note.
+  A fee found on the schedule replaces an earlier reject note with a `restored` one
+  (`stated_on_later_look`). Raw rows, attempts and notes are never deleted. Releases stay a dry run
   while `DARWIN_RELEASE_ACTS` is false; switching it on needs James's word and a version bump,
   and writes released fees as `darwin_verified` notes. Step detail: `held_release`.
+  `verify.release_review` v5 (2026-10-07) is versioned on its own: a hand check of 20 v4
+  verdicts had 17 right; the prompt now says a stop payment's removal and an expedited
+  version of a service do not fit the service's category, and "Cost plus $8" is not a price.
+  The review also reads lessons from `pipeline_feedback` (2026-10-07): for each category in
+  a batch, the 3 latest live fees Hamilton's category checks took down as wrongly filed and
+  the 2 latest takedowns a later check restored, each with its schedule line. A new takedown
+  or restore is in the next review's prompt with no code change. The source check's amount
+  judgements are left out until they hold up (of 20 read against the full page, 4 were real
+  prices wrongly taken down and 3 unreadable). The review also reads the 3 schedule rows on each
+  side of a fee's line (`scheduleContext`), since a price can belong to the next row or column.
+  Each review attempt's detail records `lessons` (how many were in its prompt).
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

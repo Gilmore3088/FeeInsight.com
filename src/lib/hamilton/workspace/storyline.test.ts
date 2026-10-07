@@ -125,7 +125,7 @@ describe("storyline", () => {
   it("names who changed the fee and when, newest first", () => {
     const story = buildFeeAnswer(research(), { story: { focus: "trend" } }).storyline!;
     const timeline = story.exhibits.find((e) => e.exhibit.kind === "change_timeline")!;
-    expect(timeline.actionTitle).toBe("2 institutions in Tennessee changed an overdraft fee in the last 180 days; 1 cut it.");
+    expect(timeline.actionTitle).toBe("2 institutions in Tennessee changed an overdraft fee in the last 180 days; 1 lowered it.");
     if (timeline.exhibit.kind === "change_timeline") expect(timeline.exhibit.events[0].institutionName).toBe("Peer 9");
     expect(story.complication[0].text).toMatch(/^2 institutions in Tennessee changed an overdraft fee/);
   });
@@ -156,10 +156,10 @@ describe("storyline", () => {
     // The table already lists every member at its price; no second exhibit repeats it.
     expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
     expect(story.lenses.market.map((f) => f.text)).toEqual([
-      "2 of 6 $10B+ institutions undercut your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
+      "2 of 6 $10B+ institutions price below your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
       "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
       "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
-      "In Tennessee, 1 cut and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
+      "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
     ]);
   });
 

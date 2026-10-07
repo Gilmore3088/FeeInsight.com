@@ -33,6 +33,7 @@ describe("checkFeeCategory", () => {
     ["card_replacement", "ATM Debit Card (duplicate)"],
     ["stop_payment", "Stop Payment"],
     ["stop_payment", "ACH Stop Payment/Cancelation Fee"],
+    ["stop_payment", "Stop Payments (to put on or remove) including ACH and Bill Pay"],
     ["paper_statement", "Paper Statement (Per Month, Waived w/ e-Statements)"],
     ["paper_statement", "E-statements complimentary on all accounts. Paper statement fee is"],
   ])("accepts %s: %s", (key, name) => {
@@ -63,6 +64,11 @@ describe("checkFeeCategory", () => {
     ["paper_statement", "eStatement Fee"],
     ["stop_payment", "Cancel stop payment"],
     ["stop_payment", "Cancellation of a Stop Payment"],
+    ["stop_payment", "Stop Payment Removal"],
+    ["stop_payment", "Stop Payment Removal Fee"],
+    ["stop_payment", "Removal of Stop Payment"],
+    ["stop_payment", "Remove Stop Payment"],
+    ["stop_payment", "Stop Payment Fee (removal)"],
     ["atm_non_network", "Foreign ATM Balance Inquiry"],
   ])("flags %s: %s as filed under the wrong category", (key, name) => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_contradicts" });
@@ -133,6 +139,16 @@ describe("checkFeeCategory", () => {
     ]) {
       expect(checkFeeCategory("nsf", name)).toEqual({ ok: true });
     }
+  });
+
+  it("v15 keeps debt collection out of check cashing and account opening out of loan fees (prod, Oct 7)", () => {
+    expect(checkFeeCategory("check_cashing", "Phone Call Collection Fee").ok).toBe(false);
+    expect(checkFeeCategory("check_cashing", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
+    expect(checkFeeCategory("check_cashing", "Foreign Item Collection Fee (per item)")).toEqual({ ok: true });
+    expect(checkFeeCategory("check_cashing", "Check Cashing Fee - Non-Member")).toEqual({ ok: true });
+    expect(checkFeeCategory("loan_origination", "Credit Report Fee to Open Account").ok).toBe(false);
+    expect(checkFeeCategory("loan_origination", "Credit Report Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("loan_origination", "Loan Cancellation Fee")).toEqual({ ok: true });
   });
 
   it("v14 reads curly quotes, check cards and deposit charge backs as the bank wrote them (rejected rows, Oct 6)", () => {

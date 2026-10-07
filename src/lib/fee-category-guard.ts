@@ -83,8 +83,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   stop_payment: {
     include: /stop/i,
-    // "Cancel stop payment" removes a stop; "ACH Stop Payment/Cancellation" places one.
-    exclude: /(release|cancel\w*\s+(of\s+)?(a\s+|the\s+)?stop|revoc|line of credit|heloc|loan|cashier|official)/i,
+    // "Cancel stop payment" and "Stop Payment Removal" remove a stop; "ACH Stop
+    // Payment/Cancellation" and "Stop Payments (to put on or remove)" place one.
+    exclude:
+      /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
@@ -142,6 +144,18 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
   },
+  // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
+  // 2026). A collection fee on a charged-off or past-due account, or a collection phone
+  // call, is debt collection; every other name passes.
+  check_cashing: {
+    include: /\S/,
+    exclude: /(charged[- ]?off|past[- ]due|delinquen|\bcalls?\b)/i,
+  },
+  // A credit report pulled to open a deposit account or membership is not a loan fee.
+  loan_origination: {
+    include: /\S/,
+    exclude: /\bopen(ing)? (an |a |new |your )?(account|membership)\b/i,
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -151,7 +165,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 14;
+export const CATEGORY_GUARD_VERSION = 16;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

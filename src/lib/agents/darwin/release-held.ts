@@ -4,8 +4,9 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { categoryOpinion, loadCategoryModel, type CategoryModel } from "./category-model";
 import { withinAmountEnvelope } from "./envelopes";
+import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { recordDarwinFeedback } from "./feedback";
-import { knoxStrategyFromFlags, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { feedbackSchemaReady, knoxStrategyFromFlags, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import {
   DARWIN_VERIFY_STRATEGY,
   insertVerifiedFee,
@@ -43,8 +44,19 @@ type SqlTag = typeof sql;
  * pile. The fee was never live, so nothing comes down; the notes carry check_name
  * `darwin.release` and can be removed, and a version bump judges every held fee again.
  * Releases stay a dry run (DARWIN_RELEASE_ACTS) until the review's own spot check passes.
+ *
+ * Version 4 (James, 2026-10-07 01:20 UTC: scrapping is a last resort, "picked over
+ * multiple times", logged, never deleted, always revisitable) makes a reject take two
+ * looks. The first "not stated" verdict is `reject_pending`: logged, no note, the fee stays
+ * held. At least DARWIN_REJECT_SECOND_LOOK_HOURS later the fee is judged again against its
+ * own document and the bank's current copy of that page; only a second "not stated" is a
+ * final `reject`, with its note naming both looks. A fee either look finds on the schedule
+ * is judged as usual, and a note an earlier version wrote for it is replaced by a
+ * "restored" one. Nothing is deleted: the raw row, both attempts and the note all stay.
  */
-export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 3 } as const;
+export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 4 } as const;
+/** Hours between a fee's first and second "not stated" look. */
+export const DARWIN_REJECT_SECOND_LOOK_HOURS = 20;
 /** Publish fees the release review confirms. Off: verdicts only. */
 export const DARWIN_RELEASE_ACTS = false;
 /** Record rejects in the learning store. */
@@ -57,11 +69,15 @@ export const DARWIN_RELEASED_HOLD_FLAG = "darwin_released_hold";
 export const DARWIN_RELEASE_BATCH = 200;
 
 export type HeldReason = "outside_envelope" | "peer_outlier";
-export type ReleaseVerdict = "review" | "reject" | "keep" | "duplicate";
+export type ReleaseVerdict = "review" | "reject_pending" | "reject" | "keep" | "duplicate";
 
 export interface HeldFeeRow extends RawFeeRow {
   held_reason: HeldReason;
   held_canonical_fee_key: string;
+  /** When the first "not stated" look was logged; set only on a second look. */
+  first_look_at?: string | Date | null;
+  /** The bank's current copy of this fee's page, when a newer copy superseded it. */
+  current_document_id?: number | string | null;
 }
 
 export type ReleaseSourceCheck = "stated" | SourceCheckFailure | "no_amount" | "tiered_unconfirmed" | "category_disputed";
@@ -94,11 +110,32 @@ function amountOf(value: number | string | null): number | null {
 }
 
 /** Pure: the verdict for one held fee, given its stored schedule text and Darwin's category model. */
+/** Rows of the schedule on each side of the matched line that the review also reads. */
+export const SCHEDULE_CONTEXT_ROWS = 3;
+const SCHEDULE_CONTEXT_CHARS = 1200;
+
+/**
+ * The matched line with the rows around it in the stored text. One line alone can hide
+ * that its price belongs to the next row or another column: a hand check of 13 source-check
+ * takedowns (2026-10-07) found 5 whose price was a neighbouring row's ("Return item $5" next
+ * to "Early close $10") or another column's. Null when the line is not in the text.
+ */
+export function scheduleContext(text: string | null | undefined, line: string): string | null {
+  if (!text) return null;
+  const lines = text.split(/\r?\n/);
+  const target = line.trim();
+  const at = lines.findIndex((candidate) => candidate.includes(target) || (candidate.trim().length > 0 && target.includes(candidate.trim())));
+  if (at < 0) return null;
+  const from = Math.max(0, at - SCHEDULE_CONTEXT_ROWS);
+  const context = lines.slice(from, at + SCHEDULE_CONTEXT_ROWS + 1).map((row) => row.trim()).filter(Boolean).join("\n");
+  return context.slice(0, SCHEDULE_CONTEXT_CHARS);
+}
+
 export function releaseVerdict(
   row: Pick<HeldFeeRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
   text: string | null | undefined,
   categoryModel: CategoryModel | null = null,
-): { verdict: Exclude<ReleaseVerdict, "duplicate">; sourceCheck: ReleaseSourceCheck; sourceLine: string | null } {
+): { verdict: Exclude<ReleaseVerdict, "duplicate" | "reject_pending">; sourceCheck: ReleaseSourceCheck; sourceLine: string | null } {
   const amount = amountOf(row.amount);
   if (amount == null || amount <= 0) return { verdict: "reject", sourceCheck: "no_amount", sourceLine: null };
   const check = checkFeeAgainstSource(text, row.fee_name, amount, ".", row.held_canonical_fee_key);
@@ -153,14 +190,25 @@ function duplicateKey(institutionId: number, key: string, amount: number | null,
   return [institutionId, key, amount, (source ?? "").trim()].join("|");
 }
 
-async function selectHeldFees(db: SqlTag, limit: number, stateCode?: string, institutionId?: number): Promise<HeldFeeRow[]> {
+async function selectHeldFees(
+  db: SqlTag,
+  limit: number,
+  stateCode?: string,
+  institutionId?: number,
+  currentCopy = false,
+): Promise<HeldFeeRow[]> {
   const params: Array<string | number> = [
     limit,
     DARWIN_VERIFY_STRATEGY.strategy,
     DARWIN_VERIFY_STRATEGY.version,
     DARWIN_RELEASE_STRATEGY.strategy,
     DARWIN_RELEASE_STRATEGY.version,
+    DARWIN_REJECT_SECOND_LOOK_HOURS,
   ];
+  // The bank's current copy of the page, read on a reject's second look.
+  const currentDocument = currentCopy
+    ? `(SELECT sd.superseded_by_id FROM source_documents sd WHERE sd.id = fr.source_document_id)`
+    : "NULL::bigint";
   const filters: string[] = [];
   const state = normalizeStateCode(stateCode);
   if (state) filters.push(`AND upper(btrim(inst.state_code)) = $${params.push(state)}`);
@@ -181,7 +229,13 @@ async function selectHeldFees(db: SqlTag, limit: number, stateCode?: string, ins
              fr.source_document_id,
              upper(btrim(inst.state_code)) AS state_code,
              pa.detail->>'reason_code' AS held_reason,
-             pa.detail->>'canonical_fee_key' AS held_canonical_fee_key
+             pa.detail->>'canonical_fee_key' AS held_canonical_fee_key,
+             (SELECT max(first.created_at) FROM pipeline_attempts first
+               WHERE first.input_fingerprint = pa.input_fingerprint
+                 AND first.strategy = $4
+                 AND first.strategy_version = $5
+                 AND first.detail->>'verdict' = 'reject_pending') AS first_look_at,
+             ${currentDocument} AS current_document_id
         FROM pipeline_attempts pa
         JOIN raw_fee_observations fr ON fr.fee_raw_id = substring(pa.input_fingerprint from 5)::bigint
         JOIN institution_sources inst ON inst.id = fr.institution_id
@@ -205,6 +259,18 @@ async function selectHeldFees(db: SqlTag, limit: number, stateCode?: string, ins
             WHERE done.input_fingerprint = pa.input_fingerprint
               AND done.strategy = $4
               AND done.strategy_version = $5
+              -- A first "not stated" look comes back once for its second look.
+              AND NOT (
+                done.detail->>'verdict' = 'reject_pending'
+                AND done.created_at < now() - make_interval(hours => $6)
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts second
+                   WHERE second.input_fingerprint = done.input_fingerprint
+                     AND second.strategy = done.strategy
+                     AND second.strategy_version = done.strategy_version
+                     AND second.created_at > done.created_at
+                )
+              )
          )
          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
        ORDER BY pa.created_at ASC, fr.fee_raw_id ASC
@@ -212,6 +278,18 @@ async function selectHeldFees(db: SqlTag, limit: number, stateCode?: string, ins
     `,
     params,
   );
+}
+
+async function loadEarlierRejects(db: SqlTag, feeRawIds: number[]): Promise<Set<number>> {
+  if (feeRawIds.length === 0) return new Set();
+  const rows = await db<Array<{ fee_raw_id: number | string }>>`
+    SELECT fee_raw_id
+      FROM pipeline_feedback
+     WHERE check_name = 'darwin.release'
+       AND kind = 'not_on_schedule'
+       AND fee_raw_id = ANY(${feeRawIds}::bigint[])
+  `;
+  return new Set((rows ?? []).map((row) => Number(row.fee_raw_id)));
 }
 
 async function loadVerifiedKeys(db: SqlTag, institutionIds: number[]): Promise<Set<string>> {
@@ -229,7 +307,7 @@ function feedbackFor(
   decision: ReleaseDecision,
   row: HeldFeeRow,
   runId: number,
-  outcome: "release" | "reject",
+  outcome: "release" | "reject" | "restore",
 ): FeedbackRow | null {
   let flags: string[] = [];
   try {
@@ -241,8 +319,8 @@ function feedbackFor(
   return {
     aboutStage: "extract",
     aboutStrategy: knoxStrategyFromFlags(flags),
-    signal: outcome === "release" ? "right" : "wrong",
-    kind: outcome === "release" ? "darwin_verified" : "not_on_schedule",
+    signal: outcome === "release" ? "right" : outcome === "restore" ? "restored" : "wrong",
+    kind: outcome === "release" ? "darwin_verified" : outcome === "restore" ? "stated_on_later_look" : "not_on_schedule",
     reportedBy: "darwin",
     checkName: "darwin.release",
     institutionId: decision.institutionId,
@@ -252,12 +330,15 @@ function feedbackFor(
     feeVerifiedId: decision.feeVerifiedId,
     canonicalFeeKey: decision.canonicalFeeKey,
     amount: decision.amount,
-    weight: outcome === "release" ? 0.5 : 1,
+    weight: outcome === "reject" ? 1 : 0.5,
     evidence: {
       fee_name: row.fee_name,
       held_reason: decision.heldReason,
       source_check: decision.sourceCheck,
       source_line: decision.sourceLine,
+      first_look_at: row.first_look_at == null ? null : new Date(row.first_look_at).toISOString(),
+      current_document_id: row.current_document_id == null ? null : Number(row.current_document_id),
+      strategy_version: DARWIN_RELEASE_STRATEGY.version,
     },
     runId,
     dedupeKey: `darwin.release:raw:${decision.feeRawId}`,
@@ -282,11 +363,24 @@ export async function runDarwinReleaseHeld(options: {
   const { db } = options;
   const learning = !options.dryRun && (await learningSchemaReady(db));
   const acts = DARWIN_RELEASE_REJECTS_ACT && learning;
-  const rows = await selectHeldFees(db, options.limit ?? DARWIN_RELEASE_BATCH, options.stateCode, options.institutionId);
+  const currentCopy = await currentCopySchemaReady(db);
+  const rows = await selectHeldFees(
+    db,
+    options.limit ?? DARWIN_RELEASE_BATCH,
+    options.stateCode,
+    options.institutionId,
+    currentCopy,
+  );
   const texts = await loadSourceTexts(
     db,
-    Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
+    Array.from(new Set(rows.flatMap((row) => [row.source_document_id, row.current_document_id]
+      .flatMap((id) => (id == null ? [] : [Number(id)]))))),
   );
+  // Fees an earlier version already marked "not_on_schedule": a fee found on the
+  // schedule now gets that note replaced by a "restored" one.
+  const earlierRejects = acts && (await feedbackSchemaReady(db))
+    ? await loadEarlierRejects(db, rows.map((row) => Number(row.fee_raw_id)))
+    : new Set<number>();
   const verified = await loadVerifiedKeys(db, Array.from(new Set(rows.map((row) => Number(row.institution_id)))));
   const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
 
@@ -294,10 +388,23 @@ export async function runDarwinReleaseHeld(options: {
   const feedback: FeedbackRow[] = [];
   for (const row of rows) {
     const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id));
-    const judged = releaseVerdict(row, text, categoryModel);
+    const secondLook = row.first_look_at != null;
+    let judged = releaseVerdict(row, text, categoryModel);
+    let judgedText = text;
+    // A second look also reads the bank's current copy of the page.
+    if (secondLook && judged.verdict === "reject" && row.current_document_id != null) {
+      const currentText = texts.get(Number(row.current_document_id));
+      const current = releaseVerdict(row, currentText, categoryModel);
+      if (current.verdict !== "reject") {
+        judged = current;
+        judgedText = currentText;
+      }
+    }
     const amount = amountOf(row.amount);
     const key = duplicateKey(Number(row.institution_id), row.held_canonical_fee_key, amount, row.source_url);
     let verdict: ReleaseVerdict = judged.verdict;
+    // Scrapping is a last resort: the first "not stated" only marks the fee for a second look.
+    if (verdict === "reject" && !secondLook) verdict = "reject_pending";
     if (verdict === "review" && verified.has(key)) verdict = "duplicate";
     else if (verdict === "review") verified.add(key);
 
@@ -315,6 +422,9 @@ export async function runDarwinReleaseHeld(options: {
     decisions.push(decision);
     if (acts && verdict === "reject") {
       const entry = feedbackFor(decision, row, options.runId, "reject");
+      if (entry) feedback.push(entry);
+    } else if (acts && verdict !== "reject_pending" && earlierRejects.has(decision.feeRawId)) {
+      const entry = feedbackFor(decision, row, options.runId, "restore");
       if (entry) feedback.push(entry);
     }
 
@@ -341,6 +451,10 @@ export async function runDarwinReleaseHeld(options: {
           verdict,
           source_check: decision.sourceCheck,
           source_line: decision.sourceLine?.slice(0, 300) ?? null,
+          source_context: decision.sourceLine ? scheduleContext(judgedText, decision.sourceLine) : null,
+          look: secondLook ? 2 : 1,
+          first_look_at: row.first_look_at == null ? null : new Date(row.first_look_at).toISOString(),
+          current_document_id: row.current_document_id == null ? null : Number(row.current_document_id),
           acted: acts && verdict === "reject",
         },
       });

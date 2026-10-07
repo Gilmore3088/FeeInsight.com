@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
@@ -26,7 +27,13 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 5: a price with a note in parentheses under its name ("$29.00/presentment (applies
 // to ...)"), and figures in a name's note ("Gift Cards ($25 up to $500 Only) | $5"), are read,
 // so fees the older check took down for those layouts are checked again and restored.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 5 } as const;
+// Version 6: a price charged per $100 of the item ("Cashier Check (per $100.00) $1.00") is not
+// a flat fee (priced_per_amount); "$.50" is a price; a price with a unit and a qualifier under
+// its name ("$5.00 per month for each acct., following ..."), "Fee $35.00" under a name, a
+// balance to maintain, and a name wrapped onto the next line are read (Darwin's sample: 13 of
+// 20 recent takedowns were real prices). Every institution is checked again; institutions
+// with source-check takedowns go first, so wrongly taken-down fees come back soonest.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 6 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -34,6 +41,38 @@ export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", versio
  */
 export function sourceCheckFingerprint(maxLiveFeeId: number | string): string {
   return `v${SOURCE_CHECK_STRATEGY.version}:${maxLiveFeeId}`;
+}
+
+/** The marker a restore leaves, so the restored fee's institution is checked again. */
+export const SOURCE_CHECK_RESTORE_PREFIX = "restored:";
+
+/**
+ * Another check (the newer-copy check, the rules re-check) can put an older row live
+ * again. Its id is below the institution's highest live id, so the fingerprint above
+ * would not change and the restored fee would go live without a source check. A marker
+ * attempt per restored row makes the institution due again: a check counts only while
+ * no marker is newer than it.
+ */
+export async function markRestoredForSourceCheck(
+  db: SqlTag,
+  restored: Array<{ institution_id: number | string; fee_published_id: number | string }>,
+  options: { runId: number; restoredBy: string },
+): Promise<void> {
+  if (restored.length === 0) return;
+  await db`
+    INSERT INTO pipeline_attempts (
+      institution_id, stage, strategy, strategy_version, input_fingerprint, outcome,
+      yield_count, cost_microusd, agent_run_id, detail
+    )
+    SELECT v.institution_id, 'publish', ${SOURCE_CHECK_STRATEGY.strategy}, ${SOURCE_CHECK_STRATEGY.version},
+           ${SOURCE_CHECK_RESTORE_PREFIX} || v.fee_published_id::text || ':' || ${options.runId}::text, 'ok',
+           0, 0, ${options.runId},
+           jsonb_build_object('restored_fee_published_id', v.fee_published_id, 'restored_by', ${options.restoredBy}::text)
+      FROM unnest(
+             ${restored.map((row) => Number(row.institution_id))}::bigint[],
+             ${restored.map((row) => Number(row.fee_published_id))}::bigint[]
+           ) AS v(institution_id, fee_published_id)
+  `;
 }
 
 export interface LiveFeeRow extends RateFields {
@@ -107,9 +146,25 @@ export interface SourceCheckResult {
   takedowns: SourceCheckTakedown[];
   /** Fees an earlier source check took down that now trace, put back live. */
   restored: number;
+  /** Failed for the first time: logged for a second look, still live. */
+  flagged: number;
+  /** Failed again before their second look was due: still live. */
+  awaitingSecondLook: number;
+  /** Passed after an earlier failure: their pending flag is cleared. */
+  cleared: number;
 }
 
-const EMPTY_RESULT: SourceCheckResult = { institutionsChecked: 0, liveFeesChecked: 0, traced: 0, relinked: 0, takedowns: [], restored: 0 };
+const EMPTY_RESULT: SourceCheckResult = {
+  institutionsChecked: 0,
+  liveFeesChecked: 0,
+  traced: 0,
+  relinked: 0,
+  takedowns: [],
+  restored: 0,
+  flagged: 0,
+  awaitingSecondLook: 0,
+  cleared: 0,
+};
 const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
 
 /**
@@ -117,7 +172,8 @@ const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
  * (`checkFeeAgainstSource`, the same rule the report gate uses). For a batch of
  * institutions not checked since their newest live fee, each live fee is traced to its
  * own document's text, or relinked to another stored document of the institution that
- * states it. A fee that still can't be traced is taken down: kept, with
+ * states it. A fee that can't be traced is logged for a second look (`second-look.ts`) and
+ * stays live; when a later run still can't trace it, it is taken down: kept, with
  * `rolled_back_at`, the batch id and the reason, and its verified row rejected so the
  * next publish does not bring it back. Clearing `rolled_back_at` restores it. Fees an
  * earlier version took down are re-checked with the institution and restored (with their
@@ -154,7 +210,26 @@ export async function takeDownUntraceableFees(
             AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
             AND pa.institution_id = live.institution_id
             AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
+            -- A fee restored after this check went live unchecked (markRestoredForSourceCheck).
+            AND NOT EXISTS (
+              SELECT 1 FROM pipeline_attempts restore
+               WHERE restore.stage = 'publish'
+                 AND restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                 AND restore.institution_id = live.institution_id
+                 AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                 AND restore.id > pa.id
+            )
        )
+          -- A live fee that failed its first look is due its second.
+          OR EXISTS (
+            SELECT 1 FROM pipeline_feedback f
+              JOIN published_fee_records pending ON pending.fee_published_id = f.fee_published_id
+             WHERE f.check_name = ${SOURCE_CHECK_STRATEGY.strategy}
+               AND f.kind = ${PENDING_KIND}
+               AND f.institution_id = live.institution_id
+               AND pending.rolled_back_at IS NULL
+               AND (f.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => ${SECOND_LOOK_MIN_MINUTES})
+          )
        ORDER BY NOT (
                   (${options.institutionId ?? null}::bigint IS NULL OR live.institution_id = ${options.institutionId ?? null}::bigint)
                   AND (${options.stateCode ?? null}::text IS NULL OR EXISTS (
@@ -167,6 +242,13 @@ export async function takeDownUntraceableFees(
                    WHERE pa.stage = 'publish'
                      AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                      AND pa.institution_id = live.institution_id
+                     AND pa.input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                ),
+                -- Banks with fees this check took down first: a reader fix restores them soonest.
+                NOT EXISTS (
+                  SELECT 1 FROM published_fee_records down
+                   WHERE down.institution_id = live.institution_id
+                     AND down.rolled_back_reason LIKE ${TAKEN_DOWN}
                 ),
                 live.institution_id
        LIMIT ${limit}
@@ -204,10 +286,12 @@ export async function takeDownUntraceableFees(
     textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), text]);
   }
   const result: SourceCheckResult = { ...EMPTY_RESULT, takedowns: [] };
+  const passing: number[] = [];
   const relinks: Array<{ feeRawId: number; sourceDocumentId: number }> = [];
   const linkedKeys = new Set<string>();
   const verifiedIds: number[] = [];
   const restores: number[] = [];
+  const failing: Array<SourceCheckTakedown & { sourceDocumentId: number | null; feeVerifiedId: number }> = [];
   const perInstitution = new Map<number, { checked: number; takenDown: number; relinked: number; restored: number }>(
     [...fingerprints.keys()].map((id) => [id, { checked: 0, takenDown: 0, relinked: 0, restored: 0 }]),
   );
@@ -223,6 +307,7 @@ export async function takeDownUntraceableFees(
     }
     result.liveFeesChecked += 1;
     counts.checked += 1;
+    if (verdict.kind !== "untraceable" && !fee.taken_down) passing.push(Number(fee.fee_published_id));
     if (verdict.kind === "traced") {
       result.traced += 1;
     } else if (verdict.kind === "relinked") {
@@ -234,20 +319,44 @@ export async function takeDownUntraceableFees(
         relinks.push({ feeRawId: Number(fee.fee_raw_id), sourceDocumentId: verdict.sourceDocumentId });
       }
     } else {
-      counts.takenDown += 1;
-      verifiedIds.push(Number(fee.lineage_ref));
-      result.takedowns.push({
+      failing.push({
         feePublishedId: Number(fee.fee_published_id),
         institutionId,
         canonicalFeeKey: fee.canonical_fee_key,
         feeName: fee.fee_name,
         amount: fee.amount == null ? null : Number(fee.amount),
+        sourceDocumentId: fee.source_document_id == null ? null : Number(fee.source_document_id),
         reason: verdict.reason,
+        feeVerifiedId: Number(fee.lineage_ref),
       });
     }
   }
   result.institutionsChecked = perInstitution.size;
   result.restored = restores.length;
+
+  // A takedown is a last resort: only a fee that failed an earlier look too comes down.
+  const look = await secondLook(db, {
+    check: SOURCE_CHECK_STRATEGY.strategy,
+    runId: options.runId,
+    failing,
+    passing,
+    dryRun: options.dryRun,
+  });
+  result.flagged = look.flagged;
+  result.awaitingSecondLook = look.waiting;
+  result.cleared = look.cleared;
+  for (const fee of look.confirmed) {
+    perInstitution.get(fee.institutionId)!.takenDown += 1;
+    verifiedIds.push(fee.feeVerifiedId);
+    result.takedowns.push({
+      feePublishedId: fee.feePublishedId,
+      institutionId: fee.institutionId,
+      canonicalFeeKey: fee.canonicalFeeKey,
+      feeName: fee.feeName,
+      amount: fee.amount,
+      reason: fee.reason,
+    });
+  }
 
   if (options.dryRun) return result;
 
@@ -343,7 +452,7 @@ export async function takeDownUntraceableFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.source_check', 'completed',
-          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down, ${result.restored} restored`},
+          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored`},
           ${JSON.stringify({
             batch_id: options.batchId,
             institutions_checked: result.institutionsChecked,
@@ -352,6 +461,9 @@ export async function takeDownUntraceableFees(
             relinked: result.relinked,
             taken_down: result.takedowns.length,
             restored: result.restored,
+            flagged_for_second_look: result.flagged,
+            awaiting_second_look: result.awaitingSecondLook,
+            cleared_after_first_look: result.cleared,
             samples: result.takedowns.slice(0, 20).map((row) => ({
               fee_published_id: row.feePublishedId,
               institution_id: row.institutionId,

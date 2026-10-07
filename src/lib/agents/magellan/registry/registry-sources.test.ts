@@ -11,6 +11,7 @@ import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
 import { cikBatch, runRegistrySecLinks } from "./sec";
 import { runRegistryRegNews } from "./reg-news";
+import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
 
 function templateText(strings: unknown): string {
@@ -326,6 +327,55 @@ describe("registry regulator news worker", () => {
   });
 });
 
+describe("registry Federal Register worker", () => {
+  const page = {
+    count: 2,
+    next_page_url: null,
+    results: [
+      {
+        document_number: "2026-01234",
+        title: "Overdraft fees at large institutions",
+        type: "Proposed Rule",
+        agencies: [{ slug: "consumer-financial-protection-bureau", name: "Consumer Financial Protection Bureau" }],
+        publication_date: "2026-09-01",
+        comments_close_on: "2026-11-01",
+        html_url: "https://www.federalregister.gov/d/2026-01234",
+        cfr_references: [{ title: 12, part: 1005 }],
+      },
+      {
+        document_number: "2026-05678",
+        title: "Assessments",
+        type: "Rule",
+        agencies: [{ slug: "federal-deposit-insurance-corporation", name: "Federal Deposit Insurance Corporation" }],
+        publication_date: "2026-08-01",
+        effective_on: "2027-01-01",
+        html_url: "https://www.federalregister.gov/d/2026-05678",
+      },
+    ],
+  };
+  const now = new Date("2026-10-07T03:00:00Z");
+
+  it("counts stages but stores nothing in shadow mode", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockResolvedValue(json(page));
+    const result = await runRegistryFederalRegister({ db, now, live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ fetched: 2, stored: 0, shadow: true, fee_related: 1, since: "2025-09-02" });
+    expect(result.stages).toEqual({ comment_open: 1, comment_closed: 0, final_not_yet_effective: 1, in_effect: 0 });
+    expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partition?.values).toEqual(expect.arrayContaining(["federal-register", "current", "succeeded"]));
+  });
+
+  it("upserts the rules when live", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.document_number }))]]);
+    const fetchImpl = vi.fn().mockResolvedValue(json(page));
+    const result = await runRegistryFederalRegister({ db, now, live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result.stored).toBe(2);
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
+    expect(rows[0]).toMatchObject({ document_number: "2026-01234", kind: "proposed_rule", agencies: ["CFPB"], cfr_parts: ["12 CFR 1005"] });
+  });
+});
+
 describe("registry state regulators worker", () => {
   it("upserts all 51 agencies and tags credit unions", async () => {
     const { db, statements } = createDb([["UPDATE institution_sources", () => [{ id: 1 }]]]);
@@ -353,6 +403,7 @@ describe("registry dispatch", () => {
       "beige-book",
       "fred",
       "reg-news",
+      "federal-register",
       "state-regulators",
     ]);
   });
