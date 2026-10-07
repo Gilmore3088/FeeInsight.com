@@ -363,3 +363,12 @@ text, as the free reader already did. A family expert names a fee after the prev
 ("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
 keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
 Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.
+
+v29 (rules 29) tidies names that ran on into their price. A short name loses the connector before
+the price ("Visa Lost/Stolen Replacement Card Fee of", "Non-Bank of America ATM Fee for",
+"Debit Card Replacement A fee of") and a leading article ("A minimum balance fee" becomes "Minimum
+balance fee"), and a "None" or "Free" cell between two names is the previous row's price, so the name
+starts after it (`tidyFeeName`). A sentence of more than eight words keeps its ending, because the
+category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
+right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
+of 1,437 kept, the same fees.

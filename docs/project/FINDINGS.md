@@ -1786,6 +1786,14 @@ slash or fragment), and `supersedeSamePageCopies` backfills existing pairs in ea
 start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.same_page_copies`
 events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
 newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
+**Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
+same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
+including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 667 live fees sit
+on the older copies. Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
+taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
+because it included failed and already-superseded copies; only current copies need linking.
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
@@ -1872,3 +1880,16 @@ categories and fees for going past a limit. The paid reader rejects the same row
 free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
 **Lesson:** a price beside a name is the fee only when the name names a charge. Words like
 "limit", "limited to" and "maximum load" mean the figure is a ceiling.
+
+## 2026-10-07: Fee names ran on into their price
+**What happened:** the audit red team counted 3,599 of 48,297 live Knox fees with a messy name: 1,819
+joined with "|", 1,338 over 80 characters and 1,025 ending on a dangling word ("Replacement Card Fee
+of", "ATM Fee for", "Debit Card Replacement A fee of"). 1,642 of the piped names predate the v17
+name tidy (Oct 6) and only change when Knox reads that page again. The tidy itself kept the words
+that led into the price, and kept the previous row's "None" price cell in the name.
+**Fix:** Knox v29's `tidyFeeName` drops a trailing connector from names of eight words or fewer, a
+leading article, and everything up to a "None"/"Free" cell between names. Longer sentences keep
+their ending, since the category guard reads "fee of" as the sign of a fee sentence.
+**Lesson:** a name is tidied for the reader, but the category guard still reads it, so a tidy rule
+has to be checked against the guard and the answer keys, not only by eye.
+
