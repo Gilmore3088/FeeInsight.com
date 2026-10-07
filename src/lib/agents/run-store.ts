@@ -45,6 +45,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
@@ -552,6 +553,7 @@ async function executeAgenticStep(
           reopened_fee_pages: read.reopenedFeePages,
           reopened_bans_lifted: read.reopenedBansLifted,
           reopened_links_restored: read.reopenedLinksRestored,
+          thin_copies_set_aside: read.thinCopiesSetAside,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
           texts_lost_fees: read.textsLostFees,
@@ -1241,6 +1243,14 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
+        detail: { ...result },
+      };
+    }
+    case "pro-digest": {
+      const result = await runProDigest({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeProDigest(result),
         detail: { ...result },
       };
     }

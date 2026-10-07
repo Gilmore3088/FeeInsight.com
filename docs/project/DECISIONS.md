@@ -5,6 +5,19 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-07
 
+**The public sample report names a real bank.** James, 01:00 UTC, in the value funnel thread.
+The sample is a live report for one real community bank and its named competitors, with the
+source link on every fee, rather than an anonymized copy without links. Every figure on it is
+already public on the institution pages. James approved the previews and said to move forward
+at 01:37 UTC, so links to the sample show across the site whenever a sample market qualifies.
+
+**Scrapping a fee is a last resort: looked at more than once, logged, archived, never deleted.**
+James, 01:20 UTC ("we need to constantly learn from fees we pass or scrap ... It needs to be last
+case decision, picked over multiple times, decision log. And it's never deleted, just archive and
+can always be revisited"). Every pass or scrap feeds `pipeline_feedback`. Darwin's held-fee pass
+(`verify.release` v4) now takes two looks at least 20 hours apart, the second against the bank's
+current copy, before a reject is final; a fee later found on the schedule gets a `restored` note.
+
 **Held fees with no category fold into an existing one; nothing beyond the ~50 tracked
 categories gets its own.** James, 01:18 UTC, chose "Fold into existing" on the Knox held-lines
 card, then: "do our best to match fees to the right category, but at some point we just need to
@@ -23,6 +36,13 @@ rules versions have read it; every read is logged in `pipeline_feedback`
 re-reads it.
 
 ## 2026-10-06
+
+**Value funnel answers.** James, 23:49 UTC, in the value funnel thread.
+1. The report rule falls back to Fed district peers when a state has too few (PR 302).
+2. No "from $300" anchor on the report offer.
+3. Pro pricing stays as it is ($499.99/mo or $5,000/yr per seat); no per-institution plan.
+4. Fee-change alerts on a followed institution are free; Pro is sold on Hamilton, not alerts.
+5. Every paid report ends with "Track this market in Hamilton", linking to the Pro plans.
 
 **One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets
 that state's edition instead of the national email; everyone else (and readers in a state too

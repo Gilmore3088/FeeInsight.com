@@ -13,6 +13,56 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
+**What happened:** First National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)
+$10.00", a report requester's headline overdraft fee, was verified by Darwin as
+`od_protection_transfer`, published, then rolled back as `rules_recheck_unreproduced`. On prod,
+140 fees at 128 banks were taken down the same way.
+**Cause:** the re-check filed Knox's reads under Knox's hint (overdraft); Darwin's category guard
+fails that name under overdraft, so the read was dropped and the live fee looked unreproduced.
+Darwin itself files it under `refileCategory`.
+**Fix:** the re-check files reads with `refileCategory`, and strategy version 3 re-checks every
+document once, which restores what still traces to its text.
+**Lesson:** any check that re-reads a fee must file it the way Darwin files it, through the one
+shared `refileCategory`.
+
+## 2026-10-07: Darwin's paid pass never ran because other agents used its per-run call cap
+**What happened:** at 01:20 UTC there were no `verify.adjudicate` or `verify.release_review`
+attempts on prod at all, and no `verify-paid` step had run in 7 days. Every one ended "Paid pass
+skipped: Provider call cap exhausted for run N under agent:darwin" before Darwin made a call
+(runs 1843, 1849, 1850, 1853 had 29, 24, 25 and 22 calls, all from Knox, Magellan and Rosetta).
+**Cause:** `assertRunCaps` compared each agent policy's `max_provider_calls_per_run` (Darwin 10)
+with the whole run's `agent_runs.actual_provider_calls`. A state run holds several agents' paid
+steps, so the earlier agents spent Darwin's cap for it.
+**Fix:** an agent policy's per-run caps count only that agent's completed calls in the run
+(`ai_api_usage_events` by `agent_run_id` and `agent_name`). Daily, monthly and global caps are
+unchanged and still bind.
+**Lesson:** a per-agent cap reads per-agent usage; a run-wide counter is only right for run-wide caps.
+
+## 2026-10-07: Darwin held current-copy fees as duplicates of older copies at the same URL
+**What happened:** at about 01:05 UTC, Hamilton's read-only counts found 1,108 live fees whose
+Knox row on the bank's current page copy was held as `duplicate_in_batch` with no verified row on
+that document. On prod, 1,919 current-copy rows at 199 banks were held that way.
+**Cause:** Darwin's in-batch duplicate key used the source URL, not the stored document. When an
+older and a newer copy of one page were in the same batch, only the older copy's fee was verified;
+the current copy's fee was held as its duplicate and never selected again.
+**Fix:** the key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2), and those rows are
+selected once more when nothing on their own document is verified as the same fee. Dry run at
+01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
+live fee by name and amount. Nothing live comes down.
+**Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
+## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
+**What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
+failed at 01:28 UTC with "operator does not exist: bigint = text", although
+`20260815083600_hamilton_pro_base_tables.sql` creates `user_id integer`.
+**Cause:** not yet known; the column was most likely created as text before that migration ran,
+and `CREATE TABLE IF NOT EXISTS` left it as it was.
+**Fix:** the Pro watchlist alerts and Monday digest (this PR) join on `u.id::text = w.user_id::text`.
+Changing the column type is left alone until someone checks its values.
+**Lesson:** a migration's `CREATE TABLE IF NOT EXISTS` is not proof of prod's column types; join
+`hamilton_watchlists.user_id` through text, or check `information_schema.columns` first.
+
 ## 2026-10-07: The source check took down real fees whose price carried a note
 **What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
 UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned
@@ -1585,6 +1635,21 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
 
+## 2026-10-07: A bot check or script shell became a page's current copy and hid its readable text
+**What happened:** 87 live fees sat on 5 pages whose current copy had no usable text, so Knox and
+the source check had nothing to read. None was a scan. Three newer copies were a bot check ("Please
+wait while your request is being verified", tvfcu.com, bankofbotetourt.com) or a bare title
+(koolaufcu.org); two were 188- and 233-byte script shells (tcu37.com, yourgcu.org). Each page's
+older copy had a full completed text (3,125 to 40,272 characters) carrying those fees.
+**Cause:** `markCurrentCopy` made every successful fetch the page's current copy, so a fetch the
+site blocked or answered with an empty shell superseded the readable copy, and an unchanged
+re-fetch of the same block page would have done it again.
+**Fix:** same PR. A copy whose text Rosetta read as not a fee page and under 300 characters is a
+thin copy; `markCurrentCopy` hands the place to the page's latest readable copy instead, and
+Rosetta's read step runs `restoreReadableCopies` each pass (`thin_copies_set_aside` in its step
+detail). Read-only dry run: 6 pages qualify (these 5 plus one with no live fees).
+**Lesson:** "newest" is not "current" unless the newer copy is at least readable.
+
 ## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
 **What happened:** some PDF schedules are stored as a single line holding every row
 ("Stop Payment………………. $35.00 Dormant Account Fee……. $7.00/Month ..."). The shared check
@@ -1660,3 +1725,79 @@ in states the lanes had not reached (most in Texas 144, Illinois 108, California
 provider call.
 **Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
 sits in states it has not reached.
+
+## 2026-10-07: Two-column schedules hid wire and stop payment fees behind footnote text
+**What happened:** First National Bank Alaska, a report requester, had 7 of 15 headline fees live and
+needed 9. Its schedule is stored as two columns flattened row by row, so the right column's
+footnotes sit beside the left column's headings ("Wire Transfer Fees | being returned NSF."). Knox
+read those lines as rows, not headings, so "Domestic Outgoing | $35.00" and "International
+Outgoing | $50.00" had nothing to name them, and the stop payment rows were held. One line
+priced both NSF and overdraft ("NSFs/Overdrafts | $33.00") and was filed as NSF only. A balance
+requirement was held as an unclassified fee, and a savings transfer was filed as an overdraft fee.
+**Fix:** Knox v27 sets the heading from a priceless two-cell line whose right cell is prose, files a
+joined NSF/overdraft price under both, never holds a balance requirement, and reads an
+"Insufficient Funds Transfer" as an overdraft protection transfer.
+**Lesson:** a flattened second column can sit on any line, including a heading's. The heading
+test has to look at the left cell on its own.
+
+## 2026-10-07: one page stored under two spellings kept two current copies
+**What happened:** Magellan marks a page's older copies as history only when the address matches
+exactly. "https://www.wailukufcu.com:443/about/rates-and-fees" and ".../about/rates-and-fees/" are
+the same page, so both stayed current. The newer copy's text was identical, Knox reads a text only
+once, and the newer copy got 0 fee rows while 41 live fees stayed on the older spelling, which
+nothing marked as older. Prod (read-only, 7 Oct ~01:30 UTC): 109 current copies at about 108 banks
+have a newer copy of the same page under another spelling (port :443, trailing slash, `#fragment`,
+www or not), with 666 live fees on them; 77 have identical text.
+**Fix:** `markCurrentCopy` also matches the page by host (no www or port) and path (no trailing
+slash or fragment), and `supersedeSamePageCopies` backfills existing pairs in each fetch step. Both
+start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.same_page_copies`
+events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
+newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
+**Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
+
+## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
+**What happened:** PR 314 rewrote the schedule-search query and lost the `''` after
+`btrim(inst.fee_schedule_url) <>`. Every `discover-paid` step failed with "syntax error at or near
+AND" from 01:21 UTC Oct 7 (4 failures before the fix). The unit tests mock the database, so they
+never parsed the SQL.
+**Fix:** the `''` is back, and a test now checks that no SQL sent by the schedule search leaves a
+comparison without its right-hand side. The fixed query was run read-only on prod and returned its
+12 rows.
+**Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
+merging.
+
+## 2026-10-07: Rosetta's free readers looked worse than they were, and reopened pages were never read
+**What happened:** a red-team check found free OCR succeeding on 30 of 146 documents, the
+JavaScript fallback on 104 of 229 pages, and 95 of the pages PR 253 reopened banned again.
+**Causes:**
+- OCR: 96 of the 146 were text-layer PDFs the text-survival ladder (PR 257) sent to OCR.
+  OCR reads only page images, so they had none or only a logo; it replaced none of their
+  texts. On real scans it read 22 of 50.
+- JavaScript fallback: 79 of the 229 were pages with plenty of their own text that just
+  isn't a fee schedule (home pages and "not found" pages at guessed `/fees` links). The
+  fallback found nothing on all 79 and logged `js_required`, as if they were script pages.
+  On real script pages it read 67 of 113.
+- Reopen: the read step reads only a bank's newest document. 380 of the 464 reopened pages
+  had a newer document at the same bank, so they were never re-read; 190 of them are
+  still the current copy of their page. The 95 re-banned pages were read again and still
+  failed (49 wrong page, 4 script-only). Reopening stopped at 16:07 Oct 6 because every
+  eligible page had been reopened once.
+**Fix:** same PR. A text-layer PDF whose text lost fees goes straight to the paid pass (no
+OCR rung). The fallback logs `wrong_document` for a page with its own text. A reopened page
+that is the current copy of its page gets its one read even when the bank has a newer
+document, and only current copies are reopened.
+**Lesson:** a success rate is only meaningful over inputs the reader could ever handle.
+Check which inputs a ladder or reopen sends before reading its score.
+## 2026-10-07: Fed districts were assigned by state, and Arizona was in the wrong one
+**What happened:** every institution in a state carried one Fed district, set long ago from a state
+table that put Arizona in District 11 (Dallas) instead of 12 (San Francisco) and West Virginia in 4
+instead of mostly 5. Split states (Missouri, Tennessee, Kentucky, Pennsylvania and others) were all
+assigned to a single district. FDIC sends each bank's real district (its FED field, set by the head
+office's county) on every universe refresh, but the update kept the stored value
+(`COALESCE(s.fed_district, r.fed_district)`), so FDIC's value never landed. NCUA has no district
+field, so credit unions were never corrected either.
+**Fix:** the FDIC universe step now takes FDIC's district, then gives credit unions and closed banks
+the district most active banks in their city have (else their state's). A parser version bump makes it
+run on the next registry tick (`registry/fdic-universe.ts`).
+**Lesson:** `COALESCE(stored, fresh)` freezes the first value forever; refreshed regulator fields go
+`COALESCE(fresh, stored)`.

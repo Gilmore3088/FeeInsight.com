@@ -7,10 +7,14 @@ import { StateSelect } from "@/components/public/state-select";
 import {
   FEE_ALERT_UNSUBSCRIBE_ACTION,
   FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  PRO_DIGEST_UNSUBSCRIBE_ACTION,
   SUBSCRIPTION_API_PATH,
 } from "@/lib/email/subscription-paths";
 
-type PreferenceAction = SubscriptionAction | typeof FEE_ALERT_UNSUBSCRIBE_ACTION;
+type PreferenceAction =
+  | SubscriptionAction
+  | typeof FEE_ALERT_UNSUBSCRIBE_ACTION
+  | typeof PRO_DIGEST_UNSUBSCRIBE_ACTION;
 
 const COPY: Record<PreferenceAction, { prompt: string; button: string; done: string }> = {
   confirm: {
@@ -27,6 +31,11 @@ const COPY: Record<PreferenceAction, { prompt: string; button: string; done: str
     prompt: "Stop all fee-change alerts for your saved institutions to",
     button: "Stop fee alerts",
     done: "Done. Fee-change alerts are off for",
+  },
+  [PRO_DIGEST_UNSUBSCRIBE_ACTION]: {
+    prompt: "Stop the Monday Hamilton digest to",
+    button: "Stop the digest",
+    done: "Done. The Monday digest is off for",
   },
 };
 
@@ -50,7 +59,7 @@ export function SubscriptionActionForm({
   async function submit() {
     setStatus("loading");
     try {
-      const isFeeAlert = action === FEE_ALERT_UNSUBSCRIBE_ACTION;
+      const isFeeAlert = action === FEE_ALERT_UNSUBSCRIBE_ACTION || action === PRO_DIGEST_UNSUBSCRIBE_ACTION;
       const resp = await fetch(isFeeAlert ? FEE_ALERT_UNSUBSCRIBE_API_PATH : SUBSCRIPTION_API_PATH, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

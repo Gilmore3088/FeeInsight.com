@@ -16,11 +16,16 @@ export interface InsufficientEvidenceReportParams {
   } | null;
 }
 
+/** Call report figures are filed in thousands of dollars. */
+function fromThousands(amount: number | null): number | null {
+  return amount === null ? null : amount * 1000;
+}
+
 export function buildInsufficientEvidenceReport(
   params: InsufficientEvidenceReportParams,
 ): ReportSummaryResponse {
   const financialSummary = params.latestFinancial
-    ? `Financial context is available through ${params.latestFinancial.report_date}: assets are ${formatCompactDollars(params.latestFinancial.total_assets)} and reported service charge income is ${formatCompactDollars(params.latestFinancial.service_charge_income)}.`
+    ? `Financial context is available through ${params.latestFinancial.report_date}: assets are ${formatCompactDollars(fromThousands(params.latestFinancial.total_assets))} and reported service charge income is ${formatCompactDollars(fromThousands(params.latestFinancial.service_charge_income))}.`
     : "Financial context is not available in the current dataset.";
 
   return {
@@ -34,22 +39,22 @@ export function buildInsufficientEvidenceReport(
       {
         label: "Fee evidence",
         current: `${params.verifiedCount} verified / ${params.provisionalCount} provisional`,
-        proposed: "Submit and validate official source",
+        proposed: "Needed: a verified fee schedule",
       },
       {
         label: "Publication status",
         current: params.statusLabel,
-        proposed: "Ready or directional",
+        proposed: "Needed: ready or directional",
       },
       {
         label: "Assets",
         current: params.assetSize ? formatAssets(params.assetSize) : "N/A",
-        proposed: "Use for peer-set selection",
+        proposed: "Used to choose peers",
       },
     ],
     strategicRationale:
       `${params.institutionName} should not receive a generic competitive position when fee evidence is empty. ` +
-      "The next high-value work is deterministic: confirm the official fee schedule, extract rows, label evidence tier and confidence, then rerun peer deltas once benchmark-eligible rows exist.",
+      "The next step is to confirm its official fee schedule and read its fees, then rerun the peer comparison once enough fees are on file.",
     tradeoffs: [
       {
         label: "Use now",
@@ -65,12 +70,11 @@ export function buildInsufficientEvidenceReport(
       },
     ],
     recommendation:
-      "Submit the official fee schedule, validate source coverage, classify extracted rows, then rerun a competitive positioning report with provisional-first evidence labels. Until then, keep the output as a diligence brief.",
+      "Send us the official fee schedule. Once its fees are read and checked, rerun this report for a full competitive comparison. Until then, treat this as a readiness brief.",
     implementationNotes: [
       `Analysis period requested: ${params.period}`,
-      `Latest source status: ${params.latestSourceStatus ?? "no source record"}`,
-      "No provider generation was used for this thin-or-empty-evidence report.",
-      "Verified benchmark conclusions must exclude provisional rows unless explicitly labeled otherwise.",
+      params.latestSourceStatus ? "A fee schedule source is on file and still being read." : "No fee schedule source is on file yet.",
+      "Written from the data on file, without a model-written analysis.",
     ],
     exportControls: {
       pdfEnabled: true,

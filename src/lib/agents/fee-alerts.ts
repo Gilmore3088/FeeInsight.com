@@ -6,6 +6,9 @@ import { formatAmount } from "@/lib/format";
 import { getTransactionalFromAddress, sendResendEmail, type EmailDeliveryStatus } from "@/lib/email/resend";
 import { renderLeadEmailHtml, renderLeadEmailText } from "@/lib/email/lead-notification";
 import { feeAlertUnsubscribeUrls, getSubscriptionTokenSecret } from "@/lib/email/subscription-token";
+import { isProEmailSendingEnabled } from "@/lib/email/pro-email-flag";
+import { canAccessPremium } from "@/lib/access";
+import type { User } from "@/lib/auth";
 
 /**
  * Atlas's fee-change alerts: one email per reader per run, covering every saved bank or
@@ -20,10 +23,16 @@ import { feeAlertUnsubscribeUrls, getSubscriptionTokenSecret } from "@/lib/email
  * newest signal included in a sent email (not the send time), and only after Resend
  * accepts the message. A failed or unconfigured send leaves the reader for the next run;
  * the per-digest idempotency key makes a retried identical email a no-op at Resend.
+ *
+ * Pro readers' Monitor watchlists (`hamilton_watchlists`) feed the same engine: each
+ * watched institution counts as a saved one, merged into the same one email, with its
+ * own high-water mark `hamilton_watchlists.last_alerted_at`. Watchlist alerts send only
+ * while PRO_EMAILS_ENABLED is on; while it is off, the run counts and renders them only.
  */
 
 export interface CandidateRow {
-  subscription_id: number | string;
+  /** Null for a watchlist row. */
+  subscription_id: number | string | null;
   user_id: number | string;
   institution_id: number | string;
   fee_categories: string[] | null;
@@ -34,6 +43,8 @@ export interface CandidateRow {
   signal_type: string;
   signal_at: string | Date;
   source_json: unknown;
+  /** Where the reader saved this institution; absent means a free subscription. */
+  source?: "subscription" | "watchlist";
 }
 
 export interface FeeChange {
@@ -61,6 +72,8 @@ export interface FeeAlertDigest {
   signalIds: string[];
   /** created_at of the newest signal read: the next high-water mark. */
   maxSignalAt: string;
+  /** Newest watchlist signal read, or null when no watchlist row fed this digest. */
+  watchlistMaxSignalAt: string | null;
   institutions: InstitutionAlert[];
 }
 
@@ -93,6 +106,11 @@ function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+/** Batch key per saved institution, so a movement and a publication in one batch pair up. */
+function savedKey(row: CandidateRow): string {
+  return row.source === "watchlist" ? `w:${row.user_id}:${row.institution_id}` : String(row.subscription_id);
+}
+
 /**
  * Pure: candidate rows (one per subscription x newer signal) into one digest per reader.
  * Keeps only fees the reader follows; a digest may end up with no institutions, which
@@ -106,7 +124,7 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
   for (const row of rows) {
     if (row.signal_type !== "hamilton_fee_movement_detected") continue;
     const json = parseJson(row.source_json);
-    const key = `${row.subscription_id}:${String(json.batch_id ?? row.signal_id)}`;
+    const key = `${savedKey(row)}:${String(json.batch_id ?? row.signal_id)}`;
     const set = movedKeysByBatch.get(key) ?? new Set<string>();
     for (const movement of (Array.isArray(json.movements) ? json.movements : []) as MovementJson[]) {
       if (typeof movement.canonical_fee_key === "string") set.add(movement.canonical_fee_key);
@@ -117,7 +135,7 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
   for (const row of rows) {
     const userId = Number(row.user_id);
     const institutionId = Number(row.institution_id);
-    const subscriptionId = Number(row.subscription_id);
+    const isWatchlist = row.source === "watchlist";
     const signalAt = toIso(row.signal_at);
     const digest =
       digests.get(userId) ??
@@ -128,10 +146,17 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
         subscriptionIds: [],
         signalIds: [],
         maxSignalAt: signalAt,
+        watchlistMaxSignalAt: null,
         institutions: [],
       } satisfies FeeAlertDigest);
-    if (!digest.subscriptionIds.includes(subscriptionId)) digest.subscriptionIds.push(subscriptionId);
-    digest.signalIds.push(String(row.signal_id));
+    if (isWatchlist) {
+      if (!digest.watchlistMaxSignalAt || signalAt > digest.watchlistMaxSignalAt) digest.watchlistMaxSignalAt = signalAt;
+    } else {
+      const subscriptionId = Number(row.subscription_id);
+      if (!digest.subscriptionIds.includes(subscriptionId)) digest.subscriptionIds.push(subscriptionId);
+    }
+    // A signal reaches a reader once even when they both saved and watch the institution.
+    if (!digest.signalIds.includes(String(row.signal_id))) digest.signalIds.push(String(row.signal_id));
     if (signalAt > digest.maxSignalAt) digest.maxSignalAt = signalAt;
 
     let institution = digest.institutions.find((item) => item.institutionId === institutionId);
@@ -163,7 +188,7 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
         });
       }
     } else if (row.signal_type === "hamilton_publication_completed") {
-      const moved = movedKeysByBatch.get(`${row.subscription_id}:${String(json.batch_id ?? row.signal_id)}`) ?? new Set();
+      const moved = movedKeysByBatch.get(`${savedKey(row)}:${String(json.batch_id ?? row.signal_id)}`) ?? new Set();
       const keys = Array.isArray(json.canonical_fee_keys) ? json.canonical_fee_keys : [];
       for (const key of keys) {
         if (typeof key !== "string" || moved.has(key) || !follows(row.fee_categories, key)) continue;
@@ -255,7 +280,9 @@ export function buildFeeAlertEmail(
   lines.push(`Compare any fee with the national median at ${site}/fees.`);
   lines.push("");
   lines.push(
-    `You get these because you saved these institutions on Fee Insight. Manage alerts: ${site}/account#alerts\nStop all fee alerts: ${urls.unsubscribePage}`,
+    digest.watchlistMaxSignalAt
+      ? `You get these because you saved these institutions on Fee Insight or watch them in Hamilton. Manage alerts: ${site}/account#alerts\nYour watchlist: ${site}/pro/monitor\nStop all fee alerts: ${urls.unsubscribePage}`
+      : `You get these because you saved these institutions on Fee Insight. Manage alerts: ${site}/account#alerts\nStop all fee alerts: ${urls.unsubscribePage}`,
   );
 
   const content = {
@@ -279,9 +306,31 @@ export interface FeeAlertDispatchResult {
   newlyPublished: number;
   /** Readers left for the next run because of the per-run cap. */
   deferred: number;
+  /** Pro readers whose email would carry watchlist news (counted even while sending is off). */
+  watchlistReaders: number;
+  /** True when PRO_EMAILS_ENABLED is off: watchlist news was counted and rendered, not sent. */
+  watchlistHeld: boolean;
+  /** Up to three rendered emails (dry run, or watchlist emails held by the switch). */
+  previews: EmailPreview[];
+}
+
+export interface EmailPreview {
+  /** The address with its local part masked, for the run ledger. */
+  to: string;
+  subject: string;
+  text: string;
 }
 
 const CANDIDATE_LIMIT = 5000;
+const MAX_PREVIEWS = 3;
+/** A watchlist with no alert sent yet reads at most this far back. */
+const WATCHLIST_FIRST_LOOKBACK_DAYS = 7;
+
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  return `${local.slice(0, 1)}***@${domain}`;
+}
 
 async function loadCandidates(): Promise<CandidateRow[]> {
   return sql<CandidateRow[]>`
@@ -299,6 +348,57 @@ async function loadCandidates(): Promise<CandidateRow[]> {
     ORDER BY sub.user_id, s.created_at
     LIMIT ${CANDIDATE_LIMIT}
   `;
+}
+
+interface WatchlistCandidateRow extends CandidateRow {
+  role: string | null;
+  subscription_status: string | null;
+  past_due_since: string | null;
+}
+
+/**
+ * Pro readers' watched institutions, as candidate rows. Columns added by migration
+ * 20270110000009 are read through to_jsonb so this query also runs before it applies.
+ * An empty fee_categories list means every fee, like a null list on a subscription.
+ */
+async function loadWatchlistCandidates(): Promise<CandidateRow[]> {
+  const rows = await sql<WatchlistCandidateRow[]>`
+    SELECT NULL AS subscription_id, u.id AS user_id, ct.id AS institution_id,
+           CASE WHEN jsonb_typeof(w.fee_categories) = 'array' AND jsonb_array_length(w.fee_categories) > 0
+                THEN ARRAY(SELECT jsonb_array_elements_text(w.fee_categories))
+                ELSE NULL END AS fee_categories,
+           u.email, u.display_name, ct.institution_name,
+           s.id::text AS signal_id, s.signal_type, s.created_at AS signal_at, s.source_json,
+           'watchlist' AS source,
+           u.role, COALESCE(u.subscription_status, 'none') AS subscription_status,
+           to_jsonb(u.*) ->> 'past_due_since' AS past_due_since
+    FROM hamilton_watchlists w
+    JOIN users u
+      ON u.id::text = w.user_id::text AND u.is_active = TRUE AND u.email IS NOT NULL
+     AND (to_jsonb(u.*) ->> 'watchlist_alerts_off_at') IS NULL
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(w.institution_ids) = 'array' THEN w.institution_ids ELSE '[]'::jsonb END
+    ) AS watched(institution_id)
+    JOIN institution_sources ct ON ct.id::text = watched.institution_id
+    JOIN hamilton_signals s
+      ON s.institution_id = ct.id::text
+     AND s.signal_type IN ('hamilton_fee_movement_detected', 'hamilton_publication_completed')
+     AND s.created_at > COALESCE(
+           (to_jsonb(w.*) ->> 'last_alerted_at')::timestamptz,
+           GREATEST(w.created_at, NOW() - make_interval(days => ${WATCHLIST_FIRST_LOOKBACK_DAYS}))
+         )
+    WHERE u.role IN ('admin', 'analyst', 'premium') OR u.subscription_status IN ('active', 'past_due')
+    ORDER BY u.id, s.created_at
+    LIMIT ${CANDIDATE_LIMIT}
+  `;
+  // Pro is decided by the same rule as every Pro screen (past_due keeps a grace window).
+  return rows.filter((row) =>
+    canAccessPremium({
+      role: row.role,
+      subscription_status: row.subscription_status,
+      past_due_since: row.past_due_since,
+    } as unknown as User),
+  ).map((row) => ({ ...row, source: "watchlist" as const }));
 }
 
 async function fillPublishedAmounts(digests: FeeAlertDigest[]): Promise<void> {
@@ -341,12 +441,51 @@ async function advanceHighWaterMark(subscriptionIds: number[], maxSignalAt: stri
   `;
 }
 
+async function advanceWatchlistMark(userId: number, maxSignalAt: string | null): Promise<void> {
+  if (!maxSignalAt) return;
+  await sql`
+    UPDATE hamilton_watchlists
+    SET last_alerted_at = ${maxSignalAt}
+    WHERE user_id::text = ${String(userId)}
+      AND (last_alerted_at IS NULL OR last_alerted_at < ${maxSignalAt})
+  `;
+}
+
+async function advanceMarks(digest: FeeAlertDigest): Promise<void> {
+  await advanceHighWaterMark(digest.subscriptionIds, digest.maxSignalAt);
+  await advanceWatchlistMark(digest.userId, digest.watchlistMaxSignalAt);
+}
+
+function renderPreviews(digests: FeeAlertDigest[], site: string): EmailPreview[] {
+  return digests.slice(0, MAX_PREVIEWS).map((digest) => {
+    const email = buildFeeAlertEmail(digest, { site, unsubscribePage: `${site}/email-preferences?preview=1` });
+    return { to: maskEmail(digest.email), subject: email.subject, text: email.text };
+  });
+}
+
 /** Reads signals, emails readers, advances the high-water mark. Never throws on delivery. */
 export async function runFeeAlertDispatch({
   dryRun = false,
   maxRecipients = 200,
 }: { dryRun?: boolean; maxRecipients?: number } = {}): Promise<FeeAlertDispatchResult> {
-  const digests = groupFeeAlertCandidates(await loadCandidates());
+  const sendWatchlist = isProEmailSendingEnabled();
+  const subscriptionRows = await loadCandidates();
+  const watchlistRows = await loadWatchlistCandidates().catch((error: unknown) => {
+    console.error("[fee-alerts] watchlist candidates failed", error instanceof Error ? error.message : String(error));
+    return [] as CandidateRow[];
+  });
+  const site = SITE_URL.replace(/\/$/, "");
+
+  // Count and render every Pro reader's watchlist news, whether or not it may be sent.
+  const watchlistDigests = groupFeeAlertCandidates([...subscriptionRows, ...watchlistRows]).filter(
+    (digest) => digest.watchlistMaxSignalAt !== null && digest.institutions.length > 0,
+  );
+  const watchlistHeld = !sendWatchlist && watchlistDigests.length > 0;
+  if (dryRun || watchlistHeld) await fillPublishedAmounts(watchlistDigests);
+
+  // Live sends include watchlist rows only while the switch is on; a dry run shows them all.
+  const rows = dryRun || sendWatchlist ? [...subscriptionRows, ...watchlistRows] : subscriptionRows;
+  const digests = groupFeeAlertCandidates(rows);
   const withNews = digests.filter((digest) => digest.institutions.length > 0);
   const quiet = digests.filter((digest) => digest.institutions.length === 0);
   await fillPublishedAmounts(withNews);
@@ -362,6 +501,9 @@ export async function runFeeAlertDispatch({
     changes: withNews.reduce((sum, d) => sum + d.institutions.reduce((n, i) => n + i.changes.length, 0), 0),
     newlyPublished: withNews.reduce((sum, d) => sum + d.institutions.reduce((n, i) => n + i.newlyPublished.length, 0), 0),
     deferred: Math.max(0, withNews.length - maxRecipients),
+    watchlistReaders: watchlistDigests.length,
+    watchlistHeld: !dryRun && watchlistHeld,
+    previews: dryRun ? renderPreviews(withNews, site) : watchlistHeld ? renderPreviews(watchlistDigests, site) : [],
   };
   if (dryRun) {
     result.reason = "dry run";
@@ -369,7 +511,7 @@ export async function runFeeAlertDispatch({
   }
 
   // Signals that touched only fees nobody follows will never produce an email: move past them.
-  for (const digest of quiet) await advanceHighWaterMark(digest.subscriptionIds, digest.maxSignalAt);
+  for (const digest of quiet) await advanceMarks(digest);
 
   const from = getTransactionalFromAddress();
   const secret = getSubscriptionTokenSecret();
@@ -381,7 +523,6 @@ export async function runFeeAlertDispatch({
     return result;
   }
 
-  const site = SITE_URL.replace(/\/$/, "");
   for (const digest of withNews.slice(0, maxRecipients)) {
     const unsubscribe = feeAlertUnsubscribeUrls(digest.userId, digest.email, secret);
     const email = buildFeeAlertEmail(digest, { site, unsubscribePage: unsubscribe.page });
@@ -403,7 +544,7 @@ export async function runFeeAlertDispatch({
     const status: EmailDeliveryStatus = delivery.status;
     if (status === "sent") {
       result.sent += 1;
-      await advanceHighWaterMark(digest.subscriptionIds, digest.maxSignalAt);
+      await advanceMarks(digest);
     } else if (status === "not_configured") {
       result.notConfigured = true;
       result.reason = delivery.status === "not_configured" ? delivery.reason : null;
@@ -417,14 +558,17 @@ export async function runFeeAlertDispatch({
 
 /** One-line run-ledger summary for the step. */
 export function summarizeFeeAlertDispatch(result: FeeAlertDispatchResult): string {
+  const held = result.watchlistHeld
+    ? ` ${result.watchlistReaders} Pro reader(s) have watchlist news held because PRO_EMAILS_ENABLED is off.`
+    : "";
   if (result.dryRun) {
-    return `Atlas found ${result.readers} reader(s) to alert about ${result.changes} change(s) and ${result.newlyPublished} newly verified fee(s) (dry run, nothing sent).`;
+    return `Atlas found ${result.readers} reader(s) to alert about ${result.changes} change(s) and ${result.newlyPublished} newly verified fee(s), ${result.watchlistReaders} of them from Pro watchlists (dry run, nothing sent).`;
   }
-  if (result.readers === 0) return "Atlas found no fee changes for readers' saved institutions.";
+  if (result.readers === 0) return `Atlas found no fee changes for readers' saved institutions.${held}`;
   if (result.notConfigured) {
     const reason = (result.reason ?? "email is not configured").replace(/\.+$/, "");
-    return `Atlas found ${result.readers} reader(s) with fee changes but did not email them: ${reason}.`;
+    return `Atlas found ${result.readers} reader(s) with fee changes but did not email them: ${reason}.${held}`;
   }
   const deferred = result.deferred > 0 ? ` ${result.deferred} reader(s) wait for the next run.` : "";
-  return `Atlas emailed ${result.sent} fee alert(s) covering ${result.institutions} institution(s): ${result.changes} change(s), ${result.newlyPublished} newly verified fee(s), ${result.failed} failed.${deferred}`;
+  return `Atlas emailed ${result.sent} fee alert(s) covering ${result.institutions} institution(s): ${result.changes} change(s), ${result.newlyPublished} newly verified fee(s), ${result.failed} failed.${deferred}${held}`;
 }
