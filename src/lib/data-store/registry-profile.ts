@@ -447,16 +447,34 @@ export interface EnforcementActionRow {
 export interface EnforcementRecord {
   /** Agencies whose list is loaded and whose actions could name this institution. */
   agenciesChecked: Array<"OCC" | "FRB">;
-  /** Active (not terminated) actions, newest first. */
-  active: EnforcementActionRow[];
-  /** Terminated actions, newest first, at most ENFORCEMENT_RECENT_LIMIT. */
-  terminated: EnforcementActionRow[];
-  terminatedCount: number;
+  /**
+   * Orders with no end date on file that began in the last OPEN_ACTION_YEARS years, newest
+   * first. The agencies don't always record an end date, so these may have ended; they are
+   * never called active.
+   */
+  open: EnforcementActionRow[];
+  /** Everything else (ended, a penalty alone, or older), newest first, at most ENFORCEMENT_RECENT_LIMIT. */
+  past: EnforcementActionRow[];
+  pastCount: number;
   /** Date the lists were last read. */
   asOf: string | null;
 }
 
 const ENFORCEMENT_RECENT_LIMIT = 5;
+export const OPEN_ACTION_YEARS = 10;
+
+/** A civil money penalty with no order attached is done once assessed; it has no end date. */
+export function isPenaltyOnly(actionType: string | null | undefined): boolean {
+  return Boolean(actionType && /penalty|\bCMP\b/i.test(actionType) && !/cease|desist|agreement|order|directive|prompt corrective/i.test(actionType));
+}
+
+/** No end date on file, more than a penalty, and recent enough that it may still be in force. */
+export function isOpenAction(action: Pick<EnforcementActionRow, "termination_date" | "action_type" | "start_date">, today: Date = new Date()): boolean {
+  if (action.termination_date || isPenaltyOnly(action.action_type) || !action.start_date) return false;
+  const cutoff = new Date(today);
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - OPEN_ACTION_YEARS);
+  return action.start_date >= cutoff.toISOString().slice(0, 10);
+}
 const AGENCY_FOR_REGULATOR: Record<string, "OCC" | "FRB"> = { OCC: "OCC", "Federal Reserve": "FRB" };
 
 /**
@@ -498,13 +516,14 @@ export async function getEnforcementRecord(institutionId: number): Promise<Enfor
   if (holding && loadedAgencies.has("FRB")) checked.add("FRB");
   for (const a of actions) checked.add(a.agency);
   if (checked.size === 0) return null;
-  const terminated = actions.filter((a) => a.termination_date);
+  const open = actions.filter((a) => isOpenAction(a));
+  const past = actions.filter((a) => !isOpenAction(a));
   const latest = loaded.map((r) => dateStr(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
   return {
     agenciesChecked: (["OCC", "FRB"] as const).filter((a) => checked.has(a)),
-    active: actions.filter((a) => !a.termination_date),
-    terminated: terminated.slice(0, ENFORCEMENT_RECENT_LIMIT),
-    terminatedCount: terminated.length,
+    open,
+    past: past.slice(0, ENFORCEMENT_RECENT_LIMIT),
+    pastCount: past.length,
     asOf: latest,
   };
 }

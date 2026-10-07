@@ -105,9 +105,10 @@ export interface RegulatoryReportData {
   enforcement_actions: {
     lists_checked: string[];
     as_of: string | null;
-    active: EnforcementActionSummary[];
-    terminated_count: number;
-    latest_terminated: EnforcementActionSummary[];
+    /** Orders with no end date on file from the last ten years; they may have ended. */
+    no_end_date_on_file: EnforcementActionSummary[];
+    past_count: number;
+    latest_past: EnforcementActionSummary[];
   } | null;
   limits: string;
 }
@@ -147,7 +148,7 @@ const NO_ENFORCEMENT_LIST =
   "No enforcement-action list in the data covers this institution (FDIC and NCUA orders are not loaded). Do not state whether it has enforcement actions.";
 
 const ENFORCEMENT_LIMITS =
-  "Enforcement actions come only from the lists named in enforcement_actions.lists_checked; FDIC and NCUA orders are not loaded. Report an action as fact, with its agency and dates, and never characterize the institution beyond it. An empty list means none on those lists, not none anywhere.";
+  "Enforcement actions come only from the lists named in enforcement_actions.lists_checked; FDIC and NCUA orders are not loaded. Report an action as fact, with its agency and dates, and never characterize the institution beyond it. Never call an action in no_end_date_on_file active or ongoing: the agencies don't always record an end date, so say it has no end date on file. An empty list means none on those lists, not none anywhere.";
 
 export function stateAgency(stateCode: string | null | undefined, charterType: string | null | undefined): string | null {
   const regulator = STATE_REGULATORS.find((entry) => entry.stateCode === stateCode);
@@ -203,9 +204,9 @@ export function buildRegulatoryContext(params: {
       ? {
           lists_checked: enforcement.agenciesChecked.map((agency) => AGENCY_LIST_NAMES[agency]),
           as_of: enforcement.asOf,
-          active: enforcement.active.map(summarizeAction),
-          terminated_count: enforcement.terminatedCount,
-          latest_terminated: enforcement.terminated.map(summarizeAction),
+          no_end_date_on_file: enforcement.open.map(summarizeAction),
+          past_count: enforcement.pastCount,
+          latest_past: enforcement.past.map(summarizeAction),
         }
       : null,
     limits: [hasStateRules ? null : NO_STATE_RULES, enforcement ? ENFORCEMENT_LIMITS : NO_ENFORCEMENT_LIST, COMPLAINT_LIMITS]
