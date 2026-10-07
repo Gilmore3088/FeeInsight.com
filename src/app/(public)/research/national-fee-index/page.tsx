@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCpiContext } from "@/lib/data-store";
-import { getPublicNationalIndex } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import {
   getDisplayName,
   FEE_FAMILIES,
@@ -41,6 +41,9 @@ export default async function NationalFeeIndexPage() {
   // Same snapshot as the fee index and research hub, so the medians match to the cent.
   const allIndex = await getPublicNationalIndex();
   const cpi = await getCpiContext();
+  // The count of categories with published fees, the same figure the homepage, pricing and
+  // institution pages show (not the taxonomy size, which includes categories with no data yet).
+  const { categoriesLabel } = await getPublicStatsSummary();
 
   // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
   const headlineCats = new Set(getFeaturedCategories());
@@ -95,14 +98,14 @@ export default async function NationalFeeIndexPage() {
       <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
         {isPro ? (
           <>
-            National benchmarking data across {TAXONOMY_COUNT} fee categories,
+            National benchmarking data across {categoriesLabel} fee categories,
             computed from published fee schedules of FDIC-insured banks and
             NCUA-insured credit unions.
           </>
         ) : (
           <>
             Preview of {index.length} headline fee categories from our full
-            index of {TAXONOMY_COUNT} categories.{" "}
+            index of {categoriesLabel} categories.{" "}
             <Link
               href="/subscribe"
               className="text-[#C44B2E] hover:underline font-medium"
@@ -202,7 +205,7 @@ export default async function NationalFeeIndexPage() {
               fontWeight: 300,
             }}
           >
-            {TAXONOMY_COUNT} categories
+            {categoriesLabel} categories
           </p>
         </div>
         <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
@@ -406,7 +409,7 @@ export default async function NationalFeeIndexPage() {
             "@context": "https://schema.org",
             "@type": "Dataset",
             name: "National Fee Index - US Bank & Credit Union Fee Benchmarks",
-            description: `National benchmarking data across ${TAXONOMY_COUNT} bank and credit union fee categories.`,
+            description: `National benchmarking data across ${categoriesLabel} bank and credit union fee categories.`,
             url: `${SITE_URL}/research/national-fee-index`,
             creator: {
               "@type": "Organization",
