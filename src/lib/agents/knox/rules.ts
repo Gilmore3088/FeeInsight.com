@@ -687,6 +687,59 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
   };
 }
 
+/**
+ * v32: "You must maintain a daily balance ... of $2,500 each statement cycle to avoid a
+ * minimum balance fee of $3.95": the fee is the figure "to avoid a ... fee of" names, never
+ * the balance before it.
+ */
+const AVOID_FEE_OF = /\bto avoid (?:an?|the)\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
+
+export function avoidFeeFromProse(segment: string): ExtractedFeeCandidate | null {
+  const match = segment.match(AVOID_FEE_OF);
+  if (!match) return null;
+  const words = normalizeSegment(match[1]);
+  const hint = classifyFeeText(words);
+  if (hint !== "minimum_balance" && hint !== "monthly_maintenance") return null;
+  const amount = Number(match[2]);
+  const feeName = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  if (!(amount > 0) || !passesDarwinChecks(hint, feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment) ?? "monthly",
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
+  };
+}
+
+/**
+ * v32: "Deposits/Withdrawals $2 Per transaction, when performed at an ATM we do not own or
+ * operate": the clause after the price says which fee it is, so it stays in the name.
+ */
+const WHERE_CLAUSE = /^\s*(?:(?:per|each)\s+[a-z]+\s*,?\s*)?(?:when|if)\s+(?:it is\s+|they are\s+)?(?:performed|used|made|conducted|done)\s+(at\s+[^.;|]{3,60})/i;
+
+export function qualifiedByClause(segment: string, firstAmount: AmountMatch, name: string): ExtractedFeeCandidate | null {
+  const clause = segment.slice(firstAmount.end).match(WHERE_CLAUSE)?.[1]?.trim();
+  if (!clause || !usableName(name)) return null;
+  const hint = classifyFeeText(clause);
+  if (hint !== "atm_non_network") return null;
+  const feeName = `${name} ${clause}`.slice(0, 120);
+  // The category guard has the last word (it refuses "Deposits/Withdrawals ..." as an ATM
+  // fee today); a refused name is not sent on to be refused again.
+  if (!passesDarwinChecks(hint, feeName, firstAmount.value)) return null;
+  return {
+    feeName,
+    amount: firstAmount.value,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: WAIVER_LANGUAGE.test(segment),
+  };
+}
+
 /** A table cell holding only a price and how often it is charged: "$20.00", "$5 per hour". */
 /** "We (will) charge a fee of", "you will be charged a fee of": the price's name comes after it. */
 const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of\s*$/i;
@@ -832,7 +885,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (!hint) {
     const maintenance =
       sentenceFee(segment, firstAmount) ??
-      maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount) ?? lowBalanceFeeFromProse(segment);
+      maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount) ?? lowBalanceFeeFromProse(segment) ??
+      avoidFeeFromProse(segment) ?? qualifiedByClause(segment, firstAmount, nameFrom(prefix));
     if (maintenance) {
       result.candidates.push(maintenance);
       return result;

@@ -693,4 +693,10 @@ describe("Knox extract.rules", () => {
     );
     expect(read.some(([name]) => String(name).startsWith("SCCU for using"))).toBe(false);
   });
+
+  it("v32 takes the fee a line says to avoid, never the balance", () => {
+    expect(
+      fees("Account Fees - You must maintain a daily balance in your account of $2,500 each statement cycle to avoid a minimum balance fee of $3.95."),
+    ).toEqual([["Minimum balance fee", 3.95, "minimum_balance"]]);
+  });
 });
