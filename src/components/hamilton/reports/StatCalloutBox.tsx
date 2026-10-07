@@ -40,7 +40,7 @@ export function StatCalloutBox({ label, current, proposed }: StatCalloutBoxProps
             className="text-[10px] uppercase tracking-wider mb-1"
             style={{ color: "var(--hamilton-text-tertiary)" }}
           >
-            Proposed
+            Benchmark
           </div>
           <div
             className="text-4xl font-bold tabular-nums leading-none"

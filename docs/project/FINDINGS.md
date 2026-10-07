@@ -1635,6 +1635,21 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
 
+## 2026-10-07: A bot check or script shell became a page's current copy and hid its readable text
+**What happened:** 87 live fees sat on 5 pages whose current copy had no usable text, so Knox and
+the source check had nothing to read. None was a scan. Three newer copies were a bot check ("Please
+wait while your request is being verified", tvfcu.com, bankofbotetourt.com) or a bare title
+(koolaufcu.org); two were 188- and 233-byte script shells (tcu37.com, yourgcu.org). Each page's
+older copy had a full completed text (3,125 to 40,272 characters) carrying those fees.
+**Cause:** `markCurrentCopy` made every successful fetch the page's current copy, so a fetch the
+site blocked or answered with an empty shell superseded the readable copy, and an unchanged
+re-fetch of the same block page would have done it again.
+**Fix:** same PR. A copy whose text Rosetta read as not a fee page and under 300 characters is a
+thin copy; `markCurrentCopy` hands the place to the page's latest readable copy instead, and
+Rosetta's read step runs `restoreReadableCopies` each pass (`thin_copies_set_aside` in its step
+detail). Read-only dry run: 6 pages qualify (these 5 plus one with no live fees).
+**Lesson:** "newest" is not "current" unless the newer copy is at least readable.
+
 ## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
 **What happened:** some PDF schedules are stored as a single line holding every row
 ("Stop Payment………………. $35.00 Dormant Account Fee……. $7.00/Month ..."). The shared check
@@ -1711,6 +1726,20 @@ provider call.
 **Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
 sits in states it has not reached.
 
+## 2026-10-07: Two-column schedules hid wire and stop payment fees behind footnote text
+**What happened:** First National Bank Alaska, a report requester, had 7 of 15 headline fees live and
+needed 9. Its schedule is stored as two columns flattened row by row, so the right column's
+footnotes sit beside the left column's headings ("Wire Transfer Fees | being returned NSF."). Knox
+read those lines as rows, not headings, so "Domestic Outgoing | $35.00" and "International
+Outgoing | $50.00" had nothing to name them, and the stop payment rows were held. One line
+priced both NSF and overdraft ("NSFs/Overdrafts | $33.00") and was filed as NSF only. A balance
+requirement was held as an unclassified fee, and a savings transfer was filed as an overdraft fee.
+**Fix:** Knox v27 sets the heading from a priceless two-cell line whose right cell is prose, files a
+joined NSF/overdraft price under both, never holds a balance requirement, and reads an
+"Insufficient Funds Transfer" as an overdraft protection transfer.
+**Lesson:** a flattened second column can sit on any line, including a heading's. The heading
+test has to look at the left cell on its own.
+
 ## 2026-10-07: one page stored under two spellings kept two current copies
 **What happened:** Magellan marks a page's older copies as history only when the address matches
 exactly. "https://www.wailukufcu.com:443/about/rates-and-fees" and ".../about/rates-and-fees/" are
@@ -1736,3 +1765,26 @@ comparison without its right-hand side. The fixed query was run read-only on pro
 12 rows.
 **Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
 merging.
+
+## 2026-10-07: Rosetta's free readers looked worse than they were, and reopened pages were never read
+**What happened:** a red-team check found free OCR succeeding on 30 of 146 documents, the
+JavaScript fallback on 104 of 229 pages, and 95 of the pages PR 253 reopened banned again.
+**Causes:**
+- OCR: 96 of the 146 were text-layer PDFs the text-survival ladder (PR 257) sent to OCR.
+  OCR reads only page images, so they had none or only a logo; it replaced none of their
+  texts. On real scans it read 22 of 50.
+- JavaScript fallback: 79 of the 229 were pages with plenty of their own text that just
+  isn't a fee schedule (home pages and "not found" pages at guessed `/fees` links). The
+  fallback found nothing on all 79 and logged `js_required`, as if they were script pages.
+  On real script pages it read 67 of 113.
+- Reopen: the read step reads only a bank's newest document. 380 of the 464 reopened pages
+  had a newer document at the same bank, so they were never re-read; 190 of them are
+  still the current copy of their page. The 95 re-banned pages were read again and still
+  failed (49 wrong page, 4 script-only). Reopening stopped at 16:07 Oct 6 because every
+  eligible page had been reopened once.
+**Fix:** same PR. A text-layer PDF whose text lost fees goes straight to the paid pass (no
+OCR rung). The fallback logs `wrong_document` for a page with its own text. A reopened page
+that is the current copy of its page gets its one read even when the bank has a newer
+document, and only current copies are reopened.
+**Lesson:** a success rate is only meaningful over inputs the reader could ever handle.
+Check which inputs a ladder or reopen sends before reading its score.
