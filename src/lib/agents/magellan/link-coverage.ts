@@ -40,6 +40,73 @@ export function isErrorPageLink(url: string | null | undefined): boolean {
   }
 }
 
+/** Folders where banks post articles, blog posts and news, not their fee schedule. */
+const ARTICLE_PATH = /\/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)\//i;
+/**
+ * A path segment that names a fee document even inside such a folder
+ * ("/articles/schedule-of-fees/", "/education-center/service-fees"), with at most one
+ * word before it ("consumer-fee-schedule"), or a PDF. A headline that merely ends in
+ * "overdraft-service-fees" is not one.
+ */
+const FEE_DOCUMENT_NAME =
+  /((^|\/)([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\.pdf($|\?))/i;
+/** The same tests for SQL, on the lowercased link. */
+export const ARTICLE_LINK_SQL = "/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)/";
+export const FEE_DOCUMENT_NAME_SQL =
+  "(/([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\\.pdf($|\\?))";
+
+/**
+ * True when the address is an article, blog post, news item or press release: a page
+ * about fees in general ("common checking account fees to avoid", Space Coast CU; a 2021
+ * Chase press release), whose amounts are national figures or old news, never the bank's
+ * own schedule. A fee document filed in such a folder ("/articles/schedule-of-fees/",
+ * MTC Federal CU) is not one.
+ */
+export function isArticleLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const path = decodeURIComponent(parsed.pathname + parsed.search);
+    return ARTICLE_PATH.test(path) && !FEE_DOCUMENT_NAME.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/** A deposit product with its own disclosure: CDs, share certificates, time deposits. */
+const SINGLE_PRODUCT = /(^|[/_.\s-])(cds?|certificates?(-of-deposit)?|share-?certificates?|time-?deposits?)([/_.?#\s-]|$)/i;
+/** The disclosure such a product comes with. */
+const PRODUCT_DISCLOSURE = /(truth[-_\s]?in[-_\s]?savings|(^|[/_.\s-])tisa?([/_.?#\s-]|$)|disclosure)/i;
+/** A name that says the document is the bank's fee schedule after all. */
+const FEE_SCHEDULE_NAME = /(fee-?schedule|feeschedule|schedule-?of-?(fees|charges|service-charges)|fees-?and-?charges|service-?charges)/i;
+/** The same tests for SQL, on the lowercased link. */
+export const SINGLE_PRODUCT_SQL = "(^|[/_. -])(cds?|certificates?(-of-deposit)?|share-?certificates?|time-?deposits?)([/_.?# -]|$)";
+export const PRODUCT_DISCLOSURE_SQL = "(truth[-_ ]?in[-_ ]?savings|(^|[/_. -])tisa?([/_.?# -]|$)|disclosure)";
+export const FEE_SCHEDULE_NAME_SQL = "(fee-?schedule|feeschedule|schedule-?of-?(fees|charges|service-charges)|fees-?and-?charges|service-?charges)";
+
+/**
+ * True when the address is the disclosure for one deposit product: a CD, share
+ * certificate or time deposit truth-in-savings sheet ("truth-in-savings-12-month-time-
+ * deposit-disclosure", Five Rivers; "TIS-CD-5.1.2025.pdf", RBFCU). Those state a rate
+ * and an early-withdrawal penalty, never the bank's account fee schedule. A link whose
+ * name also says fee schedule ("/certificates-of-deposit/schedule-of-fees.html") is
+ * not one.
+ */
+export function isSingleProductDisclosureLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const path = decodeURIComponent(parsed.pathname + parsed.search);
+    return SINGLE_PRODUCT.test(path) && PRODUCT_DISCLOSURE.test(path) && !FEE_SCHEDULE_NAME.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/** `urlNamesFeePage` (learning/fee-page.ts) for SQL, on the lowercased link. */
+export const FEE_PAGE_NAME_SQL =
+  "(fee-?schedule|schedule-of-(fees|charges)|fee-?disclosure|service-charges|pricing|(^|[/_-])fees?([/_.-]|$))";
+
 /** True when the link's address names a business-only schedule or page. */
 export function isBusinessOnlyLink(url: string): boolean {
   let path: string;

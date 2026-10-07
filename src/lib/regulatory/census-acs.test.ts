@@ -42,6 +42,11 @@ describe("ACS parser", () => {
     expect(url.searchParams.get("key")).toBeNull();
   });
 
+  it("treats a page instead of data as an error, not an unpublished vintage", async () => {
+    const fetchImpl = vi.fn(async () => new Response("<html>Invalid Key</html>", { status: 200 }));
+    await expect(fetchAcs(2024, "state", { fetchImpl: fetchImpl as unknown as typeof fetch, retries: 0 })).rejects.toThrow(/Invalid Key/);
+  });
+
   it("returns null for a vintage Census has not published", async () => {
     const fetchImpl = vi.fn(async () => new Response("error: unknown dataset", { status: 404 }));
     expect(await fetchAcs(2099, "state", { fetchImpl: fetchImpl as unknown as typeof fetch, retries: 0 })).toBeNull();
