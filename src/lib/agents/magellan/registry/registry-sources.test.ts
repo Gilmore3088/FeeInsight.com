@@ -453,6 +453,7 @@ describe("registry dispatch", () => {
       "ncua-branches",
       "ncua-branch-geocode",
       "cfpb",
+      "census-acs",
       "sec-links",
       "sec-filings",
       "beige-book",

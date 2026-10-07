@@ -8,6 +8,7 @@ import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/mag
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
@@ -92,6 +93,7 @@ export function registryPartitionsBySource(
     [FFIEC_OVERDRAFT_SOURCE]: ffiecOverdraftPartitions(now),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
+    [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
