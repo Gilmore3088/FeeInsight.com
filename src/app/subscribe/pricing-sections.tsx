@@ -27,7 +27,7 @@ export function FreeTierCard({ summary }: { summary: PublicStatsSummary }) {
         <p className="text-base text-[#1A1815]">
           <span className="font-semibold">{PRODUCT_NAME} lookup:</span> published fees for{" "}
           {summary.institutionsLabel} banks and credit unions, {summary.categoriesLabel} categories,
-          consumer guides.
+          consumer guides, and an email when a bank or credit union you follow changes a fee.
         </p>
       </div>
       <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">

@@ -21,6 +21,7 @@ import { loadMarketReport } from "@/lib/custom-report/report-data";
 import { TrackView } from "@/components/track-view";
 import { PrintButton } from "./print-button";
 import { AtAGlance, SinceBought } from "./at-a-glance";
+import { HamiltonClose } from "./hamilton-close";
 
 export const dynamic = "force-dynamic";
 
@@ -367,6 +368,7 @@ export default async function MarketReportPage({ params }: PageProps) {
                 and we will correct it. This link resolves until {DATE.format(verified.expiresOn)}.
               </p>
             </section>
+            <HamiltonClose competitors={analysis.readiness.competitorsWithData} />
           </>
         )}
       </main>
