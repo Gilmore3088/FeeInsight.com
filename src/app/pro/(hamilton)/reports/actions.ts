@@ -1,5 +1,8 @@
 "use server";
 
+import { reportGoal, type ReportClientGoal } from "@/lib/hamilton/report-goal";
+import { partnerReviewContext, reviewAnswerPage } from "@/lib/hamilton/partner-review";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import {
@@ -34,6 +37,17 @@ import {
   STATE_EXPERT_REPORT_RULES,
 } from "@/lib/hamilton/report-synthesis";
 import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
+import { getLocalFeeMoves, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
+import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
+import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
+import {
+  ANSWER_SECTION_FORMAT,
+  TRADEOFF_SECTION_FORMAT,
+  parseAnswerSection,
+  parseTradeoffSection,
+} from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { basketItemsFor, sanitizeBasketItems } from "@/lib/hamilton/report-basket";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
@@ -80,19 +94,22 @@ export interface GenerateReportParams {
   narrativeTone?: ReportNarrativeTone;
   /** Report basket: findings and tests the user added from Position, Ask and Test (re-validated here). */
   addedFindings?: unknown;
+  /** The Goal picker: shapes how decisions are ranked and framed, never the figures. */
+  clientGoal?: ReportClientGoal;
 }
 
 export type ReportNarrativeTone = "consulting" | "academic" | "executive" | "technical";
 
 const TONE_GUIDANCE: Record<ReportNarrativeTone, string> = {
   executive: "AUDIENCE: the board. Lead with the headline and the decision; keep it short; no methodology detail.",
-  consulting: "AUDIENCE: the internal pricing team. Action-oriented; name the next step for each finding.",
+  consulting: "AUDIENCE: the internal pricing team. Decision-oriented; name the decision each finding raises.",
   technical: "AUDIENCE: analysts. Data-first; state the sample size and maturity behind every benchmark.",
   academic: "AUDIENCE: research readers. Fuller context; explain the method and its limits.",
 };
 
-function withTone(context: string, tone: ReportNarrativeTone | undefined): string {
-  return tone ? `${context}\n\n${TONE_GUIDANCE[tone] ?? ""}`.trim() : context;
+function withTone(context: string, tone: ReportNarrativeTone | undefined, goal?: ReportClientGoal): string {
+  const parts = [context, tone ? TONE_GUIDANCE[tone] ?? "" : "", reportGoal(goal).guidance];
+  return parts.filter(Boolean).join("\n\n").trim();
 }
 
 export type GenerateReportResult =
@@ -230,6 +247,8 @@ HARD RULES — fail any, rewrite the section:
 8. Plain banker English. Short sentences. When you name a number, name what it is a number OF.
 9. Place the sharpest fact at the end of the sentence — the emphatic position. End on the figure from DATA rather than a comment about it ("which is notable").
 10. If a sentence could appear unchanged in any other bank's report, delete it.
+11. exhibits.local_moves lists price changes by named local competitors since tracked_since. When a decision touches a fee a competitor changed, name the competitor and its old and new amount. When moves is empty, say nothing about competitor changes, and never claim what happened before tracked_since.
+12. exhibits.fee_income_trend, when present, is the institution's fee income after inflation (in dollars_of dollars), with tests already run. Use it to say whether pricing is fighting a declining or a growing income line. Quote real_cagr_pct against industry_real_cagr_pct, and a structural_break only when significant is true, naming its quarter. Never compute a growth rate or test result yourself; when it is null, say nothing about trend.
 `.trim();
 
 function buildExecutiveSummaryContext(
@@ -240,21 +259,21 @@ function buildExecutiveSummaryContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Compare ${institutionName}'s fees to peers using the categories in the DATA payload. Lead with the 1–2 categories where the gap is largest (above or below peer median). Cite dollar figures from the payload. Period: ${period}.`;
+        return `Write the answer page for ${institutionName}'s fee benchmark. Show where it sits against its local competitors (exhibits.local_market) and peers, and the decisions that puts in front of management. Period: ${period}.`;
       case "regional_landscape":
-        return `Describe the regional fee pattern visible in the DATA payload. Lead with the single most striking geographic difference (e.g. "FL CU NSF median is \$28; national CU median is \$26"). Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s regional market. Lead with how its prices compare with the named local competitors in exhibits.local_market, then the decisions that follow. Period: ${period}.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Summarize the ${cat} distribution at ${institutionName}'s peer set. Lead with the median, the P25–P75 spread, and the number of institutions observed. Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s ${cat} pricing: where it sits against local competitors and peers, and the decision it puts in front of management. Period: ${period}.`;
       }
       case "competitive_positioning":
-        return `Assess competitive position across the categories in the DATA payload. Lead with the 1–2 categories where ${institutionName} is most exposed (highest variance from peer median). Period: ${period}.`;
+        return `Write the answer page on ${institutionName}'s competitive position: the fees where it is most exposed against named local competitors and peers, and the decision each raises. Period: ${period}.`;
     }
   })();
 
-  return `${head}\n\n${NO_FLUFF_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
+  return `${head}\n\n${ANSWER_SECTION_FORMAT}\n\n${NO_FLUFF_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
 }
 
 /**
@@ -267,17 +286,17 @@ function buildStrategicContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Explain WHY the peer gaps in the DATA payload exist for ${institutionName}. For each category in top_fees, cite the peer median + spread, then offer one observation about the gap (e.g. "P25 cluster at \$20 suggests overdraft-fee compression among CUs under \$5B"). Stop after 3 such observations.`;
+        return `Explain what is behind ${institutionName}'s position. In two or three short paragraphs, each opening with its takeaway, compare its amounts with the named local competitors in exhibits.local_market and with the peer median and spread, and say which gaps are deliberate-looking (a fee the market is moving away from) and which look like prices never revisited.`;
       case "regional_landscape":
-        return `Explain WHY the regional pattern in the DATA payload looks the way it does. Anchor each observation to a specific region or fee category from the payload. Stop after 3 observations.`;
+        return `Explain the local market behind ${institutionName}'s position in two or three short paragraphs, each opening with its takeaway. Name the competitors in exhibits.local_market that set the high and low prices, and compare the local pattern with the state and peer figures.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Explain WHY the ${cat} distribution looks the way it does for ${institutionName}'s peer set. Use the maturity field to flag where the sample is thin. Stop after 3 observations.`;
+        return `Explain what is behind ${institutionName}'s ${cat} position in two or three short paragraphs, each opening with its takeaway: the named local competitors, the peer spread, and where the sample is thin (use the maturity and count fields).`;
       }
       case "competitive_positioning":
-        return `Explain WHY ${institutionName} sits where it does on the categories in top_fees. For each, cite the peer P25/median/P75 and identify whether it has pricing power, parity, or vulnerability. Stop after 3 categories.`;
+        return `Explain what is behind ${institutionName}'s position in two or three short paragraphs, each opening with its takeaway. For its most exposed fees, name the local competitors priced above and below it and say whether it has pricing room, parity, or a vulnerability.`;
     }
   })();
 
@@ -294,10 +313,10 @@ const DECISION_POINT_RULES = `
 ${NO_FLUFF_RULES}
 
 DECISION-POINT RULES:
-6. Output AT MOST 3 decision points, largest distance from the peer median first. Generic advice about "establishing leadership" or "building frameworks" is forbidden.
-7. Each decision point names (a) the fee category, (b) the institution's amount and the peer P25, median and P75 with the institution count from the DATA payload, and (c) the options management could weigh (keep the price, move toward a peer anchor, restructure the fee), each with one observable consequence (revenue direction, percentile shift, or customer and regulatory exposure). If you cannot ground a decision point in the DATA payload, omit it.
-8. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
-9. If you can ground 0 or 1 decision points, return only that many. Better empty than meaningless.
+13. Cover the decision points on the answer page, in its order, and no others. At most 3.
+14. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+15. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
+16. If you can ground only 0 or 1 decision points, write only that many. Better short than generic.
 `.trim();
 
 function buildRecommendationContext(
@@ -307,21 +326,21 @@ function buildRecommendationContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Lay out up to 3 fee decision points for ${institutionName}, each anchored to a peer-median or P75 figure from the DATA payload. Order by distance from the peer median, largest first.`;
+        return `Write the trade-offs for ${institutionName}'s fee decision points: for each (largest value in exhibits.fee_impacts first), the options management could weigh, who notices, and what each option risks.`;
       case "regional_landscape":
-        return `Lay out up to 3 regional decision points for ${institutionName}, each tied to a specific market position visible in the DATA payload (e.g. "FL CU median is $X, ${institutionName} sits at $Y").`;
+        return `Write the trade-offs for ${institutionName}'s regional decision points: for each, the named local competitors customers will compare it with and what each option risks.`;
       case "category_deep_dive": {
         const cat = params.focusCategory
           ? params.focusCategory.replace(/_/g, " ")
           : "the focus category";
-        return `Lay out up to 3 decision points for ${institutionName} in the ${cat} category. Each must name the current peer P25/median/P75 anchor and what keeping, moving toward an anchor, or restructuring the fee would change.`;
+        return `Write the trade-offs for ${institutionName}'s ${cat} decision point (keep the price, move toward the local or peer anchor, or restructure it): who notices and what each option risks.`;
       }
       case "competitive_positioning":
-        return `Lay out up to 3 positioning decision points for ${institutionName}, starting with the categories furthest from the peer median in the DATA payload.`;
+        return `Write the trade-offs for ${institutionName}'s positioning decision points, most exposed fees first: which local competitors customers will compare it with and what each option risks.`;
     }
   })();
 
-  return `${head}\n\n${DECISION_POINT_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
+  return `${head}\n\n${TRADEOFF_SECTION_FORMAT}\n\n${DECISION_POINT_RULES}\n\n${buildSelectedInstitutionReportRules(params)}`.trim();
 }
 
 /**
@@ -367,7 +386,8 @@ export async function generateReport(
     ] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
-      params.institutionId ? getFinancialsByInstitution(params.institutionId).catch(() => []) : [],
+      // Two years of quarters across sources, enough for one complete calendar year.
+      params.institutionId ? getFinancialsByInstitution(params.institutionId, 24).catch(() => []) : [],
       params.institutionId ? getInstitutionRevenueTrend(params.institutionId).catch(() => []) : [],
       params.institutionId ? getInstitutionPeerRanking(params.institutionId).catch(() => null) : null,
       params.institutionId ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null) : null,
@@ -516,20 +536,64 @@ export async function generateReport(
     const withStateRules = (context: string) =>
       statePeers ? `${context}\n\n${STATE_EXPERT_REPORT_RULES}` : context;
 
-    // 2-4. Generate the three sections in parallel — they're independent
-    // (no shared state, no ordering constraint). Was sequential and took
-    // ~28s total; parallel cuts to ~10s (longest single call wins).
+    // Consultant exhibits, built from data only: named local competitors (FDIC branch
+    // deposits), the peer range, and dollar sensitivity from the institution's filings.
+    const localMarket = selectedInstitution
+      ? await getLocalMarketCompetitors({
+          institutionId: selectedInstitution.id,
+          certNumber: selectedInstitution.cert_number,
+          city: selectedInstitution.city,
+          stateCode: selectedInstitution.state_code,
+          categories: selectedFeeDeltas.map((delta) => delta.fee_category),
+        }).catch(() => null)
+      : null;
+    const localMoves = localMarket
+      ? await getLocalFeeMoves({
+          institutionIds: localMarket.competitors.map((competitor) => competitor.institution_id),
+          categories: selectedFeeDeltas.map((delta) => delta.fee_category),
+        }).catch(() => [])
+      : [];
+    const exhibitSet = buildReportExhibits({
+      institutionName,
+      deltas: selectedFeeDeltas,
+      peerLabel: peerIndex.label,
+      market: localMarket,
+      serviceCharges: annualServiceCharges(selectedFinancials),
+      feeScheduleUrl: selectedInstitution?.fee_schedule_url ?? null,
+      moves: localMoves,
+    });
+    // Regulation: the federal rules that bear on these fees, the state chartering
+    // agency, and the institution's CFPB complaint record.
+    const regulatory = buildRegulatoryContext({
+      institutionName,
+      stateCode: selectedInstitution?.state_code,
+      charterType: selectedInstitution?.charter_type,
+      fees: selectedFeeDeltas,
+      complaintYears: selectedInstitution
+        ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])
+        : [],
+    });
+    // Fee income over time: real (GDP price index), seasonally adjusted, tested for
+    // trend, stationarity and structural breaks, against the industry. Computed, never modeled.
+    const feeIncomeTrend = selectedInstitution
+      ? await getFeeIncomeTrend(selectedInstitution.id, institutionName).catch(() => null)
+      : null;
+    const exhibitData = { ...exhibitSet.data, regulatory: regulatory.data, fee_income_trend: feeIncomeTrend?.data ?? null };
+    const withExpertRules = (context: string) => `${withStateRules(context)}\n\n${REGULATORY_REPORT_RULES}`;
+
+    // 2-4. The three sections: the answer page, what is behind it, and the trade-offs.
     const strategicSectionType = getStrategicSectionType(params.templateType);
     const sectionInputs: SectionInput[] = [
       {
         type: "executive_summary",
-        title: "Executive Summary",
+        title: "The Answer",
         data: {
           report_type: params.templateType,
           period,
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
+          exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
           findings_added_by_reader: addedFindings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail })),
           categories: topCategories.map((c) => ({
@@ -542,24 +606,26 @@ export async function generateReport(
           })),
         },
         context: withTone(
-          withStateRules(
+          withExpertRules(
             buildExecutiveSummaryContext(params, institutionName, period) +
               (addedFindings.length > 0
                 ? "\n\nThe reader added the findings in findings_added_by_reader from their own analysis. Address each one in the summary, using only figures present in DATA."
                 : ""),
           ),
           params.narrativeTone,
+          params.clientGoal,
         ),
       },
       {
         type: strategicSectionType,
-        title: "Strategic Analysis",
+        title: "What Is Behind It",
         data: {
           report_type: params.templateType,
           period,
           institution_name: institutionName,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
+          exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
           top_fees: topCategories.slice(0, 5).map((c) => ({
             fee_category: c.fee_category,
@@ -569,11 +635,11 @@ export async function generateReport(
             institution_count: c.institution_count,
           })),
         },
-        context: withTone(withStateRules(buildStrategicContext(params, institutionName)), params.narrativeTone),
+        context: withTone(withExpertRules(buildStrategicContext(params, institutionName)), params.narrativeTone, params.clientGoal),
       },
       {
         type: "recommendation",
-        title: "For management to weigh",
+        title: "Trade-offs and What to Watch",
         // Pass actual peer-anchored fee data so the model can lay out
         // specific decision points instead of consultancy fluff. The
         // DECISION_POINT_RULES context block forbids inventing figures
@@ -584,6 +650,7 @@ export async function generateReport(
           period,
           selected_institution: selectedInstitutionData,
           state_peers: statePeers,
+          exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
           peer_anchored_fees: selectedInstitution
             ? selectedFeeDeltas.slice(0, 5)
@@ -596,12 +663,10 @@ export async function generateReport(
                 maturity: c.maturity_tier,
               })),
         },
-        context: withTone(withStateRules(buildRecommendationContext(params, institutionName)), params.narrativeTone),
+        context: withTone(withExpertRules(buildRecommendationContext(params, institutionName)), params.narrativeTone, params.clientGoal),
       },
     ];
 
-    // Sections are independent: run them together, retry only a section that failed,
-    // so one provider hiccup never discards (and re-bills) the sections that worked.
     // Paid model calls from here on: enforce the daily quota, and record the outcome
     // (one usage row per report, one pro_request run in the ledger) however it ends.
     const quota = await checkProAiQuota(user);
@@ -611,12 +676,17 @@ export async function generateReport(
       institutionId: selectedInstitution?.id ?? null,
       title: `Hamilton report: ${reportTitle}`,
     };
+    // Partner review of the answer page (filled in once the answer is drafted).
+    const partnerReview = { problems: [] as string[], rewritten: false, remaining: 0 };
+    // Drafts the partner review replaced or rejected: billed, so counted in usage.
+    const billedDrafts: VerifiedSectionOutput[] = [];
     const recordReportOutcome = async (
       status: "completed" | "failed",
       summary: string,
       sections: VerifiedSectionOutput[],
       extra: Record<string, unknown> = {},
     ) => {
+      sections = [...sections, ...billedDrafts];
       const inputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.inputTokens ?? 0), 0);
       const outputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.outputTokens ?? 0), 0);
       const model = sections[0]?.section.model ?? getHamiltonModel();
@@ -634,27 +704,73 @@ export async function generateReport(
           output_tokens: outputTokens,
           estimated_cost_microusd: costMicrousd,
           sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
+          partner_review: partnerReview,
           ...extra,
         },
       });
     };
 
-    const settled = await Promise.allSettled(sectionInputs.map((input) => generateVerifiedSection(input)));
+    // One retry per section, so a provider hiccup never discards (and re-bills) the
+    // sections that worked.
     const verifiedSections: VerifiedSectionOutput[] = [];
-    for (const [index, outcome] of settled.entries()) {
-      if (outcome.status === "fulfilled") {
-        verifiedSections.push(outcome.value);
-        continue;
-      }
+    const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
       try {
-        verifiedSections.push(await generateVerifiedSection(sectionInputs[index]));
+        return await generateVerifiedSection(input);
       } catch {
-        await recordReportOutcome("failed", `Section "${sectionInputs[index].title}" failed after a retry.`, verifiedSections);
-        return {
-          success: false,
-          error: `Hamilton couldn't write the ${sectionInputs[index].title} section right now. Please try again in a minute.`,
-        };
+        try {
+          return await generateVerifiedSection(input);
+        } catch {
+          await recordReportOutcome("failed", `Section "${input.title}" failed after a retry.`, verifiedSections);
+          return null;
+        }
       }
+    };
+    const sectionFailed = (input: SectionInput): GenerateReportResult => ({
+      success: false,
+      error: `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
+    });
+
+    // The answer page comes first; the other two sections explain and stress-test
+    // its decisions, so they receive it as context and run together.
+    let answerResult = await generateWithRetry(sectionInputs[0]);
+    if (!answerResult) return sectionFailed(sectionInputs[0]);
+    // Partner review: a draft that fails the checklist goes back once with the
+    // problems named; the rewrite is kept only if it fixes more than it breaks.
+    const reviewInput = {
+      institutionName,
+      feeNames: selectedFeeDeltas.map((delta) => getDisplayName(delta.fee_category)),
+      competitorNames: exhibitSet.data.local_market?.comparisons.flatMap((row) => row.competitors.map((c) => c.name)) ?? [],
+    };
+    const firstProblems = reviewAnswerPage({ ...reviewInput, narrative: answerResult.section.narrative });
+    partnerReview.problems = firstProblems;
+    partnerReview.remaining = firstProblems.length;
+    if (firstProblems.length > 0) {
+      const rewrite = await generateVerifiedSection({
+        ...sectionInputs[0],
+        context: `${sectionInputs[0].context ?? ""}\n\n${partnerReviewContext(firstProblems, answerResult.section.narrative)}`.trim(),
+      }).catch(() => null);
+      if (rewrite) {
+        const remaining = reviewAnswerPage({ ...reviewInput, narrative: rewrite.section.narrative });
+        if (remaining.length < firstProblems.length && rewrite.status !== "needs_review") {
+          billedDrafts.push(answerResult);
+          answerResult = rewrite;
+          partnerReview.rewritten = true;
+          partnerReview.remaining = remaining.length;
+        } else {
+          billedDrafts.push(rewrite);
+        }
+      }
+    }
+    verifiedSections.push(answerResult);
+    const answerContext = `ANSWER PAGE (already written; explain and stress-test these decisions, do not contradict or add to them):\n${answerResult.section.narrative}`;
+    const followUps = await Promise.all(
+      sectionInputs.slice(1).map((input) =>
+        generateWithRetry({ ...input, context: `${input.context ?? ""}\n\n${answerContext}`.trim() }),
+      ),
+    );
+    for (const [index, result] of followUps.entries()) {
+      if (!result) return sectionFailed(sectionInputs[index + 1]);
+      verifiedSections.push(result);
     }
 
     // Every $ and % in the narrative must trace to the data the model was given.
@@ -694,15 +810,26 @@ export async function generateReport(
           }));
 
     // 5. Assemble ReportSummaryResponse
+    const answer = parseAnswerSection(summarySection.narrative);
+    const tradeoffSection = parseTradeoffSection(recommendationSection.narrative);
     const report: ReportSummaryResponse = {
       title: reportTitle,
-      executiveSummary: summarySection.narrative
-        .split("\n\n")
-        .filter((p) => p.trim().length > 0),
+      ...(answer ? { answer: { ...answer, goal: params.clientGoal && params.clientGoal !== "balanced" ? reportGoal(params.clientGoal).label : null } } : {}),
+      exhibits: [
+        ...exhibitSet.exhibits,
+        ...(feeIncomeTrend ? [feeIncomeTrend.exhibits[0]] : []),
+        ...(regulatory.exhibit ? [regulatory.exhibit] : []),
+        ...(feeIncomeTrend ? feeIncomeTrend.exhibits.slice(1) : []),
+      ],
+      watchlist: tradeoffSection.watch,
+      sources: [...exhibitSet.sources, ...(feeIncomeTrend?.sources ?? []), ...regulatory.sources],
+      executiveSummary: answer
+        ? [answer.headline, ...answer.decisions.map((decision) => `${decision.action.replace(/\.$/, "")}. ${decision.why}`.trim())]
+        : summarySection.narrative.split("\n\n").filter((p) => p.trim().length > 0),
       snapshot: snapshotRows,
       strategicRationale: strategicSection.narrative,
       tradeoffs: tradeoffRows,
-      recommendation: recommendationSection.narrative,
+      recommendation: tradeoffSection.body || recommendationSection.narrative,
       implementationNotes: [
         `Report generated ${new Date().toLocaleDateString()}`,
         `Analysis period: ${period}`,

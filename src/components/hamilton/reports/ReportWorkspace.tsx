@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReportClientGoal } from "@/lib/hamilton/report-goal";
 import { useState, useEffect } from "react";
 import { TemplateCard } from "./TemplateCard";
 import { ConfigSidebar } from "./ConfigSidebar";
@@ -123,6 +124,7 @@ export function ReportWorkspace({
   );
   const [focusArea, setFocusArea] = useState<string>(SPOTLIGHT[0] ?? "monthly_maintenance");
   const [narrativeTone, setNarrativeTone] = useState<NarrativeTone>("consulting");
+  const [clientGoal, setClientGoal] = useState<ReportClientGoal>("balanced");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -288,6 +290,7 @@ export function ReportWorkspace({
       selectedSourceLabel,
       narrativeTone,
       addedFindings: basketItems,
+      clientGoal,
     });
     } catch {
       result = { success: false, error: "Hamilton couldn't reach the server. Check your connection and try again." };
@@ -483,6 +486,8 @@ export function ReportWorkspace({
             isGenerating={isGenerating}
             onPeerSetChange={handlePeerSetChange}
             onNarrativeToneChange={setNarrativeTone}
+            clientGoal={clientGoal}
+            onClientGoalChange={setClientGoal}
             onGenerate={() => handleGenerate()}
             peerCoveragePreview={peerCoveragePreview}
             isPeerCoverageLoading={isPeerCoverageLoading}

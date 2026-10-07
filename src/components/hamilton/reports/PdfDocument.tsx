@@ -13,7 +13,7 @@ import {
   View,
   StyleSheet,
 } from "@react-pdf/renderer";
-import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
+import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
@@ -171,6 +171,118 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     paddingLeft: 12,
   },
+  answerLabel: {
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.accent,
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  headline: {
+    fontSize: 17,
+    fontFamily: "Times-Roman",
+    color: COLORS.textPrimary,
+    lineHeight: 1.35,
+    marginBottom: 16,
+  },
+  decision: {
+    flexDirection: "row",
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 4,
+    padding: 10,
+    marginBottom: 8,
+  },
+  decisionNumber: {
+    width: 20,
+    fontSize: 12,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.accent,
+  },
+  decisionBody: {
+    flex: 1,
+  },
+  decisionAction: {
+    fontSize: 11,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textPrimary,
+    lineHeight: 1.4,
+  },
+  decisionWhy: {
+    fontSize: 10,
+    fontFamily: "Helvetica",
+    color: COLORS.textSecondary,
+    lineHeight: 1.5,
+    marginTop: 3,
+  },
+  decisionConfidence: {
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.accent,
+    marginTop: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  exhibit: {
+    marginBottom: 18,
+  },
+  exhibitNumber: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  exhibitTitle: {
+    fontSize: 11,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textPrimary,
+    lineHeight: 1.35,
+  },
+  exhibitSubtitle: {
+    fontSize: 8,
+    fontFamily: "Helvetica",
+    color: COLORS.textSecondary,
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  tableHeader: {
+    flexDirection: "row",
+    backgroundColor: COLORS.surfaceElevated,
+    paddingVertical: 4,
+  },
+  tableRow: {
+    flexDirection: "row",
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderDark,
+    borderTopStyle: "solid",
+    paddingVertical: 4,
+  },
+  tableHeadCell: {
+    flex: 1,
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textSecondary,
+    paddingHorizontal: 3,
+  },
+  tableCell: {
+    flex: 1,
+    fontSize: 8,
+    fontFamily: "Helvetica",
+    color: COLORS.textPrimary,
+    paddingHorizontal: 3,
+    lineHeight: 1.35,
+  },
+  wideCell: {
+    flex: 2.6,
+  },
+  exhibitNote: {
+    fontSize: 7,
+    fontFamily: "Helvetica",
+    color: COLORS.textTertiary,
+    marginTop: 4,
+  },
   footer: {
     position: "absolute",
     bottom: 32,
@@ -232,6 +344,129 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           )}
         </View>
 
+        {report.answer ? <ConsultantPdfBody report={report} /> : <LegacyPdfBody report={report} />}
+
+        {/* Footer */}
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>{HAMILTON_ATTRIBUTION}</Text>
+          <Text style={styles.footerText}>{today}</Text>
+        </View>
+      </Page>
+    </Document>
+  );
+}
+
+function PdfExhibit({ exhibit, number }: { exhibit: ReportExhibit; number: number }) {
+  // The last column carries names or labels; give it room.
+  const cellStyle = <T,>(index: number, base: T) =>
+    index === exhibit.columns.length - 1 && exhibit.id === "local_market" ? [base, styles.wideCell] : [base];
+  return (
+    <View style={styles.exhibit} wrap={false}>
+      <Text style={styles.exhibitNumber}>Exhibit {number}</Text>
+      <Text style={styles.exhibitTitle}>{exhibit.title}</Text>
+      <Text style={styles.exhibitSubtitle}>{exhibit.subtitle}</Text>
+      <View style={styles.tableHeader}>
+        {exhibit.columns.map((column, i) => (
+          <Text key={i} style={cellStyle(i, styles.tableHeadCell)}>{column}</Text>
+        ))}
+      </View>
+      {exhibit.rows.map((row, r) => (
+        <View key={r} style={styles.tableRow}>
+          {row.map((cell, c) => (
+            <Text key={c} style={cellStyle(c, styles.tableCell)}>{cell}</Text>
+          ))}
+        </View>
+      ))}
+      {exhibit.note && <Text style={styles.exhibitNote}>{exhibit.note}</Text>}
+    </View>
+  );
+}
+
+function PdfParagraphs({ text }: { text: string }) {
+  return (
+    <>
+      {text
+        .split(/\n\s*\n/)
+        .filter((paragraph) => paragraph.trim())
+        .map((paragraph, i) => (
+          <Text key={i} style={styles.paragraph}>{paragraph}</Text>
+        ))}
+    </>
+  );
+}
+
+/** Answer first, then the evidence, the reasoning, the trade-offs, and the sources. */
+function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
+  const answer = report.answer;
+  return (
+    <>
+      {answer && (
+        <View style={styles.section}>
+          <Text style={styles.answerLabel}>{answer.goal ? `The answer · Goal: ${answer.goal}` : "The answer"}</Text>
+          <Text style={styles.headline}>{answer.headline}</Text>
+          {answer.decisions.map((decision, i) => (
+            <View key={i} style={styles.decision} wrap={false}>
+              <Text style={styles.decisionNumber}>{i + 1}</Text>
+              <View style={styles.decisionBody}>
+                <Text style={styles.decisionAction}>{decision.action}</Text>
+                {decision.why ? <Text style={styles.decisionWhy}>{decision.why}</Text> : null}
+                {decision.confidence ? (
+                  <Text style={styles.decisionConfidence}>
+                    {decision.confidence} confidence{decision.confidenceReason ? ` · ${decision.confidenceReason}` : ""}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {(report.exhibits ?? []).length > 0 && (
+        <View style={styles.section} break>
+          <Text style={styles.sectionHeading}>The Evidence</Text>
+          {(report.exhibits ?? []).map((exhibit, i) => (
+            <PdfExhibit key={exhibit.id} exhibit={exhibit} number={i + 1} />
+          ))}
+        </View>
+      )}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionHeading}>What Is Behind It</Text>
+        <PdfParagraphs text={report.strategicRationale} />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionHeading}>Trade-offs</Text>
+        <PdfParagraphs text={report.recommendation} />
+        {(report.watchlist ?? []).length > 0 && (
+          <View style={styles.metadataStrip}>
+            <Text style={styles.answerLabel}>What to watch</Text>
+            {(report.watchlist ?? []).map((item, i) => (
+              <Text key={i} style={styles.noteItem}>— {item}</Text>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionHeading}>Method and Sources</Text>
+        {(report.sources ?? []).map((source, i) => (
+          <Text key={i} style={styles.noteItem}>
+            {source.label} · {source.detail}{source.url ? ` ${source.url}` : ""}
+          </Text>
+        ))}
+        {report.implementationNotes.map((note, i) => (
+          <Text key={`note-${i}`} style={styles.noteItem}>— {note}</Text>
+        ))}
+      </View>
+    </>
+  );
+}
+
+/** Reports written before the answer-first structure keep their original layout. */
+function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
+  return (
+    <>
         {/* Executive Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.summary}</Text>
@@ -315,12 +550,6 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           </View>
         )}
 
-        {/* Footer */}
-        <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>{HAMILTON_ATTRIBUTION}</Text>
-          <Text style={styles.footerText}>{today}</Text>
-        </View>
-      </Page>
-    </Document>
+    </>
   );
 }
