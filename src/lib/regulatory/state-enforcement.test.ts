@@ -113,3 +113,23 @@ describe("readers after the second prod run (Oct 7)", () => {
   });
 });
 
+
+describe("readers after the v4 prod run (Oct 7)", () => {
+  it("reads Illinois's table, whose three headings span four cells", () => {
+    const html = `<table>
+      <tr><td colspan="2">Action Date</td><td>Party Subject to Action</td><td>Enforcement Action</td></tr>
+      <tr><td>Effective (mm/dd/yyyy)</td><td>Termination (mm/dd/yyyy)</td><td>Institution/Individual</td></tr>
+      <tr><td>01/14/2015</td><td></td><td>Richard A. Block</td><td>Consent Order of Prohibition</td></tr>
+      <tr><td>01/23/2015</td><td></td><td>Highland Community Bank, Chicago</td><td><a href="/x/highland.pdf">Section 53 Notice Appointment of FDIC as Receiver</a></td></tr>
+    </table>`;
+    const orders = parseStateOrders("table", html, "https://idfpr.illinois.gov/banks/cbt/enforcement/enforcement2015.html");
+    expect(orders).toHaveLength(1);
+    expect(orders[0]).toMatchObject({
+      party_name: "Highland Community Bank",
+      party_city: "Chicago",
+      start_date: "2015-01-23",
+      document_url: "https://idfpr.illinois.gov/x/highland.pdf",
+    });
+    expect(splitPartyLocation("Wells Fargo Bank, National Association")).toEqual({ name: "Wells Fargo Bank, National Association", city: null });
+  });
+});
