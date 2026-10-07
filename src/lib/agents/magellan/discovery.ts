@@ -88,6 +88,14 @@ export const BUSINESS_SEARCH_VERSION = 1;
  */
 export const BUSINESS_RESERVED_SLOTS = 3;
 /**
+ * Slots kept for product-page links and for out-of-date links. In spare capacity alone a
+ * state with many banks without a link never reached them: on 7 Oct 2026 1,208 of 5,232
+ * links (23%) were product pages, 129 searched at this version, and 260 links named 2023
+ * or earlier, 18 searched.
+ */
+export const UPGRADE_RESERVED_SLOTS = 3;
+export const FRESHNESS_RESERVED_SLOTS = 2;
+/**
  * Banks whose fee link looks out of date get one search for a newer schedule per version
  * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
  * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
@@ -865,8 +873,18 @@ async function selectCandidates(
          -- A link the old crawler left behind that failed and was never read since
          -- (Southside Bank's ".../404") holds no live fee: search for the real page
          -- instead of waiting for the fetch queue to reach it.
+         -- A 404 or 410 is due at once: 51 links fetched as 404 before the fetch step
+         -- learned to clear gone links (6 Oct 2026) would otherwise wait out the 30 days.
          OR (
-           inst.last_crawl_at < NOW() - INTERVAL '30 days'
+           (
+             inst.last_crawl_at < NOW() - INTERVAL '30 days'
+             OR (
+               SELECT doc.status_code FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                ORDER BY doc.id DESC
+                LIMIT 1
+             ) IN (404, 410)
+           )
            AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
            AND (
              SELECT doc.status FROM source_documents doc
@@ -1413,18 +1431,38 @@ export async function runMagellanDiscovery(
   const learning = !dryRun && (await learningSchemaReady(db));
   const leaderIds = options.leaderIds ?? (await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []));
   const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
-  // Business-only links get a few reserved slots, then spare capacity; spare capacity
-  // then searches banks whose link is a product page, then banks whose link looks out of
-  // date (all need the attempt log).
+  // Links that are not the schedule each keep a few reserved slots, searched right after
+  // the cut-off banks resuming their search: business-only links, then product pages, then
+  // links that look out of date. Spare capacity then takes more of each, in that order
+  // (all need the attempt log).
+  const reserved = (slots: number) => Math.min(slots, limit);
   const business = learning
-    ? await selectBusinessCandidates(db, Math.max(limit - found.length, Math.min(BUSINESS_RESERVED_SLOTS, limit)), options.stateCode)
+    ? await selectBusinessCandidates(db, Math.max(limit - found.length, reserved(BUSINESS_RESERVED_SLOTS)), options.stateCode)
     : [];
-  const missing = found.slice(0, Math.max(0, limit - business.length));
-  const upgrades = learning ? await selectUpgradeCandidates(db, limit - missing.length - business.length, options.stateCode) : [];
+  const upgrades = learning
+    ? await selectUpgradeCandidates(db, Math.max(limit - found.length - business.length, reserved(UPGRADE_RESERVED_SLOTS)), options.stateCode)
+    : [];
   const stale = learning
-    ? await selectStaleCandidates(db, limit - missing.length - business.length - upgrades.length, options.stateCode)
+    ? await selectStaleCandidates(
+        db,
+        Math.max(limit - found.length - business.length - upgrades.length, reserved(FRESHNESS_RESERVED_SLOTS)),
+        options.stateCode,
+      )
     : [];
-  const rows = [...missing, ...business, ...upgrades, ...stale];
+  const missing = found.slice(0, Math.max(0, limit - business.length - upgrades.length - stale.length));
+  // The selector puts up to RESUME_FIRST_PER_STEP cut-off banks first; they keep the front.
+  let resumeCount = 0;
+  while (resumeCount < Math.min(RESUME_FIRST_PER_STEP, missing.length) && cutOff(missing[resumeCount])) resumeCount += 1;
+  const rows = [
+    ...missing.slice(0, resumeCount),
+    ...business.slice(0, BUSINESS_RESERVED_SLOTS),
+    ...upgrades.slice(0, UPGRADE_RESERVED_SLOTS),
+    ...stale.slice(0, FRESHNESS_RESERVED_SLOTS),
+    ...missing.slice(resumeCount),
+    ...business.slice(BUSINESS_RESERVED_SLOTS),
+    ...upgrades.slice(UPGRADE_RESERVED_SLOTS),
+    ...stale.slice(FRESHNESS_RESERVED_SLOTS),
+  ];
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();

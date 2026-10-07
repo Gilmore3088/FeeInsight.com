@@ -2341,3 +2341,16 @@ whose weekly check is due and records each state under its own partition row. Th
 within the hour while states are still due, so all 52 are covered in five runs.
 **Lesson:** for a registry source with many small, quick items, batch them inside one partition.
 Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Product-page and out-of-date links waited behind banks without a link
+**What happened:** the tracker found that 22.8% of active fee links are product pages, and that 201 banks' main
+link is a document from 2023 or earlier. Magellan searches both kinds, but only in a discovery step's spare
+capacity, after banks without a link. A step stops starting banks after 75 seconds, so in a state with a long
+no-link backlog they were never reached. On prod, 1,208 of 5,232 links (23%) were product pages and 129 of them
+had been searched at the current version. 260 links named 2023 or earlier and 18 had been searched. Separately,
+58 banks whose link answered 404 before the fetch step learned to clear gone links (6 Oct) were waiting out
+the 30-day stale-link rule.
+**Fix:** each step reserves 3 slots for product pages and 2 for out-of-date links, beside the 3 business slots,
+and searches them right after the cut-off bank resuming its search. A 404 or 410 with no live fee is due at once.
+**Lesson:** "spare capacity" work needs a reserved share and a place near the front, or a time-boxed step never
+reaches it.

@@ -108,7 +108,14 @@ and `detail.method_version`).
   `business` companion; a miss leaves the link alone, and the paid schedule search then
   takes the bank. Each step keeps `BUSINESS_RESERVED_SLOTS` (3) for these banks even when
   banks without a link fill it.
-- Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
+- Reserved slots: each step searches, right after the cut-off bank resuming its search,
+  up to `BUSINESS_RESERVED_SLOTS` (3) business-only links, `UPGRADE_RESERVED_SLOTS` (3)
+  product-page links and `FRESHNESS_RESERVED_SLOTS` (2) out-of-date links, then banks
+  without a link, then more of each in spare capacity. In spare capacity alone a state
+  with many banks without a link never reached them.
+- A bank whose latest document answered 404 or 410 and has no live fee is due for a
+  search at once, not after the 30-day stale-link wait.
+- Upgrade search (`UPGRADE_SEARCH_VERSION`): banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.

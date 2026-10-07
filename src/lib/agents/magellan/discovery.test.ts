@@ -11,6 +11,7 @@ import {
   runMagellanDiscovery,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
+  UPGRADE_RESERVED_SLOTS,
 } from "./discovery";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -728,6 +729,33 @@ describe("Magellan agentic discovery", () => {
       expect(result.results.map((row) => Number(row.institutionId))).toContain(79);
       const businessCall = db.mock.calls.find((call) => templateText(call[0]).includes("business-only link search"))!;
       expect(businessCall.slice(1)).toContain(3);
+    });
+
+    it("searches reserved product-page and out-of-date links before banks without a link", async () => {
+      const missing = Array.from({ length: 10 }, (_, i) => bank(i + 1, `https://bank${i + 1}.example`));
+      const product = bank(81, "https://prod.example", { fee_schedule_url: "https://prod.example/personal/checking" });
+      const stale = bank(82, "https://old.example", { fee_schedule_url: "https://old.example/2021-fee-schedule.pdf", url_year: 2021, effective_year: null });
+      const db = createDbMock(
+        missing,
+        learningHandler((text) => {
+          if (text.includes("business-only link search")) return [businessBank];
+          if (text.includes("product-page upgrade search")) return [product];
+          if (text.includes("stale-link freshness search")) return [stale];
+          return undefined;
+        }),
+      );
+      const result = await runMagellanDiscovery({ runId: 124, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0, limit: 10 });
+      expect(result.selected).toBe(10);
+      const order = result.results.map((row) => Number(row.institutionId));
+      expect(order.slice(0, 3)).toEqual([79, 81, 82]);
+      const upgradeCall = db.mock.calls.find((call) => templateText(call[0]).includes("product-page upgrade search"))!;
+      expect(upgradeCall.slice(1)).toContain(UPGRADE_RESERVED_SLOTS);
+    });
+
+    it("makes a bank whose link answered 404 due at once, not after 30 days", async () => {
+      const db = createDbMock([]);
+      await runMagellanDiscovery({ runId: 125, dryRun: true, db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+      expect(templateText(selectorCall(db)[0])).toMatch(/IN \(404, 410\)/);
     });
 
     it("replaces a business-only schedule with the consumer one and keeps it as a business companion", async () => {
