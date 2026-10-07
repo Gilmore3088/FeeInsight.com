@@ -10,6 +10,7 @@ import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, r
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
 import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
+import { FEDERAL_BILLS_SOURCE, runRegistryFederalBills } from "./federal-bills";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import {
   NCUA_BRANCH_GEOCODE_PARTITION,
@@ -357,6 +358,31 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           stages: r.stages,
           agencies: r.agencies,
           fee_related: r.fee_related,
+          shadow: r.shadow,
+        },
+      };
+    },
+  },
+  {
+    source: FEDERAL_BILLS_SOURCE,
+    stepKey: "registry-federal-bills",
+    title: "Pull federal bank fee bills",
+    run: async (input) => {
+      const r = await runRegistryFederalBills({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      return {
+        summary: r.missingKey
+          ? "Skipped federal bills: CONGRESS_GOV_API_KEY is not set."
+          : `Magellan scanned ${n(r.scanned)} bills in the ${r.congress}th Congress and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+        detail: {
+          congress: r.congress,
+          missing_key: r.missingKey,
+          scanned: r.scanned,
+          reported_total: r.reported_total,
+          requests: r.requests,
+          fetched: r.fetched,
+          stored: r.stored,
+          stages: r.stages,
           shadow: r.shadow,
         },
       };

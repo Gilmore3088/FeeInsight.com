@@ -14,6 +14,7 @@ import { runRegistryRegNews } from "./reg-news";
 import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
 import { runRegistryStateBills } from "./state-bills";
+import { runRegistryFederalBills } from "./federal-bills";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -378,6 +379,54 @@ describe("registry Federal Register worker", () => {
   });
 });
 
+describe("registry federal bills worker", () => {
+  const now = new Date("2026-10-07T03:00:00Z");
+  const page = {
+    pagination: { count: 2 },
+    bills: [
+      { congress: 119, number: "1234", type: "HR", title: "Overdraft Protection Act of 2025", latestAction: { actionDate: "2025-03-01", text: "Referred to the House Committee on Financial Services." } },
+      { congress: 119, number: "9", type: "S", title: "Farm credit modernization", latestAction: { actionDate: "2025-04-01", text: "Passed Senate." } },
+    ],
+  };
+
+  it("skips without a key", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn();
+    const result = await runRegistryFederalBills({ db, now, apiKey: null, fetchOptions: { fetchImpl } });
+    expect(result.missingKey).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))?.values).toEqual(
+      expect.arrayContaining(["federal-bills", "current", "empty"]),
+    );
+  });
+
+  it("keeps bank fee bills, sends the key as a header, and stores nothing in shadow mode", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryFederalBills({ db, now, apiKey: "k", live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ congress: 119, scanned: 2, fetched: 1, stored: 0, requests: 1, shadow: true });
+    expect(result.stages.in_committee).toBe(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("https://api.congress.gov/v3/bill/119?format=json&limit=250&offset=0");
+    expect((init as RequestInit).headers).toMatchObject({ "X-Api-Key": "k" });
+    expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
+  });
+
+  it("upserts bills when live", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryFederalBills({ db, now, apiKey: "k", live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result.stored).toBe(1);
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
+    expect(rows[0]).toMatchObject({
+      id: "119-hr-1234",
+      identifier: "H.R. 1234",
+      url: "https://www.congress.gov/bill/119th-congress/house-bill/1234",
+      stage: "in_committee",
+    });
+  });
+});
+
 describe("registry state bills worker", () => {
   const now = new Date("2026-10-07T03:00:00Z");
   const bill = {
@@ -461,6 +510,7 @@ describe("registry dispatch", () => {
       "fred",
       "reg-news",
       "federal-register",
+      "federal-bills",
       "state-bills",
       "state-regulators",
     ]);
