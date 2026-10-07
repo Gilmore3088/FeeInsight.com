@@ -138,6 +138,8 @@ export interface LocalMarketMember extends MarketInstitution {
 export interface LocalMarketMembers {
   basis: "branch_counties" | "hq_city";
   places: string[];
+  /** The market counties, five-digit FIPS codes. */
+  county_fips: string[];
   sod_year: number;
   members: LocalMarketMember[];
 }
@@ -182,6 +184,7 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
   return {
     basis: counties[0].basis === "hq_city" ? "hq_city" : "branch_counties",
     places: [...new Set(counties.map((row) => `${row.city}, ${row.state}`))],
+    county_fips: countyFips.map((fips) => fips.padStart(5, "0")),
     sod_year: sodYear,
     members: rows.map((row) => {
       const deposits = num(row.market_deposits);
