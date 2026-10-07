@@ -104,6 +104,90 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.firstbankonline.com/wp-content/uploads/2024/04/Schedule-of-Fees_Consumer-04.08.2024.pdf",
     givenBy: "web search for banks hidden by the 3-fee rule, 2026-10-07 01:10",
   },
+  {
+    institutionId: 265,
+    institutionName: "First Internet Bank of Indiana",
+    url: "https://www.firstib.com/disclosures/fees-common-personal-accounts/",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 430,
+    institutionName: "Minnwest Bank",
+    url: "https://www.minnwestbank.com/hubfs/Document%20Manager/Disclosures/Consumer_Online_Account_Opening_Disclosure.pdf",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 535,
+    institutionName: "The First National Bank of Fort Smith",
+    url: "https://www.fnbfs.com/additional-services/",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 551,
+    institutionName: "Commercial Bank",
+    url: "https://www.cbtn.com/assets/files/Hxhhzv2G",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 800,
+    institutionName: "Farmers & Merchants Bank",
+    url: "https://www.fmbankva.com/about-schedule-of-fees/",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 986,
+    institutionName: "Bank Forward",
+    url: "https://bankforward.com/wp-content/uploads/2024/03/Cost-of-Services.pdf",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 1360,
+    institutionName: "Quontic Bank",
+    url: "https://www.quontic.com/wp-content/uploads/2024/03/Section-5-Deposit-Products-Services-Fees.pdf?u1=3af49b71d9cf49ad92ab4ce67aae9525",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 1562,
+    institutionName: "Citizens Bank Minnesota",
+    url: "https://www.citizensmn.bank/assets/files/C3cPxmd4",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 1599,
+    institutionName: "Frontier State Bank",
+    url: "https://www.frontier-ok.com/assets/files/EMayvweh",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 2375,
+    institutionName: "City Bank & Trust Co.",
+    url: "https://www.citybankandtrust.com/Disclosures/",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 5000,
+    institutionName: "Riverfront Federal Credit Union",
+    url: "https://riverfrontfcu.org/PDFs/Rate-and-Fee-Disclosure/Rate-and-Fee-Disclosure.pdf",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 5214,
+    institutionName: "Thinkwise Federal Credit Union",
+    url: "https://www.thinkwisecu.org/savings-rates",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 6643,
+    institutionName: "Local 804 Federal Credit Union",
+    url: "https://cu804.org/fees-and-disclosures/",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    institutionId: 7332,
+    institutionName: "Central Kansas Education Federal Credit Union",
+    url: "https://www.ckecusalina.com/Rates",
+    givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
