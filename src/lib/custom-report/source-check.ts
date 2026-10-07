@@ -485,7 +485,24 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   // "Under $1000 - $5.00 fee per month": a dash after a balance, then a price named as the fee,
   // is a separator, not a band's upper end.
   if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;
+  if (statesMaximumFee(line, token) && !THRESHOLD_AFTER.test(after)) return false;
   return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after) || OBJECT_BEFORE.test(before);
+}
+
+// "We will charge you a fee of up to $35.00 each time we pay an overdraft" and "Late Payment Fee
+// Up to $20.00" state the fee's maximum, which is its published price (SmartBank, Oct 7).
+// "No fee up to $5,000, then $0.30" and "check cashing fee up to $4,999.99 | $5.00" are bands:
+// a price follows them. Plural "fees up to $25" is a reimbursement cap, not a price.
+const MAX_FEE_BEFORE = /\b(?:fee|charge)\s+(of\s+)?up to\s*$/i;
+
+function statesMaximumFee(line: string, token: MoneyToken): boolean {
+  const before = line.slice(Math.max(0, token.start - 40), token.start).split("|").pop() ?? "";
+  const rest = line.slice(token.end);
+  const nothingPricedAfter = moneyTokens(rest).length === 0 && !ZERO_WORDS.test(rest);
+  if (/^\s*up to\s*$/i.test(line.slice(0, token.start)) && rest.trim() === "") return true;
+  const max = MAX_FEE_BEFORE.exec(before);
+  if (!max || /\bno\s+(?:fee|charge)\s+(?:of\s+)?up to\s*$/i.test(before)) return false;
+  return Boolean(max[1]) || nothingPricedAfter;
 }
 
 // "the $34 Overdraft Fee on the $60 gasoline transaction": a figure after "on the" is what the fee
