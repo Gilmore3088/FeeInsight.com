@@ -1552,3 +1552,39 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 **Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
+
+## 2026-10-07: 14,133 live fees still pointed at a superseded copy of their page
+**What happened:** when Magellan fetches a newer copy of a fee page, Knox reads it and Darwin
+verifies its rows. A line whose amount did not change is skipped by Hamilton's publish rules as
+"identical fee already published", so the live fee kept its old document, old source date and old
+published date. On 7 Oct, 14,133 live fees at 1,051 banks pointed at a superseded copy; for 8,607
+of them (669 banks) the current copy states the same fee under the same name at the same amount,
+verified by Darwin and never published.
+**Fix:** every publish step moves up to 300 of those fees to the current copy
+(`hamilton/refresh-copy.ts`): it publishes the current copy's verified row under today's publish
+rules and category guard, and closes the old row as `refreshed by #<new id>`. Amounts are
+unchanged, so no price change is recorded and no fee comes down without its replacement.
+**The other ~5,500, sorted (prod, read-only, 7 Oct ~01:05 UTC):** 2,104 are read by Knox from the
+current copy at the same name and amount but not yet verified by Darwin (1,108 held as
+`duplicate_in_batch`, 782 not reached yet, 172 peer outliers); 683 have a same-amount row Darwin did
+not verify or filed under another variant; 934 are not in the current copy's Knox rows, but the
+current copy's text still carries the amount for all but 1 (a Knox miss, not a dropped fee); 1,206
+sit on a current copy with no Knox rows: 972 of them because the current copy's text is identical
+(Knox skips text it has read), 147 because Knox read nothing from changed text, 87 because the copy
+has no stored text; 10 are real price changes. So none of the groups shows stale prices at scale.
+The identical-text copies are fixed here too: `moveRowsToIdenticalCopy` moves the superseded copy's
+rows to the identical current copy (912 live fees at 55 banks; one superseded copy per current copy).
+**Lesson:** a dedupe that only asks "is this value already live?" also has to ask "from which
+copy?", or freshness silently stops moving.
+
+## 2026-10-07: 87 imported live fees had no source document
+**What happened:** the April import (`migration_v10`) wrote some fee lines twice, once with the
+schedule's document and once without, and published the copy without one. The source check traced
+them to the schedule but its relink is skipped when the slot is taken (an imported row is unique per
+source, document and name), so they stayed live with no document. 82 of the 87 have a twin at the
+same amount that was never verified; the other 5 have a twin at a different amount (separate lines).
+**Fix:** every publish step points such a fee's verified row at its twin once the twin's document
+states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothing is published or
+taken down.
+**Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
+stay broken without anyone seeing them.
