@@ -373,3 +373,11 @@ describe("Knox v30 limits are not prices", () => {
     expect(namesALimit("Mobile Deposit Fee (daily limits apply)", "mobile_deposit")).toBe(false);
   });
 });
+
+describe("Knox v31 rebate caps are not prices", () => {
+  it("does not read a maximum rebate as a fee", () => {
+    expect(namesALimit("Rebate of such surcharge fees will appear on your statement as a “credit.” The maximum rebate per 12-month statement", "atm_non_network")).toBe(true);
+    expect(namesALimit("Refund of such surcharge fees will appear on your statement as a “credit.” The maximum rebate per 12-month cycle per", "atm_non_network")).toBe(true);
+    expect(namesALimit("ATM Surcharge Rebate Fee", "atm_non_network")).toBe(false);
+  });
+});

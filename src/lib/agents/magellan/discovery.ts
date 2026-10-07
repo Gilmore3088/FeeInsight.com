@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import {
   normalizeStateCode,
   readStrategyFromDocumentType,
@@ -324,6 +325,8 @@ export interface RunMagellanDiscoveryOptions {
   stateCode?: string;
   db?: SqlTag;
   fetchImpl?: Fetcher;
+  /** The state's market leader ids, searched first; loaded from the shared ranking when left out. */
+  leaderIds?: number[];
   /** Pause between crawl requests (tests pass 0). */
   politeDelayMs?: number;
   /** Look for second documents of thin banks after the main search (default true in `discover` mode). */
@@ -820,6 +823,7 @@ async function selectCandidates(
   limit: number,
   stateCode: string | undefined,
   learning: boolean,
+  leaderIds: number[],
 ): Promise<DiscoveryCandidateRow[]> {
   const normalizedState = normalizeStateCode(stateCode);
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
@@ -840,6 +844,8 @@ async function selectCandidates(
              AND COALESCE(inst.failure_reason_note, '') LIKE 'out_of_time:%') AS discovery_cut_off,
            row_number() OVER (ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- The state's market leaders (top 15 by deposits or fee income) set its prices.
+       CASE WHEN inst.id = ANY(${leaderIds}::bigint[]) THEN 0 ELSE 1 END,
        -- A bank whose page was ruled out has a page whose links point the way: search it first.
        CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
              AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
@@ -1405,7 +1411,8 @@ export async function runMagellanDiscovery(
   const dryRun = Boolean(options.dryRun);
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
-  const found = await selectCandidates(db, limit, options.stateCode, learning);
+  const leaderIds = options.leaderIds ?? (await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []));
+  const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
   // Business-only links get a few reserved slots, then spare capacity; spare capacity
   // then searches banks whose link is a product page, then banks whose link looks out of
   // date (all need the attempt log).

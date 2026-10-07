@@ -29,9 +29,18 @@ type SqlTag = typeof sql;
  *
  * A person's label (`label-queue.ts`) is a lesson for the name under any other
  * category: it applies after the bank's own lesson and before the global ones.
+ *
+ * v3, restores: a fee Hamilton restored after a takedown (`restored_after_takedown`, the
+ * second look and the restore bar) is a verified fee under the category it came back
+ * with, and a takedown of that fee under that same category no longer counts as wrong.
+ * A takedown under another category stands: "International Wire, outgoing" taken down as
+ * a domestic wire and restored as an international one confirms the lesson. Only the
+ * category kinds are read. `unreproduced` (a newer rules version disagreeing with an
+ * older one), `not_on_schedule`, `wrong_amount` and `threshold` say nothing about a
+ * category and are often restored, so Knox does not learn from them.
  */
 
-export const KNOX_LESSONS_VERSION = 2;
+export const KNOX_LESSONS_VERSION = 3;
 /** `wrongKey` of a person's label, which applies whatever category the rules chose. */
 export const LABEL_WRONG_KEY = "*";
 export const LESSON_MIN_BANKS = 2;
@@ -81,14 +90,28 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
     return await inSavepoint(db, async (scope) => {
       if (!(await feedbackSchemaReady(scope))) return new Map();
       const rows = await scope<Array<{ institution_id: number | string | null; name: string; wrong_key: string; right_key: string; wrong_banks: number | string; right_banks: number | string }>>`
-        WITH judged AS (
+        WITH restored AS MATERIALIZED (
+          -- A fee Hamilton put back, under the category it went live with again.
+          SELECT DISTINCT r.fee_raw_id, r.canonical_fee_key, r.institution_id,
+                 regexp_replace(btrim(lower(regexp_replace(fr.fee_name, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name
+            FROM pipeline_feedback r
+            JOIN raw_fee_observations fr ON fr.fee_raw_id = r.fee_raw_id
+           WHERE r.kind = 'restored_after_takedown'
+             AND r.canonical_fee_key IS NOT NULL
+             AND fr.fee_name IS NOT NULL
+        ), judged AS (
           SELECT regexp_replace(btrim(lower(regexp_replace(f.evidence->>'fee_name', '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
                  f.canonical_fee_key AS fee_key, f.signal, f.institution_id
             FROM pipeline_feedback f
+            LEFT JOIN restored rs
+              ON f.signal = 'wrong' AND rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key
            WHERE f.about_stage = 'extract'
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
+             AND rs.fee_raw_id IS NULL
+          UNION ALL
+          SELECT name, canonical_fee_key, 'right', institution_id FROM restored
         ), tally AS (
           SELECT name, fee_key,
                  count(DISTINCT institution_id) FILTER (WHERE signal = 'wrong') AS wrong_banks,

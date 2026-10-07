@@ -197,6 +197,8 @@ const ENDS_ON_LIMIT =
 /** A trailing note that names a limit ("Zelle (Daily Limits)"); a fee's own note ("Mobile Deposit Fee (daily limits apply)") does not count. */
 const LIMIT_NOTE = /\(\s*(?:daily\s+|transaction\s+)?limits?\b[^)]*\)?\s*$/i;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
+/** v31: a cap on what the bank pays back ("The maximum rebate per 12-month cycle | $240") is never a fee. */
+const REBATE_CAP = /\bmax(?:imum)?\s+(?:\w+\s+)?(?:rebates?|refunds?|reimbursements?)\b/i;
 
 /**
  * v28: a price the name says is a limit is not a fee: "If you use ... Zelle, the limit is
@@ -205,6 +207,7 @@ const FEE_WORD = /\b(?:fees?|charges?)\b/i;
  */
 export function namesALimit(feeName: string, canonicalKey: string): boolean {
   const name = feeName.trim();
+  if (REBATE_CAP.test(name)) return true;
   const limitNote = LIMIT_NOTE.test(name) && !FEE_WORD.test(name.replace(LIMIT_NOTE, ""));
   if (PAST_A_LIMIT.test(name) || !(ENDS_ON_LIMIT.test(name) || limitNote)) return false;
   // "Overdraft daily maximum | $150" caps fees; "Courtesy Pay Limit | $600" caps the overdraft.

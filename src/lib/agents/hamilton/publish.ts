@@ -11,6 +11,7 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
+import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -214,6 +215,9 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
     return "Amount outside the category's plausible range";
   }
+  // A transfer or deposit limit read as a price; Knox's excerpt is checked by the sweep.
+  const limit = isPercentFee(row) ? null : limitGuardVerdict(row);
+  if (limit) return `Transaction limit, not a price: ${limit.detail}`;
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
     return "Below publish confidence threshold";
   }

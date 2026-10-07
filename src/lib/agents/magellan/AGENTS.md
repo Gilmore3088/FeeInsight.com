@@ -60,6 +60,8 @@ Magellan owns institution source discovery and source fetching.
 ## Discovery (the find team)
 
 The `discover` step (`discovery.ts`) searches banks with a website but no fee link.
+The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) go
+first among banks due, after corrections.
 For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
 homepage once, then calls the specialists in `finders.ts` in order and stops at the first
 link that passes the fee-page check. Each specialist
@@ -174,9 +176,12 @@ and `detail.method_version`).
   Report requesters go first, then the largest banks; $10B+ banks and requesters are
   picked from any state's paid step, not only their own.
 - Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`), in the same paid
-  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks or report requesters, from any state,
-  whose link is not the consumer schedule (link coverage), once a month each, requesters
-  then largest first. The model (web search) is told why the held page is not it; the
+  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks, report requesters or market leaders
+  (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
+  `src/lib/data-store/market-leaders.ts`), from any state, whose link is not the consumer
+  schedule (link coverage) or who are hidden (fewer than three live fee categories), once a
+  month each, requesters then leaders then largest first. If the ranking fails the lane runs
+  on size and requests alone. The model (web search) is told why the held page is not it; the
   answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
   stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
   and Knox read it; the link and its live fees stay. A second lane takes up to

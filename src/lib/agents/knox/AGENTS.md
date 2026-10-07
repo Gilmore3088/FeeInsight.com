@@ -387,3 +387,16 @@ v30 (rules 30) reads two more limit wordings as ceilings, not prices: a limit th
 to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
 "($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
 Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
+
+Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
+from the second look or the restore bar) counts as verified under the category it came back with,
+and a takedown under that same category no longer counts against the name. A takedown under another
+category stands, since a fee taken down as a domestic wire and restored as an international wire
+confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
+`wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
+this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.
+
+v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 12-month cycle $240",
+ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
+Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
