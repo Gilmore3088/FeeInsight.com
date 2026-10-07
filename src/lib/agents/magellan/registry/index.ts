@@ -6,6 +6,7 @@ import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse 
 import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
+import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import {
   NCUA_BRANCH_GEOCODE_PARTITION,
@@ -299,7 +300,32 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           pages: r.pages,
           stored: r.stored,
           stages: r.stages,
+          agencies: r.agencies,
           fee_related: r.fee_related,
+          shadow: r.shadow,
+        },
+      };
+    },
+  },
+  {
+    source: STATE_BILLS_SOURCE,
+    stepKey: "registry-state-bills",
+    title: "Pull state bank fee bills",
+    run: async (input) => {
+      const r = await runRegistryStateBills({ partitionKey: input.partitionKey, runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      return {
+        summary: r.missingKey
+          ? `Skipped ${r.partitionKey} state bills: OPEN_STATES_API_KEY is not set.`
+          : `Magellan found ${r.fetched} ${r.partitionKey} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+        detail: {
+          since: r.since,
+          missing_key: r.missingKey,
+          searched: r.searched,
+          requests: r.requests,
+          fetched: r.fetched,
+          stored: r.stored,
+          stages: r.stages,
           shadow: r.shadow,
         },
       };
