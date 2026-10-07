@@ -261,7 +261,7 @@ export async function recheckHeldRows(
  * no longer price under the same category goes back on hold: it leaves Darwin's queue, gets
  * `knox_promotion_withdrawn:vN`, and the decision is logged as `wrong`. The row is kept and
  * the held re-check reads it again when the rules change. Lines that keep their category are
- * marked checked for this version. Rows Darwin already verified are left to Hamilton's rules
+ * marked checked for this version. Rate fees are left to the rate rules. Rows Darwin already verified are left to Hamilton's rules
  * re-check (`hamilton/rules-recheck.ts`), which takes live fees down the same way.
  */
 export const PROMOTION_RECHECK_LIMIT = 500;
@@ -311,6 +311,9 @@ export async function recheckPromotedRows(
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
        AND NOT fr.outlier_flags ? ${checkedFlag}
+       -- Rate fees (recheckHeldRates) have no dollar amount; the rate rules judge them.
+       AND NOT fr.outlier_flags ? ${KNOX_RATE_FEE_FLAG}
+       AND fr.amount IS NOT NULL
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
        AND NOT EXISTS (
          SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id

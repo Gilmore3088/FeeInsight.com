@@ -145,6 +145,9 @@ describe("Knox held-line re-check", () => {
     expect(result).toEqual({ checked: 2, withdrawn: 1, withdrawnByCategory: { check_cashing: 1 }, logged: 1, dryRun: false });
     const calls = db.mock.calls.map((call) => ({ text: templateText(call[0]), json: JSON.stringify(call) }));
     expect(calls[0].text).toContain("FROM verified_fee_observations fv");
+    // A rate fee has no dollar amount for these rules to price; it is never selected.
+    expect(calls[0].json).toContain("knox_rate_fee");
+    expect(calls[0].text).toContain("fr.amount IS NOT NULL");
     const withdraw = calls.find((call) => call.json.includes(promotionWithdrawnFlag()));
     expect(withdraw?.json).toContain("145118");
     expect(withdraw?.json).toContain("knox_review:unclassified");
