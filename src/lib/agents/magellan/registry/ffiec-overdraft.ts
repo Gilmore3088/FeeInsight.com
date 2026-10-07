@@ -24,6 +24,8 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const FFIEC_OVERDRAFT_SOURCE = "ffiec-overdraft";
+/** v2: report_date compared as text (PR 399); quarters that failed under v1 retry at once. */
+export const FFIEC_OVERDRAFT_PARSER_VERSION = 2;
 /** FFIEC posts the bulk file about 45 days after quarter end. */
 export const FFIEC_FILING_LAG_DAYS = 50;
 /** H032 first appeared on the March 2015 call report. */
@@ -175,7 +177,7 @@ export async function runRegistryFfiecOverdraft(options: RegistryFfiecOverdraftO
       sourceUrl: FFIEC_BULK_URL,
       runId: options.runId ?? null,
       nextAttemptAfterHours: download.files ? HISTORICAL_REFRESH_HOURS : EMPTY_RETRY_HOURS,
-      detail: { report_date: reportDate, reason: emptyReason, file: download.fileName },
+      detail: { report_date: reportDate, reason: emptyReason, file: download.fileName, parser_version: FFIEC_OVERDRAFT_PARSER_VERSION },
     });
     return base;
   }
@@ -193,6 +195,7 @@ export async function runRegistryFfiecOverdraft(options: RegistryFfiecOverdraftO
     runId: options.runId ?? null,
     nextAttemptAfterHours: ffiecRefreshHours(quarter, options.now ?? new Date()),
     detail: {
+      parser_version: FFIEC_OVERDRAFT_PARSER_VERSION,
       report_date: reportDate,
       file: download.fileName,
       filers: rows.length,

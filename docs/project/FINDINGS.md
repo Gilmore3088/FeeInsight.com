@@ -13,6 +13,24 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
+**Owner:** the Data inventory thread.
+**What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
+(05:42-06:27 UTC). PR 399 fixed it at 06:52, but the six quarters stayed claimed until
+10:32-12:27, because a failed run leaves its partition "scheduled" for `CLAIM_RETRY_HOURS`, and a
+parser version bump re-ran only succeeded or empty partitions. `registry-census-acs` failed at 07:02
+(2025) and 07:32 (2024) with Census's "Missing Key" page. No `CENSUS_API_KEY` is set (the logged
+URL has no key), and Census refuses keyless requests from prod. `demographics` holds only 2022
+state and county rows (loaded 2026-04-06), and readers use the latest year on file.
+**Cause:** the scheduler had no way to tell that a failure came from code since fixed. Census
+answers a missing key with a 200 page, which the step treated as a failure.
+**Fix:** the claim records `claimed_parser_version`. A partition still "scheduled" from a claim
+under an older parser is due at once, so a parser bump retries its failures on the next tick.
+`ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
+partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
+completes instead of failing. Other non-data replies still fail.
+**Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
+
 ## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
 **What happened:** James asked Hamilton "who are my local competitors and locations" at 07:36 UTC.
 The written answer (`api.research.hamilton`, `ai_api_usage_events` id 2928) read 127,096 input
@@ -2783,6 +2801,12 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 - **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
   (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
   (an LPL disclosure, a car-price site); they are wrong links and are skipped.
+- **First run (08:03).** Citizens, Pinnacle and Flagstar were tried, and none was fetched: at
+  64 output tokens the model stopped while writing the fetch call. Room raised to 1,024
+  (only used tokens bill), version 2. Those tries no longer count toward the weekly wait, and
+  the bank list now reads the plain fetch's last outcome, because a failed paid try rewrote
+  `failure_reason`. Banks whose site keeps timing out (First Horizon, Northern Trust, USAA,
+  Morgan Stanley, Associated) are included too.
 
 ## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
 
