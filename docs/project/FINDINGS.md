@@ -338,6 +338,10 @@ tick's direct institution runs used the first minutes, so Tennessee's first real
 (enhance, state-expert, discover: about 170 seconds) no longer fit, and the next lane that
 did fit (WY at 08:48) started instead, counted as under way, and took the next tick. Once a
 lane is held for the deadline, no lower lane starts in that tick.
+**Follow-up (09:30):** with that in, no lane started at all from 08:52 to 09:25. Atlas's
+direct institution runs ranked ahead of every lane and three or four of them filled each
+tick, so a lane's first step never fit. Direct runs now go ahead of lanes only while some
+lane has started a step in the last ten minutes; otherwise the waiting lane goes first.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
