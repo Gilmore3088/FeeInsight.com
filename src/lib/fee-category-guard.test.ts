@@ -440,6 +440,7 @@ describe("checkFeeCategory", () => {
       "Insufficient Funds Fee Returned item/overdraft (NSF) with no/insufficient overdraft coverage",
       "Other fees such as overdraft or returned item fees may apply.",
       "Maximum Return Item/Overdraft Fees per day is",
+      "excluding the overdraft fees, is positive (greater than or equal to",
     ]) {
       expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
     }
