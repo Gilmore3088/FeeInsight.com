@@ -2122,6 +2122,7 @@ timed out on every fetch, so it kept the link, and the paid schedule search re-s
 fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
 the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
 **Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
+
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
 names business, commercial, corporate or treasury accounts, the same test Magellan's
