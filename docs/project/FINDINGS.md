@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
+**What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
+ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
+learning sync had logged all of them (10,589 takedown rows, 1,477 restores) in `pipeline_feedback`.
+But each check took a fee down the first time it failed, with no second look. Only the source
+check, the rules re-check and the newer-copy retire restored fees when a fix made them pass. The
+category guard (1,099 takedowns), outlier range (768) and off-taxonomy (94) checks had no way back.
+**Cause:** each check was written as a one-shot cleanup, and restore was added later only where a
+wrong takedown showed up.
+**Fix:** `hamilton/second-look.ts`. A first failure is logged and the fee stays live; a later run,
+at least 12 hours on, that fails it again takes it down. Of 1,345 source-check takedowns later
+restored, 1,311 came back within 12 hours (453 within one), so the 12-hour wait would have kept
+about 97% of them live instead of flickering off and on. Wired into the source check and the category guard, and the
+category guard now restores earlier takedowns that today's guard passes. The rules re-check,
+outlier range and off-taxonomy checks are next.
+**Lesson:** every new takedown path goes through `secondLook` and has a restore path.
+
 ## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
 **What happened:** First National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)
 $10.00", a report requester's headline overdraft fee, was verified by Darwin as
@@ -51,6 +68,22 @@ selected once more when nothing on their own document is verified as the same fe
 01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
+## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
+**What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
+and near-ready markets. At 00:47 UTC Oct 7 all 55 lanes still had priority_score 0, so Atlas kept
+taking states in waiting order. Postgres logs show "operator is not unique: unknown - unknown" at
+hh:00:32 every hour from 18:00 through 00:00 UTC: the hourly refresh ran and failed each time.
+**Cause:** postgres.js sends JavaScript numbers as untyped parameters, and the near-ready rule wrote
+`${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}`. Postgres cannot pick a "-" for two unknowns, so the
+whole UPDATE failed to plan. The function catches, logs and returns 0, so nothing else noticed.
+**Fix:** every number and array in the refresh query now carries a cast (`::int`, `::text[]`); a
+unit test fails if one is sent uncast. The fixed query, prepared on prod with untyped parameters
+the way postgres.js sends them, plans and scores IL 2274, MO 2173, MA 2169, NJ 2128, CO 2022,
+WA 2017, then TX 299.
+**Lesson:** in a `sql` template, cast every interpolated number unless a column fixes its type
+(`${n}::int`). Arithmetic between two parameters always fails. To test a query, prepare it with
+untyped parameters (`PREPARE q AS ...`), not with the numbers pasted in.
 
 ## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
 **What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
@@ -1753,6 +1786,14 @@ slash or fragment), and `supersedeSamePageCopies` backfills existing pairs in ea
 start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.same_page_copies`
 events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
 newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
+**Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
+same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
+including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 667 live fees sit
+on the older copies. Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
+taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
+because it included failed and already-superseded copies; only current copies need linking.
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
@@ -1788,3 +1829,67 @@ that is the current copy of its page gets its one read even when the bank has a 
 document, and only current copies are reopened.
 **Lesson:** a success rate is only meaningful over inputs the reader could ever handle.
 Check which inputs a ladder or reopen sends before reading its score.
+## 2026-10-07: Fed districts were assigned by state, and Arizona was in the wrong one
+**What happened:** every institution in a state carried one Fed district, set long ago from a state
+table that put Arizona in District 11 (Dallas) instead of 12 (San Francisco) and West Virginia in 4
+instead of mostly 5. Split states (Missouri, Tennessee, Kentucky, Pennsylvania and others) were all
+assigned to a single district. FDIC sends each bank's real district (its FED field, set by the head
+office's county) on every universe refresh, but the update kept the stored value
+(`COALESCE(s.fed_district, r.fed_district)`), so FDIC's value never landed. NCUA has no district
+field, so credit unions were never corrected either.
+**Fix:** the FDIC universe step now takes FDIC's district, then gives credit unions and closed banks
+the district most active banks in their city have (else their state's). A parser version bump makes it
+run on the next registry tick (`registry/fdic-universe.ts`).
+**Lesson:** `COALESCE(stored, fresh)` freezes the first value forever; refreshed regulator fields go
+`COALESCE(fresh, stored)`.
+
+## 2026-10-07: Knox's learning reader never loaded a lesson after PR 300
+**What happened:** PR 300 added per-bank lessons to the lessons query in `knox/lessons.ts` and
+left an extra ")" after the `tally` step. Postgres rejected the query on every extract run.
+`loadKnoxLessons` caught the error inside its savepoint and returned no lessons, so Knox re-filed
+nothing (the audit red team counted 0 lesson refiles in 110 extract runs). Darwin kept rejecting the
+same names under the same wrong categories ("Statement Copy" as a paper statement, "Overdraft
+Transfer" as an overdraft).
+**Fix:** the paren is gone. The same query, run read-only on prod, returns 79 global lessons and
+567 per-bank lessons. A test now checks that the query's parentheses balance.
+**Lesson:** a reader that swallows its own errors needs a test of the SQL it sends, because a
+silent empty result looks the same as "nothing to learn".
+
+## 2026-10-07: Knox's calibration counted every takedown as a misread
+**What happened:** Knox's shadow calibration (`knox/calibration.ts`) scores each strategy and
+category by how many of its recent published fees are still live. It counted every rollback as a
+misread, including rules re-checks (4,467 in 14 days), newer copies (915), duplicates (174) and
+takedowns Hamilton later restored. Overall survival read 85.6%, and the learning signal mixed
+Knox's mistakes with changes elsewhere in the pipeline.
+**Fix:** calibration v2 counts a takedown against a read only when it says Knox misread the fee
+(`source_check_untraceable`, `amount_outside_category_range`, `category_guard`) and was not later
+restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
+balance (62%) are still the weakest reads.
+**Lesson:** a learning signal has to say whose mistake it records.
+
+## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
+**What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
+transfer limit $1,000", "Mobile Deposit Checks are limited to $1,000", "No Bounce Courtesy Pay
+Limit $600" and "cash Advance limit is $500". Knox's rules filed the line under the fee the name
+mentions, and the price beside it was the limit. Separately, the paid reader had no filter for
+superseded copies: since 18:37 Oct 6, 59 of 270 paid reads were older copies whose current copy
+already had text, costing $1.62. Its priced-line count also missed "$.50" and "75¢", and so did the
+shared check, so those prices never traced.
+**Fix:** Knox v28 drops a read whose name ends on a limit (`namesALimit`), except for cap
+categories and fees for going past a limit. The paid reader rejects the same rows and now uses the
+free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
+**Lesson:** a price beside a name is the fee only when the name names a charge. Words like
+"limit", "limited to" and "maximum load" mean the figure is a ceiling.
+
+## 2026-10-07: Fee names ran on into their price
+**What happened:** the audit red team counted 3,599 of 48,297 live Knox fees with a messy name: 1,819
+joined with "|", 1,338 over 80 characters and 1,025 ending on a dangling word ("Replacement Card Fee
+of", "ATM Fee for", "Debit Card Replacement A fee of"). 1,642 of the piped names predate the v17
+name tidy (Oct 6) and only change when Knox reads that page again. The tidy itself kept the words
+that led into the price, and kept the previous row's "None" price cell in the name.
+**Fix:** Knox v29's `tidyFeeName` drops a trailing connector from names of eight words or fewer, a
+leading article, and everything up to a "None"/"Free" cell between names. Longer sentences keep
+their ending, since the category guard reads "fee of" as the sign of a fee sentence.
+**Lesson:** a name is tidied for the reader, but the category guard still reads it, so a tidy rule
+has to be checked against the guard and the answer keys, not only by eye.
+
