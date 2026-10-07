@@ -4,9 +4,9 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
-import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
+import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
@@ -792,6 +792,18 @@ async function executeAgenticStep(
       // same rows in opposite orders; the lock ends with this step's transaction.
       await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
       const institutionId = numericRunParam(params, ["institution_id"]);
+      // A takedown is never final: fees an earlier sweep took down come back once a range
+      // widens or the taxonomy gains their category.
+      const outlierRestores = await restoreOutliersNowInRange(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -873,6 +885,7 @@ async function executeAgenticStep(
         : null;
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
+      const recheckAwaiting = (rulesRecheck?.flagged ?? 0) + (rulesRecheck?.awaitingSecondLook ?? 0);
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
@@ -918,6 +931,8 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              outlierRestores.length > 0 ||
+              offTaxonomyRestores.length > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
@@ -933,9 +948,12 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
           : "";
       const offTaxonomyNote =
-        offTaxonomyRollbacks.length > 0
+        (offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
-          : "";
+          : "") +
+        (outlierRestores.length + offTaxonomyRestores.length > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${(outlierRestores.length + offTaxonomyRestores.length).toLocaleString()} earlier range or taxonomy takedown(s) that pass today.`
+          : "");
       const categoryGuardNote =
         categoryGuardRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
@@ -950,6 +968,9 @@ async function executeAgenticStep(
           : "") +
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
+          : "") +
+        (recheckAwaiting > 0
+          ? ` Kept ${recheckAwaiting.toLocaleString()} live fee(s) today's Knox rules do not read until a second look.`
           : "");
       const sourceNote =
         sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
@@ -977,6 +998,8 @@ async function executeAgenticStep(
           skipped_verified_fees: published.skippedFees,
           superseded_fees: published.supersededFees,
           outlier_rollbacks: outlierRollbacks.length,
+          outlier_restores: outlierRestores.length,
+          off_taxonomy_restores: offTaxonomyRestores.length,
           outlier_rollback_samples: outlierRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,
@@ -1042,6 +1065,8 @@ async function executeAgenticStep(
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
           rules_recheck_restores: recheckRestores,
+          rules_recheck_awaiting_second_look: recheckAwaiting,
+          rules_recheck_cleared: rulesRecheck?.cleared ?? 0,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,
