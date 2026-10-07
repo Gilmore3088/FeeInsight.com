@@ -59,11 +59,14 @@ export const KNOX_STALE_READ_BELOW_VERSION = 26;
  * a priced line for the missing fee (report-ready thread, 2026-10-07), and Space Coast CU.
  */
 export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
-  8109, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
+  // In this order: S&T (most missing-fee leads) and Space Coast first.
+  161, 8109, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
   749, 1680, 2334, 2580, 2756, 156, 528, 641, 1068, 1200, 1411, 1104, 3262, 7096, 8078, 6775, 6358, 5058, 7503,
   6788, 5998,
   // Magellan confirmed these current copies are full fee pages (2026-10-07).
-  161, 321, 836, 1170, 1024, 8082, 7723, 8606, 5622,
+  321, 836, 1170, 1024, 8082, 7723, 8606, 5622,
+  // Report-gap list re-run on current copies only (2026-10-07).
+  1995, 7929,
 ];
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
@@ -359,7 +362,7 @@ async function selectTextArtifacts(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ORDER BY ${learning && priorityIds.length > 0 ? `(adt.institution_id = ANY($${params.push(`{${priorityIds.join(",")}}`)}::bigint[])) DESC, ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ` : ""}adt.updated_at DESC, adt.id DESC
+       ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ` : ""}adt.updated_at DESC, adt.id DESC
        LIMIT $1
     `,
     params,
@@ -805,7 +808,8 @@ export async function runKnoxExtract(
   const learning = !dryRun && (await learningSchemaReady(db));
   // Dry runs stay off the database beyond the text read, like the lessons below.
   const currentCopy = !dryRun && (await currentCopySchemaReady(db));
-  // Market leaders and the named priority banks are read first while the stale backlog lasts.
+  // The named priority banks (in list order), then market leaders, are read first while the
+  // stale backlog lasts.
   const priorityIds = learning && currentCopy && !options.institutionId
     ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])]
     : [];
