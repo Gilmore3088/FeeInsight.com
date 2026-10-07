@@ -286,7 +286,10 @@ describe("registry Federal Reserve workers", () => {
         ],
       ],
     ]);
-    const fetchImpl = vi.fn().mockImplementation(async () => new Response("observation_date,X\n2026-08-01,4.2\n"));
+    const bls = { status: "REQUEST_SUCCEEDED", Results: { series: [{ data: [{ year: "2026", period: "M08", value: "4.2" }] }] } };
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      String(url).includes("api.bls.gov") ? new Response(JSON.stringify(bls)) : new Response("observation_date,X\n2026-08-01,4.2\n"),
+    );
 
     const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
 
@@ -303,12 +306,12 @@ describe("registry FRED worker: BLS and required series", () => {
     const { db, statements } = createDb([
       [
         "FROM fed_economic_indicators",
-        () => [{ series_id: "CUUR0000SEMC01", series_title: "CPI: Checking Account and Other Bank Services", fed_district: null, units: null, frequency: "Monthly" }],
+        () => [{ series_id: "CUUR0100SEMC", series_title: "CPI: Professional Services, Northeast", fed_district: null, units: null, frequency: "Monthly" }],
       ],
     ]);
     const bls = {
       status: "REQUEST_SUCCEEDED",
-      Results: { series: [{ seriesID: "CUUR0000SEMC01", data: [
+      Results: { series: [{ seriesID: "CUUR0000SS68021", data: [
         { year: "2026", period: "M08", value: "301.5" },
         { year: "2025", period: "M13", value: "290.0" },
       ] }] },
@@ -327,18 +330,21 @@ describe("registry FRED worker: BLS and required series", () => {
       expect.stringContaining("fredgraph.csv?id=GDPCTPI"),
     ]));
     // A plain GET returns about 3 years; the POST asks for 7 so 5-year charts are complete.
-    const blsCall = fetchImpl.mock.calls.find((call) => String(call[0]).includes("api.bls.gov"))!;
+    const blsCall = fetchImpl.mock.calls.find((call) => String(call[1]?.body ?? "").includes("CUUR0100SEMC"))!;
     const year = new Date().getUTCFullYear();
     expect(blsCall[1]).toMatchObject({ method: "POST" });
     expect(JSON.parse(String(blsCall[1].body))).toEqual({
-      seriesid: ["CUUR0000SEMC01"],
+      seriesid: ["CUUR0100SEMC"],
       startyear: String(year - 6),
       endyear: String(year),
     });
     expect(result).toMatchObject({ series: 1 + REQUIRED_FRED_SERIES.length, missingSeries: [] });
     const inserts = statements.filter((s) => s.text.includes("INSERT INTO fed_economic_indicators"));
-    expect(inserts.map((s) => s.values[0])).toEqual(expect.arrayContaining(["CUUR0000SEMC01", "GDPCTPI"]));
-    const blsRows = payloadOf(inserts.find((s) => s.values[0] === "CUUR0000SEMC01")!.values);
+    expect(inserts.map((s) => s.values[0])).toEqual(expect.arrayContaining(["CUUR0100SEMC", "CUUR0000SS68021", "GDPCTPI"]));
+    const regional = inserts.find((s) => s.values[0] === "CUUR0100SEMC")!;
+    // A stored medical series keeps refreshing but under its real name, not a bank label.
+    expect(regional.values[1]).toBe("CPI: Medical Professional Services, Northeast");
+    const blsRows = payloadOf(regional.values);
     expect(blsRows).toEqual([{ observation_date: "2026-08-01", value: 301.5 }]);
   });
 });
