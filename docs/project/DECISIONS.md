@@ -3,6 +3,19 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-07
+
+**Taking a fee down is a last resort: a second look, a decision log, and a way back.** James,
+01:20 UTC (Live board cleanup thread): "we need to constantly learn from fees we pass or scrap...
+It needs to be last case decision, picked over multiple times, decision log. And it's never
+deleted, just archive and can always be revisited." A Hamilton check that fails a live fee logs
+it as `takedown_pending` in `pipeline_feedback` and leaves it live; only a later run (at least
+50 minutes on) that fails it again takes it down (`hamilton/second-look.ts`). A fee that passes
+in between is logged `takedown_cleared`. Takedowns stay soft (`rolled_back_at` plus the reason),
+every takedown and restore is synced to `pipeline_feedback`, and a check that is fixed brings
+back the fees it now passes. Started with the source check and the category guard. The rules
+re-check, outlier range and off-taxonomy checks follow.
+
 ## 2026-10-06
 
 **One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets

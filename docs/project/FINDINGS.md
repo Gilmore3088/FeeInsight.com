@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
+**What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
+ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
+learning sync had logged all of them (10,589 takedown rows, 1,477 restores) in `pipeline_feedback`.
+But each check took a fee down the first time it failed, with no second look. Only the source
+check, the rules re-check and the newer-copy retire restored fees when a fix made them pass. The
+category guard (1,099 takedowns), outlier range (768) and off-taxonomy (94) checks had no way back.
+**Cause:** each check was written as a one-shot cleanup, and restore was added later only where a
+wrong takedown showed up.
+**Fix:** `hamilton/second-look.ts`. A first failure is logged and the fee stays live; a later run
+that fails it again takes it down. Wired into the source check and the category guard, and the
+category guard now restores earlier takedowns that today's guard passes. The rules re-check,
+outlier range and off-taxonomy checks are next.
+**Lesson:** every new takedown path goes through `secondLook` and has a restore path.
+
 ## 2026-10-07: The source check took down real fees whose price carried a note
 **What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
 UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned

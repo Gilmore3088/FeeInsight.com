@@ -13,9 +13,22 @@ const liveRows = [
   { fee_published_id: 4, lineage_ref: 14, institution_id: 8, canonical_fee_key: "atm_non_network", fee_name: "You may withdraw up to", amount: "500.00" },
 ];
 
-function createDbMock() {
+// Rows 2 and 4 failed their first look two hours ago, on another run.
+const firstLooks = [2, 4].map((id) => ({
+  fee_published_id: id,
+  kind: "takedown_pending",
+  evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), reason: "name" },
+}));
+
+function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = []) {
   return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
+    if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("FROM pipeline_feedback")) return Promise.resolve(flags);
+    if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve(takenDown);
+    if (text.includes("UPDATE published_fee_records") && text.includes("rolled_back_at = NULL")) {
+      return Promise.resolve((values[0] as number[]).map((id) => ({ lineage_ref: id + 10 })));
+    }
     if (text.includes("FROM published_fee_records")) return Promise.resolve(liveRows);
     if (text.includes("UPDATE published_fee_records")) {
       return Promise.resolve((values[1] as number[]).map((id) => ({ fee_published_id: id })));
@@ -61,6 +74,30 @@ describe("Hamilton category guard repair", () => {
     expect(statements).toContain("review_status = 'rejected'");
     expect(statements).not.toContain("DELETE");
     expect(JSON.stringify(db.mock.calls)).toContain("category-guard-run-10");
+  });
+
+  it("takes nothing down on a first failure: it logs both fees for a second look", async () => {
+    const db = createDbMock([]);
+
+    const result = await runHamiltonCategoryGuard({ runId: 12, db: db as unknown as GuardDb });
+
+    expect(result).toMatchObject({ failingFees: 0, rolledBackFees: 0, flaggedFees: 2 });
+    const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(statements).toContain("INSERT INTO pipeline_feedback");
+    expect(statements).not.toContain("SET rolled_back_at = NOW()");
+  });
+
+  it("brings back an earlier takedown today's guard passes", async () => {
+    const db = createDbMock([], [
+      { fee_published_id: 21, lineage_ref: 31, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00", conditions: null },
+      { fee_published_id: 22, lineage_ref: 32, canonical_fee_key: "overdraft", fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50", conditions: null },
+    ]);
+
+    const result = await runHamiltonCategoryGuard({ runId: 13, db: db as unknown as GuardDb });
+
+    expect(result.restoredFees).toBe(1);
+    const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
+    expect(restore?.[1]).toEqual([21]);
   });
 
   it("caps the rollbacks at the run limit", async () => {
