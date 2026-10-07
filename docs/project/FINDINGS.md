@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's source check takes down real prices, so its judgements can't teach yet
+**What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
+check of 20 random source-check takedowns from the 24 hours to 02:50 UTC (`wrong_amount` and
+`threshold`, not restored) found 13 that read as real prices from Knox's excerpt ("Wire Transfer
+Outgoing $20.00", "Deposit return item / $10.00", "$150.00 Drill Safe Deposit Box"), 4 right and 3 unclear.
+**Cause:** not yet known. The misses share a balance or "per $50" in the same line (read as a
+threshold) or an amount written before the name (read as not the fee).
+**Fix:** none here. Darwin's review learns only from category-check takedowns and restores; the
+finding went to the Accuracy and Hamilton publish threads. The fees are archived, not deleted.
+**Lesson:** a judgement becomes a training signal only after it has been checked to hold up;
+a wrong lesson teaches the next check to throw away real fees.
+
 ## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
 **What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
 ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
@@ -1893,6 +1905,31 @@ their ending, since the category guard reads "fee of" as the sign of a fee sente
 **Lesson:** a name is tidied for the reader, but the category guard still reads it, so a tidy rule
 has to be checked against the guard and the answer keys, not only by eye.
 
+## 2026-10-07: a rules change could not take back a category it had given a held line
+**What happened:** Knox v26 folded held lines into existing categories. Its first prod pass (runs
+1927, 1929, 1930) promoted 60 lines. Six of them went to the wrong category, and two of those were
+verified and published within minutes (published 69934, 69503). Nothing re-read a line after it was
+promoted, so the next rules version could stop new misfiles but could not pull back these.
+**Fix:** PR 336. Knox v30 narrows the fold. `recheckPromotedRows` puts unverified promotions that
+today's rules no longer file the same back on hold, logged as `wrong` and never deleted; rate fees are
+skipped. Category guard v15 rejects the two live rows, so Hamilton's rules re-check takes them down.
+Dry run on 794 unverified promotions: 7 go back on hold.
+**Lesson:** sample real prod output right after a rules change ships, and give every automatic
+promotion a way back.
+
+
+## 2026-10-07: Hamilton read a fee missing from the index as "no fee"
+**What happened:** a live Pro answer for Space Coast Federal Credit Union (saved 02:31 UTC Oct 7) to
+"Who in our state changed their NSF fee this year?" said "Your schedule shows no NSF fee" and weighed
+"a no-NSF position". The index has no NSF row for Space Coast at all, which only means the fee is not
+in the index. The memo also opened with what the data could not say. Its local comparison used
+business fee schedules for Launch Credit Union and Community Credit Union of Florida.
+**Fix:** engine 1.9.1 heads a missing fee "Your NSF / returned item fee is not in the index yet". The
+memo writer is told that `own: null` is never a fee of $0, and is asked again when it calls a missing
+fee "no-fee" or opens its summary with a limit. A recorded fee change now counts only when both prices
+were read from the same page.
+**Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
+consumer/business split for the fee readers, not something Hamilton can fix.
 
 ## 2026-10-07: Limit wordings v28 missed
 **What happened:** v29's first prod run (02:55 UTC, 50 pages, 241 rows) still raised six limits as
