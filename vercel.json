@@ -25,6 +25,10 @@
       "schedule": "31 13 * * *"
     },
     {
+      "path": "/api/admin/crew/competitor-alerts",
+      "schedule": "51 14 * * *"
+    },
+    {
       "path": "/api/admin/crew/lead-watch",
       "schedule": "41 * * * *"
     },
