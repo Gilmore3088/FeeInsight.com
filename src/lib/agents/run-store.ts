@@ -1,6 +1,7 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
+import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
@@ -2536,7 +2537,8 @@ export async function executeQueuedAgentRuns({
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
-     -- lane), then a retry of a failed state lane, then any run waiting over an hour,
+     -- lane), then a retry of a failed state lane, then a state whose report James is
+     -- waiting to review, then any run waiting over an hour,
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
@@ -2557,6 +2559,9 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
+              -- A state whose report James is waiting to review (atlas/report-review-states.ts).
+              (r.run_kind = 'workflow_lane'
+                AND upper(btrim(r.state_code)) = ANY(${[...REPORT_REVIEW_STATES]}::text[])) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC
