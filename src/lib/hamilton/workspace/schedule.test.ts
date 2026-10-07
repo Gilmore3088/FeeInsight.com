@@ -34,6 +34,13 @@ describe("whole-schedule questions", () => {
     expect(overview.shortAnswer).toMatch(/1 more fee has too few peers publishing to compare\.$/);
     expect(overview.facts[1].text).toBe("Stop Payment: your $15 is $14.50 lower than the median of 14 peers ($29.50).");
     expect(overview.shortAnswer).not.toMatch(/cheap|should|raise|cut/i);
+    expect(overview.positions.map((p) => [p.feeCategory, p.direction])).toEqual([
+      ["atm_non_network", "higher"],
+      ["stop_payment", "lower"],
+      ["overdraft", "higher"],
+      ["dormant_account", "at"],
+    ]);
+    expect(overview.positions[0]).toMatchObject({ current: 3.62, peerMedian: 2.25, peerCount: 14 });
   });
 
   it("answers without a detail fee when nothing compares", () => {

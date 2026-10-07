@@ -299,9 +299,12 @@ async function scheduleFor(institutionId: number, question: string): Promise<Sch
 
 /** Puts the overview first; the detailed answer for the furthest fee follows it. */
 function withSchedule(response: AskResponse, schedule: ScheduleOverview): AskResponse {
-  if (!schedule.top) return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts };
+  if (!schedule.top) {
+    return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts, positions: schedule.positions };
+  }
   return {
     ...response,
+    positions: schedule.positions,
     shortAnswer: `${schedule.shortAnswer} ${response.shortAnswer}`.trim(),
     facts: [...schedule.facts, ...(response.facts ?? [])],
   };

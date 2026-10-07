@@ -5,7 +5,7 @@
  */
 
 import { formatFeeAmount } from "@/lib/format";
-import type { Fact, FeePositionRow, SourceRef } from "./types";
+import type { Fact, FeePositionRow, SchedulePosition, SourceRef } from "./types";
 
 const WHOLE_SCHEDULE =
   /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b/i;
@@ -25,6 +25,8 @@ export interface ScheduleOverview {
   top: string | null;
   shortAnswer: string;
   facts: Fact[];
+  /** The same fees as rows, for a table. */
+  positions: SchedulePosition[];
 }
 
 const money = (n: number): string => formatFeeAmount(n) ?? `$${n}`;
@@ -58,6 +60,7 @@ export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverv
       top: null,
       shortAnswer: `Hamilton has ${rows.length} of your published fees on file; none yet has enough peers publishing it to compare.`,
       facts: [],
+      positions: [],
     };
   }
   const higher = ranked.filter((r) => r.current - r.band.median >= 0.005).length;
@@ -74,5 +77,14 @@ export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverv
     top: first.feeCategory,
     shortAnswer,
     facts: ranked.map((r) => ({ text: lineFor(r), source: FEES_SOURCE, sampleSize: r.band.n })),
+    positions: ranked.map((r) => ({
+      feeCategory: r.feeCategory,
+      displayName: r.displayName,
+      current: r.current,
+      peerMedian: r.band.median,
+      peerCount: r.band.n,
+      peerLabel: r.peerLabel,
+      direction: r.current - r.band.median >= 0.005 ? "higher" : r.band.median - r.current >= 0.005 ? "lower" : "at",
+    })),
   };
 }
