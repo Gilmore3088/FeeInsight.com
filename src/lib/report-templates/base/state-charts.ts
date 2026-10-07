@@ -6,10 +6,8 @@
  * when data is missing, the chart says so instead.
  */
 import { geoConicConformal, geoPath, geoCentroid } from "d3-geo";
-import { feature } from "topojson-client";
-import type { Feature, FeatureCollection, Geometry } from "geojson";
-import type { GeometryCollection, Topology } from "topojson-specification";
-import countiesTopology from "us-atlas/counties-10m.json";
+import type { FeatureCollection, Geometry } from "geojson";
+import { countyFeatures, type CountyFeature } from "@/lib/geo/counties";
 import { CHART, CHART_FONTS } from "@/lib/charts/style";
 import { escapeHtml } from "./components";
 
@@ -57,18 +55,8 @@ export const MAP_BREAKS = [26, 29, 31, 33, 35] as const;
 export const MAP_LEGEND = ["Under $26", "$26 to $29", "$29 to $31", "$31 to $33", "$33 to $35", "$35 and up"] as const;
 const MAP_LABELS = 4;
 
-type CountyFeature = Feature<Geometry, { name: string }> & { id: string };
-
-let countyCache: CountyFeature[] | null = null;
 function allCounties(): CountyFeature[] {
-  if (!countyCache) {
-    const topo = countiesTopology as unknown as Topology<{ counties: GeometryCollection<{ name: string }> }>;
-    countyCache = (feature(topo, topo.objects.counties) as FeatureCollection<Geometry, { name: string }>).features.map((f) => ({
-      ...f,
-      id: String(f.id).padStart(5, "0"),
-    })) as CountyFeature[];
-  }
-  return countyCache;
+  return countyFeatures();
 }
 
 export function mapStep(value: number): number {
