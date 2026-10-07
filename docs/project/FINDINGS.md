@@ -1538,3 +1538,19 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 **Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
+
+## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
+**What happened:** some PDF schedules are stored as a single line holding every row
+("Stop Payment………………. $35.00 Dormant Account Fee……. $7.00/Month ..."). The shared check
+(`source-check.ts`) splits long lines into sentences after every period, and the last period of
+each dot leader counted as one. So each fee's name ended one piece and its price began the next.
+Knox read West Shore Bank's stop payment, cashier's check, dormant, overdraft and late charge
+correctly, then held every one as untraced. The bank stayed hidden behind the 3-fee rule.
+**Fix:** the shared check no longer splits inside a leader (Knox's own splitter already worked
+this way since v22). Knox v25 also files a box size in inches as a safe deposit box.
+**Also found:** of the 108 hidden banks under $10B, 61 have no fee schedule stored at all
+(checking, rate or Truth-in-Savings pages), so they went to Magellan. 49 have 128 Knox rows that
+Darwin hasn't judged yet.
+**Lesson:** Knox and the shared check must split text the same way. When one learns a layout,
+change the other in the same PR.
+

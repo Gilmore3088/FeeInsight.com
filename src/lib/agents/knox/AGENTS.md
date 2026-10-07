@@ -194,6 +194,22 @@ Answer keys and the live dry run are unchanged from v22. The shared check accept
 same (name, amount) pairs as before across the answer-key and live texts (5,678 of every read
 name tried at every price in its document).
 
+v25 (rules 25) reads one-line PDF schedules, where a whole page of dot-leader rows is stored as one
+line ("Stop Payment………………. $35.00 Over $300 USD……. $40.00 Dormant Account Fee……. $7.00/Month").
+The shared check used to split that line after every period, including the last period of a dot
+leader, so each fee's name and price landed in different pieces. Knox's specialists read the fees
+and then held them as untraced (West Shore Bank: stop payment, cashier's check, dormant, overdraft,
+garnishment, late charge). The shared check no longer splits inside a leader. Also, a two-dimension size in
+inches ("10.5x10.5 Inch") is a safe deposit box, even under the next section's heading, and a name
+no longer starts with the previous row's bare price ("100.00 Overdraft (items paid)").
+
+Answer keys: Texas unchanged, held out unchanged, seven states 675 of 721 (674 of 720). Live dry
+run: 1,413 of 1,437 kept, the same fees as main. The shared check, tried on every read name at every
+price in its document, drops 7 wrong pairs (a name taking the next row's price), adds 1 right pair,
+and adds 1 wrong pair. The wrong pair is "Tracer placed on International Wire" at $10: the name's
+stem "place" also matches inside "Replacement" in a nearby row. That substring weakness is older
+than this change.
+
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
 (lowercase, letters only) that the category guards rejected under one category at 2 or more banks
