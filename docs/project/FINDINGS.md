@@ -1811,11 +1811,14 @@ newer-copy check and identical-copy move then handle the fees, as for any supers
 **Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
 same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
 including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
-was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 667 live fees sit
-on the older copies. Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 277 live fees sit
+on the older copies (the PR said 667; a recount by distinct live fee gave 277). Superseding changes no fee: Hamilton's refresh moves a live fee only when the
 current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
 taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
 because it included failed and already-superseded copies; only current copies need linking.
+**Proven on prod:** run 1936's fetch step (02:51 UTC, 7 Oct) logged "Superseded 110 current cop(ies)";
+docs 3307, 1106 and 2917 now point at 16035, 15935 and 16048. Of the 277 live fees on the older copies,
+none was taken down after the switch (checked 03:10 UTC).
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
@@ -1939,6 +1942,38 @@ free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
 **Lesson:** a price beside a name is the fee only when the name names a charge. Words like
 "limit", "limited to" and "maximum load" mean the figure is a ceiling.
 
+## 2026-10-07: Magellan's outcome ledger judged one 24th of each state, and never taught from companion pages
+**What happened:** the ledger (`magellan.link_yield`) is what lets Magellan learn which links work. Each
+discover step judged only banks whose id mod 24 matched the UTC hour, inside the step's state. A state
+lane runs about once a day, often at the same hour, so it judged the same 24th of the state every time.
+On prod, 781 banks had ever been judged, and only 19 of the 714 companion links Knox had read. The free
+platform finders also learned paths only from each bank's main link, so a schedule found by the paid
+search, the companion finder or a person (`institution_additional_sources`) never taught them anything.
+The freshness search had the same slot inside its state filter.
+**Fix:** a state's step judges and checks its whole state (`stepSlot`); steps without a state keep the
+hourly slot. The platform learner now counts judged `consumer_supplement` companions like main links
+(live +2, thin -1, wrong or dead -2); an unjudged companion counts for nothing until it is read.
+**Lesson:** a rotation meant to spread load has to be checked against how often its caller runs. Hand
+fixes only help the next bank when they flow into what the finders learn from.
+
+## 2026-10-07: business fee schedules stayed banks' consumer links, and their prices went live as consumer fees
+**What happened:** Hamilton's audit found Launch CU ($15 NSF) and Community CU of Florida ($30) showing
+prices from their business fee schedules. Both main links are business-only PDFs the old crawler chose
+(no Magellan attempt on either). Magellan's business search, which looks for the consumer schedule, only
+ran in spare discovery capacity, so in states with many banks lacking a link it never ran: 41 of 187
+business-link banks had been searched, 2 replaced. The paid schedule search took business links only
+for $10B+ banks and report requesters. The outcome ledger judged a business link by its live fees, so a
+business schedule with many fees counted as a good link and taught the finders its path.
+On prod (read-only, 7 Oct), 1,028 live fees at 91 banks are read from business-only documents; 61 of
+those fees have a live consumer fee in the same category at the same bank.
+**Fix (Magellan):** three discovery slots per step are kept for business-only links; the paid schedule
+search takes any business-link bank once the free search missed (36 banks today); the ledger judges a
+business-only main link as wrong (`business_schedule`, -2 for its path), so the finders learn not to pick
+such pages. The live business-schedule fees are Hamilton's to archive through its second look (never
+deleted); the dry-run counts above went to the Hamilton publish thread.
+**Lesson:** a link that produces many fees is not a good link if they are the wrong customer's fees.
+
+
 ## 2026-10-07: Fee names ran on into their price
 **What happened:** the audit red team counted 3,599 of 48,297 live Knox fees with a messy name: 1,819
 joined with "|", 1,338 over 80 characters and 1,025 ending on a dangling word ("Replacement Card Fee
@@ -1963,6 +1998,19 @@ Dry run on 794 unverified promotions: 7 go back on hold.
 **Lesson:** sample real prod output right after a rules change ships, and give every automatic
 promotion a way back.
 
+
+## 2026-10-07: Hamilton read a fee missing from the index as "no fee"
+**What happened:** a live Pro answer for Space Coast Federal Credit Union (saved 02:31 UTC Oct 7) to
+"Who in our state changed their NSF fee this year?" said "Your schedule shows no NSF fee" and weighed
+"a no-NSF position". The index has no NSF row for Space Coast at all, which only means the fee is not
+in the index. The memo also opened with what the data could not say. Its local comparison used
+business fee schedules for Launch Credit Union and Community Credit Union of Florida.
+**Fix:** engine 1.9.1 heads a missing fee "Your NSF / returned item fee is not in the index yet". The
+memo writer is told that `own: null` is never a fee of $0, and is asked again when it calls a missing
+fee "no-fee" or opens its summary with a limit. A recorded fee change now counts only when both prices
+were read from the same page.
+**Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
+consumer/business split for the fee readers, not something Hamilton can fix.
 
 ## 2026-10-07: Darwin's dispute threshold was too loose to bring takedowns back
 **What happened:** 4,467 live fees were taken down by the rules re-check before the second look
