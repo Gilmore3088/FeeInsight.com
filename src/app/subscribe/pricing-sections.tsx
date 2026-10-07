@@ -137,7 +137,7 @@ function faqItems(summary: PublicStatsSummary) {
     },
     {
       question: "How do seats work?",
-      answer: `One seat per named user. Each seat is billed separately; to add colleagues, email ${CONTACT_EMAIL} and we will set them up on the same workspace.`,
+      answer: "An institution account includes up to five teammates, the owner included. Once your bank's workspace is set up, add colleagues from Hamilton Settings and send them the invite link. Each person gets their own login and full Pro access.",
     },
     {
       question: "How often is the data refreshed?",

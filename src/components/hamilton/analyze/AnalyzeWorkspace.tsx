@@ -19,6 +19,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { StructuredAsk } from "./StructuredAsk";
+import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
@@ -141,6 +142,78 @@ interface AnalyzeWorkspaceProps {
 export function withEarlierQuestion(question: string, earlier: string): string {
   if (!earlier || earlier === question) return question;
   return `${question}\n\n(For context, my previous question was: "${earlier}")`;
+}
+
+/**
+ * The Evidence rows ("- Label: Value — note") drawn as figure tiles in the shared exhibit frame;
+ * a row with no value is a group heading. The figures are the answer's own, unchanged.
+ */
+export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) {
+  const groups: { heading: string | null; items: { label: string; value: string; note?: string }[] }[] = [];
+  for (const m of rows) {
+    const label = m.label.replace(/^\*+|\*+$/g, "").trim();
+    const value = m.value.replace(/^\*\*\s*|\s*\*\*$/g, "").trim();
+    if (!value && !m.note) {
+      groups.push({ heading: label, items: [] });
+      continue;
+    }
+    if (groups.length === 0) groups.push({ heading: null, items: [] });
+    groups[groups.length - 1].items.push({ label, value, note: m.note });
+  }
+  return (
+    <ExhibitFrame title="The figures behind this answer" sources={[]}>
+      <div className="flex flex-col gap-4">
+        {groups
+          .filter((g) => g.items.length > 0)
+          .map((g, gi) => (
+            <section key={gi} className="flex flex-col gap-2">
+              {g.heading ? <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">{g.heading}</h3> : null}
+              <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {g.items.map((m, i) => (
+                  <div key={i} className="flex min-w-0 flex-col gap-1 rounded-lg border border-warm-200 bg-warm-100/50 px-4 py-3">
+                    <dt className="text-xs leading-tight text-warm-600">{m.label}</dt>
+                    <dd className="text-2xl leading-tight text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+                      {m.value ? renderInline(m.value) : null}
+                    </dd>
+                    {m.note ? <dd className="text-xs leading-snug text-warm-700">{renderInline(m.note)}</dd> : null}
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
+      </div>
+    </ExhibitFrame>
+  );
+}
+
+/**
+ * Shown while a written answer is drafted, which can take most of a minute: what is happening and
+ * the seconds waited, so the page never sits empty. Only the elapsed time is live; no step is
+ * claimed done that the server has not reported.
+ */
+export function WrittenAnswerProgress() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div role="status" aria-live="polite" className="flex flex-col gap-3 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
+      <p className="flex items-center gap-2 text-sm font-medium text-warm-900">
+        <Loader2 aria-hidden className="h-4 w-4 animate-spin text-terra" />
+        Hamilton is writing this answer from the fee data and filings.
+      </p>
+      <p className="text-sm text-warm-700">
+        Written answers can take up to a minute. <span className="[font-variant-numeric:tabular-nums]">{seconds}s so far.</span>
+      </p>
+      <div className="space-y-2" aria-hidden="true">
+        <div className="skeleton h-5 w-full rounded" />
+        <div className="skeleton h-5 w-4/6 rounded" />
+        <div className="skeleton h-4 w-5/6 rounded" />
+      </div>
+    </div>
+  );
 }
 
 export function AnalyzeWorkspace({
@@ -333,7 +406,9 @@ export function AnalyzeWorkspace({
   // sent counts; an earlier answer must not stand in for it.
   const lastMessage = messages[messages.length - 1];
   const streamingContent = lastMessage?.role === "assistant" ? extractTextFromMessage(lastMessage) : "";
-  const liveParsed = isLoading && streamingContent ? parseAnalyzeResponse(streamingContent) : null;
+  // A stream that so far holds only a section heading has nothing to read yet; the progress note stays.
+  const streamingHasText = streamingContent.replace(/^#+[^\n]*$/gm, "").trim().length > 0;
+  const liveParsed = isLoading && streamingHasText ? parseAnalyzeResponse(streamingContent) : null;
   const shown = chatError && !isLoading ? null : (parsedResponse ?? liveParsed);
   const view = shown ? shapeHamiltonView(shown.hamiltonView) : { lead: "", paragraphs: [] };
   const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
@@ -404,19 +479,12 @@ export function AnalyzeWorkspace({
         />
       ) : null}
 
-      {isLoading && !shown ? (
-        <div role="status" aria-live="polite" className="flex flex-col gap-3">
-          <p className="text-sm text-warm-700">Hamilton is reading the fee data and filings for this answer…</p>
-          <div className="space-y-2" aria-hidden="true">
-            <div className="skeleton h-6 w-full rounded" />
-            <div className="skeleton h-6 w-4/6 rounded" />
-            <div className="skeleton h-4 w-5/6 rounded" />
-          </div>
-        </div>
-      ) : null}
+      {isLoading && !(shown && view.lead) ? <WrittenAnswerProgress /> : null}
 
       {shown && view.lead ? (
         <>
+          {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
+          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
           <article className="flex max-w-[68ch] flex-col gap-4">
             {askedQuestion ? (
               <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
@@ -460,33 +528,6 @@ export function AnalyzeWorkspace({
             </Callout>
           ) : null}
 
-
-          {shown.evidence.length > 0 ? (
-            <MemoSection title="The evidence">
-              <dl className="divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50 px-4">
-                {shown.evidence.map((m, i) => {
-                  const label = m.label.replace(/^\*+|\*+$/g, "").trim();
-                  const value = m.value.replace(/^\*\*\s*|\s*\*\*$/g, "").trim();
-                  if (!value && !m.note) {
-                    return (
-                      <dt key={i} className="pb-1 pt-4 text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">
-                        {label}
-                      </dt>
-                    );
-                  }
-                  return (
-                    <div key={i} className="grid gap-1 py-2.5 sm:grid-cols-[minmax(0,14rem)_1fr] sm:gap-6">
-                      <dt className="text-sm text-warm-600">{label}</dt>
-                      <dd className="text-sm text-warm-900 [font-variant-numeric:tabular-nums]">
-                        {renderInline(value)}
-                        {m.note ? <> {renderInline(m.note)}</> : null}
-                      </dd>
-                    </div>
-                  );
-                })}
-              </dl>
-            </MemoSection>
-          ) : null}
 
           {complete ? (
             <>

@@ -154,6 +154,18 @@ to call such an action active.
 **Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
 match, count how many rows it covers on prod and read a sample of them.
 
+## 2026-10-07: Saved peer groups filtered asset size by codes no institution has
+**What happened:** the Settings peer group form saved asset sizes as `a` to `f`, and the
+resolver filtered `institution_sources.asset_size_tier` by them. That column holds
+`community_small` to `super_regional` (`assetSizeTier` in `src/lib/regulatory/fdic.ts`), so any
+saved group with an asset size matched no institution and Hamilton fell back to national. How
+many saved rows carry `a`-`f` codes: none; prod `saved_peer_sets` had 0 rows (read-only, 07:20 UTC Oct 7).
+**Cause:** the form's tier list was written separately from the registry's tier vocabulary.
+**Fix:** the custom peer groups PR: the form and `PeerSetSchema` use the registry's tiers, and
+Settings shows each group's real institution count. No rows needed fixing.
+**Lesson:** a filter's values come from the column it filters; show the count a filter
+resolves to, so a group that matches nothing is visible.
+
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
 queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
@@ -2809,6 +2821,25 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   Resound CU (document 16143) and Enbright CU (PDF document 10293). Two links are wrong:
   - Tsu FCU (5080) points at a Tennessee State University tuition page.
   - SouthEast Bank (371) also holds copies of a Bangladesh bank's schedule.
+
+## 2026-10-07: Team seat invites trust an unverified email
+**What happened:** with team seats, an invitation is accepted by any signed-in account whose email
+matches, and the seat gives Pro access without payment. Registration does not verify that a person
+owns the email they sign up with (no verification step in `createUserWithSession`).
+**Cause:** invitations were tied to email when accepting also needed a paid subscription, which was
+some protection; seats remove it.
+**Fix:** closed in the same PR by signed invite links. Every grant, an existing account included,
+is now an invitation. A seat starts only when someone opens
+`/workspace-invite?i=<id>&t=<token>` signed in with the invited email. The token is
+HMAC-SHA256 of `id:email:institution`, keyed with `BFI_COOKIE_SECRET` and compared with
+`timingSafeEqual`, and the invitation must still be pending and unexpired
+(`src/lib/hamilton/workspace-invite-link.ts`). Without the secret, no link is issued or accepted.
+Accepting by email alone (`acceptPendingWorkspaceInvitationsForUser`, called from the Stripe webhook,
+the payment fallback and /account) is removed. Someone who registers with another person's
+email still cannot join without that person's link.
+**Cost:** `getCurrentUser` makes one extra query per signed-in request (`hasWorkspaceSeat`). It is
+left in place for now.
+**Lesson:** when a check stops costing money to pass, re-check what it was protecting.
 
 ## 2026-10-07: CFPB fee complaints were over-counted, cut short, and missing for big banks
 
