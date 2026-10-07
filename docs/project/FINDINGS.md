@@ -2427,3 +2427,15 @@ funds-availability, checking and rates pages; the other 33 were not sampled).
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+
+## 2026-10-07: Knox had no per-batch error review
+
+- **Problem.** Knox's error rate was only measured by hand. James asked for "a way to review errors
+  after chunks of N". A hand query over chunks of 500 Knox reads that were 24 hours old showed rates
+  from 0.0% to 13.9%. 175 batches have run since Oct 4; the newest two are 0.3%.
+- **Fix.** `knox/batch-review.ts` runs in every extract step. It scores each full, settled batch of
+  500 reads against Darwin's verdicts, Hamilton's read takedowns and the confirmed answer key. It writes
+  each miss and one batch row with the rate and its top miss patterns to `pipeline_feedback`.
+- **Watch.** A reject whose only reason is `rules_recheck_unreproduced` is a newer Knox version
+  replacing the read, so it is counted as superseded. Counting it as a miss put Oct 4's first batch
+  at 58% wrong.
