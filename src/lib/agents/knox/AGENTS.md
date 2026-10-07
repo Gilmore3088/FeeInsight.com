@@ -126,6 +126,16 @@ of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
 stay held.
 
+v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
+02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
+collection fee on charged-off accounts and a collection phone call are debt collection, not a
+check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
+report to open an account is not a loan fee. Those lines now stay held. Each extract step also
+re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
+today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
+and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
+already verified are Hamilton's rules re-check's to take down.
+
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the
 account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
@@ -372,3 +382,50 @@ starts after it (`tidyFeeName`). A sentence of more than eight words keeps its e
 category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
 right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
 of 1,437 kept, the same fees.
+
+v30 (rules 30) reads two more limit wordings as ceilings, not prices: a limit that "will increase
+to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
+"($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
+
+Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
+from the second look or the restore bar) counts as verified under the category it came back with,
+and a takedown under that same category no longer counts against the name. A takedown under another
+category stands, since a fee taken down as a domestic wire and restored as an international wire
+confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
+`wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
+this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.
+
+v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 12-month cycle $240",
+ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
+Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
+
+Takedown lessons (`takedown-lessons.ts`). Knox reads Hamilton's second-look confirmations
+(`takedown_confirmed` from the source check, limit guard and business-schedule check) for fees
+still down with no live twin. When it reads the same bank, name and price again, usually from a
+new copy of the page, it writes the row held (`knox_review:taken_down`,
+`knox_lesson:taken_down:<check>`) and does not send it to Darwin. The row is kept, never dropped.
+First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`, `unreproduced`) do not teach,
+because many are restored. The extract event carries `takedown_lessons_loaded` and `takedown_holds`.
+Before this, in the 48 hours to Oct 7 05:50 UTC, Knox re-read 208 taken-down fees, sent 49 back to
+Darwin, and 6 were published again.
+
+Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
+Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
+publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
+the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
+
+v32 (rules 32, from Space Coast CU's page, Oct 7):
+- "Incoming Wires" and "Outgoing Wires" read in the plural.
+- "(Outside U.S.)" is an international wire.
+- An account named with the balance it must keep ("Money Market Savings Account (below $2,500) | $15/mo.") is that account's low-balance fee.
+- When two fees' names share a row before one price ("Returned Check | Verification of Deposit | $20"), the price and the name are the nearest fee's.
+- A name that closes a parenthesis it never opened ("SCCU for using a non-SCCU ATM) | $60") is the end of a wrapped line, not a fee.
+- Answer keys: TX 503 right / 15 wrong (unchanged), 7 states 721 / 47 (was 719 / 47). Live dry run: 1,418 of 1,437 kept, the same as v31.
+- "... to avoid a minimum balance fee of $3.95" is read as the $3.95 fee, not the balance thresholds (Security First Bank of ND).
+- A price followed by "when performed at an ATM we do not own or operate" keeps that clause in its name. It is read only once the category guard accepts the name; today the guard refuses "Deposits/Withdrawals" as an ATM fee (Pathfinder).
+- "Account Link Overdraft Protection | $10" is an overdraft protection transfer, not an overdraft fee (Spencer Savings).
+- A figure from a worked example ("Example: Assume you establish a bill pay payment ... in the amount of $100") is not a fee. Hamilton's limit guard flags live ones as `worked_example` and takes them down after its second look (Northwest Bank's $100 bill pay, plus 2 more on Oct 7). Confirmed takedowns become Knox takedown lessons (PR 393).
+- Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
+- Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").

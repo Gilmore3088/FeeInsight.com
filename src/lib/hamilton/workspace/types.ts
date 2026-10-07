@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.9.0";
+export const WORKSPACE_ENGINE_VERSION = "1.12.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -405,6 +405,10 @@ export interface EconomicBackdrop {
   indicators: EconomicIndicator[];
   /** The district's latest Beige Book, banking section first. */
   beigeBook: { releaseDate: string; text: string; source: SourceRef } | null;
+  /** The latest FOMC minutes' rate decision, quoted. */
+  fomc?: { meetingDate: string; text: string; source: SourceRef } | null;
+  /** The district Reserve Bank's newest banking or household research piece. */
+  districtResearch?: { title: string; publishedAt: string | null; source: SourceRef } | null;
 }
 
 /** A marker on a fee exhibit: one market's median. */
@@ -613,6 +617,21 @@ export interface AskResponse {
   decisionId?: string;
   /** The saved analysis this answer was filed as (history and "Add to report"); send it with the memo request. */
   savedAnalysisId?: string;
+  /** For a question about every fee: each fee against its peer median, furthest first. */
+  positions?: SchedulePosition[];
+}
+
+export interface SchedulePosition {
+  feeCategory: string;
+  displayName: string;
+  current: number;
+  peerMedian: number;
+  peerCount: number;
+  peerLabel: string;
+  /** Against the peer median, within half a cent counts as "at". */
+  direction: "higher" | "lower" | "at";
+  /** The peers' middle half, for drawing the fee as a range strip; absent on answers saved before 1.12.1. */
+  band?: { p25: number; p75: number } | null;
 }
 
 export interface AskRequest {

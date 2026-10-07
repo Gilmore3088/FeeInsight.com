@@ -50,15 +50,30 @@ export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Prom
     return await inSavepoint(db, async (scope) => {
       if (!(await feedbackSchemaReady(scope))) return [];
       const rows = await scope<Array<{ name: string; example: string; banks: number | string; verdicts: ContestedNameVerdict[]; reason: ContestedName["reason"] }>>`
-        WITH judged AS (
+        WITH restored AS MATERIALIZED (
+          SELECT DISTINCT r.fee_raw_id, r.canonical_fee_key, r.institution_id, fr.fee_name
+            FROM pipeline_feedback r
+            JOIN raw_fee_observations fr ON fr.fee_raw_id = r.fee_raw_id
+           WHERE r.kind = 'restored_after_takedown'
+             -- Restored with no check (before 7 Oct): no verdict that the takedown was wrong.
+             AND COALESCE(r.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
+             AND r.canonical_fee_key IS NOT NULL
+             AND fr.fee_name IS NOT NULL
+        ), judged AS (
           SELECT regexp_replace(btrim(lower(regexp_replace(f.evidence->>'fee_name', '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
                  f.evidence->>'fee_name' AS raw_name,
                  f.canonical_fee_key AS fee_key, f.signal, f.institution_id
             FROM pipeline_feedback f
+            LEFT JOIN restored rs
+              ON f.signal = 'wrong' AND rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key
            WHERE f.about_stage = 'extract'
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
+             AND rs.fee_raw_id IS NULL
+          UNION ALL
+          -- A restored fee is verified under the category it came back with (as in lessons.ts).
+          SELECT regexp_replace(btrim(lower(regexp_replace(fee_name, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g'), fee_name, canonical_fee_key, 'right', institution_id FROM restored
         ), tally AS (
           SELECT name, fee_key,
                  count(DISTINCT institution_id) FILTER (WHERE signal = 'wrong')::int AS wrong_banks,

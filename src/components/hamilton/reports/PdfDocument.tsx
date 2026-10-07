@@ -15,6 +15,7 @@ import {
 } from "@react-pdf/renderer";
 import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
+import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -303,12 +304,6 @@ const styles = StyleSheet.create({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
-  quarterly_strategy: "Quarterly Strategy Report",
-  peer_brief: "Peer Brief",
-  monthly_pulse: "Monthly Pulse",
-  state_index: "State Index",
-};
 
 // ─── PdfDocument Component ────────────────────────────────────────────────────
 
@@ -318,14 +313,9 @@ interface PdfDocumentProps {
   artifactMetadata?: ReportArtifactMetadata | null;
 }
 
-function formatPolicy(policy: ReportArtifactMetadata["evidencePolicy"]): string {
-  if (policy === "verified-only") return "Verified only";
-  if (policy === "source-diligence") return "Source diligence";
-  return "Provisional first";
-}
 
 export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumentProps) {
-  const typeLabel = REPORT_TYPE_LABELS[reportType] ?? reportType;
+  const typeLabel = reportTypeLabel(reportType);
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -343,10 +333,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           {artifactMetadata && (
             <View style={styles.metadataStrip}>
               <Text style={styles.metadataText}>
-                Evidence policy: {formatPolicy(artifactMetadata.evidencePolicy)} · Peer baseline: {artifactMetadata.peerBaselineLabel ?? "Not recorded"}
-              </Text>
-              <Text style={styles.metadataText}>
-                Selected institution: {artifactMetadata.selectedSourceLabel ?? "Context source not recorded"} · {artifactMetadata.selectedVerifiedFeeCount} verified, {artifactMetadata.selectedProvisionalFeeCount} provisional, {artifactMetadata.selectedFeeDeltaCount} deterministic deltas
+                {evidencePolicyLabel(artifactMetadata.evidencePolicy)} · Peer group: {artifactMetadata.peerBaselineLabel ?? "Not recorded"} · {artifactMetadata.selectedFeeDeltaCount} {artifactMetadata.selectedFeeDeltaCount === 1 ? "fee" : "fees"} compared with peers
               </Text>
               {artifactMetadata.peerFallbackReason && (
                 <Text style={styles.metadataText}>
@@ -482,7 +469,7 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
     <>
         {/* Executive Summary */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>Executive Summary</Text>
+          <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.summary}</Text>
           {report.executiveSummary.map((para, i) => (
             <Text key={i} style={styles.paragraph}>
               {para}
@@ -490,10 +477,25 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
           ))}
         </View>
 
+        {/* Findings the reader added from Position, Ask and Test */}
+        {report.addedFindings && report.addedFindings.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.addedFindings}</Text>
+            {report.addedFindings.map((finding, i) => (
+              <View key={i} wrap={false}>
+                <Text style={styles.paragraph}>
+                  {finding.title}
+                  {finding.detail ? ` ${finding.detail}` : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Snapshot — only if scenario data present */}
         {report.snapshot.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Snapshot</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.snapshot}</Text>
             <View style={styles.statCalloutGrid}>
               {report.snapshot.map((item, i) => (
                 <View key={i} style={styles.statCalloutBox}>
@@ -511,14 +513,14 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
 
         {/* Strategic Rationale */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>Strategic Rationale</Text>
+          <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.rationale}</Text>
           <Text style={styles.paragraph}>{report.strategicRationale}</Text>
         </View>
 
         {/* Tradeoff Summary */}
         {report.tradeoffs.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Tradeoff Summary</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.tradeoffs}</Text>
             <View style={styles.tradeoffGrid}>
               {report.tradeoffs.map((item, i) => (
                 <View key={i} style={styles.tradeoffItem}>
@@ -530,16 +532,16 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
           </View>
         )}
 
-        {/* Recommended Position */}
+        {/* Position for management to weigh */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>Recommended Position</Text>
+          <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.position}</Text>
           <Text style={styles.paragraph}>{report.recommendation}</Text>
         </View>
 
         {/* Implementation Notes */}
         {report.implementationNotes.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Implementation Notes</Text>
+            <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.implementation}</Text>
             {report.implementationNotes.map((note, i) => (
               <Text key={i} style={styles.noteItem}>
                 — {note}

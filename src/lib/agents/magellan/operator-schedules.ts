@@ -33,10 +33,13 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "James, 2026-10-07 00:51",
   },
   {
+    // James's link (2026-10-07 00:52) was Citi Bangladesh's schedule of charges (taka), which
+    // Rosetta rightly rejected. Citi publishes no single US fee schedule; this is its US
+    // consumer account comparison chart. Citi charges no overdraft fee (dropped in 2022).
     institutionId: 3,
     institutionName: "Citibank, National Association",
-    url: "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges_Effective_February_26_2026.pdf",
-    givenBy: "James, 2026-10-07 00:52",
+    url: "https://online.citi.com/JRS/popups/comparison_chart.pdf",
+    givenBy: "web search for the US consumer schedule, 2026-10-07 06:30",
   },
   {
     institutionId: 5,
@@ -75,21 +78,9 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
   },
   {
-    institutionId: 33,
-    institutionName: "Flagstar Bank, National Association",
-    url: "https://www.flagstar.com/content/dam/flagstar/pdfs/OverdraftProtectionCoveragePreEnrollmentTC.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
-  },
-  {
     institutionId: 37,
     institutionName: "First Horizon Bank",
     url: "https://www.firsthorizon.com/-/media/Files/Access-Checking-Account-Service-Fee-Guide.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
-  },
-  {
-    institutionId: 47,
-    institutionName: "Pinnacle Bank",
-    url: "https://www.pnfp.com/Overdraft",
     givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
   },
   {
@@ -187,6 +178,176 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName: "Central Kansas Education Federal Credit Union",
     url: "https://www.ckecusalina.com/Rates",
     givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
+  },
+  {
+    // The bank's own copy (Morgan Stanley Online accounts). Its pricing page times out, and
+    // our fetcher has failed on us.etrade.com since 2026-10-04, so the E*TRADE copy is not used.
+    institutionId: 16,
+    institutionName: "Morgan Stanley Private Bank, National Association",
+    url: "https://www.morganstanley.com/content/dam/msdotcom/en/wealth-disclosures/pdfs/MSPBNA_MSO_Bank_Deposit_Rate_Fee_Schedule.pdf",
+    givenBy: "web search for the state market leaders, 2026-10-07 03:55",
+  },
+  {
+    // BMO has no single schedule; this is its Smart Money checking disclosure.
+    institutionId: 14,
+    institutionName: "BMO Bank National Association",
+    url: "https://www.bmo.com/en-us/pdf/smart_money_reg_dd.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // Deposit Account Pricing Guide, January 2026.
+    institutionId: 15,
+    institutionName: "Charles Schwab Bank, SSB",
+    url: "https://disclosures.schwab.com/SchwabDashboard/62667/REG30608.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // Products and fees guide from the 2024 public file. Replaces the overdraft enrollment
+    // terms (HTTP 403 on 2026-10-07), which list no fee amounts beyond overdraft.
+    institutionId: 33,
+    institutionName: "Flagstar Bank, National Association",
+    url: "https://www.flagstar.com/content/dam/flagstar/about-flagstar/community-involvement/pdfs/flagstar-bank-products-and-fees-guide.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // consumer schedule of fees, effective 2025-09-15.
+    institutionId: 35,
+    institutionName: "Zions Bancorporation, N.A.",
+    url: "https://www.amegybank.com/content/dam/zbna/disclosures/localized/zfnb/rate-sheets/scheduleoffeesconsut.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // other account services, September 2025.
+    institutionId: 42,
+    institutionName: "Columbia Bank",
+    url: "https://www.umpquabank.com/globalassets/media/documents/columbia_bank_other_account_services.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // The full fee and service charge page; replaces the overdraft-only page.
+    institutionId: 47,
+    institutionName: "Pinnacle Bank",
+    url: "https://pnfp.com/personal-finance/deposit-accounts/disclosure-of-fees-and-service-charges",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // summary of fees and definitions.
+    institutionId: 50,
+    institutionName: "BOKF, National Association",
+    url: "https://scsvc.bokf.com/-/media/Files/PDF/BOK/BOKSummaryOfFeesAndDefinitions.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // consumer schedule effective 2026-09-01 (the stored link is the July 2025 edition).
+    institutionId: 66,
+    institutionName: "Banc of California",
+    url: "https://dam.bancofcal.com/asset/8605259e-5406-4198-ba49-f5495a220a9b/Schedule-of-Fees-for-Consumers.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // personal fee schedule page.
+    institutionId: 78,
+    institutionName: "Arvest Bank",
+    url: "https://www.arvest.com/personal/fee-schedule",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // personal deposit agreement and schedule of fees.
+    institutionId: 84,
+    institutionName: "Axos Bank",
+    url: "https://www.axosbank.com/-/media/Axos/Documents/Legal/Personal-Deposit-Account-Agreement-and-Schedule-of-Fees--Axos.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // personal account disclosures; fee schedule on pages 39-48.
+    institutionId: 87,
+    institutionName: "Rockland Trust Company",
+    url: "https://www.rocklandtrust.com/assets/files/T7YMA5SW",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // products, services and fees from the 2023 public file.
+    institutionId: 111,
+    institutionName: "First Financial Bank",
+    url: "https://www.bankatfirst.com/content/dam/bankatfirst/legal/cra-public-file/2023/bank-products-services-fees.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // consumer services fees from the public file.
+    institutionId: 112,
+    institutionName: "Busey Bank",
+    url: "https://www.busey.com/assets/files/P0lBSs0h/CRA_PublicFile_ConsumerServicesFees.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // personal schedule of fees page.
+    institutionId: 118,
+    institutionName: "First United Bank and Trust Company",
+    url: "https://first.bank/About/Disclosures/Personal-Schedule-of-Fees",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // schedule of service fees, 2025-03-25.
+    institutionId: 142,
+    institutionName: "First Commonwealth Bank",
+    url: "https://www.fcbanking.com/media/fbgdwdtw/schedule-of-service-fees.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // miscellaneous fees, 2025-03-24.
+    institutionId: 154,
+    institutionName: "Amerant Bank, National Association",
+    url: "https://media.amerantbank.com/wp-content/uploads/2022/12/AMTB-MisclFeesINTENG.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // personal deposit product fee schedule.
+    institutionId: 186,
+    institutionName: "Sunflower Bank, National Association",
+    url: "https://sunflowerbank.com/getmedia/e45c00b0-ab7b-4e5c-9b5e-5e7053989b75/Deposit-Product-Fee-Schedule-Personal.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // 2026 service fees.
+    institutionId: 4382,
+    institutionName: "Pentagon Federal Credit Union",
+    url: "https://www.penfed.org/content/dam/penfedbtp/pdfs/servicefees-2026.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // fee schedule page, 2025-08-22.
+    institutionId: 4677,
+    institutionName: "Police & Fire Federal Credit Union",
+    url: "https://www.pffcu.org/membership/fee-schedule",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // fee schedule, April 2026.
+    institutionId: 6741,
+    institutionName: "Schoolsfirst Federal Credit Union",
+    url: "https://schoolsfirstfcu.org/link/72f13edcd9ba49028204e419029dc373.aspx",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // consumer services fee schedule (C-14), 2025-07-05.
+    institutionId: 7313,
+    institutionName: "The Golden 1 Federal Credit Union",
+    url: "https://www.golden1.com/-/media/Golden1/Site%20Documents/Disclosures/C-14",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // fee schedule, updated January 2026.
+    institutionId: 8322,
+    institutionName: "Alliant Federal Credit Union",
+    url: "https://secure.alliantcreditunion.org/images/uploads/files/FeeSchedule.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // fee schedule, December 2023.
+    institutionId: 8583,
+    institutionName: "Suncoast Federal Credit Union",
+    url: "https://edge.sitecorecloud.io/suncoastcre57dd-suncoast-suncoastprod-d848/media/Project/suncoast/Imported/Files/Fees/FeeSchedule-pdf.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
 ];
 

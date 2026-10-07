@@ -475,6 +475,25 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText(name)).toBeNull();
   });
 
+  it.each([
+    "Collection Fee for Charged-Off Accounts",
+    "Phone Call Collection Fee",
+    "Funds transfer fee (phone/fax request) per transfer",
+    "Credit Report Fee to Open Account",
+  ])("v30 does not fold %s (wrong homes found on prod's first v26 pass)", (name) => {
+    expect(foldedCategory(name)).toBeNull();
+    expect(classifyFeeText(name)).toBeNull();
+  });
+
+  it.each([
+    ["Payoff fax fee", "account_research"],
+    ["Clean Collection Fee (per item)", "check_cashing"],
+    ["Collection Items for Deposit", "check_cashing"],
+    ["Credit Report Fee", "loan_origination"],
+  ])("v30 still folds %s into %s", (name, key) => {
+    expect(foldedCategory(name)).toBe(key);
+  });
+
   it("v14 reads a checking account's own monthly price", () => {
     expect(extractFromSegment("Opportunity Checking | $10 per month").candidates).toMatchObject([
       { canonicalHint: "monthly_maintenance", amount: 10, frequency: "monthly" },
@@ -650,5 +669,39 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("Late Payment fee (Overdraft L-O-C)")).toBe("late_payment");
     expect(classifyFeeText("Overdraft Loan Late Fee (no grace period)")).toBe("late_payment");
     expect(classifyFeeText("Overdraft Fee")).toBe("overdraft");
+  });
+
+  it("v32 reads plural wires, outside-U.S. wires and account rows named with their balance", () => {
+    expect(classifyFeeText("Incoming Wires")).toBe("wire_domestic_incoming");
+    expect(classifyFeeText("Outgoing Wires (Outside U.S.)")).toBe("wire_intl_outgoing");
+    const sccu = [
+      "Money Market Savings Account (below $2,500) | $15/mo. | Dormant Fee (no member activity for 24 months) | $5/mo.",
+      "Interest Checking (below $1,500) | $15/mo. | Levies and Writs per document $75",
+      "Returned Check | Verification of Deposit | $20",
+      "Non-SCCU ATM Fee (transaction fee charged by | $2.50 | 3x5 | 5x5",
+      "SCCU for using a non-SCCU ATM) | $60 | $80",
+      "Out of SCCU to another financial institution | $2 | Incoming Wires | $10",
+    ].join("\n");
+    const read = runFreeSpecialists(sccu).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+    expect(read).toEqual(
+      expect.arrayContaining([
+        ["Money Market Savings Account (below $2,500)", 15, "minimum_balance"],
+        ["Interest Checking (below $1,500)", 15, "minimum_balance"],
+        ["Verification of Deposit", 20, "account_verification"],
+        ["Incoming Wires", 10, "wire_domestic_incoming"],
+      ]),
+    );
+    expect(read.some(([name]) => String(name).startsWith("SCCU for using"))).toBe(false);
+  });
+
+  it("v32 takes the fee a line says to avoid, never the balance", () => {
+    expect(
+      fees("Account Fees - You must maintain a daily balance in your account of $2,500 each statement cycle to avoid a minimum balance fee of $3.95."),
+    ).toEqual([["Minimum balance fee", 3.95, "minimum_balance"]]);
+  });
+
+  it("v32 files a linked-account overdraft protection fee as a transfer, not an overdraft", () => {
+    expect(classifyFeeText("Account Link Overdraft Protection")).toBe("od_protection_transfer");
+    expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
   });
 });

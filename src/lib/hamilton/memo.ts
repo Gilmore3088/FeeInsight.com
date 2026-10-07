@@ -28,7 +28,8 @@ a CFO taking a pricing decision to the board, and a product or marketing manager
 Return only JSON, no prose around it:
 {"summary": string, "board": string, "market": string, "questions": string[]}
 
-- summary: three or four sentences. Lead with the governing thought, then why it holds, then the decision it raises.
+- summary: three or four sentences. Open with what DATA shows that bears on the question, then why it holds, then the decision it raises.
+  When DATA cannot answer part of the question, say so once, after a finding and never as the first sentence.
 - board: one paragraph of at most 110 words on money at stake, risk, regulation and what the board would need to see.
 - market: one paragraph of at most 110 words on positioning, the claims competitors can make, and how the market is moving.
 - questions: two or three questions the reader should be able to answer before deciding, each ending in "?".
@@ -38,7 +39,28 @@ Hard rules:
 - Name institutions only as DATA names them.
 - Never recommend raising, lowering, cutting, dropping or removing a fee, and never say what the bank should do. Lay out what each path means.
 - Where DATA says a figure is missing, say it is missing; never fill it in.
+- An exhibit with "own": null means the bank's own fee is not in the index yet. It never means the bank charges no fee:
+  never call it a no-fee position, a $0 fee, or a claim the bank can make.
+- A fee changed only where DATA lists the change (a change_timeline exhibit or a dated change line). Never infer a
+  price change from anything else. When DATA lists none, say the change history is still building.
 - Plain language, short sentences, no jargon, no internal system names.`;
+
+/** Price position is "lower" or "higher", never "cheapest". */
+const CHEAP_WORDING = /\bcheap(?:er|est)?\b/i;
+/** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
+const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
+/** An opening sentence that leads with what the data lacks. */
+const LIMIT_OPENING = /^(?:the data|DATA|hamilton|we|this (?:data|index))\b[^.]{0,40}\b(?:cannot|can't|does not|doesn't|has no|holds no|lacks)\b/i;
+
+function firstSentence(text: string): string {
+  return text.trim().split(/(?<=[.!?])\s+/)[0] ?? "";
+}
+
+/** True when the storyline has no amount for the bank's own fee. */
+function ownFeeMissing(payload: unknown): boolean {
+  const storyline = (payload as { storyline?: Storyline } | null)?.storyline;
+  return (storyline?.exhibits ?? []).some((e) => e.exhibit.kind === "fee_position" && e.exhibit.own === null);
+}
 
 /** Everything the model may draw on: the storyline, plus every figure its sentences state. */
 export function memoPayload(storyline: Storyline): Record<string, unknown> {
@@ -104,6 +126,12 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
   if (advice) problems.push(`This reads as advice: "${advice[0]}". Lay out the paths without choosing.`);
   const internal = all.match(PIPELINE_TERMS);
   if (internal) problems.push(`Internal name in the text: "${internal[0]}".`);
+  const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
+  if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. Its fee is not in the index yet; say that instead.`);
+  const cheap = all.match(CHEAP_WORDING);
+  if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
+  const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
+  if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   return { problems, figureCheck };
 }
 

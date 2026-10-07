@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, isInPaymentGrace, isPaymentLapsed, PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { ManageBillingButton } from "@/app/account/manage-billing-button";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { subscribeReason } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { SITE_TITLE_TEMPLATE } from "@/lib/constants";
 
@@ -63,7 +64,7 @@ async function ProLayoutInner({
       headersList.get("x-pathname") ||
       "/pro";
     const returnTo = sanitizeInternalRedirect(requestPath, "/pro");
-    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}`);
+    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}&reason=${subscribeReason(user)}`);
   }
 
   // The Hamilton shell renders the admin "Back to Admin" bar; one bar is enough.

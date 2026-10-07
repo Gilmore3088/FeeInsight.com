@@ -10,6 +10,7 @@ const reapStaleAgentStepsMock = vi.fn();
 const getExecutionBackendStatusMock = vi.fn();
 const scheduleDueStateLaneRunsMock = vi.fn();
 const executeQueuedAgentRunsMock = vi.fn();
+const schedulePriorityInstitutionRunsMock = vi.fn();
 const assertCronTickBudgetAllowedMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
@@ -32,6 +33,10 @@ vi.mock("@/lib/execution-backend", () => ({
 vi.mock("@/lib/agents/state-lane-scheduler", () => ({
   scheduleDueStateLaneRuns: scheduleDueStateLaneRunsMock,
   STATE_LANE_LIMIT_PER_TICK: 3,
+}));
+
+vi.mock("@/lib/agents/atlas/priority-institutions", () => ({
+  schedulePriorityInstitutionRuns: schedulePriorityInstitutionRunsMock,
 }));
 
 vi.mock("@/lib/agents/run-store", () => ({
@@ -73,6 +78,9 @@ describe("/api/admin/agents/tick", () => {
       reused: 0,
       failed: [],
       results: [{ stateCode: "CA", runId: 123, status: "queued", reused: false }],
+    });
+    schedulePriorityInstitutionRunsMock.mockResolvedValue({
+      active: 0, selected: 1, scheduled: 1, reused: 0, failed: [], runs: [{ institutionId: 1, runId: 124, tier: "hand_found" }],
     });
     executeQueuedAgentRunsMock.mockResolvedValue({
       selected: 1,
@@ -131,6 +139,38 @@ describe("/api/admin/agents/tick", () => {
     expect(body.reaped.requeued).toHaveLength(1);
   });
 
+  it("queues direct institution runs after the state lanes and before draining", async () => {
+    const order: string[] = [];
+    scheduleDueStateLaneRunsMock.mockImplementation(async () => {
+      order.push("lanes");
+      return { selected: 0, scheduled: 0, reused: 0, failed: [], results: [] };
+    });
+    schedulePriorityInstitutionRunsMock.mockImplementation(async () => {
+      order.push("priority");
+      return { active: 0, selected: 1, scheduled: 1, reused: 0, failed: [], runs: [] };
+    });
+    executeQueuedAgentRunsMock.mockImplementation(async () => {
+      order.push("drain");
+      return { selected: 0, results: [] };
+    });
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(order).toEqual(["lanes", "priority", "drain"]);
+    expect(body.priorityInstitutions).toMatchObject({ scheduled: 1 });
+  });
+
+  it("still drains queued runs when direct institution scheduling fails", async () => {
+    schedulePriorityInstitutionRunsMock.mockRejectedValue(new Error("db down"));
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.priorityInstitutions).toEqual({ error: "db down" });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
+  });
+
   it("keeps draining deterministic steps when the cron budget policy is disabled (2026-08-23 outage regression)", async () => {
     assertCronTickBudgetAllowedMock.mockResolvedValue({
       allowed: false,
@@ -175,8 +215,9 @@ describe("/api/admin/agents/tick", () => {
     const call = executeQueuedAgentRunsMock.mock.calls.at(-1)?.[0];
     expect(call.runLimit).toBe(10);
     expect(call.maxStepsPerRun).toBe(10);
-    expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 150_000);
-    expect(call.deadlineAt).toBeLessThan(before + 180_000);
+    // Steps must finish inside the 300 s function limit and the 5-minute interval.
+    expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 270_000);
+    expect(call.deadlineAt).toBeLessThan(before + 290_000);
   });
 
   it("holds provider steps but still drains deterministic work when the budget denies provider calls", async () => {
@@ -216,6 +257,7 @@ describe("/api/admin/agents/tick", () => {
     expect(body.pauseReason).toBe("Operator pause for maintenance");
     expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
+    expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });
 

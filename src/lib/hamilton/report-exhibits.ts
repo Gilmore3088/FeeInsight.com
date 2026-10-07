@@ -52,7 +52,7 @@ export interface FeeImpactEstimate {
   income_per_1000_amount: number;
   /** That change as a percent of last full year's deposit service-charge income. */
   share_of_service_charges_pct: number | null;
-  /** Price-move scenario: rank among local competitors plus this institution, 1 = cheapest. */
+  /** Price-move scenario: rank among local competitors plus this institution, 1 = lowest price. */
   local_rank_today: number | null;
   local_rank_at_reference: number | null;
   local_field_size: number | null;
@@ -137,7 +137,7 @@ export function buildLocalComparisons(
   });
 }
 
-/** Rank among the competitors plus this institution at `amount`, 1 = cheapest (ties share the better rank). */
+/** Rank among the competitors plus this institution at `amount`, 1 = lowest price (ties share the better rank). */
 export function cheapestRank(amount: number, competitorAmounts: number[]): number {
   return 1 + competitorAmounts.filter((other) => other < amount - 0.005).length;
 }
@@ -279,7 +279,7 @@ export function buildReportExhibits(params: {
       columns: [
         "Fee",
         "Move",
-        "Local rank, cheapest first",
+        "Local rank, lowest price first",
         `Against ${peerLabel}`,
         "Per 1,000 charges",
         serviceCharges ? `Share of ${serviceCharges.year} ${incomeLabel}` : `Share of ${incomeLabel}`,

@@ -11,15 +11,20 @@ import {
   type PaidPassResult,
   type PaidStepOptions,
 } from "@/lib/agents/paid-pass";
+import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 import {
   DARWIN_RELEASE_ACTS,
   DARWIN_RELEASE_STRATEGY,
   releaseHeldFee,
+  scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
-import { rawFeeFingerprint } from "./verify";
+import { loadReviewMisses } from "./verdict-score";
+import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
 
@@ -37,9 +42,14 @@ type SqlTag = typeof sql;
 // Version 5 (2026-10-07): a hand check of 20 v4 verdicts found 3 wrong releases: a stop
 // payment's removal filed as a stop payment, an expedited cashier's check filed at the
 // cashier's check price, and "Cost plus $8" read as an $8 price. The prompt now names all three.
+// Version 6 (2026-10-07): a hand check of 20 v5 passes found two overdraft-protection transfers
+// ("Overdraft Protection Fee $5", "Service Overdraft Fee | Transfer from Savings to Checking")
+// passed as overdraft, and a sentence fragment passed as a fee name. Each item now lists the
+// categories its own category's fees are most often re-filed to, and a fee whose name and line
+// re-file it there by the category guard's own rules (`refileCategory`) never passes.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 5,
+  version: 6,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -49,6 +59,8 @@ const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveE
 export interface ReleaseReviewCandidate {
   row: HeldFeeRow;
   sourceLine: string;
+  /** The rows around the line in the stored schedule (release-held `scheduleContext`). */
+  sourceContext?: string | null;
 }
 
 export interface ReleaseReviewVerdict {
@@ -60,6 +72,17 @@ export interface ReleaseReviewVerdict {
 
 export function reviewPasses(verdict: ReleaseReviewVerdict | undefined): boolean {
   return Boolean(verdict?.isFee && verdict.categoryFits && verdict.amountIsPrice);
+}
+
+/**
+ * The category the guard's own re-file rules move a fee to when read with its schedule line
+ * ("Service Overdraft Fee | Transfer from Savings to Checking: $5.00" is an overdraft-protection
+ * transfer), or null when the line keeps it where it was filed.
+ */
+export function lineRefilesTo({ row, sourceLine }: ReleaseReviewCandidate): string | null {
+  const key = row.held_canonical_fee_key;
+  const refiled = refileCategory(key, `${row.fee_name ?? ""} ${sourceLine}`);
+  return refiled && refiled !== key ? refiled : null;
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -74,30 +97,162 @@ const ALIASES_BY_KEY: ReadonlyMap<string, string[]> = (() => {
   return byKey;
 })();
 
-export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[]): string {
-  const items = candidates.map(({ row, sourceLine }) => ({
+/** A past judgement on a fee in the same category, read from the shared learning store. */
+export interface ReviewLesson {
+  filedAs: string;
+  feeName: string;
+  amount: number | null;
+  scheduleLine: string | null;
+  found: string;
+}
+
+/** Wrong fees and mistaken takedowns per category in each prompt. */
+export const REVIEW_LESSONS_WRONG_PER_KEY = 3;
+export const REVIEW_LESSONS_RESTORED_PER_KEY = 2;
+
+/** What each judgement in `pipeline_feedback` means, in the words the prompt uses. */
+const LESSON_FOUND: Readonly<Record<string, string>> = {
+  wrong_category: "wrong: filed under the wrong category",
+  off_taxonomy: "wrong: not a fee this index tracks",
+  restored: "right: a check took it down by mistake; it is a real price in this category",
+};
+
+/**
+ * The recent lessons the rest of the pipeline has written about fees in these categories:
+ * live fees Hamilton's category checks took down as filed in the wrong category (not undone
+ * since), and fees a takedown got wrong that a later check restored. Every such takedown and
+ * restore becomes an example the next review reads, so the review learns from the
+ * pipeline's own outcomes, not only from rules written into this prompt.
+ *
+ * Only judgements that hold up are lessons. The source check's amount judgements
+ * (`wrong_amount`, `threshold`) are left out: of 20 random ones from the 24 hours to
+ * 2026-10-07 02:50 UTC, read against the full page, 4 were real prices it should have kept
+ * ("Wire Transfer Outgoing $20.00"; PR 341 fixes those) and 3 more could not be read, and a
+ * wrong lesson would teach the review to hold real fees. Empty when the store is missing or
+ * cannot be read.
+ */
+export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<ReviewLesson[]> {
+  const unique = [...new Set(keys.filter(Boolean))];
+  if (unique.length === 0) return [];
+  try {
+    if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return [];
+    const rows = await inSavepoint(db, (scope) => scope<{
+      canonical_fee_key: string;
+      fee_name: string | null;
+      amount: number | string | null;
+      excerpt: string | null;
+      kind: string;
+    }[]>`
+      WITH judged AS (
+        SELECT DISTINCT ON (fv.fee_verified_id, lesson.kind)
+               fv.canonical_fee_key, fv.fee_name, fv.amount, fv.fee_raw_id, lesson.kind, lesson.created_at
+          FROM (
+            SELECT pf.fee_verified_id, pf.kind, pf.created_at
+              FROM pipeline_feedback pf
+             WHERE pf.signal = 'wrong'
+               AND pf.kind IN ('wrong_category', 'off_taxonomy')
+               AND split_part(pf.check_name, ':', 1) IN ('hamilton.category_guard', 'hamilton.category_outside_taxonomy')
+               AND pf.fee_verified_id IS NOT NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM pipeline_feedback back
+                  WHERE back.signal = 'restored' AND back.fee_published_id = pf.fee_published_id
+               )
+            UNION ALL
+            SELECT fp.lineage_ref, 'restored', pf.created_at
+              FROM pipeline_feedback pf
+              JOIN published_fee_records fp ON fp.fee_published_id = pf.fee_published_id
+             WHERE pf.signal = 'restored'
+               AND fp.rolled_back_at IS NULL
+          ) lesson
+          JOIN verified_fee_observations fv ON fv.fee_verified_id = lesson.fee_verified_id
+         WHERE fv.canonical_fee_key = ANY(${unique}::text[])
+         ORDER BY fv.fee_verified_id, lesson.kind, lesson.created_at DESC
+      ), ranked AS (
+        SELECT judged.*,
+               row_number() OVER (
+                 PARTITION BY canonical_fee_key, (kind = 'restored')
+                 ORDER BY created_at DESC
+               ) AS rank
+          FROM judged
+      )
+      SELECT ranked.canonical_fee_key, ranked.fee_name, ranked.amount, ranked.kind,
+             substring(fr.conditions FROM 'excerpt="(.*)"') AS excerpt
+        FROM ranked
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = ranked.fee_raw_id
+       WHERE ranked.rank <= CASE WHEN ranked.kind = 'restored'
+                                 THEN ${REVIEW_LESSONS_RESTORED_PER_KEY}::int
+                                 ELSE ${REVIEW_LESSONS_WRONG_PER_KEY}::int END
+       ORDER BY ranked.canonical_fee_key, ranked.kind
+    `);
+    return rows.map((row) => ({
+      filedAs: row.canonical_fee_key,
+      feeName: String(row.fee_name ?? "").slice(0, 120),
+      amount: row.amount == null ? null : Number(row.amount),
+      scheduleLine: row.excerpt ? row.excerpt.slice(0, 200) : null,
+      found: LESSON_FOUND[row.kind] ?? `wrong: ${row.kind}`,
+    }));
+  } catch (error) {
+    console.warn("[darwin] release review lessons unavailable", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+/** The lessons for the categories in one batch. */
+export function lessonsFor(batch: ReleaseReviewCandidate[], lessons: ReviewLesson[]): ReviewLesson[] {
+  const keys = new Set(batch.map(({ row }) => row.held_canonical_fee_key));
+  return lessons.filter((lesson) => keys.has(lesson.filedAs));
+}
+
+export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lessons: ReviewLesson[] = []): string {
+  const items = candidates.map(({ row, sourceLine, sourceContext }) => ({
     id: Number(row.fee_raw_id),
     fee_name: row.fee_name,
     amount: row.amount == null ? null : Number(row.amount),
     filed_as: `${row.held_canonical_fee_key} (${DISPLAY_NAMES[row.held_canonical_fee_key] ?? row.held_canonical_fee_key})`,
     filed_as_includes: ALIASES_BY_KEY.get(row.held_canonical_fee_key) ?? [],
+    ...(neighbourCategories(row.held_canonical_fee_key).length > 0
+      ? {
+          not_these: neighbourCategories(row.held_canonical_fee_key).map((key) => ({
+            category: `${key} (${DISPLAY_NAMES[key] ?? key})`,
+            includes: ALIASES_BY_KEY.get(key) ?? [],
+          })),
+        }
+      : {}),
     schedule_line: sourceLine.slice(0, 300),
+    ...(sourceContext ? { schedule_rows_around: sourceContext } : {}),
   }));
   return [
     "You check fees read from bank and credit union fee schedules before they are published.",
     "Each item has the fee as it was read, the category it was filed under, and the line of the bank's schedule it came from.",
     "For each item decide, from the schedule line:",
     "- is_fee: true only if the line names a price the institution charges a customer.",
-    "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text.",
+    "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text,",
+    "  and when `fee_name` is not a fee's name but a sentence fragment (\"meet the following requirements: A service charge of\").",
     "- category_fits: true only if this fee is what `filed_as` means in this index; `filed_as_includes` lists fee names it files there.",
     "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit.",
     "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
     "  (expedited, rush or overnight) do not fit the service's own category.",
+    "  `not_these` lists neighbouring categories fees filed here often belong to; a fee that is one of those does not fit.",
     "- amount_is_price: true only if `amount` is the price the line charges for this fee.",
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
     "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
     "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55).",
+    "When an item has `schedule_rows_around` (the rows above and below its line), use them: a price that",
+    "belongs to the next row, another column or another account is not this fee's price.",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category_fits\", \"amount_is_price\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
+    ...(lessons.length > 0
+      ? [
+          "",
+          "Lessons: fees in these categories this index's later checks judged. Judge items like them the same way.",
+          JSON.stringify(lessons.map((lesson) => ({
+            filed_as: lesson.filedAs,
+            fee_name: lesson.feeName,
+            amount: lesson.amount,
+            schedule_line: lesson.scheduleLine,
+            found: lesson.found,
+          }))),
+        ]
+      : []),
     "",
     "Items:",
     JSON.stringify(items),
@@ -126,7 +281,7 @@ export function parseReleaseReviews(parsed: unknown): Map<number, ReleaseReviewV
   return verdicts;
 }
 
-type CandidateRow = HeldFeeRow & { source_line: string };
+type CandidateRow = HeldFeeRow & { source_line: string; source_context: string | null };
 
 async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: string): Promise<ReleaseReviewCandidate[]> {
   const params: Array<string | number> = [
@@ -155,7 +310,8 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
              upper(btrim(inst.state_code)) AS state_code,
              rel.detail->>'held_reason' AS held_reason,
              rel.detail->>'canonical_fee_key' AS held_canonical_fee_key,
-             rel.detail->>'source_line' AS source_line
+             rel.detail->>'source_line' AS source_line,
+             rel.detail->>'source_context' AS source_context
         FROM pipeline_attempts rel
         JOIN raw_fee_observations fr ON fr.fee_raw_id = substring(rel.input_fingerprint from 5)::bigint
         JOIN institution_sources inst ON inst.id = fr.institution_id
@@ -178,7 +334,11 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
     `,
     params,
   );
-  return (rows ?? []).map(({ source_line, ...row }) => ({ row: row as HeldFeeRow, sourceLine: source_line }));
+  return (rows ?? []).map(({ source_line, source_context, ...row }) => ({
+    row: row as HeldFeeRow,
+    sourceLine: source_line,
+    sourceContext: source_context,
+  }));
 }
 
 function failureOutcome(error: unknown): AttemptOutcome {
@@ -195,6 +355,8 @@ function isStopError(error: unknown): boolean {
 
 export interface ReleaseReviewResult extends PaidPassResult {
   calls: number;
+  /** Lessons from the learning store put in the prompts. */
+  lessons: number;
   passed: number;
   released: number;
 }
@@ -205,7 +367,7 @@ export async function runDarwinReleaseReview(
 ): Promise<ReleaseReviewResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
-  const result: ReleaseReviewResult = { ...emptyPaidPassResult(dryRun), calls: 0, passed: 0, released: 0 };
+  const result: ReleaseReviewResult = { ...emptyPaidPassResult(dryRun), calls: 0, lessons: 0, passed: 0, released: 0 };
   if (options.calls <= 0 || !(await learningSchemaReady(db))) return result;
 
   const candidates = await selectReviewCandidates(db, options.calls * RELEASE_REVIEW_FEES_PER_CALL, options.stateCode);
@@ -221,8 +383,30 @@ export async function runDarwinReleaseReview(
 
   const acts = DARWIN_RELEASE_ACTS;
   const model = PAID_PASS_MODELS.verify();
+  // Fees judged before the release step stored their schedule's surrounding rows read them now.
+  const missing = candidates.filter((candidate) => !candidate.sourceContext && candidate.row.source_document_id != null);
+  if (missing.length > 0) {
+    const texts = await loadSourceTexts(db, [...new Set(missing.map(({ row }) => Number(row.source_document_id)))]);
+    for (const candidate of missing) {
+      candidate.sourceContext = scheduleContext(texts.get(Number(candidate.row.source_document_id)), candidate.sourceLine);
+    }
+  }
+  const heldKeys = candidates.map(({ row }) => row.held_canonical_fee_key);
+  // The pipeline's own outcomes, then this review's misses against the answer keys (verdict-score.ts).
+  const lessons = [
+    ...(await loadReviewLessons(db, heldKeys)),
+    ...(await loadReviewMisses(db, "verify.release_review", heldKeys)).map((miss) => ({
+      filedAs: miss.filedAs ?? "",
+      feeName: miss.feeName,
+      amount: miss.amount,
+      scheduleLine: miss.keyLine,
+      found: `wrong: this review said ${miss.said}; the hand-keyed schedule says ${miss.keySays.join(" or ") || "no fee at this amount"}`,
+    })),
+  ];
+  result.lessons = lessons.length;
   for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
     const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
+    const batchLessons = lessonsFor(batch, lessons);
     const startedAt = Date.now();
     const common = ({ row }: ReleaseReviewCandidate) => ({
       institutionId: Number(row.institution_id),
@@ -244,7 +428,7 @@ export async function runDarwinReleaseReview(
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          messages: [{ role: "user", content: releaseReviewPrompt(batch) }],
+          messages: [{ role: "user", content: releaseReviewPrompt(batch, batchLessons) }],
         },
         create: options.create,
         metadata: { fee_raw_ids: batch.map(({ row }) => Number(row.fee_raw_id)) },
@@ -294,7 +478,8 @@ export async function runDarwinReleaseReview(
         continue;
       }
       result.succeeded += 1;
-      const passes = reviewPasses(verdict);
+      const refilesTo = lineRefilesTo(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -314,11 +499,14 @@ export async function runDarwinReleaseReview(
           amount: candidate.row.amount == null ? null : Number(candidate.row.amount),
           held_reason: candidate.row.held_reason,
           source_line: candidate.sourceLine.slice(0, 300),
+          source_context: candidate.sourceContext ?? null,
+          refiles_to: refilesTo,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,
           passes,
           reason: verdict.reason,
+          lessons: batchLessons.length,
           fee_verified_id: feeVerifiedId,
           acted: acts,
           model,

@@ -6,9 +6,12 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
-import { DARWIN_RELEASE_ACTS, type HeldFeeRow } from "./release-held";
+import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release-held";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
+  lessonsFor,
+  lineRefilesTo,
+  loadReviewLessons,
   parseReleaseReviews,
   releaseReviewPrompt,
   reviewPasses,
@@ -68,6 +71,76 @@ function attempts(db: DbMock): Array<{ strategy: unknown; outcome: unknown; deta
 }
 
 describe("Darwin held-fee release review", () => {
+  it("shows the review the schedule rows around a fee's line", () => {
+    const text = ["Account Fees", "Return item $5.00", "Early close $10.00", "Stop Payment $30.00", "Wire $20.00", "Notary Free"].join("\n");
+    expect(scheduleContext(text, "Return item $5.00")).toBe("Account Fees\nReturn item $5.00\nEarly close $10.00\nStop Payment $30.00\nWire $20.00");
+    expect(scheduleContext(text, "Not on this page $1")).toBeNull();
+    expect(scheduleContext(null, "Return item $5.00")).toBeNull();
+    const prompt = releaseReviewPrompt([
+      { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00", sourceContext: "Early close $10.00\nStop Payment $30.00" },
+    ]);
+    expect(prompt).toContain("schedule_rows_around");
+    expect(prompt).toContain("Early close $10.00");
+  });
+
+  it("never passes a fee its own line re-files, and names the neighbouring categories", () => {
+    const transfer = {
+      row: row({ fee_name: "Service Overdraft Fee", held_canonical_fee_key: "overdraft" }) as unknown as HeldFeeRow,
+      sourceLine: "Service Overdraft Fee | Fee Transfer from Savings to Checking: $5.00",
+    };
+    expect(lineRefilesTo(transfer)).toBe("od_protection_transfer");
+    expect(lineRefilesTo({ row: row({ fee_name: "Overdraft Fee", held_canonical_fee_key: "overdraft" }) as unknown as HeldFeeRow, sourceLine: "Overdraft Fee | $30.00" })).toBeNull();
+    const prompt = releaseReviewPrompt([transfer]);
+    expect(prompt).toContain("not_these");
+    expect(prompt).toContain("od_protection_transfer");
+    expect(prompt).toContain("sentence fragment");
+  });
+
+  it("puts the learning store's lessons for a batch's categories in the prompt", () => {
+    const stop = { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00" };
+    const lessons = [
+      { filedAs: "stop_payment", feeName: "Stop Payment Removal", amount: 5, scheduleLine: "Stop Payment Removal | $5.00", found: "wrong: filed under the wrong category" },
+      { filedAs: "cashiers_check", feeName: "Cashier's Check", amount: 10, scheduleLine: null, found: "wrong: filed under the wrong category" },
+    ];
+    const forBatch = lessonsFor([stop], lessons);
+    expect(forBatch.map((lesson) => lesson.filedAs)).toEqual(["stop_payment"]);
+    const prompt = releaseReviewPrompt([stop], forBatch);
+    expect(prompt).toContain("Lessons:");
+    expect(prompt).toContain("Stop Payment Removal | $5.00");
+    expect(prompt).not.toContain("Cashier's Check");
+    expect(releaseReviewPrompt([stop])).not.toContain("Lessons:");
+  });
+
+  it("reads lessons only from category judgements and restores, never the source check's amount calls", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback pf")) {
+        return Promise.resolve([
+          { canonical_fee_key: "stop_payment", fee_name: "Stop Payment Removal", amount: "5.00", excerpt: "Stop Payment Removal | $5.00", kind: "wrong_category" },
+          { canonical_fee_key: "stop_payment", fee_name: "Stop Payment", amount: "25.00", excerpt: null, kind: "restored" },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const lessons = await loadReviewLessons(db as never, ["stop_payment", "stop_payment"]);
+    const query = db.mock.calls.map(([strings]) => templateText(strings)).find((text) => text.includes("FROM pipeline_feedback pf")) ?? "";
+    expect(query).toContain("'wrong_category', 'off_taxonomy'");
+    expect(query).not.toContain("hamilton.source_check");
+    // postgres.js sends numbers untyped; a CASE of untyped values is text, and bigint <= text fails on prod.
+    expect(query).toMatch(/THEN\s+::int\s+ELSE\s+::int END/);
+    expect(lessons).toEqual([
+      { filedAs: "stop_payment", feeName: "Stop Payment Removal", amount: 5, scheduleLine: "Stop Payment Removal | $5.00", found: "wrong: filed under the wrong category" },
+      { filedAs: "stop_payment", feeName: "Stop Payment", amount: 25, scheduleLine: null, found: "right: a check took it down by mistake; it is a real price in this category" },
+    ]);
+  });
+
+  it("reviews without lessons when the learning store cannot be read", async () => {
+    const db = vi.fn(() => Promise.reject(new Error("relation does not exist")));
+    await expect(loadReviewLessons(db as never, ["stop_payment"])).resolves.toEqual([]);
+    await expect(loadReviewLessons(db as never, [])).resolves.toEqual([]);
+  });
+
   it("passes a fee only when it is a fee, fits its category, and the amount is the price", () => {
     const verdicts = parseReleaseReviews({
       verdicts: [
@@ -115,6 +188,7 @@ describe("Darwin held-fee release review", () => {
       [DARWIN_RELEASE_REVIEW_STRATEGY.strategy, "ok", true],
       [DARWIN_RELEASE_REVIEW_STRATEGY.strategy, "rejected", false],
     ]);
+    expect(attempts(db).every((attempt) => attempt.detail.lessons === 0)).toBe(true);
     const statements = db.mock.calls.map(([strings]) => templateText(strings));
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
   });
