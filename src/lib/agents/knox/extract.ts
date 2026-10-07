@@ -71,6 +71,12 @@ export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
   // Full schedules Rosetta saw read empty by v4-v15 (State Street, Openland, NY Times CU, Downriver,
   // Wisdom Heritage, Education First); v32 reads them.
   2300, 7156, 5401, 4895, 1582, 6809,
+  // Tennessee banks with Darwin-verified fees held back because Knox read only 1 or 2 fees from
+  // their current copy, all last read at v2-v22 (2026-10-07). Hand checks show most current
+  // copies are checking product pages listing 1-3 prices, so a re-read may add few fees.
+  5447, 2066, 371, 2791, 2855, 1158, 2153, 8055, 1553, 1965, 3663, 1248, 2819, 5840, 1147, 579,
+  2607, 1240, 3574, 8328, 2024, 1587, 6010, 2527, 1198, 2696, 680, 1712, 1829, 551, 1827, 1046,
+  2061, 980, 7636, 8268, 1628, 669, 6050, 4100, 2154, 251, 8267, 8371,
 ];
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;

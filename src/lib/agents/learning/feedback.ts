@@ -29,6 +29,8 @@ export type FeedbackReporter = "atlas" | "magellan" | "rosetta" | "knox" | "darw
  *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
  *   Read level (Rosetta, `rosetta/batch-review.ts`): no_fees_found, short_text, missed_fee_page,
  *     unresolved_fee_page, unread, batch_error_rate (one row per batch of reads)
+ *   Extract level (Knox, `knox/batch-review.ts`): batch_miss, batch_error_rate (one row per
+ *     batch of 500 Knox reads)
  */
 export type FeedbackKind =
   | "wrong_category"
