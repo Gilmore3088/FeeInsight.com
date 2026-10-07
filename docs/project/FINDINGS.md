@@ -1505,3 +1505,21 @@ fixture banks' own lessons (guard and Darwin verdicts only, not the keys themsel
 fee is taken down, and stored confidence is unchanged.
 **Lesson:** a learning store that only learns from agreement across banks misses most of what it
 is told; one bank's own verdicts are the strongest evidence for that bank.
+
+
+## 2026-10-07: Two page layouts hid Trustmark's and ESL's overdraft fees
+**What happened:** Trustmark's fee schedule PDF prints two columns, and the stored text flattens
+them row by row, so the right column's "Overdrafts (OD)" heading ends a left-column row and its
+"• Personal | $36.00" sub-row sits on the next line. ESL's checking page prints each fee as a card
+("Fee TypeCourtesy Pay Overdraft Fee", a description, then "Fee$5.00"). Knox read neither:
+Trustmark's NSF and overdraft ($36) were missed, and ESL's prices were held under the name "Fee".
+The shared accuracy check would also have failed both, since name and price are on different lines.
+**Fix:** Knox v23 (`table-rows.ts` right-column headings; card joining before the specialists) and
+the shared check (`joinLabeledFeeCards`, and a right-column heading over the bulleted line under
+it) read both. Answer keys and the live dry run are unchanged, and the shared check accepts
+exactly the same pairs as before on every other text tried.
+**Still open:** ESL's own fees index page keeps its fees in collapsed sections the stored text
+does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
+**Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
+same way; otherwise Knox's find is held as untraced and never reaches Darwin.
+
