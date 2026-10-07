@@ -8,6 +8,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 
 import {
   adjudicatePrompt,
+  adjudicationSource,
   DARWIN_ADJUDICATE_STRATEGY,
   parseVerdicts,
   qualifies,
@@ -156,5 +157,34 @@ describe("Darwin layer 3 adjudicator", () => {
     expect(create).not.toHaveBeenCalled();
     expect(result.selected).toBe(1);
     expect(result.results[0]).toMatchObject({ fee_raw_id: 1, knox_key: "overdraft", suggested_key: "card_replacement" });
+  });
+  it("shows the schedule rows around each fee and flags an amount that is not its price", () => {
+    const text = [
+      "Stop Payment......... $30",
+      "Check Printing......... (Fee depends on style)",
+      "ATM/Debit Transactions, off premises, each transaction......... $3",
+      "Notary Service......... $5",
+    ].join("\n");
+    const borrowed = adjudicationSource(text, { feeName: "Check Printing", amount: 3, knoxKey: "check_printing" });
+    expect(borrowed.priceCheck).not.toBe("stated");
+    expect(borrowed.sourceContext).toContain("ATM/Debit Transactions");
+    const own = adjudicationSource(text, { feeName: "Notary Service", amount: 5, knoxKey: "notary_fee" });
+    expect(own).toMatchObject({ priceCheck: "stated" });
+    expect(own.sourceContext).toContain("Notary Service");
+    expect(adjudicationSource(null, { feeName: "Notary Service", amount: 5, knoxKey: "notary_fee" })).toEqual({ sourceContext: null, priceCheck: "no_source_text" });
+
+    const prompt = adjudicatePrompt([candidate({ sourceContext: borrowed.sourceContext, priceCheck: borrowed.priceCheck })]);
+    expect(prompt).toContain("schedule_rows_around");
+    expect(prompt).toContain("price_check");
+    expect(prompt).toContain("neighbouring row's price");
+    expect(adjudicatePrompt([candidate({ priceCheck: "stated" })])).not.toContain("\"price_check\"");
+  });
+
+  it("re-reads an earlier version's disagreements but not its agreements", async () => {
+    const db = createDbMock([]);
+    await runDarwinAdjudicate({ db: asDb(db), runId: 1, dryRun: true });
+    const query = db.unsafe.mock.calls.map(([q]) => String(q)).find((q) => q.includes("verify.category_model") || q.includes("knox_key"))!;
+    expect(query).toMatch(/done\.strategy_version >= \$\d+::int OR done\.outcome <> 'evidence_mismatch'/);
+    expect(DARWIN_ADJUDICATE_STRATEGY.version).toBe(2);
   });
 });

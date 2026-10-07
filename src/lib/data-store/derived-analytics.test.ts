@@ -24,6 +24,7 @@ import type {
   TrendSignals,
 } from "./derived-analytics";
 import { getSql } from "./connection";
+import { unfilteredFinancialReads } from "./financial-sources.test-helper";
 
 type MockSql = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -315,5 +316,23 @@ describe("computeTrendSignals", () => {
     ];
     const signals = computeTrendSignals(values);
     expect(signals.qoq_change_pct).toBeNull();
+  });
+});
+
+describe("call-report reads use fdic and ncua rows only", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+    getMock().mockResolvedValue([]);
+  });
+
+  it("getFeeDependencyTrend filters by source", async () => {
+    await getFeeDependencyTrend();
+    expect(unfilteredFinancialReads(getMock())).toEqual([]);
+  });
+
+  it("getRevenuePerInstitutionTrend filters every query and latest-quarter lookup", async () => {
+    await getRevenuePerInstitutionTrend();
+    expect(getMock().mock.calls).toHaveLength(3);
+    expect(unfilteredFinancialReads(getMock())).toEqual([]);
   });
 });

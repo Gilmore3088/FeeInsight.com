@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
 import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
@@ -432,7 +433,8 @@ export async function getRegulatorInfo(institutionId: number): Promise<Regulator
 }
 
 export interface EnforcementActionRow {
-  agency: "OCC" | "FRB";
+  /** "OCC", "FRB", or a state banking department ("STATE_NJ"); enforcementAgencyLabel names it. */
+  agency: string;
   party_name: string;
   /** True when the action names the holding company rather than this institution. */
   against_holding_company: boolean;
@@ -446,17 +448,36 @@ export interface EnforcementActionRow {
 
 export interface EnforcementRecord {
   /** Agencies whose list is loaded and whose actions could name this institution. */
-  agenciesChecked: Array<"OCC" | "FRB">;
-  /** Active (not terminated) actions, newest first. */
-  active: EnforcementActionRow[];
-  /** Terminated actions, newest first, at most ENFORCEMENT_RECENT_LIMIT. */
-  terminated: EnforcementActionRow[];
-  terminatedCount: number;
+  agenciesChecked: string[];
+  /**
+   * Orders with no end date on file that began in the last OPEN_ACTION_YEARS years, newest
+   * first. The agencies don't always record an end date, so these may have ended; they are
+   * never called active.
+   */
+  open: EnforcementActionRow[];
+  /** Everything else (ended, a penalty alone, or older), newest first, at most ENFORCEMENT_RECENT_LIMIT. */
+  past: EnforcementActionRow[];
+  pastCount: number;
   /** Date the lists were last read. */
   asOf: string | null;
 }
 
 const ENFORCEMENT_RECENT_LIMIT = 5;
+export const OPEN_ACTION_YEARS = 10;
+
+/** A civil money penalty with no order attached is done once assessed; it has no end date. */
+export function isPenaltyOnly(actionType: string | null | undefined): boolean {
+  return Boolean(actionType && /penalty|\bCMP\b/i.test(actionType) && !/cease|desist|agreement|order|directive|prompt corrective/i.test(actionType));
+}
+
+/** No end date on file, more than a penalty, and recent enough that it may still be in force. */
+export function isOpenAction(action: Pick<EnforcementActionRow, "termination_date" | "action_type" | "start_date">, today: Date = new Date()): boolean {
+  if (action.termination_date || isPenaltyOnly(action.action_type) || !action.start_date) return false;
+  const cutoff = new Date(today);
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - OPEN_ACTION_YEARS);
+  return action.start_date >= cutoff.toISOString().slice(0, 10);
+}
+const agencyOrder = (a: string) => (a === "OCC" ? 0 : a === "FRB" ? 1 : 2);
 const AGENCY_FOR_REGULATOR: Record<string, "OCC" | "FRB"> = { OCC: "OCC", "Federal Reserve": "FRB" };
 
 /**
@@ -467,7 +488,7 @@ const AGENCY_FOR_REGULATOR: Record<string, "OCC" | "FRB"> = { OCC: "OCC", "Feder
  */
 export async function getEnforcementRecord(institutionId: number): Promise<EnforcementRecord | null> {
   const [inst] = await sql<Array<Record<string, unknown>>>`
-    SELECT charter_type, primary_regulator, holding_company_name FROM institution_sources WHERE id = ${institutionId}`;
+    SELECT charter_type, primary_regulator, holding_company_name, state_code, charter_agency FROM institution_sources WHERE id = ${institutionId}`;
   if (!inst || inst.charter_type !== "bank") return null;
   const holding = inst.holding_company_name ? String(inst.holding_company_name) : null;
   const loaded = await sql<Array<Record<string, unknown>>>`
@@ -481,7 +502,7 @@ export async function getEnforcementRecord(institutionId: number): Promise<Enfor
         OR (${holding}::text IS NOT NULL AND holding_company = ${holding})
      ORDER BY start_date DESC NULLS LAST, id DESC`;
   const actions: EnforcementActionRow[] = rows.map((r) => ({
-    agency: String(r.agency) as "OCC" | "FRB",
+    agency: String(r.agency),
     party_name: String(r.party_name),
     against_holding_company: r.institution_id === null || Number(r.institution_id) !== institutionId,
     action_type: r.action_type ? String(r.action_type) : null,
@@ -492,19 +513,23 @@ export async function getEnforcementRecord(institutionId: number): Promise<Enfor
     document_url: r.document_url ? String(r.document_url) : null,
   }));
   const regulatorAgency = AGENCY_FOR_REGULATOR[String(inst.primary_regulator ?? "")];
-  const checked = new Set<"OCC" | "FRB">();
+  const checked = new Set<string>();
   if (regulatorAgency && loadedAgencies.has(regulatorAgency)) checked.add(regulatorAgency);
   // The Fed supervises holding companies, so its list is checked for any bank that has one.
   if (holding && loadedAgencies.has("FRB")) checked.add("FRB");
+  // A state-chartered bank's own state department, when that state's orders are loaded.
+  const stateAgency = inst.charter_agency === "State" && inst.state_code ? stateAgencyCode(String(inst.state_code).trim()) : null;
+  if (stateAgency && loadedAgencies.has(stateAgency)) checked.add(stateAgency);
   for (const a of actions) checked.add(a.agency);
   if (checked.size === 0) return null;
-  const terminated = actions.filter((a) => a.termination_date);
+  const open = actions.filter((a) => isOpenAction(a));
+  const past = actions.filter((a) => !isOpenAction(a));
   const latest = loaded.map((r) => dateStr(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
   return {
-    agenciesChecked: (["OCC", "FRB"] as const).filter((a) => checked.has(a)),
-    active: actions.filter((a) => !a.termination_date),
-    terminated: terminated.slice(0, ENFORCEMENT_RECENT_LIMIT),
-    terminatedCount: terminated.length,
+    agenciesChecked: [...checked].sort((a, b) => agencyOrder(a) - agencyOrder(b) || a.localeCompare(b)),
+    open,
+    past: past.slice(0, ENFORCEMENT_RECENT_LIMIT),
+    pastCount: past.length,
     asOf: latest,
   };
 }

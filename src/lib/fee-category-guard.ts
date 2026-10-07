@@ -35,6 +35,8 @@ interface CategoryRule {
   include: RegExp;
   /** A fee name matching this describes a different fee, whatever it was filed as. */
   exclude: RegExp;
+  /** Words that describe a different fee unless the name also matches `unless`. */
+  excludeUnless?: { pattern: RegExp; unless: RegExp };
 }
 
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
@@ -50,10 +52,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
+  // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
+  // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
   overdraft: {
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege)/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b|\bat least\b|^.{0,20}\bfee on$)/i,
   },
   nsf: {
     include:
@@ -64,10 +68,18 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
   // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
   // what its own customer pays at another network's ATM.
+  // A deposit or an inquiry is its own fee, except in one row that also prices withdrawals or
+  // transfers at an ATM the bank does not own ("Deposits/Withdrawals at an ATM we do not own
+  // or operate", "Inquiries/Transfers at an ATM we do not own"; Pathfinder, Oct 7).
   atm_non_network: {
     include: /(atm|allpoint|network machine)/i,
+    excludeUnless: {
+      pattern: /(deposit|inquir)/i,
+      unless:
+        /^(?=.*(\b(deposit|inquir)\w*\s*(\/|&|\band\b|\bor\b)\s*(withdraw|w\/d|transfer|transaction)|\b(withdraw|w\/d|transfer|transaction)\w*\s*(\/|&|\band\b|\bor\b)\s*(balance\s+)?(deposit|inquir)))(?=.*(do(es)?\s+not\s+(own|operate)|don['’]t\s+(own|operate)|not\s+owned|\bnon[- ]?[\w.]+([- ]owned)?\s+atms?\b|\bnon[- ]?proprietary\s+atms?\b|\bforeign\s+atms?\b|\batms?\s+foreign\b|\b(all\s+)?other\s+networks?\b|\bother\s+(banks?|institutions?|financial\s+institutions?)['’]?\s+atms?\b|out[- ]of[- ](our\s+)?network|not\s+(in|within)\s+(our\s+)?network))/i,
+    },
     exclude:
-      /(replace|deposit|statement|card fee|annual|\bpin\b|inquir|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
+      /(replace|statement|card fee|annual|\bpin\b|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
   },
   wire_domestic_outgoing: {
     include: /wire/i,
@@ -156,6 +168,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /\S/,
     exclude: /\bopen(ing)? (an |a |new |your )?(account|membership)\b/i,
   },
+  // A dormant fee names inactivity. Other lines filed here ("Money Market Savings Account
+  // (below )" $15 beside Space Coast's real $5 dormant fee, "Telephone transfers") are
+  // neighbouring fees or fragments (v18).
+  dormant_account: {
+    include:
+      /(dorman|inac|abandon|escheat|unclaimed|no (\w+ )?(transaction |member |customer |owner |depositor )?activity|limited activity|under[- ]?utiliz|reactivat|idle|unused|non-?use)/i,
+    exclude: /(?!)/, // nothing is excluded; the include decides
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -165,7 +185,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 16;
+export const CATEGORY_GUARD_VERSION = 18;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -203,7 +223,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   {
     from: "overdraft",
     to: "od_protection_transfer",
-    when: /(transfer|xfe?r\b|sweep|from (your |a |linked |eligible )?(savings|shares?|account|loan|line))/i,
+    // "Account Link Overdraft Protection" (Spencer Savings) is the linked-account transfer, not the overdraft fee.
+    when: /(transfer|xfe?r\b|sweep|from (your |a |linked |eligible )?(savings|shares?|account|loan|line)|\blink(ed)? overdraft protection|account link)/i,
   },
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
   { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid|items? paid)/i },
@@ -259,7 +280,8 @@ export function checkFeeCategory(
       reason: `"${name}" states a rate ("${rate}"), so its dollar amount is not the ${canonicalFeeKey} fee`,
     };
   }
-  const excluded = name.match(rule.exclude);
+  const softExcluded = rule.excludeUnless && !rule.excludeUnless.unless.test(name) ? name.match(rule.excludeUnless.pattern) : null;
+  const excluded = name.match(rule.exclude) ?? softExcluded;
   if (excluded) {
     return {
       ok: false,

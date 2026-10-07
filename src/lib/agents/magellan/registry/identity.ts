@@ -1,4 +1,4 @@
-import { normalizeCompanyName } from "@/lib/regulatory/cfpb";
+import { fullCompanyKey, normalizeCompanyName } from "@/lib/regulatory/cfpb";
 import type { RegistryDb } from "./partitions";
 
 /**
@@ -23,6 +23,8 @@ export interface IdentityCandidate {
 
 export interface IdentityIndex {
   byName: Map<string, IdentityCandidate[]>;
+  /** fullCompanyKey(holding company name) -> its banks. */
+  byHoldingName?: Map<string, IdentityCandidate[]>;
 }
 
 export interface IdentityMatch {
@@ -34,6 +36,10 @@ export interface IdentityMatch {
 }
 
 const MIN_KEY_LENGTH = 4;
+/** asset_size is in thousands: $10B. A short name ("PNC", "TD", "U S") is safe only for a bank this large. */
+const LARGE_BANK_ASSETS = 10_000_000;
+/** A full holding-company name shared by unrelated parents goes to the largest only when it is this many times the next. */
+const DOMINANT_PARENT_RATIO = 20;
 
 export async function loadIdentityIndex(db: RegistryDb): Promise<IdentityIndex> {
   const rows = await db<
@@ -50,12 +56,14 @@ export async function loadIdentityIndex(db: RegistryDb): Promise<IdentityIndex> 
      WHERE regulatory_status IS DISTINCT FROM 'inactive'
   `;
   const byName = new Map<string, IdentityCandidate[]>();
-  const add = (key: string, candidate: IdentityCandidate) => {
+  const byHoldingName = new Map<string, IdentityCandidate[]>();
+  const addTo = (map: Map<string, IdentityCandidate[]>, key: string, candidate: IdentityCandidate) => {
     if (!key) return;
-    const list = byName.get(key) ?? [];
+    const list = map.get(key) ?? [];
     if (!list.some((entry) => entry.id === candidate.id)) list.push(candidate);
-    byName.set(key, list);
+    map.set(key, list);
   };
+  const add = (key: string, candidate: IdentityCandidate) => addTo(byName, key, candidate);
   for (const row of rows) {
     const base = {
       id: Number(row.id),
@@ -66,18 +74,54 @@ export async function loadIdentityIndex(db: RegistryDb): Promise<IdentityIndex> 
     add(normalizeCompanyName(row.institution_name), { ...base, via: "institution_name" });
     if (row.holding_company_name) {
       add(normalizeCompanyName(row.holding_company_name), { ...base, via: "holding_company_name" });
+      addTo(byHoldingName, fullCompanyKey(row.holding_company_name), { ...base, via: "holding_company_name" });
     }
   }
-  return { byName };
+  return { byName, byHoldingName };
+}
+
+/** Candidates grouped by parent (a bank with no parent is its own group), largest group first. */
+function parentGroups(candidates: IdentityCandidate[]): Array<{ assets: number; largest: IdentityCandidate }> {
+  const groups = new Map<string, IdentityCandidate[]>();
+  for (const c of candidates) {
+    const key = c.holdingCompanyRssd ?? `id:${c.id}`;
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return [...groups.values()]
+    .map((list) => {
+      const sorted = [...list].sort((a, b) => b.assetSize - a.assetSize);
+      return { assets: sorted.reduce((sum, c) => sum + c.assetSize, 0), largest: sorted[0] };
+    })
+    .sort((a, b) => b.assets - a.assets);
+}
+
+function matchHoldingCompany(name: string, index: IdentityIndex): IdentityMatch | null {
+  const candidates = index.byHoldingName?.get(fullCompanyKey(name));
+  if (!candidates || candidates.length === 0) return null;
+  const groups = parentGroups(candidates);
+  if (groups.length === 1) {
+    return { institutionId: groups[0].largest.id, confidence: 0.9, method: "holding_company_full_name", status: "accepted", candidates: candidates.length };
+  }
+  const [first, second] = groups;
+  if (first.assets >= LARGE_BANK_ASSETS && first.assets >= second.assets * DOMINANT_PARENT_RATIO) {
+    return { institutionId: first.largest.id, confidence: 0.75, method: "holding_company_dominant_parent", status: "accepted", candidates: candidates.length };
+  }
+  return null;
 }
 
 export function matchCompany(name: string, index: IdentityIndex): IdentityMatch | null {
+  const holding = matchHoldingCompany(name, index);
+  if (holding) return holding;
   const key = normalizeCompanyName(name);
   const candidates = index.byName.get(key);
   if (!candidates || candidates.length === 0) return null;
   const largest = [...candidates].sort((a, b) => b.assetSize - a.assetSize)[0];
 
   if (key.length < MIN_KEY_LENGTH) {
+    const oneParent = parentGroups(candidates).length === 1;
+    if (oneParent && largest.assetSize >= LARGE_BANK_ASSETS) {
+      return { institutionId: largest.id, confidence: 0.8, method: "short_name_large_bank", status: "accepted", candidates: candidates.length };
+    }
     return { institutionId: largest.id, confidence: 0.3, method: "short_name", status: "needs_review", candidates: candidates.length };
   }
   if (candidates.length === 1) {

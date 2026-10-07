@@ -93,6 +93,27 @@ export interface StructureMatrixExhibit extends ExhibitBase {
   columns: string[];
   /** A null cell means the schedule shows nothing for that column. */
   rows: { name: string; cells: (string | null)[]; own?: boolean }[];
+  /** The figures behind an income-split matrix, as numbers, so the page can draw it as a chart. */
+  incomeSplit?: IncomeSplitData;
+}
+
+/**
+ * Fee income per $1,000 of deposits against the peer median, and the gap split into what
+ * published prices account for and the rest (how often fees are charged, and which ones).
+ * priceExplained is the peer median's income at the bank's prices less the peer median;
+ * otherExplained is the remainder, so the two add to own minus peerMedian. Signed dollars.
+ */
+export interface IncomeSplitData {
+  unit: "per_1000_deposits";
+  own: number;
+  peerMedian: number;
+  peerLabel: string;
+  n: number;
+  /** The bank's published prices against peer medians, peer median = 100; null with no compared fee. */
+  priceIndex: number | null;
+  priceExplained: number;
+  otherExplained: number;
+  quarterEnd: string;
 }
 
 export interface MoneyAtStakeExhibit extends ExhibitBase {

@@ -136,6 +136,28 @@ export function parseFredCsv(csv: string): FredObservation[] {
   return out;
 }
 
+/**
+ * CPI-U "Checking account and other bank services" (item SS68021, U.S. city average, not seasonally
+ * adjusted). Until 2026-10-07 the app read CUUR0000SEMC01 under this name, but SEMC is medical
+ * "Professional services" and SEMC01 is physicians' services.
+ */
+export const CPI_BANK_SERVICES_SERIES = "CUUR0000SS68021";
+/** CPI-U "Financial services" (item SEGD05), the group that holds bank services. */
+export const CPI_FINANCIAL_SERVICES_SERIES = "CUUR0000SEGD05";
+
+/** Titles for BLS series we track, applied on every refresh so a wrong stored label is corrected. */
+export const BLS_SERIES_TITLES: Record<string, string> = {
+  CUUR0000SA0: "CPI: All Items (not seasonally adjusted)",
+  [CPI_BANK_SERVICES_SERIES]: "CPI: Checking Account and Other Bank Services",
+  [CPI_FINANCIAL_SERVICES_SERIES]: "CPI: Financial Services",
+  CUUR0000SEMC01: "CPI: Physicians' Services (medical; not a bank series)",
+  CUUR0000SEMC02: "CPI: Dental Services (medical; not a bank series)",
+  CUUR0100SEMC: "CPI: Medical Professional Services, Northeast",
+  CUUR0200SEMC: "CPI: Medical Professional Services, Midwest",
+  CUUR0300SEMC: "CPI: Medical Professional Services, South",
+  CUUR0400SEMC: "CPI: Medical Professional Services, West",
+};
+
 /** BLS CPI series ids (CUUR... not seasonally adjusted, CUSR... adjusted); FRED does not serve the detailed ones. */
 export function isBlsSeries(seriesId: string): boolean {
   return /^CU[US]R[0-9A-Z]+$/.test(seriesId);
@@ -182,6 +204,20 @@ export const REQUIRED_FRED_SERIES: RequiredFredSeries[] = [
     fed_district: null,
   },
   ...stateLaborSeries(),
+  {
+    series_id: CPI_BANK_SERVICES_SERIES,
+    series_title: BLS_SERIES_TITLES[CPI_BANK_SERVICES_SERIES],
+    units: "Index Dec 1977=100",
+    frequency: "Monthly",
+    fed_district: null,
+  },
+  {
+    series_id: CPI_FINANCIAL_SERVICES_SERIES,
+    series_title: BLS_SERIES_TITLES[CPI_FINANCIAL_SERVICES_SERIES],
+    units: "Index",
+    frequency: "Monthly",
+    fed_district: null,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -193,7 +229,7 @@ export const BLS_YEARS = 7;
 
 export interface BlsSeriesRequest {
   url: string;
-  json: { seriesid: string[]; startyear: string; endyear: string; registrationkey?: string };
+  json: { seriesid: string[]; startyear: string; endyear: string; registrationkey?: string; catalog?: boolean };
 }
 
 /**
@@ -210,7 +246,8 @@ export function blsSeriesRequest(seriesId: string, apiKey?: string | null, now =
       seriesid: [seriesId],
       startyear: String(endYear - BLS_YEARS + 1),
       endyear: String(endYear),
-      ...(apiKey ? { registrationkey: apiKey } : {}),
+      // v2 with a key returns BLS's own catalog title, which the run ledger records as proof of the series.
+      ...(apiKey ? { registrationkey: apiKey, catalog: true } : {}),
     },
   };
 }
@@ -218,7 +255,15 @@ export function blsSeriesRequest(seriesId: string, apiKey?: string | null, now =
 interface BlsResponse {
   status?: string;
   message?: string[];
-  Results?: { series?: Array<{ seriesID?: string; data?: Array<{ year?: string; period?: string; value?: string }> }> };
+  Results?: {
+    series?: Array<{ seriesID?: string; catalog?: { series_title?: string }; data?: Array<{ year?: string; period?: string; value?: string }> }>;
+  };
+}
+
+/** BLS's own title for the series (v2 with catalog=true only); null otherwise. */
+export function parseBlsCatalogTitle(body: unknown): string | null {
+  const title = (body as BlsResponse)?.Results?.series?.[0]?.catalog?.series_title;
+  return typeof title === "string" && title.trim() ? title.trim() : null;
 }
 
 /** Monthly observations (period M01-M12) from a BLS timeseries response; annual averages (M13) are skipped. */

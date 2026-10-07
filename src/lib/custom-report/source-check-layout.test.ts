@@ -336,4 +336,80 @@ describe("checkFeeAgainstSource daily caps", () => {
     no(drill, "Safe Deposit Box drilling", 75);
     no("Research Fee (hourly fee; 15 minute minimum charge of $10.00) | $40.00", "Research Fee (hourly fee; 15 minute minimum charge of", 10);
   });
+
+  it("reads a box-size grid and a price wrapped under its name one fee per row (Space Coast, Oct 7)", () => {
+    const sccu = [
+      "Overdraft Privilege (Per item paid)* | $30 | Stop Payment | $15",
+      "Returned Check | Verification of Deposit | $20",
+      "$30 | (Business/Quality Assurance/Expedited)",
+      "(Payable and drawn on same person)",
+      "ATMs | Safe Deposit Boxes",
+      "Non-SCCU ATM Fee (transaction fee charged by | $2.50 | 3x5 | 5x5 | 3x10 | 5x10 | 10x10",
+      "SCCU for using a non-SCCU ATM) | $60 | $80 | $90 | $110 | $185",
+      "Replacement Keys/Lock Drilling | Actual cost",
+    ].join("\n");
+    const check = (name: string, amount: number) => checkFeeAgainstSource(sccu, name, amount, ".").ok;
+    expect(check("Returned Check", 30)).toBe(true);
+    expect(check("Verification of Deposit", 20)).toBe(true);
+    expect(check("Returned Check", 20)).toBe(false);
+    expect(check("Verification of Deposit", 30)).toBe(false);
+    expect(check("Safe Deposit Box 3x5", 60)).toBe(true);
+    expect(check("Safe Deposit Boxes 5x5", 80)).toBe(true);
+    expect(check("Safe Deposit Box 10x10", 185)).toBe(true);
+    expect(check("Safe Deposit Box 3x5", 80)).toBe(false);
+    expect(check("Non-SCCU ATM Fee", 2.5)).toBe(true);
+    expect(check("Non-SCCU ATM Fee", 60)).toBe(false);
+    // The same wrap on other live schedules (USC CU, Cabrillo CU).
+    const usccu = "Legal Process Fee | ValuePlus Money Market | $10\n$35 | Monthly Service Charge if balance below $10,000";
+    expect(checkFeeAgainstSource(usccu, "Legal Process Fee", 35, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(usccu, "Legal Process Fee", 10, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(usccu, "Monthly Service Charge if balance below", 35, ".").ok).toBe(false);
+    const cabrillo = "Foreign Wire Transfer | Nonsufficient Funds Paid | $14.00\n$35.00 | ATM/Debit Card Nonsufficient Funds Paid";
+    expect(checkFeeAgainstSource(cabrillo, "Foreign Wire Transfer", 35, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(cabrillo, "Foreign Wire Transfer", 14, ".").ok).toBe(false);
+  });
+
+  it("reads a price with a dash note under its name and a price after an unclosed note (first looks, Oct 7)", () => {
+    const dash = "Cashier's Check Fee*\n\n$5.00 - *Service not available to non-customers\n\nMoney Order Fee*\n\n$2.00 - *Service not available to non-customers";
+    expect(checkFeeAgainstSource(dash, "Money Order Fee", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(dash, "Money Order Fee", 5, ".").ok).toBe(false);
+    const unclosed = "Check Copy (Front and Back and assisted by CU Employee. $2.00 per copy | 3 X 5 ........ $30.00";
+    expect(checkFeeAgainstSource(unclosed, "Check Copy (Front and Back and assisted by CU Employee.", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(unclosed, "Check Copy", 30, ".").ok).toBe(false);
+  });
+
+  it("never reads the amount a fee is charged on, or a $0 balance condition, as the fee (Chase, U.S. Bank, Oct 7)", () => {
+    const chase = "than $50 on Tuesday and you would have been charged a $34 Overdraft Fee on the check.\ntransaction + $60 gasoline transaction). To avoid the $34 Overdraft Fee on the $60 gasoline transaction from";
+    expect(checkFeeAgainstSource(chase, "Overdraft Fee on", 60, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(chase, "Overdraft Fee on", 34, ".").ok).toBe(true);
+    const usb = "(excluding the Overdraft Paid Fees and\nincluding immediate and same day deposits), is at least $0 we will waive Overdraft Paid Fee(s) charged.";
+    expect(checkFeeAgainstSource(usb, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
+  });
+
+  it("reads a fee of up to $X as the fee's maximum, and a band before a price as a band (SmartBank, Oct 7)", () => {
+    const smartbank = "What You Need to Know about Overdrafts\n• We will charge you a fee of up to $35.00 each time we pay an overdraft.";
+    expect(checkFeeAgainstSource(smartbank, "Overdraft Fee", 35, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource("- Late Payment Fee Up to $20.00", "Late Payment Fee", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Non-member check cashing fee up to $4,999.99 | $5.00", "Non-member check cashing fee", 4999.99, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("• Batch Check Scanner Rental Fee | No fee up to $5,000, then $0.30 per", "Batch Check Scanner Rental Fee", 5000, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("refunds worldwide ATM fees up to $25 monthly when qualifications are met", "ATM fees", 25, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft Fee | $35 if overdrawn by more than $5", "Overdraft Fee", 5, ".").ok).toBe(false);
+  });
+
+  it("gives a two-name row's one price to the second name (First American Bank, Oct 7)", () => {
+    const fab = [
+      "ACCOUNT SERVICES | CHECK AND STATEMENT SERVICES",
+      "Stop Payment | Monthly Statement – Electronic | Free",
+      "Via Customer Service | $35.00",
+      "Via Online Banking | $30.00 | Monthly Statement – Paper | $5.50",
+      "Audit Confirmation or Verification of | Withdrawals at Allpoint & Presto! ATMs | Free",
+      "$20.00",
+      "Deposit (VOD)",
+    ].join("\n");
+    expect(checkFeeAgainstSource(fab, "Stop Payment", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(fab, "Audit Confirmation or Verification", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(fab, "Monthly Statement – Electronic", 0, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(fab, "Withdrawals at Allpoint & Presto! ATMs", 0, ".").ok).toBe(true);
+  });
 });

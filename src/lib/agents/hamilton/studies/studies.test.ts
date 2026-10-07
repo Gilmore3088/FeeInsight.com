@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { assetBand, quarterLabel, type InstitutionPrice } from "./common";
-import { buildFeeDependence, withinTrend, type DependenceRow } from "./fee-dependence";
+import { buildFeeDependence, latestYearOf, withinTrend, type DependenceRow } from "./fee-dependence";
 import { buildInferredVolume, type IncomeFeeRow } from "./inferred-volume";
 import { runPriceStudy } from "./price-study";
 import { median, midRankPercentile, ols, quartileOf, ranks, spearman } from "./stats";
@@ -116,6 +116,11 @@ describe("fee dependence", () => {
     expect(p.peerN).toBe(10);
     expect(p.detail?.first_year).toBe(2010);
     expect(String(built.record.findings.headline)).toContain("typical bank");
+  });
+
+  it("finds the latest year of a full-size panel without overflowing the call stack", () => {
+    const years = Array.from({ length: 500_000 }, (_, i) => ({ year: 2010 + (i % 16) }));
+    expect(latestYearOf(years)).toBe(2025);
   });
 });
 

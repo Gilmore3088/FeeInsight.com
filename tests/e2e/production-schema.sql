@@ -1750,7 +1750,11 @@ CREATE TABLE public.raw_fee_observations (  fee_raw_id bigint DEFAULT nextval('r
   frequency text,
   conditions text,
   outlier_flags jsonb DEFAULT '[]'::jsonb NOT NULL,
-  source text DEFAULT 'knox'::text NOT NULL
+  source text DEFAULT 'knox'::text NOT NULL,
+  product_name text,
+  min_balance_to_avoid numeric,
+  min_opening_deposit numeric,
+  waiver_text text
 );
 CREATE TABLE public.reg_articles (  guid text NOT NULL,
   source text NOT NULL,
@@ -3100,3 +3104,59 @@ WHERE fp.rolled_back_at IS NULL
      GROUP BY deep.institution_id
     HAVING count(DISTINCT deep.canonical_fee_key) >= 3
   );
+
+-- Added 2026-10-07: the shared learning store (migration 20270110000001), read by Magellan's
+-- link ledger and discovery since the 2026-10-04 snapshot.
+CREATE TABLE IF NOT EXISTS public.pipeline_feedback (
+  id                 BIGSERIAL PRIMARY KEY,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- The output being judged: the stage and strategy that produced it.
+  about_stage        TEXT NOT NULL,
+  about_strategy     TEXT,
+  about_version      INTEGER,
+  about_attempt_id   BIGINT,
+  signal             TEXT NOT NULL,
+  kind               TEXT NOT NULL,
+  -- Who judged it, and with which check.
+  reported_by        TEXT NOT NULL,
+  check_name         TEXT,
+  institution_id     BIGINT,
+  source_document_id BIGINT,
+  source_url         TEXT,
+  fee_raw_id         BIGINT,
+  fee_verified_id    BIGINT,
+  fee_published_id   BIGINT,
+  canonical_fee_key  TEXT,
+  amount             NUMERIC,
+  weight             NUMERIC NOT NULL DEFAULT 1,
+  evidence           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  agent_run_id       BIGINT,
+  dedupe_key         TEXT NOT NULL,
+  CONSTRAINT pipeline_feedback_dedupe_key_key UNIQUE (dedupe_key),
+  CONSTRAINT pipeline_feedback_about_stage_check
+    CHECK (about_stage IN ('discover', 'fetch', 'read', 'extract', 'verify', 'publish')),
+  CONSTRAINT pipeline_feedback_signal_check
+    CHECK (signal IN ('wrong', 'right', 'missed', 'restored')),
+  CONSTRAINT pipeline_feedback_reported_by_check
+    CHECK (reported_by IN ('atlas', 'magellan', 'rosetta', 'knox', 'darwin', 'hamilton', 'human'))
+);
+
+CREATE INDEX IF NOT EXISTS pipeline_feedback_strategy_idx
+  ON public.pipeline_feedback (about_stage, about_strategy, about_version, signal);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_institution_idx
+  ON public.pipeline_feedback (institution_id);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_document_idx
+  ON public.pipeline_feedback (source_document_id);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_url_idx
+  ON public.pipeline_feedback (source_url);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_raw_idx
+  ON public.pipeline_feedback (fee_raw_id) WHERE fee_raw_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS pipeline_feedback_published_idx
+  ON public.pipeline_feedback (fee_published_id) WHERE fee_published_id IS NOT NULL;
+
+-- source_documents.companion_source_id (20270109000000_companion_fee_pages.sql)
+ALTER TABLE public.source_documents ADD COLUMN IF NOT EXISTS companion_source_id BIGINT;
+CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
+  ON public.source_documents (companion_source_id, id DESC)
+  WHERE companion_source_id IS NOT NULL;

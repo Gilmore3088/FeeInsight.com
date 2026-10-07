@@ -22,6 +22,16 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Direct state re-search (`priority-state-research.ts`)
+
+A state on `PRIORITY_STATE_RESEARCH_REQUESTS` gets a `manual_repair` run (source
+`atlas.priority_state_research`) of free steps: discover with `upgrade_slots` 25, then
+fetch, read, extract, classify, publish. One run per state at a time, none while the
+state's own lane is running (a queued lane does not count), and none once nothing is due (dead ends whose last search used
+an older discovery method, and product-page links not yet searched for the real schedule)
+or the request's `until` day has passed. Magellan's own selectors pick the banks, so a bank
+is never searched twice under one method. Tennessee is on it until 10 Oct 2026.
+
 ## State lanes: cadence and state experts
 
 - `state-lane-scheduler.ts`: one full pass per state per UTC calendar month. The first

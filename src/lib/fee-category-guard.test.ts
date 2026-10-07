@@ -163,6 +163,8 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("card_replacement", name).ok).toBe(false);
     }
     expect(refileCategory("atm_non_network", "Replacement ATM/Check Card")).toBe("card_replacement");
+    expect(refileCategory("overdraft", "Account Link Overdraft Protection")).toBe("od_protection_transfer");
+    expect(refileCategory("overdraft", "Overdraft Fee")).toBe("overdraft");
     for (const name of ["Charge Back Item Fee", "Deposit Charge Back Item", "Charge back", "Returned Deposit/Loan Payment"]) {
       expect(checkFeeCategory("deposited_item_return", name)).toEqual({ ok: true });
     }
@@ -377,9 +379,70 @@ describe("checkFeeCategory", () => {
     expect(amountEnvelopeFor("monthly_maintenance").max).toBeLessThan(2500);
   });
 
+  it("v17 rejects overdraft lines cut mid-sentence or naming a balance or statistic", () => {
+    // Live on prod Oct 7: Chase "Overdraft Fee on" $60 (the real fee is $34) and a U.S. Bank fragment at $0.
+    expect(checkFeeCategory("overdraft", "Overdraft Fee on").ok).toBe(false);
+    expect(
+      checkFeeCategory("overdraft", "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least").ok,
+    ).toBe(false);
+    expect(checkFeeCategory("overdraft", "Forty million Americans paid at least one overdraft fee in 2016 which totaled").ok).toBe(false);
+    // Real overdraft lines still pass, including long ones that end in "fee on" or say "excluding".
+    expect(checkFeeCategory("overdraft", "Overdraft Fee per transaction")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "An overdraft fee of")).toEqual({ ok: true });
+    expect(
+      checkFeeCategory("overdraft", "Non-Sufficient Funds/Overdraft created by check, in-person withdrawal, or other electronic means, excluding ATMS and POS"),
+    ).toEqual({ ok: true });
+    expect(
+      checkFeeCategory("overdraft", "Paid NSF (per item) Includes ACH, Personal Checks, Electronic Debit, Online Bill Pay. We do not charge a Paid NSF fee on"),
+    ).toEqual({ ok: true });
+  });
+
+  it("v18 keeps only inactivity fees under dormant_account", () => {
+    // Live on prod Oct 7: Space Coast's "Money Market Savings Account (below )" $15 beside its real $5 dormant fee.
+    expect(checkFeeCategory("dormant_account", "Money Market Savings Account (below )").ok).toBe(false);
+    expect(checkFeeCategory("dormant_account", "Telephone transfers").ok).toBe(false);
+    expect(checkFeeCategory("dormant_account", "Vacation Club Withdrawal").ok).toBe(false);
+    for (const name of [
+      "Dormant Fee (no member activity for 24 months)",
+      "Inactive Account Fee",
+      "Limited Activity Fee",
+      "Sunshine Checking - Under Utilization",
+      "Checking Account Reactivation Fee",
+      "If there is no transaction activity on your share and/or share draft account for a period of twelve (12) months and AOD",
+      "Cuenta inac=va por más de un año",
+      "Escheatment Fee",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name)).toEqual({ ok: true });
+    }
+  });
+
   it("explains a rejection in the reason", () => {
     const verdict = checkFeeCategory("nsf", "Returned Deposit Check");
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toContain('"Returned Deposit Check"');
+  });
+
+  it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
+    for (const name of [
+      "Deposits/Withdrawals at an ATM we do not own or operate",
+      "Inquiries/Transfers at an ATM we do not own or operate",
+      "ATM - Non-Bank ATM Withdrawals & Inquiries",
+      "Foreign ATM Inquiry or Transfer Fee",
+      "ATM Withdrawal/Inquiry on all other networks",
+      "Inquiry or transactions at non-Seacoast ATMs",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Foreign ATM Balance Inquiry",
+      "ATM Foreign Transaction Fee - Balance Inquiry",
+      "ATM Foreign Transaction Fee - Deposit",
+      "ATM Deposit Correction",
+      "Non-Member ATM Deposit/Withdrawal",
+      "Balance Inquiry at non-Pathfinder ATM",
+      "ATM Balance Inquiry (other bank ATM) per transaction",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
+    }
   });
 });

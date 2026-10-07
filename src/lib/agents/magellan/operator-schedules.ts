@@ -33,16 +33,23 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "James, 2026-10-07 00:51",
   },
   {
+    // James's link (2026-10-07 00:52) was Citi Bangladesh's schedule of charges (taka), which
+    // Rosetta rightly rejected. Citi publishes no single US fee schedule; this is its US
+    // Consumer Deposit Account Agreement, U.S. markets, effective 2025-11-20, with its Appendix 1
+    // fee schedule (the comparison chart returned HTTP 404 on 2026-10-07 07:35). Citi charges no
+    // overdraft fee (dropped in 2022).
     institutionId: 3,
     institutionName: "Citibank, National Association",
-    url: "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges_Effective_February_26_2026.pdf",
-    givenBy: "James, 2026-10-07 00:52",
+    url: "https://online.citi.com/JRS/popups/ao/CDAA.pdf",
+    givenBy: "web search for the US consumer schedule, 2026-10-07 08:05",
   },
   {
+    // The deposit products guide (fetched 2026-10-07, document 20724) names the Overdraft Paid
+    // Fee but never states it; this overdraft coverage disclosure does ($36, three a day).
     institutionId: 5,
     institutionName: "U.S. Bank National Association",
-    url: "https://www.usbank.com/dam/documents/pdf/deposits/consumer-pricing-information/deposit-products.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+    url: "https://www.usbank.com/dam/documents/pdf/checking/ATM_DebitCard_ODCoverage_Yes.pdf",
+    givenBy: "web search for the Tennessee report's largest banks, 2026-10-07 07:00",
   },
   {
     institutionId: 18,
@@ -75,10 +82,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
   },
   {
+    // Access Checking pays no overdrafts, so its guide has no overdraft fee; TotalView does ($35).
     institutionId: 37,
     institutionName: "First Horizon Bank",
-    url: "https://www.firsthorizon.com/-/media/Files/Access-Checking-Account-Service-Fee-Guide.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+    url: "https://www.firsthorizon.com/-/media/Files/TotalView-Account-Service-Fee-Guide.pdf",
+    givenBy: "web search for the Tennessee report's largest banks, 2026-10-07 07:00",
   },
   {
     institutionId: 104,
@@ -345,6 +353,46 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName: "Suncoast Federal Credit Union",
     url: "https://edge.sitecorecloud.io/suncoastcre57dd-suncoast-suncoastprod-d848/media/Project/suncoast/Imported/Files/Fees/FeeSchedule-pdf.pdf",
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+  },
+  {
+    // The bank's own overdraft services page ($38 per item). Its main link is a business
+    // checking page.
+    institutionId: 251,
+    institutionName: "Wilson Bank and Trust",
+    url: "https://www.wilsonbank.com/personal/overdraft-services",
+    givenBy: "web search for the Tennessee report's largest banks, 2026-10-07 07:00",
+  },
+  {
+    // "Outline of Services 2025, Personal Checking Accounts" (31 pages), the bank's own file on
+    // its site host's storage. ACNB holds 61% of Adams County deposits and had no link on file.
+    institutionId: 393,
+    institutionName: "ACNB Bank",
+    url: "https://trabian-canvas-prd-files.s3.amazonaws.com/acnb-com/files/document/7_list_of_services.pdf",
+    givenBy: "web search for the Adams County market study, 2026-10-07 07:10",
+  },
+  {
+    // Consumer banking welcome kit dated 6/2026, with the account fees. The overdraft coverage
+    // disclosure PDF now serves a "page doesn't exist" page (doc 20860, 2026-10-07 07:53).
+    institutionId: 19,
+    institutionName: "Fifth Third Bank, National Association",
+    url: "https://www.53.com/content/dam/fifth-third/docs/reference/fifth-third-consumer-banking-welcome-kit-accessible.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 08:05",
+  },
+  {
+    // The Tennessee bank's own consumer overdraft page: Bounce Protection $33 per item, at most
+    // 4 a day; NSF charge dropped 2023-02-01. Replaces a Bangladesh bank's schedule Magellan found.
+    institutionId: 371,
+    institutionName: "SouthEast Bank",
+    url: "https://www.southeastbank.com/consumer-overdraft-services/",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
+  },
+  {
+    // Overdraft consent form: up to $35 per item, $210 a day cap. Its main link is the account
+    // terms PDF.
+    institutionId: 255,
+    institutionName: "SmartBank",
+    url: "https://smartbank.com/wp-content/uploads/OverdraftConsentform.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
   },
 ];
 

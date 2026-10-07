@@ -37,6 +37,8 @@
 #                 Fail if current docs/plans contain stale runtime guidance.
 #   migration-history-kill
 #                 Fail if post-agentic-decommission migrations reintroduce retired runtime concepts.
+#   financial-source-kill
+#                 Fail if src reads institution_financial_records without a source filter (ffiec rows use other units).
 
 set -euo pipefail
 
@@ -696,6 +698,35 @@ plausible_kill() {
   echo "plausible-kill: OK (no Plausible analytics references)"
 }
 
+financial_source_kill() {
+  # institution_financial_records holds ffiec rows in other units that duplicate fdic quarters
+  # (src/lib/data-store/financial-sources.ts). Every FROM/JOIN of the table in src/ must filter
+  # by source within the next eight lines: source = / source IN, or the shared helper.
+  local hits="" files=()
+  mapfile -t files < <(grep -rlE '(FROM|JOIN)[[:space:]]+institution_financial_records' \
+    --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude='*.test.tsx' src 2>/dev/null || true)
+  if [[ ${#files[@]} -gt 0 ]]; then
+    hits=$(awk '
+      function flush() { if (pending && !ok) printf "%s:%d: %s\n", name, start, text; pending = 0 }
+      FNR == 1 { flush() }
+      {
+        if (pending && FNR - start > 8) flush()
+        if ($0 ~ /(FROM|JOIN)[[:space:]]+institution_financial_records/) {
+          flush(); pending = 1; ok = 0; start = FNR; text = $0; name = FILENAME
+        }
+        if (pending && $0 ~ /source[[:space:]]*(=|IN[[:space:]])|SAME_SCALE_SOURCES|financialSourceFilter|FINANCIAL_SOURCES/) ok = 1
+      }
+      END { flush() }
+    ' "${files[@]}")
+  fi
+  if [[ -n "$hits" ]]; then
+    echo "financial-source-kill: reads of institution_financial_records must filter to source IN ('fdic', 'ncua') (see src/lib/data-store/financial-sources.ts):" >&2
+    echo "$hits" >&2
+    exit 1
+  fi
+  echo "financial-source-kill: OK (every institution_financial_records read filters by source)"
+}
+
 case "$SUBCOMMAND" in
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
@@ -719,14 +750,15 @@ case "$SUBCOMMAND" in
   sql-placeholder-kill) sql_placeholder_kill ;;
   heading-wrap-kill) heading_wrap_kill ;;
   plausible-kill) plausible_kill ;;
+  financial-source-kill) financial_source_kill ;;
   migration-version-kill) migration_version_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill>" >&2
     exit 2
     ;;
 esac

@@ -39,6 +39,35 @@ const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread 
  * is what counts. An institution leaves the direct path on its own once it has run.
  */
 export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[] = [
+  // Tennessee report (2026-10-07 06:50): 6 of the 7 largest TN deposit holders had no live
+  // overdraft fee, so only 26% of TN branch deposits had one.
+  ...([
+    [37, "First Horizon Bank"],
+    [47, "Pinnacle Bank"],
+    [27, "Regions Bank"],
+    [122, "FirstBank"],
+    [5, "U.S. Bank National Association"],
+    [251, "Wilson Bank and Trust"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Tennessee report: largest deposit holder with no live overdraft fee",
+  })),
+  {
+    institutionId: 393,
+    institutionName: "ACNB Bank",
+    reason: "Adams County, PA market study: 61% of county deposits, no fee schedule on file",
+  },
+  // Tennessee report (2026-10-07 07:30): three more TN deposit leaders with no verified overdraft fee.
+  ...([
+    [19, "Fifth Third Bank, National Association"],
+    [371, "SouthEast Bank"],
+    [255, "SmartBank"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Tennessee report: deposit leader with no verified overdraft fee",
+  })),
   { institutionId: 8109, institutionName: "Space Coast Federal Credit Union", reason: "Hamilton answer had only 5 fees; full schedule needed" },
   ...([
     [51, "First National Bank of Pennsylvania"],
@@ -91,6 +120,8 @@ export interface PriorityInstitutionRow {
   institution_name: string;
   state_code: string | null;
   tier: PriorityTier;
+  /** Newest unfetched hand-found link (tier hand_found only); keys the run so a link added later the same day still runs. */
+  hand_link_id: number | null;
 }
 
 /**
@@ -98,8 +129,8 @@ export interface PriorityInstitutionRow {
  *  1. a fee schedule found by hand (Magellan's operator list) not yet fetched;
  *  2. an institution on PRIORITY_INSTITUTION_REQUESTS;
  *  3. a $10B+ institution or state market leader with a fee link but no live overdraft fee.
- * Larger institutions first within a tier. An institution with a priority run in flight,
- * or one started inside its retry window, is skipped.
+ * Requests run in list order; otherwise larger institutions first within a tier. An institution with a priority run in flight,
+ * or one started inside its retry window, is skipped, unless a hand-found link was added after that run started.
  */
 export async function selectPriorityInstitutions(
   db: SqlTag,
@@ -109,9 +140,18 @@ export async function selectPriorityInstitutions(
   if (limit === 0) return [];
   const requested = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
   const leaders = [...options.leaderIds].map(Number);
-  const rows = await db<Array<{ id: number | string; institution_name: string; state_code: string | null; tier: number | string }>>`
+  const rows = await db<
+    Array<{
+      id: number | string;
+      institution_name: string;
+      state_code: string | null;
+      tier: number | string;
+      hand_link_id: number | string | null;
+    }>
+  >`
     WITH candidates AS (
       SELECT inst.id, inst.institution_name, inst.state_code, inst.asset_size,
+             hand_new.hand_link_id, hand_new.hand_found_at,
              CASE
                WHEN EXISTS (
                  SELECT 1 FROM institution_additional_sources hand
@@ -136,9 +176,17 @@ export async function selectPriorityInstitutions(
                     ) THEN 3
              END AS tier
         FROM institution_sources inst
+        LEFT JOIN LATERAL (
+          SELECT MAX(hand.id) AS hand_link_id, MAX(hand.found_at) AS hand_found_at
+            FROM institution_additional_sources hand
+           WHERE hand.institution_id = inst.id
+             AND hand.found_by_strategy = 'discover.operator_schedule'
+             AND hand.status = 'found'
+             AND hand.last_fetched_at IS NULL
+        ) hand_new ON TRUE
        WHERE COALESCE(inst.status, 'active') = 'active'
     )
-    SELECT c.id, c.institution_name, c.state_code, c.tier
+    SELECT c.id, c.institution_name, c.state_code, c.tier, c.hand_link_id
       FROM candidates c
      WHERE c.tier IS NOT NULL
        AND NOT EXISTS (
@@ -147,13 +195,19 @@ export async function selectPriorityInstitutions(
             AND r.params_json->>'institution_id' = c.id::text
             AND (
               r.status IN ('queued', 'running', 'cancel_requested')
-              OR r.started_at > NOW() - CASE
-                WHEN c.tier = 3 THEN make_interval(days => ${PRIORITY_GAP_RETRY_DAYS}::int)
-                ELSE make_interval(hours => ${PRIORITY_RETRY_HOURS}::int)
-              END
+              OR (
+                r.started_at > NOW() - CASE
+                  WHEN c.tier = 3 THEN make_interval(days => ${PRIORITY_GAP_RETRY_DAYS}::int)
+                  ELSE make_interval(hours => ${PRIORITY_RETRY_HOURS}::int)
+                END
+                -- A hand-found link added after the last run is new work, not a retry.
+                AND (c.tier <> 1 OR c.hand_found_at IS NULL OR r.started_at >= c.hand_found_at)
+              )
             )
        )
-     ORDER BY c.tier ASC, COALESCE(c.asset_size, 0) DESC, c.id ASC
+     ORDER BY c.tier ASC,
+              CASE WHEN c.tier = 2 THEN array_position(${requested}::bigint[], c.id::bigint) END ASC NULLS LAST,
+              COALESCE(c.asset_size, 0) DESC, c.id ASC
      LIMIT ${limit}::int
   `;
   const tiers: Record<number, PriorityTier> = { 1: "hand_found", 2: "requested", 3: "overdraft_gap" };
@@ -162,6 +216,7 @@ export async function selectPriorityInstitutions(
     institution_name: String(row.institution_name),
     state_code: row.state_code ? String(row.state_code).trim().toUpperCase() : null,
     tier: tiers[Number(row.tier)] ?? "requested",
+    hand_link_id: Number(row.tier) === 1 && row.hand_link_id != null ? Number(row.hand_link_id) : null,
   }));
 }
 
@@ -236,7 +291,10 @@ export async function schedulePriorityInstitutionRuns(
         },
         triggeredBy: "api.admin.agents.tick",
         triggerSource: "schedule",
-        idempotencyKey: `atlas:priority:${pick.id}:${day}`,
+        idempotencyKey:
+          pick.hand_link_id != null
+            ? `atlas:priority:${pick.id}:hand:${pick.hand_link_id}`
+            : `atlas:priority:${pick.id}:${day}`,
         steps: priorityInstitutionSteps(pick.id),
         summary: `Direct run for one institution (${TIER_REASON[pick.tier]}).`,
       });
