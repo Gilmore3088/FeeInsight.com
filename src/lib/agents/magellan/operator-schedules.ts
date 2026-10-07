@@ -188,6 +188,14 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.ckecusalina.com/Rates",
     givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
   },
+  {
+    // The bank's own copy (Morgan Stanley Online accounts). Its pricing page times out, and
+    // our fetcher has failed on us.etrade.com since 2026-10-04, so the E*TRADE copy is not used.
+    institutionId: 16,
+    institutionName: "Morgan Stanley Private Bank, National Association",
+    url: "https://www.morganstanley.com/content/dam/msdotcom/en/wealth-disclosures/pdfs/MSPBNA_MSO_Bank_Deposit_Rate_Fee_Schedule.pdf",
+    givenBy: "web search for the state market leaders, 2026-10-07 03:55",
+  },
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");

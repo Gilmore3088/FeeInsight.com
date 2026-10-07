@@ -249,6 +249,7 @@ export async function runDarwinAdjudicate(
   result.failed += review.failed;
   result.costMicrousd += review.costMicrousd;
   result.results.push(...review.results.slice(0, 10).map((entry) => ({ ...entry, pass: "release_review" })));
+  if (review.calls > 0) result.results.push({ pass: "release_review", lessons: review.lessons });
   if (review.budgetStopped) {
     result.budgetStopped = true;
     result.budgetReason = review.budgetReason;

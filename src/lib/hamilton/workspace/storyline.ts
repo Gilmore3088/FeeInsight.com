@@ -634,7 +634,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       out.push({
         text:
           ownTransfer !== undefined
-            ? `Your ${money(ownTransfer)} transfer fee is the cheaper path you can point customers to; ${count(withTransfer.length)} of ${count(others.length)} in the group price one, typically ${money(typical)}.`
+            ? `Your ${money(ownTransfer)} transfer fee is the lower-cost path you can point customers to; ${count(withTransfer.length)} of ${count(others.length)} in the group price one, typically ${money(typical)}.`
             : `${count(withTransfer.length)} of ${count(others.length)} in the group price a transfer from savings, typically ${money(typical)}; your schedule in the index shows none.`,
         source: { ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null },
         sampleSize: others.length,

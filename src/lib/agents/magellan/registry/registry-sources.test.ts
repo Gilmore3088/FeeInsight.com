@@ -11,7 +11,10 @@ import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
 import { cikBatch, runRegistrySecLinks } from "./sec";
 import { runRegistryRegNews } from "./reg-news";
+import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
+import { runRegistryStateBills } from "./state-bills";
+import { runRegistryFederalBills } from "./federal-bills";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -326,6 +329,156 @@ describe("registry regulator news worker", () => {
   });
 });
 
+describe("registry Federal Register worker", () => {
+  const page = {
+    count: 2,
+    next_page_url: null,
+    results: [
+      {
+        document_number: "2026-01234",
+        title: "Overdraft fees at large institutions",
+        type: "Proposed Rule",
+        agencies: [{ slug: "consumer-financial-protection-bureau", name: "Consumer Financial Protection Bureau" }],
+        publication_date: "2026-09-01",
+        comments_close_on: "2026-11-01",
+        html_url: "https://www.federalregister.gov/d/2026-01234",
+        cfr_references: [{ title: 12, part: 1005 }],
+      },
+      {
+        document_number: "2026-05678",
+        title: "Assessments",
+        type: "Rule",
+        agencies: [{ slug: "federal-deposit-insurance-corporation", name: "Federal Deposit Insurance Corporation" }],
+        publication_date: "2026-08-01",
+        effective_on: "2027-01-01",
+        html_url: "https://www.federalregister.gov/d/2026-05678",
+      },
+    ],
+  };
+  const now = new Date("2026-10-07T03:00:00Z");
+
+  it("counts stages but stores nothing in shadow mode", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockResolvedValue(json(page));
+    const result = await runRegistryFederalRegister({ db, now, live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ fetched: 2, stored: 0, shadow: true, fee_related: 1, since: "2025-09-02" });
+    expect(result.stages).toEqual({ comment_open: 1, comment_closed: 0, final_not_yet_effective: 1, in_effect: 0 });
+    expect(result.agencies).toEqual({ CFPB: 1, FDIC: 1 });
+    expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partition?.values).toEqual(expect.arrayContaining(["federal-register", "current", "succeeded"]));
+  });
+
+  it("upserts the rules when live", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.document_number }))]]);
+    const fetchImpl = vi.fn().mockResolvedValue(json(page));
+    const result = await runRegistryFederalRegister({ db, now, live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result.stored).toBe(2);
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
+    expect(rows[0]).toMatchObject({ document_number: "2026-01234", kind: "proposed_rule", agencies: ["CFPB"], cfr_parts: ["12 CFR 1005"] });
+  });
+});
+
+describe("registry federal bills worker", () => {
+  const now = new Date("2026-10-07T03:00:00Z");
+  const page = {
+    pagination: { count: 2 },
+    bills: [
+      { congress: 119, number: "1234", type: "HR", title: "Overdraft Protection Act of 2025", latestAction: { actionDate: "2025-03-01", text: "Referred to the House Committee on Financial Services." } },
+      { congress: 119, number: "9", type: "S", title: "Farm credit modernization", latestAction: { actionDate: "2025-04-01", text: "Passed Senate." } },
+    ],
+  };
+
+  it("skips without a key", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn();
+    const result = await runRegistryFederalBills({ db, now, apiKey: null, fetchOptions: { fetchImpl } });
+    expect(result.missingKey).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))?.values).toEqual(
+      expect.arrayContaining(["federal-bills", "current", "empty"]),
+    );
+  });
+
+  it("keeps bank fee bills, sends the key as a header, and stores nothing in shadow mode", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryFederalBills({ db, now, apiKey: "k", live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ congress: 119, scanned: 2, fetched: 1, stored: 0, requests: 1, shadow: true });
+    expect(result.stages.in_committee).toBe(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("https://api.congress.gov/v3/bill/119?format=json&limit=250&offset=0");
+    expect((init as RequestInit).headers).toMatchObject({ "X-Api-Key": "k" });
+    expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
+  });
+
+  it("upserts bills when live", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryFederalBills({ db, now, apiKey: "k", live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result.stored).toBe(1);
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
+    expect(rows[0]).toMatchObject({
+      id: "119-hr-1234",
+      identifier: "H.R. 1234",
+      url: "https://www.congress.gov/bill/119th-congress/house-bill/1234",
+      stage: "in_committee",
+    });
+  });
+});
+
+describe("registry state bills worker", () => {
+  const now = new Date("2026-10-07T03:00:00Z");
+  const bill = {
+    id: "ocd-bill/1",
+    session: "2025-2026",
+    identifier: "AB 1",
+    title: "Overdraft and insufficient funds fees",
+    openstates_url: "https://openstates.org/ca/bills/20252026/AB1/",
+    first_action_date: "2026-01-05",
+    latest_action_date: "2026-05-01",
+    actions: [
+      { date: "2026-01-05", classification: ["introduction"], organization: { classification: "lower" } },
+      { date: "2026-02-01", classification: ["referral-committee"], organization: { classification: "lower" } },
+      { date: "2026-05-01", classification: ["passage"], organization: { classification: "lower" } },
+    ],
+  };
+  const hotel = { ...bill, id: "ocd-bill/2", identifier: "SB 2", title: "Hotel junk fees", actions: [] };
+  const page = { results: [bill, hotel], pagination: { max_page: 1 } };
+
+  it("records a missing key without fetching", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn();
+    const result = await runRegistryStateBills({ partitionKey: "ca", db, now, apiKey: "", fetchOptions: { fetchImpl } });
+    expect(result).toMatchObject({ missingKey: true, fetched: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partition?.values).toEqual(expect.arrayContaining(["state-bills", "CA", "empty"]));
+  });
+
+  it("sends the key as a header, keeps bank fee bills only, and stores nothing in shadow mode", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ fetched: 1, stored: 0, shadow: true, requests: 3 });
+    expect(result.stages.passed_chamber).toBe(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).not.toContain("k&");
+    expect(String(url)).toContain("state%3Aca");
+    expect((init as RequestInit).headers).toMatchObject({ "X-API-KEY": "k" });
+    expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
+  });
+
+  it("upserts bills with their stage when live", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result.stored).toBe(1);
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
+    expect(rows[0]).toMatchObject({ id: "ocd-bill/1", state_code: "CA", stage: "passed_chamber", stage_date: "2026-05-01" });
+  });
+});
+
 describe("registry state regulators worker", () => {
   it("upserts all 51 agencies and tags credit unions", async () => {
     const { db, statements } = createDb([["UPDATE institution_sources", () => [{ id: 1 }]]]);
@@ -344,6 +497,7 @@ describe("registry dispatch", () => {
       "fdic-universe",
       "fdic-financials",
       "ncua-financials",
+      "ffiec-overdraft",
       "fdic-sod",
       "ncua-branches",
       "ncua-branch-geocode",
@@ -353,6 +507,9 @@ describe("registry dispatch", () => {
       "beige-book",
       "fred",
       "reg-news",
+      "federal-register",
+      "federal-bills",
+      "state-bills",
       "state-regulators",
     ]);
   });

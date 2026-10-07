@@ -13,6 +13,7 @@ import {
   isParserStale,
   pickDueCandidate,
   registryCandidates,
+  registryPartitionsBySource,
   scheduleDueRegistryRuns,
 } from "./registry-scheduler";
 
@@ -25,10 +26,11 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 13)).toEqual([
+    expect(candidates.slice(0, 15)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
+      "ffiec-overdraft:2026Q1",
       "fdic-sod:2026",
       "ncua-branches:2026Q2",
       "ncua-branch-geocode:pending",
@@ -38,18 +40,31 @@ describe("registry scheduler", () => {
       "beige-book:202610",
       "fred:current",
       "reg-news:current",
+      "federal-register:current",
       "state-regulators:current",
     ]);
     // Round two continues each source's history.
     // Credit union branches pull only the newest quarter, so they drop out after round one.
-    expect(candidates.slice(13, 18)).toEqual([
+    expect(candidates.slice(15, 21)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
+      "ffiec-overdraft:2026Q2",
       "fdic-sod:2025",
       "cfpb:2025",
       "sec-filings:batch-1",
     ]);
     expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
+  });
+
+  it("schedules state bills only once the Open States key is set", () => {
+    const bills = (env: Record<string, string>) =>
+      registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
+    expect(bills({})).toEqual([]);
+    expect(bills({ OPEN_STATES_API_KEY: "key" })).toHaveLength(52);
+    const federal = (env: Record<string, string>) =>
+      registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "federal-bills")?.partitions;
+    expect(federal({})).toEqual([]);
+    expect(federal({ CONGRESS_GOV_API_KEY: "key" })).toEqual(["current"]);
   });
 
   it("defaults the backfill to 2010Q1 and honours REGISTRY_BACKFILL_FROM", () => {

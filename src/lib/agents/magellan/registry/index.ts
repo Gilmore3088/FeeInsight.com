@@ -1,10 +1,14 @@
 import type { RegistryDb } from "./partitions";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
+import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
+import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
+import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
+import { FEDERAL_BILLS_SOURCE, runRegistryFederalBills } from "./federal-bills";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
 import {
   NCUA_BRANCH_GEOCODE_PARTITION,
@@ -123,6 +127,30 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           refreshed_institutions: r.refreshedInstitutions,
           deactivated_institutions: r.deactivatedInstitutions,
           empty: r.empty,
+        },
+      };
+    },
+  },
+  {
+    source: FFIEC_OVERDRAFT_SOURCE,
+    stepKey: "registry-ffiec-overdraft",
+    title: "Pull bank overdraft and NSF income (FFIEC call report RIAD H032)",
+    run: async (input) => {
+      const r = await runRegistryFfiecOverdraft({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `No bank overdraft income for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read overdraft and NSF income for ${n(r.filers)} banks for ${r.partitionKey}: ${n(r.matchedBanks)} matched, ${n(r.updatedRows)} call-report rows updated, ${n(r.quarterlyValues)} with a quarterly figure${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          file: r.fileName,
+          filers: r.filers,
+          matched_banks: r.matchedBanks,
+          updated_rows: r.updatedRows,
+          quarterly_values: r.quarterlyValues,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
         },
       };
     },
@@ -278,6 +306,79 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan read ${r.fetched} regulator press releases and stored ${r.inserted} new ones${dry(r.dryRun)}.${failed}`,
         detail: { fetched: r.fetched, inserted: r.inserted, failed_feeds: r.failedFeeds },
+      };
+    },
+  },
+  {
+    source: FEDERAL_REGISTER_SOURCE,
+    stepKey: "registry-federal-register",
+    title: "Pull the banking regulators' proposed and final rules",
+    fixedPartition: FEDERAL_REGISTER_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryFederalRegister({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      return {
+        summary: `Magellan read ${r.fetched} Federal Register rules since ${r.since}: ${r.stages.comment_open} open for comment, ${r.stages.final_not_yet_effective} final but not yet in effect; stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+        detail: {
+          since: r.since,
+          fetched: r.fetched,
+          reported_total: r.reported_total,
+          pages: r.pages,
+          stored: r.stored,
+          stages: r.stages,
+          agencies: r.agencies,
+          fee_related: r.fee_related,
+          shadow: r.shadow,
+        },
+      };
+    },
+  },
+  {
+    source: FEDERAL_BILLS_SOURCE,
+    stepKey: "registry-federal-bills",
+    title: "Pull federal bank fee bills",
+    run: async (input) => {
+      const r = await runRegistryFederalBills({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      return {
+        summary: r.missingKey
+          ? "Skipped federal bills: CONGRESS_GOV_API_KEY is not set."
+          : `Magellan scanned ${n(r.scanned)} bills in the ${r.congress}th Congress and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+        detail: {
+          congress: r.congress,
+          missing_key: r.missingKey,
+          scanned: r.scanned,
+          reported_total: r.reported_total,
+          requests: r.requests,
+          fetched: r.fetched,
+          stored: r.stored,
+          stages: r.stages,
+          shadow: r.shadow,
+        },
+      };
+    },
+  },
+  {
+    source: STATE_BILLS_SOURCE,
+    stepKey: "registry-state-bills",
+    title: "Pull state bank fee bills",
+    run: async (input) => {
+      const r = await runRegistryStateBills({ partitionKey: input.partitionKey, runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      return {
+        summary: r.missingKey
+          ? `Skipped ${r.partitionKey} state bills: OPEN_STATES_API_KEY is not set.`
+          : `Magellan found ${r.fetched} ${r.partitionKey} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}${dry(r.dryRun)}.`,
+        detail: {
+          since: r.since,
+          missing_key: r.missingKey,
+          searched: r.searched,
+          requests: r.requests,
+          fetched: r.fetched,
+          stored: r.stored,
+          stages: r.stages,
+          shadow: r.shadow,
+        },
       };
     },
   },

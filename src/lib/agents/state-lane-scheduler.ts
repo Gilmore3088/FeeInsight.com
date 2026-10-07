@@ -10,11 +10,12 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
-import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES } from "@/lib/data-store/market-readiness";
 
 /**
@@ -439,6 +440,13 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
               WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
                 AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                 AND pa.institution_id = live.institution_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts restore
+                   WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                     AND restore.institution_id = live.institution_id
+                     AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                     AND restore.id > pa.id
+                )
            )
         OR (
           live.rolled_back_at IS NULL
@@ -526,9 +534,17 @@ export const REPORT_REQUEST_DAYS = 30;
 export const REPORT_REQUEST_PRIORITY = 2000;
 export const NEAR_READY_GAP = 6;
 export const NEAR_READY_BANK_PRIORITY = 2000;
+/**
+ * Each of a state's market leaders (its top MARKET_LEADERS_PER_STATE by deposits, service
+ * charge income or total income) still below RICH_MIN_CATEGORIES headline fees adds this
+ * much, so states whose price-setters lack fees run first (James, 2026-10-07: all fees for
+ * the largest 10 to 15 institutions in every state). 15 uncovered leaders add 750.
+ */
+export const UNCOVERED_LEADER_PRIORITY = 50;
 
 export async function refreshLanePriorities(): Promise<number> {
   try {
+    const leaderIds = await loadMarketLeaderIds(sql);
     // postgres.js sends numbers untyped, so every number here carries a cast: an uncast
     // "${a} - ${b}" fails to plan ("operator is not unique: unknown - unknown").
     const updated = await sql`
@@ -569,6 +585,13 @@ export async function refreshLanePriorities(): Promise<number> {
             WHERE pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
               AND pa.institution_id = newest.institution_id
               AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || newest.max_id::text
+              AND NOT EXISTS (
+                SELECT 1 FROM public.pipeline_attempts restore
+                 WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                   AND restore.institution_id = newest.institution_id
+                   AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                   AND restore.id > pa.id
+              )
          )
          GROUP BY 1
       ),
@@ -620,13 +643,22 @@ export async function refreshLanePriorities(): Promise<number> {
            AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
                 OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH}::int)
       ),
+      leaders AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS uncovered
+          FROM public.institution_sources inst
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+         WHERE inst.id = ANY(${leaderIds}::bigint[])
+           AND COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
+         GROUP BY 1
+      ),
       score AS (
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
                  + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
                  + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
                  + CASE WHEN near_ready.state_code IS NOT NULL
-                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END AS priority
+                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END
+                 + ${UNCOVERED_LEADER_PRIORITY}::int * COALESCE(leaders.uncovered, 0) AS priority
           FROM public.agent_state_lanes lane
           LEFT JOIN due_search ON due_search.state_code = lane.state_code
           LEFT JOIN stale ON stale.state_code = lane.state_code
@@ -634,6 +666,7 @@ export async function refreshLanePriorities(): Promise<number> {
           LEFT JOIN takedowns ON takedowns.state_code = lane.state_code
           LEFT JOIN requested ON requested.state_code = lane.state_code
           LEFT JOIN near_ready ON near_ready.state_code = lane.state_code
+          LEFT JOIN leaders ON leaders.state_code = lane.state_code
       )
       UPDATE public.agent_state_lanes lane
          SET priority_score = score.priority,
@@ -914,6 +947,15 @@ export function shouldRunNationwideLaneSync(now: Date = new Date()): boolean {
 /** State lanes launched per 5-minute tick (36 an hour). Raised from 2 on 2026-10-06 after load checks. */
 export const STATE_LANE_LIMIT_PER_TICK = 3;
 
+/**
+ * Lane runs allowed queued or running at once. The executor runs one step at a time and
+ * finishes about six full passes an hour, so launching 3 lanes every tick (36 an hour)
+ * left ~40 runs queued in launch order with a 1h40m wait, and the priority order never
+ * applied (2026-10-07). With a short queue, each free slot goes to the highest-priority
+ * due lane when it opens.
+ */
+export const MAX_ACTIVE_STATE_LANE_RUNS = 3;
+
 export async function scheduleDueStateLaneRuns({
   limit = STATE_LANE_LIMIT_PER_TICK,
   triggeredBy = "atlas.scheduler",
@@ -930,8 +972,24 @@ export async function scheduleDueStateLaneRuns({
     await refreshLanePriorities();
   }
 
+  const emptyResult: DueStateLaneScheduleResult = {
+    selected: 0,
+    scheduled: 0,
+    reused: 0,
+    idle: 0,
+    failed: [],
+    results: [],
+  };
   let dueRows: Array<{ state_code: string }>;
   try {
+    const [active] = await sql<{ runs: number }[]>`
+      SELECT count(*)::int AS runs
+        FROM public.agent_runs
+       WHERE run_kind = 'workflow_lane'
+         AND status IN ('queued', 'running', 'cancel_requested')
+    `;
+    const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
+    if (slots <= 0) return emptyResult;
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (
         SELECT state_code
@@ -947,7 +1005,7 @@ export async function scheduleDueStateLaneRuns({
          -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all.
          ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
                   priority_score DESC, next_run_after ASC, state_code ASC
-         LIMIT ${safeLimit}
+         LIMIT ${slots}
          FOR UPDATE SKIP LOCKED
       )
       UPDATE public.agent_state_lanes lane
@@ -959,16 +1017,7 @@ export async function scheduleDueStateLaneRuns({
       RETURNING lane.state_code
     `);
   } catch (error) {
-    if (isMissingStateLaneSchemaError(error)) {
-      return {
-        selected: 0,
-        scheduled: 0,
-        reused: 0,
-        idle: 0,
-        failed: [],
-        results: [],
-      };
-    }
+    if (isMissingStateLaneSchemaError(error)) return emptyResult;
     throw error;
   }
 

@@ -209,7 +209,9 @@ export function ReportWorkspace({
   }, [selectedTemplate, focusArea, selectedInstitution?.id, peerSetId]);
 
   function handleTemplateClick(type: ReportTemplateType) {
-    setSelectedTemplate((prev) => (prev === type ? null : type));
+    // Selecting only: a second click on the chosen card used to clear it, which
+    // silently disabled the write button.
+    setSelectedTemplate(type);
   }
 
   function handleStartNewReport() {
@@ -305,6 +307,8 @@ export function ReportWorkspace({
       setGeneratedReportMetadata(result.artifactMetadata);
     } else {
       setError(result.error);
+      // The banner sits at the top of the page; bring it into view so a failed run is never silent.
+      setTimeout(() => document.getElementById("report-error")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
     }
   }
 
@@ -400,7 +404,7 @@ export function ReportWorkspace({
       )}
 
       {(error || pdfError) && (
-        <div role="alert" className="rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-terra-text">
+        <div id="report-error" role="alert" className="rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-terra-text">
           {error ?? pdfError}
         </div>
       )}

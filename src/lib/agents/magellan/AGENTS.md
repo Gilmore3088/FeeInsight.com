@@ -60,6 +60,8 @@ Magellan owns institution source discovery and source fetching.
 ## Discovery (the find team)
 
 The `discover` step (`discovery.ts`) searches banks with a website but no fee link.
+The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) go
+first among banks due, after corrections.
 For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
 homepage once, then calls the specialists in `finders.ts` in order and stops at the first
 link that passes the fee-page check. Each specialist
@@ -74,7 +76,7 @@ and `detail.method_version`).
 | 1 | `discover.homepage_links` | Fee-like links on the homepage (homepage request logged here). |
 | 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`, then `/sitemap_index.xml`; an index opens its page/document children. robots.txt Disallow rules for FeeInsightBot are respected for every same-site request. Fee links and PDFs whose name says fee, schedule, disclosure or truth-in-savings are opened (version 2). |
 | 1 | `discover.hub_pages` | One hop through Disclosures / Rates & Fees / Documents / Forms pages. |
-| 1 | `discover.platform_paths` | Version 2. Paths for the detected platform (`platform-learning.ts`): the registry's seeds plus paths that are the fee link at 2+ banks, each bank's link scored by the outcome ledger (good +2, not judged +1, thin -1, rejected or dead -2). A seed whose links keep failing drops out. |
+| 1 | `discover.platform_paths` | Version 2. Paths for the detected platform (`platform-learning.ts`): the registry's seeds plus paths that are the fee link at 2+ banks, each bank's link scored by the outcome ledger (good +2, not judged +1, thin -1, rejected or dead -2). Judged companion schedules (`consumer_supplement`: paid-search, companion-finder and hand-added pages) count the same way, so a page a person adds teaches the free finders and a wrong one counts against its path. A seed whose links keep failing drops out. |
 | 1 | `discover.common_paths` | Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Version 2. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
@@ -103,7 +105,9 @@ and `detail.method_version`).
 - Business-only search (`BUSINESS_SEARCH_VERSION`): before the upgrade searches, banks
   whose link is a business-only schedule are searched once per version for the consumer
   schedule (`detail.business_search`). A find replaces the link and keeps the old one as a
-  `business` companion; a miss leaves the link alone.
+  `business` companion; a miss leaves the link alone, and the paid schedule search then
+  takes the bank. Each step keeps `BUSINESS_RESERVED_SLOTS` (3) for these banks even when
+  banks without a link fill it.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -113,7 +117,8 @@ and `detail.method_version`).
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
   schedule's own "Effective ..." date (first 4,000 characters of its latest stored text),
   or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
-  Only the hour's slot of banks (id mod 24, as the outcome ledger) is checked each step.
+  A state's step checks the whole state; a step without a state checks only the hour's
+  slot of banks (id mod 24, `stepSlot`, as the outcome ledger).
   A different page that passes the fee-page check replaces the link (the old one is not
   kept); the same page or a miss changes nothing.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
@@ -171,9 +176,12 @@ and `detail.method_version`).
   Report requesters go first, then the largest banks; $10B+ banks and requesters are
   picked from any state's paid step, not only their own.
 - Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`), in the same paid
-  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks or report requesters, from any state,
-  whose link is not the consumer schedule (link coverage), once a month each, requesters
-  then largest first. The model (web search) is told why the held page is not it; the
+  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks, report requesters or market leaders
+  (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
+  `src/lib/data-store/market-leaders.ts`), from any state, whose link is not the consumer
+  schedule (link coverage) or who are hidden (fewer than three live fee categories), once a
+  month each, requesters then leaders then largest first. If the ranking fails the lane runs
+  on size and requests alone. The model (web search) is told why the held page is not it; the
   answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
   stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
   and Knox read it; the link and its live fees stay. A second lane takes up to
@@ -192,8 +200,8 @@ and `detail.method_version`).
 
 ## Outcome ledger (`outcomes.ts`)
 
-Every discover step judges one 24th of the banks (bank id mod 24 = the UTC hour, so each
-bank once a day) by what their links produced downstream, and writes the judgement to
+Every discover step judges its state's banks (a step without a state judges one 24th of
+all banks, bank id mod 24 = the UTC hour; `stepSlot`) by what their links produced downstream, and writes the judgement to
 the shared learning store (`pipeline_feedback`, `check_name = magellan.link_yield`,
 dedupe `magellan.link_yield:doc:<first source_document_id of the link>`). A link is the
 bank's main fee link or a companion page; all fetches of the same address count as one.
@@ -204,6 +212,7 @@ bank's main fee link or a companion page; all fetches of the same address count 
 | dead | last fetch 404/410, or Rosetta's last read was a 404 | wrong, `dead_link`, 1 |
 | rejected | Rosetta's last read ruled it the wrong document | wrong, `wrong_document`, 1 |
 | thin | Knox extracted it over 24 hours ago, fewer than 3 live fees | wrong, `thin_link`, 1 |
+| business | the bank's main link is a business-only schedule (`isBusinessOnlyLink`), whatever it produced | wrong, `business_schedule`, 1 |
 
 Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
 is the Magellan specialist whose attempt found the address (null for links the old
@@ -250,6 +259,9 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 | `registry-sec-filings` | `batch-0`..`batch-7` | `institution_filings`, `holding_company_financials` |
 | `registry-beige-book` | release `YYYYMM` | `fed_beige_book` |
 | `registry-fred` | `current` | `fed_economic_indicators` (FRED-native series only) |
+| `registry-federal-register` | `current` | `reg_tracker_items` (CFPB, FDIC, OCC, Fed and NCUA proposed and final rules from the Federal Register API, last 400 days; shadow mode, nothing stored, until `FEDERAL_REGISTER_TRACKER_LIVE=true`) |
+| `registry-federal-bills` | `current` (daily) | `reg_tracker_items` (bank and credit union fee bills in the current Congress from the Congress.gov API, found by title, stage from the latest action; scheduled only when `CONGRESS_GOV_API_KEY` is set; shadow mode, nothing stored, until `FEDERAL_BILLS_TRACKER_LIVE=true`) |
+| `registry-state-bills` | state code (50 states, DC, PR; weekly) | `reg_tracker_items` (bank and credit union fee bills from the Open States API with their stage from the action history, last 400 days; scheduled only when `OPEN_STATES_API_KEY` is set; shadow mode, nothing stored, until `STATE_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.

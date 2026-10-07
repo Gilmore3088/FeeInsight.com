@@ -179,6 +179,9 @@ export function narrateStepFinished(
     case "registry-beige-book":
     case "registry-fred":
     case "registry-reg-news":
+    case "registry-federal-register":
+    case "registry-federal-bills":
+    case "registry-state-bills":
     case "registry-state-regulators":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
@@ -275,6 +278,22 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
     case "registry-reg-news":
       return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
+    case "registry-federal-register": {
+      const stages = (detail.stages ?? {}) as Record<string, unknown>;
+      const open = typeof stages.comment_open === "number" ? stages.comment_open : 0;
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Read ${count(n(detail, "fetched"), "Federal Register rule")}, ${open} open for comment; ${stored}.`;
+    }
+    case "registry-federal-bills": {
+      if (detail.missing_key) return "Skipped federal bills: the Congress.gov key is not set.";
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "federal bank fee bill")} in ${n(detail, "scanned")} bills; ${stored}.`;
+    }
+    case "registry-state-bills": {
+      if (detail.missing_key) return "Skipped state bills: the Open States key is not set.";
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
+    }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
     default:
@@ -350,6 +369,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-beige-book": "magellan",
   "registry-fred": "magellan",
   "registry-reg-news": "magellan",
+  "registry-federal-register": "magellan",
+  "registry-federal-bills": "magellan",
+  "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",

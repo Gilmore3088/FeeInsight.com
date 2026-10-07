@@ -42,6 +42,11 @@ describe("confirmFeeChange", () => {
     ).toBeNull();
   });
 
+  it("drops prices read from two different pages", () => {
+    expect(confirmFeeChange(row({ old_source_url: "https://nhfcu.org/business-fee-schedule.pdf" }))).toBeNull();
+    expect(confirmFeeChange(row({ old_source_url: "https://www.nhfcu.org/fee-schedule.pdf#page=2" }))).not.toBeNull();
+  });
+
   it("drops two different fees in one category", () => {
     expect(confirmFeeChange(row({ old_fee_name: "Express Checking Plus Monthly Fee" }))).toBeNull();
   });
