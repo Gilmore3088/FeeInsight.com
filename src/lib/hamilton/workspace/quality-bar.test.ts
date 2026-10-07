@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildAskResponse, parseAsk } from "./ask";
 import { QUALITY_QUESTIONS, scoreResponse, summarize } from "./quality-bar";
-import { asksWholeSchedule, scheduleOverview, withSchedule } from "./schedule";
+import { asksWholeSchedule, scheduleOverview } from "./schedule";
+import { withDepth } from "./story-extras";
+import { asksIncomeWhy, explainIncome, incomeSplit } from "./why";
 import { overdraftResearch } from "./test-fixtures";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { AskResponse, FeePositionRow } from "./types";
@@ -14,14 +16,20 @@ const schedule: FeePositionRow[] = [
   { feeCategory: "wire_transfer", displayName: "Wire Transfer", current: 25, band: null, peerLabel: "peers" },
 ];
 
+const intensity = { quarterEnd: "2026-06-30", own: 1.9, peerMedian: 1.5, peers: 180, peersBelow: 140 };
+
 function ask(question: string): AskResponse {
+  // The same path as the Ask route: the overview, the income split and their storyline exhibits.
   let intent = parseAsk(question);
   const overview = !intent.feeCategory && asksWholeSchedule(question) ? scheduleOverview(schedule) : null;
   if (overview?.top) intent = { ...intent, feeCategory: overview.top };
+  const split = asksIncomeWhy(question) ? incomeSplit(intensity, schedule, "credit unions with $300M to $1B in assets") : null;
+  const why = split ? { split, explained: explainIncome(split), top: scheduleOverview(schedule).top } : null;
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
   const fee = intent.feeCategory;
   const research = fee ? overdraftResearch({ feeCategory: fee, displayName: getDisplayName(fee) }) : null;
   const response = buildAskResponse({ question, intent, research, memory: [] });
-  return overview ? withSchedule(response, overview) : response;
+  return withDepth(response, overview, why, research?.provenance.dataAsOf.fees ?? null);
 }
 
 describe("Hamilton quality bar: 30 consultant questions", () => {

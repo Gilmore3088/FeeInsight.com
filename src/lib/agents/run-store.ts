@@ -12,6 +12,7 @@ import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agen
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import {
@@ -51,6 +52,8 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
@@ -935,6 +938,14 @@ async function executeAgenticStep(
             stateCode,
           })
         : null;
+      // Live names stored before Knox tidied its reads ("Stop Payment | Item", "A dormant fee
+      // of") take their tidy name, a batch of banks per step; the old name stays in
+      // pipeline_feedback and a rename never makes a fee fail the source check.
+      const nameRetidy = await retidyLiveFeeNames(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
       const published = await runHamiltonPublish({
@@ -1049,7 +1060,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1117,6 +1128,12 @@ async function executeAgenticStep(
           imported_twin_linked: importedTwins.linked,
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
+          name_retidy: {
+            institutions_checked: nameRetidy.institutionsChecked,
+            messy_names: nameRetidy.messyFees,
+            renamed: nameRetidy.renames.length,
+            skipped: nameRetidy.skipped,
+          },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
           refresh_copy_skipped: refreshCopy.skipped,
@@ -1403,6 +1420,14 @@ async function executeAgenticStep(
           agent_health: result.agentHealth ?? null,
         },
       };
+    }
+    case "content-market-spread": {
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+    }
+    case "content-fee-depth": {
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({
@@ -2068,6 +2093,19 @@ export async function hasQueuedProviderSteps(): Promise<boolean> {
   return Boolean(row);
 }
 
+/** Queued step keys of a run in the order they run. */
+async function peekQueuedStepKeys(runId: number, limit: number): Promise<string[]> {
+  const rows = await sql`
+    SELECT step_key
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     ORDER BY sequence ASC, id ASC
+     LIMIT ${limit}::int
+  `;
+  return rows.map((row) => String(row.step_key));
+}
+
 async function peekNextQueuedStepKey(runId: number): Promise<string | null> {
   const [row] = await sql`
     SELECT step_key
@@ -2121,6 +2159,25 @@ const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+
+function isQuickStep(stepKey: string): boolean {
+  return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
+}
+
+/**
+ * Expected time to reach real work: the run's leading quick steps plus the first step
+ * that is not quick. A later run in a tick starts only when this fits, because a run
+ * that ran its quick first steps counts as under way and goes ahead of failed-lane
+ * retries in the next tick's order.
+ */
+export function expectedMsToFirstWork(stepKeys: string[]): number {
+  let total = 0;
+  for (const key of stepKeys) {
+    total += expectedStepMs(key);
+    if (!isQuickStep(key)) break;
+  }
+  return total;
+}
 
 export function expectedStepMs(stepKey: string | null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
@@ -2193,6 +2250,19 @@ export async function executeAgentRun(
   const maxSteps = Math.min(Math.max(Math.floor(options.maxSteps ?? 1), 1), 10);
   let executedSteps = 0;
   let lastResult: AgentRunExecutionResult | null = null;
+
+  if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
+    const keys = await peekQueuedStepKeys(runId, maxSteps);
+    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+      return {
+        runId,
+        status: existing.status,
+        terminal: false,
+        executedSteps: 0,
+        message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+      };
+    }
+  }
 
   for (let index = 0; index < maxSteps; index += 1) {
     // A step that could not finish by the caller's deadline waits for the next tick; the

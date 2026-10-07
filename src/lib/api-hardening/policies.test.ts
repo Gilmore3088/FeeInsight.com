@@ -9,7 +9,7 @@ function listRouteFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const fullPath = join(dir, entry);
     if (statSync(fullPath).isDirectory()) return listRouteFiles(fullPath);
-    return fullPath.endsWith("/route.ts") ? [fullPath] : [];
+    return /\/route\.tsx?$/.test(fullPath) ? [fullPath] : [];
   });
 }
 
