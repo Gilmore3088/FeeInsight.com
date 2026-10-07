@@ -1660,3 +1660,17 @@ in states the lanes had not reached (most in Texas 144, Illinois 108, California
 provider call.
 **Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
 sits in states it has not reached.
+
+## 2026-10-07: Two-column schedules hid wire and stop payment fees behind footnote text
+**What happened:** First National Bank Alaska, a report requester, had 7 of 15 headline fees live and
+needed 9. Its schedule is stored as two columns flattened row by row, so the right column's
+footnotes sit beside the left column's headings ("Wire Transfer Fees | being returned NSF."). Knox
+read those lines as rows, not headings, so "Domestic Outgoing | $35.00" and "International
+Outgoing | $50.00" had nothing to name them, and the stop payment rows were held. One line
+priced both NSF and overdraft ("NSFs/Overdrafts | $33.00") and was filed as NSF only. A balance
+requirement was held as an unclassified fee, and a savings transfer was filed as an overdraft fee.
+**Fix:** Knox v26 sets the heading from a priceless two-cell line whose right cell is prose, files a
+joined NSF/overdraft price under both, never holds a balance requirement, and reads an
+"Insufficient Funds Transfer" as an overdraft protection transfer.
+**Lesson:** a flattened second column can sit on any line, including a heading's. The heading
+test has to look at the left cell on its own.

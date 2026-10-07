@@ -217,6 +217,19 @@ copies had last been read at rules v1 to v7, and none of the re-read triggers re
 current copies qualify. 211 of the 898 are read already, on a second document that holds the same
 text. Knox reads a text once, so their current copy has no rows of its own.
 
+v26 (rules 26) reads two-column schedules where the right column's footnotes run beside a left-column
+heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
+looks like a heading and whose right cell opens lowercase or with a footnote number, now sets the
+heading, so "Domestic Outgoing | $35.00" under it is an outgoing domestic wire. A stop payment
+heading also lends itself to the item it stops ("Online per check"). One price whose name joins NSF
+and overdraft ("NSFs/Overdrafts", "Overdraft or NSF") is filed under both, as the answer keys file
+it. A balance an account requires ("Minimum Daily Balance Requirement | $1,000") is never held as a
+fee, and an "Insufficient Funds Transfer" from savings is an overdraft protection transfer, not an
+overdraft. Found on First National Bank Alaska (doc 19925), which was 2 headline fees short of a
+report. Answer keys: Texas and held-out unchanged, seven states 680 right (679), the same 47 wrong.
+Live dry run: the same 1,411 of 1,437 kept. Across the 117 live-sample documents it adds 7 reads,
+each checked against its line, and moves one $2.50 transfer from NSF to overdraft protection.
+
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
 (lowercase, letters only) that the category guards rejected under one category at 2 or more banks
