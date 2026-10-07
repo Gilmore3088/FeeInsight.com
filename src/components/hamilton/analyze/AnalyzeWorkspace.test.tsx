@@ -103,3 +103,24 @@ describe("AnalyzeWorkspace while a written answer is drafted", () => {
     expect(render()).toContain("Hamilton is writing this answer");
   });
 });
+
+describe("EvidenceExhibit", () => {
+  it("draws the Evidence rows as figure tiles under their group headings, figures unchanged", async () => {
+    const { EvidenceExhibit } = await import("./AnalyzeWorkspace");
+    const html = renderToStaticMarkup(
+      <EvidenceExhibit
+        rows={[
+          { label: "Your fees", value: "" },
+          { label: "Overdraft", value: "**$30**", note: "against a $29 peer median" },
+          { label: "Peers", value: "42 institutions" },
+        ]}
+      />,
+    );
+    expect(html).toContain("The figures behind this answer");
+    expect(html).toContain("Your fees");
+    expect(html).toContain("$30");
+    expect(html).not.toContain("**");
+    expect(html).toContain("against a $29 peer median");
+    expect(html).toContain("42 institutions");
+  });
+});
