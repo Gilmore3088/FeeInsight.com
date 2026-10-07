@@ -290,6 +290,16 @@ another site is a wrong link and is left to discovery. When the paid web search'
 is refused by the bank's site (HTTP 403), the answer is kept as the bank's link (confidence
 0.75) so this fetch reads it. A budget stop ends the step before anything is spent.
 
+The paid fetch runs first in `discover-paid`, before the paid searches: run last, it got only
+what the run's provider call cap left. Companion pages blocked the same way get it too
+(strategy `fetch.paid_web_fetch_companion`, stored through `fetchAndRecordCompanion`): a page
+whose last companion fetch was refused, timed out twice, or was a PDF link answered with a web
+page. One of the three slots is kept for a companion. The companion fetch no longer stores a
+PDF link answered with a web page (outcome `blocked_bot`): 53.com served Fifth Third's fee PDFs
+as a "page doesn't exist" page, which Rosetta then set aside as a blank read. Copies stored that
+way before the check (a set-aside PDF link whose copy is a web page) are picked as well, and a
+fetched PDF puts the page back in use.
+
 ## Foreign schedules
 
 A link on another country's domain (`isForeignHostLink`: .bd, .in, .ca, .co.uk and others;
