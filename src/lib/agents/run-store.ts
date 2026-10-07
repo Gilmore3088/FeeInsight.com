@@ -9,8 +9,9 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
-import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
+import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import {
   currentMonth,
   mailingAddress,
@@ -840,6 +841,22 @@ async function executeAgenticStep(
       });
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
       const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
+      // A current copy whose text is identical to the superseded one has no rows of its
+      // own (Knox skips text it has read), so the superseded copy's rows move to it.
+      const identicalCopy = await moveRowsToIdenticalCopy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A live fee the current copy of its page still states at the same amount moves to
+      // that copy, so it no longer points at a superseded copy and its date is current.
+      const refreshCopy = await refreshFeesFromCurrentCopy(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
@@ -880,6 +897,13 @@ async function executeAgenticStep(
         stateCode,
       });
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
+      // Imported fees with no document take their schedule through an identical imported
+      // row the source check could not relink them past.
+      const importedTwins = await linkImportedFeesToTwins(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -932,13 +956,17 @@ async function executeAgenticStep(
         newerCopyRetired > 0 || newerCopyRestored > 0
           ? ` ${published.dryRun ? "Would retire" : "Retired"} ${newerCopyRetired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${newerCopyRestored > 0 ? ` and ${published.dryRun ? "would restore" : "restored"} ${newerCopyRestored.toLocaleString()} a later copy states again` : ""}.`
           : "";
+      const refreshNote =
+        refreshCopy.refreshed > 0
+          ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -983,6 +1011,14 @@ async function executeAgenticStep(
             amount: rollback.amount,
             companion_source_id: rollback.companionSourceId,
           })),
+          imported_twin_checked: importedTwins.checked,
+          imported_twin_linked: importedTwins.linked,
+          identical_copy_documents: identicalCopy.documents,
+          identical_copy_rows_moved: identicalCopy.rowsMoved,
+          refresh_copy_checked: refreshCopy.checked,
+          refresh_copy_refreshed: refreshCopy.refreshed,
+          refresh_copy_skipped: refreshCopy.skipped,
+          refresh_copy_samples: refreshCopy.samples.slice(0, 10),
           newer_copy_live: newerCopy.live,
           newer_copy_documents: newerCopy.documentsChecked,
           newer_copy_unrecognized: newerCopy.unrecognized,

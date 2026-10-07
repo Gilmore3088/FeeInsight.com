@@ -32,6 +32,10 @@ Magellan owns institution source discovery and source fetching.
   homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
   `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
   again. A locked correction is kept; a 403 is retried, since a bot block can pass.
+- Schedules found by hand (`operator-schedules.ts`, strategy `discover.operator_schedule`): a
+  checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
+  Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added
+  as a `consumer_supplement` companion, once, with an attempt row. Add a bank by adding a line.
 - Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
   fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
   (not `business`) are downloaded when new and again after 30 days, each as its own source
@@ -164,7 +168,10 @@ and `detail.method_version`).
   then largest first. The model (web search) is told why the held page is not it; the
   answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
   stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
-  and Knox read it; the link and its live fees stay.
+  and Knox read it; the link and its live fees stay. A second lane takes up to
+  `HIDDEN_BANK_SEARCH_PER_RUN` banks of any size that the catalog hides (fewer than three
+  live fee categories) whose link is an account product page or prices no overdraft,
+  largest first. The bank's own domain includes its corporate domain (`onBankDomain`).
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
   and no fee link, once a month each. The model (web search) names the official homepage;
@@ -228,6 +235,8 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 | `registry-fdic-financials` | quarter `2026Q2` | `institution_financial_records` (`fdic`, thousands, quarterly) |
 | `registry-ncua-financials` | quarter | `institution_financial_records` (`ncua`, thousands, income YTD); newest quarter also syncs the credit-union universe |
 | `registry-fdic-sod` | year | `institution_branch_deposits` |
+| `registry-ncua-branches` | newest quarter only | `credit_union_branches` (NCUA branch file: addresses, no coordinates or deposits) |
+| `registry-ncua-branch-geocode` | `pending` (hourly while addresses remain) | `credit_union_branches.latitude/longitude` via the free US Census batch geocoder, 1,000 addresses a run |
 | `registry-cfpb` | year | `institution_identity_links` (`cfpb_company`), `institution_complaint_records` |
 | `registry-sec-links` | `current` | `institution_identity_links` (`sec_cik`), `institution_sources.sec_cik` |
 | `registry-sec-filings` | `batch-0`..`batch-7` | `institution_filings`, `holding_company_financials` |

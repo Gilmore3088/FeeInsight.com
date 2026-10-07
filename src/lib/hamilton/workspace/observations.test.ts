@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   competitorMoveObservations,
+  feePositionRows,
   marketPositionObservations,
   rankObservations,
   revenueShiftObservation,
@@ -87,5 +88,18 @@ describe("ranking and bands", () => {
     const bands = priceBands([0, 25, 28, 30, 35, 36], 30);
     expect(bands.reduce((n, b) => n + b.count, 0)).toBe(6);
     expect(bands[0]).toMatchObject({ label: "$0", count: 1 });
+  });
+});
+
+describe("fee position rows", () => {
+  it("returns every reviewed fee with its peer band, unranked, and no band below the peer minimum", () => {
+    const rows = feePositionRows([
+      { feeCategory: "night_deposit", current: 3, peers, peerLabel: "Texas banks" },
+      { feeCategory: "overdraft", current: 30, peers: [25, 35], peerLabel: "Texas banks" },
+    ]);
+    expect(rows.map((r) => r.feeCategory)).toEqual(["night_deposit", "overdraft"]);
+    expect(rows[0]).toMatchObject({ current: 3, band: { p25: 5, median: 5, p75: 6, n: 10 }, peerLabel: "Texas banks" });
+    expect(rows[0].displayName.length).toBeGreaterThan(0);
+    expect(rows[1].band).toBeNull();
   });
 });

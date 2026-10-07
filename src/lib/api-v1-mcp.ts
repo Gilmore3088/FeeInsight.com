@@ -44,7 +44,7 @@ const SERVER_INSTRUCTIONS =
   "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name, state, city or size, " +
   "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
   "get_revenue_trend gives market-wide fee revenue by quarter back to 2010; get_fee_changes lists fee changes detected recently. " +
-  "get_branches gives bank branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
+  "get_branches gives bank and credit union branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
   "There is no full fee history yet, so do not infer fee trends from one snapshot. Credit the data as shown in each result's attribution field.";
 
 type Endpoint = keyof McpV1Handlers;
@@ -278,7 +278,7 @@ const TOOLS: ToolDefinition[] = [
     name: "get_branches",
     title: "Branch locations",
     description:
-      "Bank branches from the FDIC Summary of Deposits (latest year): name, address, ZIP, county, metro area, latitude/longitude and deposits. Give an institution_id for one bank's branches, or a state with optional city or ZIP for every bank branch there. Credit unions are not included. Use latitude/longitude to draw a map.",
+      "Bank and credit union branches: name, address, ZIP, county, latitude/longitude, and for banks the metro area and deposits (FDIC Summary of Deposits). Credit union branches come from NCUA and have no deposits; a few may lack coordinates. Give an institution_id for one institution's branches, or a state with optional city or ZIP for every branch there. Use latitude/longitude to draw a map.",
     inputSchema: {
       type: "object",
       properties: {

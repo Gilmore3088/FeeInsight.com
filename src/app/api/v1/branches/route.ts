@@ -7,7 +7,7 @@ import { authorizePaidV1 } from "@/lib/api-v1-auth";
 import { ApiParamError, apiError, apiOptions, intParam, stateParam, withApiHeaders } from "@/lib/api-v1";
 
 const NOTE =
-  "Bank branches from the FDIC Summary of Deposits, latest survey year. Credit unions are not included. Deposits are whole US dollars.";
+  "Banks from the FDIC Summary of Deposits (latest survey year, deposits in whole US dollars) and credit unions from NCUA's branch file (no deposits; map coordinates are added over time, so some may be null). Each row's source says which.";
 
 async function handleGET(request: NextRequest) {
   const caller = await authorizePaidV1(request, "Branch locations");
