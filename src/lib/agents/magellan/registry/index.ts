@@ -6,6 +6,13 @@ import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse 
 import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { NCUA_FINANCIALS_SOURCE, runRegistryNcuaFinancials } from "./ncua-financials";
+import {
+  NCUA_BRANCH_GEOCODE_PARTITION,
+  NCUA_BRANCH_GEOCODE_SOURCE,
+  NCUA_BRANCHES_SOURCE,
+  runRegistryNcuaBranchGeocode,
+  runRegistryNcuaBranches,
+} from "./ncua-branches";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARTITION, SEC_LINKS_SOURCE, runRegistrySecFilings, runRegistrySecLinks } from "./sec";
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
 
@@ -139,6 +146,44 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           total_deposits_thousands: r.totalDeposits,
           empty: r.empty,
         },
+      };
+    },
+  },
+  {
+    source: NCUA_BRANCHES_SOURCE,
+    stepKey: "registry-ncua-branches",
+    title: "Pull NCUA credit union branches",
+    run: async (input) => {
+      const r = await runRegistryNcuaBranches({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `NCUA has not published ${r.partitionKey} call reports yet; will check again.`
+          : `Magellan loaded ${n(r.branches)} credit union offices for ${r.partitionKey} across ${n(r.creditUnions)} credit unions; ${n(r.matchedBranches)} matched to an institution${dry(r.dryRun)}.`,
+        detail: {
+          source_url: r.sourceUrl,
+          file: r.file,
+          branches: r.branches,
+          credit_unions: r.creditUnions,
+          matched_branches: r.matchedBranches,
+          upserted_branches: r.upsertedBranches,
+          empty: r.empty,
+        },
+      };
+    },
+  },
+  {
+    source: NCUA_BRANCH_GEOCODE_SOURCE,
+    stepKey: "registry-ncua-branch-geocode",
+    title: "Map credit union branch addresses",
+    fixedPartition: NCUA_BRANCH_GEOCODE_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryNcuaBranchGeocode({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      return {
+        summary:
+          r.attempted === 0
+            ? `No credit union branch addresses were waiting for map coordinates${dry(r.dryRun)}.`
+            : `Magellan mapped ${n(r.matched)} of ${n(r.attempted)} credit union branch addresses with the US Census geocoder; ${n(r.remaining)} still to go${dry(r.dryRun)}.`,
+        detail: { attempted: r.attempted, matched: r.matched, unmatched: r.unmatched, remaining: r.remaining },
       };
     },
   },

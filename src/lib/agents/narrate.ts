@@ -171,6 +171,8 @@ export function narrateStepFinished(
     case "registry-fdic-financials":
     case "registry-ncua-financials":
     case "registry-fdic-sod":
+    case "registry-ncua-branches":
+    case "registry-ncua-branch-geocode":
     case "registry-cfpb":
     case "registry-sec-links":
     case "registry-sec-filings":
@@ -245,6 +247,12 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-fdic-sod":
       if (detail.empty) return `Checked for ${partition} branch deposit data; not published yet.`;
       return `Mapped ${count(n(detail, "branches"), "bank branch", "bank branches")} for ${partition}.`;
+    case "registry-ncua-branches":
+      if (detail.empty) return `Checked for ${partition} NCUA branch data; not published yet.`;
+      return `Loaded ${count(n(detail, "branches"), "credit union branch", "credit union branches")} for ${partition}.`;
+    case "registry-ncua-branch-geocode":
+      if (n(detail, "attempted") === 0) return "No credit union branches were waiting for map coordinates.";
+      return `Mapped ${count(n(detail, "matched"), "credit union branch", "credit union branches")}; ${n(detail, "remaining")} still to go.`;
     case "registry-cfpb":
       return `Recorded ${count(n(detail, "complaints"), "CFPB complaint")} for ${partition} across ${count(n(detail, "institutions"), "institution")}${joinParts([
         n(detail, "review_companies") > 0 && `${n(detail, "review_companies")} company names need review`,
@@ -327,6 +335,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-fdic-financials": "magellan",
   "registry-ncua-financials": "magellan",
   "registry-fdic-sod": "magellan",
+  "registry-ncua-branches": "magellan",
+  "registry-ncua-branch-geocode": "magellan",
   "registry-cfpb": "magellan",
   "registry-sec-links": "magellan",
   "registry-sec-filings": "magellan",

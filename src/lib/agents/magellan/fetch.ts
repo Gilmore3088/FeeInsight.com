@@ -6,6 +6,7 @@ import {
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import {
   documentVaultSchemaReady,
@@ -14,10 +15,11 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
-import { markCurrentCopy } from "@/lib/agents/magellan/current-copy";
+import { markCurrentCopy, supersedeSamePageCopies, type SamePageCopyResult } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
+import { addOperatorSchedules, type OperatorScheduleResult } from "./operator-schedules";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -133,6 +135,9 @@ export interface RunMagellanFetchResult {
   supersededCopies: number;
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
+  operatorSchedules: OperatorScheduleResult | null;
+  /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
+  samePageCopies: SamePageCopyResult | null;
   results: FetchResult[];
 }
 
@@ -859,7 +864,24 @@ export async function runMagellanFetch(
   // Companion pages ride on the same step, each stored as its own document stream. A
   // failure here never fails the fee-link fetch.
   let companions: RunCompanionFetchResult | null = null;
+  let operatorSchedules: OperatorScheduleResult | null = null;
+  let samePageCopies: SamePageCopyResult | null = null;
   if (!dryRun) {
+    try {
+      samePageCopies = await inSavepoint(db, (scope) =>
+        supersedeSamePageCopies(scope, { runId: options.runId, institutionId: options.institutionId ?? null }),
+      );
+    } catch (error) {
+      console.error("Same-page copies failed:", error);
+    }
+    // Schedules James found by hand join the companions before they are fetched.
+    try {
+      operatorSchedules = await inSavepoint(db, (scope) =>
+        addOperatorSchedules({ db: scope, runId: options.runId, stepId: options.stepId ?? null }),
+      );
+    } catch (error) {
+      console.error("Operator schedules failed:", error);
+    }
     try {
       const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
       companions = await runCompanionFetch({
@@ -893,6 +915,8 @@ export async function runMagellanFetch(
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     supersededCopies,
     companions,
+    operatorSchedules,
+    samePageCopies,
     results,
   };
 }

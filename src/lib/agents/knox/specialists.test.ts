@@ -280,3 +280,26 @@ describe("Knox v23 layouts", () => {
   });
 });
 
+describe("Knox v25 one-line dot-leader schedules", () => {
+  const text =
+    "Revised May 4, 2022 SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier’s Checks………………………………………..……. $4.00 " +
+    "Stop Payment………………………………………………… $35.00 Over $300 USD…………………………..……. $40.00 Dormant Account Fee……………………………………. $7.00/Month " +
+    "SAFE DEPOSIT BOX FEES 5x10 & 6x10 Inch $60.00 $65.00 OVERDRAFT AND NSF FEES 10.5x10.5 Inch $90.00 100.00 Overdraft (items paid)……………………. $10.00 " +
+    "Late Charge………………………………………………………. $20.00";
+
+  it("keeps fees whose name and price sit on one leader row", () => {
+    expect(fees(text)).toEqual(
+      expect.arrayContaining([
+        ["Stop Payment", 35, "stop_payment"],
+        ["Cashier’s Checks", 4, "cashiers_check"],
+        ["Dormant Account Fee", 7, "dormant_account"],
+        ["Overdraft (items paid)", 10, "overdraft"],
+      ]),
+    );
+  });
+
+  it("reads a box size in inches as a box, not the heading glued before it", () => {
+    expect(fees(text).some(([, amount, key]) => key === "overdraft" && amount === 90)).toBe(false);
+  });
+});
+
