@@ -6,7 +6,16 @@ import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financ
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
-import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import {
+  BEIGE_BOOK_SOURCE,
+  FOMC_MINUTES_PARTITION,
+  FOMC_MINUTES_SOURCE,
+  FRED_PARTITION,
+  FRED_SOURCE,
+  runRegistryBeigeBook,
+  runRegistryFomcMinutes,
+  runRegistryFred,
+} from "./fed";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
 import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
@@ -322,6 +331,27 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
         detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
+      };
+    },
+  },
+  {
+    source: FOMC_MINUTES_SOURCE,
+    stepKey: "registry-fomc-minutes",
+    title: "Pull FOMC minutes",
+    fixedPartition: FOMC_MINUTES_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryFomcMinutes({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const short = r.tooShort.length > 0 ? ` ${r.tooShort.length} page(s) did not parse: ${r.tooShort.join(", ")}.` : "";
+      return {
+        summary: `Magellan found ${r.linked} FOMC minutes on the Fed calendar, stored ${r.stored} new ones; ${r.remaining} still to pull${dry(r.dryRun)}.${short}`,
+        detail: {
+          linked: r.linked,
+          already_stored: r.alreadyStored,
+          fetched: r.fetched,
+          stored: r.stored,
+          too_short: r.tooShort,
+          remaining: r.remaining,
+        },
       };
     },
   },
