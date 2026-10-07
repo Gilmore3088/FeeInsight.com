@@ -2264,6 +2264,8 @@ async function providerStepGate(
 const STEP_EXPECTED_MS: Record<string, number> = {
   "discover-paid": 200_000,
   "registry-cfpb": 180_000,
+  // Paced to about ten Open States requests a minute; a run ends within about two minutes.
+  "registry-state-bills": 120_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,
