@@ -84,6 +84,8 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
   const hoveredState = hovered ? byState.get(hovered) : null;
   const trend = footprint.byYear.map((y) => ({ year: String(y.year), branches: y.branches }));
   const isCu = footprint.source === "ncua";
+  const localMap = footprint.localMap ?? null;
+  const mapped = footprint.mappedOffices ?? 0;
   const stateCount = `${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}`;
   const subtitle = isCu
     ? `${latest.branches.toLocaleString("en-US")} ${latest.branches === 1 ? "office" : "offices"} in ${stateCount}${footprint.reportDate ? ` (${formatQuarterEnd(footprint.reportDate)})` : ""}`
@@ -99,35 +101,85 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
       caption={caption}
     >
       <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="relative">
-          <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Branches by state">
-            {US_STATES.map((state) => (
-              <path
-                key={state.id}
-                d={state.d}
-                fill={fill(state.id)}
-                stroke="#FFFFFF"
-                strokeWidth={1.5}
-                onMouseEnter={() => setHovered(state.id)}
-                onMouseLeave={() => setHovered(null)}
-              />
-            ))}
-          </svg>
-          <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
-            {hoveredState
-              ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
-              : hovered
-                ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
-                : `Hover a state for its ${isCu ? "office" : "branch"} count.`}
-          </p>
-          <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6B6255]">
-            <span>Fewer</span>
-            {RAMP.map((color) => (
-              <span key={color} className="inline-block h-2 w-5 rounded-sm" style={{ background: color }} />
-            ))}
-            <span>{isCu ? "More offices" : "More branches"}</span>
+        {localMap ? (
+          <div className="relative">
+            <svg viewBox={localMap.viewBox} className="h-auto w-full" role="img" aria-label={`${isCu ? "Offices" : "Branches"} on a map of ${stateCount}`}>
+              {localMap.states.map((state) => (
+                <path
+                  key={state.id}
+                  d={state.d}
+                  fill={state.own ? RAMP[0] : "#F4F1EC"}
+                  stroke="#FFFFFF"
+                  strokeWidth={1.5}
+                  onMouseEnter={() => setHovered(state.id)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              ))}
+              {localMap.dots.map((dot, i) => (
+                <circle key={i} cx={dot.x} cy={dot.y} r={localMap.dotRadius} fill={RAMP[RAMP.length - 1]} fillOpacity={0.75} stroke="#FFFFFF" strokeWidth={1} />
+              ))}
+              {localMap.labels.map((label) => (
+                <text
+                  key={label.text}
+                  x={label.x}
+                  y={label.y - localMap.dotRadius - 6}
+                  textAnchor="middle"
+                  fontSize={22}
+                  fontWeight={600}
+                  fill="#1A1815"
+                  stroke="#FFFFFF"
+                  strokeWidth={5}
+                  paintOrder="stroke"
+                  pointerEvents="none"
+                >
+                  {label.text}
+                </text>
+              ))}
+            </svg>
+            <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
+              {hoveredState
+                ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
+                : hovered
+                  ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
+                  : `Each dot is one ${isCu ? "office" : "branch"}.`}
+            </p>
+            {mapped < latest.branches && (
+              <p className="text-[10px] text-[#6B6255]">
+                {mapped.toLocaleString("en-US")} of {latest.branches.toLocaleString("en-US")} {isCu ? "offices" : "branches"} placed on the map so far.
+              </p>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="relative">
+            <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Branches by state">
+              {US_STATES.map((state) => (
+                <path
+                  key={state.id}
+                  d={state.d}
+                  fill={fill(state.id)}
+                  stroke="#FFFFFF"
+                  strokeWidth={1.5}
+                  onMouseEnter={() => setHovered(state.id)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              ))}
+            </svg>
+            <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
+              {hoveredState
+                ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
+                : hovered
+                  ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
+                  : `Hover a state for its ${isCu ? "office" : "branch"} count.`}
+            </p>
+            <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6B6255]">
+              <span>Fewer</span>
+              {RAMP.map((color) => (
+                <span key={color} className="inline-block h-2 w-5 rounded-sm" style={{ background: color }} />
+              ))}
+              <span>{isCu ? "More offices" : "More branches"}</span>
+            </div>
+          </div>
+        )}
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
             {isCu ? "Cities with the most offices" : "Largest markets by deposits"}

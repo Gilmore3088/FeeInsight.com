@@ -114,10 +114,13 @@ async function updateExisting(
 
 /**
  * Credit unions (NCUA has no district field) and closed banks (FDIC no longer sends
- * them) take the district most active banks in the same city have, else the one most
- * banks in the state have. Runs after the bank refresh so it reads FDIC's values.
+ * them) take the district of the nearest active bank head office in the same state,
+ * once the credit union's main office has map coordinates. Without coordinates they
+ * take the district most active banks in the same city have, else the one most banks
+ * in the state have. Runs after the bank refresh so it reads FDIC's values, and after
+ * each credit union geocoding batch so districts improve as coordinates arrive.
  */
-async function deriveOtherDistricts(db: RegistryDb): Promise<number> {
+export async function deriveOtherDistricts(db: RegistryDb): Promise<number> {
   const result = await db`
     WITH banks AS (
       SELECT state_code, UPPER(BTRIM(city)) AS city, fed_district
@@ -136,9 +139,34 @@ async function deriveOtherDistricts(db: RegistryDb): Promise<number> {
         FROM banks
        GROUP BY state_code, fed_district
     ),
+    bank_hq AS (
+      SELECT b.state, b.latitude, b.longitude, s.fed_district
+        FROM institution_branch_deposits b
+        JOIN institution_sources s ON s.id = b.institution_id
+       WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+         AND b.is_main_office AND b.latitude IS NOT NULL AND b.longitude IS NOT NULL
+         AND s.source = 'fdic' AND s.regulatory_status = 'active' AND s.fed_district BETWEEN 1 AND 12
+    ),
+    cu_point AS (
+      SELECT DISTINCT ON (c.institution_id) c.institution_id, c.state, c.latitude, c.longitude
+        FROM credit_union_branches c
+       WHERE c.institution_id IS NOT NULL AND c.is_main_office AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL
+       ORDER BY c.institution_id, c.id
+    ),
+    nearest AS (
+      SELECT p.institution_id, n.fed_district
+        FROM cu_point p
+        CROSS JOIN LATERAL (
+          SELECT h.fed_district FROM bank_hq h
+           WHERE h.state = p.state
+           ORDER BY (h.latitude - p.latitude) ^ 2 + ((h.longitude - p.longitude) * COS(RADIANS(p.latitude))) ^ 2
+           LIMIT 1
+        ) n
+    ),
     target AS (
-      SELECT i.id, COALESCE(c.fed_district, st.fed_district) AS fed_district
+      SELECT i.id, COALESCE(n.fed_district, c.fed_district, st.fed_district) AS fed_district
         FROM institution_sources i
+        LEFT JOIN nearest n ON n.institution_id = i.id
         LEFT JOIN by_city c ON c.rk = 1 AND c.state_code = i.state_code AND c.city = UPPER(BTRIM(i.city))
         LEFT JOIN by_state st ON st.rk = 1 AND st.state_code = i.state_code
        WHERE i.source <> 'fdic' OR i.regulatory_status IS DISTINCT FROM 'active'

@@ -4,6 +4,7 @@ import { geocodeBatch, type GeocodeInput } from "@/lib/regulatory/census-geocode
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { latestPublishableQuarter, parseQuarterKey, quarterKey } from "@/lib/regulatory/quarters";
 import { NCUA_FILING_LAG_DAYS } from "./ncua-financials";
+import { deriveOtherDistricts } from "./fdic-universe";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -190,6 +191,8 @@ export interface RegistryNcuaBranchGeocodeResult {
   matched: number;
   unmatched: number;
   remaining: number;
+  /** Credit unions whose Fed district changed once their main office had coordinates. */
+  districtChanged: number;
   dryRun: boolean;
 }
 
@@ -219,6 +222,7 @@ export async function runRegistryNcuaBranchGeocode(
     matched: 0,
     unmatched: 0,
     remaining: 0,
+    districtChanged: 0,
     dryRun,
   };
   if (dryRun || inputs.length === 0) {
@@ -262,6 +266,7 @@ export async function runRegistryNcuaBranchGeocode(
     SELECT COUNT(*) AS n FROM credit_union_branches
      WHERE geocode_status IS NULL AND address IS NOT NULL AND city IS NOT NULL AND state IS NOT NULL`;
   result.remaining = Number(left?.n ?? 0);
+  if (result.matched > 0) result.districtChanged = await deriveOtherDistricts(db);
 
   await recordRegistryPartition(db, {
     source: NCUA_BRANCH_GEOCODE_SOURCE,
@@ -272,7 +277,7 @@ export async function runRegistryNcuaBranchGeocode(
     unmatchedCount: result.unmatched,
     runId: options.runId ?? null,
     nextAttemptAfterHours: result.remaining > 0 ? GEOCODE_MORE_HOURS : GEOCODE_IDLE_HOURS,
-    detail: { remaining: result.remaining },
+    detail: { remaining: result.remaining, district_changed: result.districtChanged },
   });
   return result;
 }

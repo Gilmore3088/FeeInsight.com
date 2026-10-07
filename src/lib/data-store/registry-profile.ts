@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { buildLocalOfficeMap, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
@@ -40,6 +41,21 @@ export interface BranchFootprint {
   byYear: BranchYear[];
   byState: BranchState[];
   topMarkets: BranchMarket[];
+  /** A zoomed map with a dot per office when the offices sit in a few states; else null (national map). */
+  localMap?: LocalOfficeMap | null;
+  /** Offices placed on the zoomed map (credit union coordinates are added over time). */
+  mappedOffices?: number;
+}
+
+type OfficePoint = { latitude: number | string; longitude: number | string; city: string | null; weight?: number | string | null };
+
+function localMapFor(states: string[], points: OfficePoint[]): { localMap: LocalOfficeMap | null; mappedOffices: number } {
+  if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
+  const map = buildLocalOfficeMap(
+    states,
+    points.map((p) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude), city: p.city, weight: p.weight == null ? 1 : Number(p.weight) })),
+  );
+  return { localMap: map, mappedOffices: map?.dots.length ?? 0 };
 }
 
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
@@ -67,12 +83,21 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
        ORDER BY 3 DESC
        LIMIT 8`,
   ]);
+  const points =
+    byState.length > 0 && byState.length <= LOCAL_MAP_MAX_STATES
+      ? await sql<OfficePoint[]>`
+          SELECT latitude, longitude, INITCAP(city) AS city, COALESCE(deposits, 0) AS weight
+            FROM institution_branch_deposits
+           WHERE institution_id = ${institutionId} AND year = ${latestYear}
+             AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      : [];
   return {
     source: "fdic_sod",
     latestYear,
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
     topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
+    ...localMapFor(byState.map((r) => r.state), [...points]),
   };
 }
 
@@ -103,6 +128,13 @@ async function getCreditUnionFootprint(institutionId: number): Promise<BranchFoo
   ]);
   const total = Number(latest?.branches ?? 0);
   if (total === 0) return null;
+  const points =
+    byState.length > 0 && byState.length <= LOCAL_MAP_MAX_STATES
+      ? await sql<OfficePoint[]>`
+          SELECT latitude, longitude, INITCAP(city) AS city
+            FROM credit_union_branches
+           WHERE institution_id = ${institutionId} AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      : [];
   const reportDate = dateStr(latest.report_date);
   const year = reportDate ? Number(reportDate.slice(0, 4)) : new Date().getUTCFullYear();
   return {
@@ -112,6 +144,7 @@ async function getCreditUnionFootprint(institutionId: number): Promise<BranchFoo
     byYear: [{ year, branches: total, deposits: 0 }],
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: 0 })),
     topMarkets: topCities.map((r) => ({ msa_name: r.city, branches: Number(r.branches), deposits: 0 })),
+    ...localMapFor(byState.map((r) => r.state), [...points]),
   };
 }
 
