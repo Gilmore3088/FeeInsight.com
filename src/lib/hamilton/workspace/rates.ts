@@ -77,7 +77,7 @@ export function rateHeadline(research: FeeResearch, name: string): string | null
       : `Your ${name} fee is ${own.label}; too few institutions state a rate to compare.`;
   }
   if (median !== null) {
-    return `Your schedule shows no ${name} fee; stated as a rate, the national median is ${formatRatePercent(median)}.`;
+    return `Your ${name} fee is not in the index yet; stated as a rate, the national median is ${formatRatePercent(median)}.`;
   }
   return null;
 }

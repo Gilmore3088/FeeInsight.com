@@ -35,6 +35,17 @@ const serve = (html: string) => vi.fn(async () => new Response(html, { status: 2
 const companions = (db: DbMock) => db.mock.calls.filter((call) => text(call[0]).includes("INSERT INTO institution_additional_sources"));
 
 describe("paid schedule search for the largest banks", () => {
+  it("sends SQL with no comparison left without its right-hand side", async () => {
+    // PR 314 shipped `btrim(...) <>` with its '' lost, and every paid discovery step failed.
+    const db = createDb([]);
+    await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn() });
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("$?"));
+    expect(statements.some((sqlText) => sqlText.includes("incomplete-link schedule search"))).toBe(true);
+    for (const sqlText of statements) {
+      expect(sqlText).not.toMatch(/(<>|<=|>=|=|<|>)\s*(\n\s*(AND|OR|\))|$)/);
+    }
+  });
+
   it("tells the model why the page we hold is not the schedule", () => {
     expect(scheduleSearchPrompt(wells)).toContain("does not list the overdraft or NSF fee amount");
     expect(scheduleSearchPrompt({ ...wells, business_only: true })).toContain("business account schedule");

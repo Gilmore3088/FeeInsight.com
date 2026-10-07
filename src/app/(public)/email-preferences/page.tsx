@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FEE_ALERT_UNSUBSCRIBE_ACTION, isSubscriptionAction } from "@/lib/email/subscription-token";
+import { isAccountUnsubscribeAction, isSubscriptionAction } from "@/lib/email/subscription-token";
 import { SubscriptionActionForm } from "./subscription-action-form";
 
 export const metadata: Metadata = {
@@ -22,9 +22,9 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
   const email = first(params.email);
   const token = first(params.token);
   const uid = first(params.uid);
-  const isFeeAlert = action === FEE_ALERT_UNSUBSCRIBE_ACTION;
+  const isAccountLink = isAccountUnsubscribeAction(action);
   const valid =
-    (isSubscriptionAction(action) || (isFeeAlert && Boolean(uid))) && Boolean(email) && Boolean(token);
+    (isSubscriptionAction(action) || (isAccountLink && Boolean(uid))) && Boolean(email) && Boolean(token);
 
   return (
     <div className="mx-auto max-w-lg px-6 py-20">
@@ -36,7 +36,7 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
       </h1>
       {valid && action && email && token ? (
         <SubscriptionActionForm
-          action={isFeeAlert ? FEE_ALERT_UNSUBSCRIBE_ACTION : (action as "confirm" | "unsubscribe")}
+          action={isAccountLink ? action : (action as "confirm" | "unsubscribe")}
           email={email}
           token={token}
           uid={uid}

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -14,7 +14,10 @@ function templateText(strings: unknown): string {
 
 /** The stored text of document 55, the schedule Knox read the test fees from. */
 const SCHEDULE_TEXT = ["Overdraft fee $35.00", "Courtesy overdraft fee $5.00", "Paper statement Free"].join("\n");
-const SOURCE_TEXTS = [{ source_document_id: 55, normalized_text: SCHEDULE_TEXT }];
+const SOURCE_TEXTS = [
+  { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
+  { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
+];
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
@@ -302,12 +305,23 @@ describe("Darwin agentic verification", () => {
     expect(result.results[1]).toMatchObject({ decision: "duplicate" });
   });
 
+  it("verifies the same fee once on each stored copy of a page", async () => {
+    // An older and a newer copy of the same URL are different documents: the fee on the
+    // bank's current copy is not a duplicate of the one on the older copy.
+    const db = createDbMock([rawFee, { ...rawFee, fee_raw_id: 802, source_document_id: 57 }]);
+
+    const result = await runDarwinVerify({ runId: 108, db: asVerifyDb(db) });
+
+    expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 0 });
+  });
+
   describe("with the learning core", () => {
     function learningDb(rows: Array<Record<string, unknown>>): DbMock {
       const db = createDbMock(rows);
       db.mockImplementation((strings: TemplateStringsArray) => {
         const text = templateText(strings);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
         if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
         if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 1300 }]);
         return Promise.resolve([]);
@@ -374,6 +388,16 @@ describe("Darwin agentic verification", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
       expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
+    });
+
+    it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id/);
+      expect(params).toEqual(expect.arrayContaining([DARWIN_BATCH_KEY_VERSION]));
     });
 
     it("selects rows whose flags are stored as a real JSON array", async () => {

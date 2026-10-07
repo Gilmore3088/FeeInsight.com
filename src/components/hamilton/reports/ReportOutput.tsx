@@ -185,9 +185,9 @@ function LegacyReportBody({ report }: { report: ReportSummaryResponse }) {
         ))}
       </ReportSection>
 
-      {/* Current vs Proposed Snapshot — only if scenario data present */}
+      {/* Snapshot: current figure against its benchmark (never a proposed price) */}
       {report.snapshot.length > 0 && (
-        <ReportSection heading="Current vs Proposed Snapshot">
+        <ReportSection heading="Snapshot">
           <div className="grid grid-cols-2 gap-4">
             {report.snapshot.map((item, i) => (
               <StatCalloutBox

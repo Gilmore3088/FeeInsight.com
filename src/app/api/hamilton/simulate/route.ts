@@ -35,6 +35,7 @@ import { getDistributionForCategory } from "@/app/pro/(hamilton)/simulate/action
 import { canSimulate } from "@/lib/hamilton/confidence";
 import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
+import { HAMILTON_SYSTEM_PROMPT } from "@/lib/hamilton/voice";
 
 export const maxDuration = 120;
 
@@ -81,7 +82,9 @@ async function handlePOST(request: Request) {
 
   const resolved = await getDistributionForCategory(feeCategory, { institutionId, peerSetId });
   if ("error" in resolved) {
-    return new Response(resolved.error, { status: 422 });
+    // The action's error names internal categories; the reader gets a plain sentence.
+    console.warn("[hamilton-simulate] no distribution", { feeCategory, error: resolved.error });
+    return new Response("There isn't enough published data for this fee to test a price yet.", { status: 422 });
   }
   const gate = canSimulate(resolved.confidenceTier);
   if (!gate.allowed) {
@@ -95,8 +98,6 @@ async function handlePOST(request: Request) {
   const { median_amount, p25_amount, p75_amount } = distributionData;
   const institutionCount = distributionData.institution_count;
   const peerLabel = distributionData.peer_label || "verified peer baseline";
-  const peerSource = distributionData.peer_source || "unknown";
-  const peerFallbackReason = distributionData.peer_fallback_reason || null;
   const direction =
     proposedFee > currentFee
       ? "increasing"
@@ -106,21 +107,15 @@ async function handlePOST(request: Request) {
   const changeDollars = Math.abs(proposedFee - currentFee).toFixed(2);
   const displayCategory = feeCategory.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const systemPrompt = `You are Hamilton, a senior banking fee strategist at Fee Insight, working from the Bank Fee Index dataset. You provide precise, authoritative analysis of fee change scenarios grounded in peer positioning and market context.
+  // Hamilton's shared voice carries the no-advice rule (voice.ts); this answer adds only its format.
+  const systemPrompt = `${HAMILTON_SYSTEM_PROMPT}
 
-Your response MUST be plain prose — NO markdown headers, NO bullet points, NO lists.
-Write 3–4 sentences maximum. Reference the percentile positions and peer distribution data provided.
-
-REQUIRED framing — address these dimensions, using only the data provided below:
-- Peer positioning: Where this fee sits relative to P25/median/P75 and what that signals competitively
-- Revenue direction: Characterize as revenue-positive, revenue-neutral, or revenue-compressing — do NOT quantify with dollar amounts
-- Evidence strength: State how many institutions the peer distribution covers and its maturity; if it is provisional, say the read is directional
-
-Do not cite complaint volumes, attrition, migration patterns or regulatory actions: that data is not supplied here.
-
-Do NOT provide concrete dollar revenue projections. No "you'll lose $X million" or "revenue impact: -$500K". Frame revenue impact directionally only.
-
-Tone: Top-tier consulting strategic advisor. Direct and data-grounded; confident where the sample is strong, explicit about limits where it is not.`;
+THIS ANSWER: a short read of one price the user is testing.
+- Plain prose, 3 to 4 sentences, no headers, bullets or lists.
+- Say where the tested price sits against the peer 25th percentile, median and 75th percentile, and how many institutions stand behind them.
+- Characterize the revenue direction only (revenue-positive, revenue-neutral or revenue-compressing); give no dollar projections.
+- Do not cite complaint volumes, attrition, migration patterns or regulatory actions: that data is not supplied here.
+- Never say whether to make the change. Describe what this price would mean and the question it puts to management.`;
 
   const institutionLine = institution
     ? `Institution: ${institution.institution_name} (${institution.charter_type === "credit_union" ? "credit union" : "bank"}${institution.asset_size_tier ? `, ${institution.asset_size_tier}` : ""})`
@@ -132,14 +127,13 @@ Fee category: ${displayCategory}
 Current fee: $${currentFee.toFixed(2)}
 Proposed fee: $${proposedFee.toFixed(2)} (${direction} by $${changeDollars})
 
-Peer baseline: ${peerLabel} (${peerSource})
-${peerFallbackReason ? `Peer fallback: ${peerFallbackReason}` : ""}
-Peer distribution (${institutionCount} institutions, ${resolved.confidenceTier} evidence):
+Peer group: ${peerLabel}
+Peer distribution (${institutionCount} institutions):
 - P25: $${p25_amount?.toFixed(2) ?? "N/A"}
 - Median: $${median_amount?.toFixed(2) ?? "N/A"}
 - P75: $${p75_amount?.toFixed(2) ?? "N/A"}
 
-Provide a concise strategic interpretation of this fee change. What does this positioning mean competitively? What is the key risk or opportunity?`.trim();
+What would this price mean competitively, and what question does it put to management?`.trim();
 
   const providerContext = {
     provider: "anthropic" as const,
