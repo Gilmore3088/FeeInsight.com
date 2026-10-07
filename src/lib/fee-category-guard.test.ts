@@ -422,6 +422,29 @@ describe("checkFeeCategory", () => {
     if (!verdict.ok) expect(verdict.reason).toContain('"Returned Deposit Check"');
   });
 
+  it("accepts one name that prices overdrafts and returned items together, never a returned item alone (First Horizon, Oct 7)", () => {
+    for (const name of [
+      "Return check/overdraft charges",
+      "Overdraft or Returned Item fee (per item)+",
+      "Overdraft Fee and Returned Item Fee",
+      "Returned Item Fee/Overdraft Fee (each)",
+      "Overdraft Fee or a Return Item Fee",
+    ]) {
+      expect(checkFeeCategory("overdraft", name), name).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Overdraft Item Returned Fee (aka NSF Fee)",
+      "Overdraft Fee (Returned NSF)",
+      "Returned Overdraft Item Fee",
+      "Overdraft Return Item Fee (Fee applies to each overdraft or returned item created by",
+      "Insufficient Funds Fee Returned item/overdraft (NSF) with no/insufficient overdraft coverage",
+      "Other fees such as overdraft or returned item fees may apply.",
+      "Maximum Return Item/Overdraft Fees per day is",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
+  });
+
   it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
     for (const name of [
       "Deposits/Withdrawals at an ATM we do not own or operate",
