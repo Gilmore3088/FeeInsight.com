@@ -2500,3 +2500,15 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
   are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
 - **Watch.** Inserts only and idempotent; it never touches a bank already in the key.
+
+## 2026-10-07: Knox had no per-batch error review
+
+- **Problem.** Knox's error rate was only measured by hand. James asked for "a way to review errors
+  after chunks of N". A hand query over chunks of 500 Knox reads that were 24 hours old showed rates
+  from 0.0% to 13.9%. 175 batches have run since Oct 4; the newest two are 0.3%.
+- **Fix.** `knox/batch-review.ts` runs in every extract step. It scores each full, settled batch of
+  500 reads against Darwin's verdicts, Hamilton's read takedowns and the confirmed answer key. It writes
+  each miss and one batch row with the rate and its top miss patterns to `pipeline_feedback`.
+- **Watch.** A reject whose only reason is `rules_recheck_unreproduced` is a newer Knox version
+  replacing the read, so it is counted as superseded. Counting it as a miss put Oct 4's first batch
+  at 58% wrong.
