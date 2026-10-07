@@ -2229,6 +2229,32 @@ fetch went. It keeps the URL in `rejected_source_urls`, clears the link and mark
 the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
 **Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
 
+## 2026-10-07: free OCR read scanned pages sideways and upside down
+**What happened:** the audit tracker scored Rosetta's OCR at 7 of 45 OK over 12 hours. 43 of the
+45 ran before PR 331 and 31 of those were text PDFs the old ladder sent to OCR (PR 331 stopped
+that). The real scans that failed mostly came back with plenty of characters at confidence 25 to 45
+(Certificate disclosures at edufcu.org and cmecreditunion.org). OCR took each page's largest image
+as stored, but scanners often store a page bottom row first or sideways and let the PDF's placement
+matrix or the page's /Rotate turn it back. Tesseract was reading mirrored or sideways text. A test
+set of 8 scans in those layouts read 3 of 8 before and 8 of 8 after.
+**Fix:** `ocr.ts` version 2 follows the placement matrix and /Rotate and turns each page image the way
+the page shows it. A page that still reads poorly is probed at the other quarter turns, for paper
+fed in sideways. Scans an older OCR version rejected or found empty get one read with the new one.
+Still unexplained: three one-page scans returned 0 characters at confidence 0 (802cu.com,
+csbnetbank.com, onomeafcu.org). The cloud container cannot fetch bank sites, so their bytes were not
+checked.
+**Lesson:** an image inside a PDF is not the page; read it through the matrix that draws it.
+
+## 2026-10-07: 79 reopened pages were selected every run and never read
+**What happened:** after PR 331, 90 reopened pages were read within an hour, but 88 others never
+were. 79 of those 88 still had their earlier failure in the bank playbook's do-not-retry list. The
+read step selected them, the router skipped them as a known failure, and a skip writes nothing, so
+they stayed eligible and were selected again every run. Reopening a page lifted its URL ban but not
+the playbook entry.
+**Fix:** the selection marks a page reopened and not read since (`reopen_pending`). For that one read,
+the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
+**Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
+
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
 names business, commercial, corporate or treasury accounts, the same test Magellan's
