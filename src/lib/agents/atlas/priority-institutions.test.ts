@@ -46,7 +46,7 @@ describe("priority institutions", () => {
   it("lists each requested institution once, the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 6)).toEqual([37, 47, 27, 122, 5, 251]);
+    expect(ids.slice(0, 7)).toEqual([37, 47, 27, 122, 5, 251, 393]);
     expect(ids).toContain(8109);
   });
 

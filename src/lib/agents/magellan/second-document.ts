@@ -12,6 +12,7 @@ import {
   DOCUMENT_YEAR_SQL,
   FEE_NAMED_LINK_SQL,
   HIDDEN_BELOW_CATEGORIES,
+  isForeignHostLink,
   LARGE_BANK_ASSETS,
   OVERDRAFT_PRICE_SQL,
   PRODUCT_LINK_SQL,
@@ -171,6 +172,8 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
   } catch {
     return null;
   }
+  // Another country's bank of the same name (southeastbank.com.bd) is never a companion.
+  if (isForeignHostLink(link.url, site.toString())) return null;
   const source: LinkSource = "homepage_link";
   const strong = STRONG_FEE_DOCUMENT.exec(lower);
   const medium = MEDIUM_FEE_DOCUMENT.exec(lower);
@@ -712,7 +715,7 @@ async function searchBank(
     const entry: TrailEntry = { url: candidate.url, source: candidate.source, foundOn: candidate.foundOn, label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "" };
     trail.push(entry);
     try {
-      const validation = await validateFeeCandidate(candidate, fetchImpl);
+      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: site.toString() }, fetchImpl);
       entry.verdict = validation.verdict;
       if (validation.ok) {
         keep({

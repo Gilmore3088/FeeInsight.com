@@ -54,7 +54,7 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
-import { runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
+import { PREVIEW_INSTITUTION_ID, runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
 import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
@@ -418,6 +418,7 @@ async function executeAgenticStep(
         mode: step.stepKey === "rescue" ? "rescue" : "discover",
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
+        upgradeSlots: numericRunParam(params, ["upgrade_slots"]),
         stateCode,
       });
       // Outcome ledger: judge one slot of banks' links by the live fees they produced and
@@ -456,6 +457,7 @@ async function executeAgenticStep(
           second_documents_found: discovery.secondDocuments?.found ?? 0,
           restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
+          search_miss_lessons: discovery.searchMisses,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,
@@ -1453,10 +1455,16 @@ async function executeAgenticStep(
         institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
         runId: run.id,
       });
+      const preview =
+        result.workspaces === 0 && !result.dryRun
+          ? await runBriefingRefresh({ dryRun: true, institutionId: PREVIEW_INSTITUTION_ID })
+          : null;
       return {
         status: "completed",
-        summary: summarizeBriefingRefresh(result),
-        detail: { ...result },
+        summary: [summarizeBriefingRefresh(result), preview && `Preview for institution ${PREVIEW_INSTITUTION_ID}: ${summarizeBriefingRefresh(preview)}`]
+          .filter(Boolean)
+          .join(" "),
+        detail: { ...result, preview },
       };
     }
     case "competitor-alerts": {
@@ -1465,10 +1473,16 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
       });
+      const preview =
+        result.banks === 0 && !result.dryRun
+          ? await runCompetitorAlerts({ dryRun: true, institutionId: PREVIEW_INSTITUTION_ID })
+          : null;
       return {
         status: "completed",
-        summary: summarizeCompetitorAlerts(result),
-        detail: { ...result },
+        summary: [summarizeCompetitorAlerts(result), preview && `Preview for institution ${PREVIEW_INSTITUTION_ID}: ${summarizeCompetitorAlerts(preview)}`]
+          .filter(Boolean)
+          .join(" "),
+        detail: { ...result, preview },
       };
     }
     case "pro-digest": {
@@ -2529,8 +2543,9 @@ export async function executeQueuedAgentRuns({
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
               ) DESC,
               -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
-              -- a hand-found schedule or a large bank missing its overdraft fee.
-              COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC,
+              -- a hand-found schedule or a large bank missing its overdraft fee; and its
+              -- direct re-search of one state's missed banks (atlas/priority-state-research.ts).
+              COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
