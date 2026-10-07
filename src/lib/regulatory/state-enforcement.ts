@@ -357,13 +357,23 @@ export function linksMatching(html: string, baseUrl: string, pattern: RegExp, li
 }
 
 /** What a page looks like when a reader finds nothing there, for the run detail. */
-export function describePage(html: string): { tables: number; rows: number; links: number; headers: string[][]; text: string } {
+/** A row's direct children as "tag:text" (for a row whose cells the reader missed). */
+function rowOutline(row: El): string {
+  return row.children
+    .filter(isEl)
+    .map((c) => `${c.name}${c.attribs.class ? `.${c.attribs.class.split(/\s+/)[0]}` : ""}:${clean(textOf(c as unknown as Node)).slice(0, 40)}`)
+    .join(" | ")
+    .slice(0, 400);
+}
+
+export function describePage(html: string): { tables: number; rows: number; links: number; headers: string[][]; outline: string[]; text: string } {
   const doc = parseDocument(html, { decodeEntities: true });
   const tables = all(doc as unknown as Node, "table");
   const main = all(doc as unknown as Node, "main")[0] ?? all(doc as unknown as Node, "body")[0];
   return {
     tables: tables.length,
     rows: tables.reduce((n, t) => n + rowsOf(t).length, 0),
+    outline: tables.slice(0, 1).flatMap((t) => rowsOf(t).slice(0, 4).map(rowOutline)),
     links: all(doc as unknown as Node, "a").length,
     headers: tables.slice(0, 3).map((t) => rowsOf(t).slice(0, 2).flatMap((r) => cellsOf(r).map((c) => clean(textOf(c as unknown as Node)).slice(0, 60)))),
     text: clean(main ? textOf(main as unknown as Node) : "").slice(0, 600),
