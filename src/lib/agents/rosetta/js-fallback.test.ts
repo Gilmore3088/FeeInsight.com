@@ -63,6 +63,17 @@ describe("Rosetta JavaScript-page fallbacks", () => {
     expect(samePageKey("https://www.Bank.example/Fee-Schedule/")).toBe(samePageKey("https://bank.example/fee-schedule"));
   });
 
+  it("reads a schedule the page shows in an embedded PDF viewer", () => {
+    const html = `<h1>Five Rivers Bank - Fee Schedule</h1>
+      <iframe src="https://cdn.example.com/files/abc123_fee-schedule.pdf#toolbar=0"></iframe>
+      <object data="/files/schedule-of-fees"></object>
+      <iframe src="https://www.youtube.com/embed/xyz"></iframe>`;
+    expect(alternateDocumentUrls(html, "https://bank.example/documents/fee-schedule")).toEqual([
+      "https://cdn.example.com/files/abc123_fee-schedule.pdf",
+      "https://bank.example/files/schedule-of-fees",
+    ]);
+  });
+
   it("tries common static variants of the same URL", () => {
     expect(staticVariantUrls("https://bank.example/fees?x=1")).toEqual([
       "https://bank.example/fees?x=1&print=1",
