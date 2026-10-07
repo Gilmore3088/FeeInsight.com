@@ -239,7 +239,7 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
   const items = [...list]
     .slice(0, MAX_COMPETITORS)
     .sort((a, b) => a.amount - b.amount)
-    .map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null }));
+    .map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null }));
   return {
     kind: "competitor_range",
     title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${items.length} institutions in your market`,
