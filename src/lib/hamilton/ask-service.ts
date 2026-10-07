@@ -23,7 +23,7 @@ import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
-import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
+import { asksWholeSchedule, scheduleOverview, withSchedule, type ScheduleOverview } from "./workspace/schedule";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
@@ -295,19 +295,6 @@ async function scheduleFor(institutionId: number, question: string): Promise<Sch
     return null;
   });
   return briefing ? scheduleOverview(briefing.positions) : null;
-}
-
-/** Puts the overview first; the detailed answer for the furthest fee follows it. */
-function withSchedule(response: AskResponse, schedule: ScheduleOverview): AskResponse {
-  if (!schedule.top) {
-    return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts, positions: schedule.positions };
-  }
-  return {
-    ...response,
-    positions: schedule.positions,
-    shortAnswer: `${schedule.shortAnswer} ${response.shortAnswer}`.trim(),
-    facts: [...schedule.facts, ...(response.facts ?? [])],
-  };
 }
 
 export interface AskMemoResult {
