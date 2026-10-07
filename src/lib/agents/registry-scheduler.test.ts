@@ -25,11 +25,13 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 11)).toEqual([
+    expect(candidates.slice(0, 13)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
       "fdic-sod:2026",
+      "ncua-branches:2026Q2",
+      "ncua-branch-geocode:pending",
       "cfpb:2026",
       "sec-links:current",
       "sec-filings:batch-0",
@@ -39,7 +41,8 @@ describe("registry scheduler", () => {
       "state-regulators:current",
     ]);
     // Round two continues each source's history.
-    expect(candidates.slice(11, 16)).toEqual([
+    // Credit union branches pull only the newest quarter, so they drop out after round one.
+    expect(candidates.slice(13, 18)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
       "fdic-sod:2025",

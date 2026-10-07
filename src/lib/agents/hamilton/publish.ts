@@ -45,7 +45,7 @@ const BLOCKING_FLAGS = new Set([
   "rejected",
 ]);
 
-interface VerifiedFeeRow extends RateFields {
+export interface VerifiedFeeRow extends RateFields {
   fee_verified_id: number | string;
   fee_raw_id: number | string;
   institution_id: number | string;
@@ -190,7 +190,7 @@ function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
-function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string | null {
+export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string | null {
   const flags = parseFlags(row.outlier_flags);
   if (!flags.includes("agentic_darwin_verified")) return "Not verified by the agentic Darwin path";
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
@@ -421,7 +421,7 @@ async function institutionFeeDepth(
   return new Map(Array.from(depth, ([id, keys]) => [id, keys.size]));
 }
 
-async function insertPublishedFee(
+export async function insertPublishedFee(
   db: SqlTag,
   options: {
     runId: number;
@@ -531,7 +531,7 @@ function documentStream(value: string | null | undefined): string {
 }
 
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
-function normalizedFeeName(name: string | null | undefined): string {
+export function normalizedFeeName(name: string | null | undefined): string {
   return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -587,7 +587,7 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
 }
 
 /** A fee's comparable value: its rate for a percentage fee, else its amount. */
-function feeValue(row: RateFields & { amount: number | string | null }): string {
+export function feeValue(row: RateFields & { amount: number | string | null }): string {
   return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
