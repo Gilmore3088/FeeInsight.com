@@ -2672,6 +2672,6 @@ balance that avoids the fee, the opening deposit, or the waiver (audit:
 **Fix:** migration `20270110000020_account_lineup_fields.sql` adds `product_name`,
 `min_balance_to_avoid`, `min_opening_deposit` and `waiver_text` to `raw_fee_observations`. The
 catalog reads `account_product_type` from `product_name` and adds the other three at its end.
-Knox (paid v2, rules v33) fills them for `monthly_maintenance` only, grounded in the text by
+Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
