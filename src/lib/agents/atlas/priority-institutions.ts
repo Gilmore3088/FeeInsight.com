@@ -58,6 +58,16 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     institutionName: "ACNB Bank",
     reason: "Adams County, PA market study: 61% of county deposits, no fee schedule on file",
   },
+  // Tennessee report (2026-10-07 07:30): three more TN deposit leaders with no verified overdraft fee.
+  ...([
+    [19, "Fifth Third Bank, National Association"],
+    [371, "SouthEast Bank"],
+    [255, "SmartBank"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Tennessee report: deposit leader with no verified overdraft fee",
+  })),
   { institutionId: 8109, institutionName: "Space Coast Federal Credit Union", reason: "Hamilton answer had only 5 fees; full schedule needed" },
   ...([
     [51, "First National Bank of Pennsylvania"],
