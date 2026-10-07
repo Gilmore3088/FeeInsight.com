@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Open States allows about ten requests a minute, so state bill runs hit 429
+**What happened:** the first two 12-state runs (05:32 and 07:12 UTC) read 16 states and failed 10 with
+HTTP 429 (CA, DE, FL, IA, ID, KS, MA, MD, MN, MO in `registry_ingest_partitions`). The failures came after
+about ten requests each time, and retries 6 and 12 seconds later were refused too.
+**Cause:** the step sent each state's four to six requests back to back. Open States' free tier allows
+about ten a minute, inferred from these runs since its docs aren't reachable from the cloud sandbox.
+A failed state then waited six hours.
+**Fix:** requests are paced 6.5 seconds apart. A run starts no new state after 60 seconds, and a 429 stops
+the run and leaves that state due instead of failing it.
+**Lesson:** pace any keyed free-tier API to its limit inside the step, and treat a 429 as "come back
+later", not as a failed item.
+
 ## 2026-10-07: A hand-found link added after a bank's direct run waited a full day
 **What happened:** on prod (read-only, 07:22 UTC) Citi's corrected US fee chart (link 2070, added
 06:43) and First Horizon's TotalView guide (link 2101, added 07:12) sat unfetched. Both banks had
@@ -2707,3 +2719,20 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 **Also:** `institution_financial_records.total_deposits` is in thousands for `fdic` and `ncua` rows but in dollars for `ffiec` rows. Readers must filter by source.
 
 **Unverified:** whether CFPB's search API returns sub-issue buckets. The run ledger records `sub_issues_loaded`.
+
+## 2026-10-07: Checking account lineup fields were never captured
+**What happened:** none of the 1,914 monthly maintenance fees on prod named its product, the
+balance that avoids the fee, the opening deposit, or the waiver (audit:
+`data-inventory/account-lineup-audit-2026-10-07.md`).
+**Cause:**
+- No fee tier had a column for them, and `published_fee_catalog.account_product_type` was a
+  hard-coded `NULL::text`.
+- Knox's paid prompt asked for `conditions` but kept only a `waivable` flag and threw the text
+  away. It also told the model to skip balance requirements.
+- The rule candidate had no field for a product, threshold or waiver.
+**Fix:** migration `20270110000020_account_lineup_fields.sql` adds `product_name`,
+`min_balance_to_avoid`, `min_opening_deposit` and `waiver_text` to `raw_fee_observations`. The
+catalog reads `account_product_type` from `product_name` and adds the other three at its end.
+Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
+`knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
+Rows already on file gain the fields only when Knox reads their document again.

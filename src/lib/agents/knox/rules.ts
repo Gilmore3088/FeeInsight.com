@@ -1,5 +1,6 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
+import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 /**
@@ -34,6 +35,8 @@ export interface ExtractedFeeCandidate {
   waivable: boolean;
   /** The specialist that found it, set when the free team's finds are merged. */
   strategy?: string;
+  /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
+  lineup?: AccountLineup | null;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
@@ -639,6 +642,23 @@ export function maintenanceFromAccountRow(segment: string, firstAmount: AmountMa
     confidence: confidenceFor(segment),
     excerpt: segment,
     waivable: WAIVER_LANGUAGE.test(segment) || /\b(if|unless|avoid)\b/i.test(segment.slice(firstAmount.end)),
+    lineup: accountRowLineup(label, after),
+  };
+}
+
+/**
+ * v33: the row's own lineup facts. The label names the product; a balance-below clause in
+ * the price cell is the balance that avoids the fee, and the cell's condition ("if ...",
+ * "waived when ...") is the waiver. Knox grounds these against the text before writing them.
+ */
+function accountRowLineup(label: string, after: string): AccountLineup {
+  const cell = after.split(CELL_SEPARATOR.trim())[0].replace(/\s+/g, " ").trim();
+  const balance = cell.match(BALANCE_BELOW_CLAUSE)?.[0];
+  return {
+    productName: label.slice(0, 80),
+    minBalanceToAvoid: balance ? (amountsIn(balance)[0]?.value ?? null) : null,
+    minOpeningDeposit: null,
+    waiverText: cell.match(/\b(?:if|unless|waived?|avoid)\b.*$/i)?.[0] ?? null,
   };
 }
 
