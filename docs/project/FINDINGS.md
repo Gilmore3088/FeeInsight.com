@@ -163,6 +163,15 @@ retries ahead of routine passes.
 them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
 their state's lane run fetches them and those runs waited in line. Next in the order after
 retries now comes a lane whose state holds a hand-found schedule with status `found`.
+**Follow-up (05:40):** after the change, runs per hour stayed at 6 (04:00 to 05:00). Two
+causes. A later run in a tick ran only its quick first steps (enhance, state-expert), then
+counted as under way and went ahead of the failed-lane retries (TX, CA, MI, NY, WI did this
+from 04:39). A later run now starts only when its quick steps and its first real step fit
+before the deadline. And a full pass is about 8 to 10 minutes of steps, mostly the paid
+search and paid read (140 to 290 seconds each), so serial runs top out near 6 an hour. The
+daily rule also put 36 of 55 states on daily full passes for any bank due a paid find (HI
+had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs weekly
+(21 daily states on the Oct 7 numbers).
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
