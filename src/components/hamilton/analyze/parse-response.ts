@@ -64,7 +64,15 @@ export function humanizeAnswerText(text: string): string {
       /\b(community_small|community_mid|community_large|large_regional|super_regional)\b(\s+(?:peers?|banks?|institutions?|credit unions?|tier|group|segment|cohort)\b)?/gi,
       (_m, key: string, noun: string | undefined) => `${TIER_WORDS[key.toLowerCase()]}${noun ?? " peers"}`,
     )
-    .replace(/`/g, "");
+    .replace(/`/g, "")
+    .replace(/\$(\d{1,3}(?:,\d{3})+)(?:\.\d+)? thousand\b/g, (_m, digits: string) => millions(Number(digits.replace(/,/g, ""))));
+}
+
+/** "$1,063 thousand" reads as "$1.06 million". */
+function millions(thousands: number): string {
+  const m = thousands / 1000;
+  const shown = m >= 100 ? m.toFixed(0) : m >= 10 ? m.toFixed(1) : m.toFixed(2);
+  return `$${shown.includes(".") ? shown.replace(/0+$/, "").replace(/\.$/, "") : shown} million`;
 }
 
 /**
@@ -102,22 +110,48 @@ type EvidenceMetric = { label: string; value: string; note?: string };
 export function parseEvidenceMetrics(text: string): EvidenceMetric[] {
   const metrics: EvidenceMetric[] = [];
   for (const rawLine of text.split("\n")) {
+    const bulleted = /^\s*(?:[-*\u2022]|\d+[.)])\s+/.test(rawLine);
+    const indented = /^\s+/.test(rawLine);
     const line = rawLine.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s+/, "").trim();
     if (!/\w/.test(line)) continue;
 
     const pair = splitLabel(line);
     if (pair) {
-      metrics.push(pair);
+      metrics.push(splitNote(pair));
       continue;
     }
     const last = metrics[metrics.length - 1];
-    if (last && last.value) {
+    if (last && last.value && indented && !bulleted) {
       last.value = `${last.value} ${cleanValue(line)}`;
-    } else {
+    } else if (bulleted || !last) {
       metrics.push({ label: "", value: cleanValue(line) });
     }
+    // An unbulleted line flush with the margin after the rows is prose the model added
+    // under the list (a confidence note), not evidence: it is left out.
   }
   return metrics;
+}
+
+/** "$30 against a $27.50 median — Keesler at $25": the figure, then the note after the dash. */
+function splitNote(metric: EvidenceMetric): EvidenceMetric {
+  if (metric.note) return metric;
+  const at = metric.value.indexOf(" \u2014 ");
+  if (at <= 0) return metric;
+  const note = metric.value.slice(at + 3).trim();
+  return note ? { label: metric.label, value: metric.value.slice(0, at).trim(), note } : metric;
+}
+
+/**
+ * Evidence rows as saved before notes were split out: the same split, applied when an
+ * older answer is shown or exported.
+ */
+export function tidyEvidence(metrics: readonly EvidenceMetric[]): EvidenceMetric[] {
+  return metrics.map((m) => splitNote({ ...m, value: humanizeAnswerText(m.value), ...(m.note ? { note: humanizeAnswerText(m.note) } : {}) }));
+}
+
+/** The answer's title: its whole first sentence, never a cut-off fragment. */
+export function answerTitle(hamiltonView: string): string {
+  return shapeHamiltonView(hamiltonView).lead;
 }
 
 function splitLabel(line: string): EvidenceMetric | null {
@@ -133,7 +167,8 @@ function splitLabel(line: string): EvidenceMetric | null {
     return null;
   }
   const plain = line.match(/^([^:*]{1,60}?):\s+(.+)$/);
-  if (plain && !/\d$/.test(plain[1])) {
+  // A label names a fee or metric, so it has letters ("Growth, Q2 2026"); "10:30" is not one.
+  if (plain && /[A-Za-z]/.test(plain[1])) {
     return { label: plain[1].trim(), value: cleanValue(plain[2]) };
   }
   return null;
