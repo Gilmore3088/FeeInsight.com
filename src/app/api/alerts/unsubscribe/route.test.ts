@@ -65,4 +65,25 @@ describe("POST /api/alerts/unsubscribe", () => {
     const token = signFeeAlertUnsubscribeToken(7, "reader@example.com", SECRET);
     expect((await postJson({ action: "unsubscribe", uid: 7, email: "reader@example.com", token })).status).toBe(400);
   });
+
+  it("stops watchlist alerts with the same fee-alert link", async () => {
+    const token = signFeeAlertUnsubscribeToken(7, "reader@example.com", SECRET);
+    await postJson({ action: "fee_alerts_unsubscribe", uid: 7, email: "reader@example.com", token });
+    const text = (sqlMock.mock.calls[1][0] as TemplateStringsArray).join("?");
+    expect(text).toContain("SET watchlist_alerts_off_at");
+  });
+
+  it("stops the Monday digest with its own signed link only", async () => {
+    const token = signFeeAlertUnsubscribeToken(7, "reader@example.com", SECRET, "pro_digest_unsubscribe");
+    const response = await postJson({ action: "pro_digest_unsubscribe", uid: 7, email: "reader@example.com", token });
+    expect(response.status).toBe(200);
+    const text = (sqlMock.mock.calls[0][0] as TemplateStringsArray).join("?");
+    expect(text).toContain("SET pro_digest_off_at");
+
+    sqlMock.mockClear();
+    const feeToken = signFeeAlertUnsubscribeToken(7, "reader@example.com", SECRET);
+    const crossed = await postJson({ action: "pro_digest_unsubscribe", uid: 7, email: "reader@example.com", token: feeToken });
+    expect(crossed.status).toBe(400);
+    expect(sqlMock).not.toHaveBeenCalled();
+  });
 });
