@@ -13,13 +13,14 @@ import { CELL_SEPARATOR, extractHtmlDomText } from "./html-dom";
  *      strings holding HTML are read through the DOM reader.
  *   2. links on the page to a PDF or print version of the schedule, or to a document whose
  *      link names the fee schedule ("/documents/fee-schedule", "Schedule of Charges"):
- *      many bank sites serve their PDF from a path with no ".pdf" ending.
+ *      many bank sites serve their PDF from a path with no ".pdf" ending; and a PDF the
+ *      page embeds in an iframe, embed or object viewer.
  *   3. the same URL with common static variants (`?print=1`, `/print`, `?output=amp`).
  * No headless browser: none is configured, and pages with no free route are handed to
  * Magellan's paid finder instead.
  */
 
-export const ROSETTA_JS_FALLBACK_VERSION = 2;
+export const ROSETTA_JS_FALLBACK_VERSION = 3;
 export const JS_FALLBACK_STRATEGY = "read.js_fallback";
 /** Alternate URLs fetched per page, at most. */
 export const JS_FALLBACK_MAX_FETCHES = 4;
@@ -233,6 +234,14 @@ export function alternateDocumentUrls(html: string, pageUrl: string): string[] {
       const type = (element.attribs.type ?? "").toLowerCase();
       if (rel.includes("amphtml") || (rel.includes("alternate") && (type.includes("pdf") || type.includes("html")))) {
         add(resolveUrl(element.attribs.href, pageUrl));
+      }
+    } else if (element.name === "iframe" || element.name === "embed" || element.name === "object") {
+      // A schedule shown in an embedded PDF viewer, not linked: the page's own text is
+      // only its title (fiveriversbank.com/documents/five-rivers-bank-fee-schedule, Oct 7).
+      const url = resolveUrl(element.attribs.src ?? element.attribs.data, pageUrl);
+      if (url && (/\.pdf(?:$|[?#])/i.test(url) || DOCUMENT_WORDS.test(pathWords(url)))) {
+        add(url);
+        named.add(url);
       }
     } else if (element.name === "a") {
       const href = element.attribs.href ?? "";

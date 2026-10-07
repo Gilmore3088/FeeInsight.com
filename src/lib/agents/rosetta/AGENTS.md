@@ -60,7 +60,8 @@ Rosetta owns source text normalization.
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
     `window.X = {...}`), then linked PDF/print versions and links that name the fee
-    schedule even with no `.pdf` ending ("Schedule of Charges", `/documents/fee-schedule`),
+    schedule even with no `.pdf` ending ("Schedule of Charges", `/documents/fee-schedule`)
+    and PDFs shown in an iframe, embed or object viewer,
     then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
     A linked scan gets free OCR. A linked document the bank already has as its own
     `source_documents` row is not fetched (it is read there); the attempt's detail lists
