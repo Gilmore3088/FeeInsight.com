@@ -172,7 +172,7 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promi
         LEFT JOIN live ON live.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
-         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> 
+         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
          AND COALESCE(profile.locked_by_correction, false) = false
