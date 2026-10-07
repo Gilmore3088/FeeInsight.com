@@ -115,6 +115,9 @@ and `detail.method_version`).
   with many banks without a link never reached them.
 - A bank whose latest document answered 404 or 410 and has no live fee is due for a
   search at once, not after the 30-day stale-link wait.
+- A state step with slots left over fills them with banks in other states that no finder
+  has ever searched (no `discover` attempt), largest first, so a state whose lane runs
+  rarely does not hold its never-searched banks back.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a

@@ -956,6 +956,48 @@ async function selectCandidates(
 }
 
 /**
+ * Banks in other states with no fee link that no finder has ever searched (no `discover`
+ * attempt), largest first. They fill a step's spare slots, so a state whose lane runs
+ * rarely does not hold them back. Locked, offline and manual-review banks stay out.
+ */
+async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode: string): Promise<DiscoveryCandidateRow[]> {
+  if (limit <= 0) return [];
+  const normalizedState = normalizeStateCode(stateCode);
+  return db<DiscoveryCandidateRow[]>`
+    -- never-searched banks in other states
+    SELECT inst.id,
+           inst.institution_name,
+           inst.state_code,
+           inst.website_url,
+           inst.asset_size,
+           inst.rescue_status,
+           profile.canonical_source_url AS profile_canonical_source_url,
+           profile.source_kind AS profile_source_kind,
+           profile.read_strategy AS profile_read_strategy,
+           profile.locked_by_correction AS profile_locked_by_correction,
+           profile.consecutive_failures AS profile_consecutive_failures
+      FROM institution_sources inst
+      LEFT JOIN institution_source_profiles profile
+        ON profile.institution_id = inst.id
+     WHERE COALESCE(inst.status, 'active') = 'active'
+       AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
+       AND inst.website_url IS NOT NULL
+       AND btrim(inst.website_url) <> ''
+       AND upper(btrim(COALESCE(inst.state_code, ''))) <> COALESCE(${normalizedState}::text, '')
+       AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+       )
+     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     LIMIT ${limit}
+  `;
+}
+
+/**
  * Banks whose fee link is an account or product page, or an article, blog post or news
  * item (`isArticleLink`), not yet searched for the real schedule at this upgrade version.
  * Their link is kept until a fee schedule is found.
@@ -1486,6 +1528,12 @@ export async function runMagellanDiscovery(
     ...upgrades.slice(UPGRADE_RESERVED_SLOTS),
     ...stale.slice(FRESHNESS_RESERVED_SLOTS),
   ];
+  // A state with little left to search fills its spare slots with banks no finder has ever
+  // searched, in any state, largest first (65 of 405 steps on 6-7 Oct ended in under 30 s
+  // while 1,418 banks with a website had never been searched).
+  if (learning && options.stateCode && rows.length < limit) {
+    rows.push(...(await selectNeverSearchedElsewhere(db, limit - rows.length, options.stateCode)));
+  }
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();

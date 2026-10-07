@@ -31,6 +31,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
     if (text.includes("business-only link search")) return Promise.resolve([]);
     if (text.includes("stale-link freshness search")) return Promise.resolve([]);
+    if (text.includes("never-searched banks in other states")) return Promise.resolve([]);
     if (text.includes("AS profile_canonical_source_url")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -666,6 +667,27 @@ describe("Magellan agentic discovery", () => {
 
       expect(result.results[0].websiteRepair).toBeNull();
       expect(attempts(db).some((attempt) => attempt.strategy === "discover.website_repair")).toBe(false);
+    });
+  });
+
+  describe("never-searched banks in other states", () => {
+    it("fills a state step's spare slots with them, after the state's own banks", async () => {
+      const own = bank(90, "https://own.example");
+      const elsewhere = bank(91, "https://far.example", { state_code: "IL" });
+      const db = createDbMock([own], learningHandler((text) => (text.includes("never-searched banks in other states") ? [elsewhere] : undefined)));
+      const fetchImpl = site({});
+
+      const result = await runMagellanDiscovery({ runId: 130, stateCode: "VT", limit: 5, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results.map((r) => r.institutionId)).toEqual([90, 91]);
+      const call = db.mock.calls.find((c) => templateText(c[0]).includes("never-searched banks in other states"))!;
+      expect(call.slice(1)).toContain("VT");
+    });
+
+    it("is not asked for when the state fills the step", async () => {
+      const db = createDbMock([bank(92, "https://own.example")], learningHandler(() => undefined));
+      await runMagellanDiscovery({ runId: 131, stateCode: "VT", limit: 1, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(db.mock.calls.some((c) => templateText(c[0]).includes("never-searched banks in other states"))).toBe(false);
     });
   });
 

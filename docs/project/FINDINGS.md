@@ -2421,3 +2421,14 @@ records the count on the extract event. First-look takedowns don't teach: Darwin
 recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
+
+## 2026-10-07: Never-searched banks waited for their own state's lane
+**What happened:** discovery searches only the lane's own state. On prod (read-only, 06:05 UTC)
+1,855 active institutions with no fee link had never been searched (437 of them have no website).
+Most were in big states: TX 304, IL 232, PA 149, MN 137, NY 127. In the 24 hours to 06:05, finders gave
+2,006 banks their first search, and 65 of 405 discover steps ended in under 30 seconds with nothing
+left to search in their state.
+**Fix:** a state step with slots left over takes never-searched banks from any state, largest
+first (`selectNeverSearchedElsewhere`, 45 ms on prod).
+**Lesson:** a queue split by state is only as fast as the slowest state's lane. Let idle capacity
+take work from anywhere.
