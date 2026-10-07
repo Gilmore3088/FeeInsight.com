@@ -94,6 +94,9 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("not_these");
     expect(prompt).toContain("od_protection_transfer");
     expect(prompt).toContain("sentence fragment");
+    expect(prompt).toContain("Smart Safe");
+    expect(prompt).toContain("footnote marker");
+    expect(prompt).toContain("jumbled text");
   });
 
   it("puts the learning store's lessons for a batch's categories in the prompt", () => {

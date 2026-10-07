@@ -2372,6 +2372,10 @@ partition is retried only after the 6-hour claim expires.
 and grows each buffer with the data. The whole zip is never held in memory.
 **Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
 that the loader will fit in a function's memory.
+**Follow-up (05:42 UTC):** once streaming worked, the step got through the download and then failed
+with "operator does not exist: text = date". `institution_financial_records.report_date` is text
+('2026-06-30'), and the update cast its parameters to date. The update now compares text with text,
+and a test fails if the update casts to date.
 
 ## 2026-10-07: State bills would have taken about four days to cover 52 states
 **What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
@@ -2397,6 +2401,19 @@ recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
 
+## Darwin's category review trusted Knox's amount (2026-10-07)
+`verify.adjudicate` v1 judged a fee from its name and amount alone. Against the answer keys it was right on
+27 of 37 disagreements, but it accepted prices that belonged to a neighbouring row ("Check Printing (fee
+depends on style)" at $3) or were a balance threshold ($50 inactivity "balance is less than"). The prod
+`answer_key_institutions` table is empty; the answer keys live in `src/lib/agents/knox/__fixtures__/`.
+v2 sends the schedule rows around each fee and the source check's verdict on its amount.
+
+## The answer-key tables on prod are empty (2026-10-07)
+`answer_key_institutions` and `answer_key_fees` have no rows, so no `answer_key` lessons reach the learning
+store: Darwin's category model and Knox's lessons never trained on the hand-keyed schedules they cite. The 81
+hand-keyed texts (2,885 fees) exist only as Knox test fixtures. Darwin's verdict score reads a compact copy
+(`src/lib/agents/darwin/answer-key-fees.json`, kept in step by its test). Loading the keys into the tables
+(through the admin answer-key page or a typed agent step) is still open.
 ## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
 **What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
 that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
@@ -2410,3 +2427,56 @@ still passes the category guard, and does not collide with another live fee of t
 name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
 Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
 **Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: Rosetta had no per-batch error review
+**What happened:** Rosetta learned only from fees taken down later (text survival), so a read that
+gave Knox nothing, or rejected a real schedule, taught nothing. James asked for a fix per error type
+and a review after every N reads.
+**Measured (prod, read-only, the 200 latest reads 6 to 36 hours old at 06:25 UTC Oct 7):** batches of
+50 had 19, 7, 6 and 7 misses (38%, 14%, 12%, 14%). 37 of the 39 were completed texts Knox found no
+fee in; 2 were unread. No short texts, no rejected page later proven a fee page. Counting only Knox
+rows written after the read overstates the misses, because Knox dedupes rereads, so the review
+counts every Knox fee from the document. A no-fee text is a miss either way: a real schedule Knox
+could not read (an earlier 30-hour window had several fee-schedule pages and a 2,626-char PDF), or a
+page that passed the fee-page check without being one (in this window the 4 fee-named links were
+funds-availability, checking and rates pages; the other 33 were not sampled).
+**Fix:** `rosetta/batch-review.ts` reviews each settled batch of 50, writes every miss as a lesson
+with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
+pass read those lessons. See rosetta/AGENTS.md "Batch review".
+**Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+
+## 2026-10-07: The Census income step recorded a published vintage as "not published"
+**What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
+in December 2025, as "not published yet" and scheduled no retry until October 14. No tract or ZIP
+income loaded.
+**Cause:** the fetch treated any reply that was not JSON data as an unpublished vintage. Census
+answers a key, quota or outage problem with a page, not data, so a real error was filed as normal.
+The actual reply is not known, because the cloud sandbox cannot reach api.census.gov.
+**Fix:** only a 404 counts as unpublished. Any other reply without data fails the step and puts the
+first 200 characters of the reply in the run ledger. The parser version is now 2, and the scheduler
+re-pulls `empty` partitions recorded under an older parser, so 2024 runs again without waiting a week.
+**Lesson:** an "empty" result must be one the source states, never a guess from a parse failure.
+
+## 2026-10-07: Plural "Wires" and balance-named account rows were missed by Knox
+**What happened:** Space Coast CU (James's demo bank) had 7 live fees. Its 1,279-character page lists 22 prices.
+**Cause:**
+- The directional wire patterns required the singular "wire", so "Incoming Wires | $10" was read as no fee.
+- "(Outside U.S.)" fell through the international rewrite, because `\b` does not match after a dot.
+- An account row named with its balance ("(below $2,500) | $15/mo.") was held as unclassified.
+- Two names in one row were glued into one name.
+**Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
+**Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.
+
+## 2026-10-07: The answer key was never on prod
+
+- **Problem.** `answer_key_institutions` and `answer_key_fees` had no rows on prod. The hand-keyed keys
+  (Texas and the 7-state set) lived only in `/mnt/project-files/answer-key/` and the Knox gate fixtures, so
+  no `answer_key` lesson ever reached `pipeline_feedback`, Atlas's answer-key score had nothing to score,
+  and Darwin's batch scoring had to bundle its own copy.
+- **Fix.** Seed migration `20270110000018_answer_key_seed.sql`: 62 banks keyed line by line by the Knox thread
+  (status `confirmed`, `confirmed_by = 'knox-hand-key'`: checked against the stored text, not yet by a person)
+  with 2,321 fee rows, and 55 banks from the 2026-10-04 prefill draft left `prefilled` (710 rows) for a person
+  to confirm on /admin/answer-key. 525 keyed rows with no taxonomy key ("unmapped") are left out. One
+  document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
+  are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
+- **Watch.** Inserts only and idempotent; it never touches a bank already in the key.

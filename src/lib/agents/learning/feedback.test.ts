@@ -137,13 +137,13 @@ describe("shared learning store", () => {
       ["FROM published_fee_records fp", [takedown]],
       ["hamilton.restore:pub:", [{ fee_published_id: 70, about_strategy: "extract.rules", institution_id: 9, source_document_id: 4, fee_raw_id: 50, fee_verified_id: 60, canonical_fee_key: "nsf", amount: "30", fee_name: "NSF fee", taken_down_for: "rules_recheck_unreproduced", restored_by: "rules_recheck_restored:restore_bar" }]],
       ["category_mismatch", [{ id: 900, institution_id: 9, source_document_id: 4, strategy_version: 3, fee_raw_id: 51, canonical_fee_key: "nsf", amount: "20", reason: "Fee name does not support its category", category_guard_version: "9", fee_name: "Returned mail", outlier_flags: [], source_url: null }]],
-      ["FROM answer_key_fees", [{ id: 3, institution_id: 9, canonical_key: "stop_payment", amount: "30", amount_kind: "flat", source_line: "Stop payment $30", uncertain: false, document_url: null }]],
-      ["INSERT INTO pipeline_feedback", [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]],
+      ["FROM answer_key_fees", [{ id: 3, institution_id: 9, canonical_key: "stop_payment", amount: "30", amount_kind: "flat", source_line: "Stop payment $30", uncertain: false, document_url: null, confirmed_by: "jdoe" }, { id: 4, institution_id: 9, canonical_key: "nsf", amount: "25", amount_kind: "fixed", source_line: "NSF $25", uncertain: true, document_url: null, confirmed_by: "knox-hand-key" }]],
+      ["INSERT INTO pipeline_feedback", [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 }]],
     ]);
 
     const result = await syncPipelineFeedback(db, { runId: 7 });
 
-    expect(result).toEqual({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 1, written: 5, relabeled: 0 });
+    expect(result).toEqual({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 2, written: 6, relabeled: 0 });
     const insert = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
     const rows = JSON.parse(String(insert?.values[0]));
     expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toEqual([
@@ -152,11 +152,14 @@ describe("shared learning store", () => {
       "hamilton.restore:pub:70",
       "darwin.verify:raw:51",
       "answer_key:fee:3",
+      "answer_key:fee:4",
     ]);
     expect(rows[2].evidence).toEqual({ fee_name: "NSF fee", taken_down_for: "rules_recheck_unreproduced", restored_by: "rules_recheck_restored:restore_bar" });
     expect(rows[3]).toMatchObject({ signal: "wrong", kind: "wrong_category", reported_by: "darwin", check_name: "darwin.category_guard" });
     expect(rows[3].evidence).toMatchObject({ verify_attempt_id: 900, fee_name: "Returned mail" });
     expect(rows[4]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "human" });
+    // Keys the Knox thread keyed by hand are labelled as Knox's, not a person's.
+    expect(rows[5]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "knox", weight: 0.5 });
   });
 
   it("only reads in a dry run", async () => {
