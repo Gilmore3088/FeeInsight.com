@@ -30,6 +30,8 @@ export interface RegistryFetchOptions {
   timeoutMs?: number;
   /** Base backoff in ms; doubled per attempt. Tests pass 0. */
   backoffMs?: number;
+  /** Extra request headers, e.g. an API key that must stay out of URLs and error messages. */
+  headers?: Record<string, string>;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -68,6 +70,7 @@ export async function registryFetch(
           "User-Agent": REGISTRY_USER_AGENT,
           Accept: "application/json, */*",
           ...(isJson ? { "Content-Type": "application/json" } : {}),
+          ...options.headers,
         },
         signal: AbortSignal.timeout(timeoutMs),
         redirect: "follow",

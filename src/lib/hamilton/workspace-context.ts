@@ -25,6 +25,8 @@ export interface ResolvedHamiltonInstitutionContext {
   institution: HamiltonSelectedInstitutionContext | null;
   error: string | null;
   source: HamiltonContextSource;
+  /** False when the URL bank is only being browsed and the user's saved bank is another one. */
+  isWorkspaceBank?: boolean;
 }
 
 function normalizeSource(source: string | null | undefined): HamiltonWorkspaceContextSource {
@@ -94,6 +96,12 @@ export async function resolveHamiltonInstitutionContext(params: {
   instId?: string | number | null;
   intent?: string | null;
   persistUrlSelection?: boolean;
+  /**
+   * The user explicitly chose this bank ("Make this my bank"). Without it, a
+   * bank in the URL only becomes the workspace bank when none is saved yet,
+   * so browsing another bank never silently replaces yours.
+   */
+  makeDefault?: boolean;
   transientSource?: HamiltonContextSource;
 }): Promise<ResolvedHamiltonInstitutionContext> {
   if (params.instId !== null && params.instId !== undefined && params.instId !== "") {
@@ -107,7 +115,13 @@ export async function resolveHamiltonInstitutionContext(params: {
       return { institution: null, error: resolved.error ?? "Institution not found", source: "none" };
     }
 
-    if (params.persistUrlSelection !== false) {
+    const savedId =
+      params.persistUrlSelection === false || params.makeDefault === true
+        ? null
+        : ((await getHamiltonWorkspaceContext(params.userId).catch(() => null))?.selectedInstitutionId ?? null);
+    const shouldPersist =
+      params.persistUrlSelection !== false && (params.makeDefault === true || savedId === null);
+    if (shouldPersist) {
       await setHamiltonWorkspaceContext({
         userId: params.userId,
         institutionId: resolved.institution.id,
@@ -115,6 +129,7 @@ export async function resolveHamiltonInstitutionContext(params: {
         intent: params.intent,
       }).catch(() => {});
     }
+    const isWorkspaceBank = shouldPersist || savedId === resolved.institution.id;
 
     return {
       institution: resolved.institution,
@@ -123,6 +138,7 @@ export async function resolveHamiltonInstitutionContext(params: {
         params.persistUrlSelection === false
           ? normalizeHamiltonContextSource(params.transientSource, "url")
           : "url",
+      ...(params.persistUrlSelection === false ? {} : { isWorkspaceBank }),
     };
   }
 

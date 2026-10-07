@@ -23,7 +23,7 @@ import {
 } from "@/lib/hamilton/artifact-context";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 
-export const metadata: Metadata = { title: "Report" };
+export const metadata: Metadata = { title: "Reports" };
 
 function buildLegacyPeerFilterLabel(params: {
   legacyPeerFilters?: string;
@@ -59,7 +59,7 @@ function buildLegacyPeerFilterLabel(params: {
 }
 
 /**
- * ReportsPage — Server component that gates and hydrates the Report Builder workspace.
+ * ReportsPage — Server component that gates and hydrates the Reports memo page.
  * Auth enforced at the layout level (canAccessPremium), but we also verify here
  * to ensure server-side redirect on direct navigation.
  *
@@ -114,8 +114,8 @@ export default async function ReportsPage({
     transientSource: isArtifactContext ? "artifact" : undefined,
   });
 
-  // Pull the user's real institution name (audit H-4 round 2) so the
-  // Configuration sidebar shows it instead of the hardcoded "Your Institution".
+  // Pull the user's real institution name (audit H-4 round 2) so the report
+  // setup names it instead of a hardcoded "Your institution".
   const institutionName =
     selectedInstitution?.name ||
     user.institution_name?.trim() ||
@@ -124,6 +124,7 @@ export default async function ReportsPage({
 
   return (
     <ReportWorkspace
+      key={`${params.intent ?? ""}:${initialReport?.id ?? ""}`}
       userId={user.id}
       institutionName={institutionName}
       publishedReports={publishedReports}

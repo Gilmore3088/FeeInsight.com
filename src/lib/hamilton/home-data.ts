@@ -408,7 +408,8 @@ export async function fetchHomeBriefingSignals(
 ): Promise<HomeBriefingSignals> {
   const institutionIds = normalizeHomeInstitutionScope(options.institutionIds ?? []);
   const [recentFive, alerts, recentThree] = await Promise.all([
-    fetchRecentSignals(5, institutionIds),
+    // Enough rows that pipeline housekeeping, which the page leaves out, never crowds out real changes.
+    fetchRecentSignals(25, institutionIds),
     fetchPriorityAlerts(userId, 3, institutionIds),
     fetchRecentSignals(3, institutionIds),
   ]);

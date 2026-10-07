@@ -52,7 +52,7 @@ export const REPORT_OFFER_LINE = "National and Fed district fee reports — free
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =
-  `Hamilton is the ${SITE_NAME} Pro workspace: benchmark, scenario, report and monitor ` +
-  "your fee position against a verified peer set.";
-export const HAMILTON_MODES = ["Analyze", "Benchmark", "Scenario", "Report", "Monitor"] as const;
+  `Hamilton is the ${SITE_NAME} Pro workspace: research, model and report your fee position ` +
+  "against a verified market, from your own counties to the nation.";
+export const HAMILTON_MODES = ["This month", "My fees", "Try a price", "Reports"] as const;
 export type HamiltonMode = (typeof HAMILTON_MODES)[number];

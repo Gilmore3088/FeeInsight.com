@@ -149,7 +149,7 @@ export function toFinancialPoint(row: InstitutionFinancialHistoryRow): Financial
     provision: quarterly ? dollars(row.provision_for_losses) : null,
     roePct: finiteOrNull(row.roe),
     leveragePct: finiteOrNull(row.leverage_ratio),
-    totalCapitalPct: finiteOrNull(row.total_capital_ratio),
+    totalCapitalPct: row.total_capital_ratio !== null && row.total_capital_ratio !== 0 ? finiteOrNull(row.total_capital_ratio) : null,
     employees: finiteOrNull(row.employee_count),
     members: finiteOrNull(row.member_count),
   };

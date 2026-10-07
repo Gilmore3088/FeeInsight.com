@@ -357,7 +357,7 @@ describe("Hamilton Reports generateReport", () => {
       ]),
     );
     expect(result.report.snapshot).toContainEqual({
-      label: "wire transfer",
+      label: "Wire Transfer",
       current: "$35.00 (provisional)",
       proposed: "$20.00 peer median",
     });
