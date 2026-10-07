@@ -6,7 +6,7 @@
 
 import { formatFeeAmount } from "@/lib/format";
 import { MAX_STORY_EXHIBITS } from "./storyline";
-import type { StoryExhibit } from "./storyline-types";
+import type { IncomeSplitData, StoryExhibit } from "./storyline-types";
 import type { AskResponse, SchedulePosition, SourceRef } from "./types";
 import { withSchedule, type ScheduleOverview } from "./schedule";
 import { withIncomeSplit, type IncomeExplanation, type IncomeSplit } from "./why";
@@ -44,6 +44,24 @@ export function scheduleExhibit(positions: readonly SchedulePosition[], feesAsOf
   };
 }
 
+/** The split as numbers: the price part is the peer median at the bank's prices, the rest is everything else. */
+export function incomeSplitData(split: IncomeSplit): IncomeSplitData {
+  const ratio = split.priceGap === null ? 1 : 1 + split.priceGap;
+  const atYourPrices = split.peerMedian * ratio;
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    unit: "per_1000_deposits",
+    own: split.own,
+    peerMedian: split.peerMedian,
+    peerLabel: split.peerLabel,
+    n: split.peers,
+    priceIndex: split.priceGap === null ? null : Math.round(100 * ratio),
+    priceExplained: round(atYourPrices - split.peerMedian),
+    otherExplained: round(split.own - atYourPrices),
+    quarterEnd: split.quarterEnd,
+  };
+}
+
 /** The bank's fee income against peers of its size, and what its prices explain of the gap. */
 export function incomeExhibit(split: IncomeSplit): StoryExhibit {
   const gap = `${Math.round(Math.abs(split.incomeGap) * 100)}%`;
@@ -73,6 +91,7 @@ export function incomeExhibit(split: IncomeSplit): StoryExhibit {
       ],
       sources: [source, { label: "Fees on each institution's own published schedule (verified, live)", table: "published_fee_catalog" }],
       note: "How often fees are charged and which ones are shown together.",
+      incomeSplit: incomeSplitData(split),
     },
     takeaway: {
       text: `${money(split.own)} per $1,000 of deposits against a ${money(split.peerMedian)} median, four quarters to ${quarterLabel(split.quarterEnd)}.`,

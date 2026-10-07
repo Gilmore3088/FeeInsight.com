@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildAskResponse, parseAsk } from "./ask";
 import { evaluateFourRoles } from "./four-roles";
 import { scheduleOverview } from "./schedule";
-import { withDepth } from "./story-extras";
+import { incomeSplitData, withDepth } from "./story-extras";
 import { overdraftResearch } from "./test-fixtures";
 import { explainIncome, incomeSplit } from "./why";
 import type { FeePositionRow } from "./types";
@@ -38,5 +38,23 @@ describe("withDepth", () => {
     const table = story.exhibits.find((e) => e.id === "schedule-overview");
     expect(table?.exhibit.kind).toBe("structure_matrix");
     expect(table?.actionTitle).toBe("Of your 2 compared fees, 1 sits higher than the peer median and 1 lower.");
+  });
+});
+
+describe("incomeSplitData", () => {
+  it("gives the page the split as numbers that add up to the gap", () => {
+    const data = incomeSplitData(split);
+    expect(data).toMatchObject({ unit: "per_1000_deposits", own: 1.9, peerMedian: 1.5, n: 180, priceIndex: 74, quarterEnd: "2026-06-30" });
+    // Prices sit below the peer medians, so price pulls income down; everything else pulls it up.
+    expect(data.priceExplained).toBeLessThan(0);
+    expect(data.otherExplained).toBeGreaterThan(0);
+    expect(data.priceExplained + data.otherExplained).toBeCloseTo(0.4, 2);
+  });
+
+  it("rides on the income-split exhibit, and every compared fee carries its peer band", () => {
+    const story = answer("Why is our fee income higher than peers?", true).answer!.storyline!;
+    const income = story.exhibits.find((e) => e.id === "income-split")!.exhibit;
+    expect(income.kind === "structure_matrix" && income.incomeSplit?.priceIndex).toBe(74);
+    expect(scheduleOverview(rows).positions.map((p) => p.band)).toEqual([{ p25: 25, p75: 32 }, { p25: 25.75, p75: 32 }]);
   });
 });
