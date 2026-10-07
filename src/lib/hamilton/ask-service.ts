@@ -22,7 +22,8 @@ import { writeStorylineMemo } from "./memo";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
-import { getFeeResearch } from "./workspace/research";
+import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
+import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
@@ -195,7 +196,11 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
-  const intent = parseAsk(question, fallbackFee);
+  let intent = parseAsk(question, fallbackFee);
+  // "Where do we stand on every fee?" is answered outright: an overview of every fee,
+  // then the fee furthest from its peer median in detail.
+  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question) : null;
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
   const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment }) : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
@@ -221,7 +226,8 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
-  const response = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
+  const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
+  const response: AskResponse = schedule ? withSchedule(built, schedule) : built;
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
   const shown = response.scenario;
   const scenarioEvents =
@@ -281,6 +287,26 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   };
 }
 
+/** The whole-schedule overview for a question about every fee, or null for any other question. */
+async function scheduleFor(institutionId: number, question: string): Promise<ScheduleOverview | null> {
+  if (!asksWholeSchedule(question)) return null;
+  const briefing = await getWorkspaceBriefing(institutionId).catch((error) => {
+    console.error("[hamilton-ask] briefing failed", error);
+    return null;
+  });
+  return briefing ? scheduleOverview(briefing.positions) : null;
+}
+
+/** Puts the overview first; the detailed answer for the furthest fee follows it. */
+function withSchedule(response: AskResponse, schedule: ScheduleOverview): AskResponse {
+  if (!schedule.top) return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts };
+  return {
+    ...response,
+    shortAnswer: `${schedule.shortAnswer} ${response.shortAnswer}`.trim(),
+    facts: [...schedule.facts, ...(response.facts ?? [])],
+  };
+}
+
 export interface AskMemoResult {
   status: number;
   body: StorylineMemoResult | { error: string };
@@ -304,7 +330,11 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   if (!question) return { status: 400, body: { error: "Ask a question." } };
   const ready = await workspaceSchemaReady();
   const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
-  const intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
+  let intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
+  if (!intent.feeCategory) {
+    const schedule = await scheduleFor(institutionId, question);
+    if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  }
   if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
   const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment });
   if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
