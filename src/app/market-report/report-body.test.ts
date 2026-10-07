@@ -40,3 +40,16 @@ describe("buildMarketBranchFootprint", () => {
     expect(footprint.byInstitution[20]).toEqual({ branches: 4, deposits: null });
   });
 });
+
+describe("cityLabel and placeLabel", () => {
+  it("title-cases all-caps city names and keeps mixed case", async () => {
+    const { cityLabel, placeLabel } = await import("./report-body");
+    expect(cityLabel("READING")).toBe("Reading");
+    expect(cityLabel("WILKES-BARRE")).toBe("Wilkes-Barre");
+    expect(cityLabel("KING OF PRUSSIA")).toBe("King of Prussia");
+    expect(cityLabel("McAllen")).toBe("McAllen");
+    expect(cityLabel("Blue Bell")).toBe("Blue Bell");
+    expect(placeLabel("READING, PA")).toBe("Reading, PA");
+    expect(placeLabel("Ambler, PA")).toBe("Ambler, PA");
+  });
+});
