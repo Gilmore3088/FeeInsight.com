@@ -56,7 +56,7 @@ describe("priority state re-search", () => {
     const { db, calls } = createDb(() => [{ busy: 1 }]);
     const result = await schedulePriorityStateResearchRuns({ db, now, requests: [request] });
     expect(result.states[0].status).toBe("in_flight");
-    expect(calls[0]).toContain("run_kind = 'workflow_lane'");
+    expect(calls[0]).toContain("run_kind = 'workflow_lane' AND status IN ('running', 'cancel_requested')");
     expect(startAgentRunMock).not.toHaveBeenCalled();
   });
 

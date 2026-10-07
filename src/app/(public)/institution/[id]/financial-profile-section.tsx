@@ -3,6 +3,8 @@ import type { FinancialPoint, GrowthRow, OutlierFlag, PeerMedianPoints, PeerRank
 import { FinancialInsights } from "./financial-insights";
 import { FinancialProfileCharts } from "./financial-profile";
 import { BranchFootprintCard, ComplaintsCard, EnforcementCard, HoldingCompanyCard } from "./registry-cards";
+import { RegulatoryWatchSection } from "./regulatory-watch";
+import type { RegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import type { BranchFootprint, ComplaintTrend, EnforcementRecord, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
 
 /** Decorative silhouette for the locked state; contains no institution data. */
@@ -45,6 +47,8 @@ export function FinancialProfileSection({
   complaints = null,
   holdingCompany = null,
   enforcement = null,
+  regulatoryWatch = null,
+  exportHref = null,
 }: {
   isPro: boolean;
   points: FinancialPoint[];
@@ -55,8 +59,11 @@ export function FinancialProfileSection({
   complaints?: ComplaintTrend | null;
   holdingCompany?: HoldingCompanyProfile | null;
   enforcement?: EnforcementRecord | null;
+  regulatoryWatch?: RegulatoryWatch | null;
+  /** Pro: the analyst CSV of this institution's fees against peer benchmarks. */
+  exportHref?: string | null;
 }) {
-  const hasRegistryCards = Boolean(footprint || complaints || holdingCompany || enforcement);
+  const hasRegistryCards = Boolean(footprint || complaints || holdingCompany || enforcement || regulatoryWatch);
   if (isPro && points.length === 0 && !hasRegistryCards) return null;
   const years = points.length > 0 ? Math.max(1, Math.round(points.length / 4)) : null;
 
@@ -93,6 +100,7 @@ export function FinancialProfileSection({
                   {enforcement && <EnforcementCard record={enforcement} />}
                   {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
                 </div>
+                {regulatoryWatch && <RegulatoryWatchSection watch={regulatoryWatch} exportHref={exportHref} />}
               </div>
             )}
           </>

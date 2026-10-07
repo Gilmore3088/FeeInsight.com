@@ -13,6 +13,41 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
+**Owner:** the Data inventory thread.
+**What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
+(05:42-06:27 UTC). PR 399 fixed it at 06:52, but the six quarters stayed claimed until
+10:32-12:27, because a failed run leaves its partition "scheduled" for `CLAIM_RETRY_HOURS`, and a
+parser version bump re-ran only succeeded or empty partitions. `registry-census-acs` failed at 07:02
+(2025) and 07:32 (2024) with Census's "Missing Key" page. No `CENSUS_API_KEY` is set (the logged
+URL has no key), and Census refuses keyless requests from prod. `demographics` holds only 2022
+state and county rows (loaded 2026-04-06), and readers use the latest year on file.
+**Cause:** the scheduler had no way to tell that a failure came from code since fixed. Census
+answers a missing key with a 200 page, which the step treated as a failure.
+**Fix:** the claim records `claimed_parser_version`. A partition still "scheduled" from a claim
+under an older parser is due at once, so a parser bump retries its failures on the next tick.
+`ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
+partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
+completes instead of failing. Other non-data replies still fail.
+**Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
+
+## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
+**What happened:** James asked Hamilton "who are my local competitors and locations" at 07:36 UTC.
+The written answer (`api.research.hamilton`, `ai_api_usage_events` id 2928) read 127,096 input
+tokens and took 47 seconds, and the page looked like it had reset. Over the 30 days before, the 10
+written answers averaged 63k input tokens (median 47k) and 34 seconds.
+**Cause:** an answer runs up to 4 model steps, and each step re-sends the system prompt (about 15k
+characters), the tool definitions (about 9k) and every earlier tool result in full. A tool result
+had no size limit (`getInstitution` returns every fee with its conditions and source link), and
+nothing was cached, so a large result was paid for again on each later step.
+**Fix:** `src/lib/research/tool-output.ts`: tool results over 12,000 characters have their longest
+lists shortened with a note saying so; the system prompt and the newest message are Anthropic cache
+points, and the ledger records cache reads apart from uncached input. Proof after merge is the
+next written answer's row in `ai_api_usage_events`. Competitor questions themselves go to a
+deterministic market answer in the Pro page thread's PR 435.
+**Lesson:** anything handed to the model inside a tool loop is paid for once per step. Give every
+tool result a size limit, and cache what repeats.
+
 ## 2026-10-07: The CPI "bank services" series was physicians' services
 **Owner:** the Data inventory thread.
 **What happened:** the app read BLS series `CUUR0000SEMC01` as "CPI: Checking Account and Other
@@ -118,6 +153,18 @@ orders from the last ten years and puts penalties and older ones under "Past"; H
 to call such an action active.
 **Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
 match, count how many rows it covers on prod and read a sample of them.
+
+## 2026-10-07: Saved peer groups filtered asset size by codes no institution has
+**What happened:** the Settings peer group form saved asset sizes as `a` to `f`, and the
+resolver filtered `institution_sources.asset_size_tier` by them. That column holds
+`community_small` to `super_regional` (`assetSizeTier` in `src/lib/regulatory/fdic.ts`), so any
+saved group with an asset size matched no institution and Hamilton fell back to national. How
+many saved rows carry `a`-`f` codes: none; prod `saved_peer_sets` had 0 rows (read-only, 07:20 UTC Oct 7).
+**Cause:** the form's tier list was written separately from the registry's tier vocabulary.
+**Fix:** the custom peer groups PR: the form and `PeerSetSchema` use the registry's tiers, and
+Settings shows each group's real institution count. No rows needed fixing.
+**Lesson:** a filter's values come from the column it filters; show the count a filter
+resolves to, so a group that matches nothing is visible.
 
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
@@ -282,6 +329,15 @@ had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs
 schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
 lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
 direct runs already do, so it was removed.
+**Follow-up (08:10):** score order alone left Tennessee's lane (score 690, eighth) queued
+from 00:55 to past 08:00, while Knox re-reads and Magellan re-searches for the state waited
+on it. A state whose report James is waiting to review (`REPORT_REVIEW_STATES`) now runs
+right after failed-lane retries and carries the report-request weight in its score.
+**Follow-up (09:00):** Tennessee was then first in the order but still did not start. Each
+tick's direct institution runs used the first minutes, so Tennessee's first real step
+(enhance, state-expert, discover: about 170 seconds) no longer fit, and the next lane that
+did fit (WY at 08:48) started instead, counted as under way, and took the next tick. Once a
+lane is held for the deadline, no lower lane starts in that tick.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2754,6 +2810,12 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 - **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
   (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
   (an LPL disclosure, a car-price site); they are wrong links and are skipped.
+- **First run (08:03).** Citizens, Pinnacle and Flagstar were tried, and none was fetched: at
+  64 output tokens the model stopped while writing the fetch call. Room raised to 1,024
+  (only used tokens bill), version 2. Those tries no longer count toward the weekly wait, and
+  the bank list now reads the plain fetch's last outcome, because a failed paid try rewrote
+  `failure_reason`. Banks whose site keeps timing out (First Horizon, Northern Trust, USAA,
+  Morgan Stanley, Associated) are included too.
 
 ## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
 
@@ -2768,6 +2830,25 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   Resound CU (document 16143) and Enbright CU (PDF document 10293). Two links are wrong:
   - Tsu FCU (5080) points at a Tennessee State University tuition page.
   - SouthEast Bank (371) also holds copies of a Bangladesh bank's schedule.
+
+## 2026-10-07: Team seat invites trust an unverified email
+**What happened:** with team seats, an invitation is accepted by any signed-in account whose email
+matches, and the seat gives Pro access without payment. Registration does not verify that a person
+owns the email they sign up with (no verification step in `createUserWithSession`).
+**Cause:** invitations were tied to email when accepting also needed a paid subscription, which was
+some protection; seats remove it.
+**Fix:** closed in the same PR by signed invite links. Every grant, an existing account included,
+is now an invitation. A seat starts only when someone opens
+`/workspace-invite?i=<id>&t=<token>` signed in with the invited email. The token is
+HMAC-SHA256 of `id:email:institution`, keyed with `BFI_COOKIE_SECRET` and compared with
+`timingSafeEqual`, and the invitation must still be pending and unexpired
+(`src/lib/hamilton/workspace-invite-link.ts`). Without the secret, no link is issued or accepted.
+Accepting by email alone (`acceptPendingWorkspaceInvitationsForUser`, called from the Stripe webhook,
+the payment fallback and /account) is removed. Someone who registers with another person's
+email still cannot join without that person's link.
+**Cost:** `getCurrentUser` makes one extra query per signed-in request (`hasWorkspaceSeat`). It is
+left in place for now.
+**Lesson:** when a check stops costing money to pass, re-check what it was protecting.
 
 ## 2026-10-07: CFPB fee complaints were over-counted, cut short, and missing for big banks
 
@@ -2819,3 +2900,48 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** The shared source check reads "up to $35.00" as a threshold, so the Reg E form's fee
   is held as untraced until the accuracy thread changes `source-check.ts`. ACNB's document 20915
   is a list of services with no overdraft price; finding its schedule is Magellan's work.
+
+## 2026-10-07: Darwin's release review only read the held fees of the lane's own state
+
+- **Problem.** `verify-paid` runs inside each state lane, and the release review picked held fees
+  from that state only. State lanes start hours after they are queued (Utah's, queued 02:05 UTC,
+  reached `verify-paid` at 08:07). At 08:25 Utah had 1 held fee waiting while about 1,000 waited
+  in other states, so release review v7 reviewed 1 fee in 90 minutes.
+- **Fix.** A lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (`release-review.ts`). Releases stay off; this changes only
+  which held fees get reviewed.
+## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
+
+- **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
+  `CONNECT tunnel failed, 403`). So the readers for state orders were written against the page
+  formats described in search results, not against fetched pages.
+- **Fix.** `registry-state-enforcement` runs on the live pipeline, which can reach those sites, and
+  records each state's pages read, orders found, matches and three sample rows in the run detail.
+  The first prod run is the check: a state whose reader finds nothing is fixed there and the parser
+  version bumped. Seven states for now (NJ, NY, IL, MD, WA, TX, NC); Pennsylvania's listing page
+  wasn't found.
+- **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
+  Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
+
+## 2026-10-07: The paid fetch for blocked sites got only the call cap's leftovers
+
+- **Problem.** After PR 444 the paid fetch ran last in Magellan's paid step. On its first real
+  run (08:23, run 1964) the searches before it used the run's provider call cap, so it fetched
+  one bank of three (Morgan Stanley, stored for $0.018) and First Horizon waited. Separately,
+  53.com answers Fifth Third's fee PDFs with a "page doesn't exist" web page. The companion fetch
+  stored that page and Rosetta set the PDFs aside as blank reads, so nothing marked them blocked.
+- **Fix.** The paid fetch runs first in the step. The companion fetch refuses a PDF link
+  answered with a web page (`blocked_bot`), and the paid fetch also takes blocked companion pages
+  (one slot of three kept for them), including PDFs already set aside after reading that page.
+- **Watch.** `pipeline_attempts` with strategy `fetch.paid_web_fetch_companion` for Fifth Third
+  (institution 19) and `fetch.paid_web_fetch` for First Horizon (37).
+
+## 2026-10-07: Written Hamilton answers were saved only from the browser
+
+- **Problem.** The Analyze screen saved a written answer to `hamilton_saved_analyses` from the
+  browser after the stream ended, and dropped any save error. One answer on prod (the 07:36
+  `research_stream`, usage row 2928) has no saved row; every earlier answer does.
+- **Fix.** `/api/research/hamilton` saves the answer in its `onFinish` (`src/lib/hamilton/answer-save.ts`)
+  and keeps the stream running if the browser drops it. The row id goes back as message metadata
+  under `savedAnalysisId`; the screen updates that row instead of inserting another.
+- **Watch.** Until the screen reads `savedAnalysisId`, both sides insert, so each answer gets two rows.

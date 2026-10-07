@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatCompactDollars } from "@/lib/format";
+import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
 import type {
   BranchFootprint,
   ComplaintTrend,
@@ -400,7 +401,6 @@ export function HoldingCompanyCard({ profile }: { profile: HoldingCompanyProfile
   );
 }
 
-const AGENCY_LABEL = { OCC: "OCC", FRB: "Federal Reserve" } as const;
 
 function ActionItem({ action }: { action: EnforcementActionRow }) {
   const date = action.start_date ? formatQuarterEnd(action.start_date) : "Date not given";
@@ -411,7 +411,7 @@ function ActionItem({ action }: { action: EnforcementActionRow }) {
         <span className="shrink-0 tabular-nums text-[#6B6255]">{date}</span>
       </div>
       <p className="text-[#5A5347]">
-        {AGENCY_LABEL[action.agency]}
+        {enforcementAgencyLabel(action.agency)}
         {action.against_holding_company && <>, against the holding company, {action.party_name}</>}
         {action.penalty_amount !== null && <>, penalty {formatCompactDollars(action.penalty_amount)}</>}
         {action.termination_date && <>. Ended {formatQuarterEnd(action.termination_date)}</>}
@@ -430,7 +430,7 @@ function ActionItem({ action }: { action: EnforcementActionRow }) {
 }
 
 export function EnforcementCard({ record }: { record: EnforcementRecord }) {
-  const agencies = record.agenciesChecked.map((a) => AGENCY_LABEL[a]).join(" and ");
+  const agencies = enforcementAgencyList(record.agenciesChecked);
   const openCount = record.open.length;
   const subtitle =
     openCount > 0

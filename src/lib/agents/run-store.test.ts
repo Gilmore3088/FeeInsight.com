@@ -963,6 +963,20 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
+  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+    const retry = order.indexOf("= 'failed') DESC");
+    const review = order.indexOf("::text[])) DESC");
+    expect(review).toBeGreaterThan(retry);
+    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  });
+
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
     sqlMock.mockResolvedValue([]);
 
@@ -1074,6 +1088,37 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
     ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("starts no lower lane in a tick once a higher lane is held for the deadline", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([
+          { id: 101, run_kind: "manual_repair" },
+          { id: 102, run_kind: "workflow_lane" },
+          { id: 103, run_kind: "workflow_lane" },
+          { id: 104, run_kind: "workflow" },
+        ]);
+      }
+      if (text.includes("SELECT step_key")) {
+        // Lane 102 needs discover (110 s) first; lane 103 and the workflow need 30 s.
+        return Promise.resolve(values[0] === 102
+          ? [{ step_key: "enhance" }, { step_key: "discover" }]
+          : [{ step_key: "public-discovery" }]);
+      }
+      if (text.includes("FROM agent_runs")) {
+        // The held lane is still queued; the others are already finished, so they do nothing.
+        return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 102 ? "queued" : "completed" }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000 });
+
+    expect(result.results.map((run) => run.runId)).toEqual([101, 102, 104]);
+    expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {

@@ -1,6 +1,7 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
+import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
@@ -128,6 +129,8 @@ export interface AgentRunExecutionResult {
   terminal: boolean;
   executedSteps: number;
   message: string;
+  /** True when the run was left queued because its first real step would not finish by the tick deadline. */
+  heldForDeadline?: boolean;
 }
 
 export interface ExecuteQueuedAgentRunsResult {
@@ -2384,6 +2387,7 @@ export async function executeAgentRun(
         terminal: false,
         executedSteps: 0,
         message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+        heldForDeadline: true,
       };
     }
   }
@@ -2511,7 +2515,7 @@ export async function executeQueuedAgentRuns({
   // When provider steps cannot run this tick, skip runs whose next queued step is a
   // provider step so they do not crowd deterministic work out of the run limit.
   const rows = await sql`
-    SELECT r.id
+    SELECT r.id, r.run_kind
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -2536,7 +2540,8 @@ export async function executeQueuedAgentRuns({
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
-     -- lane), then a retry of a failed state lane, then any run waiting over an hour,
+     -- lane), then a retry of a failed state lane, then a state whose report James is
+     -- waiting to review, then any run waiting over an hour,
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
@@ -2557,6 +2562,9 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
+              -- A state whose report James is waiting to review (atlas/report-review-states.ts).
+              (r.run_kind = 'workflow_lane'
+                AND upper(btrim(r.state_code)) = ANY(${[...REPORT_REVIEW_STATES]}::text[])) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC
@@ -2568,7 +2576,13 @@ export async function executeQueuedAgentRuns({
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
+  // Once a state lane is held because its first real step would not finish this tick,
+  // no lane further down the order starts in its place: a lower lane that fits would
+  // count as under way and take the next tick ahead of it (Tennessee waited behind WY
+  // this way, 2026-10-07). Other runs can still use the rest of the tick.
+  let laneHeld = false;
   for (const row of rows) {
+    if (laneHeld && row.run_kind === "workflow_lane") continue;
     // The first run always gets a step; a later run starts a step only when that step can
     // finish by the deadline, so a larger run limit fills the tick without running past it.
     if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
@@ -2585,15 +2599,15 @@ export async function executeQueuedAgentRuns({
     }
     const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
     if (providerSlot) providerRuns += 1;
-    results.push(
-      await executeAgentRun(runId, {
-        maxSteps: maxStepsPerRun,
-        allowProviderSteps,
-        deadlineAt,
-        alwaysRunFirstStep: results.length === 0,
-        deferProviderSteps: allowProviderSteps && !providerSlot,
-      }),
-    );
+    const result = await executeAgentRun(runId, {
+      maxSteps: maxStepsPerRun,
+      allowProviderSteps,
+      deadlineAt,
+      alwaysRunFirstStep: results.length === 0,
+      deferProviderSteps: allowProviderSteps && !providerSlot,
+    });
+    results.push(result);
+    if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
   }
   return { selected: rows.length, results };
 }

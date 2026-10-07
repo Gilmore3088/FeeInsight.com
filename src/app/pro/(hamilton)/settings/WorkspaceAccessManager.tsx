@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   grantWorkspaceAccess,
   revokeWorkspaceInvitation,
@@ -11,14 +11,19 @@ import type {
   InstitutionWorkspaceInvitation,
   InstitutionWorkspaceMembership,
 } from "@/lib/hamilton/institution-membership";
-import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 import { SERIF } from "@/components/hamilton/memo/memo";
+import { WORKSPACE_SEAT_LIMIT, countWorkspaceSeats } from "@/lib/hamilton/workspace-seats";
 
 interface WorkspaceAccessManagerProps {
   institutionId: number | null;
   members: InstitutionWorkspaceMembership[];
   invitations: InstitutionWorkspaceInvitation[];
   canManage: boolean;
+  /** Signed /workspace-invite path per invitation id, computed on the server. */
+  inviteLinks: Record<number, string | null>;
+  /** False when the server secret is missing, so no link can be signed. */
+  inviteLinksReady: boolean;
 }
 
 const inputClass =
@@ -27,7 +32,8 @@ const secondaryButton =
   "inline-block rounded-md border border-warm-300 bg-warm-50 px-3 py-1.5 text-sm font-medium text-warm-800 hover:border-warm-500 disabled:cursor-not-allowed disabled:opacity-60";
 
 const initialState: WorkspaceAccessActionState = { success: false };
-const WORKSPACE_INVITE_URL = `${SITE_URL.replace(/\/$/, "")}/workspace-invite`;
+const INVITE_LINK_UNAVAILABLE =
+  "Invite links can't be signed because the server secret (BFI_COOKIE_SECRET) is not set.";
 
 function roleLabel(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
@@ -40,20 +46,64 @@ function sourceLabel(source: string): string {
   return "import";
 }
 
-function inviteMailto(invitation: InstitutionWorkspaceInvitation): string {
-  const subject = `${SITE_NAME} workspace invitation for ${invitation.institutionName}`;
-  const body = [
-    `You have been invited to ${invitation.institutionName} in ${SITE_NAME} Hamilton.`,
-    "",
-    `Role: ${roleLabel(invitation.role)}`,
-    `Invite email: ${invitation.email}`,
-    "",
-    "Use the same email address to sign in or create an account, then activate a Pro seat. Hamilton will attach the delegated workspace automatically once the email and Pro seat match.",
-    "",
-    WORKSPACE_INVITE_URL,
-  ].join("\n");
+/**
+ * Copies one invitation's signed /workspace-invite link, on this site's origin, to the
+ * clipboard. The server signs the path; this only adds the origin. Nothing is emailed: the
+ * owner sends the link themselves, and the invitee opens it signed in with the invited
+ * email. If the clipboard is unavailable, the link is shown selected to copy by hand.
+ */
+function CopyInviteLink({ email, path }: { email: string; path: string }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "manual">("idle");
+  const [link, setLink] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  return `mailto:${encodeURIComponent(invitation.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  useEffect(() => {
+    if (status !== "manual") return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [status]);
+
+  async function handleCopy() {
+    const url = `${window.location.origin}${path}`;
+    setLink(url);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(url);
+      setStatus("copied");
+    } catch {
+      setStatus("manual");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button type="button" onClick={handleCopy} className={secondaryButton}>
+        Copy invite link
+      </button>
+      {status === "copied" && (
+        <p role="status" className="text-sm text-warm-600">
+          Copied. Send it to {email}; they open it signed in with that email.
+        </p>
+      )}
+      {status === "manual" && (
+        <label className="flex flex-col gap-1 text-sm text-warm-600">
+          <span>Copy this link and send it to {email}:</span>
+          <input
+            ref={inputRef}
+            readOnly
+            value={link}
+            onFocus={(event) => event.currentTarget.select()}
+            className={inputClass}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
+function InviteLinkCell({ email, path }: { email: string; path: string | null }) {
+  if (!path) return <p className="text-sm text-terra-text">{INVITE_LINK_UNAVAILABLE}</p>;
+  return <CopyInviteLink email={email} path={path} />;
 }
 
 export function WorkspaceAccessManager({
@@ -61,6 +111,8 @@ export function WorkspaceAccessManager({
   members,
   invitations,
   canManage,
+  inviteLinks,
+  inviteLinksReady,
 }: WorkspaceAccessManagerProps) {
   const [grantState, grantAction, isGrantPending] = useActionState(
     grantWorkspaceAccess,
@@ -79,8 +131,21 @@ export function WorkspaceAccessManager({
     return <p className="text-sm text-warm-700">Pick your bank above before adding colleagues.</p>;
   }
 
+  const seatsUsed = countWorkspaceSeats(members, invitations);
+  const seatsFull = seatsUsed >= WORKSPACE_SEAT_LIMIT;
+
   return (
     <div className="flex flex-col gap-5">
+      <div>
+        <p className="text-sm text-warm-700">
+          An institution account includes up to {WORKSPACE_SEAT_LIMIT} people, you included. Each
+          one gets full Pro access and unlimited Hamilton questions.
+        </p>
+        <p role="status" className="mt-1 text-sm font-medium text-warm-900">
+          {seatsUsed} of {WORKSPACE_SEAT_LIMIT} seats used
+        </p>
+      </div>
+
       <div>
         <h3 className="text-base text-warm-900" style={SERIF}>
           People with access
@@ -129,21 +194,13 @@ export function WorkspaceAccessManager({
                   <p className="truncate text-sm font-medium text-warm-900">{invitation.email}</p>
                   <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-600">
                     <span>{roleLabel(invitation.role)}</span>
-                    <span>Waiting for a Pro seat</span>
+                    <span>Waiting for them to open the invite link</span>
                     <span>Expires {new Date(invitation.expiresAt).toLocaleDateString()}</span>
-                  </p>
-                  <p className="mt-0.5 text-sm text-warm-600">
-                    They accept at{" "}
-                    <a href="/workspace-invite" className="text-terra-text underline decoration-terra/40 underline-offset-2">
-                      /workspace-invite
-                    </a>
                   </p>
                 </div>
                 {canManage && (
-                  <div className="flex flex-wrap gap-2">
-                    <a href={inviteMailto(invitation)} className={`${secondaryButton} no-underline`}>
-                      Email the invite
-                    </a>
+                  <div className="flex flex-wrap items-start gap-2">
+                    <InviteLinkCell email={invitation.email} path={inviteLinks[invitation.id] ?? null} />
                     <form action={revokeInviteAction}>
                       <input type="hidden" name="institution_id" value={institutionId} />
                       <input type="hidden" name="invitation_id" value={invitation.id} />
@@ -197,21 +254,35 @@ export function WorkspaceAccessManager({
           </label>
           <div className="flex flex-col gap-3 sm:col-span-2">
             <p className="text-sm text-warm-600">
-              If they don&apos;t have a Pro seat yet, we hold the invite. Send them to{" "}
-              <a href="/workspace-invite" className="text-terra-text underline decoration-terra/40 underline-offset-2">
-                /workspace-invite
-              </a>{" "}
-              to sign up with the same email, and the workspace attaches itself.
+              We save an invite and give you a link to copy and send them. They open it signed in
+              with this email, or create a free {SITE_NAME} account with it first, and their seat
+              starts then. We don&apos;t email anyone.
             </p>
+            {!inviteLinksReady && (
+              <p className="text-sm font-medium text-terra-text">{INVITE_LINK_UNAVAILABLE}</p>
+            )}
+            {seatsFull && (
+              <p className="text-sm font-medium text-terra-text">
+                All {WORKSPACE_SEAT_LIMIT} seats are in use. To add someone new, remove a person or cancel an
+                invite first.
+              </p>
+            )}
             <div>
               <button
                 type="submit"
                 disabled={isGrantPending}
                 className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isGrantPending ? "Adding..." : "Give access"}
+                {isGrantPending ? "Saving..." : "Create invite"}
               </button>
             </div>
+            {grantState.success && grantState.inviteLink && grantState.inviteEmail && (
+              <CopyInviteLink
+                key={grantState.inviteLink}
+                email={grantState.inviteEmail}
+                path={grantState.inviteLink}
+              />
+            )}
           </div>
         </form>
       ) : (

@@ -168,6 +168,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /\S/,
     exclude: /\bopen(ing)? (an |a |new |your )?(account|membership)\b/i,
   },
+  // A dormant fee names inactivity. Other lines filed here ("Money Market Savings Account
+  // (below )" $15 beside Space Coast's real $5 dormant fee, "Telephone transfers") are
+  // neighbouring fees or fragments (v18).
+  dormant_account: {
+    include:
+      /(dorman|inac|abandon|escheat|unclaimed|no (\w+ )?(transaction |member |customer |owner |depositor )?activity|limited activity|under[- ]?utiliz|reactivat|idle|unused|non-?use)/i,
+    exclude: /(?!)/, // nothing is excluded; the include decides
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -177,7 +185,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 17;
+export const CATEGORY_GUARD_VERSION = 18;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
