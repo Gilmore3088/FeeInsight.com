@@ -142,7 +142,7 @@ const economy: StateEconomicContext = {
   national_unemployment: series("UNRATE", 4.3, 4.1),
   fed_funds: series("FEDFUNDS", 4.33, 5.33, "2026-09-01"),
   cpi_all_items: series("CUUR0000SA0", 103, 100, "2025-12-01"),
-  cpi_bank_services: series("CUUR0000SEMC01", 104, 100, "2025-12-01"),
+  cpi_bank_services: series("CUUR0000SS68021", 104, 100, "2025-12-01"),
   beige_book: {
     release_date: "August 2026",
     source_url: "https://www.federalreserve.gov/beige",

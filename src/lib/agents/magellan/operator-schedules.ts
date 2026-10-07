@@ -35,11 +35,13 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   {
     // James's link (2026-10-07 00:52) was Citi Bangladesh's schedule of charges (taka), which
     // Rosetta rightly rejected. Citi publishes no single US fee schedule; this is its US
-    // consumer account comparison chart. Citi charges no overdraft fee (dropped in 2022).
+    // Consumer Deposit Account Agreement, U.S. markets, effective 2025-11-20, with its Appendix 1
+    // fee schedule (the comparison chart returned HTTP 404 on 2026-10-07 07:35). Citi charges no
+    // overdraft fee (dropped in 2022).
     institutionId: 3,
     institutionName: "Citibank, National Association",
-    url: "https://online.citi.com/JRS/popups/comparison_chart.pdf",
-    givenBy: "web search for the US consumer schedule, 2026-10-07 06:30",
+    url: "https://online.citi.com/JRS/popups/ao/CDAA.pdf",
+    givenBy: "web search for the US consumer schedule, 2026-10-07 08:05",
   },
   {
     // The deposit products guide (fetched 2026-10-07, document 20724) names the Overdraft Paid
@@ -367,6 +369,30 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName: "ACNB Bank",
     url: "https://trabian-canvas-prd-files.s3.amazonaws.com/acnb-com/files/document/7_list_of_services.pdf",
     givenBy: "web search for the Adams County market study, 2026-10-07 07:10",
+  },
+  {
+    // Consumer banking welcome kit dated 6/2026, with the account fees. The overdraft coverage
+    // disclosure PDF now serves a "page doesn't exist" page (doc 20860, 2026-10-07 07:53).
+    institutionId: 19,
+    institutionName: "Fifth Third Bank, National Association",
+    url: "https://www.53.com/content/dam/fifth-third/docs/reference/fifth-third-consumer-banking-welcome-kit-accessible.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 08:05",
+  },
+  {
+    // The Tennessee bank's own consumer overdraft page: Bounce Protection $33 per item, at most
+    // 4 a day; NSF charge dropped 2023-02-01. Replaces a Bangladesh bank's schedule Magellan found.
+    institutionId: 371,
+    institutionName: "SouthEast Bank",
+    url: "https://www.southeastbank.com/consumer-overdraft-services/",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
+  },
+  {
+    // Overdraft consent form: up to $35 per item, $210 a day cap. Its main link is the account
+    // terms PDF.
+    institutionId: 255,
+    institutionName: "SmartBank",
+    url: "https://smartbank.com/wp-content/uploads/OverdraftConsentform.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
   },
 ];
 

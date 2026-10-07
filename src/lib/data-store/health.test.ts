@@ -23,6 +23,7 @@ import {
   type InstitutionCountTrend,
 } from "./health";
 import { getSql } from "./connection";
+import { unfilteredFinancialReads } from "./financial-sources.test-helper";
 
 type MockSql = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -420,5 +421,25 @@ describe("getInstitutionCountTrends", () => {
     expect(typeof result[0].bank_count).toBe("number");
     expect(typeof result[0].cu_count).toBe("number");
     expect(typeof result[0].total).toBe("number");
+  });
+});
+
+// ── Source filter: ffiec rows use other units and must never be read ──────────
+
+describe("health queries read only fdic and ncua rows", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+    getMock().unsafe.mockResolvedValue([]);
+  });
+
+  it.each([
+    ["getIndustryHealthMetrics", () => getIndustryHealthMetrics()],
+    ["getHealthMetricsByCharter", () => getHealthMetricsByCharter()],
+    ["getDepositGrowthTrend", () => getDepositGrowthTrend()],
+    ["getLoanGrowthTrend", () => getLoanGrowthTrend()],
+    ["getInstitutionCountTrends", () => getInstitutionCountTrends()],
+  ])("%s filters by source", async (_name, run) => {
+    await run();
+    expect(unfilteredFinancialReads(getMock())).toEqual([]);
   });
 });

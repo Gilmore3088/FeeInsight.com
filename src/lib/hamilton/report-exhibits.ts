@@ -6,6 +6,7 @@
  */
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { computePercentile } from "@/lib/data-store/fees";
+import { FINANCIAL_SOURCES, isFinancialSource } from "@/lib/data-store/financial-sources";
 import { formatAmount, formatCompactDollars } from "@/lib/format";
 import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
@@ -367,8 +368,8 @@ export function buildReportExhibits(params: {
 /**
  * Last complete calendar year of deposit service-charge income, in whole dollars.
  * FDIC rows are quarterly (ISERCHGQ), so a year is the sum of its four quarters;
- * NCUA and FFIEC rows are year-to-date, so a year is its December value. Every
- * source stores income in thousands except FFIEC, which is over-scaled by 1,000.
+ * NCUA rows are year-to-date, so a year is its December value. Both store income
+ * in thousands. Rows from any other source (the ffiec duplicates) are ignored.
  */
 export function annualServiceCharges(
   records: Array<{ report_date: string; source: string; service_charge_income: number | null }>,
@@ -377,6 +378,7 @@ export function annualServiceCharges(
   for (const record of records) {
     if (record.service_charge_income === null || !Number.isFinite(Number(record.service_charge_income))) continue;
     const source = String(record.source ?? "").toLowerCase();
+    if (!isFinancialSource(source)) continue;
     const date = String(record.report_date).slice(0, 10);
     const key = `${source}|${date.slice(0, 4)}`;
     const quarters = bySourceYear.get(key) ?? new Map<string, number>();
@@ -392,11 +394,11 @@ export function annualServiceCharges(
       const ends = ["03-31", "06-30", "09-30", "12-31"];
       if (ends.every((end) => quarters.has(end))) thousands = ends.reduce((sum, end) => sum + (quarters.get(end) ?? 0), 0);
     } else if (quarters.has("12-31")) {
-      thousands = source === "ffiec" ? (quarters.get("12-31") ?? 0) / 1_000_000 : quarters.get("12-31") ?? null;
+      thousands = quarters.get("12-31") ?? null;
     }
     if (thousands !== null && thousands > 0) candidates.push({ year, amount: Math.round(thousands * 1_000), source });
   }
-  const preference = ["fdic", "ncua", "ffiec"];
+  const preference: readonly string[] = FINANCIAL_SOURCES;
   candidates.sort((a, b) => b.year - a.year || preference.indexOf(a.source) - preference.indexOf(b.source));
   return candidates[0] ?? null;
 }

@@ -203,4 +203,14 @@ describe("Darwin held-fee release review", () => {
     expect((await runDarwinReleaseReview({ runId: 5, db: asDb(db), create, calls: 0 })).selected).toBe(0);
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("fills a state lane's short list with held fees from other states", async () => {
+    const db = createDbMock([]);
+    db.unsafe = vi.fn((_query: string, params: unknown[]) =>
+      Promise.resolve(params.includes("UT") ? [row({ state_code: "UT" })] : [row(), row({ fee_raw_id: 2 })]),
+    );
+    const result = await runDarwinReleaseReview({ runId: 5, dryRun: true, db: asDb(db), create: vi.fn(), calls: 1, stateCode: "UT" });
+    expect(result.results.map((entry) => entry.fee_raw_id)).toEqual([1, 2]);
+    expect(db.unsafe).toHaveBeenCalledTimes(2);
+  });
 });

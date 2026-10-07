@@ -159,18 +159,34 @@ export function openStatesUrl(stateCode: string, query: string, since: string, p
 /** Pages per query. Open States' free tier is rate limited, so a state costs at most queries x pages requests. */
 export const MAX_PAGES_PER_QUERY = 2;
 
+/**
+ * Gap between Open States requests. On prod (2026-10-07) runs that sent requests a second
+ * or two apart got HTTP 429 after about ten requests and kept getting it for about a minute,
+ * so the free tier allows about ten a minute. One request every 6.5 s stays under that.
+ */
+export const OPEN_STATES_REQUEST_INTERVAL_MS = 6_500;
+let lastOpenStatesRequestAt = 0;
+
+async function waitForOpenStatesSlot(intervalMs: number): Promise<void> {
+  const wait = lastOpenStatesRequestAt + intervalMs - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastOpenStatesRequestAt = Date.now();
+}
+
 /** Fee bills in one state with any action on or after `since`, deduplicated across the searches. */
 export async function fetchStateFeeBills(
   stateCode: string,
   since: string,
   apiKey: string,
   options: RegistryFetchOptions = {},
+  requestIntervalMs = OPEN_STATES_REQUEST_INTERVAL_MS,
 ): Promise<{ items: StateBillItem[]; searched: number; requests: number }> {
   const byId = new Map<string, StateBillItem>();
   let searched = 0;
   let requests = 0;
   for (const query of STATE_BILL_QUERIES) {
     for (let page = 1; page <= MAX_PAGES_PER_QUERY; page += 1) {
+      await waitForOpenStatesSlot(requestIntervalMs);
       const body = await registryFetchJson<RawPage>(openStatesUrl(stateCode, query, since, page), {
         retries: 2,
         timeoutMs: 30_000,

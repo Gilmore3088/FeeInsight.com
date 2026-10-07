@@ -281,7 +281,7 @@ export const getInstitution = tool({
         verified: verifiedFees,
         provisional: provisionalFees,
       },
-      // ffiec rows duplicate fdic quarters at other scales (see financial-units.ts).
+      // getFinancialsByInstitution reads fdic and ncua rows only (see data-store/financial-sources.ts).
       financials: {
         units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
         latest: sameScaleFinancials[0] ?? null,

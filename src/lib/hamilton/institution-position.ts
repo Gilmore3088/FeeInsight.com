@@ -119,12 +119,18 @@ export function buildInstitutionPositioning(params: {
   };
 }
 
-/** The selected institution's positioning, or null when the institution doesn't exist. */
-export async function fetchInstitutionPositioning(institutionId: number): Promise<InstitutionPositioning | null> {
+/**
+ * The selected institution's positioning, or null when the institution doesn't exist. With a
+ * userId, it follows the workspace's (or the user's) default peer group.
+ */
+export async function fetchInstitutionPositioning(
+  institutionId: number,
+  userId?: string | number | null,
+): Promise<InstitutionPositioning | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
   const [peerIndex, ownValues] = await Promise.all([
-    resolveHamiltonPeerIndex({ selectedInstitution: institution }),
+    resolveHamiltonPeerIndex({ selectedInstitution: institution, institutionId, userId: userId ?? null }),
     getInstitutionFeeValues(institutionId),
   ]);
   return buildInstitutionPositioning({

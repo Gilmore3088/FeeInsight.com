@@ -16,7 +16,7 @@ function ctx(overrides: Partial<StateEconomicContext> = {}): StateEconomicContex
     national_unemployment: buildIndicatorSeries("UNRATE", monthly("2026-08-01", [4.1, 4.1, 4.2, 4.3, 4.3, 4.3, 4.4, 4.3, 4.4, 4.5, 0, 4.4, 4.3])),
     fed_funds: null,
     cpi_all_items: buildIndicatorSeries("CUUR0000SA0", monthly("2026-08-01", [103.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100])),
-    cpi_bank_services: buildIndicatorSeries("CUUR0000SEMC01", monthly("2026-08-01", [102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100])),
+    cpi_bank_services: buildIndicatorSeries("CUUR0000SS68021", monthly("2026-08-01", [102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100])),
     beige_book: null,
     regulatory: [],
     ...overrides,
