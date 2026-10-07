@@ -13,6 +13,7 @@ import {
 import {
   cleanFeeName,
   composableTail,
+  STOP_PAYMENT_ITEM_WORDS,
   LEADING_VALUE,
   looksLikeHeading,
   passesDarwinChecks,
@@ -93,6 +94,12 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
         heading = filled[0];
         continue;
       }
+      // v27: a two-column page puts the next column's prose beside a heading ("Wire Transfer
+      // Fees | being returned NSF."). The left cell is still the heading.
+      if (filled.length === 2 && amountsIn(line).length === 0 && looksLikeHeading(filled[0]) && RIGHT_COLUMN_PROSE.test(filled[1])) {
+        heading = filled[0];
+        continue;
+      }
       const opens = filled.length >= 2 ? rightColumnHeading(filled[filled.length - 1]) : null;
       if (opens) {
         column = { heading: opens, line: index };
@@ -146,6 +153,9 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
   return rows;
 }
 
+/** Prose running on from another column: opens lowercase, or with a footnote number ("1. "). */
+const RIGHT_COLUMN_PROSE = /^(?:[a-z]|\d{1,2}\.\s+[A-Z])/;
+
 /** A sub-row's bullet ("• Personal"), which a row of its own never opens with. */
 const BULLET = /^[•·▪◦‣*-]\s*\S/;
 const COLUMN_SUBROW_LINES = 8;
@@ -197,7 +207,8 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
 
     let hint = classifyFeeText(name);
     let feeName = name;
-    if (!hint && row.heading && composableTail(name)) {
+    const stopPaymentHeading = row.heading != null && classifyFeeText(row.heading) === "stop_payment";
+    if (!hint && row.heading && (composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
       hint = classifyFeeText(`${row.heading} ${name}`);
       feeName = `${row.heading}: ${name}`;
     }

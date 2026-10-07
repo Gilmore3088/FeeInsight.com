@@ -32,9 +32,9 @@ describe("Rosetta text survival", () => {
   it("climbs the reader ladder one rung at a time", () => {
     // A legacy text goes back to the current primary reader first.
     expect(nextReaderRung("pdf", { lastReader: "legacy.pdf", lastTextLost: true })).toBeNull();
-    expect(nextReaderRung("pdf", { lastReader: "read.pdf_layout", lastTextLost: true })).toBe("read.ocr_tesseract");
     expect(nextReaderRung("html", { lastReader: "read.html_dom", lastTextLost: true })).toBe("read.js_fallback");
-    // Above the free alternates there is no free rung; PDFs go to the paid pass.
+    // Free OCR reads only page images, so a text-layer PDF has no free rung: the paid pass takes it.
+    expect(nextReaderRung("pdf", { lastReader: "read.pdf_layout", lastTextLost: true })).toBeNull();
     expect(nextReaderRung("pdf", { lastReader: "read.ocr_tesseract", lastTextLost: true })).toBeNull();
     expect(nextReaderRung("docx", { lastReader: "read.docx_text", lastTextLost: true })).toBeNull();
     // A text that held keeps its reader.
@@ -42,8 +42,9 @@ describe("Rosetta text survival", () => {
   });
 
   it("starts a bank's documents on the alternate when its primary reader loses as often as it holds", () => {
-    expect(nextReaderRung("pdf", { bankRecord: { "read.pdf_layout": { held: 1, lost: 1 } } })).toBe("read.ocr_tesseract");
-    expect(nextReaderRung("pdf", { bankRecord: { "read.pdf_layout": { held: 2, lost: 1 } } })).toBeNull();
+    expect(nextReaderRung("html", { bankRecord: { "read.html_dom": { held: 1, lost: 1 } } })).toBe("read.js_fallback");
+    expect(nextReaderRung("html", { bankRecord: { "read.html_dom": { held: 2, lost: 1 } } })).toBeNull();
+    expect(nextReaderRung("pdf", { bankRecord: { "read.pdf_layout": { held: 1, lost: 1 } } })).toBeNull();
     expect(nextReaderRung("html", { bankRecord: { "read.html_dom": { held: 0, lost: 0 } } })).toBeNull();
     expect(nextReaderRung("html", { bankRecord: { "read.pdf_layout": { held: 0, lost: 4 } } })).toBeNull();
   });

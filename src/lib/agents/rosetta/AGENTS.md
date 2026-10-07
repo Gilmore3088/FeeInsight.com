@@ -61,6 +61,9 @@ Rosetta owns source text normalization.
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
+    Only a page built by script (no text, or an app shell) ends `js_required`; a page
+    whose own text reads fine but is no fee schedule (a home page or "not found" page at
+    a guessed fee link) logs the fallback as `wrong_document`.
   - Pages like that rejected as `wrong_document` before the fallback existed (an html
     text whose link names the fee page, at most one amount, never tried by
     `read.js_fallback`) are reopened once at the start of each read step, at most
@@ -69,7 +72,8 @@ Rosetta owns source text normalization.
     gets it back, and a `read.reopen` attempt (outcome `ok`, fingerprint = the text's
     `source_hash`) makes that text readable once more and voids its earlier permanent
     rejection. A page with more amounts is logged `rejected` and stays closed. No fee
-    is touched.
+    is touched. Only a page's current copy is reopened, and it gets its one read even
+    when the bank has a newer document of another page (its main link moved on).
   - A page's current copy that Rosetta read as not a fee page and under 300 characters
     (a bot check, script shell or bare title) is set aside each read step
     (`restoreReadableCopies` in `magellan/current-copy.ts`, at most 50): the page's latest
@@ -101,10 +105,11 @@ Rosetta owns source text normalization.
     `text_lost_fees` weight = lost fees when at least 3 were lost and they are 25% of the
     judged fees). `readReaderScores` sums them per reader.
   - A lost text gets one read a rung up the ladder (`nextReaderRung`): a legacy text
-    (no reader recorded) with the current primary reader; a `read.pdf_layout` text with
-    free OCR as well; a `read.html_dom` text with the JavaScript fallbacks as well. A bank
-    whose primary-reader texts lost fees at least as often as they held starts its
-    documents on the alternate too. The alternate's text is used only when it is a fee
+    (no reader recorded) with the current primary reader; a `read.html_dom` text with the
+    JavaScript fallbacks as well. A bank whose DOM texts lost fees at least as often as
+    they held starts its pages on the fallbacks too. A `read.pdf_layout` text has no free
+    rung (free OCR reads only page images and replaced none of 96 text-layer PDFs): the
+    paid pass takes it. The alternate's text is used only when it is a fee
     page listing at least as many fees with an amount (`rungTextNotWorse`). A re-read of
     a lost text keeps the stored text unless the new one is no thinner, and never sends
     the bank back to Magellan. Each rung runs once per document: the alternate's attempt

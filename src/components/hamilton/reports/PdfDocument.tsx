@@ -493,7 +493,7 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
         {/* Snapshot — only if scenario data present */}
         {report.snapshot.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Current vs Proposed Snapshot</Text>
+            <Text style={styles.sectionHeading}>Snapshot</Text>
             <View style={styles.statCalloutGrid}>
               {report.snapshot.map((item, i) => (
                 <View key={i} style={styles.statCalloutBox}>
