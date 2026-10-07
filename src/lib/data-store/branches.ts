@@ -138,14 +138,20 @@ export interface MarketBranchFootprint {
   totalBranches: number;
   /** Deposits held in those branches, whole dollars. */
   totalDeposits: number;
-  /** Per institution: its branches and deposits in the market counties. */
-  byInstitution: Record<number, { branches: number; deposits: number }>;
+  /**
+   * Per institution: its branches in the market and, for banks, its deposits there. Credit
+   * unions carry deposits null: NCUA reports no deposits by branch, so no share is shown.
+   */
+  byInstitution: Record<number, { branches: number; deposits: number | null }>;
 }
 
 /**
- * Branch counts and deposit totals for a report's market counties (FDIC Summary of Deposits),
- * so the report can show each named competitor's footprint and local deposit share. Banks only:
- * credit unions are not in the SOD. Null when the counties hold no branches.
+ * Branch counts and deposit totals for a report's market counties, so the report can show each
+ * named competitor's footprint. Banks come from the FDIC Summary of Deposits, with deposits.
+ * Credit unions come from NCUA's branch file, which has no county code, so a credit union
+ * branch counts when it sits in a city where the market counties hold a bank branch, the same
+ * city test the report uses to bring credit unions into the market. Null when the counties
+ * hold no bank branches.
  */
 export async function getMarketBranchFootprint(countyFips: string[], sodYear: number): Promise<MarketBranchFootprint | null> {
   if (countyFips.length === 0) return null;
@@ -155,15 +161,39 @@ export async function getMarketBranchFootprint(countyFips: string[], sodYear: nu
     WHERE b.year = ${sodYear} AND b.county_fips::text = ANY(${countyFips})
     GROUP BY b.institution_id`;
   if (rows.length === 0) return null;
+  const creditUnions = await sql<{ institution_id: string | number; branches: string | number }[]>`
+    WITH places AS (
+      SELECT DISTINCT b.state, UPPER(b.city) AS city
+      FROM institution_branch_deposits b
+      WHERE b.year = ${sodYear} AND b.county_fips::text = ANY(${countyFips}) AND b.city IS NOT NULL
+    )
+    SELECT c.institution_id, COUNT(*) AS branches
+    FROM credit_union_branches c
+    JOIN places p ON p.state = c.state AND p.city = UPPER(c.city)
+    WHERE c.institution_id IS NOT NULL
+    GROUP BY c.institution_id`;
+  return buildMarketBranchFootprint(sodYear, rows, creditUnions);
+}
+
+export function buildMarketBranchFootprint(
+  sodYear: number,
+  banks: { institution_id: string | number | null; branches: string | number; deposits: string | number | null }[],
+  creditUnions: { institution_id: string | number; branches: string | number }[],
+): MarketBranchFootprint {
   const byInstitution: MarketBranchFootprint["byInstitution"] = {};
   let totalBranches = 0;
   let totalDeposits = 0;
-  for (const row of rows) {
+  for (const row of banks) {
     const branches = Number(row.branches);
     const deposits = Number(row.deposits ?? 0) * SOD_THOUSANDS;
     totalBranches += branches;
     totalDeposits += deposits;
     if (row.institution_id !== null) byInstitution[Number(row.institution_id)] = { branches, deposits };
+  }
+  for (const row of creditUnions) {
+    const id = Number(row.institution_id);
+    // A bank's SOD row wins if an institution ever appears in both files.
+    if (!byInstitution[id]) byInstitution[id] = { branches: Number(row.branches), deposits: null };
   }
   return { sod_year: sodYear, totalBranches, totalDeposits, byInstitution };
 }
