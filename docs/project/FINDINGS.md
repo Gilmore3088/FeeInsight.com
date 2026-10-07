@@ -2630,3 +2630,15 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   `priority-state-research.ts`) for states that must not wait. Each miss now leaves a
   `magellan.search_miss` lesson.
 
+## 2026-10-07: Bank sites that refuse our fetcher had no way in
+
+- **Problem.** 51 banks' fee links return HTTP 403 to Magellan's fetcher (Pinnacle's pnfp.com,
+  Citizens, Flagstar, Columbia), and the paid web search's answers for Huntington and KeyBank
+  failed the same way, so those banks stayed without a schedule. The JS fallback uses the same
+  fetcher, and Firecrawl is off-limits.
+- **Fix.** `magellan/blocked-fetch.ts` asks Anthropic's server-side web fetch for the exact
+  link (bank's own host only), inside Magellan's paid step and cap.
+- **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
+  (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
+  (an LPL disclosure, a car-price site); they are wrong links and are skipped.
+

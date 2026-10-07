@@ -16,7 +16,8 @@ import {
 } from "@/lib/agents/paid-pass";
 
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
-import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
+import { runBlockedFetch } from "./blocked-fetch";
+import { fetchWithTimeout, looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { pageLinks, urlIdentity, type PageLink } from "./finders";
 import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
@@ -51,6 +52,8 @@ const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 1024;
 /** Link score given to the model's answer: strong enough to accept a scanned PDF. */
 const PAID_ANSWER_SCORE = 0.85;
+/** An answer the bank's site refused to show us (HTTP 403): kept, unchecked, for the paid fetch. */
+const BLOCKED_ANSWER_CONFIDENCE = 0.75;
 /** Paid outcomes that do not count as this month's paid try (nothing was learned). */
 export const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
 
@@ -342,6 +345,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
             documentType = validation.documentType;
             confidence = validation.confidence;
             reason = `Paid web search: ${validation.reason}`;
+          } else if (validation.status === 403) {
+            // The bank's site refuses our fetcher (Huntington, KeyBank): keep the answer so
+            // the paid fetch (blocked-fetch.ts) reads it; Rosetta then rules on the page.
+            outcome = "ok";
+            url = proposed;
+            documentType = looksLikePdfUrl(proposed) ? "pdf" : "html";
+            confidence = BLOCKED_ANSWER_CONFIDENCE;
+            reason = `Paid web search; the bank's site refused our check (HTTP 403), kept for the paid fetch: ${proposed}`;
           } else {
             outcome = validation.status != null && validation.status >= 400 ? classifyFetchFailure(validation.status) : "wrong_document";
             reason = `Answer failed the fee-page check (${validation.reason}): ${proposed}`;
@@ -405,7 +416,32 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   }
   if (!result.budgetStopped) await addWebsiteFind(result, options, db);
   if (!result.budgetStopped) await addScheduleSearch(result, options, db);
+  if (!result.budgetStopped) await addBlockedFetch(result, options, db);
   return result;
+}
+
+/**
+ * Fee links the bank's site refuses (HTTP 403) get one paid server-side fetch in the same
+ * step (blocked-fetch.ts); what it returns is stored and read like any fetched document.
+ */
+async function addBlockedFetch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+  const fetched = await runBlockedFetch({
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    dryRun: Boolean(options.dryRun),
+    db,
+    create: options.create,
+  });
+  result.selected += fetched.selected;
+  result.processed += fetched.processed;
+  result.succeeded += fetched.stored;
+  result.failed += fetched.failed;
+  result.costMicrousd += fetched.costMicrousd;
+  if (fetched.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = fetched.budgetReason;
+  }
+  result.results.push(...fetched.results);
 }
 
 /**

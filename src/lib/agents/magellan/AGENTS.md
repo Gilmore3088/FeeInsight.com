@@ -276,6 +276,19 @@ stopped, how many addresses it tried, and each finder's outcome. The link ledger
 judges links Magellan handed on, so these are the lessons for banks it gave up on. The
 step's `search_miss_lessons` detail counts them.
 
+## Paid fetch for refused links (`blocked-fetch.ts`)
+
+A fee link on the bank's own site whose last fetch was refused (`failure_reason =
+magellan_fetch_http_403`) gets one paid server-side fetch in the `discover-paid` step:
+Anthropic's `web_fetch` tool, `max_uses` 1, `allowed_domains` the link's host. Up to
+`BLOCKED_FETCH_PER_RUN` (3) banks a step, largest first, each at most once per
+`BLOCKED_FETCH_RETRY_DAYS` (7). The page text or PDF it returns goes through the same
+fetch path as any fetch (`fetchAndRecordLink`: document row, vault copy, attempt with
+strategy `fetch.paid_web_fetch` and its cost), and Rosetta reads it next. A refused link on
+another site is a wrong link and is left to discovery. When the paid web search's answer
+is refused by the bank's site (HTTP 403), the answer is kept as the bank's link (confidence
+0.75) so this fetch reads it. A budget stop ends the step before anything is spent.
+
 ## Foreign schedules
 
 A link on another country's domain (`isForeignHostLink`: .bd, .in, .ca, .co.uk and others;
