@@ -160,6 +160,7 @@ describe("Darwin held-fee release review", () => {
       [DARWIN_RELEASE_REVIEW_STRATEGY.strategy, "ok", true],
       [DARWIN_RELEASE_REVIEW_STRATEGY.strategy, "rejected", false],
     ]);
+    expect(attempts(db).every((attempt) => attempt.detail.lessons === 0)).toBe(true);
     const statements = db.mock.calls.map(([strings]) => templateText(strings));
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
   });
