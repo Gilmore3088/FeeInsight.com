@@ -276,6 +276,22 @@ next extract Knox files that exact name under the labelled category from any oth
 fits" only takes the name off the queue. A label that agrees with the rules stops a global
 lesson from moving the fee.
 
+## Batch review (`batch-review.ts`)
+
+After every 500 Knox reads (raw rows, oldest first), once they are 24 hours old (Darwin,
+publish and Hamilton's 12-hour second look have had them), the extract step scores the
+batch and writes it to `pipeline_feedback` (`check_name = 'knox.batch_review'`):
+
+- error rate = (Darwin rejected + taken down for a read reason) / judged. Reads Darwin has
+  not judged, reads Knox held for review, and reads a newer Knox version replaced
+  (`rules_recheck_unreproduced` only) are counted but not judged.
+- each miss is a `batch_miss` row (dedupe `knox.batch_review:raw:<id>`), and each batch is one
+  `batch_error_rate` row with the rate, the answer-key check (banks with a confirmed key) and
+  the five most common miss patterns (miss, reason, category, three examples).
+- Knox's own learning still comes from `wrong_category` (`lessons.ts`) and
+  `takedown_confirmed` (`takedown-lessons.ts`); the patterns are where the next rule fix
+  starts. At most two batches per step; the first review starts 72 hours back.
+
 ## Calibrated confidence (`calibration.ts`, shadow)
 Knox's confidence is a fixed formula (0.82 to 0.94), so every read clears Hamilton's 0.8 floor.
 Each extract step reads how many of Knox's fees published in the last 14 days are still live,

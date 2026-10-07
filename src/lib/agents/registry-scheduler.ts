@@ -7,8 +7,8 @@ import { FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/m
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
-import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
-import { CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
+import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
 import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
@@ -45,18 +45,20 @@ const CLAIM_RETRY_HOURS = 6;
 
 /**
  * Sources whose parser has read new accounts since some partitions were pulled. A
- * succeeded partition recorded under an older `detail.parser_version` (missing = 1) is due
+ * succeeded or empty partition recorded under an older `detail.parser_version` (missing = 1) is due
  * again, so new fields fill in through ordinary, visible registry runs, newest first.
  */
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
+  [CENSUS_ACS_SOURCE]: CENSUS_ACS_PARSER_VERSION,
+  [CFPB_SOURCE]: CFPB_PARSER_VERSION,
 };
 
 export function isParserStale(source: string, status: string | null, parserVersion: number | null): boolean {
   const current = REGISTRY_PARSER_VERSIONS[source];
-  return current !== undefined && status === "succeeded" && (parserVersion ?? 1) < current;
+  return current !== undefined && (status === "succeeded" || status === "empty") && (parserVersion ?? 1) < current;
 }
 
 export interface RegistryPartitionCandidate {
@@ -181,7 +183,7 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
       next_attempt_after = EXCLUDED.next_attempt_after,
       updated_at = NOW()
     WHERE registry_ingest_partitions.next_attempt_after <= NOW()
-       OR (registry_ingest_partitions.status = 'succeeded'
+       OR (registry_ingest_partitions.status IN ('succeeded', 'empty')
            AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
     RETURNING id
   `;

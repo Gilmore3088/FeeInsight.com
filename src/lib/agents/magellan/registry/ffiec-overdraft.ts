@@ -108,7 +108,7 @@ async function writeQuarter(
         FROM institution_financial_records f
         JOIN ids USING (institution_id)
        WHERE f.source = 'fdic'
-         AND f.report_date = ANY(${earlier}::date[])
+         AND f.report_date = ANY(${earlier}::text[])
          AND f.overdraft_revenue IS NOT NULL
        GROUP BY f.institution_id
     )
@@ -122,7 +122,7 @@ async function writeQuarter(
       LEFT JOIN prior USING (institution_id)
      WHERE f.source = 'fdic'
        AND f.institution_id = ids.institution_id
-       AND f.report_date = ${reportDate}::date
+       AND f.report_date = ${reportDate}
     RETURNING (f.overdraft_revenue IS NOT NULL) AS quarterly
   `;
   const list = [...(result as unknown as Array<{ quarterly: boolean }>)];

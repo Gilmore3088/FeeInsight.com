@@ -109,13 +109,19 @@ export async function fetchAcs(
   stateFips?: string,
 ): Promise<{ url: string; rows: AcsRow[] } | null> {
   const url = acsUrl(year, geo, stateFips);
+  const safeUrl = url.replace(/([?&]key=)[^&]+/, "$1***");
+  let text: string;
   try {
-    const response = await registryFetch(url, options);
-    const text = await response.text();
-    if (!text.trim().startsWith("[")) return null;
-    return { url: url.replace(/([?&]key=)[^&]+/, "$1***"), rows: parseAcsTable(JSON.parse(text), geo, year) };
+    text = await (await registryFetch(url, options)).text();
   } catch (error) {
-    if (error instanceof RegistryHttpError && (error.status === 404 || error.status === 400)) return null;
+    // Census answers 404 for a vintage it has not published. Anything else is a real failure.
+    if (error instanceof RegistryHttpError && error.status === 404) return null;
     throw error;
   }
+  if (!text.trim().startsWith("[")) {
+    // A 200 with a page instead of data is a key, quota or outage problem, never "not published".
+    const snippet = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new Error(`Census returned no data for ${safeUrl}: ${snippet || "empty body"}`);
+  }
+  return { url: safeUrl, rows: parseAcsTable(JSON.parse(text), geo, year) };
 }
