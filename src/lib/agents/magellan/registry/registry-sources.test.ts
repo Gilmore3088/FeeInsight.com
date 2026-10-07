@@ -448,6 +448,7 @@ describe("registry dispatch", () => {
       "fdic-universe",
       "fdic-financials",
       "ncua-financials",
+      "ffiec-overdraft",
       "fdic-sod",
       "ncua-branches",
       "ncua-branch-geocode",

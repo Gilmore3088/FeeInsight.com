@@ -1,6 +1,7 @@
 import type { RegistryDb } from "./partitions";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
+import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
@@ -125,6 +126,30 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           refreshed_institutions: r.refreshedInstitutions,
           deactivated_institutions: r.deactivatedInstitutions,
           empty: r.empty,
+        },
+      };
+    },
+  },
+  {
+    source: FFIEC_OVERDRAFT_SOURCE,
+    stepKey: "registry-ffiec-overdraft",
+    title: "Pull bank overdraft and NSF income (FFIEC call report RIAD H032)",
+    run: async (input) => {
+      const r = await runRegistryFfiecOverdraft({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `No bank overdraft income for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read overdraft and NSF income for ${n(r.filers)} banks for ${r.partitionKey}: ${n(r.matchedBanks)} matched, ${n(r.updatedRows)} call-report rows updated, ${n(r.quarterlyValues)} with a quarterly figure${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          file: r.fileName,
+          filers: r.filers,
+          matched_banks: r.matchedBanks,
+          updated_rows: r.updatedRows,
+          quarterly_values: r.quarterlyValues,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
         },
       };
     },

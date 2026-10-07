@@ -3,6 +3,7 @@ import { startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
 import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
+import { FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/magellan/registry/ffiec-overdraft";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
@@ -88,6 +89,7 @@ export function registryPartitionsBySource(
   const dynamic: Record<string, string[]> = {
     [FDIC_FINANCIALS_SOURCE]: quarters(FDIC_FILING_LAG_DAYS),
     [NCUA_FINANCIALS_SOURCE]: quarters(NCUA_FILING_LAG_DAYS),
+    [FFIEC_OVERDRAFT_SOURCE]: ffiecOverdraftPartitions(now),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
