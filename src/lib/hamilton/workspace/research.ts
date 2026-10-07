@@ -19,6 +19,8 @@ import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/c
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
+import { getInstitutionRegulators } from "@/lib/data-store/regulators";
+import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -28,12 +30,14 @@ import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
   competitorMoveObservations,
+  feePositionRows,
   marketPositionObservations,
   rankObservations,
   revenueShiftObservation,
   type FeeChangeInput,
 } from "./observations";
 import { priceBands } from "./bands";
+import { regulatoryFacts } from "./regulators";
 import { buildSegmentResearch } from "./segment";
 import { MIN_PEERS_FOR_POSITION } from "./scenario";
 import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type ServiceChargeRow } from "./revenue";
@@ -405,6 +409,7 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
     nationalIncome,
     nationalIncomeSeries,
     feesReviewed: base.ownValues.size,
+    positions: feePositionRows(positions),
     peerLabel: base.peerLabel,
     generatedAt: now.toISOString(),
     provenance: {
@@ -563,7 +568,7 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory]);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
@@ -573,6 +578,8 @@ export async function getFeeResearch(
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
     loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),
+    getInstitutionRegulators(institutionId).catch(() => null),
+    getInstitutionComplaintYears(institutionId).catch(() => []),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
@@ -625,7 +632,18 @@ export async function getFeeResearch(
     ownRows,
     nationalIncomeSeries,
     institutionFinancials: financials,
-    regulation: [...feeRules(feeCategory, base.charterType), ...feeRegulatoryNews(articles, feeCategory)],
+    regulation: [
+      ...regulatoryFacts({
+        institutionName: base.institutionName,
+        feeCategory,
+        stateCode: base.stateCode,
+        charterType: base.charterType,
+        regulators,
+        complaints,
+      }),
+      ...feeRules(feeCategory, base.charterType),
+      ...feeRegulatoryNews(articles, feeCategory),
+    ],
     economy,
     segment,
     changeEvents,
@@ -668,6 +686,8 @@ export async function getFeeResearch(
         "A blank cell in a table means the fee is not on that institution's published schedule in the index.",
         `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
         "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",
+        "Rules come from a short reviewed list. State fee laws appear only once reviewed; none is cited otherwise.",
+        "CFPB complaints count only where the CFPB company name matched this institution; no match is not proof of none.",
       ],
       clientFacts: [],
     },

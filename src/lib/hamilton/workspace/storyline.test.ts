@@ -91,6 +91,7 @@ describe("storyline", () => {
     expect(story.kind).toBe("board_decision");
     expect(story.defaultView).toBe("finance");
     expect(story.options?.map((o) => o.label)).toEqual(["Hold at $32", "Peer median, $29.50", "Remove the overdraft fee"]);
+    expect(story.options?.map((o) => o.price)).toEqual([32, 29.5, 0]);
     expect(story.options?.[2].consequences.map((c) => c.text)).toContain("None of 16 peers publishes a $0 overdraft fee today.");
     expect(JSON.stringify(story)).not.toMatch(/recommend|should|raise your|lower your|best option/i);
   });
@@ -124,7 +125,7 @@ describe("storyline", () => {
   it("names who changed the fee and when, newest first", () => {
     const story = buildFeeAnswer(research(), { story: { focus: "trend" } }).storyline!;
     const timeline = story.exhibits.find((e) => e.exhibit.kind === "change_timeline")!;
-    expect(timeline.actionTitle).toBe("2 institutions in Tennessee changed an overdraft fee in the last 180 days; 1 cut it.");
+    expect(timeline.actionTitle).toBe("2 institutions in Tennessee changed an overdraft fee in the last 180 days; 1 lowered it.");
     if (timeline.exhibit.kind === "change_timeline") expect(timeline.exhibit.events[0].institutionName).toBe("Peer 9");
     expect(story.complication[0].text).toMatch(/^2 institutions in Tennessee changed an overdraft fee/);
   });
@@ -155,10 +156,10 @@ describe("storyline", () => {
     // The table already lists every member at its price; no second exhibit repeats it.
     expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
     expect(story.lenses.market.map((f) => f.text)).toEqual([
-      "2 of 6 $10B+ institutions undercut your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
+      "2 of 6 $10B+ institutions price below your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
       "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
       "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
-      "In Tennessee, 1 cut and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
+      "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
     ]);
   });
 
@@ -177,5 +178,17 @@ describe("storyline", () => {
       const verdict = evaluateFourRoles(answer);
       expect(verdict.roles.flatMap((r) => r.failures)).toEqual([]);
     }
+  });
+});
+
+describe("local competitors carry their market deposits", () => {
+  it("passes each competitor's local deposits to the exhibit, null when unknown", () => {
+    const base = overdraftResearch();
+    const local = base.localCompetitors!.map((c, i) => ({ ...c, marketDeposits: i === 0 ? 1_200_000_000 : null }));
+    const story = buildFeeAnswer(overdraftResearch({ localCompetitors: local })).storyline!;
+    const exhibit = story.exhibits.find((e) => e.exhibit.kind === "competitor_range")!.exhibit;
+    if (exhibit.kind !== "competitor_range") throw new Error("expected competitor_range");
+    expect(exhibit.items.find((i) => i.name === "Peer 101")?.deposits).toBe(1_200_000_000);
+    expect(exhibit.items.find((i) => i.name === "Peer 102")?.deposits).toBeNull();
   });
 });

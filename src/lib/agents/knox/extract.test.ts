@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
+import { KNOX_FAULT_REASONS } from "./calibration";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -103,6 +104,11 @@ describe("Knox agentic extraction", () => {
     const result = await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
 
     expect(result).toMatchObject({ calibrationGroups: 1, calibratedBelowPublishFloor: 1 });
+    // Only takedowns that say Knox misread the fee count against it (calibration v2).
+    const survival = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_records fp"))!;
+    expect(templateText(survival[0])).toContain("rolled_back_reason ~");
+    expect(templateText(survival[0])).toContain("restored_after_takedown");
+    expect(survival).toContain(KNOX_FAULT_REASONS);
     expect(result.layouts).toEqual({ "plain/short": { documents: 1, thin: 0 } });
     const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
     const overdraft = inserts.find((call) => String(call[10]).includes("canonical_hint=overdraft"))!;
@@ -317,6 +323,22 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("COALESCE(inst.asset_size, 0) >=");
       expect(params).toEqual(expect.arrayContaining([KNOX_REREAD_ASSET_FLOOR]));
       expect(query).toContain(`ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`);
+    });
+
+    it("reads a page's current copy again when its older copy still carries live fees", async () => {
+      const db = createDbMock([]);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        return Promise.resolve([]);
+      });
+
+      await runKnoxExtract({ runId: 110, db: asExtractDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("WHERE older_copy.superseded_by_id = adt.source_document_id");
+      expect(query).toContain("live_fee.rolled_back_at IS NULL");
     });
 
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {

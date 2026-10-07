@@ -223,7 +223,7 @@ describe("Hamilton Reports generateReport", () => {
     expect(mocks.generateSection).not.toHaveBeenCalled();
     expect(result.report.title).toBe("Data Readiness Brief - Hamilton Federal Credit Union");
     expect(result.report.implementationNotes).toContain(
-      "No provider generation was used for this thin-or-empty-evidence report.",
+      "Written from the data on file, without a model-written analysis.",
     );
     expect(result.artifactMetadata).toMatchObject({
       evidencePolicy: "source-diligence",

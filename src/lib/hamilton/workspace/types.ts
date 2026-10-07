@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.7.1";
+export const WORKSPACE_ENGINE_VERSION = "1.9.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -169,9 +169,20 @@ export interface Briefing {
   nationalIncomeSeries: MarketIncome[];
   /** Fees on the bank's published schedule that Hamilton reviewed. */
   feesReviewed: number;
+  /** One row per reviewed fee: the bank's price against its peer band. Unranked; band is null below the peer minimum. */
+  positions: FeePositionRow[];
   peerLabel: string;
   generatedAt: string;
   provenance: Provenance;
+}
+
+export interface FeePositionRow {
+  feeCategory: string;
+  displayName: string;
+  current: number;
+  /** The peers' middle half and median; null when too few peers publish the fee. */
+  band: { p25: number; median: number; p75: number; n: number } | null;
+  peerLabel: string;
 }
 
 export interface PeerValue {
@@ -436,7 +447,8 @@ export type Exhibit =
       unit: "dollars";
       own: number | null;
       ownLabel: string;
-      items: { name: string; amount: number; url: string | null }[];
+      /** deposits: the institution's deposits in the bank's market counties (FDIC Summary of Deposits), local competitors only. */
+      items: { name: string; amount: number; url: string | null; deposits?: number | null }[];
       sources: SourceRef[];
       note?: string;
     }

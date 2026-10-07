@@ -90,7 +90,8 @@ export function qualifiesName(line: string): boolean {
 const UNIT_CELL =
   /^(?:\/\s*[a-z.]+|per\s+[\w/ -]{1,30}|each|ea\.?|monthly|annual(?:ly)?|fee|amount|charge|n\/c|free|none|no charge|[^a-z]*|apy\b.*)$/i;
 /** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
-const LEADING_FRAGMENT = /^(?:(?:\/\s*[A-Za-z.]+|per\s+[a-z/]+(?:\s+[a-z]+)?|each|ea\.)\s+(?=[A-Z“"(•●▪■◦➢►▸])|[a-z]\.\s+(?=[A-Z])|\d{1,2}[.)]\s+(?=[A-Z]))/;
+// The previous row's bare price also leads a name in one-line schedules ("100.00 Overdraft (items paid)").
+const LEADING_FRAGMENT = /^(?:(?:\/\s*[A-Za-z.]+|per\s+[a-z/]+(?:\s+[a-z]+)?|each|ea\.)\s+(?=[A-Z“"(•●▪■◦➢►▸])|[a-z]\.\s+(?=[A-Z])|\d{1,2}[.)]\s+(?=[A-Z])|\$?\d[\d,]*\.\d{2}\s+(?=[A-Z]))/;
 
 /** Trailing stops and separators, except the stop of an abbreviation ("Outside U.S."). */
 function trimEnd(name: string): string {
@@ -155,14 +156,19 @@ const COMPOSABLE_WORDS = new Set(
     // "Cash withdrawals - Within U.S. / U.S. territories" under "ATM fees – At non-Wells Fargo ATMs".
     "cash withdrawal withdrawals within outside territories " +
     // "Business accounts only" under "Non-Sufficient Funds (NSF)".
-    "account accounts only"
+    "account accounts only " +
+    // "Service assisted" and "Online" under "Stop Payments".
+    "online service assisted branch series"
   ).split(" "),
 );
 
-export function composableTail(name: string): boolean {
+/** What a stop payment row is placed on ("Online per check", "Per ACH payment"); only a stop payment heading lends to these. */
+export const STOP_PAYMENT_ITEM_WORDS = new Set(["check", "checks", "ach", "payment", "payments", "draft", "drafts"]);
+
+export function composableTail(name: string, also: ReadonlySet<string> = new Set()): boolean {
   // Single letters are the pieces of an abbreviation ("U.S."), not words.
   const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
-  return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
+  return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || also.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 
 /**

@@ -15,6 +15,8 @@ import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchm
 import { HAMILTON_CANONICAL, PRO_SECTION_TITLE, PRO_SUBHEAD } from "@/app/for-institutions/hamilton-copy";
 import { ProPlanCards } from "./pro-plan-cards";
 import { AdvisoryCard, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+
 import {
   ANNUAL_PRICE_LABEL,
   MONTHLY_PRICE_LABEL,
@@ -62,7 +64,7 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const summary = await getPublicStatsSummary();
+  const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
   const features = proFeatureList(summary);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
@@ -135,7 +137,7 @@ export default async function SubscribePage({
 
         <div className="space-y-8">
           <FreeTierCard summary={summary} />
-          <ReportCard />
+          <ReportCard sampleLive={sampleLive} />
 
           <section id="pro" aria-labelledby="pro-heading" className="scroll-mt-20">
             <div className="mb-5">
