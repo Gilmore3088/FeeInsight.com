@@ -26,7 +26,7 @@ export function money(value: number | null | undefined): string {
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
-const POSITION_LABEL: Record<LinePosition, string> = {
+export const POSITION_LABEL: Record<LinePosition, string> = {
   above_market: "Above local range",
   in_market: "Inside local range",
   below_market: "Below local range",
