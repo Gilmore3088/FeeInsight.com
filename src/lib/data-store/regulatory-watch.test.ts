@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionTheme, feesTouched, focusFees, isConsumerLaw, marketMediansFrom } from "./regulatory-watch";
+import { actionTheme, feesTouched, focusFees, isConsumerLaw, marketMediansFrom, stateLawFees } from "./regulatory-watch";
 import { benchmarkCsvRows, positionAgainst } from "./benchmark-export";
 
 describe("regulatory watch", () => {
@@ -75,5 +75,18 @@ describe("watch themes and focus fees", () => {
       ["nsf", 39.5, 20],
       ["stop_payment", 0, 30],
     ]);
+  });
+});
+
+describe("state law fee ties", () => {
+  const own = new Map([["dormant_account", 10], ["overdraft", 39.5], ["safe_deposit_box", 167.5]]);
+  const market = new Map([["dormant_account", { median: 15, count: 7 }]]);
+  it("names the fees a state law lists, and none for a disclosure rule that covers every fee", () => {
+    expect(stateLawFees({ topic: "dormancy", applies_to: ["dormant_account"] }, own, market)).toEqual({
+      all_fees: false,
+      fees: [{ fee_category: "dormant_account", display_name: expect.any(String), amount: 10, market_median: 15, market_count: 7 }],
+    });
+    expect(stateLawFees({ topic: "fee_change_notice", applies_to: [] }, own, market)).toEqual({ all_fees: true, fees: [] });
+    expect(stateLawFees({ topic: "basic_account", applies_to: ["monthly_maintenance"] }, own, market)).toEqual({ all_fees: false, fees: [] });
   });
 });

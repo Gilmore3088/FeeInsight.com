@@ -8,7 +8,7 @@ import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import { formatCompactDollars } from "@/lib/format";
 import type { SourceRef } from "@/lib/hamilton/workspace/types";
-import type { ActionTheme, RegulatoryWatch, WatchFeeTie, WatchPeerAction, WatchRuleChange } from "@/lib/data-store/regulatory-watch";
+import type { ActionTheme, RegulatoryWatch, WatchFeeTie, WatchPeerAction, WatchRuleChange, WatchState } from "@/lib/data-store/regulatory-watch";
 import { WATCH_ACTION_YEARS } from "@/lib/data-store/regulatory-watch";
 
 const AGENCY_LABEL = { OCC: "OCC", FRB: "Federal Reserve" } as const;
@@ -243,16 +243,107 @@ function RuleRow({ rule }: { rule: WatchRuleChange }) {
             rule.title
           )}
         </div>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {rule.fees.map((f) => (
-            <span key={f.fee_category} className="rounded border border-warm-200 bg-white px-1.5 py-0.5 text-[11px] text-warm-700">
-              {f.display_name} {money(f.amount)}
-            </span>
-          ))}
-          {rule.all_fees ? <span className="text-[11px] text-warm-600">and every other published fee</span> : null}
-        </div>
+        <FeeChips fees={rule.fees} allFees={rule.all_fees} />
       </div>
     </li>
+  );
+}
+
+const LAW_TOPIC: Record<string, string> = {
+  overdraft_nsf: "Overdraft and NSF",
+  dormancy: "Dormant accounts",
+  check_cashing: "Check cashing",
+  returned_item: "Returned items",
+  fee_change_notice: "Fee disclosure",
+  basic_account: "Basic account",
+  garnishment_legal_process: "Legal process",
+  atm: "ATM",
+  payee_returned_check: "Returned checks",
+  other: "Other",
+};
+
+function FeeChips({ fees, allFees }: { fees: readonly WatchFeeTie[]; allFees: boolean }) {
+  if (fees.length === 0 && !allFees) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-warm-600">{allFees && fees.length === 0 ? "Covers every fee you publish" : "Your fees:"}</span>
+      {fees.map((f) => (
+        <span key={f.fee_category} className="rounded border border-warm-200 bg-white px-1.5 py-0.5 text-[11px] text-warm-700">
+          {f.display_name} <span className="font-semibold tabular-nums text-warm-900">{money(f.amount)}</span>
+        </span>
+      ))}
+      {allFees && fees.length > 0 ? <span className="text-[11px] text-warm-600">and every other fee you publish</span> : null}
+    </div>
+  );
+}
+
+function StateExhibit({ state, number }: { state: WatchState; number: number }) {
+  return (
+    <ExhibitFrame
+      number={number}
+      title={`${state.state_name}: state law and bills on your fees`}
+      sources={[
+        ...(state.laws.length > 0 ? [{ label: `${state.state_name} statutes (official text)` }] : []),
+        ...(state.bills.length > 0 ? [{ label: state.bills_tracked ? "Open States legislative data" : `${state.state_name} legislature` }] : []),
+      ]}
+      note={state.laws_reviewed ? undefined : "Draft for legal review: these citations come from research not yet reviewed by counsel, and customers will not see them until that review is done."}
+    >
+      {state.supervisor ? (
+        <p className="mb-3 text-[13px] text-warm-700">
+          Your charter supervisor:{" "}
+          {state.supervisor.website ? (
+            <a href={state.supervisor.website} target="_blank" rel="noopener noreferrer" className="font-medium text-warm-900 underline decoration-warm-300 hover:text-terra-text">
+              {state.supervisor.agency}
+            </a>
+          ) : (
+            <span className="font-medium text-warm-900">{state.supervisor.agency}</span>
+          )}
+        </p>
+      ) : null}
+      {state.laws.length > 0 ? (
+        <div>
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">State law in force</span>
+            {!state.laws_reviewed ? (
+              <span className="rounded-full border border-terra px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-terra-text">Not yet legally reviewed</span>
+            ) : null}
+          </div>
+          <ul>
+            {state.laws.map((law) => (
+              <li key={law.id} className="grid gap-1 border-t border-warm-200 py-2.5 sm:grid-cols-[9rem_1fr]">
+                <div>
+                  <span className="inline-block rounded-full bg-warm-150 px-2 py-0.5 text-[11px] font-semibold text-warm-800">{LAW_TOPIC[law.topic] ?? law.topic}</span>
+                </div>
+                <div>
+                  <div className="text-[13px] font-medium text-warm-900">{law.name}</div>
+                  <div className="text-[11px] text-warm-600">
+                    {law.url ? (
+                      <a href={law.url} target="_blank" rel="noopener noreferrer" className="underline decoration-warm-300 hover:text-terra-text">
+                        {law.citation}
+                      </a>
+                    ) : (
+                      law.citation
+                    )}
+                  </div>
+                  <p className="mt-1 text-[13px] leading-snug text-warm-700">{law.summary}</p>
+                  <FeeChips fees={law.fees} allFees={law.all_fees} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {state.bills.length > 0 ? (
+        <div className={state.laws.length > 0 ? "mt-4" : undefined}>
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">Bills in the legislature</div>
+          <ul>
+            {state.bills.map((bill, i) => (
+              <RuleRow key={i} rule={bill} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </ExhibitFrame>
   );
 }
 
@@ -304,6 +395,7 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
             <FeeVsMarket fees={watch.fee_focus} />
           </ExhibitFrame>
         ) : null}
+        {watch.state && (watch.state.laws.length > 0 || watch.state.bills.length > 0) ? <StateExhibit state={watch.state} number={++n} /> : null}
         {watch.rule_changes.length > 0 ? (
           <ExhibitFrame number={++n} title="Federal rule changes on your fees" sources={[{ label: "Federal Register and Congress.gov" }]}>
             <ul>

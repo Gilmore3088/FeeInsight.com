@@ -213,6 +213,7 @@ describe("/api/v1/institutions", () => {
     it("serves the regulatory watch as JSON", async () => {
       vi.mocked(getRegulatoryWatch).mockResolvedValue({
         market: { places: ["Austin, TX"], peers_checked: 25 },
+        state: null,
         peer_actions: [],
         fee_focus: [],
         agencies_loaded: ["OCC", "FRB"],

@@ -13,6 +13,7 @@ import { getFeeValuesForInstitutions, getInstitutionFeeValues } from "./fee-inde
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { trackerStage, type TrackerStage } from "@/lib/regulatory/federal-register";
 import { isOpenAction } from "./registry-profile";
+import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
 
 /** Actions that began within this many years are shown. */
 export const WATCH_ACTION_YEARS = 3;
@@ -54,7 +55,7 @@ export interface WatchFeeTie {
 }
 
 export interface WatchRuleChange {
-  source: "federal_register" | "congress_gov";
+  source: "federal_register" | "congress_gov" | "open_states";
   title: string;
   kind: string;
   stage: TrackerStage | string | null;
@@ -70,7 +71,51 @@ export interface WatchRuleChange {
   all_fees: boolean;
 }
 
+/** A state law as the state fee laws module gives it (StateFeeLaw from PR 339 satisfies this). */
+export interface StateLawInput {
+  id: string;
+  name: string;
+  citation: string;
+  summary: string;
+  url: string | null;
+  topic: string;
+  applies_to: string[];
+}
+
+/**
+ * Returns the state laws that bind an institution. The page passes `stateFeeLawsFor`, which
+ * returns nothing until James's legal review (STATE_FEE_LAWS_REVIEWED); nothing here can
+ * show an unreviewed law to a customer.
+ */
+export type StateLawProvider = (params: { stateCode: string | null; charterType: string | null; charterAgency: string | null }) => StateLawInput[];
+
+export interface WatchStateLaw {
+  id: string;
+  name: string;
+  citation: string;
+  summary: string;
+  url: string | null;
+  topic: string;
+  fees: WatchFeeTie[];
+  all_fees: boolean;
+}
+
+export interface WatchState {
+  state_code: string;
+  state_name: string;
+  /** The state agency that charters and examines the institution, when it is state-chartered. */
+  supervisor: { agency: string; website: string | null } | null;
+  laws: WatchStateLaw[];
+  /** False when the laws came from the unreviewed draft (preview only). */
+  laws_reviewed: boolean;
+  bills: WatchRuleChange[];
+  /** False while the state bills tracker runs in shadow and stores nothing. */
+  bills_tracked: boolean;
+}
+
 export interface RegulatoryWatch {
+  /** State law, bills and supervisor for the institution's home state. */
+  state: WatchState | null;
   market: { places: string[]; peers_checked: number } | null;
   peer_actions: WatchPeerAction[];
   /** The institution's fees that consumer regulators watch most, beside the local market median. */
@@ -160,6 +205,29 @@ export function feesTouched(
   };
 }
 
+/** A state law's fee ties: its named categories, or every fee for disclosure and notice rules. */
+export function stateLawFees(
+  law: Pick<StateLawInput, "topic" | "applies_to">,
+  ownFees: ReadonlyMap<string, number>,
+  marketMedians: ReadonlyMap<string, { median: number | null; count: number }>,
+): { fees: WatchFeeTie[]; all_fees: boolean } {
+  const allFees = law.applies_to.length === 0 && law.topic === "fee_change_notice";
+  // A disclosure rule touches every fee alike, so no single fee is named.
+  const picked = allFees
+    ? []
+    : [...ownFees.entries()].filter(([category]) => law.applies_to.includes(category)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6);
+  return {
+    all_fees: allFees,
+    fees: picked.map(([category, amount]) => ({
+      fee_category: category,
+      display_name: getDisplayName(category),
+      amount,
+      market_median: marketMedians.get(category)?.median ?? null,
+      market_count: marketMedians.get(category)?.count ?? 0,
+    })),
+  };
+}
+
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -199,8 +267,15 @@ const numOrNull = (value: unknown): number | null => {
 
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
 
-export async function getRegulatoryWatch(institutionId: number, today: Date = new Date()): Promise<RegulatoryWatch> {
+export async function getRegulatoryWatch(
+  institutionId: number,
+  today: Date = new Date(),
+  options: { stateLaws?: StateLawProvider } = {},
+): Promise<RegulatoryWatch> {
   const todayIso = today.toISOString().slice(0, 10);
+  const [self] = await sql<{ state_code: string | null; charter_type: string | null; charter_agency: string | null }[]>`
+    SELECT state_code, charter_type, charter_agency FROM institution_sources WHERE id = ${institutionId}`;
+  const stateCode = self?.state_code ? String(self.state_code).trim() : null;
   const market = await getLocalMarketMembers(institutionId).catch(() => null);
   const rivals = (market?.members ?? []).filter((m) => !m.is_subject);
   const peers = rivals.slice(0, WATCH_PEER_LIMIT);
@@ -261,7 +336,7 @@ export async function getRegulatoryWatch(institutionId: number, today: Date = ne
 
   // Federal rule changes only; state items wait for the legal review of state fee laws.
   const ruleSince = new Date(today.getTime() - WATCH_RULE_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const [ruleRows, trackedRows] = await Promise.all([
+  const [ruleRows, trackedRows, billRows, billsTracked] = await Promise.all([
     sql<Record<string, unknown>[]>`
       SELECT source, kind, title, stage, agencies, published_on, comments_close_on, effective_on, url, topics
         FROM reg_tracker_items
@@ -271,6 +346,17 @@ export async function getRegulatoryWatch(institutionId: number, today: Date = ne
        ORDER BY COALESCE(effective_on, comments_close_on, published_on) DESC NULLS LAST
        LIMIT 40`,
     sql<{ n: number }[]>`SELECT COUNT(*)::int AS n FROM reg_tracker_items WHERE source IN ('federal_register', 'congress_gov')`,
+    stateCode
+      ? sql<Record<string, unknown>[]>`
+          SELECT source, kind, title, stage, published_on, stage_on, url, topics, identifier
+            FROM reg_tracker_items
+           WHERE source = 'open_states' AND jurisdiction = ${stateCode}
+             AND cardinality(topics) > 0
+             AND COALESCE(stage_on, published_on) >= ${ruleSince}
+           ORDER BY COALESCE(stage_on, published_on) DESC NULLS LAST
+           LIMIT 20`
+      : Promise.resolve([] as Record<string, unknown>[]),
+    sql<{ n: number }[]>`SELECT COUNT(*)::int AS n FROM reg_tracker_items WHERE source = 'open_states'`,
   ]);
 
   const ownFees = await getInstitutionFeeValues(institutionId).catch(() => new Map<string, number>());
@@ -307,8 +393,57 @@ export async function getRegulatoryWatch(institutionId: number, today: Date = ne
     }];
   });
 
+  const bills: WatchRuleChange[] = billRows.flatMap((r) => {
+    const topics = strings(r.topics);
+    const touched = feesTouched(topics, ownFees, medians);
+    if (touched.fees.length === 0) return [];
+    return [{
+      source: "open_states" as const,
+      title: r.identifier ? `${String(r.identifier)}: ${String(r.title)}` : String(r.title),
+      kind: String(r.kind),
+      stage: r.stage ? String(r.stage) : null,
+      agencies: [],
+      published_on: dateStr(r.published_on),
+      comments_close_on: null,
+      effective_on: dateStr(r.stage_on),
+      url: r.url ? String(r.url) : null,
+      topics,
+      fees: touched.fees,
+      all_fees: touched.all_fees,
+    }];
+  });
+  const laws: WatchStateLaw[] = (options.stateLaws?.({ stateCode, charterType: self?.charter_type ?? null, charterAgency: self?.charter_agency ?? null }) ?? []).map((law) => ({
+    id: law.id,
+    name: law.name,
+    citation: law.citation,
+    summary: law.summary,
+    url: law.url,
+    topic: law.topic,
+    ...stateLawFees(law, ownFees, medians),
+  }));
+  const regulator = stateCode ? STATE_REGULATORS.find((r) => r.stateCode === stateCode) ?? null : null;
+  const stateChartered = self?.charter_agency === "State";
+  const isCreditUnion = self?.charter_type === "credit_union";
+  const state: WatchState | null =
+    stateCode && regulator
+      ? {
+          state_code: stateCode,
+          state_name: regulator.stateName,
+          supervisor: stateChartered
+            ? isCreditUnion && regulator.creditUnionAgency
+              ? { agency: regulator.creditUnionAgency, website: regulator.creditUnionWebsite ?? null }
+              : { agency: regulator.agency, website: regulator.website }
+            : null,
+          laws,
+          laws_reviewed: true,
+          bills: bills.slice(0, 8),
+          bills_tracked: Number(billsTracked[0]?.n ?? 0) > 0,
+        }
+      : null;
+
   const asOf = loaded.map((r) => dateStr(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
   return {
+    state,
     market: market ? { places: market.places, peers_checked: peers.length } : null,
     peer_actions,
     fee_focus: focusFees(ownFees, medians),

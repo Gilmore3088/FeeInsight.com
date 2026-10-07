@@ -11,6 +11,7 @@ const action = (over: Partial<WatchPeerAction>): WatchPeerAction => ({
 });
 
 const WATCH: RegulatoryWatch = {
+  state: null,
   market: { places: ["Austin, TX"], peers_checked: 20 },
   agencies_loaded: ["OCC", "FRB"],
   as_of: "2026-10-07",
@@ -65,3 +66,31 @@ describe("timeline helpers", () => {
     expect(peerRows(WATCH.peer_actions).map((r) => r.peer_name)).toEqual(["Other Bank", "Big Bank, National Association"]);
   });
 });
+
+describe("state exhibit", () => {
+  const state = {
+    state_code: "IL", state_name: "Illinois",
+    supervisor: { agency: "Illinois Department of Financial and Professional Regulation", website: "https://idfpr.illinois.gov" },
+    laws: [{ id: "il_dormancy", name: "Conditions on dormancy charges", citation: "765 ILCS 1026/15-602", summary: "A holder may deduct a dormancy charge only under a contract.", url: null, topic: "dormancy", all_fees: false,
+      fees: [{ fee_category: "dormant_account", display_name: "Dormant Account", amount: 10, market_median: 15, market_count: 7 }] }],
+    laws_reviewed: true,
+    bills: [],
+    bills_tracked: false,
+  };
+
+  it("shows the state's laws on the bank's fees with its charter supervisor", () => {
+    const { container } = render(<RegulatoryWatchSection watch={{ ...WATCH, state }} />);
+    expect(screen.getByText("Illinois: state law and bills on your fees")).toBeInTheDocument();
+    expect(screen.getByText("Illinois Department of Financial and Professional Regulation")).toBeInTheDocument();
+    expect(screen.getByText("$10.00").parentElement?.textContent).toBe("Dormant Account $10.00");
+    expect(container.textContent).not.toMatch(/not yet legally reviewed/i);
+  });
+
+  it("marks a draft for legal review, and draws nothing when the state has no laws or bills to show", () => {
+    render(<RegulatoryWatchSection watch={{ ...WATCH, state: { ...state, laws_reviewed: false } }} />);
+    expect(screen.getByText("Not yet legally reviewed")).toBeInTheDocument();
+    const { container } = render(<RegulatoryWatchSection watch={{ ...WATCH, state: { ...state, laws: [] } }} />);
+    expect(container.textContent).not.toContain("state law and bills");
+  });
+});
+
