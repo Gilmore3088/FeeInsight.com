@@ -2405,8 +2405,10 @@ and a review after every N reads.
 50 had 19, 7, 6 and 7 misses (38%, 14%, 12%, 14%). 37 of the 39 were completed texts Knox found no
 fee in; 2 were unread. No short texts, no rejected page later proven a fee page. Counting only Knox
 rows written after the read overstates the misses, because Knox dedupes rereads, so the review
-counts every Knox fee from the document. Several no-fee texts are real schedules (fee-schedule pages
-and one 2,626-char PDF).
+counts every Knox fee from the document. A no-fee text is a miss either way: a real schedule Knox
+could not read (an earlier 30-hour window had several fee-schedule pages and a 2,626-char PDF), or a
+page that passed the fee-page check without being one (in this window the 4 fee-named links were
+funds-availability, checking and rates pages; the other 33 were not sampled).
 **Fix:** `rosetta/batch-review.ts` reviews each settled batch of 50, writes every miss as a lesson
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
