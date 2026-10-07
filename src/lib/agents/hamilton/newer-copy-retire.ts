@@ -9,6 +9,9 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
+// The text-hash guards (identical text skipped, newer text read by Knox, a fee Knox read
+// from the newer text never retired) joined version 1 without a bump: they only retire
+// less, and in all of version 1 one fee was retired.
 export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 1 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
@@ -41,6 +44,12 @@ export interface NewerCopyFeeRow {
   amount: number | string | null;
   /** Retired by an earlier newer-copy check; restored if the newest copy states it again. */
   retired?: boolean | null;
+  /**
+   * True when Knox holds a row with this fee's name or amount (under any category, held or
+   * not) read from the newer copy or from any document with the same text. Such a fee is
+   * never retired: the reader found it, whatever the text matcher says.
+   */
+  newer_row_match?: boolean | null;
 }
 
 export type NewerCopyVerdict = "still_stated" | "still_named" | "dropped" | "unproven" | "no_amount";
@@ -146,6 +155,8 @@ export function judgeNewerCopy(fees: NewerCopyFeeRow[], newerText: string, older
       stated.push(fee);
     } else if (verdict === "still_named") {
       result.stillNamed += 1;
+    } else if (verdict === "dropped" && fee.newer_row_match) {
+      result.stillNamed += 1;
     } else if (verdict === "dropped") {
       result.dropped += 1;
       dropped.push(fee);
@@ -220,6 +231,13 @@ export async function retireFeesDroppedFromNewerCopy(
            AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
       ),
+      -- Texts Knox has read: any stored text with fee rows read from a copy that holds it.
+      read_texts AS MATERIALIZED (
+        SELECT DISTINCT same.text_hash
+          FROM agent_source_texts same
+          JOIN raw_fee_observations nr ON nr.source_document_id = same.source_document_id
+         WHERE same.status = 'completed' AND same.text_hash IS NOT NULL
+      ),
       paired AS (
         SELECT older.older_id, newest.id AS newer_id
           FROM older
@@ -241,6 +259,23 @@ export async function retireFeesDroppedFromNewerCopy(
              ORDER BY n.crawled_at DESC, n.id DESC
              LIMIT 1
           ) newest ON TRUE
+          -- Each copy's latest stored text.
+          JOIN LATERAL (
+            SELECT t.text_hash FROM agent_source_texts t
+             WHERE t.source_document_id = older.older_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+             ORDER BY t.id DESC LIMIT 1
+          ) older_text ON TRUE
+          JOIN LATERAL (
+            SELECT t.text_hash FROM agent_source_texts t
+             WHERE t.source_document_id = newest.id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+             ORDER BY t.id DESC LIMIT 1
+          ) newer_text ON TRUE
+         -- Identical text cannot drop a fee; the pair is skipped (its rows move to the
+         -- current copy in refresh-copy.ts).
+         WHERE older_text.text_hash IS DISTINCT FROM newer_text.text_hash
+           -- Knox must have read the newer text (from this copy or any copy with the same
+           -- text) before any of the older copy's fees can be judged gone.
+           AND newer_text.text_hash IN (SELECT text_hash FROM read_texts)
       )
       SELECT paired.older_id, paired.newer_id
         FROM paired
@@ -258,8 +293,28 @@ export async function retireFeesDroppedFromNewerCopy(
     const olderIds = pairs.map((pair) => Number(pair.older_id));
     const newerIds = pairs.map((pair) => Number(pair.newer_id));
     fees = await inSavepoint(db, (scope) => scope<NewerCopyFeeRow[]>`
+      WITH newer_rows AS MATERIALIZED (
+        -- Every fee row Knox read from the newer copy's text, from whichever copy holds it.
+        SELECT DISTINCT newer_text.source_document_id AS newer_id,
+               lower(regexp_replace(nr.fee_name, '[^a-zA-Z0-9]+', '', 'g')) AS name_key,
+               nr.amount
+          FROM agent_source_texts newer_text
+          JOIN agent_source_texts same ON same.text_hash = newer_text.text_hash AND same.status = 'completed'
+          JOIN raw_fee_observations nr ON nr.source_document_id = same.source_document_id
+         WHERE newer_text.source_document_id = ANY(${newerIds}::bigint[])
+           AND newer_text.status = 'completed'
+           AND newer_text.text_hash IS NOT NULL
+      )
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, pair.newer_id AS newer_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.rolled_back_at IS NOT NULL AS retired
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.rolled_back_at IS NOT NULL AS retired,
+             EXISTS (
+               SELECT 1 FROM newer_rows
+                WHERE newer_rows.newer_id = pair.newer_id
+                  AND (
+                    newer_rows.name_key = lower(regexp_replace(fp.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+                    OR (fp.amount IS NOT NULL AND newer_rows.amount = fp.amount)
+                  )
+             ) AS newer_row_match
         FROM unnest(${olderIds}::bigint[], ${newerIds}::bigint[]) AS pair(older_id, newer_id)
         JOIN raw_fee_observations fr ON fr.source_document_id = pair.older_id
         JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id

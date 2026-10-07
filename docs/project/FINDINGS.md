@@ -1620,3 +1620,14 @@ states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothin
 taken down.
 **Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
 stay broken without anyone seeing them.
+
+## 2026-10-07: The newer-copy check could judge a copy Knox never read
+**What happened:** Knox reads a stored text once, so a newer copy whose text is byte-identical to
+one it already read (same `text_hash`, for example Wailuku FCU documents 2917 and 16048) has no fee
+rows of its own. The newer-copy check judged fees by the newer copy's text only, so it never retired
+anything on identical text, but nothing stopped it from judging a copy Knox had not read, or retiring
+a fee Knox did read from the newer text under another category or as a held row.
+**Fix:** the check skips pairs whose texts are identical, waits until Knox has rows for the newer
+text (from any copy with the same `text_hash`), and never retires a fee whose name or amount Knox
+read from that text. These guards only retire less (version 1 retired one fee in total), so the
+strategy version is unchanged. Retires stay logged with a reason and restorable.
