@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isStaleDatedLink, refersElsewhere } from "./link-coverage";
+import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isSingleProductDisclosureLink, isStaleDatedLink, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -87,5 +87,25 @@ describe("isArticleLink", () => {
     expect(isArticleLink("https://bank.example/news/2025-fee-update.pdf")).toBe(false);
     expect(isArticleLink("https://bank.example/fee-schedule")).toBe(false);
     expect(isArticleLink(null)).toBe(false);
+  });
+});
+
+describe("isSingleProductDisclosureLink", () => {
+  it("flags the CD, certificate and time-deposit disclosures saved as fee links on prod", () => {
+    expect(isSingleProductDisclosureLink("https://www.fiveriversbank.com/documents/truth-in-savings-12-month-time-deposit-disclosure")).toBe(true);
+    expect(isSingleProductDisclosureLink("https://www.rbfcu.coop/wp-content/uploads/2025/04/TIS-CD-5.1.2025.pdf")).toBe(true);
+    expect(isSingleProductDisclosureLink("https://www.northcountry.org/getmedia/43f2/Truth_in_Savings_Disclosure_CD.pdf")).toBe(true);
+    expect(isSingleProductDisclosureLink("https://www.bealbank.com/bbusa/cd-savings/cd-rates/truth-in-savings/")).toBe(true);
+    expect(isSingleProductDisclosureLink("https://www.kccu4u.org/tools-and-resources/disclosures/certificate-truth-in-savings")).toBe(true);
+    expect(isSingleProductDisclosureLink("https://charlesriverbank.com/wp-content/Disclosures/Certificate-of-Deposit-TISA.pdf")).toBe(true);
+  });
+
+  it("leaves fee schedules and account-wide disclosures alone", () => {
+    expect(isSingleProductDisclosureLink("https://www.ozk.com/disclosures/certificates-of-deposit/schedule-of-fees.html")).toBe(false);
+    expect(isSingleProductDisclosureLink("https://www.hometowncu.coop/Documents/Disclosures/202304-HT-DE-CD_RateFeeSchedule.pdf")).toBe(false);
+    expect(isSingleProductDisclosureLink("https://www.calcoastcu.org/disclosures/savings-ira-savings-account-truth-in-savings-disclosure.pdf")).toBe(false);
+    expect(isSingleProductDisclosureLink("https://bank.example/disclosures/truth-in-savings.pdf")).toBe(false);
+    expect(isSingleProductDisclosureLink("https://bank.example/personal/cds/")).toBe(false);
+    expect(isSingleProductDisclosureLink(null)).toBe(false);
   });
 });

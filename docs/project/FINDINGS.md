@@ -2457,3 +2457,24 @@ still passes the category guard, and does not collide with another live fee of t
 name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
 Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
 **Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: A blank-reading "Fee Schedule" page was swapped for a CD disclosure
+**What happened:** Rosetta sets aside a page that reads no amounts or needs JavaScript, and Magellan
+then saves whatever page next passes its check. Five Rivers Bank's fee page became a 12-month
+time-deposit truth-in-savings sheet on Oct 5. On prod (06:15 UTC Oct 7) 223 banks had a fee-named page
+set aside that way; 65 of them now link a page that is not fee-named. 20 active banks link a CD,
+certificate or time-deposit disclosure.
+**Fix:** finders reject one product's disclosure (`single_product_disclosure`), such links go to the
+upgrade search, and a bank whose fee-named page was set aside for a blank read gets it back as its main
+link once (the weaker page stays as a companion) so Rosetta's newer readers try it.
+**Lesson:** a page that reads blank is a reading problem first. Swap it only for a page that is at least
+as clearly the fee schedule.
+
+## 2026-10-07: Magellan's errors were judged per link but never reviewed per finder
+**What happened:** the outcome ledger judged each link, but nothing added up which finder produced the
+bad ones or folded in Darwin's verdicts. On prod the site crawl finder had 35 wrong of 75 judged links
+and the hub-page finder 36 of 104; both kept their place in the finder order.
+**Fix:** after every chunk of 50 judged links, an error review scores the chunk per finder against the
+ledger, Darwin and the answer key, writes it to `pipeline_feedback`, and a finder wrong in two
+reviews in a row runs last until it recovers.
+**Lesson:** per-item judgements need a regular roll-up that feeds back into what the agent does next.

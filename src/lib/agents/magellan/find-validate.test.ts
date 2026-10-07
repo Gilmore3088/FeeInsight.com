@@ -135,6 +135,13 @@ describe("business-only schedules", () => {
     expect(schedule.verdict).not.toBe("article_page");
   });
 
+  it("rejects one product's disclosure without opening it", async () => {
+    const fetchImpl = page(lines);
+    const disclosure = await validateFeeCandidate({ url: "https://www.fiveriversbank.com/documents/truth-in-savings-12-month-time-deposit-disclosure", score: 0.9, reasons: [] }, fetchImpl);
+    expect(disclosure).toMatchObject({ ok: false, verdict: "single_product_disclosure" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("rejects a page whose own heading is a business schedule, and keeps a combined one", async () => {
     const business = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Business Account Fee Schedule</h1>${lines}`));
     expect(business).toMatchObject({ ok: false, verdict: "business_schedule" });

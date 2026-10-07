@@ -125,7 +125,20 @@ and `detail.method_version`).
   Links to an article, blog post, news item or press release (`isArticleLink`, unless the
   path names a fee document such as "/articles/schedule-of-fees/") go to the same search,
   and a find does not keep the article as a companion. Every finder rejects such a
-  candidate (`article_page`) before opening it.
+  candidate (`article_page`) before opening it. Links to one deposit product's disclosure
+  (`isSingleProductDisclosureLink`: a CD, share certificate or time deposit truth-in-savings
+  sheet, unless the name also says fee schedule) are handled the same way
+  (`single_product_disclosure`): they state a rate and an early-withdrawal penalty, not the
+  account fees.
+- Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
+  named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
+  amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
+  PDF, fewer than 8 live fees unless it is one product's disclosure), gets the fee page back
+  as its main link, up to 25 per step after the companion search. The weaker page stays as a
+  companion `account_page` (not an article or a product disclosure). Each bank is checked
+  once per version (`discover`/`restore_fee_page` attempt, `ok` or `unchanged` with the
+  reason kept); the step's `restored_fee_pages` detail lists the swaps. Rosetta's readers
+  (embedded data, linked and embedded PDF viewers) decide whether it now reads.
 - Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
   link looks out of date are searched once per version for a newer schedule
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
@@ -237,6 +250,20 @@ Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_
 is the Magellan specialist whose attempt found the address (null for links the old
 crawler left). Only changed judgements are written; the step's `link_outcomes` detail
 reports the counts. Finders, the fee-page classifier and Darwin read these rows.
+
+## Error review per chunk (`batch-review.ts`)
+
+After the ledger, each discover step reviews every full chunk of `BATCH_SIZE` (50) newly
+judged links, oldest first, at most 4 chunks a step. A link in the chunk is an error when
+the ledger judged it wrong, when Darwin rejected at least 3 of its fees and more than it
+passed, or when the bank's confirmed answer key names a different document. One
+`pipeline_feedback` row per finder in the chunk (`check_name = magellan.batch_review`,
+kind `batch_review`) records links, errors, error kinds, Darwin errors, answer-key matches
+and up to 5 sample error links; it is `wrong` when 40% or more of that finder's links (at
+least 5) were errors. A finder whose last two such reviews were both wrong runs after the
+other finders (`loadDemotedFinders`, `demoteFinders`; the known link still runs first)
+until a review comes back right. The step's `batch_review` detail and `finder_order.demoted`
+show the result. Nothing here changes a link or a fee.
 
 ## Fee-page classifier, in shadow (`page-classifier.ts`)
 

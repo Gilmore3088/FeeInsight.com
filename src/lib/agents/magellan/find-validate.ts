@@ -1,7 +1,7 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
-import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink } from "./link-coverage";
+import { isArticleLink, isBusinessOnlyLink, isSingleProductDisclosureLink, isBusinessOnlyText, isErrorPageLink } from "./link-coverage";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -92,6 +92,7 @@ export type CandidateVerdict =
   | "business_schedule"
   | "error_page"
   | "article_page"
+  | "single_product_disclosure"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -191,6 +192,14 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
+  }
+  if (isSingleProductDisclosureLink(candidate.url)) {
+    return rejected(
+      "single_product_disclosure",
+      "Candidate is one deposit product's disclosure (CD, certificate or time deposit), not the fee schedule",
+      null,
+      candidate.score,
+    );
   }
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
   if (!response.ok) {

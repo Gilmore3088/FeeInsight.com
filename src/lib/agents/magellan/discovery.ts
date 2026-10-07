@@ -32,7 +32,21 @@ import {
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
-import { ARTICLE_LINK_SQL, BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_DOCUMENT_NAME_SQL, FEE_NAMED_LINK_SQL, isArticleLink, PRODUCT_LINK_SQL } from "./link-coverage";
+import {
+  ARTICLE_LINK_SQL,
+  BUSINESS_PATH_SQL,
+  CONSUMER_PATH_SQL,
+  FEE_DOCUMENT_NAME_SQL,
+  FEE_NAMED_LINK_SQL,
+  FEE_SCHEDULE_NAME_SQL,
+  isArticleLink,
+  isSingleProductDisclosureLink,
+  PRODUCT_DISCLOSURE_SQL,
+  PRODUCT_LINK_SQL,
+  SINGLE_PRODUCT_SQL,
+} from "./link-coverage";
+import { loadDemotedFinders } from "./batch-review";
+import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
@@ -364,9 +378,11 @@ export interface RunMagellanDiscoveryResult {
   /** The shadow page classifier this step scored candidates with, if one is stored. */
   pageClassifier: { trainedAt: string | null; positives: number; negatives: number } | null;
   /** Specialist strategies in the order this step ran them, and whether the state expert set it. */
-  finderOrder: { strategies: string[]; source: "state_expert" | "default" };
+  finderOrder: { strategies: string[]; source: "state_expert" | "default"; demoted?: string[] };
   methodVersion: number;
   secondDocuments: RunSecondDocumentFindResult | null;
+  /** Fee pages put back as the main link after a blank read had swapped them out. */
+  restoredFeePages: RestoreFeePagesResult | null;
   limit: number;
   dryRun: boolean;
   results: CandidateDiscoveryResult[];
@@ -998,8 +1014,9 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
 }
 
 /**
- * Banks whose fee link is an account or product page, or an article, blog post or news
- * item (`isArticleLink`), not yet searched for the real schedule at this upgrade version.
+ * Banks whose fee link is an account or product page, an article, blog post or news
+ * item (`isArticleLink`), or one deposit product's disclosure such as a CD truth-in-savings
+ * sheet (`isSingleProductDisclosureLink`), not yet searched for the real schedule at this upgrade version.
  * Their link is kept until a fee schedule is found.
  */
 async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
@@ -1027,6 +1044,9 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
        AND (
              (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
              OR (lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
+             OR (lower(inst.fee_schedule_url) ~ ${SINGLE_PRODUCT_SQL}
+                 AND lower(inst.fee_schedule_url) ~ ${PRODUCT_DISCLOSURE_SQL}
+                 AND lower(inst.fee_schedule_url) !~ ${FEE_SCHEDULE_NAME_SQL})
            )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
@@ -1485,6 +1505,17 @@ export function finderOrderFromHints(hints: StateExpertHints | null): typeof FIN
   return [first, ...ordered.map((strategy) => byStrategy.get(strategy)!)];
 }
 
+/**
+ * Finders the error review marked wrong in their last two chunks (`batch-review.ts`) run
+ * after the others. The known link still runs first, and nothing is dropped.
+ */
+export function demoteFinders(order: typeof FINDER_ORDER, demoted: ReadonlySet<string>): typeof FINDER_ORDER {
+  if (demoted.size === 0) return order;
+  const [first, ...rest] = order;
+  const isDemoted = (finder: (typeof FINDER_ORDER)[number]) => demoted.has(FINDERS[finder.key].strategy);
+  return [first, ...rest.filter((finder) => !isDemoted(finder)), ...rest.filter(isDemoted)];
+}
+
 export async function runMagellanDiscovery(
   options: RunMagellanDiscoveryOptions,
 ): Promise<RunMagellanDiscoveryResult> {
@@ -1541,7 +1572,9 @@ export async function runMagellanDiscovery(
   // MG-4 in shadow: the stored classifier scores every opened candidate (trail `page_p`).
   const pageClassifier = learning ? await loadPageClassifier(db) : null;
   const hints = options.stateCode ? await stateExpertHints(options.stateCode, db).catch(() => null) : null;
-  const finderOrder = finderOrderFromHints(hints);
+  const demotedFinders = learning ? await loadDemotedFinders(db) : new Set<string>();
+  const hintedOrder = finderOrderFromHints(hints);
+  const finderOrder = demoteFinders(hintedOrder, demotedFinders);
 
   const startedAt = Date.now();
   const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
@@ -1578,8 +1611,8 @@ export async function runMagellanDiscovery(
     );
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
-    // An article or blog link is not kept beside the schedule: its amounts were never the bank's.
-    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url)) {
+    // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
+    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {
@@ -1602,6 +1635,15 @@ export async function runMagellanDiscovery(
         deadline: stepDeadline,
         dryRun,
         learning,
+      })
+    : null;
+  const restoredFeePages = learning && options.mode !== "rescue" && Date.now() - startedAt < STEP_START_BUDGET_MS
+    ? await restoreSwappedFeePages({
+        db,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        dryRun,
       })
     : null;
 
@@ -1629,10 +1671,12 @@ export async function runMagellanDiscovery(
     pageClassifier: pageClassifier ? { trainedAt: pageClassifier.trainedAt, positives: pageClassifier.positives, negatives: pageClassifier.negatives } : null,
     finderOrder: {
       strategies: finderOrder.map((finder) => FINDERS[finder.key].strategy),
-      source: finderOrder === FINDER_ORDER ? "default" : "state_expert",
+      source: hintedOrder === FINDER_ORDER ? "default" : "state_expert",
+      demoted: [...demotedFinders],
     },
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
+    restoredFeePages,
     limit,
     dryRun,
     results,
