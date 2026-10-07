@@ -21,7 +21,8 @@ export interface FigureCheckResult {
   unmatched: string[];
 }
 
-const MAX_PAYLOAD_NUMBERS = 400;
+// Report payloads carry the institution, state peers and exhibits; keep them all in view.
+const MAX_PAYLOAD_NUMBERS = 1000;
 const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, million: 1e6, b: 1e9, billion: 1e9 };
 
 const USD_PATTERN = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|m|b|thousand|million|billion)?\b/gi;
