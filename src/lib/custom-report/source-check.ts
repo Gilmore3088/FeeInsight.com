@@ -61,6 +61,11 @@ const COLUMN_LABEL_LINE = /^(?:fees?(?:\s*(?:&|and)\s*charges?)?|charges?|amount
 const PRICE_THEN_PAREN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:\/|per\b|each\b|for\b)[^|()$]{0,40})?\(\s*[a-z]/i;
 const CATEGORY_LOOKBACK_LINES = 3;
 const NAME_HEADING_LINES = 8;
+/** Rows that must split into exactly two cells before a page is read as two columns. */
+const TWO_COLUMN_MIN_ROWS = 5;
+/** ...and the share of two-cell rows that carry words in both cells. */
+const TWO_COLUMN_MIN_SHARE = 0.6;
+const PRICE_FIRST_CELL = /^\s*(?:\$|\d|¢|free\b|no\s+(?:charge|fee|cost)\b|none\b|n\/a\b|waived\b|varies\b|the\s+greater\b|the\s+lesser\b)/i;
 const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
@@ -413,12 +418,37 @@ function namesItsBand(row: string, feeName: string): boolean {
 // live fees); split it once.
 let lastText: string | null = null;
 let lastLines: string[] = [];
+let lastColumns: string[][] = [];
+
 function cachedSourceLines(text: string): string[] {
   if (text !== lastText) {
     lastLines = sourceLines(text);
+    lastColumns = columnLines(text);
     lastText = text;
   }
   return lastLines;
+}
+
+/**
+ * A two-column page flattened row by row ("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" /
+ * "($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00") interleaves two fee lists,
+ * so a right-column name and its price sit on different rows of other fees. Each column is
+ * read again on its own, top to bottom. Only pages where many rows split into exactly two
+ * cells count as two-column; a column can only add a trace, never take one away.
+ */
+function columnLines(text: string): string[][] {
+  const rows = text.split(/\r?\n/).map((row) => row.split(" | "));
+  // A table row's cells ("Stop Payment | $30") are one fee; a column's cell carries words
+  // ("($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00").
+  const words = (cell: string) => (cell.match(/[a-z]{3,}/gi) ?? []).length;
+  // A cell that opens with its price ("| $2.00 per page", "| No Charge") is the row's price cell.
+  const split = rows.map((cells) => cells.length === 2 && words(cells[1]) >= 2 && !PRICE_FIRST_CELL.test(cells[1]));
+  const pairs = rows.filter((cells) => cells.length === 2).length;
+  const columns = rows.filter((cells) => cells.length === 2 && cells.every((cell) => words(cell) >= 2)).length;
+  if (columns < TWO_COLUMN_MIN_ROWS || columns < pairs * TWO_COLUMN_MIN_SHARE) return [];
+  const left = rows.map((cells, index) => (split[index] ? cells[0] : cells.join(" | ")));
+  const right = rows.filter((_, index) => split[index]).map((cells) => cells[1]);
+  return [sourceLines(left.join("\n")), sourceLines(right.join("\n"))];
 }
 
 /**
@@ -435,21 +465,28 @@ export function checkFeeAgainstSource(
   categoryPattern: string,
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
-  const asPrice = checkAgainstLines(text, feeName, amount, categoryPattern, false);
-  if (asPrice.ok || !canonicalFeeKey || !DAILY_CAP_CATEGORIES.has(canonicalFeeKey)) return asPrice;
-  const asCap = checkAgainstLines(text, feeName, amount, categoryPattern, true);
-  return asCap.ok ? asCap : asPrice;
+  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  const pages = [cachedSourceLines(text), ...lastColumns];
+  const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
+  let first: SourceCheckResult | null = null;
+  for (const lines of pages) {
+    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false);
+    if (asPrice.ok) return asPrice;
+    first ??= asPrice;
+    if (!asCap) continue;
+    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
+    if (cap.ok) return cap;
+  }
+  return first ?? { ok: false, reason: "no_source_text" };
 }
 
 function checkAgainstLines(
-  text: string | null | undefined,
+  lines: string[],
   feeName: string,
   amount: number,
   categoryPattern: string,
   dailyCap: boolean,
 ): SourceCheckResult {
-  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
-  const lines = cachedSourceLines(text);
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
   const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
@@ -498,6 +535,11 @@ function checkAgainstLines(
       row = leader;
       amountProblem = null;
     }
+    const wrapped = amountProblem && !dailyCap ? wrappedNameRow(lines, i, feeName) : null;
+    if (wrapped && !statesAmount(wrapped, rounded, stems)) {
+      row = wrapped;
+      amountProblem = null;
+    }
     if (!amountProblem && !dailyCap && pricedPerAmount(row, rounded)) amountProblem = "priced_per_amount";
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
@@ -514,6 +556,28 @@ function checkAgainstLines(
 }
 
 /**
+ * A name that runs onto the next row ("PROCESSING OF LEVIES**" / "IRS or Court-ordered
+ * Garnishments ...... $100.00", read as "PROCESSING OF LEVIES IR"): when the fee's name ends
+ * with the start of the next row, the two rows up to that row's first price are the fee's row.
+ * The line itself must carry no price, so a priced row never takes the next row's price.
+ */
+function wrappedNameRow(lines: string[], index: number, feeName: string): string | null {
+  const line = lines[index];
+  const next = lines[index + 1];
+  if (!next || moneyTokens(line).length > 0) return null;
+  // The row runs to the next row's first price ("on us only $5.00 Bad Address Correction Fee $3.00").
+  const price = moneyTokens(next)[0];
+  if (!price) return null;
+  const words = comparable(feeName).replace(/[^a-z0-9' ]/g, " ").trim().split(/\s+/);
+  const here = ` ${comparable(line).replace(/[^a-z0-9' ]/g, " ")} `;
+  let cut = words.length;
+  while (cut > 0 && !here.includes(` ${words[cut - 1]} `)) cut -= 1;
+  const tail = words.slice(cut).join(" ");
+  if (cut === 0 || tail.length < 2) return null;
+  return comparable(next).startsWith(tail) ? `${line} ${next.slice(0, price.end)}` : null;
+}
+
+/**
  * "Cashier Check (per $100.00) $1.00", "CHECK CASHING FEE (NOT ON US- PER $100) | ...": the
  * price is charged for each $100 of the item, so it scales with the item and is not a flat
  * fee. The basis must sit in the fee's label, before the price, so a neighbouring row on the
@@ -525,7 +589,13 @@ function pricedPerAmount(row: string, amount: number): boolean {
   const price = moneyTokens(row).find(
     (token) => Math.abs(token.value - amount) < 0.005 && !/\bper\s*$/i.test(row.slice(Math.max(0, token.start - 6), token.start)),
   );
-  return !!price && PER_AMOUNT_BASIS.test(row.slice(0, price.start));
+  if (!price) return false;
+  const label = row.slice(0, price.start);
+  // A basis printed right after another price is that price's ("Coin deposited | $0.0062 per $1 |
+  // Escheat/abandoned account notice | $2"): the notice is a flat $2.
+  return Array.from(label.matchAll(new RegExp(PER_AMOUNT_BASIS.source, "gi"))).some(
+    (basis) => !/\$\s?\d[\d,]*(?:\.\d+)?\s*$/.test(label.slice(Math.max(0, (basis.index ?? 0) - 16), basis.index)),
+  );
 }
 
 /** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.

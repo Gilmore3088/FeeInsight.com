@@ -128,7 +128,7 @@ export default async function ProCategoriesPage() {
                     Categories
                   </p>
                   <p
-                    className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"
+                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
                     style={{
                       fontFamily: "var(--font-newsreader), Georgia, serif",
                     }}
@@ -141,7 +141,7 @@ export default async function ProCategoriesPage() {
                     Observations
                   </p>
                   <p
-                    className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"
+                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
                     style={{
                       fontFamily: "var(--font-newsreader), Georgia, serif",
                     }}
@@ -154,7 +154,7 @@ export default async function ProCategoriesPage() {
                     Coverage
                   </p>
                   <p
-                    className="mt-0.5 text-lg font-light text-warm-900 tabular-nums"
+                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
                     style={{
                       fontFamily: "var(--font-newsreader), Georgia, serif",
                     }}
@@ -189,7 +189,7 @@ export default async function ProCategoriesPage() {
                           </span>
                         )}
                       </div>
-                      <span className="shrink-0 ml-2 text-[11px] tabular-nums text-warm-500">
+                      <span className="shrink-0 ml-2 text-[11px] [font-variant-numeric:tabular-nums] text-warm-500">
                         {s?.median_amount != null
                           ? `${formatAmount(s.median_amount)} · n=${s.institution_count}`
                           : <span title="Fewer than 5 institutions publish this fee">Too few</span>}

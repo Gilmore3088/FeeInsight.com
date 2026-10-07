@@ -5,11 +5,15 @@ import {
   beigeBookPageUrl,
   blsSeriesRequest,
   fetchText,
+  FOMC_CALENDAR_URL,
+  fomcMinutesUrl,
   fredCsvUrl,
   isBlsSeries,
   isFredNativeSeries,
   parseBlsSeries,
   parseBeigeBookPage,
+  parseFomcMinutesDates,
+  parseFomcMinutesPage,
   parseFredCsv,
   REQUIRED_FRED_SERIES,
   type FredObservation,
@@ -26,6 +30,8 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  * already tracked in fed_economic_indicators (plus REQUIRED_FRED_SERIES) from the
  * keyless graph CSV, and the BLS CPI series (FRED lacks the detailed ones, such as
  * "checking account and other bank services") from the BLS public API.
+ * registry-fomc-minutes (partition "current"): the full text of each FOMC meeting's
+ * minutes linked from the FOMC calendar page, into fed_fomc_minutes.
  */
 
 export const BEIGE_BOOK_SOURCE = "beige-book";
@@ -217,4 +223,86 @@ export function beigeEmptyRetryHours(code: string, now: Date): number {
   const month = Number(code.slice(4, 6));
   const monthsAgo = (now.getUTCFullYear() - year) * 12 + (now.getUTCMonth() + 1 - month);
   return monthsAgo >= 1 ? BEIGE_PAST_EMPTY_RETRY_HOURS : BEIGE_EMPTY_RETRY_HOURS;
+}
+
+export const FOMC_MINUTES_SOURCE = "fomc-minutes";
+export const FOMC_MINUTES_PARTITION = "current";
+const FOMC_REFRESH_HOURS = 24;
+/** Minutes pulled per run; the calendar page links about five years, so the backfill takes a few days. */
+const FOMC_MINUTES_PER_RUN = 8;
+/** Pages shorter than this did not parse into minutes; they are counted, not stored. */
+const FOMC_MIN_TEXT_LENGTH = 5_000;
+
+export interface RegistryFomcMinutesResult {
+  source: string;
+  partitionKey: string;
+  linked: number;
+  alreadyStored: number;
+  fetched: number;
+  stored: number;
+  tooShort: string[];
+  remaining: number;
+  dryRun: boolean;
+}
+
+export async function runRegistryFomcMinutes(options: FedOptions = {}): Promise<RegistryFomcMinutesResult> {
+  const db = options.db ?? sql;
+  const calendar = await fetchText(FOMC_CALENDAR_URL, options.fetchOptions);
+  const linked = calendar ? parseFomcMinutesDates(calendar) : [];
+  const storedRows = await db<Array<{ meeting_date: string }>>`
+    SELECT to_char(meeting_date, 'YYYY-MM-DD') AS meeting_date FROM fed_fomc_minutes
+  `;
+  const stored = new Set(storedRows.map((row) => row.meeting_date));
+  const missing = linked.filter((date) => !stored.has(date));
+  const batch = missing.slice(0, FOMC_MINUTES_PER_RUN);
+  const pages = await mapWithConcurrency(batch, FED_CONCURRENCY, async (meetingDate) => {
+    const url = fomcMinutesUrl(meetingDate);
+    const html = await fetchText(url, options.fetchOptions);
+    return { meetingDate, url, page: html ? parseFomcMinutesPage(html) : null };
+  });
+  const rows = pages
+    .filter((p) => p.page && p.page.text.length >= FOMC_MIN_TEXT_LENGTH)
+    .map((p) => ({ meeting_date: p.meetingDate, title: p.page?.title ?? null, content_text: p.page?.text ?? "", source_url: p.url }));
+  const tooShort = pages.filter((p) => !p.page || p.page.text.length < FOMC_MIN_TEXT_LENGTH).map((p) => p.meetingDate);
+  const result: RegistryFomcMinutesResult = {
+    source: FOMC_MINUTES_SOURCE,
+    partitionKey: FOMC_MINUTES_PARTITION,
+    linked: linked.length,
+    alreadyStored: linked.length - missing.length,
+    fetched: pages.length,
+    stored: 0,
+    tooShort,
+    remaining: Math.max(0, missing.length - batch.length),
+    dryRun: Boolean(options.dryRun),
+  };
+  if (options.dryRun) return result;
+
+  if (rows.length > 0) {
+    const payload = JSON.stringify(rows);
+    const inserted = await db<Array<{ meeting_date: string }>>`
+      INSERT INTO fed_fomc_minutes (meeting_date, title, content_text, source_url, fetched_at)
+      SELECT r.meeting_date::date, r.title, r.content_text, r.source_url, NOW()
+        FROM jsonb_to_recordset(${payload}::jsonb) AS r(meeting_date text, title text, content_text text, source_url text)
+      ON CONFLICT (meeting_date) DO UPDATE SET
+        title = EXCLUDED.title,
+        content_text = EXCLUDED.content_text,
+        source_url = EXCLUDED.source_url,
+        fetched_at = NOW()
+      RETURNING meeting_date
+    `;
+    result.stored = inserted.length;
+  }
+  await recordRegistryPartition(db, {
+    source: FOMC_MINUTES_SOURCE,
+    partitionKey: FOMC_MINUTES_PARTITION,
+    status: linked.length > 0 ? "succeeded" : "empty",
+    rowCount: linked.length,
+    insertedCount: result.stored,
+    sourceUrl: FOMC_CALENDAR_URL,
+    runId: options.runId ?? null,
+    // Come back sooner while the backfill is still going.
+    nextAttemptAfterHours: result.remaining > 0 ? 2 : FOMC_REFRESH_HOURS,
+    detail: { linked: linked.length, already_stored: result.alreadyStored, stored: result.stored, too_short: tooShort, remaining: result.remaining },
+  });
+  return result;
 }
