@@ -154,3 +154,13 @@ describe("answerAsk", () => {
     expect(store.analyses).toHaveLength(0);
   });
 });
+
+describe("waiver rate answers", () => {
+  it("stores a waiver rate as a share, so 1% is 0.01 and never 100%", async () => {
+    const { waiverShare } = await import("./ask-service");
+    expect(waiverShare("1%")).toBe(0.01);
+    expect(waiverShare("8")).toBe(0.08);
+    expect(waiverShare("0.08")).toBe(0.08);
+    expect(waiverShare("150%")).toBeNull();
+  });
+});
