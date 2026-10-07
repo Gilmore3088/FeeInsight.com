@@ -24,6 +24,7 @@ import {
   type InstitutionWorkspaceInvitation,
 } from "@/lib/hamilton/institution-membership";
 import { WorkspaceAccessManager } from "./WorkspaceAccessManager";
+import { buildWorkspaceInvitePath, inviteLinksConfigured } from "@/lib/hamilton/workspace-invite-link";
 import { LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 import { FeeFiguresUpload } from "@/components/hamilton/settings/FeeFiguresUpload";
 
@@ -85,6 +86,20 @@ export default async function SettingsPage({
     isAdmin ||
     selectedMembership?.role === "owner" ||
     selectedMembership?.role === "admin";
+  // Signed per-invite links, computed here on the server; the secret never reaches the page.
+  const inviteLinksReady = inviteLinksConfigured();
+  const workspaceInviteLinks: Record<number, string | null> = canManageWorkspaceAccess
+    ? Object.fromEntries(
+        workspaceInvitations.map((invitation) => [
+          invitation.id,
+          buildWorkspaceInvitePath({
+            invitationId: invitation.id,
+            email: invitation.email,
+            institutionId: invitation.institutionId,
+          }),
+        ]),
+      )
+    : {};
 
   const subscriptionStatus = user.subscription_status ?? "none";
   const statusLabel =
@@ -193,6 +208,8 @@ export default async function SettingsPage({
             members={workspaceMembers}
             invitations={workspaceInvitations}
             canManage={canManageWorkspaceAccess}
+            inviteLinks={workspaceInviteLinks}
+            inviteLinksReady={inviteLinksReady}
           />
         </div>
       </MemoSection>

@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -99,8 +100,15 @@ function form(values: Record<string, string>) {
   return formData;
 }
 
+const INVITE_SECRET = "settings-test-secret";
+
+function invitationRow(overrides: Record<string, unknown> = {}) {
+  return { id: 91, email: "newuser@example.com", role: "analyst", institutionId: 2945, ...overrides };
+}
+
 describe("Hamilton Settings workspace access actions", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let previousSecret: string | undefined;
 
   beforeEach(() => {
     mocks.state.sqlCalls.length = 0;
@@ -116,6 +124,8 @@ describe("Hamilton Settings workspace access actions", () => {
     mocks.revokeInstitutionWorkspaceInvitationMock.mockReset();
     mocks.revokeInstitutionWorkspaceMembershipMock.mockReset();
     mocks.setHamiltonWorkspaceContextMock.mockReset();
+    previousSecret = process.env.BFI_COOKIE_SECRET;
+    process.env.BFI_COOKIE_SECRET = INVITE_SECRET;
     // Any outbound request (an email provider included) would go through fetch.
     fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network in tests"));
 
@@ -134,83 +144,96 @@ describe("Hamilton Settings workspace access actions", () => {
       limit: 5,
       emailHoldsSeat: false,
     });
+    mocks.createInstitutionWorkspaceInvitationMock.mockResolvedValue(invitationRow());
   });
 
   afterEach(() => {
     fetchSpy.mockRestore();
+    if (previousSecret === undefined) delete process.env.BFI_COOKIE_SECRET;
+    else process.env.BFI_COOKIE_SECRET = previousSecret;
   });
 
-  it("grants access at once to an existing Pro user when the current user can manage the institution", async () => {
+  it("saves an invitation with a signed link and sends no email", async () => {
     const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([
-      { id: 8, display_name: "Analyst User", email: "analyst@example.com" },
-    ]);
-    mocks.grantInstitutionWorkspaceMembershipMock.mockResolvedValue({
-      id: 51,
-      userDisplayName: "Analyst User",
-    });
 
     const result = await grantWorkspaceAccess(
       { success: false },
-      form({
-        institution_id: "2945",
-        email: "Analyst@Example.com",
-        role: "analyst",
-        notes: "Board packet support.",
-      }),
+      form({ institution_id: "2945", email: "NewUser@Example.com", role: "analyst" }),
     );
 
+    const token = createHmac("sha256", INVITE_SECRET).update("91:newuser@example.com:2945").digest("hex");
     expect(result).toMatchObject({
       success: true,
-      message: "Analyst User now has analyst access to Hamilton Bank.",
+      inviteLink: `/workspace-invite?i=91&t=${token}`,
+      inviteEmail: "newuser@example.com",
+      message: expect.stringContaining("Copy the invite link"),
     });
-    expect(mocks.state.sqlCalls[0].values).toEqual(["analyst@example.com"]);
-    expect(mocks.grantInstitutionWorkspaceMembershipMock).toHaveBeenCalledWith(
+    expect(mocks.createInstitutionWorkspaceInvitationMock).toHaveBeenCalledWith(
       {
         institutionId: 2945,
-        userId: 8,
+        email: "newuser@example.com",
         role: "analyst",
-        source: "delegated",
-        grantedByUserId: 7,
-        notes: "Board packet support.",
+        invitedByUserId: 7,
+        notes: "Pending analyst access from Hamilton Settings.",
       },
       mocks.sqlMock,
     );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("grants a seat to an existing free account without asking them to pay", async () => {
+  it("gives an existing account an invitation, not instant access", async () => {
     const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([
-      { id: 8, display_name: "Viewer User", email: "viewer@example.com" },
-    ]);
-    mocks.grantInstitutionWorkspaceMembershipMock.mockResolvedValue({ id: 52 });
+    // Even if a users row exists for this email, nothing grants a membership here.
+    mocks.state.queuedRows.push([{ id: 8, display_name: "Analyst User", email: "analyst@example.com" }]);
+    mocks.createInstitutionWorkspaceInvitationMock.mockResolvedValue(invitationRow({ email: "analyst@example.com" }));
 
     const result = await grantWorkspaceAccess(
       { success: false },
-      form({ institution_id: "2945", email: "viewer@example.com", role: "viewer" }),
+      form({ institution_id: "2945", email: "analyst@example.com", role: "analyst" }),
+    );
+
+    expect(result).toMatchObject({ success: true, inviteEmail: "analyst@example.com" });
+    expect(mocks.grantInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
+    expect(mocks.createInstitutionWorkspaceInvitationMock).toHaveBeenCalledTimes(1);
+    expect(mocks.state.sqlCalls.some((call) => call.text.includes("INSERT INTO institution_workspace_memberships"))).toBe(false);
+  });
+
+  it("refuses to create an invite when the signing secret is missing", async () => {
+    const { grantWorkspaceAccess } = await import("./actions");
+    delete process.env.BFI_COOKIE_SECRET;
+
+    const result = await grantWorkspaceAccess(
+      { success: false },
+      form({ institution_id: "2945", email: "newuser@example.com", role: "analyst" }),
     );
 
     expect(result).toMatchObject({
-      success: true,
-      message: "Viewer User now has viewer access to Hamilton Bank.",
+      success: false,
+      error: expect.stringContaining("BFI_COOKIE_SECRET"),
     });
     expect(mocks.createInstitutionWorkspaceInvitationMock).not.toHaveBeenCalled();
-    // The user lookup no longer reads the invitee's subscription.
-    expect(mocks.state.sqlCalls[0].text).not.toContain("subscription_status");
+  });
+
+  it("refuses an invite to the inviter's own email", async () => {
+    const { grantWorkspaceAccess } = await import("./actions");
+    const result = await grantWorkspaceAccess(
+      { success: false },
+      form({ institution_id: "2945", email: "owner@example.com", role: "admin" }),
+    );
+    expect(result.success).toBe(false);
+    expect(mocks.createInstitutionWorkspaceInvitationMock).not.toHaveBeenCalled();
   });
 
   it("checks seats and writes under one per-institution lock", async () => {
     const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([{ id: 8, display_name: "A", email: "a@example.com" }]);
-    mocks.grantInstitutionWorkspaceMembershipMock.mockResolvedValue({ id: 53 });
 
     await grantWorkspaceAccess(
       { success: false },
       form({ institution_id: "2945", email: "a@example.com", role: "analyst" }),
     );
 
-    expect(mocks.state.sqlCalls[1].text).toContain("pg_advisory_xact_lock");
-    expect(mocks.state.sqlCalls[1].values).toEqual([2945]);
+    expect(mocks.state.sqlCalls[0].text).toContain("pg_advisory_xact_lock");
+    expect(mocks.state.sqlCalls[0].values).toEqual([2945]);
     expect(mocks.getInstitutionWorkspaceSeatUsageMock).toHaveBeenCalledWith(
       { institutionId: 2945, email: "a@example.com" },
       mocks.sqlMock,
@@ -219,7 +242,6 @@ describe("Hamilton Settings workspace access actions", () => {
 
   it("refuses a sixth person when all five seats are used", async () => {
     const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([{ id: 8, display_name: "Sixth", email: "sixth@example.com" }]);
     mocks.getInstitutionWorkspaceSeatUsageMock.mockResolvedValue({
       used: 5,
       limit: 5,
@@ -235,37 +257,16 @@ describe("Hamilton Settings workspace access actions", () => {
       success: false,
       error: expect.stringContaining("All 5 seats on this institution account are in use"),
     });
-    expect(mocks.grantInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
     expect(mocks.createInstitutionWorkspaceInvitationMock).not.toHaveBeenCalled();
   });
 
-  it("refuses a sixth invitation for an email with no account when all seats are used", async () => {
+  it("still lets a full workspace re-invite someone who already holds a seat", async () => {
     const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([]);
-    mocks.getInstitutionWorkspaceSeatUsageMock.mockResolvedValue({
-      used: 5,
-      limit: 5,
-      emailHoldsSeat: false,
-    });
-
-    const result = await grantWorkspaceAccess(
-      { success: false },
-      form({ institution_id: "2945", email: "new@example.com", role: "viewer" }),
-    );
-
-    expect(result.success).toBe(false);
-    expect(mocks.createInstitutionWorkspaceInvitationMock).not.toHaveBeenCalled();
-  });
-
-  it("still lets a full workspace change the role of someone who already holds a seat", async () => {
-    const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([{ id: 8, display_name: "Member", email: "member@example.com" }]);
     mocks.getInstitutionWorkspaceSeatUsageMock.mockResolvedValue({
       used: 5,
       limit: 5,
       emailHoldsSeat: true,
     });
-    mocks.grantInstitutionWorkspaceMembershipMock.mockResolvedValue({ id: 54 });
 
     const result = await grantWorkspaceAccess(
       { success: false },
@@ -273,7 +274,7 @@ describe("Hamilton Settings workspace access actions", () => {
     );
 
     expect(result).toMatchObject({ success: true });
-    expect(mocks.grantInstitutionWorkspaceMembershipMock).toHaveBeenCalled();
+    expect(mocks.createInstitutionWorkspaceInvitationMock).toHaveBeenCalled();
   });
 
   it("rejects delegated grants from users without owner or admin institution authority", async () => {
@@ -286,60 +287,18 @@ describe("Hamilton Settings workspace access actions", () => {
 
     const result = await grantWorkspaceAccess(
       { success: false },
-      form({
-        institution_id: "2945",
-        email: "analyst@example.com",
-        role: "analyst",
-      }),
+      form({ institution_id: "2945", email: "analyst@example.com", role: "analyst" }),
     );
 
     expect(result).toMatchObject({
       success: false,
       error: "Only institution owners or admins can manage workspace access.",
     });
-    expect(mocks.grantInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
-  });
-
-  it("saves an invitation for an email with no account and sends no email", async () => {
-    const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([]);
-    mocks.createInstitutionWorkspaceInvitationMock.mockResolvedValue({
-      id: 91,
-      email: "newuser@example.com",
-      role: "analyst",
-    });
-
-    const result = await grantWorkspaceAccess(
-      { success: false },
-      form({
-        institution_id: "2945",
-        email: "newuser@example.com",
-        role: "analyst",
-      }),
-    );
-
-    expect(result).toMatchObject({
-      success: true,
-      message:
-        "Invite saved for newuser@example.com (analyst). Copy the invite link and send it to them. They sign in or create a free account with newuser@example.com to join; they don't pay for a seat.",
-    });
-    expect(mocks.grantInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
-    expect(mocks.createInstitutionWorkspaceInvitationMock).toHaveBeenCalledWith(
-      {
-        institutionId: 2945,
-        email: "newuser@example.com",
-        role: "analyst",
-        invitedByUserId: 7,
-        notes: "Pending analyst access from Hamilton Settings.",
-      },
-      mocks.sqlMock,
-    );
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mocks.createInstitutionWorkspaceInvitationMock).not.toHaveBeenCalled();
   });
 
   it("reports a failed invitation save instead of claiming success", async () => {
     const { grantWorkspaceAccess } = await import("./actions");
-    mocks.state.queuedRows.push([]);
     mocks.createInstitutionWorkspaceInvitationMock.mockResolvedValue(null);
 
     const result = await grantWorkspaceAccess(
@@ -360,12 +319,15 @@ describe("workspace invites send no email", () => {
     expect(source).not.toMatch(/sendWorkspaceInviteEmail|resend/i);
   });
 
-  it("the access manager has no mailto link and copies the invite link instead", () => {
+  it("the access manager has no mailto link and copies each invite's signed link", () => {
     const source = readFileSync(join(settingsDir, "WorkspaceAccessManager.tsx"), "utf8");
     expect(source).not.toContain("mailto:");
+    expect(source).not.toContain("BFI_COOKIE_SECRET ||");
+    expect(source).not.toContain("workspace-invite-link");
     expect(source).toContain("navigator.clipboard");
     expect(source).toContain("Copy invite link");
     expect(source).toContain("window.location.origin");
+    expect(source).toContain("inviteLinks[invitation.id]");
   });
 });
 

@@ -22,7 +22,6 @@ import {
   buildHamiltonAccountHref,
 } from "@/lib/hamilton/account-actions";
 import {
-  acceptPendingWorkspaceInvitationsForUser,
   getUserInstitutionClaimHistory,
   getUserInstitutionMemberships,
   getPendingWorkspaceInvitationsForEmail,
@@ -60,10 +59,6 @@ export default async function AccountPage({
         await sqlConn`
           UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
           WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
-        await acceptPendingWorkspaceInvitationsForUser({
-          userId: user.id,
-          email: user.email ?? user.username,
-        }).catch(() => []);
         user.subscription_status = "active";
         if (user.role !== "admin" && user.role !== "analyst") {
           user.role = "premium";
@@ -216,7 +211,7 @@ export default async function AccountPage({
                 </h2>
                 <p className="text-[13px] text-[#6B6255] mt-1">
                   {pendingWorkspaceInvitations.length > 0
-                    ? "Your email has been invited to an institution account. It includes up to five teammates, so you don't need to pay to join."
+                    ? "Your email has been invited to an institution account. It includes up to five teammates, so you don't need to pay to join. Open the invite link the account owner sent you."
                     : "The full fee catalog, peer benchmarks, Hamilton analysis, data exports, and report workflows."}
                 </p>
                 {pendingWorkspaceInvitations.length > 0 && (

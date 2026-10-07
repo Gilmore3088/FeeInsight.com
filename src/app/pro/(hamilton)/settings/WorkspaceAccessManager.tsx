@@ -20,6 +20,10 @@ interface WorkspaceAccessManagerProps {
   members: InstitutionWorkspaceMembership[];
   invitations: InstitutionWorkspaceInvitation[];
   canManage: boolean;
+  /** Signed /workspace-invite path per invitation id, computed on the server. */
+  inviteLinks: Record<number, string | null>;
+  /** False when the server secret is missing, so no link can be signed. */
+  inviteLinksReady: boolean;
 }
 
 const inputClass =
@@ -28,7 +32,8 @@ const secondaryButton =
   "inline-block rounded-md border border-warm-300 bg-warm-50 px-3 py-1.5 text-sm font-medium text-warm-800 hover:border-warm-500 disabled:cursor-not-allowed disabled:opacity-60";
 
 const initialState: WorkspaceAccessActionState = { success: false };
-const WORKSPACE_INVITE_PATH = "/workspace-invite";
+const INVITE_LINK_UNAVAILABLE =
+  "Invite links can't be signed because the server secret (BFI_COOKIE_SECRET) is not set.";
 
 function roleLabel(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
@@ -42,11 +47,12 @@ function sourceLabel(source: string): string {
 }
 
 /**
- * Copies the /workspace-invite link on this site to the clipboard. Nothing is emailed: the
- * owner sends the link themselves, and the invitee signs in with the invited email. If the
- * clipboard is unavailable, the link is shown selected so it can be copied by hand.
+ * Copies one invitation's signed /workspace-invite link, on this site's origin, to the
+ * clipboard. The server signs the path; this only adds the origin. Nothing is emailed: the
+ * owner sends the link themselves, and the invitee opens it signed in with the invited
+ * email. If the clipboard is unavailable, the link is shown selected to copy by hand.
  */
-function CopyInviteLink({ email }: { email: string }) {
+function CopyInviteLink({ email, path }: { email: string; path: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "manual">("idle");
   const [link, setLink] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,7 +64,7 @@ function CopyInviteLink({ email }: { email: string }) {
   }, [status]);
 
   async function handleCopy() {
-    const url = `${window.location.origin}${WORKSPACE_INVITE_PATH}`;
+    const url = `${window.location.origin}${path}`;
     setLink(url);
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
@@ -76,7 +82,7 @@ function CopyInviteLink({ email }: { email: string }) {
       </button>
       {status === "copied" && (
         <p role="status" className="text-sm text-warm-600">
-          Copied. Send it to {email}; they sign in with that email.
+          Copied. Send it to {email}; they open it signed in with that email.
         </p>
       )}
       {status === "manual" && (
@@ -95,11 +101,18 @@ function CopyInviteLink({ email }: { email: string }) {
   );
 }
 
+function InviteLinkCell({ email, path }: { email: string; path: string | null }) {
+  if (!path) return <p className="text-sm text-terra-text">{INVITE_LINK_UNAVAILABLE}</p>;
+  return <CopyInviteLink email={email} path={path} />;
+}
+
 export function WorkspaceAccessManager({
   institutionId,
   members,
   invitations,
   canManage,
+  inviteLinks,
+  inviteLinksReady,
 }: WorkspaceAccessManagerProps) {
   const [grantState, grantAction, isGrantPending] = useActionState(
     grantWorkspaceAccess,
@@ -181,19 +194,13 @@ export function WorkspaceAccessManager({
                   <p className="truncate text-sm font-medium text-warm-900">{invitation.email}</p>
                   <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-600">
                     <span>{roleLabel(invitation.role)}</span>
-                    <span>Waiting for them to sign in</span>
+                    <span>Waiting for them to open the invite link</span>
                     <span>Expires {new Date(invitation.expiresAt).toLocaleDateString()}</span>
-                  </p>
-                  <p className="mt-0.5 text-sm text-warm-600">
-                    They accept at{" "}
-                    <a href={WORKSPACE_INVITE_PATH} className="text-terra-text underline decoration-terra/40 underline-offset-2">
-                      {WORKSPACE_INVITE_PATH}
-                    </a>
                   </p>
                 </div>
                 {canManage && (
                   <div className="flex flex-wrap items-start gap-2">
-                    <CopyInviteLink email={invitation.email} />
+                    <InviteLinkCell email={invitation.email} path={inviteLinks[invitation.id] ?? null} />
                     <form action={revokeInviteAction}>
                       <input type="hidden" name="institution_id" value={institutionId} />
                       <input type="hidden" name="invitation_id" value={invitation.id} />
@@ -247,10 +254,13 @@ export function WorkspaceAccessManager({
           </label>
           <div className="flex flex-col gap-3 sm:col-span-2">
             <p className="text-sm text-warm-600">
-              If they already have a {SITE_NAME} account with this email, they get access right
-              away. If not, we save the invite: copy the invite link and send it to them, and they
-              sign in or create a free account with the same email. We don&apos;t email anyone.
+              We save an invite and give you a link to copy and send them. They open it signed in
+              with this email, or create a free {SITE_NAME} account with it first, and their seat
+              starts then. We don&apos;t email anyone.
             </p>
+            {!inviteLinksReady && (
+              <p className="text-sm font-medium text-terra-text">{INVITE_LINK_UNAVAILABLE}</p>
+            )}
             {seatsFull && (
               <p className="text-sm font-medium text-terra-text">
                 All {WORKSPACE_SEAT_LIMIT} seats are in use. To add someone new, remove a person or cancel an
@@ -263,9 +273,16 @@ export function WorkspaceAccessManager({
                 disabled={isGrantPending}
                 className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isGrantPending ? "Adding..." : "Give access"}
+                {isGrantPending ? "Saving..." : "Create invite"}
               </button>
             </div>
+            {grantState.success && grantState.inviteLink && grantState.inviteEmail && (
+              <CopyInviteLink
+                key={grantState.inviteLink}
+                email={grantState.inviteEmail}
+                path={grantState.inviteLink}
+              />
+            )}
           </div>
         </form>
       ) : (

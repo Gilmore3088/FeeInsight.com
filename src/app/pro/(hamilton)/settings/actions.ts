@@ -12,12 +12,15 @@ import {
   getActiveInstitutionMembership,
   getInstitutionWorkspaceSeatUsage,
   createInstitutionWorkspaceInvitation,
-  grantInstitutionWorkspaceMembership,
   revokeInstitutionWorkspaceInvitation,
   revokeInstitutionWorkspaceMembership,
-  type InstitutionWorkspaceMembershipRole,
 } from "@/lib/hamilton/institution-membership";
 import { hasOpenSeat, seatLimitMessage } from "@/lib/hamilton/workspace-seats";
+import {
+  INVITE_SECRET_MISSING_MESSAGE,
+  buildWorkspaceInvitePath,
+  inviteLinksConfigured,
+} from "@/lib/hamilton/workspace-invite-link";
 import {
   getSavedPeerSets,
   savePeerSet,
@@ -55,6 +58,9 @@ export type WorkspaceAccessActionState = {
   success: boolean;
   error?: string;
   message?: string;
+  /** Signed /workspace-invite path for a new invitation; the page adds its own origin. */
+  inviteLink?: string;
+  inviteEmail?: string;
 };
 
 const WorkspaceInstitutionSchema = z.object({
@@ -308,16 +314,17 @@ async function canManageSelectedInstitution(
 
 type GrantOutcome =
   | { kind: "full"; limit: number }
-  | { kind: "invited"; email: string }
-  | { kind: "granted" }
+  | { kind: "invited"; email: string; inviteLink: string }
   | { kind: "failed"; error: string };
 
 /**
- * Adds a person to an institution account. Nothing is emailed: an invitation is saved, and
- * the owner copies the /workspace-invite link to the invitee. A seat on a paid institution
- * account gives the invitee Pro access, so nobody needs to pay to accept. At most
- * WORKSPACE_SEAT_LIMIT people per institution (the owner included); the count and the write
- * run under one per-institution lock so two invites cannot both take the last seat.
+ * Invites a person to an institution account. Every grant is an invitation, an existing
+ * account included: the seat becomes active only when the invitee opens the signed invite
+ * link while signed in with the invited email (`acceptSignedWorkspaceInvite`). Nothing is
+ * emailed; the owner copies the link this returns. A seat on a paid institution account
+ * gives Pro access, so nobody pays to accept. At most WORKSPACE_SEAT_LIMIT people per
+ * institution (the owner included); the count and the write run under one per-institution
+ * lock so two invites cannot both take the last seat.
  */
 export async function grantWorkspaceAccess(
   _prev: WorkspaceAccessActionState,
@@ -338,6 +345,10 @@ export async function grantWorkspaceAccess(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid workspace access request." };
   }
+  // Fail closed before anything is saved: an invite nobody can accept is no use.
+  if (!inviteLinksConfigured()) {
+    return { success: false, error: INVITE_SECRET_MISSING_MESSAGE };
+  }
 
   const { institution, error } = await getHamiltonInstitutionContext(parsed.data.institution_id);
   if (!institution) return { success: false, error: error ?? "Institution not found." };
@@ -347,19 +358,8 @@ export async function grantWorkspaceAccess(
     return { success: false, error: "Only institution owners or admins can manage workspace access." };
   }
 
-  const granteeRows = await sql<Array<{
-    id: number;
-    display_name: string | null;
-    email: string | null;
-  }>>`
-    SELECT id, display_name, email
-    FROM users
-    WHERE LOWER(email) = ${parsed.data.email}
-      AND is_active = true
-    LIMIT 1
-  `;
-  const grantee = granteeRows[0];
-  if (grantee && grantee.id === user.id) {
+  const ownEmail = (user.email ?? user.username ?? "").trim().toLowerCase();
+  if (ownEmail && ownEmail === parsed.data.email) {
     return { success: false, error: "Your own workspace role is managed through institution claim authority." };
   }
 
@@ -376,36 +376,24 @@ export async function grantWorkspaceAccess(
         return { kind: "full", limit: seats.limit };
       }
 
-      if (!grantee) {
-        const invitation = await createInstitutionWorkspaceInvitation(
-          {
-            institutionId: institution.id,
-            email: parsed.data.email,
-            role,
-            invitedByUserId: user.id,
-            notes: parsed.data.notes || `Pending ${role} access from Hamilton Settings.`,
-          },
-          tx,
-        );
-        return invitation
-          ? { kind: "invited", email: invitation.email }
-          : { kind: "failed", error: "Workspace invitation could not be saved." };
-      }
-
-      const membership = await grantInstitutionWorkspaceMembership(
+      const invitation = await createInstitutionWorkspaceInvitation(
         {
           institutionId: institution.id,
-          userId: grantee.id,
-          role: role as InstitutionWorkspaceMembershipRole,
-          source: "delegated",
-          grantedByUserId: user.id,
-          notes: parsed.data.notes || `Delegated ${role} access from Hamilton Settings.`,
+          email: parsed.data.email,
+          role,
+          invitedByUserId: user.id,
+          notes: parsed.data.notes || `Pending ${role} access from Hamilton Settings.`,
         },
         tx,
       );
-      return membership
-        ? { kind: "granted" }
-        : { kind: "failed", error: "Workspace access could not be granted." };
+      if (!invitation) return { kind: "failed", error: "Workspace invitation could not be saved." };
+      const inviteLink = buildWorkspaceInvitePath({
+        invitationId: invitation.id,
+        email: invitation.email,
+        institutionId: invitation.institutionId,
+      });
+      if (!inviteLink) throw new Error(INVITE_SECRET_MISSING_MESSAGE);
+      return { kind: "invited", email: invitation.email, inviteLink };
     });
   } catch (e) {
     console.error("grantWorkspaceAccess failed:", e);
@@ -416,17 +404,11 @@ export async function grantWorkspaceAccess(
   if (outcome.kind === "failed") return { success: false, error: outcome.error };
 
   revalidatePath("/pro/settings");
-  if (outcome.kind === "invited") {
-    return {
-      success: true,
-      message: `Invite saved for ${outcome.email} (${role}). Copy the invite link and send it to them. They sign in or create a free account with ${outcome.email} to join; they don't pay for a seat.`,
-    };
-  }
-
-  revalidatePath("/account");
   return {
     success: true,
-    message: `${grantee?.display_name ?? grantee?.email ?? "User"} now has ${role} access to ${institution.name}.`,
+    message: `Invite saved for ${outcome.email} (${role}). Copy the invite link and send it to them. They open it while signed in with ${outcome.email}, or create a free account with that email first; they don't pay for a seat.`,
+    inviteLink: outcome.inviteLink,
+    inviteEmail: outcome.email,
   };
 }
 

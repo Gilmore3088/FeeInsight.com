@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   hasWorkspaceSeat: vi.fn(),
-  accept: vi.fn(),
+  acceptSigned: vi.fn(),
   memberships: vi.fn(),
 }));
 
@@ -12,8 +12,12 @@ vi.mock("@/lib/auth", () => ({
   hasWorkspaceSeat: mocks.hasWorkspaceSeat,
 }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({
-  acceptPendingWorkspaceInvitationsForUser: mocks.accept,
   getUserInstitutionMemberships: mocks.memberships,
+}));
+vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
+  WORKSPACE_INVITE_PATH: "/workspace-invite",
+  acceptSignedWorkspaceInvite: mocks.acceptSigned,
+  signedInviteMessage: () => "message",
 }));
 vi.mock("@/components/customer-footer", () => ({ CustomerFooter: () => null }));
 vi.mock("@/components/consumer-nav", () => ({ ConsumerNav: () => null }));
@@ -29,27 +33,35 @@ const freeUser = {
   subscription_status: "none",
 };
 
+const TOKEN = "a".repeat(64);
+
 describe("workspace invite page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.memberships.mockResolvedValue([]);
   });
 
-  it("accepts the invitation for a signed-in account that has not paid", async () => {
+  it("accepts a signed link for a signed-in account that has not paid, then re-checks the seat", async () => {
     mocks.getCurrentUser.mockResolvedValue(freeUser);
-    mocks.accept.mockResolvedValue([{ id: 1 }]);
+    mocks.acceptSigned.mockResolvedValue({ status: "accepted", membership: { id: 1 } });
     mocks.hasWorkspaceSeat.mockResolvedValue(true);
 
-    await WorkspaceInvitePage();
+    await WorkspaceInvitePage({ searchParams: Promise.resolve({ i: "91", t: TOKEN }) });
 
-    expect(mocks.accept).toHaveBeenCalledWith({ userId: 8, email: "analyst@bank.com" });
-    // The seat is re-checked after accepting, since the user was loaded before.
+    expect(mocks.acceptSigned).toHaveBeenCalledWith({ invitationId: 91, token: TOKEN, user: freeUser });
     expect(mocks.hasWorkspaceSeat).toHaveBeenCalledWith(8);
+  });
+
+  it("accepts nothing without a signed link, even for the invited email", async () => {
+    mocks.getCurrentUser.mockResolvedValue(freeUser);
+    await WorkspaceInvitePage({ searchParams: Promise.resolve({}) });
+    await WorkspaceInvitePage({ searchParams: Promise.resolve({ i: "91" }) });
+    expect(mocks.acceptSigned).not.toHaveBeenCalled();
   });
 
   it("accepts nothing for a signed-out visitor", async () => {
     mocks.getCurrentUser.mockResolvedValue(null);
-    await WorkspaceInvitePage();
-    expect(mocks.accept).not.toHaveBeenCalled();
+    await WorkspaceInvitePage({ searchParams: Promise.resolve({ i: "91", t: TOKEN }) });
+    expect(mocks.acceptSigned).not.toHaveBeenCalled();
   });
 });

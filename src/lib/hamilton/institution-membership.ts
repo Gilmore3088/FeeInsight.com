@@ -633,75 +633,85 @@ export async function revokeInstitutionWorkspaceInvitation(
   return rows[0] ? mapInvitationRow(rows[0]) : null;
 }
 
-export async function acceptPendingWorkspaceInvitationsForUser(
-  params: {
-    userId: number;
-    email: string | null | undefined;
-  },
+export interface WorkspaceInvitationForAccept {
+  id: number;
+  institutionId: number;
+  email: string;
+  role: InstitutionWorkspaceInvitationRole;
+  status: InstitutionWorkspaceInvitationStatus;
+  /** expires_at is at or before NOW(), judged by the database clock. */
+  expired: boolean;
+  acceptedByUserId: number | null;
+}
+
+/**
+ * One invitation by id, for the signed-link accept flow. Locks the row when called inside
+ * a transaction, so two visits cannot both accept it.
+ */
+export async function getWorkspaceInvitationForAccept(
+  invitationId: number,
   db: SqlClient = sql,
-): Promise<InstitutionWorkspaceMembership[]> {
-  if (!params.email) return [];
+): Promise<WorkspaceInvitationForAccept | null> {
+  const rows = await db<Record<string, unknown>[]>`
+    SELECT id, institution_id, email, invited_role, invitation_status,
+           (expires_at <= NOW()) AS expired, accepted_by_user_id
+      FROM institution_workspace_invitations
+     WHERE id = ${invitationId}
+     FOR UPDATE
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    institutionId: Number(row.institution_id),
+    email: String(row.email),
+    role: String(row.invited_role) as InstitutionWorkspaceInvitationRole,
+    status: String(row.invitation_status) as InstitutionWorkspaceInvitationStatus,
+    expired: row.expired === true,
+    acceptedByUserId: row.accepted_by_user_id == null ? null : Number(row.accepted_by_user_id),
+  };
+}
+
+/**
+ * Accepts one invitation for one user and grants the delegated membership. The update only
+ * matches a pending, unexpired invitation for exactly this email, so an expired, revoked or
+ * already-used invite, or another person's, accepts nothing and returns null. Callers check
+ * the signed link first (`acceptSignedWorkspaceInvite`); nothing accepts invitations by
+ * email alone.
+ */
+export async function acceptWorkspaceInvitation(
+  params: { invitationId: number; userId: number; email: string },
+  db: SqlClient = sql,
+): Promise<InstitutionWorkspaceMembership | null> {
   const normalizedEmail = params.email.trim().toLowerCase();
-  if (!normalizedEmail) return [];
+  if (!normalizedEmail) return null;
 
-  await db`
+  const acceptedRows = await db<Record<string, unknown>[]>`
     UPDATE institution_workspace_invitations
-       SET invitation_status = 'expired',
+       SET invitation_status = 'accepted',
+           accepted_by_user_id = ${params.userId},
+           accepted_at = NOW(),
            updated_at = NOW()
-     WHERE email = ${normalizedEmail}
+     WHERE id = ${params.invitationId}
+       AND email = ${normalizedEmail}
        AND invitation_status = 'pending'
-       AND expires_at <= NOW()
+       AND expires_at > NOW()
+    RETURNING id, institution_id, invited_role, invited_by_user_id, notes
   `;
+  const accepted = acceptedRows[0];
+  if (!accepted) return null;
 
-  const invitations = await db<Record<string, unknown>[]>`
-    SELECT
-      id,
-      institution_id,
-      invited_role,
-      invited_by_user_id,
-      notes
-    FROM institution_workspace_invitations
-    WHERE email = ${normalizedEmail}
-      AND invitation_status = 'pending'
-      AND expires_at > NOW()
-    ORDER BY created_at ASC, id ASC
-  `;
-
-  const acceptedMemberships: InstitutionWorkspaceMembership[] = [];
-  for (const invitation of invitations) {
-    const acceptedInvitation = await db<Record<string, unknown>[]>`
-      UPDATE institution_workspace_invitations
-         SET invitation_status = 'accepted',
-             accepted_by_user_id = ${params.userId},
-             accepted_at = NOW(),
-             updated_at = NOW()
-       WHERE id = ${Number(invitation.id)}
-         AND invitation_status = 'pending'
-         AND expires_at > NOW()
-      RETURNING id, institution_id, invited_role, invited_by_user_id, notes
-    `;
-    const accepted = acceptedInvitation[0];
-    if (!accepted) continue;
-
-    const membership = await grantInstitutionWorkspaceMembership(
-      {
-        institutionId: Number(accepted.institution_id),
-        userId: params.userId,
-        role: String(accepted.invited_role) as InstitutionWorkspaceMembershipRole,
-        source: "delegated",
-        grantedByUserId: Number(accepted.invited_by_user_id),
-        notes: accepted.notes
-          ? String(accepted.notes)
-          : "Accepted pending workspace invitation.",
-      },
-      db,
-    );
-
-    if (!membership) continue;
-    acceptedMemberships.push(membership);
-  }
-
-  return acceptedMemberships;
+  return grantInstitutionWorkspaceMembership(
+    {
+      institutionId: Number(accepted.institution_id),
+      userId: params.userId,
+      role: String(accepted.invited_role) as InstitutionWorkspaceMembershipRole,
+      source: "delegated",
+      grantedByUserId: Number(accepted.invited_by_user_id),
+      notes: accepted.notes ? String(accepted.notes) : "Accepted workspace invitation link.",
+    },
+    db,
+  );
 }
 
 export async function getUserInstitutionClaimHistory(

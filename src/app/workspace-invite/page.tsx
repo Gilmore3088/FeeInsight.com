@@ -7,10 +7,15 @@ import { SearchModal } from "@/components/public/search-modal";
 import { canAccessPremium, hasTeamSeat } from "@/lib/access";
 import { getCurrentUser, hasWorkspaceSeat } from "@/lib/auth";
 import {
-  acceptPendingWorkspaceInvitationsForUser,
   getUserInstitutionMemberships,
   type InstitutionWorkspaceMembership,
 } from "@/lib/hamilton/institution-membership";
+import {
+  WORKSPACE_INVITE_PATH,
+  acceptSignedWorkspaceInvite,
+  signedInviteMessage,
+  type SignedInviteResult,
+} from "@/lib/hamilton/workspace-invite-link";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import type { Metadata } from "next";
 
@@ -50,23 +55,43 @@ function MembershipCard({ membership }: { membership: InstitutionWorkspaceMember
   );
 }
 
-export default async function WorkspaceInvitePage() {
+function firstParam(value: string | string[] | undefined): string | null {
+  const first = Array.isArray(value) ? value[0] : value;
+  return first ? String(first) : null;
+}
+
+export default async function WorkspaceInvitePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = (await searchParams) ?? {};
+  const invitationParam = firstParam(params.i);
+  const token = firstParam(params.t);
+  const hasLink = Boolean(invitationParam && token);
+  const returnPath = hasLink
+    ? `${WORKSPACE_INVITE_PATH}?i=${encodeURIComponent(invitationParam ?? "")}&t=${encodeURIComponent(token ?? "")}`
+    : WORKSPACE_INVITE_PATH;
+  const fromParam = encodeURIComponent(returnPath);
+
   const user = await getCurrentUser();
   const userEmail = user?.email ?? user?.username ?? null;
-  // A seat on an institution account needs no payment of its own: any signed-in account
-  // accepts the pending invitations for its email here.
-  const acceptedFromVisit = user
-    ? await acceptPendingWorkspaceInvitationsForUser({
-        userId: user.id,
-        email: userEmail,
-      }).catch(() => [])
-    : [];
+  // A seat starts only from a signed invite link opened by the invited email. A seat on an
+  // institution account needs no payment of its own.
+  const result: SignedInviteResult | null =
+    user && hasLink
+      ? await acceptSignedWorkspaceInvite({
+          invitationId: Number(invitationParam),
+          token: token ?? "",
+          user,
+        })
+      : null;
   const activeMemberships = user
     ? await getUserInstitutionMemberships(user.id).catch(() => [])
     : [];
   // The user was loaded before this visit accepted anything, so re-check the seat then.
   const hasSeat =
-    user && acceptedFromVisit.length > 0 ? await hasWorkspaceSeat(user.id) : hasTeamSeat(user);
+    user && result?.status === "accepted" ? await hasWorkspaceSeat(user.id) : hasTeamSeat(user);
   const hasAccess = user ? canAccessPremium({ ...user, workspace_seat: hasSeat }) : false;
 
   return (
@@ -86,9 +111,9 @@ export default async function WorkspaceInvitePage() {
               Institution workspace invitation
             </h1>
             <p className="mt-3 text-sm leading-6 text-[#6B6255]">
-              An institution account includes up to {WORKSPACE_SEAT_LIMIT} teammates. Sign in with
-              the email you were invited with and you join right away, with full Pro access and no
-              payment of your own. Hamilton then carries that institution into Analyze, Reports,
+              An institution account includes up to {WORKSPACE_SEAT_LIMIT} teammates. Open the
+              invite link the account owner sent you while signed in with the invited email, and you
+              join with full Pro access and no payment of your own. Hamilton then carries that institution into Analyze, Reports,
               Simulate, Monitor, and Settings.
             </p>
           </div>
@@ -104,13 +129,13 @@ export default async function WorkspaceInvitePage() {
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  href="/register?from=%2Fworkspace-invite"
+                  href={`/register?from=${fromParam}`}
                   className="rounded-full bg-[#C44B2E] px-4 py-2 text-sm font-semibold text-white no-underline"
                 >
                   Create Account
                 </Link>
                 <Link
-                  href="/login?from=%2Fworkspace-invite"
+                  href={`/login?from=${fromParam}`}
                   className="rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-[#1A1815] no-underline"
                 >
                   Sign In
@@ -121,10 +146,16 @@ export default async function WorkspaceInvitePage() {
 
           {user && (
             <div className="space-y-4">
-              {acceptedFromVisit.length > 0 && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-                  Accepted {acceptedFromVisit.length} workspace invitation
-                  {acceptedFromVisit.length === 1 ? "" : "s"} for {userEmail}.
+              {result && (
+                <div
+                  role="status"
+                  className={
+                    result.status === "accepted" || result.status === "already_accepted"
+                      ? "rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+                      : "rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"
+                  }
+                >
+                  {signedInviteMessage(result, userEmail)}
                 </div>
               )}
               {activeMemberships.length > 0 ? (
@@ -145,11 +176,11 @@ export default async function WorkspaceInvitePage() {
               ) : (
                 <div className="rounded-lg border border-[#E8DFD1] bg-white/70 p-4">
                   <p className="text-sm font-semibold text-[#1A1815]">
-                    No invitation found for {userEmail}
+                    No institution workspace for {userEmail} yet
                   </p>
                   <p className="mt-2 text-sm text-[#6B6255]">
-                    Ask the institution owner to invite this exact email from Hamilton Settings, then
-                    open this page again.
+                    Open the invite link the institution owner sent you. If you don&apos;t have one,
+                    ask them to invite this exact email from Hamilton Settings and send you the link.
                     {!hasAccess && " If you want a workspace of your own, see the Pro plans."}
                   </p>
                   {!hasAccess && (

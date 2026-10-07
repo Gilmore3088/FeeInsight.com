@@ -2457,8 +2457,15 @@ matches, and the seat gives Pro access without payment. Registration does not ve
 owns the email they sign up with (no verification step in `createUserWithSession`).
 **Cause:** invitations were tied to email when accepting also needed a paid subscription, which was
 some protection; seats remove it.
-**Fix:** not yet. The exposure is one seat on the inviting institution, at most five per account,
-and the owner sees every member in Settings and can remove them. A verify-email step before
-`acceptPendingWorkspaceInvitationsForUser` (or a signed one-time invite token in the copied link)
-would close it.
+**Fix:** closed in the same PR by signed invite links. Every grant, an existing account included,
+is now an invitation. A seat starts only when someone opens
+`/workspace-invite?i=<id>&t=<token>` signed in with the invited email. The token is
+HMAC-SHA256 of `id:email:institution`, keyed with `BFI_COOKIE_SECRET` and compared with
+`timingSafeEqual`, and the invitation must still be pending and unexpired
+(`src/lib/hamilton/workspace-invite-link.ts`). Without the secret, no link is issued or accepted.
+Accepting by email alone (`acceptPendingWorkspaceInvitationsForUser`, called from the Stripe webhook,
+the payment fallback and /account) is removed. Someone who registers with another person's
+email still cannot join without that person's link.
+**Cost:** `getCurrentUser` makes one extra query per signed-in request (`hasWorkspaceSeat`). It is
+left in place for now.
 **Lesson:** when a check stops costing money to pass, re-check what it was protecting.

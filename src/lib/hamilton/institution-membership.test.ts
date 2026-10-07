@@ -22,7 +22,8 @@ vi.mock("@/lib/data-store/connection", () => ({
 }));
 
 import {
-  acceptPendingWorkspaceInvitationsForUser,
+  acceptWorkspaceInvitation,
+  getWorkspaceInvitationForAccept,
   createInstitutionWorkspaceInvitation,
   getPendingInstitutionWorkspaceInvitations,
   getPendingWorkspaceInvitationsForEmail,
@@ -411,18 +412,8 @@ describe("institution workspace memberships", () => {
     expect(mocks.state.sqlCalls[0].values).toEqual([7, 91, 2945]);
   });
 
-  it("accepts pending invitations into delegated memberships for matching active Pro users", async () => {
+  it("accepts one invitation only while it is pending, unexpired and for this exact email", async () => {
     mocks.state.queuedRows.push(
-      [],
-      [
-        {
-          id: 91,
-          institution_id: 2945,
-          invited_role: "analyst",
-          invited_by_user_id: 7,
-          notes: "Competitive review support.",
-        },
-      ],
       [
         {
           id: 91,
@@ -451,22 +442,52 @@ describe("institution workspace memberships", () => {
       ],
     );
 
-    const accepted = await acceptPendingWorkspaceInvitationsForUser({
+    const membership = await acceptWorkspaceInvitation({
+      invitationId: 91,
       userId: 8,
       email: "Analyst@Example.com",
     });
 
-    expect(accepted[0]).toMatchObject({
-      id: 51,
+    expect(membership).toMatchObject({ id: 51, institutionId: 2945, userId: 8, role: "analyst", source: "delegated" });
+    const update = mocks.state.sqlCalls[0];
+    expect(update.text).toContain("invitation_status = 'accepted'");
+    expect(update.text).toContain("invitation_status = 'pending'");
+    expect(update.text).toContain("expires_at > NOW()");
+    expect(update.values).toEqual([8, 91, "analyst@example.com"]);
+    expect(mocks.state.sqlCalls[1].text).toContain("INSERT INTO institution_workspace_memberships");
+  });
+
+  it("grants nothing when the invitation is no longer pending", async () => {
+    mocks.state.queuedRows.push([]);
+
+    const membership = await acceptWorkspaceInvitation({ invitationId: 91, userId: 8, email: "a@example.com" });
+
+    expect(membership).toBeNull();
+    expect(mocks.state.sqlCalls).toHaveLength(1);
+  });
+
+  it("reads one invitation for the accept flow with a row lock and the database's expiry judgement", async () => {
+    mocks.state.queuedRows.push([
+      {
+        id: 91,
+        institution_id: 2945,
+        email: "a@example.com",
+        invited_role: "viewer",
+        invitation_status: "pending",
+        expired: true,
+        accepted_by_user_id: null,
+      },
+    ]);
+
+    expect(await getWorkspaceInvitationForAccept(91)).toEqual({
+      id: 91,
       institutionId: 2945,
-      userId: 8,
-      role: "analyst",
-      source: "delegated",
+      email: "a@example.com",
+      role: "viewer",
+      status: "pending",
+      expired: true,
+      acceptedByUserId: null,
     });
-    expect(mocks.state.sqlCalls[0].text).toContain("expires_at <= NOW()");
-    expect(mocks.state.sqlCalls[1].values).toEqual(["analyst@example.com"]);
-    expect(mocks.state.sqlCalls[2].text).toContain("invitation_status = 'accepted'");
-    expect(mocks.state.sqlCalls[2].text).toContain("expires_at > NOW()");
-    expect(mocks.state.sqlCalls[3].text).toContain("INSERT INTO institution_workspace_memberships");
+    expect(mocks.state.sqlCalls[0].text).toContain("FOR UPDATE");
   });
 });
