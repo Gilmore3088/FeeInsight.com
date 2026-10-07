@@ -12,7 +12,8 @@ import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAtt
 import { FeeScorecard } from "@/components/hamilton/benchmark/FeeScorecard";
 import { buildAttentionItems, FLAGSHIP_FEE } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
-import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch, getWorkspaceBriefing } from "@/lib/hamilton/workspace/research";
+import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
 import type { Briefing, FeeResearch } from "@/lib/hamilton/workspace/types";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
@@ -21,12 +22,16 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "This month" };
 
-/** The engine's Briefing and overdraft research, cached per institution for an hour (keyed on the id). */
+/**
+ * The engine's Briefing and overdraft research, cached for an hour per institution and peer
+ * group (keyed on both, so a bank's own group from Settings never serves another reader).
+ */
 const getCachedBriefing = unstable_cache(
-  async (institutionId: number) => {
+  async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => {
+    const peers: EnginePeerOptions = { peerSet };
     const [briefing, overdraft] = await Promise.all([
-      getWorkspaceBriefing(institutionId),
-      getFeeResearch(institutionId, FLAGSHIP_FEE),
+      getWorkspaceBriefing(institutionId, new Date(), peers),
+      getFeeResearch(institutionId, FLAGSHIP_FEE, new Date(), peers),
     ]);
     return { briefing, overdraft };
   },
@@ -35,12 +40,15 @@ const getCachedBriefing = unstable_cache(
 );
 
 async function loadBriefing(
+  user: User | null,
   selectedInstitutionId: string | null,
 ): Promise<{ briefing: Briefing | null; overdraft: FeeResearch | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
   if (!institutionId) return { briefing: null, overdraft: null, unavailable: false };
   try {
-    return { ...(await getCachedBriefing(institutionId)), unavailable: false };
+    const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
+    const peerSet = active ? { filters: active.filters, label: active.label } : null;
+    return { ...(await getCachedBriefing(institutionId, peerSet)), unavailable: false };
   } catch {
     return { briefing: null, overdraft: null, unavailable: true };
   }
@@ -113,7 +121,7 @@ export default async function HamiltonHomePage({
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
   const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
-  const { briefing, overdraft, unavailable } = await loadBriefing(selectedInstitutionId);
+  const { briefing, overdraft, unavailable } = await loadBriefing(user, selectedInstitutionId);
   const items = buildAttentionItems(briefing, overdraft);
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const trail = briefing
