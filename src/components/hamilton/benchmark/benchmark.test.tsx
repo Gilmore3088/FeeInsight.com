@@ -100,6 +100,15 @@ describe("RecentChanges", () => {
     expect(html).not.toContain("Change d");
   });
 
+  it("leaves pipeline housekeeping out and shows a repeated change once", () => {
+    const darwin: SignalEntry = {
+      id: "d1", signalType: "darwin_verification_needs_review", severity: "medium",
+      title: "Space Coast - 2 fee rows needs verification review", body: "Darwin skipped 2 fee rows.", createdAt: "2026-10-03T00:00:00Z",
+    };
+    const items = mergeChanges([], [darwin, { ...darwin, id: "d2" }, signal("s3", "Overdraft raised"), signal("s4", "Overdraft raised")]);
+    expect(items.map((i) => i.title)).toEqual(["Overdraft raised"]);
+  });
+
   it("links to Monitor with institution context", () => {
     const html = renderToStaticMarkup(<RecentChanges alerts={[]} signals={[]} selectedInstitutionId="2945" />);
     expect(html).toContain('href="/pro/monitor?instId=2945"');

@@ -15,6 +15,7 @@ import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { StorylineView, type MemoState } from "@/components/hamilton/storyline/StorylineView";
 import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
+import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
   { key: "revenue", label: "Revenue" },
@@ -61,7 +62,24 @@ async function postMemo(body: AskBody): Promise<MemoState> {
   }
 }
 
-function QuestionForm({ question, onAnswer, busy }: { question: ClarifyingQuestion; onAnswer: (value: string) => void; busy: boolean }) {
+/** The fees offered as one-tap answers when Hamilton asks which fee. */
+const FEE_CHOICES = getSpotlightCategories().map((c) => ({ key: c, label: getDisplayName(c).replace(/\s*\([^)]*\)/g, "") }));
+
+function QuestionForm({
+  question,
+  onAnswer,
+  busy,
+  notFound,
+  onWrite,
+}: {
+  question: ClarifyingQuestion;
+  onAnswer: (value: string) => void;
+  busy: boolean;
+  /** The last answer Hamilton could not use, so the reader sees why it asked again. */
+  notFound?: string | null;
+  /** Answers the whole question in writing instead, when it is not about one fee. */
+  onWrite?: () => void;
+}) {
   const [value, setValue] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -74,6 +92,41 @@ function QuestionForm({ question, onAnswer, busy }: { question: ClarifyingQuesti
       <p className="text-lg leading-snug text-warm-900" style={SERIF}>
         {question.prompt}
       </p>
+      {notFound ? (
+        <p role="status" className="text-sm text-terra-text">
+          Hamilton couldn&apos;t find a fee in &ldquo;{notFound}&rdquo;. Pick one below{onWrite ? " or get a written answer" : ""}.
+        </p>
+      ) : null}
+      {question.fieldKey === "ask.fee_category" ? (
+        <div className="flex flex-wrap gap-2">
+          {FEE_CHOICES.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              disabled={busy}
+              onClick={() => onAnswer(f.label)}
+              className="rounded-md border border-warm-300 bg-white px-3.5 py-2 text-sm text-warm-900 hover:border-terra hover:text-terra-text disabled:opacity-50"
+            >
+              {f.label}
+            </button>
+          ))}
+          {onWrite ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onWrite}
+              className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
+            >
+              Answer my question in writing
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {busy ? (
+        <p role="status" className="flex items-center gap-2 text-sm text-warm-700">
+          <Loader2 className="h-4 w-4 animate-spin" /> Working on it...
+        </p>
+      ) : null}
       {objective ? (
         <div className="flex flex-wrap gap-2">
           {OBJECTIVES.map((o) => (
@@ -188,6 +241,10 @@ export function StructuredAsk({
   const decisionId = useRef<string | undefined>(undefined);
   const lastQuestion = useRef<string | null>(null);
   const [memo, setMemo] = useState<MemoState | undefined>(undefined);
+  // An answer Hamilton could not use: it asks again, and the card says why.
+  const [notFound, setNotFound] = useState<string | null>(null);
+  // The reader chose a written answer instead of picking a fee.
+  const [handedOff, setHandedOff] = useState(false);
   // The question the memo was asked for; a newer question drops an older memo's result.
   const memoFor = useRef<string | null>(null);
 
@@ -233,6 +290,8 @@ export function StructuredAsk({
     memoFor.current = null;
     setMemo(undefined);
     setResponse(null);
+    setNotFound(null);
+    setHandedOff(false);
     void run({ question }).then((res) => {
       if (res) setResponse(res);
       follow(question, res);
@@ -240,8 +299,17 @@ export function StructuredAsk({
   }, [question, run, follow]);
 
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
+    setNotFound(null);
     const saved = await run({ answer: { fieldKey: q.fieldKey, value } });
     if (!saved) return;
+    const again = saved.question ?? saved.answer?.question ?? null;
+    if (again && again.fieldKey === q.fieldKey) setNotFound(value);
+    // A fee answer that found a storyline gets Hamilton's memo like any other answer.
+    if (q.fieldKey === "ask.fee_category" && saved.answer?.storyline && lastQuestion.current) {
+      setResponse(saved);
+      follow(lastQuestion.current, saved);
+      return;
+    }
     // An objective is remembered, then the original question is asked again with it.
     if (q.fieldKey === "decision.objective" && lastQuestion.current) {
       const asked = lastQuestion.current;
@@ -303,7 +371,7 @@ export function StructuredAsk({
             ) : null
           }
         />
-      ) : (
+      ) : q && response.shortAnswer.trim() === q.prompt.trim() ? null : (
         <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
           {response.shortAnswer}
         </p>
@@ -318,7 +386,23 @@ export function StructuredAsk({
       {response.scenario ? (
         <ScenarioSummary s={response.scenario} modelHref={modelHrefFor(response.scenario.feeCategory, response.scenario.tested)} />
       ) : null}
-      {q && q.inputKind !== "file" ? <QuestionForm key={q.fieldKey} question={q} busy={busy} onAnswer={(v) => void answerQuestion(q, v)} /> : null}
+      {q && q.inputKind !== "file" && !handedOff ? (
+        <QuestionForm
+          key={q.fieldKey}
+          question={q}
+          busy={busy}
+          notFound={notFound}
+          onAnswer={(v) => void answerQuestion(q, v)}
+          onWrite={
+            onNoStoryline && lastQuestion.current
+              ? () => {
+                  setHandedOff(true);
+                  onNoStoryline(lastQuestion.current!);
+                }
+              : undefined
+          }
+        />
+      ) : null}
       {error ? <p className="text-sm text-terra-text">{error}</p> : null}
     </div>
   );

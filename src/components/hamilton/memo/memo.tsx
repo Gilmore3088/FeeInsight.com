@@ -4,6 +4,7 @@
  * numbered exhibits with their source under each. Server components only.
  */
 import Link from "next/link";
+import { LinkPending } from "./LinkPending";
 import type { ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
@@ -107,6 +108,7 @@ export function LinkButton({
       }
     >
       {children}
+      <LinkPending />
     </Link>
   );
 }
@@ -135,6 +137,7 @@ export function Tabs({ items, label }: { items: TabItem[]; label: string }) {
         >
           {t.label}
           {t.meta ? <span className={t.active ? "ml-1.5 text-warm-ink-300" : "ml-1.5 text-warm-600"}>{t.meta}</span> : null}
+          <LinkPending />
         </Link>
       ))}
     </nav>

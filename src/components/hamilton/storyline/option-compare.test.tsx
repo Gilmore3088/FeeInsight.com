@@ -178,3 +178,22 @@ describe("FeeScorecard", () => {
     ).toBe("");
   });
 });
+
+describe("exhibit tidying", () => {
+  it("cites each source once and gives equal market medians one label", async () => {
+    const { uniqueSources, groupMarkers } = await import("@/components/hamilton/memo/exhibit-view");
+    const s = { label: "Fees on each institution's own published schedule (verified, live)", asOf: "2026-10-01" };
+    expect(uniqueSources([s, s, { ...s, asOf: "2026-10-02" }, { label: "Other", asOf: null }])).toHaveLength(2);
+    expect(
+      groupMarkers([
+        { label: "Florida median", scope: "state", value: 30, n: 90 },
+        { label: "National median", scope: "national", value: 30, n: 900 },
+        { label: "Fed district 6 (Atlanta) median", scope: "district", value: 30, n: 200 },
+        { label: "Local market (Melbourne, FL) median", scope: "local", value: 35, n: 7 },
+      ] as never),
+    ).toEqual([
+      { value: 30, label: "Florida, National, Fed district 6" },
+      { value: 35, label: "Local market" },
+    ]);
+  });
+});

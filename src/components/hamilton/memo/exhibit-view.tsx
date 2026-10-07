@@ -5,7 +5,7 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
-import type { Exhibit, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
+import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 
 export type ExhibitSpec = Exhibit;
 export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "claims" | "drivers" | "exhibit" | "question" | "evidenceLevel">;
@@ -36,8 +36,19 @@ export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
   );
 }
 
+/** Each source once: the same label and date from several markets is one citation, not five. */
+export function uniqueSources(sources: readonly SourceRef[]): SourceRef[] {
+  const seen = new Set<string>();
+  return sources.filter((s) => {
+    const key = `${s.label}|${shortDate(s.asOf) ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function sourceLine(sources: readonly SourceRef[]): ReactNode {
-  return sources.map((s, i) => (
+  return uniqueSources(sources).map((s, i) => (
     <span key={`${s.label}-${i}`}>
       {i > 0 ? "; " : ""}
       {s.url ? (
@@ -114,12 +125,28 @@ function ownLabelStyle(at: number, left: number): CSSProperties {
   return { left: `${left}%` };
 }
 
+/** "Credit unions, $1B to $10B in assets median" -> "Credit unions, $1B to $10B in assets"; "Fed district 6 (Atlanta)" -> "Fed district 6". */
+function shortMarketLabel(label: string): string {
+  return label
+    .replace(/\s+median$/i, "")
+    .replace(/\s*\([^)]*\)/g, "")
+    .trim();
+}
+
+/** Market medians grouped by value, lowest first, each group named once. */
+export function groupMarkers(markers: readonly ExhibitMarker[]): { label: string; value: number }[] {
+  const byValue = new Map<number, string[]>();
+  for (const m of markers) byValue.set(m.value, [...(byValue.get(m.value) ?? []), shortMarketLabel(m.label)]);
+  return [...byValue.entries()].sort((a, b) => a[0] - b[0]).map(([value, labels]) => ({ value, label: labels.join(", ") }));
+}
+
 function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> }) {
   const values = [x.band.p25, x.band.p75, x.band.median, ...x.markers.map((m) => m.value), ...(x.own != null ? [x.own] : [])];
   const axis = axisFor(values);
   // The band already draws the peer median; markers add the wider markets.
-  const markers = x.markers.filter((m) => m.scope !== "peer").sort((a, b) => a.value - b.value);
-  const markerText = (m: (typeof markers)[number]) => `${m.label} ${fmtMoney(m.value)}`;
+  // Markets with the same median share one label ("Florida, National: $30"), so equal values never stack.
+  const markers = groupMarkers(x.markers.filter((m) => m.scope !== "peer"));
+  const markerText = (m: (typeof markers)[number]) => `${m.label}: ${fmtMoney(m.value)}`;
   const placed = placeLabels(markers.map((m) => ({ x: axis.at(m.value), width: labelWidth(markerText(m)) })));
   const rowCount = Math.max(1, ...placed.map((p) => p.row + 1));
   const ownText = x.own != null ? `${x.ownLabel} ${fmtMoney(x.own)}` : "";
@@ -144,7 +171,7 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         />
         <span className="absolute top-6 h-6 w-0.5 -translate-x-1/2 bg-warm-800" style={{ left: `${axis.at(x.band.median)}%` }} title={`${x.band.label} median ${fmtMoney(x.band.median)}`} />
         {markers.map((m, i) => (
-          <span key={`${m.scope}-${m.label}`}>
+          <span key={m.label}>
             <span
               className="absolute top-[2.4rem] w-px -translate-x-1/2 bg-warm-400"
               style={{ left: `${axis.at(m.value)}%`, height: `${0.85 + placed[i].row * 1.5}rem` }}

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { overdraftResearch } from "@/lib/hamilton/workspace/test-fixtures";
@@ -60,5 +60,29 @@ describe("StructuredAsk", () => {
     render(<StructuredAsk question="what is a call report?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
     await waitFor(() => expect(onNoStoryline).toHaveBeenCalledWith("what is a call report?"));
     expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask"]);
+  });
+
+  it("offers fee buttons and a written answer, and says why when an answer isn't a fee", async () => {
+    const which: AskResponse = {
+      kind: "clarifying_question" as AskResponse["kind"],
+      shortAnswer: "Which fee do you want to look at?",
+      pageChange: { screen: "none" },
+      question: { prompt: "Which fee do you want to look at?", inputKind: "text", fieldKey: "ask.fee_category" },
+    };
+    mockFetch(which, {});
+    const onNoStoryline = vi.fn();
+    render(<StructuredAsk question="how does our fee revenue compare?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    await screen.findByText("Hamilton has one question");
+    // The question shows once, on the card, not again as a heading above it.
+    expect(screen.getAllByText("Which fee do you want to look at?")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Overdraft" })).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
+    await screen.findByText(/couldn.t find a fee in/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Answer my question in writing" }));
+    expect(onNoStoryline).toHaveBeenCalledWith("how does our fee revenue compare?");
+    await waitFor(() => expect(screen.queryByText("Hamilton has one question")).toBeNull());
   });
 });

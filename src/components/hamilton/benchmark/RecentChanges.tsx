@@ -24,17 +24,37 @@ interface ChangeItem {
   isAlert: boolean;
 }
 
+/**
+ * Pipeline housekeeping (an agent finished, a row needs review) is for the admin queue, not a
+ * customer's briefing: only changes in fees, markets and publications reach this list.
+ */
+const INTERNAL_SIGNAL = /^(atlas|magellan|rosetta|knox|darwin)_|^source_accepted$/;
+
+export function isCustomerSignal(signalType: string | null | undefined): boolean {
+  return !INTERNAL_SIGNAL.test(signalType ?? "");
+}
+
 export function mergeChanges(alerts: AlertEntry[], signals: SignalEntry[], limit = 6): ChangeItem[] {
   const seen = new Set<string>();
+  // The same change recorded on several runs reads as one line, newest first.
+  const said = new Set<string>();
   const items: ChangeItem[] = [];
+  const add = (item: ChangeItem) => {
+    const text = `${item.title}|${item.body}`;
+    if (said.has(text)) return;
+    said.add(text);
+    items.push(item);
+  };
   for (const alert of alerts) {
     seen.add(alert.signalId);
-    items.push({ key: `alert-${alert.id}`, title: alert.title, body: alert.body, severity: alert.severity, createdAt: alert.createdAt, isAlert: true });
+    if (!isCustomerSignal(alert.signalType)) continue;
+    add({ key: `alert-${alert.id}`, title: alert.title, body: alert.body, severity: alert.severity, createdAt: alert.createdAt, isAlert: true });
   }
   for (const signal of signals) {
     if (seen.has(signal.id)) continue;
     seen.add(signal.id);
-    items.push({ key: `signal-${signal.id}`, title: signal.title, body: signal.body, severity: signal.severity, createdAt: signal.createdAt, isAlert: false });
+    if (!isCustomerSignal(signal.signalType)) continue;
+    add({ key: `signal-${signal.id}`, title: signal.title, body: signal.body, severity: signal.severity, createdAt: signal.createdAt, isAlert: false });
   }
   return items.slice(0, limit);
 }

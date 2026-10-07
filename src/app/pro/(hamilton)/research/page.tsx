@@ -31,6 +31,7 @@ import {
 } from "@/components/hamilton/memo/memo";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
+import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
 
 export const metadata: Metadata = { title: "My fees" };
 
@@ -254,24 +255,26 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   const own = research?.institutionFinancials ?? null;
   const latest = own ? { quarter: quarterOf(own.quarterEnd) } : null;
   const credit = inst?.charterType === "credit_union";
-  const trail = buildAuditTrail({
-    feeName: ws.feeName,
-    layer,
-    layerDates: layerDates(ws, layer),
-    ownFeeRows: ws.ownFeeRows,
-    local: layer.key === "local" ? ws.local : null,
-    callReport: latest
-      ? {
-          quarter: latest.quarter,
-          source: `${own!.sourceRef.label}, from the Hamilton engine; year-to-date filings split into quarters. National figures sum every FDIC and NCUA filer on file.`,
-        }
-      : null,
-    complaints: Boolean(complaints && complaints.total_complaints > 0),
-    stateChanges: inst?.stateCode && research
-      ? { state: inst.stateCode, days: COMPETITOR_MOVE_WINDOW_DAYS, asOf: research.provenance.dataAsOf.changes ?? null }
-      : null,
-  });
-  const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
+  const trailFor = (layer: LayerSummary) =>
+    buildAuditTrail({
+      feeName: ws.feeName,
+      layer,
+      layerDates: layerDates(ws, layer),
+      ownFeeRows: ws.ownFeeRows,
+      local: layer.key === "local" ? ws.local : null,
+      callReport: latest
+        ? {
+            quarter: latest.quarter,
+            source: `${own!.sourceRef.label}, from the Hamilton engine; year-to-date filings split into quarters. National figures sum every FDIC and NCUA filer on file.`,
+          }
+        : null,
+      complaints: Boolean(complaints && complaints.total_complaints > 0),
+      stateChanges: inst?.stateCode && research
+        ? { state: inst.stateCode, days: COMPETITOR_MOVE_WINDOW_DAYS, asOf: research.provenance.dataAsOf.changes ?? null }
+        : null,
+    });
+  const csvHrefFor = (layer: LayerSummary) =>
+    hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
   const localBanks = ws.local?.competitors ?? [];
   const hamiltonRead = research ? buildFeeAnswer(research) : null;
 
@@ -332,20 +335,19 @@ export default async function ResearchPage({ searchParams }: PageProps) {
       ) : null}
 
       <MemoSection title="The market, layer by layer" note="One institution, one value each. Overdraft counts at a bank's highest tier.">
-        <Tabs
+        <LayerTabs
           label="Market layer"
-          items={ws.layers.map((l) => ({
+          initial={layer.key}
+          tabs={ws.layers.map((l) => ({
+            key: l.key,
             label: l.label,
             meta: l.median != null ? fmtMoney(l.median) : "—",
             href: researchHref({ fee: ws.fee, layer: l.key }, instId),
-            active: l.key === layer.key,
-          }))}
-        />
-        <LayerExhibit layer={layer} ownAmount={ws.ownAmount} feeName={ws.feeName} />
-        <AuditPanel trail={trail} downloadHref={csvHref} />
-      </MemoSection>
-
-      {layer.key === "local" && ws.local ? (
+            panel: (
+              <div className="flex flex-col gap-4">
+                <LayerExhibit layer={l} ownAmount={ws.ownAmount} feeName={ws.feeName} />
+                <AuditPanel trail={trailFor(l)} downloadHref={csvHrefFor(l)} />
+                {l.key === "local" && ws.local ? (
         <MemoSection
           title="Who your customers can walk into"
           note={`${ws.local.institutions} ${ws.local.institutions === 1 ? "institution" : "institutions"} in your market, largest deposits first (FDIC Summary of Deposits, ${ws.local.sodYear}).`}
@@ -385,7 +387,12 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             <p className="text-sm text-warm-700">No institution in your market publishes a {ws.feeName.toLowerCase()} fee we&apos;ve verified yet.</p>
           )}
         </MemoSection>
-      ) : null}
+                ) : null}
+              </div>
+            ),
+          }))}
+        />
+      </MemoSection>
 
       {inst?.stateCode && research ? (
         <MemoSection

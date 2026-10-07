@@ -54,7 +54,7 @@ describe("AnswerView", () => {
     const html = renderToStaticMarkup(<AnswerView answer={answer} questionAction="/pro/research" />);
     expect(html.indexOf("Your $32 overdraft fee")).toBeLessThan(html.indexOf("Overdraft against peers"));
     expect(html).toContain("n=18");
-    expect(html).toContain("Texas $30");
+    expect(html).toContain("Texas: $30");
     expect(html).toContain('name="fee.overdraft.annual_items"');
     expect(html).toContain("Market data only");
     expect(html).not.toContain("font-mono");
