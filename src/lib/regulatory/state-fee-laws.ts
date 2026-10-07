@@ -80,11 +80,13 @@ export const STATE_FEE_LAW_COVERAGE: readonly StateFeeLawCoverage[] = STATE_FEE_
  * The in-force state laws that can bear on an institution's consumer deposit fees.
  * `charterAgency` is institution_sources.charter_agency: "State" gets the state-charter
  * rules for its charter type; "OCC", "NCUA" or an unknown agency get only rules the
- * statute extends to every depository institution.
+ * statute extends to every depository institution. General fee-authority and parity
+ * rules name no fee, so they are left out unless asked for: they would otherwise
+ * appear on every fee's answer.
  */
 export function stateFeeLawsFor(
   params: { stateCode: string | null | undefined; charterType: string | null | undefined; charterAgency: string | null | undefined },
-  opts: { includeUnreviewed?: boolean } = {},
+  opts: { includeUnreviewed?: boolean; includeFeeAuthority?: boolean } = {},
 ): StateFeeLaw[] {
   if (!STATE_FEE_LAWS_REVIEWED && !opts.includeUnreviewed) return [];
   if (!params.stateCode) return [];
@@ -92,6 +94,7 @@ export function stateFeeLawsFor(
   const stateChartered = params.charterAgency === "State";
   return STATE_FEE_LAWS.filter((law) => {
     if (law.state_code !== params.stateCode || law.status !== "in_force") return false;
+    if (law.topic === "fee_authority" && !opts.includeFeeAuthority) return false;
     switch (law.institutions) {
       case "all_depository_institutions":
         return true;

@@ -348,6 +348,12 @@ export interface FdicInstitutionRow {
   closed_date: string | null;
 }
 
+/** FDIC's FED field: the Federal Reserve district (1-12) of the head office. */
+function fedDistrict(value: unknown): number | null {
+  const n = int(value);
+  return n !== null && n >= 1 && n <= 12 ? n : null;
+}
+
 export function parseFdicInstitution(record: FdicRecord): FdicInstitutionRow | null {
   const cert = str(record.CERT);
   const name = str(record.NAME);
@@ -371,7 +377,7 @@ export function parseFdicInstitution(record: FdicRecord): FdicInstitutionRow | n
     website_url: normalizeWebsite(record.WEBADDR),
     asset_size: asset,
     asset_size_tier: assetSizeTier(asset),
-    fed_district: int(record.FED),
+    fed_district: fedDistrict(record.FED),
     cbsa_code: str(record.CBSA_NO),
     cbsa_name: str(record.CBSA),
     established_date: parseFdicDate(record.ESTYMD),

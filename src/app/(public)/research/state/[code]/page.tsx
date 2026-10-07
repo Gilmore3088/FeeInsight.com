@@ -10,7 +10,8 @@ import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stat
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import {
   getCitiesInStateCached,
   getStateEconomicContextCached,
@@ -95,6 +96,7 @@ export default async function StateReportPage({ params }: PageProps) {
   if (!stateName) notFound();
 
   const user = await getCurrentUser();
+  const sampleLive = await sampleReportAvailable();
   const showAllCategories = canAccessAllCategories(user);
 
   // Every read is served from the public cache between publishes.
@@ -175,7 +177,7 @@ export default async function StateReportPage({ params }: PageProps) {
           body={`Leave your email and we'll send you the link to the ${stateName} medians against national, updated as new fee schedules are verified.`}
           buttonLabel="Send it to me"
           secondaryLink={
-            SAMPLE_REPORT_LIVE
+            sampleLive
               ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
               : undefined
           }

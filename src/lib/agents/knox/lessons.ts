@@ -96,7 +96,6 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
             FROM judged
            WHERE name <> ''
            GROUP BY name, fee_key
-        )
         ), bank_tally AS (
           SELECT institution_id, name, fee_key,
                  count(*) FILTER (WHERE signal = 'wrong') AS wrong_count,

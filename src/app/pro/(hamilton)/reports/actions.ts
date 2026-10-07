@@ -40,6 +40,8 @@ import { stateExpertSummary } from "@/lib/agents/hamilton/state-expert-summary";
 import { getLocalFeeMoves, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
 import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
+import { getInstitutionRegulators } from "@/lib/data-store/regulators";
+import { stateFeeLawsFor } from "@/lib/regulatory/state-fee-laws";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import {
@@ -557,10 +559,18 @@ export async function generateReport(
     });
     // Regulation: the federal rules that bear on these fees, the state chartering
     // agency, and the institution's CFPB complaint record.
+    const regulators = selectedInstitution
+      ? await getInstitutionRegulators(selectedInstitution.id).catch(() => null)
+      : null;
     const regulatory = buildRegulatoryContext({
       institutionName,
       stateCode: selectedInstitution?.state_code,
       charterType: selectedInstitution?.charter_type,
+      stateRules: stateFeeLawsFor({
+        stateCode: selectedInstitution?.state_code,
+        charterType: selectedInstitution?.charter_type,
+        charterAgency: regulators?.charterAgency,
+      }),
       fees: selectedFeeDeltas,
       complaintYears: selectedInstitution
         ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])

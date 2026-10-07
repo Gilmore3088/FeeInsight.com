@@ -50,6 +50,9 @@ describe("state fee laws", () => {
     expect(stateBank.map((law) => law.id)).not.toContain("ca_cu_overdraft_nsf_cap");
     expect(federalCu.every((law) => law.institutions === "all_depository_institutions")).toBe(true);
     expect(federalCu.length).toBeGreaterThan(0);
-    for (const law of [...stateCu, ...federalCu, ...stateBank]) expect(law.status).toBe("in_force");
+    for (const law of [...stateCu, ...federalCu, ...stateBank]) {
+      expect(law.status).toBe("in_force");
+      expect(law.topic).not.toBe("fee_authority");
+    }
   });
 });

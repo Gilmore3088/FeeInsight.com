@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { applyKnoxLesson, LABEL_WRONG_KEY, lessonName, lessonsFrom, type KnoxLesson } from "@/lib/agents/knox/lessons";
+import { describe, expect, it, vi } from "vitest";
+import { applyKnoxLesson, LABEL_WRONG_KEY, lessonName, lessonsFrom, loadKnoxLessons, type KnoxLesson } from "@/lib/agents/knox/lessons";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 
 const lesson = (name: string, wrongKey: string, rightKey: string): KnoxLesson => ({ name, wrongKey, rightKey, wrongBanks: 3, rightBanks: 3 });
@@ -90,5 +90,28 @@ describe("Knox weekly labels", () => {
     ]);
     expect(applyKnoxLesson(fee("Statement Copy", "paper_statement"), withBank, 7).candidate.canonicalHint).toBe("check_image");
     expect(applyKnoxLesson(fee("Statement Copy", "paper_statement"), withBank, 8).candidate.canonicalHint).toBe("document_reproduction");
+  });
+});
+
+describe("Knox lessons query", () => {
+  // The query shipped with an extra ")" from PR 300 to Oct 7 2026: Postgres refused it,
+  // the reader returned no lessons, and Knox re-filed nothing.
+  it("is well formed: every parenthesis closes, outside string literals", async () => {
+    const texts: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("$1");
+      texts.push(text);
+      return Promise.resolve(text.includes("to_regclass") ? [{ ready: true }] : []);
+    });
+    await loadKnoxLessons(db as never);
+    const query = texts.find((text) => text.includes("pipeline_feedback f"));
+    expect(query).toBeDefined();
+    let depth = 0;
+    for (const char of (query ?? "").replace(/'[^']*'/g, "''")) {
+      if (char === "(") depth += 1;
+      if (char === ")") depth -= 1;
+      expect(depth).toBeGreaterThanOrEqual(0);
+    }
+    expect(depth).toBe(0);
   });
 });
