@@ -52,7 +52,11 @@ const PRICE_THEN_QUALIFIER = /^\s*(?:\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:\/\s*[a-z]+|
  * A table's column heading repeated on every row ("ATM withdrawals on non-CU ATMs" / "Fees &
  * Charges" / "$2.00"): it may sit between a name and its price.
  */
-const COLUMN_LABEL_LINE = /^(?:fees?(?:\s*(?:&|and)\s*charges?)?|charges?|amount|price|cost|rate)\s*:?$/i;
+const COLUMN_LABEL_LINE = /^(?:(?:current|standard|regular|member)\s+)?(?:fees?(?:\s*(?:&|and)\s*charges?)?|charges?|amount|price|cost|rate)\s*:?$/i;
+/** Or a price, its unit and a sentence about it ("$25.00 Per Month. Applicable after 1 year of inactivity."). */
+const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*\.\s+\S/i;
+/** An allowance before the price ("5 Free per month," / "$2.50 each additional") is not the price. */
+const FREE_ALLOWANCE = /\b\d+\s+(?:free|no\s+charge)\b/gi;
 /**
  * Or a price, its unit, and a note in parentheses ("$29.00/presentment (applies to
  * transactions of $10 or more...)", "$10.00 per card replacement (normally up to 7 to 10
@@ -351,7 +355,7 @@ function feeRow(lines: string[], index: number): string {
   // A figure that is only a limit in the name's note ("Non-Customer check cashing (or 1% if
   // check is over $500)") is not the row's price; the price may still be printed under it.
   // A free word in a note ("ATM Withdrawal (first 6 free)" / "$1.00") is an allowance, not the price.
-  if (moneyTokens(line).some((t) => !isThreshold(line, t) && !inNote(line, t)) || ZERO_WORDS.test(line.replace(/\([^()]*\)/g, " "))) return line;
+  if (moneyTokens(line).some((t) => !isThreshold(line, t) && !inNote(line, t)) || ZERO_WORDS.test(line.replace(/\([^()]*\)/g, " ").replace(FREE_ALLOWANCE, " "))) return line;
   // Only a price line may follow; another name ("Incoming" then "Outgoing" then "$25")
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
@@ -359,6 +363,7 @@ function feeRow(lines: string[], index: number): string {
     .find(
       (next) =>
         PRICE_THEN_QUALIFIER.test(next) ||
+        PRICE_THEN_SENTENCE.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
           (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
@@ -533,6 +538,21 @@ function checkAgainstLines(
     const leader = dailyCap ? null : leaderRow(lines, i);
     if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
       row = leader;
+      amountProblem = null;
+    }
+    // A fee named inside another row's note ("Cost to drill a box: Actual cost plus $25.00. (Lost
+    // key replacement $75.00)") is stated by that note.
+    // The note must open with the fee's own name, so a qualifier in a price's note ("Research Fee
+    // (hourly fee; 15 minute minimum charge of $10.00) | $40.00") never stands in for the price.
+    const nameStart = comparable(feeName).replace(/[^a-z0-9' ]/g, " ").trim().split(/\s+/).slice(0, 2).join(" ");
+    const ownNote =
+      amountProblem && !dailyCap && nameStart.length >= 3
+        ? Array.from(row.matchAll(/\(([^()]*)\)/g), (match) => match[1]).find(
+            (note) => comparable(note).replace(/[^a-z0-9' ]/g, " ").trim().startsWith(nameStart) && namesFee(note, stems) && !statesAmount(note, rounded, stems),
+          )
+        : undefined;
+    if (ownNote) {
+      row = ownNote;
       amountProblem = null;
     }
     const wrapped = amountProblem && !dailyCap ? wrappedNameRow(lines, i, feeName) : null;
