@@ -85,6 +85,21 @@ Darwin owns verification and classification.
   caps are set. Each verdict (is it a fee, which category) is recorded per fee with its
   side (`knox`, `model`, `other`, `not_a_fee`); it never changes a decision yet. On live
   data at 2026-10-06 07:20 UTC, 23 approvals and 477 rejects qualified.
+  v2 (2026-10-07) sends each fee with the schedule rows around it (`scheduleContext`) and
+  the shared source check's verdict on its amount (`price_check`), and re-reads v1's
+  disagreements. Scored against the 81 answer-key texts, v1 was right on 27 of the 37
+  disagreements at key banks (Knox on 2); its misses mostly took a neighbouring row's
+  price or a balance threshold as the fee
+  (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
+- Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
+  category review's and the release review's verdicts at answer-key institutions are scored
+  against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
+  fixtures) in chunks of 20 decided verdicts. Each chunk is a `verify.verdict_score` attempt
+  (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
+  outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
+  `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent
+  misses for the categories in a batch as lessons. Coverage is small: about 5% of the
+  category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
@@ -96,6 +111,8 @@ Darwin owns verification and classification.
   the category it was filed under (the prompt lists the names the taxonomy files there), and
   the amount is the price, not a cap or a misread number. Released rows carry the
   `darwin_released_hold` flag so the whole release can be found and rolled back.
+  A state lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (2026-10-07: Utah's lane had 1 while about 1,000 waited elsewhere).
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
@@ -124,6 +141,21 @@ Darwin owns verification and classification.
   transfers passed as overdraft. Each item now lists `not_these` (the categories the guard's
   re-file rules move its category's fees to), and a fee whose name plus line `refileCategory`
   moves elsewhere never passes (attempt detail `refiles_to`).
+  v7 (2026-10-07): a hand check of 20 v6 passes had 17 right (a "Smart Safe" cash device passed
+  as safe deposit box rent, a $65 box read with its footnote as $651, a bare "overdrafts $5.00"
+  from jumbled rows). The prompt names all three.
+  v8 (2026-10-07): a hand check of 20 v7 passes had 17 right (an incoming wire priced "$2.95 (FEE
+  WAIVED)", an NSF check re-clear filed as NSF, an online-wire monthly fee filed as monthly maintenance).
+  The prompt names all three. `scheduleContext` no longer anchors on a bare price row ("$5.00"),
+  which had shown one item the rows around a different fee.
+  v9 (2026-10-07): a hand check of 20 v8 passes had 18 right (an "Emergency Card Replacement" passed
+  as card replacement, and a $10 rush card read from "Debit Card Replacement Rush Order | $10 $75").
+  The prompt names emergency service and two prices in one row.
+  v10 (2026-10-07): a hand check of 20 v9 passes had 18 sure right (an "Overnight Fee (Business Bill
+  Pay)" passed as bill pay; a $2.75 "Return Check Item" beside a $30 returned-check fee is unclear).
+  A fee whose name says it is the expedited, rush, overnight, emergency or same/next/second-day
+  version of a service now never passes outside a premium category such as `rush_card`
+  (`premiumServiceMisfiled`, attempt detail `premium_service`).
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

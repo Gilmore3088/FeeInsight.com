@@ -83,10 +83,10 @@ describe("enforcement matching", () => {
     expect(matcher.match({ party_name: "Old Bank", party_city: null, party_state: "TX" }).institution_id).toBe(4);
   });
 
-  it("falls back to a holding company, in that state first, else by its name alone", () => {
+  it("falls back to a holding company only with a subsidiary in that state", () => {
     expect(matcher.match({ party_name: "Example Bancorp", party_city: "Dallas", party_state: "TX" })).toEqual({ institution_id: null, holding_company: "EXAMPLE BANCORP", method: "holding_company" });
-    expect(matcher.match({ party_name: "Example Bancorp", party_city: null, party_state: "OK" }).holding_company).toBe("EXAMPLE BANCORP");
-    expect(matcher.match({ party_name: "Other Bancorp", party_city: null, party_state: "OK" }).method).toBeNull();
+    // Same name in another state may be an unrelated company: never matched.
+    expect(matcher.match({ party_name: "Example Bancorp", party_city: null, party_state: "OK" }).method).toBeNull();
   });
 
   it("matches a bank whose registry name carries a DBA", () => {

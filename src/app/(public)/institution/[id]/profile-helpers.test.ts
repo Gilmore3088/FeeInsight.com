@@ -41,10 +41,8 @@ describe("financial units", () => {
     expect(financial).toBe("$158.7M");
   });
 
-  it("keeps FFIEC whole-dollar balances unscaled and hides zero ROA", () => {
-    const ffiec = normalizeFinancial({ ...ncuaRecord, source: "ffiec", total_assets: 158_694_000, roa: 0.9 });
-    expect(ffiec.totalAssets).toBe(158_694_000);
-    expect(ffiec.roaPct).toBe(0.9);
+  it("hides zero ROA and converts the fee income fraction to percent", () => {
+    expect(normalizeFinancial({ ...ncuaRecord, roa: 0.9 }).roaPct).toBe(0.9);
     expect(normalizeFinancial(ncuaRecord).roaPct).toBeNull();
     expect(normalizeFinancial(ncuaRecord).feeIncomeRatioPct).toBeCloseTo(8.23);
   });
@@ -84,18 +82,14 @@ describe("financial units", () => {
     fee_income_ratio: 0.1892,
   };
 
-  it("scales FFIEC and FDIC rows for the same quarter to the same magnitude", () => {
+  it("scales FDIC thousands to dollars", () => {
     const fdic = normalizeFinancial(firstBankFdicQ1);
-    const ffiec = normalizeFinancial(firstBankFfiecQ1);
     expect(formatCompactDollars(fdic.totalAssets)).toBe("$689.4M");
-    expect(formatCompactDollars(ffiec.totalAssets)).toBe("$689.4M");
     expect(formatCompactDollars(fdic.serviceChargeIncome)).toBe("$6K");
-    expect(ffiec.serviceChargeIncome).toBe(6_834);
     expect(fdic.feeIncomeRatioPct).toBeCloseTo(0.06, 2);
-    expect(ffiec.feeIncomeRatioPct).toBeCloseTo(0.068, 2);
   });
 
-  it("renders one row per quarter, preferring fdic over ffiec, newest first", () => {
+  it("renders one row per quarter from fdic, dropping the ffiec duplicates, newest first", () => {
     const rows = selectFinancialsByQuarter([
       firstBankFfiecQ1,
       firstBankFdicQ1,
@@ -110,11 +104,12 @@ describe("financial units", () => {
     expect(formatCompactDollars(rows[1].serviceChargeIncome)).toBe("$8K");
   });
 
-  it("falls back to ffiec, then ncua, when fdic is missing for a quarter", () => {
+  it("never renders an ffiec row, even when it is the only row for a quarter", () => {
+    expect(selectFinancialsByQuarter([firstBankFfiecQ1])).toEqual([]);
     const rows = selectFinancialsByQuarter([firstBankFfiecQ4, { ...ncuaRecord, report_date: "2025-12-31" }]);
     expect(rows).toHaveLength(1);
-    expect(rows[0].source).toBe("ffiec");
-    expect(formatCompactDollars(rows[0].totalAssets)).toBe("$677.3M");
+    expect(rows[0].source).toBe("ncua");
+    expect(formatCompactDollars(rows[0].totalAssets)).toBe("$158.7M");
   });
 
   it("leaves a single-source credit union untouched", () => {

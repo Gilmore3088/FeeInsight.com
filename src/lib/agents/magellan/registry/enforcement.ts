@@ -22,9 +22,10 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 /**
  * Bumped when the matcher changes, so the scheduler re-runs the partition at once
  * (REGISTRY_PARSER_VERSIONS) instead of waiting for the weekly refresh. 2: DBA names,
- * holding companies based in another state.
+ * holding companies by name alone. 3: name-alone holding-company matches withdrawn
+ * (they tied generic names to unrelated companies).
  */
-export const ENFORCEMENT_MATCHER_VERSION = 2;
+export const ENFORCEMENT_MATCHER_VERSION = 3;
 
 export const ENFORCEMENT_SOURCE = "enforcement";
 export const ENFORCEMENT_PARTITION = "current";

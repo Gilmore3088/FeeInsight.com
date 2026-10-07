@@ -101,6 +101,14 @@ export function parseAcsTable(table: unknown, geo: AcsGeoType, year: number): Ac
   return out;
 }
 
+/** Census answered with its "Missing Key" / "Invalid Key" page: the data API needs CENSUS_API_KEY. */
+export class CensusKeyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CensusKeyError";
+  }
+}
+
 /** One geography level for one ACS 5-year vintage; null when Census has not published it. */
 export async function fetchAcs(
   year: number,
@@ -109,13 +117,21 @@ export async function fetchAcs(
   stateFips?: string,
 ): Promise<{ url: string; rows: AcsRow[] } | null> {
   const url = acsUrl(year, geo, stateFips);
+  const safeUrl = url.replace(/([?&]key=)[^&]+/, "$1***");
+  let text: string;
   try {
-    const response = await registryFetch(url, options);
-    const text = await response.text();
-    if (!text.trim().startsWith("[")) return null;
-    return { url: url.replace(/([?&]key=)[^&]+/, "$1***"), rows: parseAcsTable(JSON.parse(text), geo, year) };
+    text = await (await registryFetch(url, options)).text();
   } catch (error) {
-    if (error instanceof RegistryHttpError && (error.status === 404 || error.status === 400)) return null;
+    // Census answers 404 for a vintage it has not published. Anything else is a real failure.
+    if (error instanceof RegistryHttpError && error.status === 404) return null;
     throw error;
   }
+  if (!text.trim().startsWith("[")) {
+    // A 200 with a page instead of data is a key, quota or outage problem, never "not published".
+    const snippet = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+    const message = `Census returned no data for ${safeUrl}: ${snippet || "empty body"}`;
+    if (/\b(missing|invalid) key\b/i.test(snippet)) throw new CensusKeyError(message);
+    throw new Error(message);
+  }
+  return { url: safeUrl, rows: parseAcsTable(JSON.parse(text), geo, year) };
 }

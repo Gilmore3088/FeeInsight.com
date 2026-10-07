@@ -23,8 +23,21 @@ export function isPaymentLapsed(user: User | null, now: Date = new Date()): bool
 export function canAccessPremium(user: User | null): boolean {
   if (!user) return false;
   if (user.role === "admin" || user.role === "analyst") return true;
+  if (hasTeamSeat(user)) return true;
   return user.subscription_status === "active" || isInPaymentGrace(user);
 }
+
+/**
+ * Holds a seat on a paid institution account (owner included): an active workspace member
+ * whose workspace owner's subscription is active or in past-due grace. The flag is loaded
+ * with the user (`hasWorkspaceSeat` in auth.ts) and is false when it could not be read.
+ */
+export function hasTeamSeat(user: User | null): boolean {
+  return user?.workspace_seat === true;
+}
+
+/** No daily cap on Hamilton questions; the shared provider spend breaker still applies. */
+export const UNLIMITED_RESEARCH_QUERIES = Number.POSITIVE_INFINITY;
 
 /** Can see the full fee catalog (free sees the spotlight categories only). */
 export function canAccessAllCategories(user: User | null): boolean {
@@ -66,6 +79,8 @@ export function getVisibleCategoryCount(user: User | null): number {
 /** Daily Hamilton analysis query limit. */
 export function getResearchQueryLimit(user: User | null): number {
   if (!user) return 0;
+  // Team seats, the owner included, have no daily question cap.
+  if (hasTeamSeat(user)) return UNLIMITED_RESEARCH_QUERIES;
   if (user.role === "admin") return 200;
   if (user.role === "analyst") return 50;
   if (canAccessPremium(user)) return 50;

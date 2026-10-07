@@ -42,6 +42,7 @@ import {
   syncTextSurvival,
   type ReaderRecord,
 } from "@/lib/agents/rosetta/text-survival";
+import { BATCH_REVIEW_CHECK, reviewReadBatches, type BatchReviewResult } from "@/lib/agents/rosetta/batch-review";
 import { DOCX_STRATEGY, DocxReadError, extractDocxText } from "@/lib/agents/rosetta/docx";
 import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
 import {
@@ -249,6 +250,9 @@ export interface RunRosettaReadResult {
   /** Reads sent up the reader ladder by the survival record, and how many used its text. */
   readerEscalations: number;
   readerEscalationsUsed: number;
+  /** Batches of reads reviewed this step (batch-review.ts): each one's error rate and misses by kind. */
+  batchReviews: BatchReviewResult["batches"];
+  batchReviewError: string | null;
   /** Institutions whose learned format was filled in from an earlier text. */
   formatsBackfilled: number;
   /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
@@ -1074,6 +1078,12 @@ async function selectCandidates(
     if (textSurvival) {
       params.push(TEXT_SURVIVAL_CHECK);
       const survivalParam = `$${params.length}`;
+      // A batch review lesson whose fix is this rung counts like a lost text (batch-review.ts).
+      params.push(BATCH_REVIEW_CHECK);
+      const batchParam = `$${params.length}`;
+      const lostLesson = (alias: string) =>
+        `(${alias}.check_name = ${survivalParam}
+          OR (${alias}.check_name = ${batchParam} AND ${alias}.evidence->>'remedy' = 'reread_js_fallback'))`;
       // Only a web page has a free rung up; a PDF whose text lost fees goes to the paid pass.
       params.push(PRIMARY_READERS.html);
       const htmlPrimaryParam = `$${params.length}`;
@@ -1083,7 +1093,7 @@ async function selectCandidates(
                 adt.status = 'completed'
                 AND EXISTS (
                   SELECT 1 FROM pipeline_feedback lost
-                   WHERE lost.check_name = ${survivalParam}
+                   WHERE ${lostLesson("lost")}
                      AND lost.signal = 'wrong'
                      AND lost.source_document_id = adt.source_document_id
                      AND lost.evidence->>'text_hash' = adt.text_hash
@@ -1117,7 +1127,7 @@ async function selectCandidates(
                 WHERE adt.source_document_id = cr.id
                   AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
                   AND adt.status = 'completed'
-                  AND lost.check_name = ${survivalParam}
+                  AND ${lostLesson("lost")}
                   AND lost.signal = 'wrong'
              ) AS last_text_lost,
              (
@@ -1128,7 +1138,7 @@ async function selectCandidates(
                 WHERE adt.source_document_id = cr.id
                   AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
                   AND adt.status = 'completed'
-                  AND lost.check_name = ${survivalParam}
+                  AND ${lostLesson("lost")}
                   AND lost.signal = 'wrong'
                 LIMIT 1
              ) AS last_lost_text,
@@ -1832,6 +1842,16 @@ export async function runRosettaRead(
   const survival = textSurvivalReady
     ? await syncTextSurvival(db, { runId: options.runId, dryRun })
     : { ready: false, refreshed: false, texts: 0, held: 0, lost: 0, written: 0 };
+  // Every BATCH_REVIEW_SIZE settled reads: judge the batch, write its misses as lessons (read
+  // below by the candidate and paid-read selections) and its error rate. Not in a dry run.
+  // A failed review never stops the reads; its error is on the step result.
+  let batchReviewError: string | null = null;
+  const batchReview = textSurvivalReady
+    ? await reviewReadBatches(db, { runId: options.runId }).catch((error: unknown) => {
+        batchReviewError = error instanceof Error ? error.message : String(error);
+        return { ready: false, batches: [], written: 0 } as BatchReviewResult;
+      })
+    : { ready: false, batches: [], written: 0 };
   const rows = await selectCandidates(
     db,
     limit,
@@ -2042,6 +2062,8 @@ export async function runRosettaRead(
     textsLostFees: survival.lost,
     readerEscalations: results.filter((result) => result.escalation != null).length,
     readerEscalationsUsed: results.filter((result) => result.escalation?.used).length,
+    batchReviews: batchReview.batches,
+    batchReviewError,
     formatsBackfilled: formats.updated,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,

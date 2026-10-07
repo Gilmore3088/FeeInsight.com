@@ -16,7 +16,11 @@ import { StorylineView, type MemoState } from "@/components/hamilton/storyline/S
 import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
-import { FactList, SchedulePositionsTable } from "./schedule-answer";
+import { FactList, SchedulePositionsChart } from "./schedule-answer";
+import { LocalMarketView } from "./local-market";
+import { isLocalMarketQuestion } from "@/lib/hamilton/local-market-question";
+import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
+import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -37,6 +41,21 @@ type AskBody = {
   savedAnalysisId?: string;
   answer?: { fieldKey: string; value: string | number };
 };
+
+/** The local market for a competitors-and-locations question; null when none is on file. */
+async function postMarket(institutionId: string | null): Promise<LocalMarketAnswer | null> {
+  try {
+    const res = await fetch("/api/hamilton/ask/market", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ institutionId: institutionId ?? undefined }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as LocalMarketAnswer;
+  } catch {
+    return null;
+  }
+}
 
 async function postAsk(body: AskBody): Promise<AskResponse> {
   const res = await fetch("/api/hamilton/ask", {
@@ -249,6 +268,8 @@ export function StructuredAsk({
   onNoStoryline?: (question: string) => void;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
+  // A competitors-and-locations question is answered with the market itself (no fee to chart).
+  const [market, setMarket] = useState<LocalMarketAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const decisionId = useRef<string | undefined>(undefined);
@@ -305,12 +326,26 @@ export function StructuredAsk({
     memoFor.current = null;
     setMemo(undefined);
     setResponse(null);
+    setMarket(null);
     setNotFound(null);
-    void run({ question }).then((res) => {
+    const asked = question;
+    void (async () => {
+      if (isLocalMarketQuestion(asked) && !matchFeeCategory(asked)) {
+        setBusy(true);
+        const found = await postMarket(institutionId);
+        setBusy(false);
+        if (lastQuestion.current !== asked) return;
+        if (found) {
+          setMarket(found);
+          return;
+        }
+      }
+      const res = await run({ question: asked });
+      if (lastQuestion.current !== asked) return;
       if (res) setResponse(res);
-      follow(question, res);
-    });
-  }, [question, run, follow]);
+      follow(asked, res);
+    })();
+  }, [question, run, follow, institutionId]);
 
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
     setNotFound(null);
@@ -336,6 +371,7 @@ export function StructuredAsk({
   };
 
   if (!question) return null;
+  if (market) return <LocalMarketView data={market} />;
   if (busy && !response) {
     return (
       <p role="status" className="flex items-center gap-2 text-sm text-warm-700">
@@ -350,7 +386,12 @@ export function StructuredAsk({
   // The market slice the question named ("$10B and up"), when the engine sends it.
   const segment = response.segment ?? null;
   // The storyline answer (engine 1.6.0), when the engine sends one.
-  const storyline = response.answer?.storyline ?? null;
+  // When every fee is drawn above, the storyline's own overview matrix would repeat it as a table.
+  const rawStoryline = response.answer?.storyline ?? null;
+  const storyline =
+    rawStoryline && response.positions?.length
+      ? { ...rawStoryline, exhibits: rawStoryline.exhibits.filter((e) => e.id !== "schedule-overview").map((e, i) => ({ ...e, number: i + 1 })) }
+      : rawStoryline;
   const answerExhibit = response.answer?.exhibit ?? null;
   const exhibitOwn =
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
@@ -365,7 +406,7 @@ export function StructuredAsk({
               {response.shortAnswer}
             </p>
           ) : null}
-          <SchedulePositionsTable rows={response.positions} hrefFor={researchHrefFor} />
+          <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} />
         </>
       ) : null}
       {response.answer && storyline ? (

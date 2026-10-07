@@ -23,6 +23,7 @@ import {
   scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
+import { loadReviewMisses } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
@@ -46,9 +47,16 @@ type SqlTag = typeof sql;
 // passed as overdraft, and a sentence fragment passed as a fee name. Each item now lists the
 // categories its own category's fees are most often re-filed to, and a fee whose name and line
 // re-file it there by the category guard's own rules (`refileCategory`) never passes.
+// Version 7 (2026-10-07): a hand check of 20 v6 passes found 17 right. "Smart Safe Deposit
+// Correction Notice" (a business cash device) passed as safe deposit box rent, a box price read
+// with its footnote marker ("$651" among $85 and $100 boxes) passed, and a bare "overdrafts | $5.00"
+// from jumbled rows passed. The prompt now names all three.
+// Version 10 (2026-10-07): a hand check of 20 v9 passes found "Overnight Fee (Business Bill Pay)"
+// passed as bill pay, the fourth premium-service miss since v5. A fee whose own name says it is the
+// faster version of a service now never passes outside a premium category (`premiumServiceMisfiled`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 6,
+  version: 10,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -82,6 +90,20 @@ export function lineRefilesTo({ row, sourceLine }: ReleaseReviewCandidate): stri
   const key = row.held_canonical_fee_key;
   const refiled = refileCategory(key, `${row.fee_name ?? ""} ${sourceLine}`);
   return refiled && refiled !== key ? refiled : null;
+}
+
+/** Categories that are themselves the faster version of a service. */
+const PREMIUM_CATEGORIES = new Set(["rush_card"]);
+const PREMIUM_SERVICE = /\b(expedit\w*|rush|overnight|emergency|same[- ]day|next[- ]day|second[- ]day)\b/i;
+
+/**
+ * A faster or premium version of a service ("Overnight Fee (Business Bill Pay)") filed under the
+ * service's own category. The prompt has said so since v5 and the model still passed them, so the
+ * fee's own name now decides: such a fee stays held.
+ */
+export function premiumServiceMisfiled({ row }: Pick<ReleaseReviewCandidate, "row">): boolean {
+  const key = row.held_canonical_fee_key;
+  return !PREMIUM_CATEGORIES.has(key) && PREMIUM_SERVICE.test(row.fee_name ?? "");
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -228,16 +250,25 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text,",
     "  and when `fee_name` is not a fee's name but a sentence fragment (\"meet the following requirements: A service charge of\").",
     "- category_fits: true only if this fee is what `filed_as` means in this index; `filed_as_includes` lists fee names it files there.",
-    "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit.",
+    "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit,",
+    "  nor a different service that shares a word with the category (a \"Smart Safe\" cash-deposit device is not a safe deposit box).",
+    "  A monthly charge for one service (online wires, bill pay) is not the account's monthly maintenance fee,",
+    "  and a fee for returning or re-clearing a check the customer deposited is not NSF.",
     "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
-    "  (expedited, rush or overnight) do not fit the service's own category.",
+    "  (expedited, rush, emergency or overnight) do not fit the service's own category.",
     "  `not_these` lists neighbouring categories fees filed here often belong to; a fee that is one of those does not fit.",
     "- amount_is_price: true only if `amount` is the price the line charges for this fee.",
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
     "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
-    "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55).",
+    "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55), including a footnote marker read",
+    "  as a digit (\"$651\" in a list of $85, $100 and $120 boxes is $65 with footnote 1).",
+    "  Also false for a price the line marks as waived outright (\"$2.95 (FEE WAIVED)\"); a price waived",
+    "  only under a condition (\"waived with a $500 balance\") is still the price.",
+    "  When one row runs two fee names together with two prices, the prices go with the names in order",
+    "  (\"Debit Card Replacement Rush Order | $10 $75\" is a $10 replacement and a $75 rush order).",
     "When an item has `schedule_rows_around` (the rows above and below its line), use them: a price that",
-    "belongs to the next row, another column or another account is not this fee's price.",
+    "belongs to the next row, another column or another account is not this fee's price. When the rows",
+    "are jumbled text rather than a fee table and do not show what the fee is (a bare \"overdrafts | $5.00\"), is_fee is false.",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category_fits\", \"amount_is_price\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
     ...(lessons.length > 0
       ? [
@@ -369,7 +400,15 @@ export async function runDarwinReleaseReview(
   const result: ReleaseReviewResult = { ...emptyPaidPassResult(dryRun), calls: 0, lessons: 0, passed: 0, released: 0 };
   if (options.calls <= 0 || !(await learningSchemaReady(db))) return result;
 
-  const candidates = await selectReviewCandidates(db, options.calls * RELEASE_REVIEW_FEES_PER_CALL, options.stateCode);
+  const limit = options.calls * RELEASE_REVIEW_FEES_PER_CALL;
+  const candidates = await selectReviewCandidates(db, limit, options.stateCode);
+  // A lane whose state has few held fees left fills the rest with the oldest held fees from any
+  // state, so the wait does not depend on when each state's lane next comes round.
+  if (options.stateCode && candidates.length < limit) {
+    const taken = new Set(candidates.map(({ row }) => Number(row.fee_raw_id)));
+    const others = await selectReviewCandidates(db, limit);
+    candidates.push(...others.filter(({ row }) => !taken.has(Number(row.fee_raw_id))).slice(0, limit - candidates.length));
+  }
   result.selected = candidates.length;
   if (dryRun) {
     result.results = candidates.slice(0, 50).map(({ row }) => ({
@@ -390,7 +429,18 @@ export async function runDarwinReleaseReview(
       candidate.sourceContext = scheduleContext(texts.get(Number(candidate.row.source_document_id)), candidate.sourceLine);
     }
   }
-  const lessons = await loadReviewLessons(db, candidates.map(({ row }) => row.held_canonical_fee_key));
+  const heldKeys = candidates.map(({ row }) => row.held_canonical_fee_key);
+  // The pipeline's own outcomes, then this review's misses against the answer keys (verdict-score.ts).
+  const lessons = [
+    ...(await loadReviewLessons(db, heldKeys)),
+    ...(await loadReviewMisses(db, "verify.release_review", heldKeys)).map((miss) => ({
+      filedAs: miss.filedAs ?? "",
+      feeName: miss.feeName,
+      amount: miss.amount,
+      scheduleLine: miss.keyLine,
+      found: `wrong: this review said ${miss.said}; the hand-keyed schedule says ${miss.keySays.join(" or ") || "no fee at this amount"}`,
+    })),
+  ];
   result.lessons = lessons.length;
   for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
     const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
@@ -467,7 +517,8 @@ export async function runDarwinReleaseReview(
       }
       result.succeeded += 1;
       const refilesTo = lineRefilesTo(candidate);
-      const passes = reviewPasses(verdict) && refilesTo == null;
+      const premium = premiumServiceMisfiled(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null && !premium;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -489,6 +540,7 @@ export async function runDarwinReleaseReview(
           source_line: candidate.sourceLine.slice(0, 300),
           source_context: candidate.sourceContext ?? null,
           refiles_to: refilesTo,
+          premium_service: premium,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,

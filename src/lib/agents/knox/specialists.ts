@@ -6,10 +6,11 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
-import { namesALimit, passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
+import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -34,7 +35,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 31 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 33 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -93,13 +94,30 @@ function heldKey(held: HeldFeeCandidate): string {
   return `${held.shape}:${held.canonicalHint}:${held.feeName.toLowerCase()}:${held.amount}:${held.percent}`;
 }
 
+/** True when a ")" comes before any "(": the name is the tail of a wrapped line. */
+export function closesUnopenedParen(name: string): boolean {
+  const close = name.indexOf(")");
+  return close >= 0 && (name.indexOf("(") < 0 || name.indexOf("(") > close);
+}
+
+/**
+ * v33: pass 1 adds fees named by their page context (`context-names.ts`), and a line saying
+ * its fee is being eliminated or no longer charged holds no fee for review.
+ */
+function withContextFees(text: string, read: ExtractionRulesResult): ExtractionRulesResult {
+  return {
+    candidates: [...contextFees(text), ...read.candidates.filter((fee) => !NO_LONGER_CHARGED.test(fee.excerpt))],
+    held: read.held.filter((row) => !NO_LONGER_CHARGED.test(row.excerpt)),
+  };
+}
+
 export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
   const text = joinLabeledFeeCardText(sourceText);
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
-    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => extractCandidatesFromText(text) },
+    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
     { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(text) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
@@ -125,6 +143,13 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       const candidate = { ...read, feeName: tidyFeeName(read.feeName) };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
+      // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
+      // ATM) | $60") is the end of the line above, and the price is another column's.
+      if (closesUnopenedParen(candidate.feeName)) continue;
+      // v32: a worked example's figure is not a price.
+      if (namesAWorkedExample(candidate.feeName)) continue;
+      // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
+      if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
       if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
         selfCheckFailed += 1;
         untraced.push({
@@ -156,6 +181,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     for (const heldRow of found.held) {
       if (held.length >= MAX_HELD_PER_DOCUMENT) break;
       const foundRow = { ...heldRow, feeName: tidyFeeName(heldRow.feeName) };
+      if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
       const untracedZero = foundRow.shape === "zero" && !tracesToSource(text, foundRow.feeName, 0);
       if (untracedZero) selfCheckFailed += 1;

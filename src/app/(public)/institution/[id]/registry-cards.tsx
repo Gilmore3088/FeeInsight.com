@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatCompactDollars } from "@/lib/format";
+import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
 import type {
   BranchFootprint,
   ComplaintTrend,
@@ -400,7 +401,6 @@ export function HoldingCompanyCard({ profile }: { profile: HoldingCompanyProfile
   );
 }
 
-const AGENCY_LABEL = { OCC: "OCC", FRB: "Federal Reserve" } as const;
 
 function ActionItem({ action }: { action: EnforcementActionRow }) {
   const date = action.start_date ? formatQuarterEnd(action.start_date) : "Date not given";
@@ -411,7 +411,7 @@ function ActionItem({ action }: { action: EnforcementActionRow }) {
         <span className="shrink-0 tabular-nums text-[#6B6255]">{date}</span>
       </div>
       <p className="text-[#5A5347]">
-        {AGENCY_LABEL[action.agency]}
+        {enforcementAgencyLabel(action.agency)}
         {action.against_holding_company && <>, against the holding company, {action.party_name}</>}
         {action.penalty_amount !== null && <>, penalty {formatCompactDollars(action.penalty_amount)}</>}
         {action.termination_date && <>. Ended {formatQuarterEnd(action.termination_date)}</>}
@@ -430,40 +430,40 @@ function ActionItem({ action }: { action: EnforcementActionRow }) {
 }
 
 export function EnforcementCard({ record }: { record: EnforcementRecord }) {
-  const agencies = record.agenciesChecked.map((a) => AGENCY_LABEL[a]).join(" and ");
-  const activeCount = record.active.length;
+  const agencies = enforcementAgencyList(record.agenciesChecked);
+  const openCount = record.open.length;
   const subtitle =
-    activeCount > 0
-      ? `${activeCount} active ${activeCount === 1 ? "action" : "actions"}`
-      : record.terminatedCount > 0
-        ? "No active actions"
+    openCount > 0
+      ? `${openCount} ${openCount === 1 ? "order" : "orders"} with no end date on file`
+      : record.pastCount > 0
+        ? `${record.pastCount} past ${record.pastCount === 1 ? "action" : "actions"}`
         : `None on file with the ${agencies}`;
   return (
     <Card
       title="Enforcement actions"
       subtitle={subtitle}
-      caption={`Source: public enforcement action lists from the ${agencies}${record.asOf ? `, read ${formatQuarterEnd(record.asOf)}` : ""}. FDIC orders are not included yet. Actions against individual bank officers are left out.`}
+      caption={`Source: public enforcement action lists from the ${agencies}${record.asOf ? `, read ${formatQuarterEnd(record.asOf)}` : ""}. The agencies don't always record when an order ends, so one with no end date may have ended. FDIC orders are not included yet. Actions against individual bank officers are left out.`}
     >
-      {activeCount === 0 && record.terminatedCount === 0 ? (
+      {openCount === 0 && record.pastCount === 0 ? (
         <p className="text-[12px] text-[#5A5347]">
           The {agencies} {record.agenciesChecked.length > 1 ? "have" : "has"} no public enforcement action against this bank or its holding company on file.
         </p>
       ) : (
         <div className="text-[12px]">
-          {activeCount > 0 && (
+          {openCount > 0 && (
             <ul className="divide-y divide-[#F1EBE1]">
-              {record.active.map((action, i) => (
+              {record.open.map((action, i) => (
                 <ActionItem key={`a-${i}`} action={action} />
               ))}
             </ul>
           )}
-          {record.terminatedCount > 0 && (
+          {record.pastCount > 0 && (
             <>
               <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
-                Ended {record.terminatedCount > record.terminated.length ? `(latest ${record.terminated.length} of ${record.terminatedCount})` : ""}
+                Past {record.pastCount > record.past.length ? `(latest ${record.past.length} of ${record.pastCount})` : ""}
               </p>
               <ul className="divide-y divide-[#F1EBE1]">
-                {record.terminated.map((action, i) => (
+                {record.past.map((action, i) => (
                   <ActionItem key={`t-${i}`} action={action} />
                 ))}
               </ul>

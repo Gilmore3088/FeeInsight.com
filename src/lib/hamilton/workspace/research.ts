@@ -25,7 +25,14 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
-import { ASSET_TIER_RANGES, buildInstitutionPeerFilterCandidates, describePeerFilters, type HamiltonPeerFilters } from "../peer-index";
+import {
+  ASSET_TIER_RANGES,
+  buildInstitutionPeerFilterCandidates,
+  describePeerFilters,
+  peerSetCandidate,
+  type ActivePeerSet,
+  type HamiltonPeerFilters,
+} from "../peer-index";
 import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
@@ -105,19 +112,26 @@ function peerLabel(filters: HamiltonPeerFilters): string {
 /**
  * Peers per fee: the first of the institution's default peer groups (state, charter, size
  * and district, then progressively wider, then national) where at least
- * MIN_PEERS_FOR_POSITION other institutions publish that fee.
+ * MIN_PEERS_FOR_POSITION other institutions publish that fee. With `activeFirst`, the first
+ * candidate is the bank's own peer group from Settings; a fee it is too thin for widens to
+ * the next group, and the label says how many the bank's group had.
  */
 export function choosePeers(
   candidates: HamiltonPeerFilters[],
   valuesBySet: Map<string, PeerFeeValue[]>[],
   categories: string[],
+  options: { activeFirst?: boolean } = {},
 ): Map<string, CategoryPeers> {
   const chosen = new Map<string, CategoryPeers>();
   for (const category of categories) {
     for (const [index, filters] of candidates.entries()) {
       const values = valuesBySet[index]?.get(category) ?? [];
       if (values.length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
-        chosen.set(category, { label: peerLabel(filters), values });
+        const ownCount = valuesBySet[0]?.get(category)?.length ?? 0;
+        const label = options.activeFirst && index > 0
+          ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
+          : peerLabel(filters);
+        chosen.set(category, { label, values });
         break;
       }
     }
@@ -163,12 +177,26 @@ export function marketLayerSets(institution: {
   return sets;
 }
 
-async function loadBase(institutionId: number, categories?: string[]): Promise<WorkspaceBase | null> {
+/** Options every engine entry point takes: the bank's own peer group from Settings, when it set one. */
+export interface EnginePeerOptions {
+  peerSet?: Pick<ActivePeerSet, "filters" | "label"> | null;
+}
+
+async function loadBase(
+  institutionId: number,
+  categories?: string[],
+  options: EnginePeerOptions = {},
+): Promise<WorkspaceBase | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
   const ownValues = await getInstitutionFeeValues(institutionId, categories);
   const wanted = categories ?? [...ownValues.keys()];
-  const candidates: HamiltonPeerFilters[] = [...buildInstitutionPeerFilterCandidates(institution), {}];
+  const activeFirst = Boolean(options.peerSet);
+  const candidates: HamiltonPeerFilters[] = [
+    ...(options.peerSet ? [peerSetCandidate(options.peerSet)] : []),
+    ...buildInstitutionPeerFilterCandidates(institution),
+    {},
+  ];
   const layerSets = marketLayerSets(institution);
   // One read for the peer candidates and the layers; national is already the last candidate.
   const extra = layerSets.filter((l) => l.scope !== "national");
@@ -188,7 +216,7 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
     ],
     peerLabel: peerLabel(candidates[0]),
     ownValues,
-    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted),
+    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, { activeFirst }),
   };
 }
 
@@ -371,8 +399,12 @@ export function localMarketView(
   return { layer, competitors, info };
 }
 
-export async function getWorkspaceBriefing(institutionId: number, now = new Date()): Promise<Briefing | null> {
-  const base = await loadBase(institutionId);
+export async function getWorkspaceBriefing(
+  institutionId: number,
+  now = new Date(),
+  options: EnginePeerOptions = {},
+): Promise<Briefing | null> {
+  const base = await loadBase(institutionId, undefined, options);
   if (!base) return null;
   const [changes, financialRows, articles, nationalIncomeSeries] = await Promise.all([
     loadStateChanges(base.stateCode),
@@ -564,9 +596,9 @@ export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
   now = new Date(),
-  options: { segment?: AskSegment | null } = {},
+  options: { segment?: AskSegment | null } & EnginePeerOptions = {},
 ): Promise<FeeResearch | null> {
-  const base = await loadBase(institutionId, [feeCategory]);
+  const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
   const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),

@@ -60,7 +60,8 @@ Rosetta owns source text normalization.
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
     `window.X = {...}`), then linked PDF/print versions and links that name the fee
-    schedule even with no `.pdf` ending ("Schedule of Charges", `/documents/fee-schedule`),
+    schedule even with no `.pdf` ending ("Schedule of Charges", `/documents/fee-schedule`)
+    and PDFs shown in an iframe, embed or object viewer,
     then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
     A linked scan gets free OCR. A linked document the bank already has as its own
     `source_documents` row is not fetched (it is read there); the attempt's detail lists
@@ -154,6 +155,31 @@ stored). Rosetta writes them only once the migration is applied.
 - Preserve institution ID, source document ID, source URL, content type, source hash, normalized text hash, character count, and error state.
 - Mark insufficient text explicitly. Do not fabricate text, fee rows, or confidence.
 - Make OCR/manual-needed states visible to Atlas and downstream review surfaces.
+
+## Batch review (after every 50 reads)
+
+`batch-review.ts` runs in each read step, before candidates are picked. It takes the next 50
+primary reads (html_dom, pdf_layout, plain_text, docx) once they are 6 hours old, so Knox and
+the later readers have had them, from the last 3 days and only of each bank's current
+document (a lesson on a replaced copy is never read). A failed review never stops the reads:
+its error is `batchReviewError` on the step result. It judges each read against what happened next, never a guess:
+
+| Miss | Rule | Fix that picks it up |
+|---|---|---|
+| `no_fees_found` | completed text, Knox ran on it, Knox has no fee from the document | web page: one read with the JavaScript fallbacks (the same rung as a lost text); PDF: lesson only |
+| `short_text` | under 600 chars and under 3 Knox fees | web page: JavaScript fallbacks; PDF: the paid read pass |
+| `missed_fee_page` | rejected as `wrong_document`, a later read of it gave Knox 3+ fees | lesson only (the fee-page check was wrong) |
+| `unresolved_fee_page` | rejected, link names the fee page, bank has no live fee, nothing read it since | the fee-page reopen (once per fallback version) |
+| `unread` | scan, script page or parse failure no reader has read since | scan: OCR then paid read; script page: Magellan's paid finder |
+
+A read that failed and was read later counts as `recovered`, not an error. Each miss is a
+`pipeline_feedback` row (`check_name = 'rosetta.batch_review'`, `evidence.remedy`, deduped per
+attempt). The candidate selection treats `remedy = 'reread_js_fallback'` like a lost text, and
+the paid pass treats `remedy = 'paid_read'` like one. Each batch also writes one
+`kind = 'batch_error_rate'` row (errors, reads, rate, misses by kind); its `last_attempt_id` is
+the cursor. At most two batches per step; a partial batch waits. The step result carries
+`batchReviews`. Knox dedupes rereads, so the fee count is every Knox fee from the document,
+not only rows since the read.
 
 ## Boundaries
 

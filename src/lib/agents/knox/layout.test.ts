@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { tidyFeeName } from "./layout";
+import { readsAMeasuredAmount, tidyFeeName } from "./layout";
 
 describe("tidyFeeName", () => {
   it.each([
@@ -47,5 +47,20 @@ describe("tidyFeeName", () => {
 
   it("keeps the raw name when tidying would leave nothing usable", () => {
     expect(tidyFeeName("3 x 5")).toBe("3 x 5");
+  });
+});
+
+describe("readsAMeasuredAmount (v32)", () => {
+  it("drops a waiver threshold and a worked example's transaction amount", () => {
+    const usBank = "if your Available Balance (excluding the Overdraft Paid Fees and\nincluding immediate and same day deposits), is at least $0 we will waive Overdraft Paid Fee(s) charged.";
+    expect(readsAMeasuredAmount(usBank, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0)).toBe(true);
+    const chase = "To avoid the $34 Overdraft Fee on the $60 gasoline transaction from Tuesday";
+    expect(readsAMeasuredAmount(chase, "Overdraft Fee on", 60)).toBe(true);
+  });
+
+  it("keeps the price when the threshold is a different figure", () => {
+    expect(readsAMeasuredAmount("$5 service charge if balance falls below $300", "service charge if balance falls below", 5)).toBe(false);
+    expect(readsAMeasuredAmount("Overdraft Fee on the $600 purchase", "Overdraft Fee on", 60)).toBe(false);
+    expect(readsAMeasuredAmount("Overdraft fee $34", "Overdraft fee", 34)).toBe(false);
   });
 });

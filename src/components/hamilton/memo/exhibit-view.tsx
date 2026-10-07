@@ -77,10 +77,13 @@ export function ExhibitFrame({
   children: ReactNode;
 }) {
   return (
-    <figure className="rounded-lg border border-warm-300 bg-warm-50 p-5 break-inside-avoid">
-      <figcaption className="mb-4">
-        {number != null ? <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span> : null}
-        <span className="text-base text-warm-900" style={SERIF}>
+    <figure className="relative overflow-hidden rounded-xl border border-warm-300 bg-white p-5 shadow-[0_1px_2px_rgba(26,24,21,0.04)] break-inside-avoid sm:p-6 print:shadow-none">
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-terra via-terra/50 to-transparent" />
+      <figcaption className="mb-5 flex flex-col gap-1">
+        {number != null ? (
+          <span className="inline-flex w-fit items-center rounded-full bg-terra-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span>
+        ) : null}
+        <span className="text-lg leading-snug text-warm-900" style={SERIF}>
           {title}
         </span>
       </figcaption>
@@ -259,15 +262,20 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
               </span>
             ) : null}
           </span>
-          <span className="relative h-5">
+          <span className="relative h-7">
             <span className="absolute inset-x-0 top-1/2 h-px bg-warm-200" />
-            {x.own != null ? <span className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-terra/70" style={{ left: `${axis.at(x.own)}%` }} /> : null}
-            <span
-              className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ${x.own != null && item.amount > x.own ? "bg-warm-800" : x.own != null && item.amount < x.own ? "bg-warm-500" : "bg-terra"}`}
-              style={{ left: `${axis.at(item.amount)}%` }}
-            />
+            {x.own != null ? (
+              // A bar from your fee to theirs: the distance reads at a glance, and the side says more or less.
+              <span
+                className={`absolute top-1 h-5 ${item.amount > x.own ? "rounded-r-md bg-warm-700" : "rounded-l-md bg-warm-400"}`}
+                style={{ left: `${Math.min(axis.at(item.amount), axis.at(x.own))}%`, width: `${Math.max(Math.abs(axis.at(item.amount) - axis.at(x.own)), 0.8)}%` }}
+              />
+            ) : (
+              <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warm-700" style={{ left: `${axis.at(item.amount)}%` }} />
+            )}
+            {x.own != null ? <span className="absolute -inset-y-1 w-[3px] -translate-x-1/2 rounded bg-terra" style={{ left: `${axis.at(x.own)}%` }} /> : null}
           </span>
-          <span className="text-right text-warm-900 [font-variant-numeric:tabular-nums]">{fmtMoney(item.amount)}</span>
+          <span className="text-right font-semibold text-warm-900 [font-variant-numeric:tabular-nums]">{fmtMoney(item.amount)}</span>
         </div>
       ))}
       <div className={`grid ${RANGE_COLS} gap-3 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]`}>
@@ -281,15 +289,15 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
       {x.own != null ? (
         <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-warm-700">
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-0.5 bg-terra/70" />
+            <span className="inline-block h-3.5 w-[3px] rounded bg-terra" />
             {x.ownLabel}: {fmtMoney(x.own)}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-warm-500" />
+            <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-400" />
             Charges less
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-warm-800" />
+            <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-700" />
             Charges more
           </span>
         </p>
@@ -304,33 +312,90 @@ function fmtTrendValue(v: number, unit: "dollars" | "percent"): string {
   if (a >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
   if (a >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
   if (a >= 1e3) return `$${Math.round(v / 1e3)}K`;
+  // Small figures (service charges per $1,000 of deposits) keep their cents.
+  if (a < 100) return `$${v.toFixed(2)}`;
   return `$${Math.round(v)}`;
 }
 
 function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
-  const W = 600;
-  const H = 190;
-  const pad = { l: 8, r: 64, t: 12, b: 24 };
+  const W = 640;
+  const H = 230;
+  const pad = { l: 44, r: 128, t: 16, b: 28 };
   const dates = [...new Set(x.series.flatMap((s) => s.points.map((p) => p.date)))].sort();
   const vals = x.series.flatMap((s) => s.points.map((p) => p.value));
   if (dates.length < 2 || vals.length === 0) return <p className="text-sm text-warm-700">Not enough points on file to draw a trend.</p>;
-  const lo = Math.min(0, ...vals);
-  const hi = Math.max(...vals) * 1.08 || 1;
+  // Zoom to the data rather than to zero, so a gap of cents between two lines is visible.
+  const vMin = Math.min(...vals);
+  const vMax = Math.max(...vals);
+  const span = vMax - vMin || Math.abs(vMax) * 0.1 || 1;
+  const lo = vMin < 0 ? vMin - span * 0.2 : Math.max(0, vMin - span * 0.6);
+  const hi = vMax + span * 0.3;
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
-  const strokes = ["var(--color-terra, #C44B2E)", "#6b6255", "#a39a8c"];
+  const strokes = ["#C44B2E", "#5A5347", "#A09788"];
   const label = (d: string) => shortDate(d) ?? d;
+  const [own, peer] = x.series;
+  const paired = own && peer && own.points.length > 1 && peer.points.length > 1;
+  // The gap at each end, where both series have a point on the same date.
+  const gapAt = (d: string | undefined) => {
+    if (!paired || !d) return null;
+    const a = own.points.find((p) => p.date === d);
+    const b = peer.points.find((p) => p.date === d);
+    return a && b ? { d, a: a.value, b: b.value } : null;
+  };
+  const ends = [gapAt(own?.points[0]?.date), gapAt(own?.points[own.points.length - 1]?.date)].filter((g): g is NonNullable<typeof g> => g != null);
+  // End labels sit beside the last point, nudged apart when the lines finish close together.
+  const endLabels = x.series
+    .map((s, i) => ({ s, i, last: s.points[s.points.length - 1] }))
+    .filter((e) => e.last)
+    .map((e) => ({ ...e, y: py(e.last!.value) }))
+    .sort((m, n) => m.y - n.y);
+  for (let k = 1; k < endLabels.length; k++) {
+    if (endLabels[k].y - endLabels[k - 1].y < 30) endLabels[k].y = endLabels[k - 1].y + 30;
+  }
+  const gradId = `trend-fill-${x.title.length}-${dates.length}`;
   return (
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-3xl" role="img" aria-label={x.title}>
+        <defs>
+          <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#C44B2E" stopOpacity={0.28} />
+            <stop offset="100%" stopColor="#C44B2E" stopOpacity={0.06} />
+          </linearGradient>
+        </defs>
         {[0, 0.5, 1].map((f) => {
           const v = lo + (hi - lo) * f;
           return (
             <g key={f}>
-              <line x1={pad.l} x2={W - pad.r} y1={py(v)} y2={py(v)} stroke="#e8dfd1" />
-              <text x={W - pad.r + 6} y={py(v) + 4} fontSize="11" fill="#8a8073">
+              <line x1={pad.l} x2={W - pad.r} y1={py(v)} y2={py(v)} stroke="#E0D7C9" strokeDasharray={f === 0 ? undefined : "2 4"} />
+              <text x={pad.l - 6} y={py(v) + 4} fontSize="11" fill="#6B6255" textAnchor="end">
                 {fmtTrendValue(v, x.unit)}
               </text>
+            </g>
+          );
+        })}
+        {/* The space between the bank and its peers is filled, so the gap reads as a shape. */}
+        {paired ? (
+          <polygon
+            fill={`url(#${gradId})`}
+            points={[
+              ...own.points.map((p) => `${px(p.date)},${py(p.value)}`),
+              ...[...peer.points].reverse().map((p) => `${px(p.date)},${py(p.value)}`),
+            ].join(" ")}
+          />
+        ) : null}
+        {ends.map((g, k) => {
+          const xg = px(g.d) + (k === 0 ? 10 : -10);
+          const y1 = py(Math.max(g.a, g.b));
+          const y2 = py(Math.min(g.a, g.b));
+          return (
+            <g key={g.d}>
+              <path d={`M ${xg - (k === 0 ? 4 : -4)} ${y1} H ${xg} V ${y2} H ${xg - (k === 0 ? 4 : -4)}`} fill="none" stroke="#1A1815" strokeWidth={1} />
+              {y2 - y1 > 14 ? (
+                <text x={xg + (k === 0 ? 5 : -5)} y={(y1 + y2) / 2 + 4} fontSize="11" fontWeight={600} fill="#1A1815" textAnchor={k === 0 ? "start" : "end"}>
+                  gap {fmtTrendValue(Math.abs(g.a - g.b), x.unit)}
+                </text>
+              ) : null}
             </g>
           );
         })}
@@ -339,29 +404,52 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
             key={s.label}
             fill="none"
             stroke={strokes[i % strokes.length]}
-            strokeWidth={i === 0 ? 2.5 : 1.75}
+            strokeWidth={i === 0 ? 3 : 1.75}
+            strokeLinejoin="round"
+            strokeLinecap="round"
             strokeDasharray={i === 0 ? undefined : "5 4"}
             points={s.points.map((p) => `${px(p.date)},${py(p.value)}`).join(" ")}
           />
         ))}
-        <text x={pad.l} y={H - 6} fontSize="11" fill="#8a8073">
+        {x.series.map((s, i) =>
+          s.points.map((p, k) =>
+            i === 0 || k === s.points.length - 1 ? (
+              <circle
+                key={`${s.label}-${p.date}`}
+                cx={px(p.date)}
+                cy={py(p.value)}
+                r={k === s.points.length - 1 ? (i === 0 ? 5 : 3.5) : 2.5}
+                fill={strokes[i % strokes.length]}
+                stroke="#fff"
+                strokeWidth={1.5}
+              />
+            ) : null,
+          ),
+        )}
+        {endLabels.map((e) => (
+          <g key={`label-${e.s.label}`}>
+            <text x={W - pad.r + 12} y={e.y} fontSize="15" fontWeight={600} fill={e.i === 0 ? "#A93D25" : "#1A1815"}>
+              {fmtTrendValue(e.last!.value, x.unit)}
+            </text>
+            <text x={W - pad.r + 12} y={e.y + 13} fontSize="10.5" fill="#6B6255">
+              {e.i === 0 ? e.s.label : e.s.label.length > 20 ? "Peer median" : e.s.label}
+            </text>
+          </g>
+        ))}
+        <text x={pad.l} y={H - 6} fontSize="11" fill="#6B6255">
           {label(dates[0])}
         </text>
-        <text x={W - pad.r} y={H - 6} fontSize="11" fill="#8a8073" textAnchor="end">
+        <text x={W - pad.r} y={H - 6} fontSize="11" fill="#6B6255" textAnchor="end">
           {label(dates[dates.length - 1])}
         </text>
       </svg>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-warm-700">
-        {x.series.map((s, i) => {
-          const last = s.points[s.points.length - 1];
-          return (
-            <span key={s.label} className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-0.5 w-5" style={{ background: strokes[i % strokes.length] }} />
-              {s.label}
-              {last ? <span className="text-warm-900 [font-variant-numeric:tabular-nums]">{fmtTrendValue(last.value, x.unit)}</span> : null}
-            </span>
-          );
-        })}
+        {x.series.map((s, i) => (
+          <span key={s.label} className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-5" style={{ background: strokes[i % strokes.length] }} />
+            {s.label}
+          </span>
+        ))}
       </div>
     </div>
   );

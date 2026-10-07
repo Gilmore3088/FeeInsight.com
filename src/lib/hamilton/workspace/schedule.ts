@@ -85,6 +85,7 @@ export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverv
       peerCount: r.band.n,
       peerLabel: r.peerLabel,
       direction: r.current - r.band.median >= 0.005 ? "higher" : r.band.median - r.current >= 0.005 ? "lower" : "at",
+      band: { p25: r.band.p25, p75: r.band.p75 },
     })),
   };
 }
