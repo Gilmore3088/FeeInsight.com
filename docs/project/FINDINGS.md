@@ -110,6 +110,21 @@ selected once more when nothing on their own document is verified as the same fe
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
 
+## 2026-10-07: Ticks sat idle up to half the time because no step started after 150 s
+**What happened:** at 04:00 UTC Oct 7, 43 lane runs were queued and about 6 finished an hour.
+The tick audit rows (`api_route_audit_events`, 02:55 to 04:05) show ticks lasting 150 to 294
+seconds out of each 300. Steps ran about 170 seconds per tick. A full lane pass is about 4
+minutes of steps but took 10 to 15 minutes, because it spread over three ticks.
+**Cause:** the tick started no new step 150 seconds after it began, however short the step.
+A 6-second publish step waited for the next tick just like a 190-second paid search.
+**Fix:** a step starts only when its expected runtime (p99 over 3 days, `STEP_EXPECTED_MS`
+in run-store) fits before 270 seconds. Short steps use the end of a tick, and long ones
+still start early enough to finish inside the 300-second limit. Runs stay serial, so the
+database load per moment is unchanged. A state whose last finished lane run failed now
+retries ahead of routine passes.
+**Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
+tick latency in `api_route_audit_events` before guessing where the time goes.
+
 ## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
 **What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
 MN was queued at 00:40 and started at 02:21. NE, queued at 00:40, had not started at 02:35.
@@ -2184,3 +2199,31 @@ local-market and custom-report rival reads leave those rows out; the bank's own 
 them. `STATS_METHOD_VERSION` 4 makes cached index rows rebuild. Undo by reverting the filter.
 **Lesson:** a fee's source document decides whose price it is, so the statistics contract checks the
 source, not only that one exists.
+
+## 2026-10-07: Bank overdraft income was never loaded, and credit union lines stop after 2024
+**What happened:** `institution_financial_records.overdraft_revenue` had 0 rows for banks; credit
+unions had it for the four 2024 quarters only (17,597 rows, 1,670 above zero). Hamilton's revenue
+line for overdraft and NSF fees was empty for every bank.
+**Cause:** banks: RIAD H032 (consumer overdraft-related service charges, banks of $1B or more) is not
+in the FDIC BankFind API, and no loader read the FFIEC bulk call report. The earlier loader was a
+Modal job that never ran here. Credit unions: NCUA retired accounts IS0048 and IS0049 from the
+March 2025 call report; the 2025 and 2026 files carry the columns but no values (registry detail
+`fee_income_accounts_unreported`). That is the source's limit, not a loader gap.
+**Fix:** registry step `registry-ffiec-overdraft` (`src/lib/regulatory/ffiec.ts`,
+`magellan/registry/ffiec-overdraft.ts`) posts the FFIEC CDR bulk form, reads Schedule RI H032 by
+RSSD, and writes the quarterly figure onto the bank's FDIC row. H032 is year to date, so a quarter
+is stored only when every earlier quarter of that year is on file; partitions run oldest quarter
+first within each year. No migration.
+**Lesson:** a field Hamilton reads needs a loader proven on prod, not only a reader. When a regulator
+retires a line, say so in the data notes rather than leaving it to look like a gap.
+
+## 2026-10-07: Banks on the community bank leverage ratio showed 0% total capital
+**What happened:** in Q2 2026, 1,808 of 4,313 banks had no tier 1 risk-based ratio and a total
+capital ratio of exactly 0; all but 7 are under $10B.
+**Cause:** banks that elect the community bank leverage ratio framework do not file risk-based
+ratios. BankFind returns null for RBC1RWAJ and 0 for RBCRWAJ. The parser stored the 0, the bank page
+showed it and the peer median counted it. The missing tier 1 ratio itself is correct.
+**Fix:** the FDIC parser stores null total capital when tier 1 is null and total capital is 0; the
+bank page and peer median skip a stored 0. Older rows correct themselves as quarters refresh.
+**Lesson:** a regulator's 0 can mean "not filed". Check a field's zeros against the filing rules
+before storing them as values.
