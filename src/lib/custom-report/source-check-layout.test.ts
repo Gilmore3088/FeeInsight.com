@@ -219,5 +219,17 @@ describe("checkFeeAgainstSource daily caps", () => {
     // A row whose only figure is in parentheses keeps it as the price.
     expect(checkFeeAgainstSource("Stop Payment ($30.00)", "Stop Payment", 30, ".").ok).toBe(true);
   });
+
+  it("refuses a price charged per $100 of the item as a flat fee (Oct 7 spot check)", () => {
+    const rows = "Cashier Check - All Others (per $100.00) $1.00\nMoney Order - All Others (per $100.00) $1.00\nStop Payment $30.00";
+    expect(checkFeeAgainstSource(rows, "Cashier Check - All Others (per )", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+    expect(checkFeeAgainstSource(rows, "Money Order - All Others (per )", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+    expect(checkFeeAgainstSource(rows, "Stop Payment", 30, ".").ok).toBe(true);
+    const merged = "CHECK CASHING FEE (NOT ON US- PER $100) | 3X5 – $30.00";
+    expect(checkFeeAgainstSource(merged, "CHECK CASHING FEE (NOT ON US- PER )", 30, ".").ok).toBe(false);
+    // A neighbouring row's basis on the same line does not count against this fee.
+    const wire = "Domestic - Incoming Wire | $10.00 | Loose Currency Ordered (per $100) | $0.50";
+    expect(checkFeeAgainstSource(wire, "Domestic - Incoming Wire", 10, ".").ok).toBe(true);
+  });
 });
 

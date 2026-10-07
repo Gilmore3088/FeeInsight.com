@@ -27,7 +27,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 5: a price with a note in parentheses under its name ("$29.00/presentment (applies
 // to ...)"), and figures in a name's note ("Gift Cards ($25 up to $500 Only) | $5"), are read,
 // so fees the older check took down for those layouts are checked again and restored.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 5 } as const;
+// Version 6: a price charged per $100 of the item ("Cashier Check (per $100.00) $1.00") is not
+// a flat fee (priced_per_amount), so every institution is checked again; such fees get the
+// second look and then come down, archived, never deleted.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 6 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

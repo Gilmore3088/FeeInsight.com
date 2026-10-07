@@ -1846,3 +1846,16 @@ Knox's mistakes with changes elsewhere in the pipeline.
 restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
 balance (62%) are still the weakest reads.
 **Lesson:** a learning signal has to say whose mistake it records.
+
+## 2026-10-07: a price charged per $100 of the item was published as a flat fee
+**What happened:** a spot check of 10 fees source check v5 restored found two at one credit union
+("Cashier Check - All Others (per $100.00) $1.00", same for money orders) live as a flat $1. A
+query of live flat fees found one more: a check-cashing row "(NOT ON US- PER $100)" that took the
+$30 of a 3x5 safe deposit box printed beside it.
+**Cause:** Knox's rules strip dollar figures from a name, leaving "(per )", and keep the price.
+`checkFeeAgainstSource` read "(per $100.00)" as a note on the name (v5), so nothing objected.
+**Fix:** the shared check refuses a price whose own label says "per $N" (`priced_per_amount`);
+source check v6 re-checks every institution, so the live ones get the second look and then come
+down, archived. Knox, Darwin and Hamilton all read through the same check, so new reads stop too.
+**Lesson:** a figure in a fee's label is either a band, a limit or a basis; the reader has to
+decide which before it calls the price flat.

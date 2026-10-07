@@ -17,6 +17,7 @@ export type SourceCheckFailure =
   | "no_source_text"
   | "name_not_in_text"
   | "amount_not_the_fee"
+  | "priced_per_amount"
   | "amount_is_a_threshold"
   | "tiered_fee"
   | "category_not_in_text";
@@ -403,9 +404,10 @@ function checkAgainstLines(
     no_source_text: 0,
     name_not_in_text: 1,
     amount_not_the_fee: 2,
-    amount_is_a_threshold: 3,
-    tiered_fee: 4,
-    category_not_in_text: 5,
+    priced_per_amount: 3,
+    amount_is_a_threshold: 4,
+    tiered_fee: 5,
+    category_not_in_text: 6,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -440,6 +442,7 @@ function checkAgainstLines(
       row = leader;
       amountProblem = null;
     }
+    if (!amountProblem && !dailyCap && pricedPerAmount(row, rounded)) amountProblem = "priced_per_amount";
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
@@ -452,6 +455,21 @@ function checkAgainstLines(
     return { ok: true, sourceLine: row.slice(0, 240) };
   }
   return { ok: false, reason: best };
+}
+
+/**
+ * "Cashier Check (per $100.00) $1.00", "CHECK CASHING FEE (NOT ON US- PER $100) | ...": the
+ * price is charged for each $100 of the item, so it scales with the item and is not a flat
+ * fee. The basis must sit in the fee's label, before the price, so a neighbouring row on the
+ * same line ("Incoming Wire | $10.00 | Loose Currency (per $100) | $0.50") does not count.
+ */
+const PER_AMOUNT_BASIS = /\bper\s*\$\s?\d[\d,]*(?:\.\d{2})?(?=\s*(?:\)|\||of\b|in\b|face\b|worth\b|value\b|$))/i;
+
+function pricedPerAmount(row: string, amount: number): boolean {
+  const price = moneyTokens(row).find(
+    (token) => Math.abs(token.value - amount) < 0.005 && !/\bper\s*$/i.test(row.slice(Math.max(0, token.start - 6), token.start)),
+  );
+  return !!price && PER_AMOUNT_BASIS.test(row.slice(0, price.start));
 }
 
 /** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.
