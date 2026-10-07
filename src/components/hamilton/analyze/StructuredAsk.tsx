@@ -357,7 +357,16 @@ export function StructuredAsk({
   return (
     <div className="flex flex-col gap-5">
       {response.positions && response.positions.length > 0 ? (
-        <SchedulePositionsTable rows={response.positions} hrefFor={researchHrefFor} />
+        <>
+          {/* The takeaways lead; the table and the top fee's storyline follow. Without a storyline
+              or answer the same sentence already shows below, so it is not repeated. */}
+          {response.answer && response.shortAnswer.trim() ? (
+            <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
+              {response.shortAnswer}
+            </p>
+          ) : null}
+          <SchedulePositionsTable rows={response.positions} hrefFor={researchHrefFor} />
+        </>
       ) : null}
       {response.answer && storyline ? (
         <StorylineView
