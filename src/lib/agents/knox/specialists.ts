@@ -6,7 +6,7 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
-import { namesALimit, namesAWorkedExample, passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
@@ -136,6 +136,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       if (closesUnopenedParen(candidate.feeName)) continue;
       // v32: a worked example's figure is not a price.
       if (namesAWorkedExample(candidate.feeName)) continue;
+      // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
+      if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
       if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
         selfCheckFailed += 1;
         untraced.push({
@@ -167,6 +169,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     for (const heldRow of found.held) {
       if (held.length >= MAX_HELD_PER_DOCUMENT) break;
       const foundRow = { ...heldRow, feeName: tidyFeeName(heldRow.feeName) };
+      if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
       const untracedZero = foundRow.shape === "zero" && !tracesToSource(text, foundRow.feeName, 0);
       if (untracedZero) selfCheckFailed += 1;

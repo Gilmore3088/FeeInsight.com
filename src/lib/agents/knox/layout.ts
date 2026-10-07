@@ -218,6 +218,28 @@ export function namesAWorkedExample(feeName: string): boolean {
   return WORKED_EXAMPLE.test(feeName.trim());
 }
 
+/**
+ * v32: a figure that follows a comparison or "on" at the end of the name is what the fee is
+ * measured against, not its price: "if your Available Balance ... is at least | $0" (U.S. Bank's
+ * waiver rule), "the $34 Overdraft Fee on | the $60 gasoline transaction" (Chase's worked
+ * example). Only fires when the text has the name's last words right before that same figure,
+ * so "$5 service charge if balance falls below $300" still reads $5.
+ */
+const MEASURED_AGAINST_TAIL = /(?:\bat\s+(?:least|most)|\bno\s+(?:more|less)\s+than|\b(?:more|less|greater|fewer)\s+than|\bexceeds?|\bexceeding|\bbelow|\babove|\bunder|\bover|\bon)\s*$/i;
+
+function amountPattern(amount: number): string {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const grouped = Number(whole).toLocaleString("en-US").replace(/,/g, ",?");
+  return cents === "00" ? `${grouped}(?:\\.00)?` : `${grouped}\\.${cents}`;
+}
+
+export function readsAMeasuredAmount(text: string, feeName: string, amount: number): boolean {
+  const name = feeName.trim();
+  if (!MEASURED_AGAINST_TAIL.test(name)) return false;
+  const lastWords = name.split(/\s+/).slice(-6).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  return new RegExp(`${lastWords}\\s*(?:the\\s+)?\\$\\s*${amountPattern(amount)}(?![\\d.,]*\\d)`, "i").test(text);
+}
+
 export function namesALimit(feeName: string, canonicalKey: string): boolean {
   const name = feeName.trim();
   if (REBATE_CAP.test(name)) return true;
