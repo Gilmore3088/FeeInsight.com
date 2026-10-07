@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const chat = vi.hoisted(() => ({
   status: "ready" as string,
   messages: [] as Array<{ id: string; role: string; parts: Array<{ type: string; text?: string }> }>,
+  opts: null as null | { onFinish?: (e: { message: unknown; isError?: boolean; isAbort?: boolean }) => Promise<void> },
 }));
 
 vi.mock("@ai-sdk/react", () => ({
-  useChat: () => ({
+  useChat: (opts: typeof chat.opts) => ((chat.opts = opts), {
     messages: chat.messages,
     status: chat.status,
     sendMessage: vi.fn(),
@@ -16,7 +17,8 @@ vi.mock("@ai-sdk/react", () => ({
     clearError: vi.fn(),
   }),
 }));
-vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ saveAnalysis: vi.fn() }));
+const saveAnalysis = vi.hoisted(() => vi.fn(async () => ({ id: "client-row" })));
+vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ saveAnalysis }));
 
 import { AnalyzeWorkspace } from "./AnalyzeWorkspace";
 
@@ -122,5 +124,31 @@ describe("EvidenceExhibit", () => {
     expect(html).not.toContain("**");
     expect(html).toContain("against a $29 peer median");
     expect(html).toContain("42 institutions");
+  });
+});
+
+describe("AnalyzeWorkspace saving a written answer", () => {
+  const finished = (metadata?: unknown) => ({
+    message: { id: "m1", role: "assistant", metadata, parts: [{ type: "text", text: ANSWER }] },
+    isError: false,
+    isAbort: false,
+  });
+
+  beforeEach(() => {
+    chat.status = "ready";
+    chat.messages = [];
+    saveAnalysis.mockClear();
+  });
+
+  it("uses the row the route already saved and never saves it twice", async () => {
+    renderToStaticMarkup(<AnalyzeWorkspace userId={1} institutionId="8109" />);
+    await chat.opts?.onFinish?.(finished({ savedAnalysisId: "server-row" }));
+    expect(saveAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("saves from the browser when the route sent no saved id", async () => {
+    renderToStaticMarkup(<AnalyzeWorkspace userId={1} institutionId="8109" />);
+    await chat.opts?.onFinish?.(finished());
+    expect(saveAnalysis).toHaveBeenCalledTimes(1);
   });
 });
