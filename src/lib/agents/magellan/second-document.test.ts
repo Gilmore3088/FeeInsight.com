@@ -106,6 +106,8 @@ describe("Magellan companion finder", () => {
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_records"));
     expect(select).toContain(THIN_BANK_CATEGORY_LIMIT);
+    // Banks past the thin limit still qualify when a headline fee (maintenance, overdraft) is missing.
+    expect(templateText(select![0])).toMatch(/OR NOT has_monthly_fee\s+OR NOT has_overdraft/);
   });
 
   it("fills spare slots with hidden banks from any state, never the same bank twice", async () => {

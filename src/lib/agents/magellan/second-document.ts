@@ -425,7 +425,8 @@ async function selectThinBanks(
       -- which are the banks this finder exists for.
       SELECT c.institution_id,
              count(DISTINCT c.canonical_fee_key)::int AS categories,
-             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee
+             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee,
+             bool_or(c.canonical_fee_key = 'overdraft') AS has_overdraft
         FROM published_fee_records c
         JOIN institution_sources scoped ON scoped.id = c.institution_id
        WHERE c.rolled_back_at IS NULL
@@ -436,6 +437,7 @@ async function selectThinBanks(
       SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              COALESCE(thin.categories, 0) AS categories,
              COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
+             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
              -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
              -- schedule, no stored text that prices an overdraft, a text that sends the
@@ -489,6 +491,11 @@ async function selectThinBanks(
              -- An HTML fee link with no monthly fee: the product-page pattern.
              OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
              OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
+             -- Near the report bar but missing a headline fee its link does not price: the
+             -- monthly maintenance or overdraft item fee often sits in a separate account
+             -- disclosure (Coulee Bank, Spencer Savings, Community Bank PA on Oct 7).
+             OR NOT has_monthly_fee
+             OR NOT has_overdraft
            )
        AND (
              NOT ${hiddenOnly}::boolean
@@ -504,6 +511,8 @@ async function selectThinBanks(
      ORDER BY requested DESC,
               (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
               (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) DESC,
+              -- Then banks one headline fee short of a full schedule, before thinner ones.
+              (categories >= ${THIN_BANK_CATEGORY_LIMIT} AND (NOT has_monthly_fee OR NOT has_overdraft)) DESC,
               categories ASC,
               asset_size DESC NULLS LAST,
               id ASC

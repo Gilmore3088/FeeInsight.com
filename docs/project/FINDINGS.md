@@ -2432,3 +2432,14 @@ left to search in their state.
 first (`selectNeverSearchedElsewhere`, 45 ms on prod).
 **Lesson:** a queue split by state is only as fast as the slowest state's lane. Let idle capacity
 take work from anywhere.
+
+## 2026-10-07: Banks a headline fee short were never searched for a second document
+**What happened:** the companion finder searched only banks with fewer than 8 fee categories or a
+weak link. Banks near the report bar whose schedule leaves out monthly maintenance or the overdraft
+item fee were never searched. Knox confirmed it for three banks: Coulee Bank (15 categories, no
+maintenance price on its schedule), Spencer Savings (16, no overdraft item price) and Community Bank PA
+(22, overdraft item fees refunded). On prod 2,029 banks with 8 or more live categories lack one of the two.
+**Fix:** a bank with no live monthly maintenance or overdraft fee now qualifies for the companion
+search. Banks of 8+ categories missing one come right after weak links. In PA alone that adds 97 banks.
+**Lesson:** a complete-looking schedule can still leave out the fees a report needs. Search for the
+account disclosure when a headline fee is missing, not only when the page is thin.
