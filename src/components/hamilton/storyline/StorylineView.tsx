@@ -11,6 +11,7 @@ import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
+import { OptionLetter, OptionScaleChart, OptionStanding, optionPoints, optionScale } from "./option-compare";
 import type { StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
 import type { Storyline } from "./types";
 
@@ -241,22 +242,7 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       {story.options && story.options.length > 0 ? (
         <section>
           <Kicker>Options and what each would mean</Kicker>
-          <div className={`grid gap-3 ${story.options.length >= 3 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
-            {story.options.map((o) => (
-              <div key={o.label} className="flex flex-col gap-3 rounded-lg border border-warm-300 bg-white p-4">
-                <p className="text-lg leading-snug text-warm-900" style={SERIF}>
-                  {o.label}
-                </p>
-                <ul className="flex flex-col divide-y divide-warm-100 text-sm leading-snug text-warm-800">
-                  {o.consequences.map((c, i) => (
-                    <li key={i} className="py-1.5 first:pt-0 last:pb-0">
-                      <Line fact={c} notes={notes} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          <OptionsSideBySide story={story} notes={notes} />
           <p className="mt-2 text-xs text-warm-600">Hamilton sets out the options; the choice is your team&apos;s.</p>
         </section>
       ) : null}
@@ -272,5 +258,36 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
 
       <SourceList notes={notes} />
     </article>
+  );
+}
+
+/** The options lettered in the engine's order, priced on one scale, each card saying where it would sit. */
+function OptionsSideBySide({ story, notes }: { story: Storyline; notes: SourceNotes }) {
+  const points = optionPoints(story.options ?? []);
+  const scale = optionScale(story);
+  return (
+    <div className="flex flex-col gap-3">
+      <OptionScaleChart points={points} scale={scale} />
+      <div className={`grid gap-3 ${points.length >= 3 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
+        {points.map(({ letter, option, price }) => (
+          <div key={option.label} className="flex flex-col gap-3 rounded-lg border border-warm-300 bg-white p-4">
+            <div className="flex items-start gap-2">
+              <OptionLetter letter={letter} />
+              <p className="text-lg leading-snug text-warm-900" style={SERIF}>
+                {option.label}
+              </p>
+            </div>
+            <OptionStanding price={price} scale={scale} />
+            <ul className="flex flex-col divide-y divide-warm-100 text-sm leading-snug text-warm-800">
+              {option.consequences.map((c, i) => (
+                <li key={i} className="py-1.5 first:pt-0 last:pb-0">
+                  <Line fact={c} notes={notes} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

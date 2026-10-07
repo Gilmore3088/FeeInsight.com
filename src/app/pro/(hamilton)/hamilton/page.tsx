@@ -9,6 +9,7 @@ import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-cont
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
+import { FeeScorecard, type ScorecardRow } from "@/components/hamilton/benchmark/FeeScorecard";
 import { buildAttentionItems, FLAGSHIP_FEE } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch, getWorkspaceBriefing } from "@/lib/hamilton/workspace/research";
@@ -163,6 +164,14 @@ export default async function HamiltonHomePage({
           </LinkButton>
         </div>
       )}
+
+      {/* Every fee against its peers, once the engine returns the positions it already computes. */}
+      {briefing && (briefing as Briefing & { positions?: ScorecardRow[] }).positions?.length ? (
+        <FeeScorecard
+          rows={(briefing as Briefing & { positions?: ScorecardRow[] }).positions ?? []}
+          institutionId={selectedInstitutionId}
+        />
+      ) : null}
 
       <Suspense fallback={<ChangesSkeleton />}>
         <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
