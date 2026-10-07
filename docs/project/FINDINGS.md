@@ -1801,11 +1801,14 @@ newer-copy check and identical-copy move then handle the fees, as for any supers
 **Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
 same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
 including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
-was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 667 live fees sit
-on the older copies. Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 277 live fees sit
+on the older copies (the PR said 667; a recount by distinct live fee gave 277). Superseding changes no fee: Hamilton's refresh moves a live fee only when the
 current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
 taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
 because it included failed and already-superseded copies; only current copies need linking.
+**Proven on prod:** run 1936's fetch step (02:51 UTC, 7 Oct) logged "Superseded 110 current cop(ies)";
+docs 3307, 1106 and 2917 now point at 16035, 15935 and 16048. Of the 277 live fees on the older copies,
+none was taken down after the switch (checked 03:10 UTC).
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
