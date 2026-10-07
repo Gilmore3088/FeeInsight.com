@@ -210,6 +210,13 @@ and adds 1 wrong pair. The wrong pair is "Tracer placed on International Wire" a
 stem "place" also matches inside "Replacement" in a nearby row. That substring weakness is older
 than this change.
 
+Also from v25, a page's current copy is read again once per rules version while an older copy of the
+page still carries live fees. On 2026-10-07, 898 live fees on older copies were missing from their
+current copy's Knox rows, though the current text still showed the amount. Most of those current
+copies had last been read at rules v1 to v7, and none of the re-read triggers reached them. 1,017
+current copies qualify. 211 of the 898 are read already, on a second document that holds the same
+text. Knox reads a text once, so their current copy has no rows of its own.
+
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
 (lowercase, letters only) that the category guards rejected under one category at 2 or more banks

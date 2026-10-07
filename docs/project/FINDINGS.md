@@ -1554,3 +1554,14 @@ Darwin hasn't judged yet.
 **Lesson:** Knox and the shared check must split text the same way. When one learns a layout,
 change the other in the same PR.
 
+**Same day, newer page copies:** 898 live fees on older page copies had no matching Knox row on the
+page's current copy, though the current text still carried the amount. The causes:
+- about 370 were read on the current copy under another category;
+- about 110 were held there;
+- 211 were read on a second document holding the identical text;
+- the remaining ~200 sat on current copies last read at rules v1 to v7.
+
+Nothing re-read a current copy, because the re-read triggers only reach thin texts, flagged texts
+and $10B+ banks. Knox now reads a current copy again once per rules version while an older copy
+still carries live fees.
+
