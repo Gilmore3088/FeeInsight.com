@@ -5,18 +5,19 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { sql, withTransaction } from "@/lib/data-store/connection";
-import { sendWorkspaceInviteEmail } from "@/lib/email/workspace-invite";
 import { getHamiltonInstitutionContext } from "@/lib/hamilton/institution-context";
 import { setHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 import { adoptInstitution } from "@/lib/hamilton/adopt-institution";
 import {
   getActiveInstitutionMembership,
+  getInstitutionWorkspaceSeatUsage,
   createInstitutionWorkspaceInvitation,
   grantInstitutionWorkspaceMembership,
   revokeInstitutionWorkspaceInvitation,
   revokeInstitutionWorkspaceMembership,
   type InstitutionWorkspaceMembershipRole,
 } from "@/lib/hamilton/institution-membership";
+import { hasOpenSeat, seatLimitMessage } from "@/lib/hamilton/workspace-seats";
 import {
   getSavedPeerSets,
   savePeerSet,
@@ -305,23 +306,19 @@ async function canManageSelectedInstitution(
   return membership?.role === "owner" || membership?.role === "admin";
 }
 
-async function appendWorkspaceInviteDeliveryMessage(
-  baseMessage: string,
-  invitation: NonNullable<Awaited<ReturnType<typeof createInstitutionWorkspaceInvitation>>>,
-) {
-  const delivery = await sendWorkspaceInviteEmail(invitation).catch(() => ({
-    status: "failed" as const,
-    error: "Workspace invite email send failed.",
-  }));
-  if (delivery.status === "sent") {
-    return `${baseMessage} Invite email sent with /workspace-invite.`;
-  }
-  if (delivery.status === "not_configured") {
-    return `${baseMessage} Automated email is not configured yet; use the Email Invite action or send /workspace-invite manually.`;
-  }
-  return `${baseMessage} Automated email delivery failed; use the Email Invite action or send /workspace-invite manually.`;
-}
+type GrantOutcome =
+  | { kind: "full"; limit: number }
+  | { kind: "invited"; email: string }
+  | { kind: "granted" }
+  | { kind: "failed"; error: string };
 
+/**
+ * Adds a person to an institution account. Nothing is emailed: an invitation is saved, and
+ * the owner copies the /workspace-invite link to the invitee. A seat on a paid institution
+ * account gives the invitee Pro access, so nobody needs to pay to accept. At most
+ * WORKSPACE_SEAT_LIMIT people per institution (the owner included); the count and the write
+ * run under one per-institution lock so two invites cannot both take the last seat.
+ */
 export async function grantWorkspaceAccess(
   _prev: WorkspaceAccessActionState,
   formData: FormData,
@@ -354,88 +351,82 @@ export async function grantWorkspaceAccess(
     id: number;
     display_name: string | null;
     email: string | null;
-    role: string;
-    subscription_status: string | null;
   }>>`
-    SELECT id, display_name, email, role, COALESCE(subscription_status, 'none') AS subscription_status
+    SELECT id, display_name, email
     FROM users
     WHERE LOWER(email) = ${parsed.data.email}
       AND is_active = true
     LIMIT 1
   `;
   const grantee = granteeRows[0];
-  if (!grantee) {
-    const invitation = await createInstitutionWorkspaceInvitation({
-      institutionId: institution.id,
-      email: parsed.data.email,
-      role: parsed.data.role,
-      invitedByUserId: user.id,
-      notes: parsed.data.notes || `Pending ${parsed.data.role} access from Hamilton Settings.`,
-    });
-    if (!invitation) {
-      return { success: false, error: "Workspace invitation could not be queued." };
-    }
-
-    revalidatePath("/pro/settings");
-    return {
-      success: true,
-      message: await appendWorkspaceInviteDeliveryMessage(
-        `${invitation.email} has been queued for ${parsed.data.role} access. Authority activates after they register and activate Pro with that email.`,
-        invitation,
-      ),
-    };
-  }
-  if (grantee.id === user.id) {
+  if (grantee && grantee.id === user.id) {
     return { success: false, error: "Your own workspace role is managed through institution claim authority." };
   }
-  const granteeCanUseHamilton =
-    grantee.role === "admin" ||
-    grantee.role === "analyst" ||
-    grantee.subscription_status === "active";
-  if (!granteeCanUseHamilton) {
-    const invitation = await createInstitutionWorkspaceInvitation({
-      institutionId: institution.id,
-      email: parsed.data.email,
-      role: parsed.data.role,
-      invitedByUserId: user.id,
-      notes: parsed.data.notes || `Pending ${parsed.data.role} access from Hamilton Settings.`,
-    });
-    if (invitation) {
-      revalidatePath("/pro/settings");
-      return {
-        success: true,
-        message: await appendWorkspaceInviteDeliveryMessage(
-          `${invitation.email} has been queued for ${parsed.data.role} access. The invite activates after that user upgrades to Pro.`,
-          invitation,
-        ),
-      };
-    }
 
+  const role = parsed.data.role;
+  let outcome: GrantOutcome;
+  try {
+    outcome = await withTransaction(async (tx): Promise<GrantOutcome> => {
+      await tx`SELECT pg_advisory_xact_lock(hashtext('institution_workspace_seats'), ${institution.id})`;
+      const seats = await getInstitutionWorkspaceSeatUsage(
+        { institutionId: institution.id, email: parsed.data.email },
+        tx,
+      );
+      if (!seats.emailHoldsSeat && !hasOpenSeat(seats.used, seats.limit)) {
+        return { kind: "full", limit: seats.limit };
+      }
+
+      if (!grantee) {
+        const invitation = await createInstitutionWorkspaceInvitation(
+          {
+            institutionId: institution.id,
+            email: parsed.data.email,
+            role,
+            invitedByUserId: user.id,
+            notes: parsed.data.notes || `Pending ${role} access from Hamilton Settings.`,
+          },
+          tx,
+        );
+        return invitation
+          ? { kind: "invited", email: invitation.email }
+          : { kind: "failed", error: "Workspace invitation could not be saved." };
+      }
+
+      const membership = await grantInstitutionWorkspaceMembership(
+        {
+          institutionId: institution.id,
+          userId: grantee.id,
+          role: role as InstitutionWorkspaceMembershipRole,
+          source: "delegated",
+          grantedByUserId: user.id,
+          notes: parsed.data.notes || `Delegated ${role} access from Hamilton Settings.`,
+        },
+        tx,
+      );
+      return membership
+        ? { kind: "granted" }
+        : { kind: "failed", error: "Workspace access could not be granted." };
+    });
+  } catch (e) {
+    console.error("grantWorkspaceAccess failed:", e);
+    return { success: false, error: "Workspace access could not be saved. Try again." };
+  }
+
+  if (outcome.kind === "full") return { success: false, error: seatLimitMessage(outcome.limit) };
+  if (outcome.kind === "failed") return { success: false, error: outcome.error };
+
+  revalidatePath("/pro/settings");
+  if (outcome.kind === "invited") {
     return {
-      success: false,
-      error: "That user needs an active Pro account before delegated Hamilton access can be granted, and the pending invitation could not be queued.",
+      success: true,
+      message: `Invite saved for ${outcome.email} (${role}). Copy the invite link and send it to them. They sign in or create a free account with ${outcome.email} to join; they don't pay for a seat.`,
     };
   }
 
-  const membership = await grantInstitutionWorkspaceMembership({
-    institutionId: institution.id,
-    userId: grantee.id,
-    role: parsed.data.role as InstitutionWorkspaceMembershipRole,
-    source: "delegated",
-    grantedByUserId: user.id,
-    notes: parsed.data.notes || `Delegated ${parsed.data.role} access from Hamilton Settings.`,
-  });
-
-  if (!membership) {
-    return { success: false, error: "Workspace access could not be granted." };
-  }
-
-  revalidatePath("/pro/settings");
   revalidatePath("/account");
-
   return {
     success: true,
-    message: `${grantee.display_name ?? grantee.email ?? "User"} now has ${parsed.data.role} access to ${institution.name}.`,
+    message: `${grantee?.display_name ?? grantee?.email ?? "User"} now has ${role} access to ${institution.name}.`,
   };
 }
 

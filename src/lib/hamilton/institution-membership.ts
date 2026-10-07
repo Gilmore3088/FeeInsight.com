@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 
 export type InstitutionWorkspaceMembershipRole = "owner" | "admin" | "analyst" | "viewer";
 export type InstitutionWorkspaceMembershipStatus = "active" | "revoked";
@@ -354,7 +355,24 @@ export async function createInstitutionWorkspaceInvitation(
   db: SqlClient = sql,
 ): Promise<InstitutionWorkspaceInvitation | null> {
   const normalizedEmail = params.email.trim().toLowerCase();
+  // The seat cap is checked in the same statement as the insert: a new email is queued only
+  // while fewer than WORKSPACE_SEAT_LIMIT seats are in use; an email that already holds a
+  // seat (a member, or a pending invite being refreshed) never needs a new one. A full
+  // workspace inserts nothing and this returns null.
   const rows = await db<Record<string, unknown>[]>`
+    WITH seats AS (
+      SELECT COALESCE(LOWER(u.email), 'user:' || u.id::text) AS seat_key
+        FROM institution_workspace_memberships iwm
+        JOIN users u ON u.id = iwm.user_id
+       WHERE iwm.institution_id = ${params.institutionId}
+         AND iwm.membership_status = 'active'
+      UNION
+      SELECT iwi.email AS seat_key
+        FROM institution_workspace_invitations iwi
+       WHERE iwi.institution_id = ${params.institutionId}
+         AND iwi.invitation_status = 'pending'
+         AND iwi.expires_at > NOW()
+    )
     INSERT INTO institution_workspace_invitations (
       institution_id,
       email,
@@ -365,7 +383,8 @@ export async function createInstitutionWorkspaceInvitation(
       notes,
       created_at,
       updated_at
-    ) VALUES (
+    )
+    SELECT
       ${params.institutionId},
       ${normalizedEmail},
       ${params.role},
@@ -375,7 +394,8 @@ export async function createInstitutionWorkspaceInvitation(
       ${params.notes ?? null},
       NOW(),
       NOW()
-    )
+    WHERE EXISTS (SELECT 1 FROM seats WHERE seat_key = ${normalizedEmail})
+       OR (SELECT COUNT(*) FROM seats) < ${WORKSPACE_SEAT_LIMIT}
     ON CONFLICT (institution_id, email)
     WHERE invitation_status = 'pending'
     DO UPDATE SET
@@ -427,6 +447,49 @@ export async function createInstitutionWorkspaceInvitation(
   `;
 
   return rows[0] ? mapInvitationRow(rows[0]) : null;
+}
+
+export interface InstitutionWorkspaceSeatUsage {
+  /** Distinct people holding a seat: active members plus pending, unexpired invitations. */
+  used: number;
+  limit: number;
+  /** True when `email` already holds a seat, so adding it again takes no new seat. */
+  emailHoldsSeat: boolean;
+}
+
+/**
+ * Seats in use on an institution workspace, in one query. Same rule as the guarded insert
+ * in `createInstitutionWorkspaceInvitation` and `countWorkspaceSeats` in workspace-seats.ts.
+ */
+export async function getInstitutionWorkspaceSeatUsage(
+  params: { institutionId: number; email?: string | null },
+  db: SqlClient = sql,
+): Promise<InstitutionWorkspaceSeatUsage> {
+  const normalizedEmail = params.email?.trim().toLowerCase() || null;
+  const rows = await db<Array<{ used: number | string; email_holds_seat: boolean }>>`
+    WITH seats AS (
+      SELECT COALESCE(LOWER(u.email), 'user:' || u.id::text) AS seat_key
+        FROM institution_workspace_memberships iwm
+        JOIN users u ON u.id = iwm.user_id
+       WHERE iwm.institution_id = ${params.institutionId}
+         AND iwm.membership_status = 'active'
+      UNION
+      SELECT iwi.email AS seat_key
+        FROM institution_workspace_invitations iwi
+       WHERE iwi.institution_id = ${params.institutionId}
+         AND iwi.invitation_status = 'pending'
+         AND iwi.expires_at > NOW()
+    )
+    SELECT COUNT(*)::int AS used,
+           COALESCE(BOOL_OR(seat_key = ${normalizedEmail}), false) AS email_holds_seat
+      FROM seats
+  `;
+  const row = rows[0];
+  return {
+    used: Number(row?.used ?? 0),
+    limit: WORKSPACE_SEAT_LIMIT,
+    emailHoldsSeat: row?.email_holds_seat === true,
+  };
 }
 
 export async function getPendingInstitutionWorkspaceInvitations(
@@ -629,7 +692,7 @@ export async function acceptPendingWorkspaceInvitationsForUser(
         grantedByUserId: Number(accepted.invited_by_user_id),
         notes: accepted.notes
           ? String(accepted.notes)
-          : "Accepted pending workspace invitation after Pro activation.",
+          : "Accepted pending workspace invitation.",
       },
       db,
     );

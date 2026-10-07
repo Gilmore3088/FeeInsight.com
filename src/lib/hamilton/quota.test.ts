@@ -33,6 +33,19 @@ describe("checkProAiQuota", () => {
     expect((await checkProAiQuota(pro)).allowed).toBe(true);
   });
 
+  it("never blocks a team seat holder, however many questions they asked today", async () => {
+    sqlMock.mockResolvedValueOnce([{ used: 400 }]);
+    const quota = await checkProAiQuota({ ...pro, workspace_seat: true });
+    expect(quota.allowed).toBe(true);
+    expect(quota.used).toBe(400);
+    expect(quota.limit).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("keeps the 50-question cap for a Pro subscriber without a seat", async () => {
+    sqlMock.mockResolvedValueOnce([{ used: 50 }]);
+    expect(await checkProAiQuota({ ...pro, workspace_seat: false })).toMatchObject({ allowed: false, limit: 50 });
+  });
+
   it("gives admins the larger limit", async () => {
     sqlMock.mockResolvedValueOnce([{ used: 120 }]);
     expect(await checkProAiQuota({ ...pro, role: "admin" })).toMatchObject({ allowed: true, limit: 200 });

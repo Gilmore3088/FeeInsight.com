@@ -2450,3 +2450,15 @@ pass read those lessons. See rosetta/AGENTS.md "Batch review".
 - Two names in one row were glued into one name.
 **Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
 **Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.
+
+## 2026-10-07: Team seat invites trust an unverified email
+**What happened:** with team seats, an invitation is accepted by any signed-in account whose email
+matches, and the seat gives Pro access without payment. Registration does not verify that a person
+owns the email they sign up with (no verification step in `createUserWithSession`).
+**Cause:** invitations were tied to email when accepting also needed a paid subscription, which was
+some protection; seats remove it.
+**Fix:** not yet. The exposure is one seat on the inviting institution, at most five per account,
+and the owner sees every member in Settings and can remove them. A verify-email step before
+`acceptPendingWorkspaceInvitationsForUser` (or a signed one-time invite token in the copied link)
+would close it.
+**Lesson:** when a check stops costing money to pass, re-check what it was protecting.

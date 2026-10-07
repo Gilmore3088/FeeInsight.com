@@ -216,7 +216,7 @@ export default async function AccountPage({
                 </h2>
                 <p className="text-[13px] text-[#6B6255] mt-1">
                   {pendingWorkspaceInvitations.length > 0
-                    ? "Activate Pro to accept delegated Hamilton workspace access for your invited institution."
+                    ? "Your email has been invited to an institution account. It includes up to five teammates, so you don't need to pay to join."
                     : "The full fee catalog, peer benchmarks, Hamilton analysis, data exports, and report workflows."}
                 </p>
                 {pendingWorkspaceInvitations.length > 0 && (
@@ -233,10 +233,10 @@ export default async function AccountPage({
                 )}
               </div>
               <a
-                href={pendingWorkspaceInvitations.length > 0 ? "/subscribe?invite=workspace" : "/subscribe"}
+                href={pendingWorkspaceInvitations.length > 0 ? "/workspace-invite" : "/subscribe"}
                 className="mt-4 md:mt-0 inline-flex items-center gap-2 rounded-full bg-[#C44B2E] px-6 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-[#C44B2E]/15 hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all flex-shrink-0 no-underline"
               >
-                View Plans
+                {pendingWorkspaceInvitations.length > 0 ? "Accept invitation" : "View Plans"}
                 <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
