@@ -33,6 +33,7 @@ describe("checkFeeCategory", () => {
     ["card_replacement", "ATM Debit Card (duplicate)"],
     ["stop_payment", "Stop Payment"],
     ["stop_payment", "ACH Stop Payment/Cancelation Fee"],
+    ["stop_payment", "Stop Payments (to put on or remove) including ACH and Bill Pay"],
     ["paper_statement", "Paper Statement (Per Month, Waived w/ e-Statements)"],
     ["paper_statement", "E-statements complimentary on all accounts. Paper statement fee is"],
   ])("accepts %s: %s", (key, name) => {
@@ -63,6 +64,11 @@ describe("checkFeeCategory", () => {
     ["paper_statement", "eStatement Fee"],
     ["stop_payment", "Cancel stop payment"],
     ["stop_payment", "Cancellation of a Stop Payment"],
+    ["stop_payment", "Stop Payment Removal"],
+    ["stop_payment", "Stop Payment Removal Fee"],
+    ["stop_payment", "Removal of Stop Payment"],
+    ["stop_payment", "Remove Stop Payment"],
+    ["stop_payment", "Stop Payment Fee (removal)"],
     ["atm_non_network", "Foreign ATM Balance Inquiry"],
   ])("flags %s: %s as filed under the wrong category", (key, name) => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_contradicts" });

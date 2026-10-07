@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
+import { SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
 
@@ -158,6 +158,8 @@ export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]
                  WHERE pa.institution_id = fp.institution_id
                    AND pa.stage = 'publish'
                    AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                   -- A restore marker is not a check (markRestoredForSourceCheck).
+                   AND pa.input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
               ) last_check ON true
              WHERE fp.rolled_back_at IS NULL
                AND fp.published_at < NOW() - ${`${SOURCE_CHECK_GRACE_HOURS} hours`}::interval
