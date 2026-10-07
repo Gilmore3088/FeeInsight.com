@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
+**What happened:** James asked Hamilton "who are my local competitors and locations" at 07:36 UTC.
+The written answer (`api.research.hamilton`, `ai_api_usage_events` id 2928) read 127,096 input
+tokens and took 47 seconds, and the page looked like it had reset. Over the 30 days before, the 10
+written answers averaged 63k input tokens (median 47k) and 34 seconds.
+**Cause:** an answer runs up to 4 model steps, and each step re-sends the system prompt (about 15k
+characters), the tool definitions (about 9k) and every earlier tool result in full. A tool result
+had no size limit (`getInstitution` returns every fee with its conditions and source link), and
+nothing was cached, so a large result was paid for again on each later step.
+**Fix:** `src/lib/research/tool-output.ts`: tool results over 12,000 characters have their longest
+lists shortened with a note saying so; the system prompt and the newest message are Anthropic cache
+points, and the ledger records cache reads apart from uncached input. Proof after merge is the
+next written answer's row in `ai_api_usage_events`. Competitor questions themselves go to a
+deterministic market answer in the Pro page thread's PR 435.
+**Lesson:** anything handed to the model inside a tool loop is paid for once per step. Give every
+tool result a size limit, and cache what repeats.
+
 ## 2026-10-07: The CPI "bank services" series was physicians' services
 **Owner:** the Data inventory thread.
 **What happened:** the app read BLS series `CUUR0000SEMC01` as "CPI: Checking Account and Other
