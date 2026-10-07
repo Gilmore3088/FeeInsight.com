@@ -52,18 +52,18 @@ describe("buildRegulatoryContext", () => {
       ...base,
       enforcement: {
         agenciesChecked: ["OCC"],
-        active: [{ agency: "OCC", party_name: "Flora Bank, N.A.", against_holding_company: false, action_type: "Formal Agreement", subject: null, start_date: "2025-03-01", termination_date: null, penalty_amount: null, document_url: null }],
-        terminated: [],
-        terminatedCount: 2,
+        open: [{ agency: "OCC", party_name: "Flora Bank, N.A.", against_holding_company: false, action_type: "Formal Agreement", subject: null, start_date: "2025-03-01", termination_date: null, penalty_amount: null, document_url: null }],
+        past: [],
+        pastCount: 2,
         asOf: "2026-10-07",
       },
     });
     expect(withRecord.data.enforcement_actions).toEqual({
       lists_checked: ["OCC enforcement actions"],
       as_of: "2026-10-07",
-      active: [{ agency: "OCC", against: "Flora Bank, N.A.", type: "Formal Agreement", start_date: "2025-03-01", termination_date: null, penalty_amount: null }],
-      terminated_count: 2,
-      latest_terminated: [],
+      no_end_date_on_file: [{ agency: "OCC", against: "Flora Bank, N.A.", type: "Formal Agreement", start_date: "2025-03-01", termination_date: null, penalty_amount: null }],
+      past_count: 2,
+      latest_past: [],
     });
     expect(withRecord.data.limits).toContain("FDIC and NCUA orders are not loaded");
     expect(withRecord.data.limits).not.toContain("no source of enforcement");

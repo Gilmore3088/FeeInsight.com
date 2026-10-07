@@ -126,6 +126,22 @@ describe("business-only schedules", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("rejects an article about fees without opening it, and keeps a fee document filed under articles", async () => {
+    const fetchImpl = page(lines);
+    const article = await validateFeeCandidate({ url: "https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid", score: 0.9, reasons: [] }, fetchImpl);
+    expect(article).toMatchObject({ ok: false, verdict: "article_page" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const schedule = await validateFeeCandidate({ url: "https://www.mtcfederal.com/articles/schedule-of-fees/", score: 0.9, reasons: [] }, fetchImpl);
+    expect(schedule.verdict).not.toBe("article_page");
+  });
+
+  it("rejects one product's disclosure without opening it", async () => {
+    const fetchImpl = page(lines);
+    const disclosure = await validateFeeCandidate({ url: "https://www.fiveriversbank.com/documents/truth-in-savings-12-month-time-deposit-disclosure", score: 0.9, reasons: [] }, fetchImpl);
+    expect(disclosure).toMatchObject({ ok: false, verdict: "single_product_disclosure" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("rejects a page whose own heading is a business schedule, and keeps a combined one", async () => {
     const business = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Business Account Fee Schedule</h1>${lines}`));
     expect(business).toMatchObject({ ok: false, verdict: "business_schedule" });

@@ -241,6 +241,21 @@ export function narrateStepFinished(
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
     }
+    case "briefing-refresh": {
+      const stored = n(detail, "stored");
+      const quarter = String(detail.quarter ?? "this quarter");
+      if (detail.dryRun === true) return `Dry run: built ${quarter} briefings without storing them.`;
+      return stored === 0
+        ? `Every workspace already has its ${quarter} briefing.`
+        : `Stored ${count(stored, `${quarter} briefing`)}.`;
+    }
+    case "competitor-alerts": {
+      const alerts = n(detail, "alerts");
+      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Monitor.`;
+      return alerts === 0
+        ? "Checked local competitors; no verified fee change to show."
+        : `Showed ${count(alerts, "competitor change alert")} in Monitor.`;
+    }
     case "pro-digest": {
       const withNews = n(detail, "withNews");
       if (detail.dryRun === true) return `Dry run: ${count(withNews, "Pro reader")} would get a Monday digest.`;
@@ -374,6 +389,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "daily-brief": "atlas",
   "lead-watch": "atlas",
   "pro-digest": "atlas",
+  "competitor-alerts": "hamilton",
+  "briefing-refresh": "hamilton",
   "content-fee-depth": "hamilton",
   "content-market-spread": "hamilton",
   "marketing-score": "hamilton",
