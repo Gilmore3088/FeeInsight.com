@@ -113,11 +113,18 @@ const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
 const PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/;
 
 /**
+ * Where a run-on line splits: after a sentence's period, never inside a dot leader, so
+ * "Stop Payment……………. $35.00" keeps its name and price together. A one-line PDF schedule
+ * stays whole, where each price belongs to the words since the previous price.
+ */
+const LONG_LINE_SPLIT = /(?<=(?<![.…])[.;])(?![.…])\s+|\s{3,}|•/;
+
+/**
  * A long line split into sentences. A description row whose only other cell is its price
  * also keeps its title with that price, since the sentences leave the price on its own.
  */
 function longLineParts(line: string): string[] {
-  const parts = line.split(/(?<=[.;])\s+|\s{3,}|•/);
+  const parts = line.split(LONG_LINE_SPLIT);
   const cells = line.split("|").map((cell) => cell.trim());
   const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
   return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
