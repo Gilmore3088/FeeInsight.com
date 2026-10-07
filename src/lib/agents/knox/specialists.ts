@@ -8,7 +8,7 @@ import {
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
 import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 
 /**
@@ -34,7 +34,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 22 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 23 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -87,7 +87,10 @@ function heldKey(held: HeldFeeCandidate): string {
   return `${held.shape}:${held.canonicalHint}:${held.feeName.toLowerCase()}:${held.amount}:${held.percent}`;
 }
 
-export function runFreeSpecialists(text: string): FreeExtractionResult {
+export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
+  // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
+  // check reads them; the self-check still runs against the stored text.
+  const text = joinLabeledFeeCardText(sourceText);
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => extractCandidatesFromText(text) },
