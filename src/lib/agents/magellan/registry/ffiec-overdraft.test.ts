@@ -59,6 +59,8 @@ describe("runRegistryFfiecOverdraft", () => {
     const update = statements.find((s) => s.text.includes("UPDATE institution_financial_records"));
     expect(update?.values).toContainEqual(["2026-03-31"]);
     expect(update?.values).toContain("2026-06-30");
+    // report_date is a text column ("2026-06-30"); comparing it to ::date fails on prod.
+    expect(update?.text).not.toContain("::date");
     expect(statements.some((s) => s.text.includes("registry_ingest_partitions") && s.values.includes("succeeded"))).toBe(true);
   });
 

@@ -2392,6 +2392,10 @@ partition is retried only after the 6-hour claim expires.
 and grows each buffer with the data. The whole zip is never held in memory.
 **Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
 that the loader will fit in a function's memory.
+**Follow-up (05:42 UTC):** once streaming worked, the step got through the download and then failed
+with "operator does not exist: text = date". `institution_financial_records.report_date` is text
+('2026-06-30'), and the update cast its parameters to date. The update now compares text with text,
+and a test fails if the update casts to date.
 
 ## 2026-10-07: State bills would have taken about four days to cover 52 states
 **What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
@@ -2461,6 +2465,18 @@ with its fix (`evidence.remedy`) and one error-rate row per batch. The reread se
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
 
+## 2026-10-07: The Census income step recorded a published vintage as "not published"
+**What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
+in December 2025, as "not published yet" and scheduled no retry until October 14. No tract or ZIP
+income loaded.
+**Cause:** the fetch treated any reply that was not JSON data as an unpublished vintage. Census
+answers a key, quota or outage problem with a page, not data, so a real error was filed as normal.
+The actual reply is not known, because the cloud sandbox cannot reach api.census.gov.
+**Fix:** only a 404 counts as unpublished. Any other reply without data fails the step and puts the
+first 200 characters of the reply in the run ledger. The parser version is now 2, and the scheduler
+re-pulls `empty` partitions recorded under an older parser, so 2024 runs again without waiting a week.
+**Lesson:** an "empty" result must be one the source states, never a guess from a parse failure.
+
 ## 2026-10-07: Plural "Wires" and balance-named account rows were missed by Knox
 **What happened:** Space Coast CU (James's demo bank) had 7 live fees. Its 1,279-character page lists 22 prices.
 **Cause:**
@@ -2470,3 +2486,17 @@ pass read those lessons. See rosetta/AGENTS.md "Batch review".
 - Two names in one row were glued into one name.
 **Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
 **Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.
+
+## 2026-10-07: The answer key was never on prod
+
+- **Problem.** `answer_key_institutions` and `answer_key_fees` had no rows on prod. The hand-keyed keys
+  (Texas and the 7-state set) lived only in `/mnt/project-files/answer-key/` and the Knox gate fixtures, so
+  no `answer_key` lesson ever reached `pipeline_feedback`, Atlas's answer-key score had nothing to score,
+  and Darwin's batch scoring had to bundle its own copy.
+- **Fix.** Seed migration `20270110000018_answer_key_seed.sql`: 62 banks keyed line by line by the Knox thread
+  (status `confirmed`, `confirmed_by = 'knox-hand-key'`: checked against the stored text, not yet by a person)
+  with 2,321 fee rows, and 55 banks from the 2026-10-04 prefill draft left `prefilled` (710 rows) for a person
+  to confirm on /admin/answer-key. 525 keyed rows with no taxonomy key ("unmapped") are left out. One
+  document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
+  are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
+- **Watch.** Inserts only and idempotent; it never touches a bank already in the key.
