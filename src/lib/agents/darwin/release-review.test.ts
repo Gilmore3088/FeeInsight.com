@@ -103,6 +103,8 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("FEE WAIVED");
     expect(prompt).toContain("re-clearing a check");
     expect(prompt).toContain("online wires");
+    expect(prompt).toContain("emergency");
+    expect(prompt).toContain("prices go with the names in order");
   });
 
   it("puts the learning store's lessons for a batch's categories in the prompt", () => {
@@ -174,7 +176,7 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("account_research");
     expect(prompt).toContain("bad address");
     expect(prompt).toContain("removing or releasing a stop payment");
-    expect(prompt).toContain("expedited, rush or overnight");
+    expect(prompt).toContain("expedited, rush, emergency or overnight");
     expect(prompt).toContain("Cost plus $8");
   });
 

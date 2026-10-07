@@ -53,7 +53,7 @@ type SqlTag = typeof sql;
 // from jumbled rows passed. The prompt now names all three.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 8,
+  version: 9,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -238,7 +238,7 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "  A monthly charge for one service (online wires, bill pay) is not the account's monthly maintenance fee,",
     "  and a fee for returning or re-clearing a check the customer deposited is not NSF.",
     "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
-    "  (expedited, rush or overnight) do not fit the service's own category.",
+    "  (expedited, rush, emergency or overnight) do not fit the service's own category.",
     "  `not_these` lists neighbouring categories fees filed here often belong to; a fee that is one of those does not fit.",
     "- amount_is_price: true only if `amount` is the price the line charges for this fee.",
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
@@ -247,6 +247,8 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "  as a digit (\"$651\" in a list of $85, $100 and $120 boxes is $65 with footnote 1).",
     "  Also false for a price the line marks as waived outright (\"$2.95 (FEE WAIVED)\"); a price waived",
     "  only under a condition (\"waived with a $500 balance\") is still the price.",
+    "  When one row runs two fee names together with two prices, the prices go with the names in order",
+    "  (\"Debit Card Replacement Rush Order | $10 $75\" is a $10 replacement and a $75 rush order).",
     "When an item has `schedule_rows_around` (the rows above and below its line), use them: a price that",
     "belongs to the next row, another column or another account is not this fee's price. When the rows",
     "are jumbled text rather than a fee table and do not show what the fee is (a bare \"overdrafts | $5.00\"), is_fee is false.",
