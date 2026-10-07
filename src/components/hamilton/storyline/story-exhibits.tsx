@@ -8,6 +8,7 @@ import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
+import { IncomeSplitChart, incomeSplitOf } from "./income-split";
 
 function shortDate(iso: string): string {
   return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -90,6 +91,18 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
     );
   }
   if (x.kind === "structure_matrix") {
+    // The income split carries its numbers (engine 1.12.1), so it is drawn rather than tabled.
+    const split = item.id === "income-split" ? incomeSplitOf(x) : null;
+    if (split) {
+      return (
+        <div>
+          <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
+            <IncomeSplitChart data={split} />
+          </ExhibitFrame>
+          {takeaway}
+        </div>
+      );
+    }
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
         <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">

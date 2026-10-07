@@ -93,7 +93,7 @@ describe("StructuredAsk", () => {
         pageChange: { screen: "none" },
         facts: [{ text: "Overdraft $35 against a $29 median.", source: { label: "Bank Fee Index" } }],
         positions: [
-          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher" },
+          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher", ...({ band: { p25: 25, p75: 32 } } as object) },
           { feeCategory: "nsf", displayName: "NSF / returned item", current: 20, peerMedian: 25, peerCount: 38, peerLabel: "Banks $10B and up", direction: "lower" },
           { feeCategory: "stop_payment", displayName: "Stop payment", current: 30, peerMedian: 30, peerCount: 30, peerLabel: "Banks $10B and up", direction: "at" },
         ],
@@ -102,8 +102,11 @@ describe("StructuredAsk", () => {
     );
     const onNoStoryline = vi.fn();
     render(<StructuredAsk question="Where do we stand on every fee?" institutionId="8109" modelHrefFor={() => "/"} researchHrefFor={(f) => `/pro/research?fee=${f}`} onNoStoryline={onNoStoryline} />);
-    await screen.findByText("Every fee against its peer median");
+    await screen.findByText("Every fee against its peers");
     expect(screen.getByText("1 lower · 1 at median · 1 higher")).toBeTruthy();
+    // Drawn on its peer range: the middle half when the engine sends it, the median alone otherwise.
+    expect(screen.getByRole("img", { name: "$35 against a peer middle half of $25 to $32, median $29" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "$20 against a peer median of $25" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Overdraft" }).getAttribute("href")).toBe("/pro/research?fee=overdraft");
     // The table carries the figures, so the same lines are not listed again.
     expect(screen.queryByText("Overdraft $35 against a $29 median.")).toBeNull();
@@ -144,7 +147,7 @@ describe("StructuredAsk", () => {
     );
     render(<StructuredAsk question="Where do we stand on every fee?" institutionId="8109" modelHrefFor={() => "/"} />);
     const lead = await screen.findByText(/two of three fees sit above/);
-    const table = screen.getByText("Every fee against its peer median");
+    const table = screen.getByText("Every fee against its peers");
     expect(lead.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
