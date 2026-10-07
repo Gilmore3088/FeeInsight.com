@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -207,6 +208,8 @@ export function netMarketMoves(rows: MovementSignalRow[]): MarketMove[] {
       const previousAmount = toNumberOrNull(raw.previous_amount);
       const newAmount = toNumberOrNull(raw.new_amount);
       if (!category || previousAmount === null || newAmount === null) continue;
+      // A re-read, recategorization or other page's copy is not a price change.
+      if (!isConfirmedMovement(raw)) continue;
       const institutionId = Number(row.institution_id);
       const key = `${institutionId}:${category}`;
       const existing = moves.get(key);
@@ -440,7 +443,7 @@ async function loadMarketMoves(states: string[], districts: number[], since: str
       AND (ct.state_code = ANY(${states}::text[]) OR ct.fed_district = ANY(${districts}::int[]))
     ORDER BY s.created_at
   `;
-  return netMarketMoves(rows);
+  return netMarketMoves(await withConfirmedMovements(rows));
 }
 
 interface FeeRow {
