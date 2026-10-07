@@ -254,6 +254,7 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 | `registry-sec-filings` | `batch-0`..`batch-7` | `institution_filings`, `holding_company_financials` |
 | `registry-beige-book` | release `YYYYMM` | `fed_beige_book` |
 | `registry-fred` | `current` | `fed_economic_indicators` (FRED-native series only) |
+| `registry-federal-register` | `current` | `reg_tracker_items` (CFPB, FDIC, OCC, Fed and NCUA proposed and final rules from the Federal Register API, last 400 days; shadow mode, nothing stored, until `FEDERAL_REGISTER_TRACKER_LIVE=true`) |
 | `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
