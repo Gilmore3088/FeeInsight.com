@@ -21,7 +21,15 @@ import {
   getSavedPeerSets,
   savePeerSet,
   deletePeerSet,
+  updatePeerSet,
+  setDefaultPeerSet,
+  getPeerSetWorkspace,
+  getPeerInstitutionNames,
+  type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
+import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
+import { parseSavedPeerSetFilters } from "@/lib/hamilton/peer-index";
+import { STATE_NAMES } from "@/lib/us-states";
 
 export type WorkspaceInstitutionState = {
   success: boolean;
@@ -540,48 +548,173 @@ export async function revokeWorkspaceInvitation(
 
 // ─── Peer Set Management (SET-02) ─────────────────────────────────────────────
 
-const PeerSetSchema = z.object({
-  name: z.string().min(1).max(100).trim(),
-  charter_type: z.enum(["bank", "credit_union"]).nullable(),
-  asset_tiers: z.array(z.enum(["a", "b", "c", "d", "e", "f"])).optional(),
-  fed_districts: z.array(z.coerce.number().int().min(1).max(12)).optional(),
-});
+/** The asset tiers institution_sources.asset_size_tier holds (src/lib/regulatory/fdic.ts). */
+const PEER_SET_ASSET_TIERS = [
+  "community_small",
+  "community_mid",
+  "community_large",
+  "regional",
+  "large_regional",
+  "super_regional",
+] as const;
 
 const MAX_SAVED_PEER_SETS = 10;
+const MAX_CHOSEN_PEERS = 50;
 
-export async function createPeerSet(formData: FormData) {
-  const user = await getCurrentUser();
-  if (!user) return { success: false, error: "Not authenticated" };
-  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
-  const existing = await getSavedPeerSets(String(user.id));
-  if (existing.length >= MAX_SAVED_PEER_SETS) {
-    return { success: false, error: `You can save up to ${MAX_SAVED_PEER_SETS} peer sets. Remove one to add another.` };
-  }
+const PeerSetSchema = z
+  .object({
+    name: z.string().trim().min(1, "Give the peer group a name.").max(100),
+    mode: z.enum(["filters", "institutions"]),
+    charter_type: z.enum(["bank", "credit_union"]).nullable(),
+    asset_tiers: z.array(z.enum(PEER_SET_ASSET_TIERS)).optional(),
+    fed_districts: z.array(z.coerce.number().int().min(1).max(12)).optional(),
+    states: z
+      .array(z.string().trim().toUpperCase().refine((code) => code in STATE_NAMES, "Pick states from the list."))
+      .optional(),
+    institution_ids: z
+      .array(z.coerce.number().int().positive())
+      .max(MAX_CHOSEN_PEERS, `Choose up to ${MAX_CHOSEN_PEERS} institutions.`)
+      .optional(),
+  })
+  .refine((v) => v.mode !== "institutions" || (v.institution_ids?.length ?? 0) > 0, {
+    message: "Choose at least one institution.",
+  });
 
-  const raw = {
-    name: formData.get("name"),
+export type PeerSetActionResult = {
+  success: boolean;
+  error?: string;
+  id?: number;
+  peerSet?: SavedPeerSet;
+  count?: PeerGroupCount | null;
+  institutionNames?: Record<number, string>;
+};
+
+function parsePeerSetForm(formData: FormData) {
+  const mode = formData.get("mode") === "institutions" ? "institutions" : "filters";
+  const ids = [...new Set(formData.getAll("institution_ids").filter(Boolean).map(Number))];
+  const parsed = PeerSetSchema.safeParse({
+    name: formData.get("name") ?? "",
+    mode,
     charter_type: formData.get("charter_type") || null,
     asset_tiers: formData.getAll("asset_tiers").filter(Boolean) as string[],
     fed_districts: formData.getAll("fed_districts").filter(Boolean).map(Number),
-  };
-
-  const parsed = PeerSetSchema.safeParse(raw);
+    states: formData.getAll("states").filter(Boolean) as string[],
+    institution_ids: ids,
+  });
   if (!parsed.success) {
-    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const v = parsed.data;
+  // Hand-picked peers are exactly those institutions, so the filters are not saved with them.
+  const filters =
+    v.mode === "institutions"
+      ? { institution_ids: v.institution_ids }
+      : {
+          charter_type: v.charter_type ?? undefined,
+          asset_tiers: v.asset_tiers,
+          fed_districts: v.fed_districts,
+          states: [...new Set(v.states ?? [])],
+        };
+  return { ok: true as const, name: v.name, filters };
+}
+
+/** The workspace the user is working in, or null (personal sets). A lookup failure means personal. */
+async function peerSetWorkspace(userId: number): Promise<{ institutionId: number; role: string } | null> {
+  try {
+    return await getPeerSetWorkspace(String(userId));
+  } catch {
+    return null;
+  }
+}
+
+/** The set as saved, with a real count of the institutions it resolves to. */
+async function savedPeerSetResult(id: number, userId: number, workspaceId: number | null): Promise<PeerSetActionResult> {
+  try {
+    const sets = await getSavedPeerSets(String(userId), workspaceId);
+    const peerSet = sets.find((set) => set.id === id);
+    if (!peerSet) return { success: true, id };
+    const [count, names] = await Promise.all([
+      getPeerGroupCounts([parseSavedPeerSetFilters(peerSet)], workspaceId).then((c) => c[0] ?? null),
+      getPeerInstitutionNames(peerSet.institution_ids ?? []),
+    ]);
+    return { success: true, id, peerSet, count, institutionNames: Object.fromEntries(names) };
+  } catch {
+    return { success: true, id };
+  }
+}
+
+export async function createPeerSet(formData: FormData): Promise<PeerSetActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
+
+  const workspace = await peerSetWorkspace(user.id);
+  if (workspace?.role === "viewer") {
+    return { success: false, error: "Viewers can use the team's peer groups but not add them." };
+  }
+  const workspaceId = workspace?.institutionId ?? null;
+  const existing = await getSavedPeerSets(String(user.id), workspaceId);
+  const inScope = existing.filter((set) =>
+    workspaceId === null ? (set.institution_id ?? null) === null : set.institution_id === workspaceId,
+  );
+  if (inScope.length >= MAX_SAVED_PEER_SETS) {
+    return { success: false, error: `You can save up to ${MAX_SAVED_PEER_SETS} peer groups. Remove one to add another.` };
   }
 
-  const id = await savePeerSet(
-    parsed.data.name,
-    {
-      charter_type: parsed.data.charter_type ?? undefined,
-      asset_tiers: parsed.data.asset_tiers,
-      fed_districts: parsed.data.fed_districts,
-    },
-    String(user.id)
-  );
+  const parsed = parsePeerSetForm(formData);
+  if (!parsed.ok) return { success: false, error: parsed.error };
+
+  const id = await savePeerSet(parsed.name, parsed.filters, String(user.id), workspaceId);
 
   revalidatePath("/pro/settings");
-  return { success: true, id };
+  return savedPeerSetResult(id, user.id, workspaceId);
+}
+
+export async function editPeerSet(id: number, formData: FormData): Promise<PeerSetActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
+  if (!Number.isInteger(id) || id <= 0) return { success: false, error: "Peer group not found." };
+
+  const parsed = parsePeerSetForm(formData);
+  if (!parsed.ok) return { success: false, error: parsed.error };
+
+  const updated = await updatePeerSet(id, parsed.name, parsed.filters, String(user.id));
+  if (!updated) return { success: false, error: "Peer group not found, or you can't change it." };
+
+  revalidatePath("/pro/settings");
+  const workspace = await peerSetWorkspace(user.id);
+  return savedPeerSetResult(id, user.id, workspace?.institutionId ?? null);
+}
+
+/**
+ * "Use for all charts": make a set the default, or pass null to go back to automatic peers.
+ * Charts use the team's default before a personal one, so picking a personal set (or
+ * automatic) also clears the team's default when the user may change it.
+ */
+export async function setPeerSetForAllCharts(id: number | null): Promise<PeerSetActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { success: false, error: "Not authenticated" };
+  if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
+  if (id !== null && (!Number.isInteger(id) || id <= 0)) return { success: false, error: "Peer group not found." };
+
+  const userId = String(user.id);
+  const workspace = await peerSetWorkspace(user.id);
+  const teamScope = workspace && workspace.role !== "viewer" ? workspace.institutionId : null;
+
+  if (id === null) {
+    await setDefaultPeerSet({ id: null, userId, institutionId: null });
+    if (teamScope !== null) await setDefaultPeerSet({ id: null, userId, institutionId: teamScope });
+  } else {
+    const changed = await setDefaultPeerSet({ id, userId, institutionId: null });
+    if (!changed) return { success: false, error: "Peer group not found, or you can't change it." };
+    if (changed.institutionId === null && teamScope !== null) {
+      await setDefaultPeerSet({ id: null, userId, institutionId: teamScope });
+    }
+  }
+
+  revalidatePath("/pro", "layout");
+  return { success: true, id: id ?? undefined };
 }
 
 export async function removePeerSet(id: number) {

@@ -7,6 +7,7 @@ import {
   type IndexEntry,
 } from "@/lib/data-store/fee-index";
 import {
+  getDefaultPeerSets,
   getSavedPeerSetById,
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
@@ -18,6 +19,15 @@ export interface HamiltonPeerFilters {
   asset_tiers?: string[];
   fed_districts?: number[];
   state_code?: string;
+  /** Any of these states. */
+  states?: string[];
+  /** Hand-picked peers: when set, the peers are exactly these institutions. */
+  institutionIds?: number[];
+  /**
+   * Display only: the name charts show for this group (a saved peer group's name).
+   * Never filters anything; describePeerFilters returns it when present.
+   */
+  label?: string;
 }
 
 export type HamiltonPeerIndexSource =
@@ -37,10 +47,12 @@ export interface HamiltonPeerIndexContext {
 interface ResolveHamiltonPeerIndexParams {
   userId?: string | number | null;
   peerSetId?: string | null;
-  selectedInstitution?: Pick<
+  /** The workspace whose default peer group applies; defaults to selectedInstitution.id. */
+  institutionId?: number | null;
+  selectedInstitution?: (Pick<
     InstitutionDetail,
     "institution_name" | "state_code" | "charter_type" | "asset_size_tier" | "fed_district"
-  > | null;
+  > & { id?: number | null }) | null;
   approvedOnly?: boolean;
   minUsableCategories?: number;
 }
@@ -64,6 +76,11 @@ function cleanFilters(filters: HamiltonPeerFilters): HamiltonPeerFilters {
   if (filters.state_code?.trim()) cleaned.state_code = filters.state_code.trim().toUpperCase();
   if (filters.asset_tiers?.length) cleaned.asset_tiers = [...new Set(filters.asset_tiers.filter(Boolean))];
   if (filters.fed_districts?.length) cleaned.fed_districts = [...new Set(filters.fed_districts)];
+  const states = [...new Set((filters.states ?? []).map((st) => st.trim().toUpperCase()).filter(Boolean))];
+  if (states.length) cleaned.states = states;
+  const ids = [...new Set((filters.institutionIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length) cleaned.institutionIds = ids;
+  if (filters.label?.trim()) cleaned.label = filters.label.trim();
   return cleaned;
 }
 
@@ -74,14 +91,21 @@ function filtersKey(filters: HamiltonPeerFilters): string {
     state_code: clean.state_code ?? "",
     asset_tiers: clean.asset_tiers ?? [],
     fed_districts: clean.fed_districts ?? [],
+    states: clean.states ?? [],
+    institutionIds: clean.institutionIds ?? [],
   });
 }
 
-export function parseSavedPeerSetFilters(peerSet: Pick<SavedPeerSet, "tiers" | "districts" | "charter_type">): HamiltonPeerFilters {
+export function parseSavedPeerSetFilters(
+  peerSet: Pick<SavedPeerSet, "tiers" | "districts" | "charter_type"> &
+    Partial<Pick<SavedPeerSet, "states" | "institution_ids">>,
+): HamiltonPeerFilters {
   return cleanFilters({
     charter_type: peerSet.charter_type ?? undefined,
     asset_tiers: parseCsv(peerSet.tiers),
     fed_districts: parseDistrictCsv(peerSet.districts),
+    states: peerSet.states ?? undefined,
+    institutionIds: peerSet.institution_ids ?? undefined,
   });
 }
 
@@ -101,8 +125,14 @@ export const ASSET_TIER_RANGES: Record<string, string> = {
 
 export function describePeerFilters(filters: HamiltonPeerFilters | null): string {
   if (!filters) return "Verified national index";
+  if (filters.label?.trim()) return filters.label.trim();
+  if (filters.institutionIds?.length) {
+    const n = filters.institutionIds.length;
+    return `${n} chosen ${n === 1 ? "institution" : "institutions"}`;
+  }
   const parts: string[] = [];
   if (filters.state_code) parts.push(filters.state_code);
+  if (filters.states?.length) parts.push(filters.states.join("/"));
   if (filters.charter_type) parts.push(filters.charter_type.replace(/_/g, " "));
   if (filters.asset_tiers?.length) {
     parts.push(filters.asset_tiers.map((tier) => ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " ")).join(" or "));
@@ -153,6 +183,71 @@ export function hasUsablePeerIndex(
   ).length >= minUsableCategories;
 }
 
+/** A saved peer group that applies to every Pro chart and benchmark. */
+export interface ActivePeerSet {
+  id: number;
+  name: string;
+  /** The group's filters, ready for getPeerIndex / getPeerFeeValues (no label). */
+  filters: HamiltonPeerFilters;
+  /** What charts call the group: its name, or a description of its filters when unnamed. */
+  label: string;
+}
+
+function toActivePeerSet(set: SavedPeerSet): ActivePeerSet {
+  const filters = parseSavedPeerSetFilters(set);
+  return { id: set.id, name: set.name, filters, label: set.name.trim() || describePeerFilters(filters) };
+}
+
+/**
+ * Pick the set that applies from the candidate defaults: the workspace's default for this
+ * institution first, else the user's own personal default.
+ */
+export function pickActivePeerSet(
+  defaults: SavedPeerSet[],
+  institutionId: number | null,
+): ActivePeerSet | null {
+  const workspace = institutionId === null
+    ? undefined
+    : defaults.find((set) => set.is_default && set.institution_id === institutionId);
+  const personal = defaults.find((set) => set.is_default && set.institution_id === null);
+  const chosen = workspace ?? personal;
+  return chosen ? toActivePeerSet(chosen) : null;
+}
+
+/**
+ * The peer group every Pro chart and benchmark uses for this user and bank: the workspace's
+ * default set (when the user is an active member of that workspace), else the user's own
+ * default set. Null when neither exists, or with no user (a workspace's choice is never shown
+ * to someone outside it).
+ */
+export async function getActivePeerSet(params: {
+  userId: string | number | null | undefined;
+  institutionId: number | null | undefined;
+}): Promise<ActivePeerSet | null> {
+  if (params.userId === null || params.userId === undefined || params.userId === "") return null;
+  const institutionId = params.institutionId && Number.isInteger(params.institutionId) && params.institutionId > 0
+    ? params.institutionId
+    : null;
+  const defaults = await getDefaultPeerSets({ userId: String(params.userId), institutionId });
+  return pickActivePeerSet(defaults, institutionId);
+}
+
+/**
+ * The active set as a filter candidate the engine can put first in its candidate list. It
+ * carries the set's name as `label`, so describePeerFilters (and every chart label built on it)
+ * names the group the way the bank named it.
+ */
+export function peerSetCandidate(set: Pick<ActivePeerSet, "filters" | "label">): HamiltonPeerFilters {
+  return { ...set.filters, label: set.label };
+}
+
+/** The filters without the display-only label, for the data readers. */
+function queryFilters(filters: HamiltonPeerFilters): HamiltonPeerFilters {
+  const rest = { ...filters };
+  delete rest.label;
+  return rest;
+}
+
 async function resolveNationalIndex(
   fallbackReason: string | null,
   approvedOnly = true,
@@ -184,6 +279,27 @@ export async function resolveHamiltonPeerIndex(
   const minUsableCategories = params.minUsableCategories ?? 3;
   const userId = params.userId === null || params.userId === undefined ? null : String(params.userId);
   const peerSetId = params.peerSetId?.trim() || null;
+  const institutionId = params.institutionId ?? params.selectedInstitution?.id ?? null;
+  let activeFallbackReason: string | null = null;
+
+  if (!peerSetId && userId) {
+    // No explicit choice: the workspace's (or the user's) default peer group applies.
+    const active = await getActivePeerSet({ userId, institutionId }).catch(() => null);
+    if (active) {
+      const entries = await getPeerIndex(queryFilters(active.filters), approvedOnly);
+      if (hasUsablePeerIndex(entries, minUsableCategories)) {
+        return {
+          entries,
+          label: active.label,
+          source: "saved-peer-set",
+          filters: active.filters,
+          peerSetId: String(active.id),
+          fallbackReason: null,
+        };
+      }
+      activeFallbackReason = `Your peer group "${active.label}" has too few institutions publishing these fees, so Hamilton widened to the next group.`;
+    }
+  }
 
   if (peerSetId && userId) {
     const parsedPeerSetId = Number(peerSetId);
@@ -218,15 +334,16 @@ export async function resolveHamiltonPeerIndex(
         source: "selected-institution-default",
         filters,
         peerSetId: null,
-        fallbackReason: null,
+        fallbackReason: activeFallbackReason,
       };
     }
   }
 
   return resolveNationalIndex(
-    params.selectedInstitution
-      ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
-      : null,
+    activeFallbackReason ??
+      (params.selectedInstitution
+        ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
+        : null),
     approvedOnly,
   );
 }
