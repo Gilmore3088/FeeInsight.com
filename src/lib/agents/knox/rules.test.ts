@@ -627,4 +627,10 @@ describe("Knox extract.rules", () => {
       expect(classifyFeeText("Maximum daily Overdraft or Returned Item fees (per day, personal accounts)")).toBe("od_daily_cap");
     });
   });
+
+  it("v24 files a loan's late fee as a late payment fee, not an overdraft fee", () => {
+    expect(classifyFeeText("Late Payment fee (Overdraft L-O-C)")).toBe("late_payment");
+    expect(classifyFeeText("Overdraft Loan Late Fee (no grace period)")).toBe("late_payment");
+    expect(classifyFeeText("Overdraft Fee")).toBe("overdraft");
+  });
 });

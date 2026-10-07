@@ -13,6 +13,35 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
+**What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
+MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
+Reading each of the 25 misses against the bank's own text: about 13 are real fees the key left out
+or mapped elsewhere (a $10 late fee, a loan modification fee, a lien release, a replacement card),
+and the rest are wrong. Two of the wrong ones are a shared-rule gap seen across all live rows: loan
+late fees filed as overdraft (3 live: "Overdraft Loan Late Fee", "Late Payment fee (Overdraft
+L-O-C)", "Loan Late Fee ... Overdraft") and "Int’l Wire Fee Out" filed as a domestic wire (2 live,
+read before Knox v16 learned "Int'l").
+**Fix:** category guard v13 fails a late fee filed as overdraft and an "Int'l" wire filed as domestic
+(one price for "Domestic & Int'l" stays domestic), and Darwin re-files both. Knox v24 files a late
+fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
+5; Hamilton's publish step takes them down.
+**Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
+
+## 2026-10-07: Big banks call it a "Schedule of Charges", on the parent company's site
+**What happened:** James, 00:52 UTC Oct 7. Citibank (institution 3) has no fee link and 0 live
+fees; its consumer schedule is "Schedule_of_Charges_Effective_February_26_2026.pdf" on
+citigroup.com, while its website is citi.com. Only the free finders' link phrases knew the
+words "schedule of charges"; the page check's fee words and the paid prompts did not, and the
+paid finders rejected any answer off the website's own host.
+**Cause:** Magellan's fee vocabulary and domain rule were written from small-bank sites.
+**Fix:** this PR. "Schedule of Charges", "Schedule of Service Charges", "Account Fee Schedule",
+"Consumer Fees" and "Deposit Account Agreement" in the page check, link phrases and paid
+prompts; `onBankDomain` (link-coverage.ts, shared by paid find and schedule search) accepts
+the website's name plus a corporate word (citigroup.com, citibank.com), not look-alikes
+(citizensbank.com).
+**Lesson:** test finders against the largest banks' own wording and hosting, not only community banks.
+
 ## 2026-10-06: A fee document dated 2019 counted as a finished link
 **What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
 links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
@@ -1505,3 +1534,21 @@ fixture banks' own lessons (guard and Darwin verdicts only, not the keys themsel
 fee is taken down, and stored confidence is unchanged.
 **Lesson:** a learning store that only learns from agreement across banks misses most of what it
 is told; one bank's own verdicts are the strongest evidence for that bank.
+
+
+## 2026-10-07: Two page layouts hid Trustmark's and ESL's overdraft fees
+**What happened:** Trustmark's fee schedule PDF prints two columns, and the stored text flattens
+them row by row, so the right column's "Overdrafts (OD)" heading ends a left-column row and its
+"• Personal | $36.00" sub-row sits on the next line. ESL's checking page prints each fee as a card
+("Fee TypeCourtesy Pay Overdraft Fee", a description, then "Fee$5.00"). Knox read neither:
+Trustmark's NSF and overdraft ($36) were missed, and ESL's prices were held under the name "Fee".
+The shared accuracy check would also have failed both, since name and price are on different lines.
+**Fix:** Knox v23 (`table-rows.ts` right-column headings; card joining before the specialists) and
+the shared check (`joinLabeledFeeCards`, and a right-column heading over the bulleted line under
+it) read both. Answer keys and the live dry run are unchanged, and the shared check accepts
+exactly the same pairs as before on every other text tried.
+**Still open:** ESL's own fees index page keeps its fees in collapsed sections the stored text
+does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
+**Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
+same way; otherwise Knox's find is held as untraced and never reaches Darwin.
+

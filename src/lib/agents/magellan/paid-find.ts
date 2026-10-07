@@ -18,7 +18,7 @@ import {
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
 import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
 import { pageLinks, urlIdentity, type PageLink } from "./finders";
-import { LARGE_BANK_ASSETS } from "./link-coverage";
+import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
 
@@ -143,31 +143,7 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
   `;
 }
 
-function websiteHost(website: string): string | null {
-  for (const candidate of [website.trim(), `https://${website.trim()}`]) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") return url.hostname.toLowerCase().replace(/^www\./, "");
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-/** The bank's own domain: the website host or one of its subdomains. */
-export function onBankDomain(url: string, website: string): boolean {
-  const host = websiteHost(website);
-  if (!host) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    const candidate = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    return candidate === host || candidate.endsWith(`.${host}`);
-  } catch {
-    return false;
-  }
-}
+export { onBankDomain };
 
 export function paidFindPrompt(row: Pick<PaidFindRow, "institution_name" | "city" | "state_code" | "website_url">): string {
   const host = websiteHost(row.website_url) ?? row.website_url;
@@ -175,14 +151,16 @@ export function paidFindPrompt(row: Pick<PaidFindRow, "institution_name" | "city
     "Find the URL of this bank's consumer fee schedule: the document (PDF or web page) that lists",
     "account service fees with dollar amounts, such as overdraft, NSF/returned item, stop payment,",
     "wire transfer, and monthly maintenance fees. It is often titled \"Schedule of Fees\",",
-    "\"Fee Schedule\", or \"Truth in Savings / Fee Disclosure\".",
+    "\"Fee Schedule\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Account Fee Schedule\",",
+    "\"Consumer Fees\", \"Deposit Account Agreement\", or \"Truth in Savings / Fee Disclosure\". Large banks often",
+    "publish it on their parent company's domain.",
     "",
     `Bank: ${row.institution_name}`,
     `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
     `Website: ${row.website_url}`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${host} or a subdomain of it).`,
+    `- The URL must be on the bank's own domain (${host}, a subdomain of it, or its parent company's domain).`,
     "- Do not return rate sheets, press releases, account agreements without fee amounts, or other sites.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -196,7 +174,8 @@ export function paidPickPrompt(row: Pick<PaidFindRow, "institution_name" | "stat
     "Below are the links on a bank's homepage. Pick the links most likely to open the bank's",
     "consumer fee schedule: the document or page that lists account service fees with dollar",
     "amounts (overdraft, NSF, stop payment, wire, monthly maintenance). Good labels include",
-    "\"Schedule of Fees\", \"Fee Schedule\", \"Truth in Savings\", \"Disclosures\", \"Forms & Documents\".",
+    "\"Schedule of Fees\", \"Fee Schedule\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Consumer Fees\",",
+    "\"Deposit Account Agreement\", \"Truth in Savings\", \"Disclosures\", \"Forms & Documents\".",
     "Do not pick rates pages, loan or card pages, news, or careers.",
     "",
     `Bank: ${row.institution_name} (${row.state_code ?? "unknown state"}), website ${row.website_url}`,

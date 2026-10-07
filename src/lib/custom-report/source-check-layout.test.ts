@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkFeeAgainstSource } from "./source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCards } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
   it("reads a price printed under its fee's name", () => {
@@ -158,5 +158,37 @@ describe("checkFeeAgainstSource daily caps", () => {
       "Fee is assessed when such items are paid. Overdraft Fee limited to four (4) charges per day. | $36.00";
     expect(checkFeeAgainstSource(row, "Overdraft Fee", 36, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(row, "Overdraft Fee", 5, ".").ok).toBe(false);
+  });
+
+  it("reads a labeled fee card's name and price as one row, never another card's price", () => {
+    const text = [
+      "Fee TypeCheckOK Fee",
+      "DescriptionOverdraft protection paid from a linked account.",
+      "Ways to avoid fees",
+      "Fee$5.00 each day an overdraft occurs.",
+      "Fee TypeCourtesy Pay Overdraft Fee",
+      "DescriptionOverdraft Service for checks. The monthly maximum overdraft is $250.",
+      "Fee$25.00",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(text, "Courtesy Pay Overdraft Fee", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Courtesy Pay Overdraft Fee", 5, ".").ok).toBe(false);
+    expect(joinLabeledFeeCards(["Fee TypeRush Order", "DescriptionExpedite a card", "Fee$15.00"])).toEqual([
+      "Rush Order | $15.00",
+      "DescriptionExpedite a card",
+      "",
+    ]);
+  });
+
+  it("reads a two-column schedule's right-column heading over its bulleted sub-rows", () => {
+    const text = [
+      "• Business | $5.00 | Overdrafts (OD)",
+      "• Personal | $36.00",
+      "Debit Card | FREE | when the amount of the item paid in overdraft is $4.99",
+      "• Expedited delivery | $40.00 | • Business | $30.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdrafts (OD): Personal", 36, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Overdrafts (OD): Business", 30, ".").ok).toBe(true);
+    // A heading at the end of a row names only bulleted lines under it.
+    expect(checkFeeAgainstSource("Notary | $5.00 | Counter Checks\nChecks | $10.00", "Counter Checks", 10, ".").ok).toBe(false);
   });
 });

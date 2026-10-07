@@ -37,6 +37,11 @@ const FEE_CONTENT_KEYWORDS = [
   "schedule of fees",
   "fee schedule",
   "fee disclosure",
+  // Large banks' names for the same document (Citi's "Schedule of Charges", Oct 6).
+  "schedule of charges",
+  "schedule of service charges",
+  "consumer fees",
+  "deposit account agreement",
 ];
 
 /**

@@ -135,6 +135,21 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
+    for (const name of ["Late Payment fee (Overdraft L-O-C)", "Overdraft Loan Late Fee (no grace period)"]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(false);
+      expect(refileCategory("overdraft", name)).toBe("late_payment");
+    }
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (Max 5 items per day)")).toEqual({ ok: true });
+    for (const name of ["Int’l Wire Fee Out +", "(Fee shown when charged as Int’l Wire Fee Out)", "Int'l Wire Outgoing"]) {
+      expect(checkFeeCategory("wire_domestic_outgoing", name).ok).toBe(false);
+      expect(refileCategory("wire_domestic_outgoing", name)).toBe("wire_intl_outgoing");
+    }
+    expect(checkFeeCategory("wire_domestic_outgoing", "Wire Send (Domestic and Int’l): Domestic")).toEqual({ ok: true });
+    expect(checkFeeCategory("wire_domestic_incoming", "per request | Wire Transfers (domestic & int’l) Incoming")).toEqual({ ok: true });
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Wire - Interbank")).toEqual({ ok: true });
+  });
+
   it("v11 keeps ATM, wire, currency-exchange and joined-cell lines out of foreign transaction fees and never takes a rate's figure as dollars", () => {
     for (const name of [
       "Foreign Transaction Fee",

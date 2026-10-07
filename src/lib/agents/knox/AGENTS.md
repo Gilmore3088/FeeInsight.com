@@ -178,6 +178,22 @@ banks with a stored overdraft fee that was never live:
 Answer keys: Texas 454 of 468 (main 452 of 467), held out 45 of 50 (43 of 49), seven states
 674 of 720 (673 of 719). Live dry run: 1,414 of 1,437 kept, the same fees as main.
 
+v23 (rules 23, table 6) reads two layouts the audit found missing fees:
+- labeled fee cards, one field per line ("Fee TypeCourtesy Pay Overdraft Fee" / "Description..." /
+  "Fee$5.00"), as ESL prints them. The card's name and price are joined into one row before
+  any specialist reads the text, and the shared check (`joinLabeledFeeCards` in
+  `source-check.ts`) joins them the same way. A card never takes the next card's price;
+- a two-column schedule flattened row by row, where the right column's fee heading ends a
+  left-column row ("• Business | $5.00 | Overdrafts (OD)") and its bulleted sub-rows follow
+  ("• Personal | $36.00"), as Trustmark prints NSF and overdraft. A two-cell sub-row belongs to
+  the heading only directly under it or its last sub-row; a line with both columns places it by
+  position; a right-column row of its own ends the heading. The shared check reads such a
+  heading only over a bulleted line under it.
+
+Answer keys and the live dry run are unchanged from v22. The shared check accepts exactly the
+same (name, amount) pairs as before across the answer-key and live texts (5,678 of every read
+name tried at every price in its document).
+
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
 (lowercase, letters only) that the category guards rejected under one category at 2 or more banks
