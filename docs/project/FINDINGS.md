@@ -13,6 +13,15 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: postgres.js sends numbers untyped, so a CASE of them is text
+
+Darwin's release review read no lessons on prod: all 32 reviews after PR 351 recorded `lessons: 0` though the
+store held 27 lessons for those categories. The query compared `row_number()` with
+`CASE ... THEN ${n} ELSE ${m} END`. postgres.js sends JS numbers with no type, Postgres resolves a CASE of
+untyped values to text, and `bigint <= text` fails. The loader caught the error and returned no lessons.
+Fix: cast numbers used in CASE or COALESCE (`${n}::int`). A loader that falls back on error should log why,
+and its first prod run should be checked for a non-zero count, not just the presence of the field.
+
 ## 2026-10-07: A fee's own schedule line is not enough context to judge it
 **What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
 check of 20 random source-check takedowns (24 hours to 02:50 UTC, `wrong_amount`/`threshold`)
@@ -2062,6 +2071,9 @@ at $2,500, is a balance threshold read as a fee and is not fixed here.
 "($/#)" note to `namesALimit`.
 **Lesson:** prove a rules change on its first prod run, not only on the answer keys: prod pages carry
 wordings the keyed schedules lack.
+**Follow-up (v31):** v30's first prod run (03:21 UTC, 362 rows) had none of these wordings but read
+an ATM rebate cap ("The maximum rebate per 12-month cycle" $180/$240) as a fee; v31 reads a maximum
+rebate, refund or reimbursement as a limit.
 
 ## 2026-10-07: Knox's lessons ignored restores
 **What happened:** Hamilton publish found that Knox's lessons read every `wrong_category` takedown as

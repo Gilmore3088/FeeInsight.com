@@ -24,10 +24,12 @@ function createDbMock(
   rows: Array<Record<string, unknown>>,
   priorPublishedRows: Array<Record<string, unknown>> = [],
   depthRows: Array<Record<string, unknown>> = deepInstitutionRows(rows),
+  movementEvidence: Array<Record<string, unknown>> = [],
 ): DbMock {
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
+    if (text.includes("agent_source_texts")) return Promise.resolve(movementEvidence);
     if (text.includes("INSERT INTO published_fee_records")) {
       return Promise.resolve([{ fee_published_id: nextPublishedId++ }]);
     }
@@ -163,7 +165,10 @@ describe("Hamilton agentic publish", () => {
   });
 
   it("emits a fee movement signal when a published amount changes from the prior live catalog row", async () => {
-    const db = createDbMock([verifiedFee], [priorPublishedFee]);
+    const db = createDbMock([verifiedFee], [priorPublishedFee], undefined, [
+      { fee_published_id: 601, fee_name: "Overdraft fee", source_url: "https://testbank.example/fees", document_text: "Overdraft fee $30.00\nWire transfer $25.00" },
+      { fee_published_id: 1201, fee_name: "Overdraft fee", source_url: "https://testbank.example/fees", document_text: "Overdraft fee $35.00\nWire transfer $25.00" },
+    ]);
 
     const result = await runHamiltonPublish({
       runId: 106,
@@ -190,6 +195,26 @@ describe("Hamilton agentic publish", () => {
     expect(callsJson).toContain("published_fee_movement");
     expect(callsJson).toContain("amount_delta");
     expect(callsJson).toContain(":5");
+  });
+
+  it("keeps a movement the bank's texts do not confirm off the watcher alert", async () => {
+    // A second reading of the same edition: both texts state the same prices, so the
+    // $30 to $35 "move" is a fee paired with a neighbouring price, not a change.
+    const sameEdition = "Overdraft fee $30.00 $35.00\nWire transfer $25.00";
+    const db = createDbMock([verifiedFee], [priorPublishedFee], undefined, [
+      { fee_published_id: 601, fee_name: "Overdraft fee", source_url: "https://testbank.example/fees", document_text: sameEdition },
+      { fee_published_id: 1201, fee_name: "Overdraft fee", source_url: "https://testbank.example/fees", document_text: sameEdition },
+    ]);
+
+    const result = await runHamiltonPublish({ runId: 116, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(1);
+    expect(result.results[0]).toMatchObject({ previousFeePublishedId: 601, movementDirection: "increase" });
+    const callsJson = JSON.stringify(db.mock.calls);
+    expect(callsJson).toContain("hamilton_publication_completed");
+    expect(callsJson).not.toContain("hamilton_fee_movement_detected");
+    expect(callsJson).toContain('unconfirmed_movement_count\\":1');
+    expect(callsJson).not.toContain("hamilton_priority_alerts");
   });
 
   it("skips re-verified rows whose content is already live in the catalog", async () => {

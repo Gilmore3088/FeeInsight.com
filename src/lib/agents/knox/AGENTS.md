@@ -395,3 +395,8 @@ category stands, since a fee taken down as a domestic wire and restored as an in
 confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
 `wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
 this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.
+
+v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 12-month cycle $240",
+ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
+Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
