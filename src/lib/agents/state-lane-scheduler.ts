@@ -15,6 +15,7 @@ import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES } from "@/lib/data-store/market-readiness";
 
 /**
@@ -526,9 +527,17 @@ export const REPORT_REQUEST_DAYS = 30;
 export const REPORT_REQUEST_PRIORITY = 2000;
 export const NEAR_READY_GAP = 6;
 export const NEAR_READY_BANK_PRIORITY = 2000;
+/**
+ * Each of a state's market leaders (its top MARKET_LEADERS_PER_STATE by deposits, service
+ * charge income or total income) still below RICH_MIN_CATEGORIES headline fees adds this
+ * much, so states whose price-setters lack fees run first (James, 2026-10-07: all fees for
+ * the largest 10 to 15 institutions in every state). 15 uncovered leaders add 750.
+ */
+export const UNCOVERED_LEADER_PRIORITY = 50;
 
 export async function refreshLanePriorities(): Promise<number> {
   try {
+    const leaderIds = await loadMarketLeaderIds(sql);
     // postgres.js sends numbers untyped, so every number here carries a cast: an uncast
     // "${a} - ${b}" fails to plan ("operator is not unique: unknown - unknown").
     const updated = await sql`
@@ -620,13 +629,22 @@ export async function refreshLanePriorities(): Promise<number> {
            AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
                 OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH}::int)
       ),
+      leaders AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS uncovered
+          FROM public.institution_sources inst
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+         WHERE inst.id = ANY(${leaderIds}::bigint[])
+           AND COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
+         GROUP BY 1
+      ),
       score AS (
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
                  + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
                  + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
                  + CASE WHEN near_ready.state_code IS NOT NULL
-                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END AS priority
+                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END
+                 + ${UNCOVERED_LEADER_PRIORITY}::int * COALESCE(leaders.uncovered, 0) AS priority
           FROM public.agent_state_lanes lane
           LEFT JOIN due_search ON due_search.state_code = lane.state_code
           LEFT JOIN stale ON stale.state_code = lane.state_code
@@ -634,6 +652,7 @@ export async function refreshLanePriorities(): Promise<number> {
           LEFT JOIN takedowns ON takedowns.state_code = lane.state_code
           LEFT JOIN requested ON requested.state_code = lane.state_code
           LEFT JOIN near_ready ON near_ready.state_code = lane.state_code
+          LEFT JOIN leaders ON leaders.state_code = lane.state_code
       )
       UPDATE public.agent_state_lanes lane
          SET priority_score = score.priority,
