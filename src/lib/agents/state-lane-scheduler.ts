@@ -529,6 +529,8 @@ export const NEAR_READY_BANK_PRIORITY = 2000;
 
 export async function refreshLanePriorities(): Promise<number> {
   try {
+    // postgres.js sends numbers untyped, so every number here carries a cast: an uncast
+    // "${a} - ${b}" fails to plan ("operator is not unique: unknown - unknown").
     const updated = await sql`
       WITH due_search AS (
         SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS banks
@@ -548,7 +550,7 @@ export async function refreshLanePriorities(): Promise<number> {
           FROM public.institution_sources inst
          WHERE COALESCE(inst.status, 'active') = 'active'
            AND NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL
-           AND inst.last_crawl_at < NOW() - ${MAGELLAN_STALE_LINK_REFETCH_DAYS} * INTERVAL '1 day'
+           AND inst.last_crawl_at < NOW() - ${MAGELLAN_STALE_LINK_REFETCH_DAYS}::int * INTERVAL '1 day'
          GROUP BY 1
       ),
       newest AS (
@@ -582,12 +584,12 @@ export async function refreshLanePriorities(): Promise<number> {
         -- Headline categories live per institution: the count market-readiness.ts uses.
         SELECT institution_id, COUNT(DISTINCT canonical_fee_key)::int AS categories
           FROM public.published_fee_catalog
-         WHERE canonical_fee_key = ANY(${[...HEADLINE_FEE_KEYS]})
+         WHERE canonical_fee_key = ANY(${[...HEADLINE_FEE_KEYS]}::text[])
          GROUP BY institution_id
       ),
       market AS (
         SELECT upper(btrim(inst.state_code)) AS state_code, inst.charter_type,
-               count(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES})::int AS rich
+               count(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES}::int)::int AS rich
           FROM public.institution_sources inst
           LEFT JOIN coverage ON coverage.institution_id = inst.id
          WHERE inst.state_code IS NOT NULL AND inst.charter_type IS NOT NULL
@@ -597,8 +599,8 @@ export async function refreshLanePriorities(): Promise<number> {
         SELECT state_code, max(rich) AS rich
           FROM market
          WHERE charter_type = 'bank'
-           AND rich < ${MARKET_READY_MIN_RICH}
-           AND rich >= ${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}
+           AND rich < ${MARKET_READY_MIN_RICH}::int
+           AND rich >= ${MARKET_READY_MIN_RICH}::int - ${NEAR_READY_GAP}::int
          GROUP BY 1
       ),
       requested AS (
@@ -612,19 +614,19 @@ export async function refreshLanePriorities(): Promise<number> {
           LEFT JOIN market ON market.state_code = upper(btrim(inst.state_code))
                           AND market.charter_type = inst.charter_type
          WHERE 'report' = ANY(string_to_array(lead.source, ','))
-           AND lead.created_at > NOW() - ${REPORT_REQUEST_DAYS} * INTERVAL '1 day'
+           AND lead.created_at > NOW() - ${REPORT_REQUEST_DAYS}::int * INTERVAL '1 day'
            AND lead.paid_at IS NULL
            AND position('src=e2e-test' IN COALESCE(lead.use_case, '')) = 0
-           AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}
-                OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH})
+           AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
+                OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH}::int)
       ),
       score AS (
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
                  + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
-                 + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY} ELSE 0 END
+                 + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
                  + CASE WHEN near_ready.state_code IS NOT NULL
-                        THEN ${NEAR_READY_BANK_PRIORITY} + 10 * near_ready.rich ELSE 0 END AS priority
+                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END AS priority
           FROM public.agent_state_lanes lane
           LEFT JOIN due_search ON due_search.state_code = lane.state_code
           LEFT JOIN stale ON stale.state_code = lane.state_code
@@ -912,6 +914,15 @@ export function shouldRunNationwideLaneSync(now: Date = new Date()): boolean {
 /** State lanes launched per 5-minute tick (36 an hour). Raised from 2 on 2026-10-06 after load checks. */
 export const STATE_LANE_LIMIT_PER_TICK = 3;
 
+/**
+ * Lane runs allowed queued or running at once. The executor runs one step at a time and
+ * finishes about six full passes an hour, so launching 3 lanes every tick (36 an hour)
+ * left ~40 runs queued in launch order with a 1h40m wait, and the priority order never
+ * applied (2026-10-07). With a short queue, each free slot goes to the highest-priority
+ * due lane when it opens.
+ */
+export const MAX_ACTIVE_STATE_LANE_RUNS = 3;
+
 export async function scheduleDueStateLaneRuns({
   limit = STATE_LANE_LIMIT_PER_TICK,
   triggeredBy = "atlas.scheduler",
@@ -928,8 +939,24 @@ export async function scheduleDueStateLaneRuns({
     await refreshLanePriorities();
   }
 
+  const emptyResult: DueStateLaneScheduleResult = {
+    selected: 0,
+    scheduled: 0,
+    reused: 0,
+    idle: 0,
+    failed: [],
+    results: [],
+  };
   let dueRows: Array<{ state_code: string }>;
   try {
+    const [active] = await sql<{ runs: number }[]>`
+      SELECT count(*)::int AS runs
+        FROM public.agent_runs
+       WHERE run_kind = 'workflow_lane'
+         AND status IN ('queued', 'running', 'cancel_requested')
+    `;
+    const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
+    if (slots <= 0) return emptyResult;
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (
         SELECT state_code
@@ -945,7 +972,7 @@ export async function scheduleDueStateLaneRuns({
          -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all.
          ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
                   priority_score DESC, next_run_after ASC, state_code ASC
-         LIMIT ${safeLimit}
+         LIMIT ${slots}
          FOR UPDATE SKIP LOCKED
       )
       UPDATE public.agent_state_lanes lane
@@ -957,16 +984,7 @@ export async function scheduleDueStateLaneRuns({
       RETURNING lane.state_code
     `);
   } catch (error) {
-    if (isMissingStateLaneSchemaError(error)) {
-      return {
-        selected: 0,
-        scheduled: 0,
-        reused: 0,
-        idle: 0,
-        failed: [],
-        results: [],
-      };
-    }
+    if (isMissingStateLaneSchemaError(error)) return emptyResult;
     throw error;
   }
 

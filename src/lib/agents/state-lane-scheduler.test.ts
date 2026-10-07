@@ -28,6 +28,7 @@ import {
   NEAR_READY_BANK_PRIORITY,
   NEAR_READY_GAP,
   REPORT_REQUEST_PRIORITY,
+  MAX_ACTIVE_STATE_LANE_RUNS,
   STATE_LANE_STARVATION_HOURS,
   nextDayStart,
   nextMonthStart,
@@ -198,6 +199,7 @@ describe("state lane scheduler", () => {
   });
 
   it("syncs every state's profiles only on the first tick of each hour", async () => {
+    sqlMock.mockResolvedValue([]);
     withTransactionMock.mockImplementation((fn: (tx: unknown) => unknown) => fn(vi.fn().mockResolvedValue([])));
 
     await scheduleDueStateLaneRuns({ limit: 2, now: new Date("2026-10-05T06:35:00Z") });
@@ -207,7 +209,21 @@ describe("state lane scheduler", () => {
     expect(syncStateLaneProfilesMock).toHaveBeenCalledTimes(1);
   });
 
+  it("launches only into free queue slots, so the priority order decides who runs", async () => {
+    const txMock = vi.fn().mockResolvedValue([]);
+    withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
+
+    sqlMock.mockResolvedValue([{ runs: MAX_ACTIVE_STATE_LANE_RUNS }]);
+    await expect(scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-07T02:35:00Z") })).resolves.toMatchObject({ selected: 0 });
+    expect(withTransactionMock).not.toHaveBeenCalled();
+
+    sqlMock.mockResolvedValue([{ runs: MAX_ACTIVE_STATE_LANE_RUNS - 1 }]);
+    await scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-07T02:35:00Z") });
+    expect(txMock.mock.calls[0].slice(1)).toContain(1);
+  });
+
   it("never schedules a second run for a state whose last run is still active", async () => {
+    sqlMock.mockResolvedValue([]);
     const txMock = vi.fn().mockResolvedValue([]);
     withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
 
@@ -381,6 +397,21 @@ describe("state lane scheduler", () => {
       expect(text).toContain(part);
     }
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
+  });
+
+  it("casts every number it sends, since an uncast $1 - $2 fails to plan", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    const strings = call?.[0] as string[];
+    const values = call?.slice(1) ?? [];
+    const uncast = values.flatMap((value, index) => {
+      const isNumber = typeof value === "number";
+      const isArray = Array.isArray(value);
+      if (!isNumber && !isArray) return [];
+      return strings[index + 1].startsWith("::") ? [] : [index];
+    });
+    expect(uncast).toEqual([]);
   });
 
   it("runs the busiest due lanes first but never starves an overdue one", async () => {

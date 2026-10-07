@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's source check takes down real prices, so its judgements can't teach yet
+**What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
+check of 20 random source-check takedowns from the 24 hours to 02:50 UTC (`wrong_amount` and
+`threshold`, not restored) found 13 that read as real prices from Knox's excerpt ("Wire Transfer
+Outgoing $20.00", "Deposit return item / $10.00", "$150.00 Drill Safe Deposit Box"), 4 right and 3 unclear.
+**Cause:** not yet known. The misses share a balance or "per $50" in the same line (read as a
+threshold) or an amount written before the name (read as not the fee).
+**Fix:** none here. Darwin's review learns only from category-check takedowns and restores; the
+finding went to the Accuracy and Hamilton publish threads. The fees are archived, not deleted.
+**Lesson:** a judgement becomes a training signal only after it has been checked to hold up;
+a wrong lesson teaches the next check to throw away real fees.
+
 ## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
 **What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
 ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
@@ -68,6 +80,39 @@ selected once more when nothing on their own document is verified as the same fe
 01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
+## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
+**What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
+MN was queued at 00:40 and started at 02:21. NE, queued at 00:40, had not started at 02:35.
+In the 3 hours before, lane steps used about 113 minutes. Full passes took about 10 minutes
+each, so the executor finished about six an hour.
+**Cause:** the scheduler launched up to 3 lanes every 5-minute tick (36 an hour). It only
+skipped a state whose own run was still active, so the queue filled to nearly every lane.
+The executor took queued runs oldest first. The lane priority order (PR 262, PR 308) only
+chose which lanes got launched, and then every lane waited its turn in the queue.
+**Fix:** the scheduler launches only while fewer than `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane
+runs are queued or running. Each free slot goes to the highest-priority due lane. The
+executor finishes a run it has started before starting a new one. After that it takes runs
+waiting over an hour, then lanes by priority score. Lanes still cannot all run hourly: 55
+lanes at about 10 minutes per full pass is more than an hour of serial work.
+**Lesson:** a queue that refills faster than it drains turns any priority into launch order.
+Cap what is queued to about one tick's worth of work, and order at the point of execution.
+
+## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
+**What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
+and near-ready markets. At 00:47 UTC Oct 7 all 55 lanes still had priority_score 0, so Atlas kept
+taking states in waiting order. Postgres logs show "operator is not unique: unknown - unknown" at
+hh:00:32 every hour from 18:00 through 00:00 UTC: the hourly refresh ran and failed each time.
+**Cause:** postgres.js sends JavaScript numbers as untyped parameters, and the near-ready rule wrote
+`${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}`. Postgres cannot pick a "-" for two unknowns, so the
+whole UPDATE failed to plan. The function catches, logs and returns 0, so nothing else noticed.
+**Fix:** every number and array in the refresh query now carries a cast (`::int`, `::text[]`); a
+unit test fails if one is sent uncast. The fixed query, prepared on prod with untyped parameters
+the way postgres.js sends them, plans and scores IL 2274, MO 2173, MA 2169, NJ 2128, CO 2022,
+WA 2017, then TX 299.
+**Lesson:** in a `sql` template, cast every interpolated number unless a column fixes its type
+(`${n}::int`). Arithmetic between two parameters always fails. To test a query, prepare it with
+untyped parameters (`PREPARE q AS ...`), not with the numbers pasted in.
 
 ## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
 **What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
@@ -1770,6 +1815,17 @@ slash or fragment), and `supersedeSamePageCopies` backfills existing pairs in ea
 start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.same_page_copies`
 events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
 newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
+**Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
+same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
+including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 277 live fees sit
+on the older copies (the PR said 667; a recount by distinct live fee gave 277). Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
+taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
+because it included failed and already-superseded copies; only current copies need linking.
+**Proven on prod:** run 1936's fetch step (02:51 UTC, 7 Oct) logged "Superseded 110 current cop(ies)";
+docs 3307, 1106 and 2917 now point at 16035, 15935 and 16048. Of the 277 live fees on the older copies,
+none was taken down after the switch (checked 03:10 UTC).
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
@@ -1842,3 +1898,87 @@ Knox's mistakes with changes elsewhere in the pipeline.
 restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
 balance (62%) are still the weakest reads.
 **Lesson:** a learning signal has to say whose mistake it records.
+
+## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
+**What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
+transfer limit $1,000", "Mobile Deposit Checks are limited to $1,000", "No Bounce Courtesy Pay
+Limit $600" and "cash Advance limit is $500". Knox's rules filed the line under the fee the name
+mentions, and the price beside it was the limit. Separately, the paid reader had no filter for
+superseded copies: since 18:37 Oct 6, 59 of 270 paid reads were older copies whose current copy
+already had text, costing $1.62. Its priced-line count also missed "$.50" and "75¢", and so did the
+shared check, so those prices never traced.
+**Fix:** Knox v28 drops a read whose name ends on a limit (`namesALimit`), except for cap
+categories and fees for going past a limit. The paid reader rejects the same rows and now uses the
+free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
+**Lesson:** a price beside a name is the fee only when the name names a charge. Words like
+"limit", "limited to" and "maximum load" mean the figure is a ceiling.
+
+## 2026-10-07: Magellan's outcome ledger judged one 24th of each state, and never taught from companion pages
+**What happened:** the ledger (`magellan.link_yield`) is what lets Magellan learn which links work. Each
+discover step judged only banks whose id mod 24 matched the UTC hour, inside the step's state. A state
+lane runs about once a day, often at the same hour, so it judged the same 24th of the state every time.
+On prod, 781 banks had ever been judged, and only 19 of the 714 companion links Knox had read. The free
+platform finders also learned paths only from each bank's main link, so a schedule found by the paid
+search, the companion finder or a person (`institution_additional_sources`) never taught them anything.
+The freshness search had the same slot inside its state filter.
+**Fix:** a state's step judges and checks its whole state (`stepSlot`); steps without a state keep the
+hourly slot. The platform learner now counts judged `consumer_supplement` companions like main links
+(live +2, thin -1, wrong or dead -2); an unjudged companion counts for nothing until it is read.
+**Lesson:** a rotation meant to spread load has to be checked against how often its caller runs. Hand
+fixes only help the next bank when they flow into what the finders learn from.
+
+## 2026-10-07: business fee schedules stayed banks' consumer links, and their prices went live as consumer fees
+**What happened:** Hamilton's audit found Launch CU ($15 NSF) and Community CU of Florida ($30) showing
+prices from their business fee schedules. Both main links are business-only PDFs the old crawler chose
+(no Magellan attempt on either). Magellan's business search, which looks for the consumer schedule, only
+ran in spare discovery capacity, so in states with many banks lacking a link it never ran: 41 of 187
+business-link banks had been searched, 2 replaced. The paid schedule search took business links only
+for $10B+ banks and report requesters. The outcome ledger judged a business link by its live fees, so a
+business schedule with many fees counted as a good link and taught the finders its path.
+On prod (read-only, 7 Oct), 1,028 live fees at 91 banks are read from business-only documents; 61 of
+those fees have a live consumer fee in the same category at the same bank.
+**Fix (Magellan):** three discovery slots per step are kept for business-only links; the paid schedule
+search takes any business-link bank once the free search missed (36 banks today); the ledger judges a
+business-only main link as wrong (`business_schedule`, -2 for its path), so the finders learn not to pick
+such pages. The live business-schedule fees are Hamilton's to archive through its second look (never
+deleted); the dry-run counts above went to the Hamilton publish thread.
+**Lesson:** a link that produces many fees is not a good link if they are the wrong customer's fees.
+
+
+## 2026-10-07: Fee names ran on into their price
+**What happened:** the audit red team counted 3,599 of 48,297 live Knox fees with a messy name: 1,819
+joined with "|", 1,338 over 80 characters and 1,025 ending on a dangling word ("Replacement Card Fee
+of", "ATM Fee for", "Debit Card Replacement A fee of"). 1,642 of the piped names predate the v17
+name tidy (Oct 6) and only change when Knox reads that page again. The tidy itself kept the words
+that led into the price, and kept the previous row's "None" price cell in the name.
+**Fix:** Knox v29's `tidyFeeName` drops a trailing connector from names of eight words or fewer, a
+leading article, and everything up to a "None"/"Free" cell between names. Longer sentences keep
+their ending, since the category guard reads "fee of" as the sign of a fee sentence.
+**Lesson:** a name is tidied for the reader, but the category guard still reads it, so a tidy rule
+has to be checked against the guard and the answer keys, not only by eye.
+
+## 2026-10-07: a rules change could not take back a category it had given a held line
+**What happened:** Knox v26 folded held lines into existing categories. Its first prod pass (runs
+1927, 1929, 1930) promoted 60 lines. Six of them went to the wrong category, and two of those were
+verified and published within minutes (published 69934, 69503). Nothing re-read a line after it was
+promoted, so the next rules version could stop new misfiles but could not pull back these.
+**Fix:** PR 336. Knox v30 narrows the fold. `recheckPromotedRows` puts unverified promotions that
+today's rules no longer file the same back on hold, logged as `wrong` and never deleted; rate fees are
+skipped. Category guard v15 rejects the two live rows, so Hamilton's rules re-check takes them down.
+Dry run on 794 unverified promotions: 7 go back on hold.
+**Lesson:** sample real prod output right after a rules change ships, and give every automatic
+promotion a way back.
+
+
+## 2026-10-07: Hamilton read a fee missing from the index as "no fee"
+**What happened:** a live Pro answer for Space Coast Federal Credit Union (saved 02:31 UTC Oct 7) to
+"Who in our state changed their NSF fee this year?" said "Your schedule shows no NSF fee" and weighed
+"a no-NSF position". The index has no NSF row for Space Coast at all, which only means the fee is not
+in the index. The memo also opened with what the data could not say. Its local comparison used
+business fee schedules for Launch Credit Union and Community Credit Union of Florida.
+**Fix:** engine 1.9.1 heads a missing fee "Your NSF / returned item fee is not in the index yet". The
+memo writer is told that `own: null` is never a fee of $0, and is asked again when it calls a missing
+fee "no-fee" or opens its summary with a limit. A recorded fee change now counts only when both prices
+were read from the same page.
+**Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
+consumer/business split for the fee readers, not something Hamilton can fix.
