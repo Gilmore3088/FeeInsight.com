@@ -40,6 +40,7 @@ describe("registry scheduler", () => {
       "reg-news:current",
       "federal-register:current",
       "state-regulators:current",
+      "enforcement:current",
     ]);
     // Round two continues each source's history.
     // Credit union branches pull only the newest quarter, so they drop out after round one.

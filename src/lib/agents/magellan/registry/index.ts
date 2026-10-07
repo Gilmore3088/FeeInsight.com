@@ -15,6 +15,7 @@ import {
   runRegistryNcuaBranches,
 } from "./ncua-branches";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARTITION, SEC_LINKS_SOURCE, runRegistrySecFilings, runRegistrySecLinks } from "./sec";
+import { ENFORCEMENT_PARTITION, ENFORCEMENT_SOURCE, runRegistryEnforcement } from "./enforcement";
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
 
 /**
@@ -315,6 +316,21 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan synced ${r.agencies} state regulators and tagged ${r.creditUnionsTagged} credit unions with their chartering agency${dry(r.dryRun)}.`,
         detail: { agencies: r.agencies, credit_unions_tagged: r.creditUnionsTagged },
+      };
+    },
+  },
+  {
+    source: ENFORCEMENT_SOURCE,
+    stepKey: "registry-enforcement",
+    title: "Pull OCC and Federal Reserve enforcement actions",
+    fixedPartition: ENFORCEMENT_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryEnforcement({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const { OCC, FRB } = r.byAgency;
+      const failed = r.failed.length > 0 ? ` Failed: ${r.failed.join("; ")}.` : "";
+      return {
+        summary: `Magellan read ${n(OCC.actions)} OCC and ${n(FRB.actions)} Federal Reserve enforcement actions against institutions: ${n(OCC.matched + FRB.matched)} matched to a bank and ${n(OCC.holdingCompany + FRB.holdingCompany)} to a holding company${dry(r.dryRun)}.${failed}`,
+        detail: { by_agency: r.byAgency, upserted: r.upserted, failed: r.failed },
       };
     },
   },

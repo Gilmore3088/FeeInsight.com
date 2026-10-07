@@ -405,6 +405,7 @@ describe("registry dispatch", () => {
       "reg-news",
       "federal-register",
       "state-regulators",
+      "enforcement",
     ]);
   });
 
