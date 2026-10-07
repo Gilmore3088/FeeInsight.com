@@ -181,3 +181,35 @@ export async function getInstitutionComplaintProfile(
     fee_related_pct: Math.round(feeRelatedPct * 10) / 10,
   };
 }
+
+export interface InstitutionComplaintYear {
+  year: string;
+  total_complaints: number;
+  fee_related_complaints: number;
+}
+
+/**
+ * CFPB complaints matched to one institution, per calendar year, newest first.
+ * Fee-related uses the same three issues as the national summary.
+ */
+export async function getInstitutionComplaintYears(targetId: number): Promise<InstitutionComplaintYear[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT report_period,
+           COALESCE(SUM(complaint_count) FILTER (WHERE issue = '_total'), 0)::int AS total,
+           COALESCE(SUM(complaint_count) FILTER (WHERE issue IN (
+             'Problem caused by your funds being low',
+             'Fees or interest',
+             'Managing an account'
+           )), 0)::int AS fee_related
+      FROM institution_complaint_records
+     WHERE institution_id = ${targetId}
+     GROUP BY report_period
+     ORDER BY report_period DESC
+  `;
+  return [...rows].map((row) => ({
+    year: String(row.report_period),
+    total_complaints: Number(row.total),
+    fee_related_complaints: Number(row.fee_related),
+  }));
+}

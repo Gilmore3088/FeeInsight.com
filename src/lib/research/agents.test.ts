@@ -130,12 +130,12 @@ describe("getHamilton", () => {
 
   it("consumer: systemPrompt contains HAMILTON_SYSTEM_PROMPT base text", async () => {
     const config = await getHamilton("consumer");
-    expect(config.systemPrompt).toContain("You are Hamilton, the chief strategist");
+    expect(config.systemPrompt).toContain("You are Hamilton, the pricing advisor");
   });
 
   it("consumer: systemPrompt starts with consumer-role prefix (plain-language framing)", async () => {
     const config = await getHamilton("consumer");
-    const hamiltonIdx = config.systemPrompt.indexOf("You are Hamilton, the chief strategist");
+    const hamiltonIdx = config.systemPrompt.indexOf("You are Hamilton, the pricing advisor");
     expect(hamiltonIdx).toBeGreaterThan(0);
 
     const prefix = config.systemPrompt.slice(0, hamiltonIdx);
@@ -144,7 +144,7 @@ describe("getHamilton", () => {
 
   it("admin: systemPrompt starts with admin-role prefix containing operational/data quality language", async () => {
     const config = await getHamilton("admin");
-    const hamiltonIdx = config.systemPrompt.indexOf("You are Hamilton, the chief strategist");
+    const hamiltonIdx = config.systemPrompt.indexOf("You are Hamilton, the pricing advisor");
     expect(hamiltonIdx).toBeGreaterThan(0);
 
     const prefix = config.systemPrompt.slice(0, hamiltonIdx);

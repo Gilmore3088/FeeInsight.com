@@ -1,6 +1,7 @@
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { ReportSection } from "./ReportSection";
 import { StatCalloutBox } from "./StatCalloutBox";
+import { ReportAnswer, ReportExhibitTable, ReportSources } from "./ReportAnswer";
 
 interface ReportOutputProps {
   report: ReportSummaryResponse;
@@ -84,6 +85,93 @@ export function ReportOutput({ report, reportType, artifactMetadata }: ReportOut
         )}
       </header>
 
+      {report.answer ? <ConsultantReportBody report={report} /> : <LegacyReportBody report={report} />}
+    </article>
+  );
+}
+
+function Paragraphs({ text, muted = false }: { text: string; muted?: boolean }) {
+  return (
+    <>
+      {text
+        .split(/\n\s*\n/)
+        .filter((paragraph) => paragraph.trim())
+        .map((paragraph, i) => (
+          <p
+            key={i}
+            className="text-[15px] leading-relaxed mb-4 last:mb-0"
+            style={{ color: muted ? "var(--hamilton-text-secondary)" : "var(--hamilton-text-primary)" }}
+          >
+            {paragraph}
+          </p>
+        ))}
+    </>
+  );
+}
+
+/** Answer first, then the evidence, the reasoning, the trade-offs, and the sources. */
+function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
+  const exhibits = report.exhibits ?? [];
+  const watchlist = report.watchlist ?? [];
+  return (
+    <>
+      {report.answer && <ReportAnswer headline={report.answer.headline} decisions={report.answer.decisions} goal={report.answer.goal} />}
+
+      {exhibits.length > 0 && (
+        <ReportSection heading="The Evidence">
+          {exhibits.map((exhibit, i) => (
+            <ReportExhibitTable key={exhibit.id} exhibit={exhibit} number={i + 1} />
+          ))}
+        </ReportSection>
+      )}
+
+      <ReportSection heading="What Is Behind It">
+        <Paragraphs text={report.strategicRationale} />
+      </ReportSection>
+
+      <ReportSection heading="Trade-offs">
+        <Paragraphs text={report.recommendation} />
+        {watchlist.length > 0 && (
+          <div className="hamilton-card mt-6 p-4" style={{ backgroundColor: "var(--hamilton-surface-elevated)" }}>
+            <div
+              className="text-[11px] font-semibold uppercase tracking-wider mb-2"
+              style={{ color: "var(--hamilton-text-accent)" }}
+            >
+              What to watch
+            </div>
+            <ul className="space-y-1.5">
+              {watchlist.map((item, i) => (
+                <li key={i} className="text-[14px] leading-relaxed" style={{ color: "var(--hamilton-text-primary)" }}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </ReportSection>
+
+      <ReportSection heading="Method and Sources">
+        {(report.sources ?? []).length > 0 && (
+          <div className="mb-6">
+            <ReportSources sources={report.sources ?? []} />
+          </div>
+        )}
+        <ul className="space-y-1.5">
+          {report.implementationNotes.map((note, i) => (
+            <li key={i} className="text-[12px] leading-relaxed" style={{ color: "var(--hamilton-text-tertiary)" }}>
+              {note}
+            </li>
+          ))}
+        </ul>
+      </ReportSection>
+    </>
+  );
+}
+
+/** Reports written before the answer-first structure keep their original layout. */
+function LegacyReportBody({ report }: { report: ReportSummaryResponse }) {
+  return (
+    <>
       {/* Executive Summary */}
       <ReportSection heading="Executive Summary">
         {report.executiveSummary.map((paragraph, i) => (
@@ -180,6 +268,6 @@ export function ReportOutput({ report, reportType, artifactMetadata }: ReportOut
           </ul>
         </ReportSection>
       )}
-    </article>
+    </>
   );
 }
