@@ -2580,6 +2580,9 @@ funds-availability, checking and rates pages; the other 33 were not sampled).
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+**Follow-up (07:20 UTC Oct 7):** the first 28 live batches walked reads back to Oct 3, and 61 of
+the 76 web pages sent for a JavaScript reread were replaced copies the reader never selects. The
+review now judges only each bank's current document from the last 3 days.
 
 ## 2026-10-07: The Census income step recorded a published vintage as "not published"
 **What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
