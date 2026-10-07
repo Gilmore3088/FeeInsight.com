@@ -8,7 +8,7 @@
 
 import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
 import { ASSET_TIER_RANGES } from "./peer-index";
-import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
+import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { scheduleOverview } from "./workspace/schedule";
 import type { FeePositionRow, InstitutionFinancials, SchedulePosition } from "./workspace/types";
 import { loadBriefContext, type BriefContext } from "./brief-context";
@@ -52,9 +52,9 @@ export function peerPhrase(charterType: string, assetTier: string): string {
   return range ? `${kind} with ${range} in assets` : `${kind} of the same size`;
 }
 
-export async function loadAnswerBrief(institutionId: number): Promise<AnswerBrief | null> {
+export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOptions = {}): Promise<AnswerBrief | null> {
   const [briefing, intensity, context] = await Promise.all([
-    getWorkspaceBriefing(institutionId).catch((error) => {
+    getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
       console.error("[answer-brief] briefing failed", error);
       return null;
     }),
@@ -76,7 +76,7 @@ export async function loadAnswerBrief(institutionId: number): Promise<AnswerBrie
   const competitors: LocalCompetitorFee[] = [];
   for (const p of overview.positions.slice(0, COMPETITOR_LOOKUPS)) {
     if (competitors.length >= COMPETITOR_FEES) break;
-    const research = await getFeeResearch(institutionId, p.feeCategory).catch(() => null);
+    const research = await getFeeResearch(institutionId, p.feeCategory, new Date(), peers).catch(() => null);
     const local = research?.localCompetitors ?? [];
     if (local.length < MIN_COMPETITORS) continue;
     competitors.push({
