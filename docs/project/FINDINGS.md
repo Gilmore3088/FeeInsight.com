@@ -139,6 +139,10 @@ in run-store) fits before 270 seconds. Short steps use the end of a tick, and lo
 still start early enough to finish inside the 300-second limit. Runs stay serial, so the
 database load per moment is unchanged. A state whose last finished lane run failed now
 retries ahead of routine passes.
+**Follow-up (04:30):** 22 of the 27 schedules found by hand (`discover.operator_schedule`, among
+them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
+their state's lane run fetches them and those runs waited in line. Next in the order after
+retries now comes a lane whose state holds a hand-found schedule with status `found`.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 

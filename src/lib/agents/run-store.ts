@@ -2339,8 +2339,9 @@ export async function executeQueuedAgentRuns({
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a retry of a failed
-     -- state lane, then any run waiting over an hour, then state lanes by Atlas's priority
-     -- score (open work, report requests, near-ready markets), then launch order.
+     -- state lane, then a lane with a hand-found schedule to fetch, then any run waiting
+     -- over an hour, then state lanes by Atlas's priority score (open work, report
+     -- requests, near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
@@ -2355,6 +2356,16 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
+              -- A state holding a fee schedule found by hand (Magellan's operator list) that
+              -- has not been fetched yet goes next, so those links don't wait behind routine
+              -- passes. The lane's own fetch, read and extract steps then pick it up.
+              (r.run_kind = 'workflow_lane' AND EXISTS (
+                SELECT 1 FROM institution_additional_sources hand
+                  JOIN institution_sources inst ON inst.id = hand.institution_id
+                 WHERE hand.found_by_strategy = 'discover.operator_schedule'
+                   AND hand.status = 'found'
+                   AND upper(btrim(inst.state_code)) = upper(btrim(r.state_code))
+              )) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC
