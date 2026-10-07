@@ -37,6 +37,14 @@ describe("state fee laws", () => {
     }
   });
 
+  it("gives every in-force rule left as \"other\" a stated reason", () => {
+    for (const law of STATE_FEE_LAWS) {
+      if (law.status !== "in_force" || law.institutions !== "other") continue;
+      if (law.topic === "payee_returned_check" || law.topic === "fee_authority") continue;
+      expect(law.coverage_note?.trim(), law.id).toBeTruthy();
+    }
+  });
+
   it("returns nothing for citation until the laws are reviewed", () => {
     expect(STATE_FEE_LAWS_REVIEWED).toBe(false);
     expect(stateFeeLawsFor({ stateCode: "CA", charterType: "credit_union", charterAgency: "State" })).toEqual([]);

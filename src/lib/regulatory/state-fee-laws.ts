@@ -34,7 +34,10 @@ export type StateFeeLawInstitutions =
   | "state_banks"
   | "state_credit_unions"
   | "state_banks_and_credit_unions"
+  /** Banks of any charter, national banks included, but not credit unions. */
+  | "all_banks"
   | "all_depository_institutions"
+  /** Binds someone other than the depositor's institution, or a narrow class; never cited. */
   | "other";
 
 export interface StateFeeLaw extends RegulatoryRule {
@@ -43,6 +46,8 @@ export interface StateFeeLaw extends RegulatoryRule {
   status: StateFeeLawStatus;
   /** Who the statute itself says it covers. */
   institutions: StateFeeLawInstitutions;
+  /** Why the coverage was coded this way, where the statute's wording needed reading. */
+  coverage_note?: string;
   /** ISO date, a year, or "unknown". */
   effective_date: string;
   verification: "official_excerpt" | "secondary_only";
@@ -98,6 +103,8 @@ export function stateFeeLawsFor(
     switch (law.institutions) {
       case "all_depository_institutions":
         return true;
+      case "all_banks":
+        return !isCreditUnion;
       case "state_banks":
         return stateChartered && !isCreditUnion;
       case "state_credit_unions":

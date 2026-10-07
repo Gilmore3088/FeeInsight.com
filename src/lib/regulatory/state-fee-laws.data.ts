@@ -122,6 +122,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "A.R.S. § 23-351 (azleg.gov) puts the free-withdrawal duty on 'any wage deposit plan adopted by an employer', so it binds employers, not banks directly; it defines 'financial institution' as a member of the FDIC or a comparable federal or state agency.",
     "applies_to": [],
     "summary": "An employer wage deposit plan must give the employee 1 withdrawal per deposit free of any service charge.",
     "detail": "An employer wage deposit plan must give the employee one withdrawal per deposit free of any service charge to the employee. The duty is framed on the employer's plan, not directly on the bank.",
@@ -143,6 +144,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Definition not seen; coded from the statute's text as summarized: A.R.S. § 44-6852 lets the holder, payee or assignee of a dishonored check collect a fee from the drawer, so it binds payees, not a bank's fee to its depositor.",
     "applies_to": [],
     "summary": "This payee rule lets a dishonored check's holder or payee collect up to $25 plus actual bank charges from the drawer.",
     "detail": "The holder, payee or assignee of a dishonored check may collect from the drawer a service fee of up to $25 plus any actual charges the financial institution assessed. This is a payee rule, not a limit on bank fees.",
@@ -187,12 +189,13 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force since 2025-09-26",
     "effective_date": "2025-09-26",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Laws 2025 ch. 63 (SB 1206, azleg.gov) defines 'bank' as a person engaged in the business of banking, including a savings bank, savings and loan association, credit union, trust company and a bank as defined in § 6-101, with no charter limit.",
     "applies_to": [
       "overdraft"
     ],
-    "summary": "An account agreement may let a bank debit a special deposit for an overdraft fee and directly related costs, but not otherwise set off.",
-    "detail": "For a special deposit (a bank deposit for at least two beneficiaries, for a stated purpose and subject to a contingency), the account agreement may let the bank debit the deposit for an overdraft fee and for costs directly related to the special deposit; the bank otherwise may not set off against it. It applies to account agreements made on or after September 26, 2025, and covers banks as the act defines them (definition not seen).",
+    "summary": "An account agreement may let a bank or credit union debit a special deposit for overdraft fees and directly related costs, barring other setoff.",
+    "detail": "For a special deposit (a bank deposit for at least two beneficiaries, for a stated purpose and subject to a contingency), the account agreement may let the bank debit the deposit for an overdraft fee and for costs directly related to the special deposit; the bank otherwise may not set off against it. It applies to account agreements made on or after September 26, 2025, and covers banks as the act defines them, which includes savings banks, savings and loan associations, credit unions and trust companies.",
     "evidence": "azleg.gov Laws 2025 ch. 63 and Senate fact sheet: 'An account agreement may authorize the bank to debit a special deposit: ... for an overdraft fee; for costs incurred by the bank that relate directly to a special deposit'; bank may not exercise recoupment or setoff against a special deposit except against an obligation to pay a beneficiary; applies to account agreements executed on or after September 26, 2025 (per search summary). Signed by the Governor.",
     "url": "https://azleg.gov/legtext/57leg/1r/laws/0063.htm",
     "verification": "official_excerpt",
@@ -399,13 +402,14 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "§ 36a-303 names any bank, Connecticut credit union or federal credit union, and § 36a-2 (cga.ct.gov) defines 'bank' as a Connecticut bank or a federal bank (national bank, federal savings bank or federal S&L with its principal office in Connecticut); out-of-state credit unions are not named.",
     "applies_to": [
       "overdraft",
       "nsf"
     ],
     "summary": "A bank, Connecticut credit union or federal credit union may not charge for an overdraft caused by a Social Security direct deposit tape error.",
-    "detail": "A bank, Connecticut credit union or federal credit union may not charge a fee or penalty for an overdraft caused by an error on, or an accidental omission from, a Social Security Administration direct deposit tape. (Covers state banks, Connecticut credit unions and federal credit unions as the statute names them.)",
+    "detail": "A bank, Connecticut credit union or federal credit union may not charge a fee or penalty for an overdraft caused by an error on, or an accidental omission from, a Social Security Administration direct deposit tape. (Covers banks, which § 36a-2 defines to include Connecticut banks and federal banks with a Connecticut principal office, plus Connecticut credit unions and federal credit unions.)",
     "evidence": "'No bank, Connecticut credit union or federal credit union may charge a fee or a penalty for an overdraft if such overdraft is due to an error on a direct deposit tape of the Social Security Administration or an accidental omission from such tape.'",
     "url": "https://cga.ct.gov/2023/pub/chap_665a.htm",
     "verification": "official_excerpt",
@@ -420,7 +424,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "§ 36a-304 names each bank, Connecticut credit union and federal credit union, and § 36a-2 (cga.ct.gov) defines 'bank' to include federal banks (national banks, federal savings banks and S&Ls) with a Connecticut principal office.",
     "applies_to": [
       "check_cashing"
     ],
@@ -440,10 +445,11 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "§ 36a-316 (cga.ct.gov, as quoted in search) defines 'financial institution' for §§ 36a-315 to 36a-323 as any bank, Connecticut credit union or federal credit union, and § 36a-2 makes 'bank' include federal banks with a Connecticut principal office.",
     "applies_to": [],
     "summary": "A financial institution must post its deposit account charges and give 30 days' posted and delivered notice before any new or increased charge.",
-    "detail": "A 'financial institution' (as defined in chapter 665a; definition not reviewed) must post a list of current deposit account charges in each office that accepts deposits, and may not impose a new or increased deposit account charge unless it posts notice at least 30 days beforehand and delivers notice to each affected depositor. Sections 36a-315 to 36a-323 do not apply to time accounts of $100,000 or more.",
+    "detail": "A 'financial institution' (any bank, Connecticut credit union or federal credit union, per § 36a-316) must post a list of current deposit account charges in each office that accepts deposits, and may not impose a new or increased deposit account charge unless it posts notice at least 30 days beforehand and delivers notice to each affected depositor. Sections 36a-315 to 36a-323 do not apply to time accounts of $100,000 or more.",
     "evidence": "'No financial institution shall impose any new deposit account charge or increase any existing deposit account charge unless the financial institution posts a notice reciting such new or increased charge at least thirty days prior to such imposition or increase in each office ... and delivers a notice ... to each depositor who has a deposit account which will be affected.' § 36a-323: provisions of 36a-315 to 36a-323 do not apply to any time account containing $100,000 or more.",
     "url": "https://cga.ct.gov/2023/pub/chap_665a.htm",
     "figures": {
@@ -462,7 +468,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force since 2023-07-01",
     "effective_date": "2023-07-01",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "§ 36a-316 (cga.ct.gov, as quoted in search) defines 'banking institution' as any FDIC- or NCUA-insured bank, trust company, savings bank, S&L or credit union chartered under the laws of Connecticut, any other state or the United States that offers consumer transaction accounts.",
     "applies_to": [
       "overdraft",
       "nsf",
@@ -514,7 +521,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "§ 52-367a (cga.ct.gov) defines 'financial institution' for §§ 52-367a and 52-367b as any bank, savings bank, S&L or credit union chartered under Connecticut or United States law with its main office in Connecticut, or a similar out-of-state institution with a Connecticut branch.",
     "applies_to": [
       "garnishment_levy",
       "legal_process",
@@ -569,6 +577,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "D.C. Code § 47-351.01 (code.dccouncil.gov) defines 'eligible financial institution' as a bank, SEC-registered brokerage, S&L, savings bank or credit union meeting the requirements to bid for District deposits under § 47-351.04, a narrow class, not all banks.",
     "applies_to": [
       "check_cashing"
     ],
@@ -606,12 +615,13 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force since 2025-01-01",
     "effective_date": "2025-01-01",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "84 Del. Laws c. 465 (SB 308, legis.delaware.gov) defines 'bank' as a person engaged in the business of banking, including a savings bank, savings and loan association, credit union and trust company, with no charter limit.",
     "applies_to": [
       "overdraft"
     ],
-    "summary": "An account agreement may let a bank debit a special deposit for overdraft fees or related costs on that account, without setting any amount.",
-    "detail": "For a 'special deposit' (a deposit for the benefit of at least 2 beneficiaries, for a permissible purpose, and subject to a contingency, such as an escrow-type account), the account agreement may authorize the bank to debit the special deposit for a bank fee that relates to an overdraft in the special deposit account or for costs that relate directly to the special deposit. It applies to banks holding special deposits under Delaware law, not to ordinary consumer checking accounts, and it sets no fee amount.",
+    "summary": "An account agreement may let a bank or credit union debit a special deposit for overdraft fees and directly related costs, with no amount set.",
+    "detail": "For a 'special deposit' (a deposit for the benefit of at least 2 beneficiaries, for a permissible purpose, and subject to a contingency, such as an escrow-type account), the account agreement may authorize the bank to debit the special deposit for a bank fee that relates to an overdraft in the special deposit account or for costs that relate directly to the special deposit. It applies to banks (which the act defines to include savings banks, savings and loan associations, credit unions and trust companies) holding special deposits under Delaware law, not to ordinary consumer checking accounts, and it sets no fee amount.",
     "evidence": "Official session law text (via search result): 'An account agreement may authorize the bank to debit the special deposit ... (2) For a fee assessed by the bank that relates to an overdraft in the special deposit account; (3) For costs incurred by the bank that relate directly to the special deposit'. Special deposit = deposit 'for the benefit of at least 2 beneficiaries ... subject to a contingency'. Act takes effect January 1, 2025.",
     "url": "https://legis.delaware.gov/SessionLaws/Chapter/GetPdfDocument?fileAttachmentId=645649",
     "figures": {
@@ -653,7 +663,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force since 2013",
     "effective_date": "2013",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Fla. Stat. § 655.005 (flsenate.gov / leg.state.fl.us) defines 'financial institution' as a state or federal savings or thrift association, bank, savings bank, trust company, credit union and listed international and other entities.",
     "applies_to": [
       "check_cashing"
     ],
@@ -965,7 +976,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_banks",
+    "coverage_note": "205 ILCS 605/1 (ilga.gov) defines 'financial institution' as Illinois banks (and out-of-state bank branches), savings banks, savings and loan associations, and federally chartered commercial banks, savings banks or S&Ls operating in Illinois; credit unions are not named.",
     "applies_to": [
       "minimum_balance",
       "monthly_maintenance"
@@ -991,7 +1003,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_banks",
+    "coverage_note": "205 ILCS 605/1 (ilga.gov) defines 'financial institution' as Illinois banks (and out-of-state bank branches), savings banks, savings and loan associations, and federally chartered commercial banks, savings banks or S&Ls operating in Illinois; credit unions are not named.",
     "applies_to": [],
     "summary": "A financial institution must give consumer deposit account holders a statement of all account fees at opening and at least once each calendar year.",
     "detail": "A financial institution must give a disclosure statement listing all fees charged for a consumer deposit account at the initial deposit and at least once each calendar year to every consumer deposit account holder.",
@@ -1561,7 +1574,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Minn. Stat. § 48.512, subd. 1 (revisor.mn.gov) defines 'financial intermediary' as any person doing business in Minnesota who offers transaction accounts to the public, so it reaches any bank, thrift or credit union regardless of charter.",
     "applies_to": [],
     "summary": "Each financial intermediary sets transaction account service charges by sound business judgment, and they must be reasonable and set competitively, not by agreement.",
     "detail": "Each financial intermediary (as defined in § 48.512) sets its own transaction account service charges, not otherwise limited by law, by sound business judgment; the charges must be reasonable in relation to cost plus profit, deterring misuse, competitive position and safety and soundness, and must be set competitively, not by agreement with other institutions.",
@@ -1579,7 +1593,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Minn. Stat. § 48.512, subd. 1 (revisor.mn.gov) defines 'financial intermediary' as any person doing business in Minnesota who offers transaction accounts to the public, so it reaches any bank, thrift or credit union regardless of charter.",
     "applies_to": [
       "deposited_item_return"
     ],
@@ -1731,13 +1746,14 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "RSMo § 447.503 (revisor.mo.gov) defines 'banking organization' as any bank, trust company or safe deposit company and 'financial organization' as any savings and loan association, credit union or loan and investment company engaged in business in Missouri, with no charter limit.",
     "applies_to": [
       "dormant_account",
       "paper_statement"
     ],
-    "summary": "For a consumer account inactive 12 months or more, a bank must send annual statements and may charge up to $5 per statement.",
-    "detail": "For a consumer deposit account inactive for 12 months or more, a bank or financial organization must issue annual statements to the depositor and may charge a service fee of up to $5 for each such statement, withdrawn from the inactive account.",
+    "summary": "A bank, thrift or credit union must send annual statements on consumer accounts inactive 12 or more months, and may charge up to $5 each.",
+    "detail": "For a consumer deposit account inactive for 12 months or more, a banking organization or financial organization (banks, trust companies, savings and loan associations and credit unions, per § 447.503) must issue annual statements to the depositor and may charge a service fee of up to $5 for each such statement, withdrawn from the inactive account.",
     "evidence": "'a bank or financial organization may charge a service fee of up to five dollars for any statement issued for inactive accounts' ... 'For any consumer deposit account that is or has been inactive for twelve months or more, such bank or financial organization shall issue annual statements' (search summary of revisor.mo.gov text).",
     "url": "https://www.revisor.mo.gov/main/PageSelect.aspx?section=447.200&bid=35074",
     "figures": {
@@ -1756,7 +1772,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "state_banks",
+    "coverage_note": "Miss. Code § 81-5-1 as summarized on billstatus.ls.state.ms.us / dbcf.ms.gov gives parity to state-chartered banks, savings associations, S&Ls and savings banks; it is a grant of powers to state charters only.",
     "applies_to": [],
     "summary": "A state bank, savings association or savings bank may exercise its federal counterpart's powers with the Commissioner's prior approval.",
     "detail": "A state-chartered bank, savings association or savings bank may exercise the rights and powers of its federally chartered counterpart operating in Mississippi, under the same conditions, with prior approval from the Commissioner of Banking and Consumer Finance after an application showing the federal counterpart has the right; the statute also gives state banks national-bank powers as prescribed by State Board of Banking Review regulation.",
@@ -1831,6 +1848,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "N.C. Gen. Stat. § 54C-168 (ncleg.gov) speaks of 'a savings bank' under Chapter 54C (Savings Banks), whose § 54C-4 covers state savings banks organized under that chapter, a narrow class of North Carolina savings banks only.",
     "applies_to": [
       "deposited_item_return",
       "nsf"
@@ -1852,6 +1870,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Definition not seen; coded from the statute's text: N.C. Gen. Stat. § 54B-147 (ncleg.gov) speaks of a savings and loan association under Chapter 54B (Savings and Loan Associations), a narrow class of North Carolina savings associations only.",
     "applies_to": [
       "deposited_item_return",
       "nsf"
@@ -1929,6 +1948,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "N.C. Gen. Stat. § 25-3-506 (ncleg.gov, heading 'Collection of processing fee for returned checks') lets a person who accepts a check for goods or services charge the fee, so it binds payees, not a bank's fee to its depositor.",
     "applies_to": [],
     "summary": "This payee rule lets a person accepting a check for goods or services charge up to $35 when the bank refuses it for insufficient funds.",
     "detail": "A person who accepts a check for goods or services may charge a processing fee of up to $35 when the payor bank refuses payment for insufficient funds or because the drawer has no account; this is a payee rule, not a bank fee rule.",
@@ -1993,6 +2013,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "N.D.C.C. ch. 32-09.1 (ndlegis.gov) designates as garnishee whoever the summons is issued against, and § 32-09.1-10 makes the plaintiff tender the $40 fee, so it sets what a creditor pays any garnishee, not a bank's fee to its depositor.",
     "applies_to": [
       "garnishment_levy"
     ],
@@ -2056,7 +2077,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "The Nebraska Uniform Special Deposits Act (nebraskalegislature.gov, § 8-3202) defines 'financial institution' as a bank, savings bank, building and loan, S&L or credit union chartered by the United States, Nebraska or another state, plus similar federally insured organizations, trust companies and some digital asset depositories.",
     "applies_to": [
       "overdraft"
     ],
@@ -2333,7 +2355,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "NRS ch. 657 (leg.state.nv.us, as quoted in search) defines 'financial institution' as an institution licensed under NRS Title 55/56 or chapter 645B, or a similar institution chartered or licensed under federal law, so it reaches state and federal banks, thrifts and credit unions; the exact definition section number was not seen.",
     "applies_to": [
       "nsf",
       "overdraft"
@@ -2517,13 +2540,14 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "CPLR 5205(n) (nysenate.gov, as quoted in search) defines 'banking institution' for article 52 as all banks, trust companies, savings banks, S&Ls, credit unions and foreign banking corporations chartered or licensed under New York law, foreign banks with a New York branch, and nationally chartered banks; federal thrifts and federal credit unions are not expressly named.",
     "applies_to": [
       "garnishment_levy",
       "legal_process"
     ],
     "summary": "A banking institution that cannot lawfully restrain a debtor's account, or restrains it unlawfully, may charge the debtor no fee whatever its agreement says.",
-    "detail": "If a banking institution served with a restraining notice cannot lawfully restrain a judgment debtor's account, or a restraint is placed in violation of the CPLR, the institution may charge the debtor no fee, whatever its account agreement or fee schedule says. This reaches any 'banking institution' served with a New York restraining notice; the statutory definition of that term was not checked here.",
+    "detail": "If a banking institution served with a restraining notice cannot lawfully restrain a judgment debtor's account, or a restraint is placed in violation of the CPLR, the institution may charge the debtor no fee, whatever its account agreement or fee schedule says. This reaches any 'banking institution' served with a New York restraining notice; CPLR 5205(n) defines that term to include banks, savings banks, S&Ls and credit unions chartered under New York law and nationally chartered banks.",
     "evidence": "Quoted in nycourts.gov opinions (e.g. Jackson v Bank of Am., 2017 NY Slip Op 02780): 'In the event that a banking institution served with a restraining notice cannot lawfully restrain a judgment debtor's banking institution account, or a restraint is placed on the judgment debtor's account in violation of any section of this chapter, the banking institution shall charge no fee to the judgment debtor regardless of any terms of agreement, or schedule of fees, or other contract between the judgment debtor and the banking institution.' Subdivision heading: 'Fee for banking institution's costs in processing a restraining notice for an account.'",
     "url": "https://www.nysenate.gov/legislation/laws/CVP/5222",
     "verification": "official_excerpt",
@@ -2538,12 +2562,13 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force since 2024-04-01",
     "effective_date": "2024-04-01",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "CPLR 5205(n) (nysenate.gov, as quoted in search) defines 'banking institution' for article 52 as all banks, trust companies, savings banks, S&Ls, credit unions and foreign banking corporations chartered or licensed under New York law, foreign banks with a New York branch, and nationally chartered banks; federal thrifts and federal credit unions are not expressly named.",
     "applies_to": [
       "garnishment_levy",
       "legal_process"
     ],
-    "summary": "A bank may not restrain the exempt amount, set at $3,425, if exempt payments were direct-deposited within 45 days before a restraining notice.",
+    "summary": "A banking institution may not restrain the exempt amount, set at $3,425, if exempt payments were direct-deposited within 45 days before a restraining notice.",
     "detail": "If statutorily exempt payments (such as Social Security, SSI, public assistance, veterans' benefits, unemployment, pensions or child support) were direct-deposited into the account in the 45 days before a restraining notice, the bank may not restrain the CPLR 5205(l) amount, which DFS set at $3,425 from April 1, 2024 (next adjustment April 1, 2027). Otherwise a restraining notice does not apply to an amount up to 240 times the greater of the federal or New York State minimum hourly wage.",
     "evidence": "DFS 'Amount Exempt from Judgments': new exemption amount $3,425 effective April 1, 2024, not applicable to restraining notices served before that date; prior amounts $2,500 (2009) ... $3,000 (2021); adjustments every three years. CPLR 5222(i) quoted by DFS: restraining notice 'shall not apply to an amount equal to or less than the greater of two hundred forty times the federal minimum hourly wage ... or two hundred forty times the state minimum hourly wage'. nycourts.gov: if exempt direct deposits were made 'during the forty-five day period preceding the restraining notice', the bank 'shall not restrain' the protected amount. 'Banking institution' definition not checked.",
     "url": "https://www.dfs.ny.gov/industry_guidance/exemption_from_judgments",
@@ -2623,6 +2648,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Ohio Rev. Code § 2716.12 (codes.ohio.gov) makes the creditor's affidavit carry $1 as 'the garnishee's fee' in any non-earnings garnishment, so it sets what a creditor pays any garnishee, not a bank's fee to its depositor; the chapter's definition of garnishee was not seen.",
     "applies_to": [
       "garnishment_levy"
     ],
@@ -2915,6 +2941,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Definition not seen; coded from the statute's text as summarized: 18 Pa.C.S. § 4105 caps the service charge a payee may impose for a bad check, so it binds payees, not a bank's fee to its depositor.",
     "applies_to": [],
     "summary": "This payee rule caps a payee's bad check service charge at $50, unless bank fees charged to the payee exceeded $50.",
     "detail": "Payee rule, not a bank fee rule: the service charge a payee may impose for a bad check is capped at $50, unless financial institutions charged the payee more than $50 because of the check, in which case it may not exceed those actual fees.",
@@ -3067,6 +3094,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Definition not seen; coded from the statute's text as summarized: S.C. Code §§ 34-11-65 and 34-11-70 let a person who accepts a check collect the fee from the drawer, so they bind payees, not a bank's fee to its depositor.",
     "applies_to": [],
     "summary": "This payee rule lets a person accepting a check charge up to $25 when the bank refuses it for insufficient funds or no account.",
     "detail": "Payee rule, not a bank fee rule: a person who accepts a check may collect a processing fee of up to $25 when the payor bank refuses it for insufficient funds or no account, and a drawer of an NSF check must pay the amount plus a $25 service charge within 10 days of written notice by certified mail.",
@@ -3187,7 +3215,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Tex. Prop. Code ch. 73 defines a depository as a bank, savings and loan association, credit union or other banking organization that holds deposits in Texas (text seen only on texas.public.law, a secondary source; official capitol.texas.gov text not reached), with no charter limit.",
     "applies_to": [
       "dormant_account"
     ],
@@ -3243,7 +3272,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Utah Code § 7-16a-102 (le.utah.gov) defines 'depository institution' as a bank, S&L, savings bank, industrial loan corporation, credit union or other institution that holds deposits or share accounts, with no charter limit.",
     "applies_to": [
       "atm_non_network"
     ],
@@ -3263,7 +3293,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Utah Code § 7-16a-102 (le.utah.gov) defines 'operator' as a depository institution, a depository institution holding company or an institution they own or control that owns or contracts to operate the ATM, and 'depository institution' has no charter limit.",
     "applies_to": [
       "atm_non_network"
     ],
@@ -3340,6 +3371,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Utah Code § 7-15-1 (le.utah.gov) binds the issuer and holder of a dishonored check and exempts a holder that is a depository institution, so it binds payees, not a bank's fee to its depositor.",
     "applies_to": [],
     "summary": "This payee rule makes a dishonored check's issuer liable for the amount plus a $20 service charge, but depository institution holders are exempt.",
     "detail": "The issuer of a dishonored check is liable to the holder for the check amount plus a $20 service charge, which may not be collected if the redeposited check is honored. A depository institution holder is exempt from this rule and may instead contract with the issuer for dishonor fees.",
@@ -3464,7 +3496,8 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
-    "institutions": "other",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "Search of legislature.vermont.gov returned a Title 8 definition making 'financial institution' mean any Vermont, state or national financial institution under § 11101(32) plus credit unions and other regulated lenders chartered under Vermont, US or other state law; § 10502 itself defines only the account types, and which definition governs §§ 10501-10504 was not confirmed.",
     "applies_to": [],
     "summary": "The Commissioner may require financial institutions to offer basic checking and savings accounts if availability and cost deteriorate, with no current fee cap.",
     "detail": "Vermont declares a policy that reasonable-cost basic checking and savings accounts stay available to consumers and lets the Commissioner of Financial Regulation adopt rules requiring financial institutions to offer basic checking and savings accounts if availability and cost materially deteriorate; no standing fee cap was found in the current text.",
@@ -3653,6 +3686,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Wis. Stat. §§ 812.01 and 812.08 (docs.legis.wisconsin.gov) let a creditor proceed against any person indebted to or holding the debtor's property and entitle that garnishee to a $3 fee, so it sets what a creditor pays any garnishee, not a bank's fee to its depositor.",
     "applies_to": [
       "garnishment_levy"
     ],
@@ -3840,6 +3874,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "W. Va. Code § 32A-3-1(f) (code.wvlegislature.gov) exempts federally insured depository institutions, foreign bank agencies and governmental entities from the check-cashing article, so it binds licensed check cashers, not banks.",
     "applies_to": [
       "check_cashing"
     ],
@@ -3887,6 +3922,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "in_force",
     "institutions": "other",
+    "coverage_note": "Definition not seen; coded from the statute's text as summarized: W. Va. Code § 61-3-39e lets a payee or holder charge the fee, so it binds payees, not a bank's fee to its depositor.",
     "applies_to": [],
     "summary": "This payee rule lets a payee or holder, not the bank, charge up to $25 per check dishonored for insufficient funds.",
     "detail": "A payee or holder (not the bank) may charge up to $25 for each check, draft or order dishonored for insufficient funds.",
