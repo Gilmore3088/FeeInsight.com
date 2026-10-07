@@ -40,6 +40,7 @@ describe("/api/v1/market", () => {
     vi.mocked(getLocalMarketMembers).mockResolvedValue({
       basis: "branch_counties",
       places: ["Austin, TX"],
+      county_fips: ["48453"],
       sod_year: 2026,
       members: [
         { institution_id: 69, institution_name: "A", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 750, is_subject: true },
