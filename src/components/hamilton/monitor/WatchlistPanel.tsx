@@ -1,11 +1,10 @@
 /**
- * WatchlistPanel — right sidebar for canonical institution monitoring.
- * Sections:
- *   1. Watchlist Integrity — tracked institutions with status dots
- *   2. Queued Refresh Work — report, scenario, and watchlist rerun prompts
- *   3. Monitoring Posture — evidence and provider-work status
+ * WatchlistPanel — the side column of All changes:
+ *   1. The institution in context, with a button to watch it
+ *   2. Institutions you watch, with add (search) and remove
+ *   3. Updates waiting: reports, models and watch-list checks queued from a change
  *
- * Interactive add/remove is a client sub-component.
+ * Interactive add/remove is a client component; the server actions live in the route.
  */
 
 "use client";
@@ -16,6 +15,7 @@ import { addToWatchlist, removeFromWatchlist } from "@/app/pro/(hamilton)/monito
 import type { WatchlistEntry } from "@/lib/hamilton/monitor-data";
 import type { HamiltonRefreshJobEntry } from "@/lib/hamilton/refresh-jobs";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
+import { SERIF } from "@/components/hamilton/memo/memo";
 
 interface WatchlistPanelProps {
   entries: WatchlistEntry[];
@@ -36,66 +36,34 @@ interface InstitutionSearchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Status config matching prototype icons
+// Plain-language status for each watched institution
 // ---------------------------------------------------------------------------
 
-const STATUS_CONFIG: Record<
-  WatchlistEntry["status"],
-  { icon: React.ReactNode; label: string }
-> = {
-  current: {
-    icon: (
-      <span
-        style={{
-          fontSize: "1.25rem",
-          color: "#16a34a",
-          lineHeight: 1,
-        }}
-        title="Renewal status: Secure"
-      >
-        ✓
-      </span>
-    ),
-    label: "RENEWAL STATUS: SECURE",
-  },
-  review_due: {
-    icon: (
-      <span
-        style={{
-          fontSize: "1.25rem",
-          color: "#b45309",
-          lineHeight: 1,
-        }}
-        title="Renewal status: In Review"
-      >
-        ◷
-      </span>
-    ),
-    label: "RENEWAL STATUS: IN REVIEW",
-  },
-  unknown: {
-    icon: (
-      <span
-        style={{
-          fontSize: "1.25rem",
-          color: "#a8a29e",
-          lineHeight: 1,
-        }}
-        title="Renewal status: Unknown"
-      >
-        ○
-      </span>
-    ),
-    label: "RENEWAL STATUS: UNKNOWN",
-  },
+const STATUS_CONFIG: Record<WatchlistEntry["status"], { dot: string; label: string }> = {
+  current: { dot: "bg-warm-700", label: "Fees verified and current" },
+  review_due: { dot: "bg-terra", label: "Fee schedule being re-checked" },
+  unknown: { dot: "bg-warm-300", label: "Not yet checked" },
 };
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
+function SideHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-lg text-warm-900" style={SERIF}>
+      {children}
+    </h2>
+  );
+}
+
 function institutionLocation(result: InstitutionSearchResult): string {
   return [result.city, result.state_code].filter(Boolean).join(", ");
+}
+
+function feeCounts(verified: number, provisional: number): string {
+  const v = `${verified} verified ${verified === 1 ? "fee" : "fees"}`;
+  return provisional > 0 ? `${v}, ${provisional} not yet verified` : v;
 }
 
 function WatchlistIntegrity({
@@ -108,119 +76,59 @@ function WatchlistIntegrity({
   isPending: boolean;
 }) {
   return (
-    <div>
-      <h2
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.625rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.2em",
-          color: "var(--hamilton-text-tertiary)",
-          fontWeight: 600,
-          marginBottom: "1.5rem",
-        }}
-      >
-        Watchlist Integrity
-      </h2>
+    <div className="flex flex-col gap-3">
+      <SideHeading>Institutions you watch</SideHeading>
 
       {entries.length === 0 ? (
-        <p
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.875rem",
-            color: "var(--hamilton-text-secondary)",
-            lineHeight: 1.6,
-            paddingBottom: "0.5rem",
-          }}
-        >
-          No institutions tracked. Add one below to begin monitoring.
+        <p className="text-pretty text-sm leading-relaxed text-warm-700">
+          You aren&apos;t watching any institutions yet. Add one below to see its fee changes here.
         </p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
           {entries.map((entry) => {
-            const { icon, label } = STATUS_CONFIG[entry.status];
+            const { dot, label } = STATUS_CONFIG[entry.status];
             return (
-              <div
-                key={entry.institutionId}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "1rem",
-                  backgroundColor: "var(--hamilton-surface-container-low, #f5f3ee)",
-                  transition: "background-color 0.15s ease",
-                }}
-                className="watchlist-row-hover"
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      fontFamily: "var(--hamilton-font-sans)",
-                      fontSize: "0.875rem",
-                      fontWeight: 600,
-                      color: "var(--hamilton-on-surface)",
-                      marginBottom: "0.125rem",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {entry.displayName}
-                  </p>
-                  <p
-                    style={{
-                      fontFamily: "var(--hamilton-font-sans)",
-                      fontSize: "0.625rem",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.1em",
-                      color: "var(--hamilton-text-tertiary)",
-                    }}
-                  >
-                    {label}
-                  </p>
+              <li key={entry.institutionId} className="flex items-start gap-3 px-4 py-3">
+                <span className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-warm-900">{entry.displayName}</p>
+                  <p className="text-xs text-warm-600">{label}</p>
+                  <div className="mt-1 flex gap-3 text-xs">
+                    <Link
+                      href={`/pro/analyze?instId=${entry.institutionId}&intent=watchlist`}
+                      className="text-terra-text underline"
+                    >
+                      Ask about it
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => onRemove(entry.institutionId)}
+                      disabled={isPending}
+                      className="text-warm-600 underline hover:text-warm-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Stop watching
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexShrink: 0 }}>
-                  {icon}
-                  <Link
-                    href={`/pro/analyze?instId=${entry.institutionId}&intent=watchlist`}
-                    style={{
-                      fontSize: "0.6875rem",
-                      color: "var(--hamilton-primary)",
-                      textDecoration: "none",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Analyze
-                  </Link>
-                  <button
-                    onClick={() => onRemove(entry.institutionId)}
-                    disabled={isPending}
-                    style={{
-                      fontSize: "0.6875rem",
-                      color: "var(--hamilton-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: isPending ? "not-allowed" : "pointer",
-                      padding: 0,
-                      opacity: isPending ? 0.5 : 1,
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </div>
   );
 }
 
 function refreshJobLabel(jobType: HamiltonRefreshJobEntry["jobType"]): string {
-  if (jobType === "report_refresh") return "Report refresh";
-  if (jobType === "scenario_refresh") return "Scenario refresh";
-  return "Watchlist review";
+  if (jobType === "report_refresh") return "Report to refresh";
+  if (jobType === "scenario_refresh") return "Price model to rerun";
+  return "Watch list to check";
+}
+
+function refreshJobLinkLabel(jobType: HamiltonRefreshJobEntry["jobType"]): string {
+  if (jobType === "report_refresh") return "Open the report";
+  if (jobType === "scenario_refresh") return "Open the model";
+  return "See its changes";
 }
 
 function refreshJobHref(job: HamiltonRefreshJobEntry): string {
@@ -238,250 +146,57 @@ function refreshJobHref(job: HamiltonRefreshJobEntry): string {
 
 function refreshJobEvidenceLabel(policy: HamiltonRefreshJobEntry["evidencePolicy"]): string | null {
   if (!policy) return null;
-  if (policy === "verified-only") return "Verified-only";
-  if (policy === "provisional-first") return "Provisional-first";
-  if (policy === "source-diligence") return "Source diligence";
+  if (policy === "verified-only") return "Verified fees only";
+  if (policy === "provisional-first") return "Includes fees not yet verified";
+  if (policy === "source-diligence") return "Source still being checked";
   return null;
 }
 
-function RefreshJobQueue({ jobs }: { jobs: HamiltonRefreshJobEntry[] }) {
+function RefreshJobQueue({
+  jobs,
+  watchedCount,
+}: {
+  jobs: HamiltonRefreshJobEntry[];
+  watchedCount: number;
+}) {
+  const queuedToRun = jobs.filter((job) => job.providerCallQueued).length;
+  const waitingOnYou = jobs.length - queuedToRun;
+
   return (
-    <div>
-      <h2
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.625rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.2em",
-          color: "var(--hamilton-text-tertiary)",
-          fontWeight: 600,
-          marginBottom: "1.5rem",
-        }}
-      >
-        Queued Refresh Work
-      </h2>
+    <div className="flex flex-col gap-3">
+      <div>
+        <SideHeading>Updates waiting</SideHeading>
+        <p className="mt-1 text-pretty text-sm text-warm-600">
+          You watch {watchedCount} {watchedCount === 1 ? "institution" : "institutions"}.{" "}
+          {waitingOnYou} {waitingOnYou === 1 ? "update waits" : "updates wait"} for you to rerun;{" "}
+          {queuedToRun} {queuedToRun === 1 ? "is" : "are"} queued to run.
+        </p>
+      </div>
 
       {jobs.length === 0 ? (
-        <p
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.875rem",
-            color: "var(--hamilton-text-secondary)",
-            lineHeight: 1.6,
-          }}
-        >
-          No report, scenario, or watchlist refresh work is queued for this scope.
+        <p className="text-pretty text-sm leading-relaxed text-warm-700">
+          No report, price model or watch-list check is waiting on a change right now.
         </p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {jobs.map((job) => (
-            <div
-              key={job.id}
-              style={{
-                padding: "1rem",
-                border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-                backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-              }}
-            >
-              <p
-                style={{
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.625rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "var(--hamilton-primary)",
-                  fontWeight: 700,
-                  marginBottom: "0.375rem",
-                }}
-              >
-                {refreshJobLabel(job.jobType)}
-              </p>
-              <p
-                style={{
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.8125rem",
-                  color: "var(--hamilton-on-surface)",
-                  lineHeight: 1.45,
-                  marginBottom: "0.75rem",
-                }}
-              >
-                {job.reason}
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.375rem",
-                  marginBottom: "0.75rem",
-                }}
-              >
-                {refreshJobEvidenceLabel(job.evidencePolicy) && (
-                  <span
-                    style={{
-                      border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-                      borderRadius: "999px",
-                      color: "var(--hamilton-text-tertiary)",
-                      fontFamily: "var(--hamilton-font-sans)",
-                      fontSize: "0.5625rem",
-                      fontWeight: 700,
-                      letterSpacing: "0.08em",
-                      padding: "0.125rem 0.375rem",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {refreshJobEvidenceLabel(job.evidencePolicy)}
-                  </span>
-                )}
-                <span
-                  style={{
-                    border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-                    borderRadius: "999px",
-                    color: job.providerCallQueued ? "#991b1b" : "var(--hamilton-text-tertiary)",
-                    fontFamily: "var(--hamilton-font-sans)",
-                    fontSize: "0.5625rem",
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    padding: "0.125rem 0.375rem",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {job.providerCallQueued ? "Provider queued" : "Manual rerun"}
-                </span>
-                {!job.providerCallQueued && (
-                  <span
-                    style={{
-                      border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-                      borderRadius: "999px",
-                      color: "var(--hamilton-text-tertiary)",
-                      fontFamily: "var(--hamilton-font-sans)",
-                      fontSize: "0.5625rem",
-                      fontWeight: 700,
-                      letterSpacing: "0.08em",
-                      padding: "0.125rem 0.375rem",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    No provider queued
-                  </span>
-                )}
-              </div>
-              <Link
-                href={refreshJobHref(job)}
-                style={{
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.6875rem",
-                  color: "var(--hamilton-primary)",
-                  textDecoration: "none",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Open Workflow
-              </Link>
-            </div>
-          ))}
-        </div>
+        <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+          {jobs.map((job) => {
+            const evidence = refreshJobEvidenceLabel(job.evidencePolicy);
+            return (
+              <li key={job.id} className="px-4 py-3">
+                <p className="text-sm font-medium text-warm-900">{refreshJobLabel(job.jobType)}</p>
+                <p className="mt-0.5 text-pretty text-sm leading-relaxed text-warm-700">{job.reason}</p>
+                <p className="mt-1 text-xs text-warm-600">
+                  {job.providerCallQueued ? "Queued to run" : "Waiting for you to rerun"}
+                  {evidence ? ` · ${evidence}` : ""}
+                </p>
+                <Link href={refreshJobHref(job)} className="mt-1 inline-block text-sm text-terra-text underline">
+                  {refreshJobLinkLabel(job.jobType)}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </div>
-  );
-}
-
-function MonitoringPostureCard({
-  entries,
-  refreshJobs,
-}: {
-  entries: WatchlistEntry[];
-  refreshJobs: HamiltonRefreshJobEntry[];
-}) {
-  const providerQueuedCount = refreshJobs.filter((job) => job.providerCallQueued).length;
-  const manualRerunCount = refreshJobs.length - providerQueuedCount;
-  const postureItems = [
-    { label: "Canonical IDs", value: String(entries.length) },
-    { label: "Manual reruns", value: String(manualRerunCount) },
-    { label: "Provider queued", value: String(providerQueuedCount) },
-  ];
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        overflow: "hidden",
-        borderRadius: "var(--hamilton-radius-lg, 0.5rem)",
-        border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-        backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-        padding: "1rem",
-      }}
-    >
-      <p
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.625rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.2em",
-          color: "var(--hamilton-text-tertiary)",
-          fontWeight: 700,
-          marginBottom: "0.875rem",
-        }}
-      >
-        Monitoring Posture
-      </p>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: "0.5rem",
-          marginBottom: "0.875rem",
-        }}
-      >
-        {postureItems.map((item) => (
-          <div
-            key={item.label}
-            style={{
-              minWidth: 0,
-              border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-              backgroundColor: "var(--hamilton-surface-container-low, #f5f3ee)",
-              padding: "0.625rem",
-            }}
-          >
-            <span
-              style={{
-                display: "block",
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.5625rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                color: "var(--hamilton-text-tertiary)",
-                marginBottom: "0.25rem",
-              }}
-            >
-              {item.label}
-            </span>
-            <span
-              style={{
-                display: "block",
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "1rem",
-                fontWeight: 800,
-                color: "var(--hamilton-on-surface)",
-              }}
-            >
-              {item.value}
-            </span>
-          </div>
-        ))}
-      </div>
-      <p
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.75rem",
-          color: "var(--hamilton-text-secondary)",
-          lineHeight: 1.5,
-        }}
-      >
-        Monitor work stays tied to matched institutions, evidence-policy labels, and manual reruns unless
-        provider work is explicitly queued.
-      </p>
     </div>
   );
 }
@@ -497,78 +212,30 @@ function SelectedInstitutionPrompt({
   onWatch: () => void;
   isPending: boolean;
 }) {
+  const place = [selectedInstitution.city, selectedInstitution.stateCode].filter(Boolean).join(", ");
   return (
-    <div
-      style={{
-        padding: "1rem",
-        border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-        backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-      }}
-    >
-      <p
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.625rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: "var(--hamilton-text-tertiary)",
-          fontWeight: 700,
-          marginBottom: "0.5rem",
-        }}
-      >
-        Selected Institution
-      </p>
-      <p
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.9375rem",
-          fontWeight: 700,
-          color: "var(--hamilton-on-surface)",
-          lineHeight: 1.3,
-          marginBottom: "0.375rem",
-        }}
-      >
+    <div className="rounded-lg border border-warm-300 bg-warm-50 px-4 py-4">
+      <p className="text-xs text-warm-600">Looking at</p>
+      <p className="mt-0.5 text-lg leading-snug text-warm-900" style={SERIF}>
         {selectedInstitution.name}
       </p>
-      <p
-        style={{
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.75rem",
-          color: "var(--hamilton-text-secondary)",
-          lineHeight: 1.5,
-          marginBottom: "0.875rem",
-        }}
-      >
-        ID {selectedInstitution.id}
-        {[selectedInstitution.city, selectedInstitution.stateCode].filter(Boolean).length > 0
-          ? ` · ${[selectedInstitution.city, selectedInstitution.stateCode].filter(Boolean).join(", ")}`
-          : ""}{" "}
-        · {selectedInstitution.feePublicationLabel} · {selectedInstitution.publishedFeeCount} verified ·{" "}
-        {selectedInstitution.provisionalFeeCount} provisional
+      <p className="mt-1 text-xs leading-relaxed text-warm-600">
+        {place ? `${place} · ` : ""}
+        {selectedInstitution.feePublicationLabel} ·{" "}
+        {feeCounts(selectedInstitution.publishedFeeCount, selectedInstitution.provisionalFeeCount)}
       </p>
       <button
         type="button"
         onClick={onWatch}
         disabled={isPending || isTracked}
-        style={{
-          width: "100%",
-          fontFamily: "var(--hamilton-font-sans)",
-          fontSize: "0.75rem",
-          fontWeight: 600,
-          padding: "0.625rem 1rem",
-          background: isTracked
-            ? "var(--hamilton-surface-container-low, #f5f3ee)"
-            : "linear-gradient(to bottom right, var(--hamilton-primary), var(--hamilton-primary-container))",
-          color: isTracked ? "var(--hamilton-text-secondary)" : "#ffffff",
-          border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-          borderRadius: "var(--hamilton-radius-md, 0.25rem)",
-          cursor: isPending || isTracked ? "not-allowed" : "pointer",
-          opacity: isPending ? 0.6 : 1,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
+        className={
+          "mt-3 w-full rounded-md px-3.5 py-2 text-sm font-medium disabled:cursor-not-allowed " +
+          (isTracked
+            ? "border border-warm-300 bg-warm-100 text-warm-700"
+            : "bg-terra text-white hover:bg-terra-dark disabled:opacity-60")
+        }
       >
-        {isTracked ? "Already Watched" : "Watch Selected Institution"}
+        {isTracked ? "You watch this institution" : "Watch this institution"}
       </button>
     </div>
   );
@@ -637,151 +304,65 @@ function InstitutionSearchAdd({
   }, [query]);
 
   return (
-    <div
-      style={{
-        paddingTop: "1rem",
-        borderTop: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-      }}
-    >
-      <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor="watch-search" className="text-sm font-medium text-warm-800">
+        Watch another institution
+      </label>
+      <div className="relative">
         <input
+          id="watch-search"
           type="search"
           value={query}
           onChange={(e) => updateQuery(e.target.value)}
           onFocus={() => query.trim().length >= 2 && setShowSuggestions(true)}
           onBlur={() => window.setTimeout(() => setShowSuggestions(false), 160)}
-          placeholder="Search institution to watch"
+          placeholder="Search by name"
           disabled={isPending}
-          style={{
-            width: "100%",
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.8125rem",
-            padding: "0.5rem 0.75rem",
-            border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-            borderRadius: "var(--hamilton-radius-md, 0.25rem)",
-            backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-            color: "var(--hamilton-on-surface)",
-            outline: "none",
-            minWidth: 0,
-          }}
+          className="w-full min-w-0 rounded-md border border-warm-300 bg-warm-50 px-3 py-2 text-sm text-warm-900 placeholder:text-warm-600 focus:border-warm-600 focus:outline-none disabled:opacity-60"
         />
-        <p
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.6875rem",
-            color: "var(--hamilton-text-tertiary)",
-            lineHeight: 1.5,
-          }}
-        >
-          Choose a matched result so Monitor stores the canonical institution ID.
-        </p>
 
         {showSuggestions && (suggestions.length > 0 || isSearching || searchError) && (
-          <div
-            style={{
-              position: "absolute",
-              top: "2.45rem",
-              left: 0,
-              right: 0,
-              zIndex: 20,
-              maxHeight: "18rem",
-              overflowY: "auto",
-              border: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-              borderRadius: "var(--hamilton-radius-md, 0.25rem)",
-              backgroundColor: "#ffffff",
-              boxShadow: "0 18px 45px rgba(55, 42, 35, 0.14)",
-            }}
-          >
-            {isSearching && (
-              <div
-                style={{
-                  padding: "0.75rem",
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--hamilton-text-tertiary)",
-                }}
-              >
-                Searching...
-              </div>
-            )}
+          <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-md border border-warm-300 bg-warm-50 shadow-lg">
+            {isSearching && <div className="px-3 py-2.5 text-xs text-warm-600">Searching...</div>}
             {searchError && (
-              <div
-                style={{
-                  padding: "0.75rem",
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--hamilton-error, #ba1a1a)",
-                }}
-              >
+              <div role="alert" className="px-3 py-2.5 text-xs text-terra-text">
                 {searchError}
               </div>
             )}
-            {!isSearching && !searchError && suggestions.map((result) => (
-              <button
-                key={result.id}
-                type="button"
-                onMouseDown={() => {
-                  onAdd(result);
-                  setQuery("");
-                  setSuggestions([]);
-                  setShowSuggestions(false);
-                }}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: "0.75rem",
-                  border: "none",
-                  borderBottom: "1px solid var(--hamilton-outline-variant, #d8c2b8)",
-                  background: "#ffffff",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  style={{
-                    display: "block",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    fontFamily: "var(--hamilton-font-sans)",
-                    fontSize: "0.8125rem",
-                    fontWeight: 700,
-                    color: "var(--hamilton-on-surface)",
+            {!isSearching &&
+              !searchError &&
+              suggestions.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  onMouseDown={() => {
+                    onAdd(result);
+                    setQuery("");
+                    setSuggestions([]);
+                    setShowSuggestions(false);
                   }}
+                  className="block w-full border-b border-warm-200 px-3 py-2.5 text-left last:border-b-0 hover:bg-warm-100"
                 >
-                  {result.institution_name}
-                </span>
-                <span
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "0.5rem",
-                    marginTop: "0.25rem",
-                    fontFamily: "var(--hamilton-font-sans)",
-                    fontSize: "0.6875rem",
-                    color: "var(--hamilton-text-secondary)",
-                  }}
-                >
-                  <span>ID {result.id}</span>
-                  {institutionLocation(result) && <span>{institutionLocation(result)}</span>}
-                  <span>{result.fee_publication_label}</span>
-                  <span>{result.published_fee_count} verified</span>
-                  <span>{result.provisional_fee_count} provisional</span>
-                </span>
-              </button>
-            ))}
+                  <span className="block truncate text-sm font-medium text-warm-900">
+                    {result.institution_name}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-warm-600">
+                    {[
+                      institutionLocation(result),
+                      result.fee_publication_label,
+                      feeCounts(result.published_fee_count, result.provisional_fee_count),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </button>
+              ))}
           </div>
         )}
       </div>
+      <p className="text-xs text-warm-600">Pick a name from the list to add it.</p>
       {error && (
-        <p
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.75rem",
-            color: "var(--hamilton-error, #ba1a1a)",
-            marginTop: "0.375rem",
-          }}
-        >
+        <p role="alert" className="text-sm text-terra-text">
           {error}
         </p>
       )}
@@ -808,7 +389,7 @@ export function WatchlistPanel({
 
   function handleAddInstitution(institutionId: string) {
     if (entries.some((entry) => entry.institutionId === institutionId)) {
-      setError("Already tracking this institution.");
+      setError("You already watch this institution.");
       return;
     }
     setError(null);
@@ -856,7 +437,7 @@ export function WatchlistPanel({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "3rem" }}>
+    <div className="flex flex-col gap-8 text-warm-800">
       {selectedInstitution && (
         <SelectedInstitutionPrompt
           selectedInstitution={selectedInstitution}
@@ -866,23 +447,12 @@ export function WatchlistPanel({
         />
       )}
 
-      {/* 1. Watchlist Integrity */}
-      <WatchlistIntegrity
-        entries={entries}
-        onRemove={handleRemove}
-        isPending={isPending}
-      />
+      <div className="flex flex-col gap-4">
+        <WatchlistIntegrity entries={entries} onRemove={handleRemove} isPending={isPending} />
+        <InstitutionSearchAdd onAdd={handleAddSearchResult} isPending={isPending} error={error} />
+      </div>
 
-      {/* Add institution input */}
-      <InstitutionSearchAdd
-        onAdd={handleAddSearchResult}
-        isPending={isPending}
-        error={error}
-      />
-
-      <RefreshJobQueue jobs={refreshJobs} />
-
-      <MonitoringPostureCard entries={entries} refreshJobs={refreshJobs} />
+      <RefreshJobQueue jobs={refreshJobs} watchedCount={entries.length} />
     </div>
   );
 }

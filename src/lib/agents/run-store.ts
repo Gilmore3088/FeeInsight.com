@@ -51,6 +51,7 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
@@ -339,6 +340,32 @@ async function executeAgenticStep(
       dryRun: run.runKind === "dry_run",
       db: tx,
     });
+  }
+
+  // Hamilton's studies (study-*) share one dispatcher in hamilton/studies.
+  if (isStudyStep(step.stepKey)) {
+    const result = await runStudyStep(step.stepKey, {
+      db: tx,
+      runId: run.id,
+      dryRun: run.runKind === "dry_run",
+      force: params.force === true || params.force === "true",
+    });
+    return {
+      status: "completed",
+      summary: summarizeStudyStep(result),
+      detail: {
+        schema_ready: result.schemaReady,
+        study_key: result.studyKey,
+        as_of: result.asOf,
+        stored: result.stored,
+        already_current: result.alreadyCurrent,
+        study_id: result.studyId,
+        n: result.n,
+        placements: result.placements,
+        headline: result.headline,
+        dry_run: result.dryRun,
+      },
+    };
   }
 
   switch (step.stepKey) {

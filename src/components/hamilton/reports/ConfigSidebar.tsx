@@ -4,11 +4,12 @@ import { Loader2 } from "lucide-react";
 import type { ReportTemplateType } from "@/app/pro/(hamilton)/reports/actions";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { REPORT_GOALS, type ReportClientGoal } from "@/lib/hamilton/report-goal";
+import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
+import { SERIF } from "@/components/hamilton/memo/memo";
 import {
-  PeerBaselineSelector,
-  type HamiltonPeerSetOption,
-} from "@/components/hamilton/PeerBaselineSelector";
+  REPORT_GOALS,
+  type ReportClientGoal,
+} from "@/lib/hamilton/report-goal";
 
 type NarrativeTone = "consulting" | "academic" | "executive" | "technical";
 
@@ -44,7 +45,11 @@ function OptionList<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="space-y-3" role="radiogroup" aria-label={label}>
+    <div
+      className="grid gap-2 sm:grid-cols-2"
+      role="radiogroup"
+      aria-label={label}
+    >
       {options.map((option) => {
         const isActive = value === option.value;
         return (
@@ -54,24 +59,24 @@ function OptionList<T extends string>({
             role="radio"
             aria-checked={isActive}
             onClick={() => onChange(option.value)}
-            className="w-full text-left p-4 cursor-pointer transition-colors"
-            style={{
-              border: isActive ? "1px solid var(--hamilton-primary)" : "1px solid transparent",
-              backgroundColor: isActive
-                ? "var(--hamilton-surface-container-lowest)"
-                : "var(--hamilton-surface-container-high)",
-            }}
+            className={
+              "rounded-md border px-3 py-2.5 text-left transition-colors " +
+              (isActive
+                ? "border-terra bg-terra-soft"
+                : "border-warm-300 bg-white hover:border-warm-500")
+            }
           >
             <span
-              className="text-[12px] uppercase tracking-widest block"
-              style={{
-                fontWeight: isActive ? 700 : 600,
-                color: isActive ? "var(--hamilton-on-surface)" : "var(--hamilton-secondary)",
-              }}
+              className={
+                "block text-sm " +
+                (isActive
+                  ? "font-semibold text-warm-900"
+                  : "font-medium text-warm-800")
+              }
             >
               {option.label}
             </span>
-            <span className="text-[11px] mt-0.5 block" style={{ color: "var(--hamilton-secondary)" }}>
+            <span className="mt-0.5 block text-xs text-warm-600">
               {option.hint}
             </span>
           </button>
@@ -82,51 +87,87 @@ function OptionList<T extends string>({
 }
 
 /**
- * Two knobs: the client's GOAL (how decisions are ranked) and the AUDIENCE. Everything else (institution,
- * peer set, focus area) inherits from the user's profile and the chosen
- * template. The audience values map 1:1 onto the existing NarrativeTone
- * enum so the API contract is unchanged — we just relabel the buttons.
+ * Two choices: the client's goal (which decision points come first) and the
+ * audience. The audience values map 1:1 onto the existing NarrativeTone enum so
+ * the API contract is unchanged; only the labels are the reader's words.
  */
-const AUDIENCES: Array<{ value: NarrativeTone; label: string; hint: string }> = [
-  { value: "executive",  label: "Board",         hint: "Short, headline-led, decision first" },
-  { value: "consulting", label: "Internal Team", hint: "Action-oriented, names next steps" },
-  { value: "technical",  label: "Analysts",      hint: "Data-first, sample size on every benchmark" },
-  { value: "academic",   label: "Research",      hint: "Fuller context, explains method and limits" },
+const AUDIENCES: Array<{
+  value: NarrativeTone;
+  label: string;
+  forLabel: string;
+  hint: string;
+}> = [
+  {
+    value: "executive",
+    label: "Board",
+    forLabel: "the board",
+    hint: "Short, with the main point first",
+  },
+  {
+    value: "consulting",
+    label: "Your team",
+    forLabel: "your team",
+    hint: "Practical, with what to look at next",
+  },
+  {
+    value: "technical",
+    label: "Analysts",
+    forLabel: "analysts",
+    hint: "Figures first, with the number of institutions behind each",
+  },
+  {
+    value: "academic",
+    label: "Research",
+    forLabel: "research",
+    hint: "Fuller context, with the method and its limits",
+  },
 ];
 
-function formatEvidenceCounts(preview: ReportPeerCoveragePreview): string {
-  return `${preview.selectedVerifiedFeeCount} verified / ${preview.selectedProvisionalFeeCount} provisional`;
+const inputClass =
+  "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra disabled:opacity-60";
+
+function formatPeerSetSummary(peerSet: HamiltonPeerSetOption): string {
+  const charter = peerSet.charter_type
+    ? peerSet.charter_type === "credit_union"
+      ? "Credit unions"
+      : peerSet.charter_type.replace(/_/g, " ")
+    : null;
+  const parts = [
+    charter,
+    peerSet.tiers ? `asset tiers ${peerSet.tiers}` : null,
+    peerSet.districts ? `Fed districts ${peerSet.districts}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "your own list";
 }
 
-function formatReadinessTone(readiness: ReportPeerCoveragePreview["readiness"]): {
-  color: string;
-  backgroundColor: string;
-} {
+function readinessClass(
+  readiness: ReportPeerCoveragePreview["readiness"],
+): string {
   switch (readiness) {
     case "verified_comparison_ready":
-      return {
-        color: "#166534",
-        backgroundColor: "rgba(22,101,52,0.08)",
-      };
+      return "border-warm-300 bg-warm-150 text-warm-900";
     case "directional_comparison_ready":
-      return {
-        color: "#854d0e",
-        backgroundColor: "rgba(133,77,14,0.09)",
-      };
     case "peer_index_only":
-      return {
-        color: "var(--hamilton-on-surface)",
-        backgroundColor: "var(--hamilton-surface-container-lowest)",
-      };
+      return "border-warm-300 bg-warm-50 text-warm-800";
     case "source_diligence":
     case "source_needed":
-      return {
-        color: "#991b1b",
-        backgroundColor: "rgba(153,27,27,0.08)",
-      };
+      return "border-terra bg-terra-soft text-terra-text";
   }
 }
 
+function StepHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-lg text-warm-900" style={SERIF}>
+      {children}
+    </h3>
+  );
+}
+
+/**
+ * Report setup: who will read it, which peers it compares against, how much data
+ * supports it, and the button that writes it. Sits in the page's single column, never
+ * beside a finished report. (Kept under its old export name for existing imports.)
+ */
 export function ConfigSidebar({
   selectedTemplate,
   selectedInstitutionId = null,
@@ -147,231 +188,210 @@ export function ConfigSidebar({
   onGenerate,
 }: ConfigSidebarProps) {
   const canGenerate = selectedTemplate !== null && !isGenerating;
-  const activeAudience = AUDIENCES.find((a) => a.value === narrativeTone) ?? AUDIENCES[0];
-  const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
+  const activeAudience =
+    AUDIENCES.find((a) => a.value === narrativeTone) ?? AUDIENCES[0];
+  const settingsHref = hrefWithInstitutionContext(
+    "/pro/settings",
+    selectedInstitutionId,
+  );
+  const selectedPeerValue = peerSetId ?? "";
+  const peerSetKnown =
+    selectedPeerValue === "" ||
+    savedPeerSets.some((p) => String(p.id) === selectedPeerValue);
 
   return (
-    <aside className="min-w-0 lg:sticky lg:top-32 lg:col-span-4">
-      <div className="bg-surface-container-low p-5 sm:p-8">
-        <div className="mb-6">
-          <h2 className="font-headline text-3xl italic mb-1">Goal</h2>
-          <p
-            className="text-xs tracking-wide leading-relaxed"
-            style={{ color: "var(--hamilton-secondary)" }}
-          >
-            What should these decisions achieve? Hamilton orders the
-            decisions by this goal.
-          </p>
+    <form
+      className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-warm-50 p-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onGenerate();
+      }}
+    >
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <div>
+            <StepHeading>What it should help with</StepHeading>
+            <p className="mt-1 text-sm text-warm-600">
+              Sets which decision points come first. The figures stay the same.
+            </p>
+          </div>
+          <OptionList
+            label="Goal"
+            options={REPORT_GOALS}
+            value={clientGoal}
+            onChange={onClientGoalChange}
+          />
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onGenerate();
-          }}
-        >
-          <OptionList label="Goal" options={REPORT_GOALS} value={clientGoal} onChange={onClientGoalChange} />
 
-          <div className="mt-8 mb-4">
-            <h2 className="font-headline text-3xl italic mb-1">Audience</h2>
-            <p
-              className="text-xs tracking-wide leading-relaxed"
-              style={{ color: "var(--hamilton-secondary)" }}
-            >
-              Who is this report for? Hamilton tunes voice, depth, and structure
-              to match.
+        <div className="flex flex-col gap-3">
+          <div>
+            <StepHeading>Who will read it</StepHeading>
+            <p className="mt-1 text-sm text-warm-600">
+              Hamilton adjusts length, depth and tone to suit.
             </p>
           </div>
-          <OptionList label="Audience" options={AUDIENCES} value={narrativeTone} onChange={onNarrativeToneChange} />
+          <OptionList
+            label="Audience"
+            options={AUDIENCES}
+            value={narrativeTone}
+            onChange={onNarrativeToneChange}
+          />
+        </div>
 
-          {/* CTA */}
-          <div className="pt-7">
-            <PeerBaselineSelector
-              id="report-peer-baseline"
-              value={peerSetId}
-              defaultLabel={defaultPeerSetLabel}
-              peerSets={savedPeerSets}
-              disabled={isGenerating}
-              onChange={onPeerSetChange}
-            />
+        <div className="flex flex-col gap-3">
+          <div>
+            <StepHeading>Compare against</StepHeading>
+            <p className="mt-1 text-sm text-warm-600">
+              The peer group behind every comparison. If it is too small for a
+              fee, Hamilton uses all institutions nationally and says so.
+            </p>
           </div>
-
-          <div
-            className="mt-6 border-t pt-5"
-            style={{ borderColor: "rgba(216,194,184,0.24)" }}
+          <label htmlFor="report-peer-baseline" className="sr-only">
+            Peer group
+          </label>
+          <select
+            id="report-peer-baseline"
+            value={selectedPeerValue}
+            disabled={isGenerating}
+            onChange={(event) => onPeerSetChange(event.target.value || null)}
+            className={inputClass}
           >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span
-                className="text-[10px] uppercase tracking-[0.2em]"
-                style={{ color: "var(--hamilton-secondary)" }}
-              >
-                Evidence Preview
-              </span>
-              {isPeerCoverageLoading && (
-                <span
-                  className="text-[10px] uppercase tracking-[0.16em]"
-                  style={{ color: "var(--hamilton-secondary)" }}
-                >
-                  Checking
-                </span>
-              )}
-            </div>
-
-            {peerCoverageError && (
-              <p
-                className="text-[11px] leading-relaxed"
-                style={{ color: "#991b1b" }}
-              >
-                Coverage unavailable: {peerCoverageError}
-              </p>
+            <option value="">{defaultPeerSetLabel}</option>
+            {!peerSetKnown && (
+              <option value={selectedPeerValue}>
+                Saved peer group #{selectedPeerValue}
+              </option>
             )}
-
-            {!peerCoverageError && !peerCoveragePreview && !isPeerCoverageLoading && (
-              <p
-                className="text-[11px] leading-relaxed"
-                style={{ color: "var(--hamilton-secondary)" }}
-              >
-                No template selected.
-              </p>
-            )}
-
-            {!peerCoverageError && peerCoveragePreview && (
-              <div className="space-y-3">
-                <div
-                  className="rounded-md px-3 py-2 text-[12px] font-semibold"
-                  style={formatReadinessTone(peerCoveragePreview.readiness)}
-                >
-                  {peerCoveragePreview.readinessLabel}
-                </div>
-
-                <dl className="grid grid-cols-2 gap-3 text-[11px]">
-                  <div>
-                    <dt style={{ color: "var(--hamilton-secondary)" }}>
-                      Baseline
-                    </dt>
-                    <dd
-                      className="mt-0.5 font-medium leading-snug"
-                      style={{ color: "var(--hamilton-on-surface)" }}
-                    >
-                      {peerCoveragePreview.peerBaselineLabel ?? "Not resolved"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt style={{ color: "var(--hamilton-secondary)" }}>
-                      Peer categories
-                    </dt>
-                    <dd
-                      className="mt-0.5 font-medium"
-                      style={{ color: "var(--hamilton-on-surface)" }}
-                    >
-                      {peerCoveragePreview.usablePeerCategoryCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt style={{ color: "var(--hamilton-secondary)" }}>
-                      Institution deltas
-                    </dt>
-                    <dd
-                      className="mt-0.5 font-medium"
-                      style={{ color: "var(--hamilton-on-surface)" }}
-                    >
-                      {peerCoveragePreview.selectedFeeDeltaCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt style={{ color: "var(--hamilton-secondary)" }}>
-                      Evidence
-                    </dt>
-                    <dd
-                      className="mt-0.5 font-medium"
-                      style={{ color: "var(--hamilton-on-surface)" }}
-                    >
-                      {formatEvidenceCounts(peerCoveragePreview)}
-                    </dd>
-                  </div>
-                </dl>
-
-                <p
-                  className="text-[11px] leading-relaxed"
-                  style={{ color: "var(--hamilton-secondary)" }}
-                >
-                  {peerCoveragePreview.readinessDetail}
-                </p>
-
-                {peerCoveragePreview.peerFallbackReason && (
-                  <p
-                    className="rounded-md px-3 py-2 text-[11px] leading-relaxed"
-                    style={{
-                      backgroundColor: "rgba(133,77,14,0.08)",
-                      color: "#854d0e",
-                    }}
-                  >
-                    {peerCoveragePreview.peerFallbackReason}
-                  </p>
-                )}
-
-                {peerCoveragePreview.focusCategoryCovered === false && (
-                  <p
-                    className="rounded-md px-3 py-2 text-[11px] leading-relaxed"
-                    style={{
-                      backgroundColor: "rgba(153,27,27,0.08)",
-                      color: "#991b1b",
-                    }}
-                  >
-                    Focus category has insufficient verified peer coverage.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="pt-8">
-            <button
-              type="submit"
-              disabled={!canGenerate}
-              className="w-full burnished-cta text-white py-5 px-8 flex items-center justify-center gap-3 transition-transform active:scale-95"
-              style={{ opacity: canGenerate ? 1 : 0.6, cursor: canGenerate ? "pointer" : "not-allowed" }}
-            >
-              {isGenerating ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>
-              )}
-              <span className="text-[10px] uppercase tracking-[0.3em] font-bold">
-                {isGenerating
-                  ? "Generating..."
-                  : `Generate ${activeAudience.label} Report`}
-              </span>
-            </button>
-
-            {!selectedTemplate && !isGenerating && (
-              <p className="text-[11px] text-center mt-3" style={{ color: "var(--hamilton-secondary)" }}>
-                Pick a report type first.
-              </p>
-            )}
-
-            {/* Implicit context — what this run will use. Quiet, single line.
-                Replaces the old Institution / Peer Set / Focus Area inputs. */}
-            <p
-              className="text-[10px] text-center mt-4 leading-relaxed"
-              style={{ color: "var(--hamilton-secondary)" }}
-            >
-              For{" "}
-              <span style={{ color: "var(--hamilton-on-surface)" }}>
-                {institutionName || "your institution"}
-              </span>
-              {" · "}
-              {peerSetLabel || "national peers"}
-              {" · "}
-              <a
-                href={settingsHref}
-                className="underline underline-offset-2 hover:opacity-70"
-              >
-                change defaults
-              </a>
-            </p>
-          </div>
-        </form>
+            {savedPeerSets.map((peerSet) => (
+              <option key={peerSet.id} value={String(peerSet.id)}>
+                {peerSet.name}: {formatPeerSetSummary(peerSet)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-    </aside>
+
+      <div className="flex flex-col gap-3 border-t border-warm-200 pt-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <StepHeading>What the data supports</StepHeading>
+          {isPeerCoverageLoading && (
+            <span className="text-xs text-warm-600">Checking…</span>
+          )}
+        </div>
+
+        {peerCoverageError && (
+          <p className="text-sm text-terra-text">
+            Hamilton couldn&apos;t check the data for this report:{" "}
+            {peerCoverageError}
+          </p>
+        )}
+
+        {!peerCoverageError &&
+          !peerCoveragePreview &&
+          !isPeerCoverageLoading && (
+            <p className="text-sm text-warm-600">
+              Choose a report above to see how much data stands behind it.
+            </p>
+          )}
+
+        {!peerCoverageError && peerCoveragePreview && (
+          <div className="flex flex-col gap-3">
+            <p
+              className={`rounded-md border px-3 py-2 text-sm font-medium ${readinessClass(peerCoveragePreview.readiness)}`}
+            >
+              {peerCoveragePreview.readinessLabel}
+            </p>
+
+            <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-warm-600">Peer group</dt>
+                <dd className="mt-0.5 font-medium leading-snug text-warm-900">
+                  {peerCoveragePreview.peerBaselineLabel ?? "Not settled yet"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-warm-600">
+                  Fees with enough peer data
+                </dt>
+                <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
+                  {peerCoveragePreview.usablePeerCategoryCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-warm-600">
+                  Your fees compared with peers
+                </dt>
+                <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
+                  {peerCoveragePreview.selectedFeeDeltaCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-warm-600">Your published fees</dt>
+                <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
+                  {peerCoveragePreview.selectedVerifiedFeeCount}
+                  {peerCoveragePreview.selectedProvisionalFeeCount > 0
+                    ? `, plus ${peerCoveragePreview.selectedProvisionalFeeCount} still in review`
+                    : ""}
+                </dd>
+              </div>
+            </dl>
+
+            <p className="text-sm leading-relaxed text-pretty text-warm-700">
+              {peerCoveragePreview.readinessDetail}
+            </p>
+
+            {peerCoveragePreview.peerFallbackReason && (
+              <p className="rounded-md border-l-2 border-terra bg-terra-soft px-3 py-2 text-sm leading-relaxed text-warm-800">
+                {peerCoveragePreview.peerFallbackReason}
+              </p>
+            )}
+
+            {peerCoveragePreview.focusCategoryCovered === false && (
+              <p className="rounded-md border-l-2 border-terra bg-terra-soft px-3 py-2 text-sm leading-relaxed text-warm-800">
+                There isn&apos;t enough verified peer data for this fee yet, so
+                the comparison will be thin.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-warm-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-warm-600">
+          For{" "}
+          <span className="font-medium text-warm-900">
+            {institutionName || "your institution"}
+          </span>
+          {" · "}
+          {peerSetLabel || "all institutions nationally"}
+          {" · "}
+          <a
+            href={settingsHref}
+            className="text-terra-text underline underline-offset-2"
+          >
+            Change defaults
+          </a>
+        </p>
+        <div className="flex flex-col items-start gap-1 sm:items-end">
+          <button
+            type="submit"
+            disabled={!canGenerate}
+            className="flex items-center justify-center gap-2 rounded-md bg-terra px-4 py-2.5 text-sm font-medium text-white hover:bg-terra-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isGenerating ? (
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            ) : null}
+            {isGenerating
+              ? "Writing the report…"
+              : `Write the report for ${activeAudience.forLabel}`}
+          </button>
+          {selectedTemplate === null && !isGenerating ? (
+            <span className="text-xs text-warm-600">
+              Choose a report above first.
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </form>
   );
 }

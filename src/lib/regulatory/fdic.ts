@@ -271,7 +271,9 @@ export function parseFdicFinancial(record: FdicRecord, q: Quarter): FdicFinancia
     noncurrent_loan_rate: num(record.NCLNLSR),
     leverage_ratio: num(record.RBC1AAJ),
     tier1_capital_ratio: num(record.RBC1RWAJ),
-    total_capital_ratio: num(record.RBCRWAJ),
+    // Community bank leverage ratio filers report no risk-based ratios: BankFind returns a null
+    // tier 1 ratio and 0 for total capital. Store that as unknown, not as zero capital.
+    total_capital_ratio: num(record.RBC1RWAJ) === null && num(record.RBCRWAJ) === 0 ? null : num(record.RBCRWAJ),
     employee_count: int(record.NUMEMP),
     branch_count: int(record.OFFDOM),
     raw_json: record,

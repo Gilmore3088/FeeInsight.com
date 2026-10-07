@@ -219,11 +219,14 @@ export async function getCountyDemographics(
   stateFips: string
 ): Promise<DemographicData[]> {
   const rows = await sql`
-    SELECT geo_id, geo_type, geo_name, state_fips,
-           median_household_income, poverty_count, total_population, year
-    FROM demographics
-    WHERE geo_type = 'county' AND state_fips = ${stateFips}
-    ORDER BY total_population DESC`;
+    SELECT * FROM (
+      SELECT DISTINCT ON (geo_id) geo_id, geo_type, geo_name, state_fips,
+             median_household_income, poverty_count, total_population, year
+      FROM demographics
+      WHERE geo_type = 'county' AND state_fips = ${stateFips}
+      ORDER BY geo_id, year DESC
+    ) latest
+    ORDER BY total_population DESC NULLS LAST`;
   return [...rows] as DemographicData[];
 }
 
@@ -706,7 +709,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.noncurrent_loan_rate) AS noncurrent_loan_rate,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.tier1_capital_ratio) AS tier1_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.leverage_ratio) AS leverage_ratio,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) AS total_capital_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) FILTER (WHERE f.total_capital_ratio <> 0) AS total_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS fee_income_ratio
       FROM me
       JOIN institution_sources s

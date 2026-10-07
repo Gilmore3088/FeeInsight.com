@@ -26,29 +26,38 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 14)).toEqual([
+    expect(candidates.slice(0, 20)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
+      "ffiec-overdraft:2026Q1",
       "fdic-sod:2026",
       "ncua-branches:2026Q2",
       "ncua-branch-geocode:pending",
       "cfpb:2026",
+      "census-acs:2025",
+      "irs-zip-income:2024",
       "sec-links:current",
       "sec-filings:batch-0",
       "beige-book:202610",
       "fred:current",
+      "fomc-minutes:current",
+      "fed-publications:current",
       "reg-news:current",
       "federal-register:current",
       "state-regulators:current",
+      "enforcement:current",
     ]);
     // Round two continues each source's history.
     // Credit union branches pull only the newest quarter, so they drop out after round one.
-    expect(candidates.slice(14, 19)).toEqual([
+    expect(candidates.slice(20, 28)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
+      "ffiec-overdraft:2026Q2",
       "fdic-sod:2025",
       "cfpb:2025",
+      "census-acs:2024",
+      "irs-zip-income:2023",
       "sec-filings:batch-1",
     ]);
     expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
@@ -58,7 +67,11 @@ describe("registry scheduler", () => {
     const bills = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
     expect(bills({})).toEqual([]);
-    expect(bills({ OPEN_STATES_API_KEY: "key" })).toHaveLength(52);
+    expect(bills({ OPEN_STATES_API_KEY: "key" })).toEqual(["current"]);
+    const federal = (env: Record<string, string>) =>
+      registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "federal-bills")?.partitions;
+    expect(federal({})).toEqual([]);
+    expect(federal({ CONGRESS_GOV_API_KEY: "key" })).toEqual(["current"]);
   });
 
   it("defaults the backfill to 2010Q1 and honours REGISTRY_BACKFILL_FROM", () => {

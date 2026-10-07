@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
-import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
 import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
 import { matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
@@ -13,7 +13,9 @@ import { cikBatch, runRegistrySecLinks } from "./sec";
 import { runRegistryRegNews } from "./reg-news";
 import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
-import { runRegistryStateBills } from "./state-bills";
+import { runRegistryStateBills, runRegistryStateBillsBatch } from "./state-bills";
+import { runRegistryFederalBills } from "./federal-bills";
+import { runRegistryFedPublications } from "./fed-publications";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -378,6 +380,114 @@ describe("registry Federal Register worker", () => {
   });
 });
 
+describe("registry FOMC minutes worker", () => {
+  const calendar = '<a href="/monetarypolicy/fomcminutes20260729.htm">Minutes</a> <a href="/monetarypolicy/fomcminutes20260617.htm">Minutes</a>';
+  const minutes = `<div id="article"><h3>Minutes of the Federal Open Market Committee</h3><p>${"Participants discussed. ".repeat(400)}</p></div><h6>footer</h6>`;
+
+  it("pulls minutes it does not have yet and skips pages that don't parse", async () => {
+    const { db, statements } = createDb([
+      ["FROM fed_fomc_minutes", () => [{ meeting_date: "2026-06-17" }]],
+      ["INSERT INTO fed_fomc_minutes", (values) => payloadOf(values).map((r) => ({ meeting_date: r.meeting_date }))],
+    ]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      new Response(url.endsWith("fomccalendars.htm") ? calendar : minutes, { status: 200 }),
+    );
+    const result = await runRegistryFomcMinutes({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ linked: 2, alreadyStored: 1, fetched: 1, stored: 1, remaining: 0, tooShort: [] });
+    expect(fetchImpl).toHaveBeenCalledWith("https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm", expect.anything());
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO fed_fomc_minutes"))!.values);
+    expect(rows[0]).toMatchObject({ meeting_date: "2026-07-29", title: "Minutes of the Federal Open Market Committee" });
+    expect(String(rows[0].content_text)).not.toContain("footer");
+  });
+});
+
+describe("registry regional Fed publications worker", () => {
+  const index = `<ul>
+    <li><a href="/rss/frbatl">Federal Reserve Bank of Atlanta</a></li>
+    <li><a href="https://fedinprint.org/rss/frbchi.rss">Federal Reserve Bank of Chicago</a></li>
+    <li><a href="/series/frbatl">Atlanta series (not a feed)</a></li>
+  </ul>`;
+  const rss = (bank: string) => `<rss><channel>
+    <item><title>${bank} research note</title><link>https://example.org/${bank}/1</link><pubDate>Mon, 05 Oct 2026 12:00:00 GMT</pubDate></item>
+    <item><title>${bank} regional report</title><link>https://example.org/${bank}/2</link></item>
+  </channel></rss>`;
+
+  it("reads the feeds the Fed in Print page links, falls back to a bank's own feed, and reports banks with none", async () => {
+    const { db, statements } = createDb([
+      ["INSERT INTO fed_publications", (values) => payloadOf(values).map((r) => ({ link: r.link }))],
+    ]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://fedinprint.org/rss") return new Response(index, { status: 200 });
+      if (url === "https://fedinprint.org/rss/frbatl") return new Response(rss("atl"), { status: 200 });
+      if (url === "https://fedinprint.org/rss/frbchi.rss") return new Response(rss("chi"), { status: 200 });
+      if (url === "https://www.dallasfed.org/rss/speeches") return new Response(rss("dal"), { status: 200 });
+      return new Response("gone", { status: 404 });
+    });
+    const result = await runRegistryFedPublications({ db, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result).toMatchObject({ indexReachable: true, fetched: 6, inserted: 6 });
+    expect(result.byBank).toMatchObject({ Atlanta: 2, Chicago: 2, Dallas: 2, Boston: 0 });
+    expect(result.banksWithoutItems).toContain("Philadelphia (no feed found)");
+    expect(result.banksWithoutItems).toContain("Boston");
+    expect(fetchImpl).not.toHaveBeenCalledWith("https://www.atlantafed.org/rss/speechindex", expect.anything());
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO fed_publications"))!.values);
+    expect(rows.find((r) => r.link === "https://example.org/atl/1")).toMatchObject({ district: 6, bank: "Atlanta", feed_url: "https://fedinprint.org/rss/frbatl" });
+  });
+
+  it("fails the step when no feed at all can be read", async () => {
+    const { db } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("down", { status: 503 }));
+    await expect(runRegistryFedPublications({ db, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } })).rejects.toThrow(/No Reserve Bank feed/);
+  });
+});
+
+describe("registry federal bills worker", () => {
+  const now = new Date("2026-10-07T03:00:00Z");
+  const page = {
+    pagination: { count: 2 },
+    bills: [
+      { congress: 119, number: "1234", type: "HR", title: "Overdraft Protection Act of 2025", latestAction: { actionDate: "2025-03-01", text: "Referred to the House Committee on Financial Services." } },
+      { congress: 119, number: "9", type: "S", title: "Farm credit modernization", latestAction: { actionDate: "2025-04-01", text: "Passed Senate." } },
+    ],
+  };
+
+  it("skips without a key", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn();
+    const result = await runRegistryFederalBills({ db, now, apiKey: null, fetchOptions: { fetchImpl } });
+    expect(result.missingKey).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))?.values).toEqual(
+      expect.arrayContaining(["federal-bills", "current", "empty"]),
+    );
+  });
+
+  it("keeps bank fee bills, sends the key as a header, and stores nothing in shadow mode", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryFederalBills({ db, now, apiKey: "k", live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ congress: 119, scanned: 2, fetched: 1, stored: 0, requests: 1, shadow: true });
+    expect(result.stages.in_committee).toBe(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("https://api.congress.gov/v3/bill/119?format=json&limit=250&offset=0");
+    expect((init as RequestInit).headers).toMatchObject({ "X-Api-Key": "k" });
+    expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
+  });
+
+  it("upserts bills when live", async () => {
+    const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    const result = await runRegistryFederalBills({ db, now, apiKey: "k", live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result.stored).toBe(1);
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
+    expect(rows[0]).toMatchObject({
+      id: "119-hr-1234",
+      identifier: "H.R. 1234",
+      url: "https://www.congress.gov/bill/119th-congress/house-bill/1234",
+      stage: "in_committee",
+    });
+  });
+});
+
 describe("registry state bills worker", () => {
   const now = new Date("2026-10-07T03:00:00Z");
   const bill = {
@@ -428,6 +538,28 @@ describe("registry state bills worker", () => {
     const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
     expect(rows[0]).toMatchObject({ id: "ocd-bill/1", state_code: "CA", stage: "passed_chamber", stage_date: "2026-05-01" });
   });
+
+  it("reads the next states that are due in one run and records each state plus the batch", async () => {
+    const { db, statements } = createDb([["FROM registry_ingest_partitions", () => [{ partition_key: "AK" }, { partition_key: "AL" }]]]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      String(url).includes("state%3Aaz") ? new Response("nope", { status: 400 }) : json(page),
+    );
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 3, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result.states).toEqual(["AR", "AZ", "CA"]);
+    expect(result.failedStates).toEqual(["AZ"]);
+    expect(result).toMatchObject({ fetched: 2, remaining: 52 - 2 - 3 });
+    const partitions = statements.filter((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partitions.map((s) => s.values[1])).toEqual(["AR", "AZ", "CA", "current"]);
+    expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
+  });
+
+  it("fails the run when every state in it fails", async () => {
+    const { db } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("bad key", { status: 401 }));
+    await expect(
+      runRegistryStateBillsBatch({ db, now, apiKey: "k", statesPerRun: 2, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } }),
+    ).rejects.toThrow(/Every state in this run failed/);
+  });
 });
 
 describe("registry state regulators worker", () => {
@@ -448,18 +580,25 @@ describe("registry dispatch", () => {
       "fdic-universe",
       "fdic-financials",
       "ncua-financials",
+      "ffiec-overdraft",
       "fdic-sod",
       "ncua-branches",
       "ncua-branch-geocode",
       "cfpb",
+      "census-acs",
+      "irs-zip-income",
       "sec-links",
       "sec-filings",
       "beige-book",
       "fred",
+      "fomc-minutes",
+      "fed-publications",
       "reg-news",
       "federal-register",
+      "federal-bills",
       "state-bills",
       "state-regulators",
+      "enforcement",
     ]);
   });
 
