@@ -170,7 +170,7 @@ function QuestionForm({
           </button>
         </form>
       )}
-      <p className="text-xs text-warm-600">Hamilton keeps your answer with your institution&apos;s figures. You can change it in Data.</p>
+      <p className="text-xs text-warm-600">Hamilton keeps your answer with your institution&apos;s figures. You can change it in My bank and data, under Account.</p>
     </div>
   );
 }

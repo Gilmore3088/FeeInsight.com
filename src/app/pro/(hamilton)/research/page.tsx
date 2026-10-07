@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
+import { defaultLayer, describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import type { FeeResearch, InstitutionFinancials, MarketIncome } from "@/lib/hamilton/workspace/types";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
@@ -227,7 +227,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
   const ws = await loadFeeWorkspace({ userId: user.id, instId: params.instId, fee: params.fee, intent: "research" });
   const inst = ws.institution;
   const instId = inst ? String(inst.id) : null;
-  const layerKey = parseLayer(params.layer ?? (ws.layers.some((l) => l.key === "local") ? "local" : "state"));
+  const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
   const research = ws.research;

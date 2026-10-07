@@ -115,3 +115,16 @@ export function describePosition(layer: LayerSummary, ownAmount: number | null):
   parts.push(`${more} charge more`);
   return parts.join(", ");
 }
+
+/**
+ * The layer a screen opens on when the reader hasn't picked one: the peer group (charter and
+ * asset size) first, then the state, district and nation, skipping any too thin for a median.
+ * The local market stays one tap away; a handful of hometown institutions is a thin yardstick
+ * for a large bank (James, 2026-10-07: "Your market (7)" for a $9B credit union).
+ */
+export function defaultLayer(layers: readonly Pick<LayerSummary, "key" | "thin">[]): LayerKey {
+  for (const key of ["peers", "state", "district", "national"] as const) {
+    if (layers.some((l) => l.key === key && !l.thin)) return key;
+  }
+  return layers.find((l) => !l.thin)?.key ?? layers[layers.length - 1]?.key ?? "state";
+}

@@ -7,12 +7,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { parseLayer } from "@/lib/hamilton/research-layers";
+import { defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
 import { modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
-import { annualItemsQuestion, waiverRateQuestion } from "@/lib/hamilton/workspace/scenario";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
@@ -27,7 +26,6 @@ import {
   MemoSection,
   PeerSplitBars,
   PriceStrip,
-  QuestionCard,
   Tabs,
   fmtMoney,
   fmtSignedMoney,
@@ -70,7 +68,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
   });
   const inst = ws.institution;
   const instId = inst ? String(inst.id) : null;
-  const layerKey = parseLayer(params.layer ?? (ws.layers.some((l) => l.key === "local") ? "local" : "state"));
+  const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
 
   const current = ws.ownAmount;
@@ -130,7 +128,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
     ],
   });
   // Hamilton asks for one figure at a time: the volume first, then the waiver share.
-  const question = current == null ? null : paidItems == null ? { q: annualItemsQuestion(ws.fee), name: "paid" } : waiverRate == null ? { q: waiverRateQuestion(ws.fee), name: "waiver" } : null;
   // The engine's market exhibit, drawn the same way as on My fees and in Ask.
   const positionExhibit = ws.research ? buildFeeAnswer(ws.research, { focus: "position" }).exhibit : null;
   const evidenceLabel = (e: "market" | "institution") => (e === "institution" ? "Your figures" : "Market data only");
@@ -165,20 +162,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
         />
       ) : null}
 
-      {question ? (
-        <QuestionCard
-          prompt={question.q.prompt}
-          why={
-            question.name === "paid"
-              ? "Turns the per-1,000 figures into your yearly fee income."
-              : "Counts only the fees you keep."
-          }
-          name={question.name}
-          inputKind={question.q.inputKind === "percent" ? "percent" : "number"}
-          action="/pro/simulate"
-          keep={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, instId }}
-        />
-      ) : null}
 
       <form id="your-figures" method="get" action="/pro/simulate" className="grid scroll-mt-24 gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-4">
         <input type="hidden" name="fee" value={ws.fee} />
@@ -206,13 +189,22 @@ export default async function ModelPage({ searchParams }: PageProps) {
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Items you charge a year (your figure)
           <input id="paid" name="paid" inputMode="numeric" defaultValue={params.paid ?? (savedFigures?.annualItems != null ? String(savedFigures.annualItems) : "")} className={inputClass} placeholder="For example 14,500" />
+          <span className="text-xs text-warm-600">Before waivers. Turns the per-1,000 figures into yearly fee income.</span>
         </label>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Share you waive or refund, in percent (your figure)
           <input name="waiver" inputMode="decimal" defaultValue={params.waiver ?? (savedFigures?.waiverRate != null ? String(Math.round(savedFigures.waiverRate * 1000) / 10) : "")} className={inputClass} placeholder="For example 12" />
         </label>
         <p className="text-xs text-warm-600 md:col-span-4">
-          {savedFigures ? "From your saved figures. Changes here aren't saved." : "Not saved. Upload them in My bank and data to keep them."}
+          {savedFigures ? "From your saved figures. Changes here aren't saved." : (
+            <>
+              Not saved. To keep them, add them in{" "}
+              <a href={hrefWithInstitutionContext("/pro/settings", instId)} className="text-terra-text underline">
+                My bank and data
+              </a>{" "}
+              under Account.
+            </>
+          )}
         </p>
       </form>
 
