@@ -35,6 +35,8 @@ interface CategoryRule {
   include: RegExp;
   /** A fee name matching this describes a different fee, whatever it was filed as. */
   exclude: RegExp;
+  /** Words that describe a different fee unless the name also matches `unless`. */
+  excludeUnless?: { pattern: RegExp; unless: RegExp };
 }
 
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
@@ -64,10 +66,18 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
   // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
   // what its own customer pays at another network's ATM.
+  // A deposit or an inquiry is its own fee, except in one row that also prices withdrawals or
+  // transfers at an ATM the bank does not own ("Deposits/Withdrawals at an ATM we do not own
+  // or operate", "Inquiries/Transfers at an ATM we do not own"; Pathfinder, Oct 7).
   atm_non_network: {
     include: /(atm|allpoint|network machine)/i,
+    excludeUnless: {
+      pattern: /(deposit|inquir)/i,
+      unless:
+        /^(?=.*(\b(deposit|inquir)\w*\s*(\/|&|\band\b|\bor\b)\s*(withdraw|w\/d|transfer|transaction)|\b(withdraw|w\/d|transfer|transaction)\w*\s*(\/|&|\band\b|\bor\b)\s*(balance\s+)?(deposit|inquir)))(?=.*(do(es)?\s+not\s+(own|operate)|don['’]t\s+(own|operate)|not\s+owned|\bnon[- ]?[\w.]+([- ]owned)?\s+atms?\b|\bnon[- ]?proprietary\s+atms?\b|\bforeign\s+atms?\b|\batms?\s+foreign\b|\b(all\s+)?other\s+networks?\b|\bother\s+(banks?|institutions?|financial\s+institutions?)['’]?\s+atms?\b|out[- ]of[- ](our\s+)?network|not\s+(in|within)\s+(our\s+)?network))/i,
+    },
     exclude:
-      /(replace|deposit|statement|card fee|annual|\bpin\b|inquir|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
+      /(replace|statement|card fee|annual|\bpin\b|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
   },
   wire_domestic_outgoing: {
     include: /wire/i,
@@ -259,7 +269,8 @@ export function checkFeeCategory(
       reason: `"${name}" states a rate ("${rate}"), so its dollar amount is not the ${canonicalFeeKey} fee`,
     };
   }
-  const excluded = name.match(rule.exclude);
+  const softExcluded = rule.excludeUnless && !rule.excludeUnless.unless.test(name) ? name.match(rule.excludeUnless.pattern) : null;
+  const excluded = name.match(rule.exclude) ?? softExcluded;
   if (excluded) {
     return {
       ok: false,

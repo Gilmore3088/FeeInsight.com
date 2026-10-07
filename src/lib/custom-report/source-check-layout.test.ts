@@ -336,4 +336,36 @@ describe("checkFeeAgainstSource daily caps", () => {
     no(drill, "Safe Deposit Box drilling", 75);
     no("Research Fee (hourly fee; 15 minute minimum charge of $10.00) | $40.00", "Research Fee (hourly fee; 15 minute minimum charge of", 10);
   });
+
+  it("reads a box-size grid and a price wrapped under its name one fee per row (Space Coast, Oct 7)", () => {
+    const sccu = [
+      "Overdraft Privilege (Per item paid)* | $30 | Stop Payment | $15",
+      "Returned Check | Verification of Deposit | $20",
+      "$30 | (Business/Quality Assurance/Expedited)",
+      "(Payable and drawn on same person)",
+      "ATMs | Safe Deposit Boxes",
+      "Non-SCCU ATM Fee (transaction fee charged by | $2.50 | 3x5 | 5x5 | 3x10 | 5x10 | 10x10",
+      "SCCU for using a non-SCCU ATM) | $60 | $80 | $90 | $110 | $185",
+      "Replacement Keys/Lock Drilling | Actual cost",
+    ].join("\n");
+    const check = (name: string, amount: number) => checkFeeAgainstSource(sccu, name, amount, ".").ok;
+    expect(check("Returned Check", 30)).toBe(true);
+    expect(check("Verification of Deposit", 20)).toBe(true);
+    expect(check("Returned Check", 20)).toBe(false);
+    expect(check("Verification of Deposit", 30)).toBe(false);
+    expect(check("Safe Deposit Box 3x5", 60)).toBe(true);
+    expect(check("Safe Deposit Boxes 5x5", 80)).toBe(true);
+    expect(check("Safe Deposit Box 10x10", 185)).toBe(true);
+    expect(check("Safe Deposit Box 3x5", 80)).toBe(false);
+    expect(check("Non-SCCU ATM Fee", 2.5)).toBe(true);
+    expect(check("Non-SCCU ATM Fee", 60)).toBe(false);
+    // The same wrap on other live schedules (USC CU, Cabrillo CU).
+    const usccu = "Legal Process Fee | ValuePlus Money Market | $10\n$35 | Monthly Service Charge if balance below $10,000";
+    expect(checkFeeAgainstSource(usccu, "Legal Process Fee", 35, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(usccu, "Legal Process Fee", 10, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(usccu, "Monthly Service Charge if balance below", 35, ".").ok).toBe(false);
+    const cabrillo = "Foreign Wire Transfer | Nonsufficient Funds Paid | $14.00\n$35.00 | ATM/Debit Card Nonsufficient Funds Paid";
+    expect(checkFeeAgainstSource(cabrillo, "Foreign Wire Transfer", 35, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(cabrillo, "Foreign Wire Transfer", 14, ".").ok).toBe(false);
+  });
 });

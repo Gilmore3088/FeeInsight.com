@@ -31,7 +31,8 @@ const PRICE_FIRST_MAX_LENGTH = 120;
  * A line that is a price ("$10.00", "Free", "Per Item | $25.00", "- $5 each"), not another
  * fee's row ("Incoming | $10.00").
  */
-const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
+// A box size opening a line ("3x5 | $60") is that box's row, not a price for the row above.
+const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d(?!\d*\s*["”']?\s*x\s*\d)|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
 /** A box or item size ("3 X 10", "5\" x 10\"") read as one word. */
 const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
@@ -200,12 +201,67 @@ export function joinLabeledFeeCardText(text: string): string {
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
-    text
-      .split(/\r?\n/)
-      .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter((line) => line.length > 0),
+    regridRows(
+      text
+        .split(/\r?\n/)
+        .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+        .map((line) => line.replace(/\s+/g, " ").trim())
+        .filter((line) => line.length > 0),
+    ),
   ).filter((line) => line.length > 0);
+}
+
+const SIZE_CELL = /^\d+\s*["”']?\s*x\s*\d+(?:\s*["”']?\s*x\s*\d+)?\s*["”']?$/i;
+const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
+const NAME_CELL = /^[A-Z][^$|]*[a-z]{3}[^$|]*$/;
+
+/**
+ * Two table layouts that print a fee's price on a different row than its name are rewritten
+ * to one fee per row, so no other fee's price sits on the name's row:
+ * - a size grid: box sizes closing one row ("... | 3x5 | 5x5 | 10x10") and their prices
+ *   closing the next ("... | $60 | $80 | $185") become "3x5 | $60" rows after the pair;
+ * - a price wrapped under its name: "Returned Check | Verification of Deposit | $20" over
+ *   "$30 | (Business ...)" is two fees, the first priced by the price opening the next row
+ *   ("Returned Check | $30", "Verification of Deposit | $20").
+ */
+function regridRows(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const cells = lines[i].split(" | ");
+    const next = lines[i + 1]?.split(" | ");
+    if (!next) {
+      out.push(lines[i]);
+      continue;
+    }
+    let sizes = 0;
+    while (sizes < cells.length && SIZE_CELL.test(cells[cells.length - 1 - sizes])) sizes += 1;
+    let prices = 0;
+    while (prices < next.length && PRICE_ONLY_CELL.test(next[next.length - 1 - prices])) prices += 1;
+    if (sizes >= 2 && prices === sizes) {
+      const head = cells.slice(0, cells.length - sizes);
+      const tail = next.slice(0, next.length - prices);
+      if (head.length > 0) out.push(head.join(" | "));
+      if (tail.length > 0) out.push(tail.join(" | "));
+      cells.slice(-sizes).forEach((size, k) => out.push(`${size} | ${next[next.length - prices + k]}`));
+      i += 1;
+      continue;
+    }
+    if (
+      cells.length === 3 &&
+      NAME_CELL.test(cells[0]) &&
+      NAME_CELL.test(cells[1]) &&
+      PRICE_ONLY_CELL.test(cells[2]) &&
+      next.length >= 2 &&
+      PRICE_ONLY_CELL.test(next[0]) &&
+      !PRICE_ONLY_CELL.test(next[1])
+    ) {
+      out.push(`${cells[0]} | ${next[0]}`, `${cells[1]} | ${cells[2]}`, next.slice(1).join(" | "));
+      i += 1;
+      continue;
+    }
+    out.push(lines[i]);
+  }
+  return out;
 }
 
 function nameStems(feeName: string): string[] {

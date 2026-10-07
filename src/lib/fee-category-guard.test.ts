@@ -382,4 +382,28 @@ describe("checkFeeCategory", () => {
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toContain('"Returned Deposit Check"');
   });
+
+  it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
+    for (const name of [
+      "Deposits/Withdrawals at an ATM we do not own or operate",
+      "Inquiries/Transfers at an ATM we do not own or operate",
+      "ATM - Non-Bank ATM Withdrawals & Inquiries",
+      "Foreign ATM Inquiry or Transfer Fee",
+      "ATM Withdrawal/Inquiry on all other networks",
+      "Inquiry or transactions at non-Seacoast ATMs",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Foreign ATM Balance Inquiry",
+      "ATM Foreign Transaction Fee - Balance Inquiry",
+      "ATM Foreign Transaction Fee - Deposit",
+      "ATM Deposit Correction",
+      "Non-Member ATM Deposit/Withdrawal",
+      "Balance Inquiry at non-Pathfinder ATM",
+      "ATM Balance Inquiry (other bank ATM) per transaction",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
+    }
+  });
 });
