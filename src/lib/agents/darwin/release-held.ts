@@ -6,7 +6,7 @@ import { categoryOpinion, loadCategoryModel, type CategoryModel } from "./catego
 import { withinAmountEnvelope } from "./envelopes";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { recordDarwinFeedback } from "./feedback";
-import { knoxStrategyFromFlags, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { feedbackSchemaReady, knoxStrategyFromFlags, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import {
   DARWIN_VERIFY_STRATEGY,
   insertVerifiedFee,
@@ -357,7 +357,9 @@ export async function runDarwinReleaseHeld(options: {
   );
   // Fees an earlier version already marked "not_on_schedule": a fee found on the
   // schedule now gets that note replaced by a "restored" one.
-  const earlierRejects = acts ? await loadEarlierRejects(db, rows.map((row) => Number(row.fee_raw_id))) : new Set<number>();
+  const earlierRejects = acts && (await feedbackSchemaReady(db))
+    ? await loadEarlierRejects(db, rows.map((row) => Number(row.fee_raw_id)))
+    : new Set<number>();
   const verified = await loadVerifiedKeys(db, Array.from(new Set(rows.map((row) => Number(row.institution_id)))));
   const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
 
