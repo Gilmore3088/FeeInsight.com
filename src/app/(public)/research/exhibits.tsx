@@ -73,7 +73,7 @@ export function CharterExhibit({
     <section id="charters" className="scroll-mt-28 print:break-inside-avoid">
       <SectionHeading
         eyebrow={eyebrow}
-        title={`${place ? `${place} credit` : "Credit"} unions are cheaper on ${cuCheaper} of ${rows.length} ${place ? "fees" : "everyday fees"}`}
+        title={`${place ? `${place} credit` : "Credit"} unions are lower on ${cuCheaper} of ${rows.length} ${place ? "fees" : "everyday fees"}`}
       >
         Median price at banks and at credit unions for each fee{place ? ` in ${place}` : ""}. The gap between the dots is
         what switching charter would typically save or cost.

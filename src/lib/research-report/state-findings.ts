@@ -141,7 +141,7 @@ export function computeStateFindings(
       key: "charter-gap",
       figure: formatAmount(Math.abs(gap)),
       headline: `${gap > 0 ? "Credit unions" : "Banks"} charge less for ${lowerName(widest.fee_category)}`,
-      detail: `In ${stateName}, median ${formatAmount(widest.cu_median_amount)} at credit unions vs ${formatAmount(widest.bank_median_amount)} at banks. Credit unions are cheaper on ${cuCheaper} of ${paired.length} fees compared.`,
+      detail: `In ${stateName}, median ${formatAmount(widest.cu_median_amount)} at credit unions vs ${formatAmount(widest.bank_median_amount)} at banks. Credit unions are lower on ${cuCheaper} of ${paired.length} fees compared.`,
       exhibit: "charters",
     });
   } else if (solid.length >= 3) {

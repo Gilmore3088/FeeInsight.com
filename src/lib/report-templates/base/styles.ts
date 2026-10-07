@@ -1179,6 +1179,47 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   line-height: 1.6;
 }
 
+/* State report exhibits (base/state-charts.ts): SVG drawn at a fixed viewBox, scaled to the column. */
+.state-exhibit {
+  margin: 16px 0 0;
+}
+
+.state-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.state-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 10px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 11.5px;
+  color: ${PALETTE.textSecondary};
+}
+
+.state-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.state-chart-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.state-chart-title {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 12px;
+  font-weight: 600;
+  color: ${PALETTE.text};
+  margin: 0 0 6px;
+}
+
 /* Position against national: diverging bars around the national median */
 .position-chart {
   margin: 16px 0 0;
@@ -1378,6 +1419,9 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   }
 
   .stat-cards,
+  .state-exhibit:not(.state-exhibit-flow),
+  .state-ladder-row,
+  .state-chart-panel,
   .h-bar-chart,
   .col-chart,
   .finding,
@@ -1432,6 +1476,13 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   .compact-table tr {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  /* A ladder breaks between fee rows; its legend and axis stay with the first row. */
+  .state-exhibit-flow .state-chart-legend,
+  .state-ladder-axis {
+    break-after: avoid;
+    page-break-after: avoid;
   }
 
   .exhibit-source,

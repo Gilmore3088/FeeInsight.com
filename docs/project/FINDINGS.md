@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The "bank services" price series may be physicians' services
+**What happened:** building the State Index economy chart, the series stored as "CPI: Checking
+Account and Other Bank Services" (`CUUR0000SEMC01`) read 408.5 in Aug 2021 and 439.4 in Aug 2026 on
+prod (read-only query, 07:25 UTC). In the BLS item codes, `SEMC01` is under medical care services and,
+as far as we know, is physicians' services; the bank-services item is a different code. Not verified
+against BLS: the cloud network blocks bls.gov and FRED.
+**Cause:** inferred: the series ID was picked by hand in `src/lib/data-store/economic-context.ts`,
+`src/lib/data-store/financial.ts` (`BANK_FEES`) and `src/lib/research/tools-internal.ts`, and the stored
+title came from our own label, not from BLS.
+**Fix:** none yet. The state report charts consumer prices (all items) and the Fed funds rate instead.
+The three readers above still use the series; someone with bls.gov access confirms the right code.
+**Lesson:** take a series title from the publisher's catalog, never type it in. Before charting a
+series, check its title at the source.
+
 ## 2026-10-07: Enforcement lists rarely record an end date, so "no end date" is not "active"
 **What happened:** the Pro enforcement card (PR 372) called every action with no termination date
 "active". On prod (read-only, 07:05 UTC) that was 825 of 4,431 OCC and Fed actions: 651 are civil
