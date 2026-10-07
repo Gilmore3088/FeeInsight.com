@@ -148,6 +148,9 @@ Darwin owns verification and classification.
   WAIVED)", an NSF check re-clear filed as NSF, an online-wire monthly fee filed as monthly maintenance).
   The prompt names all three. `scheduleContext` no longer anchors on a bare price row ("$5.00"),
   which had shown one item the rows around a different fee.
+  v9 (2026-10-07): a hand check of 20 v8 passes had 18 right (an "Emergency Card Replacement" passed
+  as card replacement, and a $10 rush card read from "Debit Card Replacement Rush Order | $10 $75").
+  The prompt names emergency service and two prices in one row.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
