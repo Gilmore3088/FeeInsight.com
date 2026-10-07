@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Admin Today read job health from the retired workers' markers
+**What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
+including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
+run Aug 12" and "Hamilton monthly pulse is overdue", while prod showed Atlas lanes completing at
+03:26 UTC Oct 7, agent steps finishing every few minutes, the registry sync at 03:17 and a monthly
+pulse completed Oct 6 06:07.
+**Cause:** `getJobFreshness` read `workers_last_run`, which only the retired Modal workers wrote; its
+newest row is Aug 13. The report freshness gate read the same table for its Atlas health check.
+**Fix:** job health and the report gate now read `agent_runs`, `agent_run_steps` and `report_jobs`
+(this PR). The tick is only overdue while steps are queued.
+**Lesson:** when a runtime is retired, grep for every table it wrote and move each reader to the new
+ledger in the same change.
+
 ## 2026-10-07: A fee's own schedule line is not enough context to judge it
 **What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
 check of 20 random source-check takedowns (24 hours to 02:50 UTC, `wrong_amount`/`threshold`)

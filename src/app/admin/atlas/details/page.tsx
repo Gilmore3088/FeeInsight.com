@@ -917,12 +917,12 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 
 function AgentRail({ schedules }: { schedules: JobFreshness[] }) {
   const stages = [
-    { name: "Atlas", role: "Schedule + observe", href: "/admin", icon: Orbit, jobs: ["daily_pipeline"] },
-    { name: "Magellan", role: "Discover + fetch", href: "/admin/magellan", icon: Compass, jobs: ["discover", "fetch", "rescue"] },
-    { name: "Rosetta", role: "Read sources", href: "/admin/rosetta", icon: FileText, jobs: ["read", "daily_pipeline"] },
-    { name: "Knox", role: "Extract + exceptions", href: "/admin/knox", icon: ShieldCheck, jobs: ["knox_review"] },
-    { name: "Darwin", role: "Verify", href: "/admin/darwin", icon: Dna, jobs: ["darwin_drain"] },
-    { name: "Hamilton", role: "Publish", href: "/admin/data", icon: BookOpenText, jobs: ["daily_pipeline"] },
+    { name: "Atlas", role: "Schedule + observe", href: "/admin", icon: Orbit, jobs: ["atlas_state_lanes", "agent_executor"] },
+    { name: "Magellan", role: "Discover + fetch", href: "/admin/magellan", icon: Compass, jobs: ["registry_sync"] },
+    { name: "Rosetta", role: "Read sources", href: "/admin/rosetta", icon: FileText, jobs: [] },
+    { name: "Knox", role: "Extract + exceptions", href: "/admin/knox", icon: ShieldCheck, jobs: [] },
+    { name: "Darwin", role: "Verify", href: "/admin/darwin", icon: Dna, jobs: [] },
+    { name: "Hamilton", role: "Publish", href: "/admin/data", icon: BookOpenText, jobs: ["monthly_pulse"] },
   ];
   return (
     <div className="grid overflow-hidden rounded-lg border border-black/[0.06] bg-white sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 dark:border-white/[0.06] dark:bg-[oklch(0.19_0_0)]">
