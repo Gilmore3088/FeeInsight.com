@@ -13,17 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
-## 2026-10-07: Hamilton's source check takes down real prices, so its judgements can't teach yet
+## 2026-10-07: A fee's own schedule line is not enough context to judge it
 **What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
-check of 20 random source-check takedowns from the 24 hours to 02:50 UTC (`wrong_amount` and
-`threshold`, not restored) found 13 that read as real prices from Knox's excerpt ("Wire Transfer
-Outgoing $20.00", "Deposit return item / $10.00", "$150.00 Drill Safe Deposit Box"), 4 right and 3 unclear.
-**Cause:** not yet known. The misses share a balance or "per $50" in the same line (read as a
-threshold) or an amount written before the name (read as not the fee).
-**Fix:** none here. Darwin's review learns only from category-check takedowns and restores; the
-finding went to the Accuracy and Hamilton publish threads. The fees are archived, not deleted.
-**Lesson:** a judgement becomes a training signal only after it has been checked to hold up;
-a wrong lesson teaches the next check to throw away real fees.
+check of 20 random source-check takedowns (24 hours to 02:50 UTC, `wrong_amount`/`threshold`)
+read from Knox's one-line excerpt called 13 real prices. Read against the full page by the Accuracy
+thread, only 4 were real prices wrongly taken down ("Wire Transfer Outgoing $20.00"; PR 341), 5
+were right to come down because the price belonged to a neighbouring row or column ("Deposit
+return item $10" was the early-close price; the $5/Mo was the Bill Pay column), 1 is a rate refused
+by design and 3 have garbled names.
+**Cause:** a single extracted line drops the rows around it, which is where a misplaced price shows.
+**Fix:** Darwin's release review now reads the schedule rows around a held fee's line
+(`scheduleContext`, 3 rows each side). Its lessons leave out the source check's amount judgements
+until PR 341's fixes are proven.
+**Lesson:** judge a price against the rows around it in the stored page, never a one-line excerpt;
+and check a hand-check's own evidence before reporting a rate from it.
 
 ## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
 **What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
