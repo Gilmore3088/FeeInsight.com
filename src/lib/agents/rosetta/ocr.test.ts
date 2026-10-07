@@ -7,8 +7,13 @@ import {
   fitForOcr,
   layoutOcrWords,
   OcrError,
+  orientAsDrawn,
+  recognizeUpright,
   toGray,
+  turnImage,
+  type GrayImage,
   type OcrEngine,
+  type OcrPage,
   type OcrWord,
 } from "./ocr";
 import { imageOnlyPdf, rasterizeLines, scannedFeePdf } from "./test-fixtures/scanned-pdf";
@@ -72,6 +77,63 @@ describe("Rosetta free OCR", () => {
     }
     expect(Date.now() - startedAt).toBeLessThan(20_000);
   }, 30_000);
+
+  it("turns an image the way its placement matrix and the page draw it", () => {
+    // 2x1 image [a b]; columns run down the device and rows run left: a quarter turn clockwise.
+    const image: GrayImage = { width: 2, height: 1, data: new Uint8Array([10, 20]) };
+    expect(orientAsDrawn(image, [0, 1, 1, 0, 0, 0])).toEqual({ width: 1, height: 2, data: new Uint8Array([10, 20]) });
+    // Stored bottom row first and flipped back by the matrix (a = 1, d = 1 in device space).
+    const twoRows: GrayImage = { width: 1, height: 2, data: new Uint8Array([1, 2]) };
+    expect(Array.from(orientAsDrawn(twoRows, [1, 0, 0, 1, 0, 0]).data)).toEqual([2, 1]);
+    // Upright stays as stored; skewed placements are left alone.
+    expect(orientAsDrawn(image, [1, 0, 0, -1, 0, 0])).toBe(image);
+    expect(orientAsDrawn(image, [1, 1, 1, -1, 0, 0])).toBe(image);
+    // Four quarter turns come back to the start.
+    const square: GrayImage = { width: 2, height: 2, data: new Uint8Array([1, 2, 3, 4]) };
+    expect(Array.from(turnImage(square, 1).data)).toEqual([3, 1, 4, 2]);
+    expect(Array.from(turnImage(turnImage(turnImage(turnImage(square, 1), 1), 1), 1).data)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("reads a page stored upside down the way the page shows it", async () => {
+    const lines = ["SCHEDULE OF FEES", "OVERDRAFT FEE PER ITEM        $33.00", "STOP PAYMENT                  $31.00"];
+    const reader = createScannedPdfReader();
+    try {
+      const ocr = await reader.read(imageOnlyPdf([rasterizeLines(lines)], { storedFlipped: true }));
+      expect(ocr.confidence).toBeGreaterThan(70);
+      expect(ocr.text).toContain("OVERDRAFT FEE PER ITEM | $33.00");
+    } finally {
+      await reader.close();
+    }
+  }, 30_000);
+
+  it("turns a page that was scanned sideways and keeps the turn for the next page", async () => {
+    const page = rasterizeLines(["SCHEDULE OF FEES", "OVERDRAFT FEE PER ITEM        $33.00", "STOP PAYMENT                  $31.00"]);
+    const sideways = turnImage(page, 1);
+    const reader = createScannedPdfReader();
+    try {
+      const ocr = await reader.read(imageOnlyPdf([sideways, sideways]));
+      expect(ocr.confidence).toBeGreaterThan(70);
+      expect(ocr.pages[0]).toContain("OVERDRAFT FEE PER ITEM | $33.00");
+      expect(ocr.pages[1]).toContain("STOP PAYMENT | $31.00");
+    } finally {
+      await reader.close();
+    }
+  }, 60_000);
+
+  it("never turns a page that reads well", async () => {
+    const calls: number[] = [];
+    const good: OcrPage = { text: "x", confidence: 90, words: [word("OVERDRAFT FEE PER ITEM $33.00 MONTHLY FEE $9.00", 0, 10, 10)] };
+    const engine: OcrEngine = {
+      recognize: async (image) => {
+        calls.push(image.width);
+        return good;
+      },
+      terminate: async () => undefined,
+    };
+    const result = await recognizeUpright(engine, { width: 300, height: 400, data: new Uint8Array(120_000).fill(255) });
+    expect(result.turns).toBe(0);
+    expect(calls).toHaveLength(1);
+  });
 
   it("refuses scans longer than the free page limit and PDFs with no page images", async () => {
     const reader = createScannedPdfReader(() => {
