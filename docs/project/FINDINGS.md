@@ -2458,6 +2458,20 @@ search. Banks of 8+ categories missing one come right after weak links. In PA al
 **Lesson:** a complete-looking schedule can still leave out the fees a report needs. Search for the
 account disclosure when a headline fee is missing, not only when the page is thin.
 
+
+## Darwin's category review trusted Knox's amount (2026-10-07)
+`verify.adjudicate` v1 judged a fee from its name and amount alone. Against the answer keys it was right on
+27 of 37 disagreements, but it accepted prices that belonged to a neighbouring row ("Check Printing (fee
+depends on style)" at $3) or were a balance threshold ($50 inactivity "balance is less than"). The prod
+`answer_key_institutions` table is empty; the answer keys live in `src/lib/agents/knox/__fixtures__/`.
+v2 sends the schedule rows around each fee and the source check's verdict on its amount.
+
+## The answer-key tables on prod are empty (2026-10-07)
+`answer_key_institutions` and `answer_key_fees` have no rows, so no `answer_key` lessons reach the learning
+store: Darwin's category model and Knox's lessons never trained on the hand-keyed schedules they cite. The 81
+hand-keyed texts (2,885 fees) exist only as Knox test fixtures. Darwin's verdict score reads a compact copy
+(`src/lib/agents/darwin/answer-key-fees.json`, kept in step by its test). Loading the keys into the tables
+(through the admin answer-key page or a typed agent step) is still open.
 ## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
 **What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
 that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
@@ -2523,3 +2537,13 @@ funds-availability, checking and rates pages; the other 33 were not sampled).
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+
+## 2026-10-07: Plural "Wires" and balance-named account rows were missed by Knox
+**What happened:** Space Coast CU (James's demo bank) had 7 live fees. Its 1,279-character page lists 22 prices.
+**Cause:**
+- The directional wire patterns required the singular "wire", so "Incoming Wires | $10" was read as no fee.
+- "(Outside U.S.)" fell through the international rewrite, because `\b` does not match after a dot.
+- An account row named with its balance ("(below $2,500) | $15/mo.") was held as unclassified.
+- Two names in one row were glued into one name.
+**Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
+**Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.
