@@ -34,9 +34,12 @@ type SqlTag = typeof sql;
  * every call budget-checked and cost-logged under Darwin's own policy (`agent:darwin`).
  * With DARWIN_RELEASE_ACTS off it records verdicts only.
  */
+// Version 5 (2026-10-07): a hand check of 20 v4 verdicts found 3 wrong releases: a stop
+// payment's removal filed as a stop payment, an expedited cashier's check filed at the
+// cashier's check price, and "Cost plus $8" read as an $8 price. The prompt now names all three.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: DARWIN_RELEASE_STRATEGY.version,
+  version: 5,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -88,8 +91,11 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[]): strin
     "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text.",
     "- category_fits: true only if this fee is what `filed_as` means in this index; `filed_as_includes` lists fee names it files there.",
     "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit.",
+    "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
+    "  (expedited, rush or overnight) do not fit the service's own category.",
     "- amount_is_price: true only if `amount` is the price the line charges for this fee.",
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
+    "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
     "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55).",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category_fits\", \"amount_is_price\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
     "",
