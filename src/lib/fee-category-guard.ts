@@ -213,6 +213,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
+/** Categories fees filed under `canonicalFeeKey` are re-filed to when their name says so. */
+export function neighbourCategories(canonicalFeeKey: string): string[] {
+  return [...new Set(REFILE_RULES.filter((rule) => rule.from === canonicalFeeKey).map((rule) => rule.to))];
+}
+
 /** The category a fee belongs in: its own, or the one its name re-files it to. */
 // PDFs and web pages write "Teller’s Check" and "ATM’s" with curly quotes; the rules use '.
 function plainQuotes(name: string): string {
