@@ -148,6 +148,37 @@ describe("API budget guard", () => {
     expect(decision.policyId).toBe(1);
   });
 
+  it("counts an agent's per-run call cap against that agent's own calls in the run", async () => {
+    const darwinPolicy = {
+      ...enabledPolicy,
+      id: 5,
+      policy_key: "agent:darwin",
+      scope: "agent",
+      agent_name: "darwin",
+      max_provider_calls_per_run: 10,
+    };
+    let darwinCalls = 0;
+    sqlMock.mockImplementation((strings: unknown) => {
+      const query = templateText(strings);
+      if (query.includes("FROM public.api_budget_policies")) return Promise.resolve([enabledPolicy, darwinPolicy]);
+      // Knox and Rosetta used 29 calls earlier in the same state run.
+      if (query.includes("FROM public.agent_runs")) {
+        return Promise.resolve([{ actual_provider_calls: 29, actual_estimated_cost_microusd: 1_000_000 }]);
+      }
+      if (query.includes("agent_run_id")) return Promise.resolve([{ calls: darwinCalls, microusd: 0 }]);
+      if (query.includes("FROM public.ai_api_usage_events")) return Promise.resolve([{ microusd: 0 }]);
+      return Promise.resolve([]);
+    });
+    const context = { provider: "anthropic", model: "claude-haiku", agent: "darwin", operation: "adjudicate", agentRunId: 1843 };
+
+    expect((await assertProviderBudgetAllowed(context)).allowed).toBe(true);
+
+    darwinCalls = 10;
+    const blocked = await assertProviderBudgetAllowed(context);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reasonCode).toBe("budget_run_cap_exhausted");
+  });
+
   it("returns a typed error from blocked decisions", () => {
     const error = providerBudgetDecisionToError({
       allowed: false,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON } from "./rules-recheck";
+import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON, RULES_RECHECK_STRATEGY } from "./rules-recheck";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -48,6 +48,14 @@ describe("Hamilton rules re-check", () => {
     expect(fees.has("overdraft:3000")).toBe(false);
   });
 
+  it("files a read under the category Darwin re-files it to", () => {
+    // First National Bank Alaska: Knox hints overdraft, Darwin files an overdraft protection transfer.
+    const fees = reproducibleFees(
+      "Insufficient Funds Transfer (Savings Overdraft | $10.00 per transfer | met. Other account fees or restrictions may apply.\nProtection3) | 5. Monthly Service Fee",
+    );
+    expect(fees.has("od_protection_transfer:1000")).toBe(true);
+  });
+
   it("rolls back live fees today's rules no longer read and rejects their verified rows", async () => {
     const db = createDbMock(
       [
@@ -81,7 +89,7 @@ describe("Hamilton rules re-check", () => {
     expect(query).toContain("fr.source = 'knox'");
     expect(query).toContain("knox_paid_extraction");
     expect(query).toContain("upper(btrim(inst.state_code)) = $6");
-    expect(params).toEqual([25, "hamilton.rules_recheck", 2, knoxFreeSignature(), RULES_RECHECK_REASON, "TX"]);
+    expect(params).toEqual([25, "hamilton.rules_recheck", RULES_RECHECK_STRATEGY.version, knoxFreeSignature(), RULES_RECHECK_REASON, "TX"]);
     const writes = JSON.stringify(db.mock.calls);
     expect(writes).toContain("UPDATE published_fee_records");
     expect(writes).toContain("UPDATE verified_fee_observations");

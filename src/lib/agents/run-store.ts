@@ -46,6 +46,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
+import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
@@ -553,6 +554,7 @@ async function executeAgenticStep(
           reopened_fee_pages: read.reopenedFeePages,
           reopened_bans_lifted: read.reopenedBansLifted,
           reopened_links_restored: read.reopenedLinksRestored,
+          thin_copies_set_aside: read.thinCopiesSetAside,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
           texts_lost_fees: read.textsLostFees,
@@ -592,6 +594,7 @@ async function executeAgenticStep(
       });
       // Lines older rules held as unclassified get today's rules too.
       const heldRecheck = await recheckHeldRows(tx, {
+        runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
@@ -604,7 +607,7 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged). Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
         detail: {
           held_recheck: heldRecheck,
           held_rate_recheck: rateRecheck,
@@ -1263,6 +1266,14 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
+        detail: { ...result },
+      };
+    }
+    case "pro-digest": {
+      const result = await runProDigest({ dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeProDigest(result),
         detail: { ...result },
       };
     }

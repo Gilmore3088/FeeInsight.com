@@ -269,6 +269,12 @@ also comes back. Every restore here, and in the newer-copy check, leaves a
 (`markRestoredForSourceCheck`), so the bank is source-checked again even though no newer
 fee id appeared.
 
+Each read is filed under the category Darwin files it under (`refileCategory`, strategy
+version 3, 2026-10-07). Before that, a fee Darwin re-filed from Knox's hint, such as First
+National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)" (hint overdraft,
+filed as an overdraft protection transfer), was read under the hint, failed the category
+guard there, and was taken down as unreproduced: 140 fees at 128 banks on 2026-10-07.
+
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
