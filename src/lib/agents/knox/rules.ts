@@ -89,7 +89,7 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   {
     key: "check_cashing",
     // A collection fee on a charged-off or past-due account, or a collection phone call,
-    // is debt collection, not a check sent for collection (v28, from prod's first v26 pass).
+    // is debt collection, not a check sent for collection (v30, from prod's first v26 pass).
     pattern:
       /^(?![\s\S]*\b(?:charged[- ]?off|past[- ]due|delinquen\w*|calls?)\b)[\s\S]*?\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
   },

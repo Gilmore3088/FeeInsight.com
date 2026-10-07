@@ -480,7 +480,7 @@ describe("Knox extract.rules", () => {
     "Phone Call Collection Fee",
     "Funds transfer fee (phone/fax request) per transfer",
     "Credit Report Fee to Open Account",
-  ])("v28 does not fold %s (wrong homes found on prod's first v26 pass)", (name) => {
+  ])("v30 does not fold %s (wrong homes found on prod's first v26 pass)", (name) => {
     expect(foldedCategory(name)).toBeNull();
     expect(classifyFeeText(name)).toBeNull();
   });
@@ -490,7 +490,7 @@ describe("Knox extract.rules", () => {
     ["Clean Collection Fee (per item)", "check_cashing"],
     ["Collection Items for Deposit", "check_cashing"],
     ["Credit Report Fee", "loan_origination"],
-  ])("v28 still folds %s into %s", (name, key) => {
+  ])("v30 still folds %s into %s", (name, key) => {
     expect(foldedCategory(name)).toBe(key);
   });
 

@@ -255,7 +255,7 @@ export async function recheckHeldRows(
 }
 
 /**
- * A rules fix can take back a category an earlier version gave a held line (v28: "Phone Call
+ * A rules fix can take back a category an earlier version gave a held line (v30: "Phone Call
  * Collection Fee" is debt collection, not a check sent for collection). Each pass re-reads
  * the lines Knox promoted from held that Darwin has not verified yet. A line today's rules
  * no longer price under the same category goes back on hold: it leaves Darwin's queue, gets

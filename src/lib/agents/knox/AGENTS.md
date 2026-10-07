@@ -126,7 +126,7 @@ of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
 stay held.
 
-v28 (rules 28) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
+v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
 02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
 collection fee on charged-off accounts and a collection phone call are debt collection, not a
 check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
@@ -360,3 +360,25 @@ Change this table and `agent-health.ts` in the same PR.
 | Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_EXTRACT_STRATEGY`, 24 h) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `textsExtracted`, `evidenceMismatch`.
+
+v28 (rules 28) never reads a limit as a price. A name that ends on a limit ("Zelle transfer limit",
+"Mobile Deposit Checks are limited to", "VISA Gift Cards: Maximum card load", "Cash Advance Fee
+(maximum", "Zelle (Daily Limits)") states the most a customer may move, not what they pay
+(`namesALimit` in `layout.ts`). A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), a
+fee for going past a limit keeps its price ("Over Limit", "Limit Violation"), and a fee's own note
+keeps it a fee ("Mobile Deposit Fee (daily limits apply)"). The paid reader rejects the same rows
+(`limit_not_fee`). The shared check now also reads a price under a dollar written "$.50" or "75¢",
+and the paid reader counts those lines and skips an older copy of a page whose current copy has a
+text, as the free reader already did. A family expert names a fee after the previous fee's note
+("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
+keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
+Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.
+
+v29 (rules 29) tidies names that ran on into their price. A short name loses the connector before
+the price ("Visa Lost/Stolen Replacement Card Fee of", "Non-Bank of America ATM Fee for",
+"Debit Card Replacement A fee of") and a leading article ("A minimum balance fee" becomes "Minimum
+balance fee"), and a "None" or "Free" cell between two names is the previous row's price, so the name
+starts after it (`tidyFeeName`). A sentence of more than eight words keeps its ending, because the
+category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
+right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
+of 1,437 kept, the same fees.

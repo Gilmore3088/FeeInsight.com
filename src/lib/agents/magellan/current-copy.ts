@@ -57,9 +57,14 @@ export const PAGE_TRAILING_SLASH_SQL = "/+(\\?|$)";
 /**
  * False runs the same-page match in shadow mode: each fetch step logs which current copies
  * another spelling of their page would supersede (`magellan.same_page_copies`) but changes
- * none, and exact-address superseding goes on as before.
+ * none, and exact-address superseding goes on as before. Live since a shadow review on prod
+ * (5 fetch steps, 7 Oct 2026): the same 109 pairs every step, each a true respelling (www,
+ * :443, http, trailing slash, #fragment), no thin current copy, 667 live fees on the older
+ * copies. Superseding moves no fee by itself: Hamilton's refresh moves a live fee to the
+ * current copy only when the current copy reads the same line, and its newer-copy check
+ * still pairs exact addresses, so no fee comes down because a spelling changed.
  */
-export const SAME_PAGE_SUPERSEDE_LIVE = false;
+export const SAME_PAGE_SUPERSEDE_LIVE = true;
 /** Older same-page copies marked (or, in shadow mode, logged) per fetch step. */
 export const SAME_PAGE_COPY_LIMIT = 200;
 
@@ -195,7 +200,8 @@ export interface SamePageCopyResult {
 /**
  * Backfill for pages stored under two spellings: of each institution's current copies that
  * name the same page, the newest stays current and the others point at it, as a fetch of
- * that page now does. In shadow mode (SAME_PAGE_SUPERSEDE_LIVE false) it only logs the pairs.
+ * that page now does. A thin copy (bot check, script shell) never takes the place of a
+ * readable one, as in `restoreReadableCopies`. In shadow mode (SAME_PAGE_SUPERSEDE_LIVE false) it only logs the pairs.
  * Nothing is deleted and no fee is touched here; Hamilton's newer-copy check and identical-copy
  * move handle the fees as for any superseded copy.
  */
@@ -210,6 +216,13 @@ export async function supersedeSamePageCopies(
     -- same-page current copies
     WITH current_copies AS (
       SELECT doc.id, doc.institution_id, doc.crawled_at,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts thin
+                WHERE thin.source_document_id = doc.id
+                  AND thin.status <> 'completed'
+                  AND COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS}
+                  AND thin.source_hash = doc.content_hash
+             ) AS thin,
              substring(lower(doc.document_url) from ${PAGE_HOST_SQL})
                || regexp_replace(regexp_replace(split_part(doc.document_url, '#', 1), ${PAGE_ORIGIN_SQL}, ''), ${PAGE_TRAILING_SLASH_SQL}, '\\1') AS page
         FROM source_documents doc
@@ -221,7 +234,7 @@ export async function supersedeSamePageCopies(
     ),
     ranked AS (
       SELECT current_copies.*,
-             first_value(id) OVER (PARTITION BY institution_id, page ORDER BY crawled_at DESC NULLS LAST, id DESC) AS newest_id
+             first_value(id) OVER (PARTITION BY institution_id, page ORDER BY thin, crawled_at DESC NULLS LAST, id DESC) AS newest_id
         FROM current_copies
        WHERE page IS NOT NULL
     )
