@@ -586,7 +586,13 @@ function pricedPerAmount(row: string, amount: number): boolean {
   const price = moneyTokens(row).find(
     (token) => Math.abs(token.value - amount) < 0.005 && !/\bper\s*$/i.test(row.slice(Math.max(0, token.start - 6), token.start)),
   );
-  return !!price && PER_AMOUNT_BASIS.test(row.slice(0, price.start));
+  if (!price) return false;
+  const label = row.slice(0, price.start);
+  // A basis printed right after another price is that price's ("Coin deposited | $0.0062 per $1 |
+  // Escheat/abandoned account notice | $2"): the notice is a flat $2.
+  return Array.from(label.matchAll(new RegExp(PER_AMOUNT_BASIS.source, "gi"))).some(
+    (basis) => !/\$\s?\d[\d,]*(?:\.\d+)?\s*$/.test(label.slice(Math.max(0, (basis.index ?? 0) - 16), basis.index)),
+  );
 }
 
 /** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.

@@ -274,6 +274,12 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Escheat Notice* (when balance is $25 or more) . . . $2.00", "Escheat Notice (when balance is", 25, ".").ok).toBe(false);
   });
 
+  it("keeps a flat price whose row follows another price's per-$ basis (prod first look, Oct 7)", () => {
+    const text = "Coin deposited | $0.0062 per $1 | Escheat/abandoned account notice | $2\nCoin furnished | $0.13 per roll | (as permitted by law)";
+    expect(checkFeeAgainstSource(text, "Escheat/abandoned account notice", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Cashier Check (per $100.00) $1.00", "Cashier Check", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+  });
+
   it("reads two-column pages flattened row by row (Oct 7, third sample)", () => {
     const twoColumn = [
       "CASHIER'S CHECKS........................ $5.00 per customer, | A $50.00 fee will be assessed for a payment book if the loan was originally",
