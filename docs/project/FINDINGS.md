@@ -187,6 +187,10 @@ search and paid read (140 to 290 seconds each), so serial runs top out near 6 an
 daily rule also put 36 of 55 states on daily full passes for any bank due a paid find (HI
 had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs weekly
 (21 daily states on the Oct 7 numbers).
+**Follow-up (07:15):** Atlas's direct runs for one institution (PR 408) now fetch hand-found
+schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
+lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
+direct runs already do, so it was removed.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
