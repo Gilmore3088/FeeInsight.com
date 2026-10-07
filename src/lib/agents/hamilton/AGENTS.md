@@ -331,6 +331,24 @@ Hamilton's checks beside how many Knox read. The hourly scheduler
 tick wakes sleeping state lanes that still have unchecked live fees (source check or
 rules re-check), so a new rule reaches every state within hours.
 
+## Studies (James, 2026-10-07 05:03 UTC "Build it all")
+
+Statistical studies on the joined data, stored so Hamilton can cite a result and place one
+institution in it (`src/lib/agents/hamilton/studies`). One run a day
+(`/api/admin/crew/studies`), one step per study; a step stores only when its data period is new.
+
+- Tables: `hamilton_studies` (read the `is_current` row per `study_key`),
+  `hamilton_study_placements` (an institution against its peers), `inferred_fee_volume`.
+- `fee_dependence`: fee share of revenue every year since 2010, banks and credit unions side by
+  side, never pooled (their definitions differ), closed institutions included.
+- `local_income`, `market_concentration`, `fee_income_share`: price studies on live fees.
+  Cross-sectional only: fee prices are a current snapshot (fee moves over time are artifacts), so
+  a result describes how prices differ across institutions, never what a change would do.
+- `inferred_items_paid`: reported overdraft/NSF income divided by the published fee, a range,
+  always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
+  loads ($1B+ banks, overdraft and NSF together).
+- Nothing from a study is published on the site or sent until James says so.
+
 ## Marketing
 
 Hamilton also runs the monthly marketing loop (score, write, draft, send on approval).

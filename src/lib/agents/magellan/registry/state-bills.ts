@@ -4,9 +4,12 @@ import { fetchStateFeeBills, STATE_BILL_JURISDICTIONS, type BillStage } from "@/
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
- * Magellan registry step: read one state's bank and credit union fee bills from Open
- * States into reg_tracker_items (one partition per state, refreshed weekly), so the
- * regulation tracker can show which bills are moving and where each one stands.
+ * Magellan registry step: read bank and credit union fee bills from Open States into
+ * reg_tracker_items, so the regulation tracker can show which bills are moving and where
+ * each one stands. The scheduler queues one partition, "current"; each run reads the
+ * next STATES_PER_RUN states not checked in the last week and records each state under
+ * its own partition row (refreshed weekly). One state per run took about four days to
+ * cover all 52, since the registry runs one step every five minutes across all sources.
  *
  * Needs OPEN_STATES_API_KEY. Without it the step records the partition as waiting on
  * the key and checks again the next day. Shadow mode until STATE_BILLS_TRACKER_LIVE=true:
@@ -19,9 +22,12 @@ const MISSING_KEY_RETRY_HOURS = 24;
 /** Bills with any action in the last 400 days: this year's session and last year's. */
 export const STATE_BILLS_LOOKBACK_DAYS = 400;
 
-export function stateBillPartitions(): string[] {
-  return STATE_BILL_JURISDICTIONS;
-}
+export const STATE_BILLS_PARTITION = "current";
+/** About 5 Open States requests and 5 seconds a state, so a run stays near a minute. */
+export const STATES_PER_RUN = 12;
+const STATE_FAILED_RETRY_HOURS = 6;
+const BATCH_BACKLOG_RETRY_HOURS = 1;
+const BATCH_IDLE_RETRY_HOURS = 24;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.STATE_BILLS_TRACKER_LIVE === "true";
@@ -147,6 +153,127 @@ export async function runRegistryStateBills(
       shadow,
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
     },
+  });
+  return result;
+}
+
+export interface RegistryStateBillsBatchResult {
+  source: string;
+  partitionKey: string;
+  missingKey: boolean;
+  states: string[];
+  failedStates: string[];
+  remaining: number;
+  fetched: number;
+  stored: number;
+  stages: Record<BillStage, number>;
+  shadow: boolean;
+  dryRun: boolean;
+}
+
+/** One scheduled run: the next STATES_PER_RUN states whose weekly check is due. */
+export async function runRegistryStateBillsBatch(
+  options: {
+    runId?: number | null;
+    dryRun?: boolean;
+    db?: RegistryDb;
+    fetchOptions?: RegistryFetchOptions;
+    now?: Date;
+    live?: boolean;
+    apiKey?: string | null;
+    statesPerRun?: number;
+  } = {},
+): Promise<RegistryStateBillsBatchResult> {
+  const db = options.db ?? sql;
+  const apiKey = options.apiKey === undefined ? process.env.OPEN_STATES_API_KEY?.trim() : options.apiKey?.trim();
+  const stages: Record<BillStage, number> = {
+    introduced: 0,
+    in_committee: 0,
+    passed_chamber: 0,
+    passed_legislature: 0,
+    signed: 0,
+    vetoed: 0,
+    failed: 0,
+  };
+  const result: RegistryStateBillsBatchResult = {
+    source: STATE_BILLS_SOURCE,
+    partitionKey: STATE_BILLS_PARTITION,
+    missingKey: !apiKey,
+    states: [],
+    failedStates: [],
+    remaining: 0,
+    fetched: 0,
+    stored: 0,
+    stages,
+    shadow: !(options.live ?? stateBillsLive()),
+    dryRun: Boolean(options.dryRun),
+  };
+  if (!apiKey) {
+    if (!options.dryRun) {
+      await recordRegistryPartition(db, {
+        source: STATE_BILLS_SOURCE,
+        partitionKey: STATE_BILLS_PARTITION,
+        status: "empty",
+        rowCount: 0,
+        runId: options.runId ?? null,
+        nextAttemptAfterHours: MISSING_KEY_RETRY_HOURS,
+        detail: { missing_key: true },
+      });
+    }
+    return result;
+  }
+
+  const fresh = await db<Array<{ partition_key: string }>>`
+    SELECT partition_key FROM registry_ingest_partitions
+     WHERE source = ${STATE_BILLS_SOURCE} AND partition_key <> ${STATE_BILLS_PARTITION}
+       AND next_attempt_after > NOW()
+  `;
+  const notDue = new Set(fresh.map((row) => row.partition_key));
+  const due = STATE_BILL_JURISDICTIONS.filter((code) => !notDue.has(code));
+  const batch = due.slice(0, options.statesPerRun ?? STATES_PER_RUN);
+  result.states = batch;
+  result.remaining = due.length - batch.length;
+
+  const errors: string[] = [];
+  for (const stateCode of batch) {
+    try {
+      const one = await runRegistryStateBills({ ...options, partitionKey: stateCode, apiKey, db });
+      result.fetched += one.fetched;
+      result.stored += one.stored;
+      for (const key of Object.keys(stages) as BillStage[]) stages[key] += one.stages[key];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.failedStates.push(stateCode);
+      errors.push(`${stateCode}: ${message}`);
+      if (!options.dryRun) {
+        await recordRegistryPartition(db, {
+          source: STATE_BILLS_SOURCE,
+          partitionKey: stateCode,
+          status: "failed",
+          rowCount: 0,
+          runId: options.runId ?? null,
+          nextAttemptAfterHours: STATE_FAILED_RETRY_HOURS,
+          error: message.slice(0, 500),
+        });
+      }
+    }
+  }
+  if (batch.length > 0 && result.failedStates.length === batch.length) {
+    throw new Error(`Every state in this run failed: ${errors.slice(0, 3).join("; ")}`);
+  }
+  if (options.dryRun) return result;
+
+  await recordRegistryPartition(db, {
+    source: STATE_BILLS_SOURCE,
+    partitionKey: STATE_BILLS_PARTITION,
+    status: batch.length > 0 ? "succeeded" : "empty",
+    rowCount: result.fetched,
+    insertedCount: result.stored,
+    unmatchedCount: result.failedStates.length,
+    runId: options.runId ?? null,
+    // Come back within the hour while states are still due; otherwise check daily.
+    nextAttemptAfterHours: result.remaining > 0 ? BATCH_BACKLOG_RETRY_HOURS : BATCH_IDLE_RETRY_HOURS,
+    detail: { states: batch, failed: errors, remaining: result.remaining, stages, shadow: result.shadow },
   });
   return result;
 }

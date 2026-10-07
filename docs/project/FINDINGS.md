@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Call report rows for closed institutions store no revenue, and the two charters define revenue differently
+**What happened:** building the fee dependence study, 4,248 of 7,747 FDIC rows for 2010-12-31 had
+`total_revenue` (read-only query on `institution_financial_records`, 05:20 UTC). The rest belong to
+institutions no longer in `institution_sources`, which the loaders store with `institution_id` NULL
+and only a few columns. Separately, banks' `total_revenue` is net interest income plus noninterest
+income (FDIC NIMQ + NONIIQ), while credit unions' is gross interest income plus noninterest income
+(NCUA 115 + 117), and the credit union fee line (131) is all fee income, not only deposit service
+charges.
+**Cause:** the `unmatched` insert in `fdic-financials.ts` and `ncua-financials.ts` keeps only assets,
+deposits, loans, net income and service charges; `raw_json` still holds every field. The definitions
+follow what each regulator files.
+**Fix:** Hamilton's fee dependence study (this PR) reads each filing's raw fields, so closed and
+merged institutions count and the series has no survivor bias; it reports banks and credit unions
+side by side and never pools them.
+**Lesson:** a study over history must read the raw filing fields, not only the matched-row columns,
+and must not compare a bank ratio with a credit union ratio as if they were the same measure.
+
 ## 2026-10-07: Admin Today read job health from the retired workers' markers
 **What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
 including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
@@ -122,6 +139,10 @@ in run-store) fits before 270 seconds. Short steps use the end of a tick, and lo
 still start early enough to finish inside the 300-second limit. Runs stay serial, so the
 database load per moment is unchanged. A state whose last finished lane run failed now
 retries ahead of routine passes.
+**Follow-up (04:30):** 22 of the 27 schedules found by hand (`discover.operator_schedule`, among
+them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
+their state's lane run fetches them and those runs waited in line. Next in the order after
+retries now comes a lane whose state holds a hand-found schedule with status `found`.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2294,3 +2315,29 @@ showed it and the peer median counted it. The missing tier 1 ratio itself is cor
 bank page and peer median skip a stored 0. Older rows correct themselves as quarters refresh.
 **Lesson:** a regulator's 0 can mean "not filed". Check a field's zeros against the filing rules
 before storing them as values.
+
+## 2026-10-07: The FFIEC overdraft step ran out of memory on prod
+**What happened:** after PR 369 merged, `registry-ffiec-overdraft` failed for 2026Q1 (04:32 UTC)
+and 2026Q2 (05:07 UTC) about a second into each run, with "Array buffer allocation failed". No H032
+values were written.
+**Cause:** the step buffered the whole all-schedules bulk zip and unzipped it in one call, which
+sizes each output buffer from the zip headers. Which of the two allocations failed was not
+confirmed, because the cloud sandbox cannot download from FFIEC. Unit tests used small zips, so
+they did not catch it. A failed registry step also leaves its partition `scheduled`, and that
+partition is retried only after the 6-hour claim expires.
+**Fix:** `unzipScheduleRi` reads the download as a stream, inflates only the Schedule RI files,
+and grows each buffer with the data. The whole zip is never held in memory.
+**Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
+that the loader will fit in a function's memory.
+
+## 2026-10-07: State bills would have taken about four days to cover 52 states
+**What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
+only Alaska had run.
+**Cause:** the registry scheduler starts one step every five minutes. It works round-robin across about
+20 sources and picks the first partition that is due. A source with 52 small partitions gets one
+turn per round, behind every other source's history and retries.
+**Fix:** state bills now has one scheduled partition, `current`. Each run reads the next 12 states
+whose weekly check is due and records each state under its own partition row. The step comes back
+within the hour while states are still due, so all 52 are covered in five runs.
+**Lesson:** for a registry source with many small, quick items, batch them inside one partition.
+Use per-item partitions only when each item is a heavy download.
