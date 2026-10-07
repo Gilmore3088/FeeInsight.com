@@ -81,6 +81,23 @@ selected once more when nothing on their own document is verified as the same fe
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
 
+## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
+**What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
+MN was queued at 00:40 and started at 02:21. NE, queued at 00:40, had not started at 02:35.
+In the 3 hours before, lane steps used about 113 minutes. Full passes took about 10 minutes
+each, so the executor finished about six an hour.
+**Cause:** the scheduler launched up to 3 lanes every 5-minute tick (36 an hour). It only
+skipped a state whose own run was still active, so the queue filled to nearly every lane.
+The executor took queued runs oldest first. The lane priority order (PR 262, PR 308) only
+chose which lanes got launched, and then every lane waited its turn in the queue.
+**Fix:** the scheduler launches only while fewer than `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane
+runs are queued or running. Each free slot goes to the highest-priority due lane. The
+executor finishes a run it has started before starting a new one. After that it takes runs
+waiting over an hour, then lanes by priority score. Lanes still cannot all run hourly: 55
+lanes at about 10 minutes per full pass is more than an hour of serial work.
+**Lesson:** a queue that refills faster than it drains turns any priority into launch order.
+Cap what is queued to about one tick's worth of work, and order at the point of execution.
+
 ## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
 **What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
 and near-ready markets. At 00:47 UTC Oct 7 all 55 lanes still had priority_score 0, so Atlas kept
