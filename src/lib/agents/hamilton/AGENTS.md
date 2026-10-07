@@ -309,7 +309,13 @@ re-extracting would insert the same raw row, which the raw-row dedupe index (doc
 price) refuses. A fee read again under a new name returns the normal way, through Darwin.
 Documents whose live fees were all taken down are re-checked too. Step detail:
 `rules_recheck_restores`. A fee an earlier re-check judged against a text other than its own
-also comes back. Every restore here, and in the newer-copy check, leaves a
+comes back only over the restore bar (below) judged against the document's newest text
+(`newer_text`). Before 7 Oct it came back with no check (`text_gone`, 84 fees on prod);
+`restore-recheck.ts` gives each of those the restore bar on its newest text: one that clears
+it is marked `rules_recheck_restore_checked`; one that fails is archived on its second look
+(check `hamilton.rules_recheck_restore`, reason `rules_recheck_restore: <bar reason>`, verified
+row rejected, flag `rules_recheck_restore_failed`). Knox's lessons, label queue and calibration
+ignore the `restored_after_takedown` rows of `text_gone` restores. Every restore here, and in the newer-copy check, leaves a
 `restored:<fee id>:<run>` marker attempt under the source check's strategy
 (`markRestoredForSourceCheck`), so the bank is source-checked again even though no newer
 fee id appeared.
@@ -322,7 +328,7 @@ there and disputes no other cell), the text states the fee's price on its own ro
 row is not a $0 price, a minimum balance, a refundable deposit, a limit, a markup on a cost,
 a sentence cut before its figure, or a copy of an item filed as the item. Without the model
 nothing comes back this way. Every restore's verified row carries
-`rules_recheck_restored:<same_read|text_gone|restore_bar>`, and the event counts
+`rules_recheck_restored:<same_read|newer_text|restore_bar>` (`text_gone` on older rows), and the event counts
 `restored_by_reason`.
 
 Each read is filed under the category Darwin files it under (`refileCategory`, strategy

@@ -2276,6 +2276,20 @@ the playbook entry.
 the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
 **Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
 
+## 2026-10-07: The rules re-check restored fees with no check when their text was gone
+**What happened:** a fee the rules re-check had taken down came back live, with no category
+guard, schedule check or category model, whenever the text it was read from was no longer stored
+(`rules-recheck.ts`, restore reason `text_gone`). 84 live fees at 16 banks came back that way,
+among them NY answer-key misses: an international wire filed as bill pay, "Letter of Protest" as a
+gift card, a $0 "ATM services are UNLIMITED" and a check photocopy filed as document reproduction.
+Each restore also wrote a `restored_after_takedown` lesson that told Knox the takedown was wrong.
+The re-check's "latest" text was also the last by text hash, not the newest read.
+**Fix:** that restore now needs the restore bar (`disputedRestoreVerdict`) on the document's newest
+text; texts are ordered by read id. `restore-recheck.ts` gives the 84 the same bar on a second look
+(archive, never delete), and Knox's lesson readers skip the lessons those unchecked restores wrote.
+**Lesson:** every path that puts a fee live passes the same checks as publish; a restore is a
+publish.
+
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
 names business, commercial, corporate or treasury accounts, the same test Magellan's

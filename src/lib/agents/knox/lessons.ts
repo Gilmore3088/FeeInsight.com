@@ -97,6 +97,8 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
             FROM pipeline_feedback r
             JOIN raw_fee_observations fr ON fr.fee_raw_id = r.fee_raw_id
            WHERE r.kind = 'restored_after_takedown'
+             -- Restored with no check (before 7 Oct): no verdict that the takedown was wrong.
+             AND COALESCE(r.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
              AND r.canonical_fee_key IS NOT NULL
              AND fr.fee_name IS NOT NULL
         ), judged AS (

@@ -8,6 +8,7 @@ import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
+import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
@@ -952,6 +953,13 @@ async function executeAgenticStep(
           })
         : null;
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
+      // Fees an older re-check restored with no check at all get the restore bar on a second look.
+      const restoreRecheck = await recheckUncheckedRestores(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
       const published = await runHamiltonPublish({
         runId: run.id,
@@ -1012,6 +1020,7 @@ async function executeAgenticStep(
               currentCopy.takenDown.length > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
+              restoreRecheck.rolledBack.length > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
           });
@@ -1033,6 +1042,10 @@ async function executeAgenticStep(
       const businessNote =
         businessSchedule.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${businessSchedule.rolledBack.length.toLocaleString()} business-schedule fee(s) beside the bank's consumer fee.`
+          : "";
+      const restoreRecheckNote =
+        restoreRecheck.failing.length > 0 || restoreRecheck.passing > 0
+          ? ` Second look on ${restoreRecheck.unchecked.toLocaleString()} unchecked restore(s): ${restoreRecheck.passing.toLocaleString()} clear the restore bar, ${restoreRecheck.failing.length.toLocaleString()} fail it, ${restoreRecheck.rolledBack.length.toLocaleString()} ${published.dryRun ? "would be archived" : "archived"}.`
           : "";
       const articleNote =
         articlePage.rolledBack.length > 0
@@ -1075,7 +1088,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1108,6 +1121,15 @@ async function executeAgenticStep(
             waiting: businessSchedule.waiting,
             rolled_back: businessSchedule.rolledBack.length,
             restored: businessSchedule.restored,
+          },
+          restore_recheck: {
+            unchecked: restoreRecheck.unchecked,
+            without_text: restoreRecheck.withoutText,
+            passing: restoreRecheck.passing,
+            failing: restoreRecheck.failing.length,
+            flagged: restoreRecheck.flagged,
+            waiting: restoreRecheck.waiting,
+            rolled_back: restoreRecheck.rolledBack.length,
           },
           article_page: {
             article_fees: articlePage.articleFees,
