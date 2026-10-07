@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Darwin held current-copy fees as duplicates of older copies at the same URL
+**What happened:** at about 01:05 UTC, Hamilton's read-only counts found 1,108 live fees whose
+Knox row on the bank's current page copy was held as `duplicate_in_batch` with no verified row on
+that document. On prod, 1,919 current-copy rows at 199 banks were held that way.
+**Cause:** Darwin's in-batch duplicate key used the source URL, not the stored document. When an
+older and a newer copy of one page were in the same batch, only the older copy's fee was verified;
+the current copy's fee was held as its duplicate and never selected again.
+**Fix:** the key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2), and those rows are
+selected once more when nothing on their own document is verified as the same fee. Dry run at
+01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
+live fee by name and amount. Nothing live comes down.
+**Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
 ## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
 **What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
 MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).

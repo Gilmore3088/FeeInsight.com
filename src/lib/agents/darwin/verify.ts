@@ -304,7 +304,15 @@ export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promis
   return new Map(texts.map((text) => [Number(text.source_document_id), text.normalized_text]));
 }
 
-/** Same institution, category, amount, frequency and source: the same fee line. */
+/**
+ * Version of the in-batch duplicate key, recorded on each attempt. Version 1 keyed on the
+ * source URL, so a fee on a bank's current copy of a page was held as a duplicate of the
+ * same fee on an older copy at that URL, and only the older copy was ever verified.
+ * Version 2 keys on the stored document.
+ */
+export const DARWIN_BATCH_KEY_VERSION = 2;
+
+/** Same institution, category, amount, frequency and document: the same fee line. */
 function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
   return [
     Number(row.institution_id),
@@ -312,7 +320,9 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
     normalizedAmount(row.amount),
     isPercentFee(row) ? `rate:${ratePercentOf(row)}` : "",
     (row.frequency ?? "").trim().toLowerCase(),
-    (row.source_url ?? row.document_r2_key ?? "").trim(),
+    row.source_document_id != null
+      ? `doc:${Number(row.source_document_id)}`
+      : (row.source_url ?? row.document_r2_key ?? "").trim(),
   ].join("|");
 }
 
@@ -343,6 +353,10 @@ async function selectRawFees(
     // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
     // rejected, or one a new re-file rule now places, is not lost.
     const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
+    // A row held as an in-batch duplicate under the old URL key is re-checked once when it
+    // sits on the bank's current copy and nothing on that same document is verified as the
+    // same fee; a row with a verified twin on its own document stays a duplicate.
+    const batchKeyParam = `$${params.push(DARWIN_BATCH_KEY_VERSION)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -352,6 +366,22 @@ async function selectRawFees(
               AND NOT (
                 pa.detail->>'reason_code' = 'category_mismatch'
                 AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'duplicate_in_batch'
+                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${batchKeyParam}
+                AND EXISTS (
+                  SELECT 1 FROM source_documents sd
+                   WHERE sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM verified_fee_observations twin
+                    JOIN raw_fee_observations twin_raw ON twin_raw.fee_raw_id = twin.fee_raw_id
+                   WHERE twin_raw.source_document_id = fr.source_document_id
+                     AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
+                     AND twin.amount IS NOT DISTINCT FROM fr.amount
+                )
               )
          )`);
   }
@@ -833,6 +863,7 @@ export async function runDarwinVerify(
           reason_code: result.reasonCode,
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
+          batch_key_version: DARWIN_BATCH_KEY_VERSION,
           amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
             ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
             : undefined,
