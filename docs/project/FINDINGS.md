@@ -2122,3 +2122,14 @@ timed out on every fetch, so it kept the link, and the paid schedule search re-s
 fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
 the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
 **Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
+## 2026-10-07: business-only fee schedules fed the consumer benchmarks
+**What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
+names business, commercial, corporate or treasury accounts, the same test Magellan's
+`isBusinessOnlyLink` uses. They counted in national, state and district medians, peer ranges and the
+paid report's rival columns as if they were consumer prices. Dry run: national monthly maintenance
+$5.36 to $5.00, NSF $30.00 to $29.95; most state moves were $0.50 to $2.50 in either direction.
+**Fix:** a read-model filter, not a data change. `STATS_ROW_FILTER` (fee-stats rule 6) and the
+local-market and custom-report rival reads leave those rows out; the bank's own page still shows
+them. `STATS_METHOD_VERSION` 4 makes cached index rows rebuild. Undo by reverting the filter.
+**Lesson:** a fee's source document decides whose price it is, so the statistics contract checks the
+source, not only that one exists.
