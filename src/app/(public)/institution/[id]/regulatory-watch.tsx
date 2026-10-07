@@ -7,11 +7,11 @@
 import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import { formatCompactDollars } from "@/lib/format";
+import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
 import type { SourceRef } from "@/lib/hamilton/workspace/types";
 import type { ActionTheme, RegulatoryWatch, WatchFeeTie, WatchPeerAction, WatchRuleChange, WatchState } from "@/lib/data-store/regulatory-watch";
 import { WATCH_ACTION_YEARS } from "@/lib/data-store/regulatory-watch";
 
-const AGENCY_LABEL = { OCC: "OCC", FRB: "Federal Reserve" } as const;
 
 export const THEME: Record<ActionTheme, { label: string; color: string }> = {
   consumer: { label: "Consumer law, UDAP, fees", color: "#A93D25" },
@@ -71,7 +71,7 @@ function shortBankName(name: string): string {
 
 function actionTitle(a: WatchPeerAction): string {
   return [
-    `${AGENCY_LABEL[a.agency]} ${a.action_type ?? "enforcement action"}`,
+    `${enforcementAgencyLabel(a.agency)} ${a.action_type ?? "enforcement action"}`,
     a.start_date ? fullDate(a.start_date) : null,
     a.against_holding_company ? `against the holding company, ${a.party_name}` : null,
     a.penalty_amount !== null ? `penalty ${formatCompactDollars(a.penalty_amount)}` : null,
@@ -356,7 +356,7 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
   const peersWithActions = new Set(actions.map((a) => a.peer_id)).size;
   const penalties = actions.reduce((sum, a) => sum + (a.penalty_amount ?? 0), 0);
   const consumer = actions.filter((a) => a.theme === "consumer").length;
-  const agencies = watch.agencies_loaded.map((a) => AGENCY_LABEL[a]).join(" and ") || "OCC and Federal Reserve";
+  const agencies = enforcementAgencyList(watch.agencies_loaded) || "OCC and Federal Reserve";
   const city = firstCity(watch.market?.places ?? []);
   const span = timelineWindow(watch.as_of, actions);
   const since = monthYear(new Date(span.start).toISOString());

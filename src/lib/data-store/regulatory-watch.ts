@@ -27,7 +27,8 @@ export const WATCH_RULE_DAYS = 365;
 export interface WatchPeerAction {
   peer_id: number;
   peer_name: string;
-  agency: "OCC" | "FRB";
+  /** "OCC", "FRB" or a state department ("STATE_NJ"). */
+  agency: string;
   /** The party named in the action (the bank, or its holding company). */
   party_name: string;
   against_holding_company: boolean;
@@ -121,7 +122,7 @@ export interface RegulatoryWatch {
   /** The institution's fees that consumer regulators watch most, beside the local market median. */
   fee_focus: WatchFeeTie[];
   /** Agencies whose lists are loaded; empty means no enforcement source yet. */
-  agencies_loaded: Array<"OCC" | "FRB">;
+  agencies_loaded: string[];
   rule_changes: WatchRuleChange[];
   /** False while the federal rule trackers run in shadow and store nothing. */
   rules_tracked: boolean;
@@ -319,7 +320,7 @@ export async function getRegulatoryWatch(
     return [{
       peer_id: peerId,
       peer_name: peerName.get(peerId) ?? String(r.party_name),
-      agency: String(r.agency) === "OCC" ? "OCC" : "FRB",
+      agency: String(r.agency),
       party_name: String(r.party_name),
       against_holding_company: byBank === null,
       action_type: actionType,
@@ -447,7 +448,7 @@ export async function getRegulatoryWatch(
     market: market ? { places: market.places, peers_checked: peers.length } : null,
     peer_actions,
     fee_focus: focusFees(ownFees, medians),
-    agencies_loaded: (["OCC", "FRB"] as const).filter((a) => loaded.some((r) => r.agency === a)),
+    agencies_loaded: loaded.map((r) => String(r.agency)).sort((a, b) => (a === "OCC" ? -1 : b === "OCC" ? 1 : a === "FRB" ? -1 : b === "FRB" ? 1 : a.localeCompare(b))),
     rule_changes: rule_changes.slice(0, 12),
     rules_tracked: Number(trackedRows[0]?.n ?? 0) > 0,
     as_of: asOf,

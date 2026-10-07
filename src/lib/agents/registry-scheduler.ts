@@ -16,6 +16,7 @@ import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
 import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
 import { ENFORCEMENT_MATCHER_VERSION, ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/enforcement";
+import { STATE_ENFORCEMENT_PARSER_VERSION, STATE_ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/state-enforcement";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -52,6 +53,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
+  [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,
   [CENSUS_ACS_SOURCE]: CENSUS_ACS_PARSER_VERSION,
 };
 
