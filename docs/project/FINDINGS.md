@@ -2961,3 +2961,15 @@ Rows already on file gain the fields only when Knox reads their document again.
   in the last 7 days) a direct run, ranked right after hand-found schedules.
 - **Watch.** `agent_runs` with `params_json->>'tier' = 'paid_fetched'`, and `agent_source_texts`
   for documents 21028 (Citizens) and 21030 (Fifth Third).
+
+## 2026-10-07: Darwin's paid pass ran only on monthly full passes
+
+- **Problem.** `verify-paid` (Claude's review of held fees and of Darwin's disagreements) was in
+  the full state-lane pass only, not the hourly backlog run. The last full passes with it were
+  queued by 02:40 UTC and drained by 14:24 UTC. After that no held fee was reviewed, so release
+  review v10 (PR 467) had nothing to run in.
+- **Fix.** `verify-paid` joins `STATE_LANE_BACKLOG_STEP_KEYS`, like Knox's `extract-paid`. It
+  reads only fees no attempt of the current version has read, so it spends nothing once they are
+  done; the Darwin and global budget caps still stop it.
+- **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
+  `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
