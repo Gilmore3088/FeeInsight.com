@@ -3,7 +3,9 @@ import {
   CFPB_FIRST_YEAR,
   fetchCfpbCompanyBreakdown,
   fetchCfpbCompanyCounts,
+  fetchCfpbCompanyProductIssues,
 } from "@/lib/regulatory/cfpb";
+import { FEE_PRODUCTS, FEE_PRODUCTS_KEY, FEE_SUB_ISSUES_KEY, subIssueKey } from "@/lib/complaints/fee-issues";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { loadAcceptedLinks, loadIdentityIndex, matchCompany, upsertIdentityLinks, type IdentityLinkInput } from "./identity";
 import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
@@ -14,14 +16,19 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  * 1. List every company with complaints that year and match names to
  *    institutions (institution_identity_links; ambiguous names wait for review).
  * 2. For each accepted company, pull the product and issue breakdown.
- * 3. Write institution_complaint_records per institution: product totals with
- *    issue '_total' (the existing convention) and top issues under product
- *    '_all'. Several companies mapped to one institution are summed.
+ * 3. Pull the issues (and sub-issues, when CFPB returns them) within the
+ *    deposit and card products, which is what fee complaints are counted from
+ *    (src/lib/complaints/fee-issues.ts).
+ * 4. Replace the whole year in institution_complaint_records: product totals
+ *    with issue '_total', every issue under product '_all', and the deposit and
+ *    card issues under FEE_PRODUCTS_KEY / FEE_SUB_ISSUES_KEY. Several companies
+ *    mapped to one institution are summed.
  */
 
 export const CFPB_SOURCE = "cfpb";
 const BREAKDOWN_CONCURRENCY = 4;
-const TOP_ISSUES = 15;
+/** v2: all issues (no top-15 cut), deposit/card fee issues, whole-year replace, better name matching. */
+export const CFPB_PARSER_VERSION = 2;
 const CURRENT_YEAR_REFRESH_HOURS = 24 * 7;
 const RECENT_YEAR_REFRESH_HOURS = 24 * 30;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;
@@ -44,6 +51,8 @@ export interface RegistryCfpbResult {
   reviewCompanies: number;
   institutions: number;
   complaints: number;
+  feeProductComplaints: number;
+  subIssuesLoaded: boolean;
   rowsWritten: number;
   dryRun: boolean;
 }
@@ -73,6 +82,8 @@ export async function runRegistryCfpb(options: RegistryCfpbOptions): Promise<Reg
     reviewCompanies: decisions.filter((d) => d.match.status === "needs_review").length,
     institutions: 0,
     complaints: 0,
+    feeProductComplaints: 0,
+    subIssuesLoaded: false,
     rowsWritten: 0,
     dryRun,
   };
@@ -84,34 +95,43 @@ export async function runRegistryCfpb(options: RegistryCfpbOptions): Promise<Reg
   const companyCounts = new Map(companies.map((c) => [c.key, c.doc_count]));
   const linked = [...accepted.entries()].filter(([company]) => companyCounts.has(company));
 
-  const breakdowns = await mapWithConcurrency(linked, BREAKDOWN_CONCURRENCY, async ([company, institutionId]) => ({
-    institutionId,
-    breakdown: await fetchCfpbCompanyBreakdown(company, year, options.fetchOptions),
-  }));
+  // Both requests per company run together, so a year stays inside one function call.
+  const breakdowns = await mapWithConcurrency(linked, BREAKDOWN_CONCURRENCY, async ([company, institutionId]) => {
+    const [breakdown, feeProducts] = await Promise.all([
+      fetchCfpbCompanyBreakdown(company, year, options.fetchOptions),
+      fetchCfpbCompanyProductIssues(company, year, FEE_PRODUCTS, options.fetchOptions),
+    ]);
+    return { institutionId, breakdown, feeProducts };
+  });
 
-  const byInstitution = new Map<number, { products: Map<string, number>; issues: Map<string, number> }>();
-  for (const { institutionId, breakdown } of breakdowns) {
-    const entry = byInstitution.get(institutionId) ?? { products: new Map(), issues: new Map() };
-    for (const product of breakdown.products) entry.products.set(product.key, (entry.products.get(product.key) ?? 0) + product.doc_count);
-    for (const issue of breakdown.issues) entry.issues.set(issue.key, (entry.issues.get(issue.key) ?? 0) + issue.doc_count);
+  type Counts = Map<string, number>;
+  const add = (map: Counts, key: string, count: number) => map.set(key, (map.get(key) ?? 0) + count);
+  const byInstitution = new Map<number, { products: Counts; issues: Counts; feeIssues: Counts; feeSubIssues: Counts }>();
+  for (const { institutionId, breakdown, feeProducts } of breakdowns) {
+    const entry = byInstitution.get(institutionId) ?? { products: new Map(), issues: new Map(), feeIssues: new Map(), feeSubIssues: new Map() };
+    for (const product of breakdown.products) add(entry.products, product.key, product.doc_count);
+    for (const issue of breakdown.issues) add(entry.issues, issue.key, issue.doc_count);
+    for (const issue of feeProducts.issues) add(entry.feeIssues, issue.key, issue.doc_count);
+    for (const sub of feeProducts.subIssues) add(entry.feeSubIssues, subIssueKey(sub.issue, sub.subIssue), sub.doc_count);
     byInstitution.set(institutionId, entry);
     result.complaints += breakdown.total;
+    result.feeProductComplaints += feeProducts.total;
+    if (feeProducts.subIssues.length > 0) result.subIssuesLoaded = true;
   }
 
   const rows: Array<{ institution_id: number; product: string; issue: string; complaint_count: number }> = [];
   for (const [institutionId, entry] of byInstitution) {
     for (const [product, count] of entry.products) rows.push({ institution_id: institutionId, product, issue: "_total", complaint_count: count });
-    const topIssues = [...entry.issues.entries()].sort((a, b) => b[1] - a[1]).slice(0, TOP_ISSUES);
-    for (const [issue, count] of topIssues) rows.push({ institution_id: institutionId, product: "_all", issue, complaint_count: count });
+    for (const [issue, count] of entry.issues) rows.push({ institution_id: institutionId, product: "_all", issue, complaint_count: count });
+    for (const [issue, count] of entry.feeIssues) rows.push({ institution_id: institutionId, product: FEE_PRODUCTS_KEY, issue, complaint_count: count });
+    for (const [issue, count] of entry.feeSubIssues) rows.push({ institution_id: institutionId, product: FEE_SUB_ISSUES_KEY, issue, complaint_count: count });
   }
   result.institutions = byInstitution.size;
 
-  // Replace the year for every institution touched, so products that dropped to zero disappear.
-  const institutionIds = JSON.stringify([...byInstitution.keys()]);
+  // Replace the whole year, so products that dropped to zero and links that were withdrawn disappear.
   await db`
     DELETE FROM institution_complaint_records
      WHERE report_period = ${String(year)}
-       AND institution_id IN (SELECT (jsonb_array_elements_text(${institutionIds}::jsonb))::bigint)
   `;
   for (const group of chunk(rows, 1_000)) {
     const payload = JSON.stringify(group);
@@ -140,7 +160,13 @@ export async function runRegistryCfpb(options: RegistryCfpbOptions): Promise<Reg
     runId: options.runId ?? null,
     nextAttemptAfterHours:
       year >= currentYear ? CURRENT_YEAR_REFRESH_HOURS : year === currentYear - 1 ? RECENT_YEAR_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS,
-    detail: { institutions: result.institutions, complaints: result.complaints },
+    detail: {
+      institutions: result.institutions,
+      complaints: result.complaints,
+      fee_product_complaints: result.feeProductComplaints,
+      sub_issues_loaded: result.subIssuesLoaded,
+      parser_version: CFPB_PARSER_VERSION,
+    },
   });
   return result;
 }

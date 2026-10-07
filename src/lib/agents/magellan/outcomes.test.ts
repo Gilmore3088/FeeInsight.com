@@ -83,6 +83,33 @@ describe("Magellan outcome ledger", () => {
     expect(linkYieldSlot(new Date("2026-10-06T23:59:00Z"))).toBe(23);
   });
 
+  it("judges a link wrong when a second look confirmed at least as many of its fees wrong as are live", () => {
+    expect(judgeLink(link({ live_fees: 2, confirmed_down: 5 }), NOW)).toEqual({
+      label: "wrong_fees",
+      signal: "wrong",
+      kind: "confirmed_wrong_fees",
+      weight: 5,
+    });
+    // Fewer confirmed than live, or under the bar: judged by its live fees as before.
+    expect(judgeLink(link({ live_fees: 12, confirmed_down: 4 }), NOW)).toMatchObject({ label: "good" });
+    expect(judgeLink(link({ live_fees: 0, confirmed_down: 2 }), NOW)?.label).not.toBe("wrong_fees");
+  });
+
+  it("reads only second-look confirmations, never first-look takedowns", async () => {
+    const statements: string[] = [];
+    const db = vi.fn(async (strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      statements.push(text);
+      if (text.includes("to_regclass")) return [{ ready: true }];
+      return [];
+    });
+    await recordLinkOutcomes(db as never, { runId: 1, stateCode: "TX", now: NOW });
+    const ledger = statements.find((text) => text.includes("confirmed AS ("));
+    expect(ledger).toBeDefined();
+    expect(ledger).toContain("f.kind = 'takedown_confirmed'");
+    expect(ledger).not.toMatch(/not_on_schedule|wrong_amount|'threshold'/);
+  });
+
   it("judges a business-only main link as wrong even when it produced live fees", () => {
     const business = link({ url: "https://www.launchcu.com/wpcms/wp-content/uploads/Business-Account-Fee-Schedule.pdf", live_fees: 26 });
     expect(judgeLink(business, NOW)).toEqual({ label: "business", signal: "wrong", kind: "business_schedule", weight: 1 });

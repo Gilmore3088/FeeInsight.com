@@ -39,6 +39,25 @@ const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread 
  * is what counts. An institution leaves the direct path on its own once it has run.
  */
 export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[] = [
+  // Tennessee report (2026-10-07 06:50): 6 of the 7 largest TN deposit holders had no live
+  // overdraft fee, so only 26% of TN branch deposits had one.
+  ...([
+    [37, "First Horizon Bank"],
+    [47, "Pinnacle Bank"],
+    [27, "Regions Bank"],
+    [122, "FirstBank"],
+    [5, "U.S. Bank National Association"],
+    [251, "Wilson Bank and Trust"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Tennessee report: largest deposit holder with no live overdraft fee",
+  })),
+  {
+    institutionId: 393,
+    institutionName: "ACNB Bank",
+    reason: "Adams County, PA market study: 61% of county deposits, no fee schedule on file",
+  },
   { institutionId: 8109, institutionName: "Space Coast Federal Credit Union", reason: "Hamilton answer had only 5 fees; full schedule needed" },
   ...([
     [51, "First National Bank of Pennsylvania"],
@@ -98,7 +117,7 @@ export interface PriorityInstitutionRow {
  *  1. a fee schedule found by hand (Magellan's operator list) not yet fetched;
  *  2. an institution on PRIORITY_INSTITUTION_REQUESTS;
  *  3. a $10B+ institution or state market leader with a fee link but no live overdraft fee.
- * Larger institutions first within a tier. An institution with a priority run in flight,
+ * Requests run in list order; otherwise larger institutions first within a tier. An institution with a priority run in flight,
  * or one started inside its retry window, is skipped.
  */
 export async function selectPriorityInstitutions(
@@ -153,7 +172,9 @@ export async function selectPriorityInstitutions(
               END
             )
        )
-     ORDER BY c.tier ASC, COALESCE(c.asset_size, 0) DESC, c.id ASC
+     ORDER BY c.tier ASC,
+              CASE WHEN c.tier = 2 THEN array_position(${requested}::bigint[], c.id::bigint) END ASC NULLS LAST,
+              COALESCE(c.asset_size, 0) DESC, c.id ASC
      LIMIT ${limit}::int
   `;
   const tiers: Record<number, PriorityTier> = { 1: "hand_found", 2: "requested", 3: "overdraft_gap" };
