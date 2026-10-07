@@ -36,6 +36,7 @@ import {
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
+import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
 
 export const maxDuration = 300;
 
@@ -243,8 +244,9 @@ async function handlePOST(request: Request) {
         providerContext,
         async () => generateText({
           model: getAnthropicLanguageModel(agent.model, "hamilton"),
-          system: systemPrompt,
+          system: cachedSystem(systemPrompt),
           messages: await convertToModelMessages(messages),
+          prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
           tools: agent.tools,
           maxOutputTokens: agent.maxTokens,
           stopWhen: stepCountIs(agent.maxSteps),
@@ -293,22 +295,26 @@ async function handlePOST(request: Request) {
     providerStartedAt = await guardProviderCall(providerContext);
     const result = streamText({
       model: getAnthropicLanguageModel(agent.model, "hamilton"),
-      system: systemPrompt,
+      // Tools and system are identical on every step, and each step re-sends the earlier
+      // tool results: cache both so later steps read them instead of paying full input.
+      system: cachedSystem(systemPrompt),
       messages: await convertToModelMessages(messages),
+      prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
       tools: agent.tools,
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
       onFinish: async ({ totalUsage }) => {
         try {
           // totalUsage spans every tool step; usage is only the last step.
+          const usage = ledgerUsage(totalUsage);
           const inputTokens = totalUsage?.inputTokens ?? 0;
           const outputTokens = totalUsage?.outputTokens ?? 0;
-          const costCents = estimateCostCents(agent.model, inputTokens, outputTokens);
+          const costCents = Math.round((estimateAnthropicCostMicrousd(agent.model, usage) ?? 0) / 10_000);
           if (!providerFailed && providerStartedAt !== null) {
             await recordProviderUsage(
               providerContext,
               "completed",
-              { inputTokens, outputTokens },
+              usage,
               { latencyMs: Date.now() - providerStartedAt },
             );
           }
