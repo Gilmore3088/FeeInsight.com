@@ -377,7 +377,15 @@ export async function runDarwinReleaseReview(
   const result: ReleaseReviewResult = { ...emptyPaidPassResult(dryRun), calls: 0, lessons: 0, passed: 0, released: 0 };
   if (options.calls <= 0 || !(await learningSchemaReady(db))) return result;
 
-  const candidates = await selectReviewCandidates(db, options.calls * RELEASE_REVIEW_FEES_PER_CALL, options.stateCode);
+  const limit = options.calls * RELEASE_REVIEW_FEES_PER_CALL;
+  const candidates = await selectReviewCandidates(db, limit, options.stateCode);
+  // A lane whose state has few held fees left fills the rest with the oldest held fees from any
+  // state, so the wait does not depend on when each state's lane next comes round.
+  if (options.stateCode && candidates.length < limit) {
+    const taken = new Set(candidates.map(({ row }) => Number(row.fee_raw_id)));
+    const others = await selectReviewCandidates(db, limit);
+    candidates.push(...others.filter(({ row }) => !taken.has(Number(row.fee_raw_id))).slice(0, limit - candidates.length));
+  }
   result.selected = candidates.length;
   if (dryRun) {
     result.results = candidates.slice(0, 50).map(({ row }) => ({

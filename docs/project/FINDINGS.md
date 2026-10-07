@@ -329,6 +329,15 @@ had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs
 schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
 lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
 direct runs already do, so it was removed.
+**Follow-up (08:10):** score order alone left Tennessee's lane (score 690, eighth) queued
+from 00:55 to past 08:00, while Knox re-reads and Magellan re-searches for the state waited
+on it. A state whose report James is waiting to review (`REPORT_REVIEW_STATES`) now runs
+right after failed-lane retries and carries the report-request weight in its score.
+**Follow-up (09:00):** Tennessee was then first in the order but still did not start. Each
+tick's direct institution runs used the first minutes, so Tennessee's first real step
+(enhance, state-expert, discover: about 170 seconds) no longer fit, and the next lane that
+did fit (WY at 08:48) started instead, counted as under way, and took the next tick. Once a
+lane is held for the deadline, no lower lane starts in that tick.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2878,6 +2887,29 @@ Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-r
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
 
+## 2026-10-07: Overdraft pages named their fee in a heading Knox did not read
+
+- **Problem.** $10B+ banks' overdraft pages were being read, but no overdraft fee went live
+  (78 of 192). Knox took the words right before each price as the name, so it named the fee
+  "fee for each item or transaction paid" (Wilson Bank & Trust), "This" or "Maximum amount of
+  times this" (SouthEast Bank). With no category, nothing reached Darwin. SmartBank's Reg E
+  consent form, "a fee of up to $35.00 each time we pay an overdraft", gave no row at all.
+- **Fix.** Knox v33 (`knox/context-names.ts`) names a per-item price from the overdraft heading
+  above it and "this $X fee" from the term defined just above. It drops a fee the page says is
+  being eliminated, and it reads "a fee of up to $X each time we pay an overdraft".
+- **Watch.** The shared source check reads "up to $35.00" as a threshold, so the Reg E form's fee
+  is held as untraced until the accuracy thread changes `source-check.ts`. ACNB's document 20915
+  is a list of services with no overdraft price; finding its schedule is Magellan's work.
+
+## 2026-10-07: Darwin's release review only read the held fees of the lane's own state
+
+- **Problem.** `verify-paid` runs inside each state lane, and the release review picked held fees
+  from that state only. State lanes start hours after they are queued (Utah's, queued 02:05 UTC,
+  reached `verify-paid` at 08:07). At 08:25 Utah had 1 held fee waiting while about 1,000 waited
+  in other states, so release review v7 reviewed 1 fee in 90 minutes.
+- **Fix.** A lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (`release-review.ts`). Releases stay off; this changes only
+  which held fees get reviewed.
 ## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
 
 - **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
@@ -2890,6 +2922,19 @@ Rows already on file gain the fields only when Knox reads their document again.
   wasn't found.
 - **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
   Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
+
+## 2026-10-07: The paid fetch for blocked sites got only the call cap's leftovers
+
+- **Problem.** After PR 444 the paid fetch ran last in Magellan's paid step. On its first real
+  run (08:23, run 1964) the searches before it used the run's provider call cap, so it fetched
+  one bank of three (Morgan Stanley, stored for $0.018) and First Horizon waited. Separately,
+  53.com answers Fifth Third's fee PDFs with a "page doesn't exist" web page. The companion fetch
+  stored that page and Rosetta set the PDFs aside as blank reads, so nothing marked them blocked.
+- **Fix.** The paid fetch runs first in the step. The companion fetch refuses a PDF link
+  answered with a web page (`blocked_bot`), and the paid fetch also takes blocked companion pages
+  (one slot of three kept for them), including PDFs already set aside after reading that page.
+- **Watch.** `pipeline_attempts` with strategy `fetch.paid_web_fetch_companion` for Fifth Third
+  (institution 19) and `fetch.paid_web_fetch` for First Horizon (37).
 
 ## 2026-10-07: Written Hamilton answers were saved only from the browser
 
