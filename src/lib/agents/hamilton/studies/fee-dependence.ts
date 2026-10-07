@@ -136,9 +136,14 @@ export function withinTrend(rows: DependenceRow[]): { slopePerYear: number; se: 
   return { slopePerYear: slope, se, ciLow: slope - 1.96 * se, ciHigh: slope + 1.96 * se, institutions };
 }
 
+/** A loop, not Math.max(...years): the panel has ~120k rows, past the call-argument limit. */
+export function latestYearOf(rows: Array<{ year: number }>): number {
+  return rows.reduce((max, r) => (r.year > max ? r.year : max), rows[0].year);
+}
+
 export function buildFeeDependence(rows: DependenceRow[]): FeeDependenceResult | null {
   if (rows.length === 0) return null;
-  const latestYear = Math.max(...rows.map((r) => r.year));
+  const latestYear = latestYearOf(rows);
   const charters: Charter[] = ["bank", "credit_union"];
   const series: Record<string, YearPoint[]> = {};
   const trend: Record<string, unknown> = {};

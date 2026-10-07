@@ -99,7 +99,10 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
            ELSE make_interval(days => ${COMPANION_REFETCH_DAYS})
          END
        )
-     ORDER BY ias.last_fetched_at ASC NULLS FIRST, ias.id ASC
+     -- Schedules found by hand go first, so a state with more due pages than the limit
+     -- never leaves one waiting (NY had 12 due on 2026-10-07 and skipped Morgan Stanley).
+     ORDER BY (ias.found_by_strategy = 'discover.operator_schedule') DESC,
+              ias.last_fetched_at ASC NULLS FIRST, ias.id ASC
      LIMIT ${limit}
   `;
 }

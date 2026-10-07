@@ -65,12 +65,17 @@ export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; 
  * (James, 2026-10-06): a website on file, not offline or manual-review, and not a dead end
  * (`dead` / `needs_human`, which the quarterly re-check searches again). Counting dead ends
  * kept 23 states on daily paid passes that could never turn off; on this count alone 5 do.
- * A state also stays daily while Magellan's paid steps have banks due this month: dead-end
- * banks the paid find has not tried (`discover-paid`), and institutions with no website the
- * website search has not tried. Both are monthly per bank, so the rule turns off on its own,
- * and the paid caps still bound the spend.
+ * A state also stays daily while Magellan's paid steps have at least DAILY_FULL_PASS_FIND_DUE
+ * banks due this month (dead-end banks the paid find has not tried, `discover-paid`, plus
+ * institutions with no website the website search has not tried), or while any market leader
+ * is among them. Both are monthly per bank, so the rule turns off on its own, and the paid
+ * caps still bound the spend. A state with fewer banks due runs weekly until they are tried.
+ * Daily for any bank due kept 36 of 55 states daily on Oct 7 (HI with 1 bank due); this rule
+ * keeps 21.
  */
 export const DAILY_FULL_PASS_MISSING_LINKS = 50;
+/** About one day's paid finding: the paid find tries up to 25 banks a pass. */
+export const DAILY_FULL_PASS_FIND_DUE = 25;
 
 export type StateLaneRecheck = "quarterly";
 
@@ -250,6 +255,12 @@ export function quarterWindowKey(date = new Date()): string {
 /** Start of the next UTC day: when a daily focus lane's next full pass is due. */
 export function nextDayStart(date = new Date()): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
+}
+
+/** Start of the next UTC week (Monday, as Postgres date_trunc('week') counts it). */
+export function nextWeekStart(date = new Date()): Date {
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - daysSinceMonday + 7));
 }
 
 /** Start of the next UTC calendar month: when an idle lane's next full pass is due. */
@@ -689,6 +700,8 @@ export interface StateLaneCadence {
   recheckDue: boolean;
   /** Focus state still missing many links: full passes are due daily, not monthly. */
   daily: boolean;
+  /** Some banks still due a paid find this month, too few for daily: full passes weekly. */
+  weekly: boolean;
 }
 
 /**
@@ -698,49 +711,21 @@ export interface StateLaneCadence {
  */
 export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
   try {
+    const leaderIds = await loadMarketLeaderIds(sql, { stateCode });
     const [row] = await sql<{
       full_this_month: boolean;
+      full_this_week: boolean;
       full_today: boolean;
       recheck_this_quarter: boolean;
       missing_links: number;
       paid_find_due: number;
       website_find_due: number;
+      leader_find_due: number;
     }[]>`
-      SELECT
-        EXISTS (
-          SELECT 1 FROM public.agent_runs run
-           WHERE run.run_kind = 'workflow_lane'
-             AND upper(btrim(run.state_code)) = ${stateCode}
-             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
-             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
-             AND run.started_at >= date_trunc('month', NOW(), 'UTC')
-             -- Only a pass with the state-expert step counts: October 2026's passes ran
-             -- before it existed, so discovery and state memory would wait for November.
-             AND EXISTS (
-               SELECT 1 FROM public.agent_run_steps step
-                WHERE step.agent_run_id = run.id AND step.step_key = 'state-expert'
-             )
-        ) AS full_this_month,
-        EXISTS (
-          SELECT 1 FROM public.agent_runs run
-           WHERE run.run_kind = 'workflow_lane'
-             AND upper(btrim(run.state_code)) = ${stateCode}
-             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
-             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
-             AND run.started_at >= date_trunc('day', NOW(), 'UTC')
-        ) AS full_today,
-        (
-          SELECT count(*)::int FROM public.institution_sources inst
-            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
-           WHERE upper(btrim(inst.state_code)) = ${stateCode}
-             AND COALESCE(inst.status, 'active') = 'active'
-             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
-             AND ${findableBankSql()}
-        ) AS missing_links,
-        -- Mirrors magellan/paid-find.ts selectBanks: dead-end banks the paid pick or paid
-        -- web search has not tried this month after every free finder ran.
-        (
-          SELECT count(*)::int FROM public.institution_sources inst
+      -- Mirrors magellan/paid-find.ts selectBanks: dead-end banks the paid pick or paid
+      -- web search has not tried this month after every free finder ran.
+      WITH paid_due AS (
+          SELECT inst.id FROM public.institution_sources inst
             LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
            WHERE upper(btrim(inst.state_code)) = ${stateCode}
              AND COALESCE(inst.status, 'active') = 'active'
@@ -764,11 +749,11 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
                   AND pa.created_at >= date_trunc('month', NOW())
                   AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
              ) < 2
-        ) AS paid_find_due,
-        -- Mirrors magellan/website-find.ts selectRows: institutions with no website the
-        -- website search has not tried this month.
-        (
-          SELECT count(*)::int FROM public.institution_sources inst
+      ),
+      -- Mirrors magellan/website-find.ts selectRows: institutions with no website the
+      -- website search has not tried this month.
+      website_due AS (
+          SELECT inst.id FROM public.institution_sources inst
             LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
            WHERE upper(btrim(inst.state_code)) = ${stateCode}
              AND COALESCE(inst.status, 'active') = 'active'
@@ -784,7 +769,52 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
                   AND pa.created_at >= date_trunc('month', NOW())
                   AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
              )
-        ) AS website_find_due,
+      )
+      SELECT
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('month', NOW(), 'UTC')
+             -- Only a pass with the state-expert step counts: October 2026's passes ran
+             -- before it existed, so discovery and state memory would wait for November.
+             AND EXISTS (
+               SELECT 1 FROM public.agent_run_steps step
+                WHERE step.agent_run_id = run.id AND step.step_key = 'state-expert'
+             )
+        ) AS full_this_month,
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('day', NOW(), 'UTC')
+        ) AS full_today,
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('week', NOW(), 'UTC')
+        ) AS full_this_week,
+        (
+          SELECT count(*)::int FROM public.institution_sources inst
+            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+           WHERE upper(btrim(inst.state_code)) = ${stateCode}
+             AND COALESCE(inst.status, 'active') = 'active'
+             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+             AND ${findableBankSql()}
+        ) AS missing_links,
+        (SELECT count(*)::int FROM paid_due) AS paid_find_due,
+        (SELECT count(*)::int FROM website_due) AS website_find_due,
+        (
+          SELECT count(*)::int FROM (SELECT id FROM paid_due UNION SELECT id FROM website_due) due
+           WHERE due.id = ANY(${leaderIds}::bigint[])
+        ) AS leader_find_due,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
            WHERE run.run_kind = 'workflow_lane'
@@ -795,29 +825,34 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
         ) AS recheck_this_quarter
     `;
+    const findDue = Number(row?.paid_find_due ?? 0) + Number(row?.website_find_due ?? 0);
     const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS
-      || Number(row?.paid_find_due ?? 0) > 0
-      || Number(row?.website_find_due ?? 0) > 0;
+      || findDue >= DAILY_FULL_PASS_FIND_DUE
+      || Number(row?.leader_find_due ?? 0) > 0;
+    const weekly = !daily && findDue > 0;
     return {
-      fullDue: daily ? !row?.full_today : !row?.full_this_month,
+      fullDue: daily ? !row?.full_today : weekly ? !row?.full_this_week : !row?.full_this_month,
       recheckDue: !row?.recheck_this_quarter,
       daily,
+      weekly,
     };
   } catch (error) {
     console.error("stateLaneCadence failed:", error);
-    return { fullDue: true, recheckDue: false, daily: false };
+    return { fullDue: true, recheckDue: false, daily: false, weekly: false };
   }
 }
 
-function nextFullPassAt(daily: boolean): string {
-  return (daily ? nextDayStart() : nextMonthStart()).toISOString();
+function nextFullPassAt(cadence: Pick<StateLaneCadence, "daily" | "weekly"> | null): string {
+  if (cadence?.daily) return nextDayStart().toISOString();
+  if (cadence?.weekly) return nextWeekStart().toISOString();
+  return nextMonthStart().toISOString();
 }
 
 async function markLaneScheduled(
   stateCode: string,
   runId: number,
   backlog: boolean,
-  daily: boolean,
+  cadence: StateLaneCadence | null,
 ): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
@@ -825,7 +860,7 @@ async function markLaneScheduled(
            last_run_at = NOW(),
            next_run_after = CASE
              WHEN ${backlog} THEN NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-             ELSE LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour')
+             ELSE LEAST(${nextFullPassAt(cadence)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour')
            END,
            lease_token = NULL,
            lease_expires_at = NULL,
@@ -835,13 +870,14 @@ async function markLaneScheduled(
 }
 
 /**
- * Nothing due and no backlog: the lane sleeps until its next full pass (next month, or
- * tomorrow for a daily state), or at most STATE_LANE_IDLE_RECHECK_HOURS.
+ * Nothing due and no backlog: the lane sleeps until its next full pass (next month,
+ * tomorrow for a daily state, next Monday for a weekly one), or at most
+ * STATE_LANE_IDLE_RECHECK_HOURS.
  */
-async function markLaneIdle(stateCode: string, daily: boolean): Promise<void> {
+async function markLaneIdle(stateCode: string, cadence: StateLaneCadence): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
-       SET next_run_after = LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour'),
+       SET next_run_after = LEAST(${nextFullPassAt(cadence)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour'),
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()
@@ -928,7 +964,7 @@ export async function startStateLaneRun(
       stateCode,
       result.run.id,
       await stateHasDocumentBacklog(stateCode),
-      cadence?.daily ?? false,
+      cadence,
     );
   }
   return { ...result, stateCode, idempotencyKey, mode, recheck };
@@ -1035,7 +1071,7 @@ export async function scheduleDueStateLaneRuns({
     try {
       const cadence = await stateLaneCadence(stateCode);
       if (!cadence.fullDue && !(await stateHasDocumentBacklog(stateCode))) {
-        await markLaneIdle(stateCode, cadence.daily);
+        await markLaneIdle(stateCode, cadence);
         output.idle += 1;
         continue;
       }

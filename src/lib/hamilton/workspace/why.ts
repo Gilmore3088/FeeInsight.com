@@ -139,7 +139,11 @@ export function explainIncome(split: IncomeSplit): IncomeExplanation {
 
   const incomeMaterial = Math.abs(Math.log(1 + split.incomeGap)) >= MATERIAL;
   if (!incomeMaterial) {
-    lines.push("How often fees are charged, and which ones, brings your income back to about the median.");
+    lines.push(
+      Math.abs(split.priceGap) < 0.05
+        ? "Price and income both sit close to their peer medians."
+        : "How often fees are charged, and which ones, offsets the price difference.",
+    );
   } else if (split.priceShare === null) {
     lines.push("Price does not explain the gap, so it comes from how often fees are charged and which fees are charged.");
   } else if (split.priceShare >= 100) {

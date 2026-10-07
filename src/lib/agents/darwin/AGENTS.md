@@ -120,6 +120,10 @@ Darwin owns verification and classification.
   prices wrongly taken down and 3 unreadable). The review also reads the 3 schedule rows on each
   side of a fee's line (`scheduleContext`), since a price can belong to the next row or column.
   Each review attempt's detail records `lessons` (how many were in its prompt).
+  v6 (2026-10-07): a second hand check of 20 v5 passes had 16 right, with two overdraft-protection
+  transfers passed as overdraft. Each item now lists `not_these` (the categories the guard's
+  re-file rules move its category's fees to), and a fee whose name plus line `refileCategory`
+  moves elsewhere never passes (attempt detail `refiles_to`).
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
