@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Enforcement lists rarely record an end date, so "no end date" is not "active"
+**What happened:** the Pro enforcement card (PR 372) called every action with no termination date
+"active". On prod (read-only, 07:05 UTC) that was 825 of 4,431 OCC and Fed actions: 651 are civil
+money penalties alone, which are done once assessed, and 86 are orders from before 2016. Only 88
+are orders from the last ten years with no end date. PR 401 had also matched 48 actions to holding
+companies by name alone; most were unrelated companies sharing a generic name (State Holding Co of
+Thermopolis, WY on an Arkansas bank), found by checking all 28 names after its re-match ran.
+**Cause:** the OCC export and the Fed CSV leave the end date blank for penalties and for many old
+orders; holding-company names like "Community Bankshares Inc" repeat across states.
+**Fix:** PR 410 withdrew name-only matching (merged). This PR shows "no end date on file" only for
+orders from the last ten years and puts penalties and older ones under "Past"; Hamilton is told never
+to call such an action active.
+**Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
+match, count how many rows it covers on prod and read a sample of them.
+
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
 queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
