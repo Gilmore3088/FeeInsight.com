@@ -67,7 +67,7 @@ describe("registry scheduler", () => {
     const bills = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
     expect(bills({})).toEqual([]);
-    expect(bills({ OPEN_STATES_API_KEY: "key" })).toHaveLength(52);
+    expect(bills({ OPEN_STATES_API_KEY: "key" })).toEqual(["current"]);
     const federal = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "federal-bills")?.partitions;
     expect(federal({})).toEqual([]);
