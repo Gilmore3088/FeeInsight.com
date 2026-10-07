@@ -19,6 +19,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { DARWIN_CATEGORY_MODEL_STRATEGY } from "./category-model";
 import { scheduleContext } from "./release-held";
 import { runDarwinReleaseReview } from "./release-review";
+import { loadReviewMisses, runDarwinVerdictScore, type ReviewMiss } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
@@ -140,7 +141,7 @@ export function adjudicationSource(
   return { sourceContext: probe ? scheduleContext(text, probe) : null, priceCheck: null };
 }
 
-export function adjudicatePrompt(candidates: AdjudicationCandidate[]): string {
+export function adjudicatePrompt(candidates: AdjudicationCandidate[], misses: ReviewMiss[] = []): string {
   const items = candidates.map((candidate) => ({
     id: candidate.feeRawId,
     fee_name: candidate.feeName,
@@ -163,6 +164,20 @@ export function adjudicatePrompt(candidates: AdjudicationCandidate[]): string {
     "  `filed_as` and `alternative` are two guesses; either may be wrong.",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
     "",
+    ...(misses.length > 0
+      ? [
+          "Your past mistakes on fees filed like these, checked against hand-keyed schedules. Do not repeat them:",
+          JSON.stringify(misses.map((miss) => ({
+            fee_name: miss.feeName,
+            amount: miss.amount,
+            filed_as: miss.filedAs,
+            you_said: miss.said,
+            schedule_says: miss.keySays.length > 0 ? miss.keySays : "no fee at this amount",
+            schedule_line: miss.keyLine,
+          }))),
+          "",
+        ]
+      : []),
     "Canonical keys:",
     canonicalFeeList(),
     "",
@@ -280,6 +295,19 @@ function isStopError(error: unknown): boolean {
 export async function runDarwinAdjudicate(
   options: PaidStepOptions & { create?: PaidMessageCreator },
 ): Promise<PaidPassResult> {
+  const result = await reviewAndAdjudicate(options);
+  if (options.dryRun) return result;
+  // Score the reviews' new verdicts against the answer keys after every chunk (no model call).
+  const db = options.db ?? sql;
+  if (!(await learningSchemaReady(db))) return result;
+  const score = await runDarwinVerdictScore(db, { runId: options.runId, stepId: options.stepId ?? null });
+  if (score.chunks.length > 0) result.results.push({ pass: "verdict_score", chunks: score.chunks, lessons: score.lessons });
+  return result;
+}
+
+async function reviewAndAdjudicate(
+  options: PaidStepOptions & { create?: PaidMessageCreator },
+): Promise<PaidPassResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
   const result = emptyPaidPassResult(dryRun);
@@ -328,9 +356,12 @@ export async function runDarwinAdjudicate(
     );
   }
 
+  const misses = await loadReviewMisses(db, "verify.adjudicate", candidates.map((candidate) => candidate.knoxKey));
   const model = PAID_PASS_MODELS.verify();
   for (let start = 0; start < candidates.length; start += FEES_PER_CALL) {
     const batch = candidates.slice(start, start + FEES_PER_CALL);
+    const batchKeys = new Set(batch.map((candidate) => candidate.knoxKey));
+    const batchMisses = misses.filter((miss) => miss.filedAs != null && batchKeys.has(miss.filedAs));
     const startedAt = Date.now();
     const common = (candidate: AdjudicationCandidate) => ({
       institutionId: candidate.institutionId,
@@ -353,7 +384,7 @@ export async function runDarwinAdjudicate(
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          messages: [{ role: "user", content: adjudicatePrompt(batch) }],
+          messages: [{ role: "user", content: adjudicatePrompt(batch, batchMisses) }],
         },
         create: options.create,
         metadata: { fee_raw_ids: batch.map((candidate) => candidate.feeRawId) },
@@ -423,6 +454,7 @@ export async function runDarwinAdjudicate(
           side,
           reason: verdict.reason,
           price_check: candidate.priceCheck ?? null,
+          lessons: batchMisses.length,
           source_context: candidate.sourceContext ?? null,
           model,
         },

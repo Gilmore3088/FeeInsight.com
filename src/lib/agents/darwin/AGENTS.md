@@ -91,6 +91,15 @@ Darwin owns verification and classification.
   disagreements at key banks (Knox on 2); its misses mostly took a neighbouring row's
   price or a balance threshold as the fee
   (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
+- Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
+  category review's and the release review's verdicts at answer-key institutions are scored
+  against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
+  fixtures) in chunks of 20 decided verdicts. Each chunk is a `verify.verdict_score` attempt
+  (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
+  outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
+  `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent
+  misses for the categories in a batch as lessons. Coverage is small: about 5% of the
+  category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
