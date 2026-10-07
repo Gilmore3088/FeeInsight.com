@@ -558,20 +558,23 @@ function checkAgainstLines(
 /**
  * A name that runs onto the next row ("PROCESSING OF LEVIES**" / "IRS or Court-ordered
  * Garnishments ...... $100.00", read as "PROCESSING OF LEVIES IR"): when the fee's name ends
- * with the start of the next row and that row states one price, the two rows are the fee's row.
+ * with the start of the next row, the two rows up to that row's first price are the fee's row.
  * The line itself must carry no price, so a priced row never takes the next row's price.
  */
 function wrappedNameRow(lines: string[], index: number, feeName: string): string | null {
   const line = lines[index];
   const next = lines[index + 1];
-  if (!next || moneyTokens(line).length > 0 || moneyTokens(next).length !== 1) return null;
+  if (!next || moneyTokens(line).length > 0) return null;
+  // The row runs to the next row's first price ("on us only $5.00 Bad Address Correction Fee $3.00").
+  const price = moneyTokens(next)[0];
+  if (!price) return null;
   const words = comparable(feeName).replace(/[^a-z0-9' ]/g, " ").trim().split(/\s+/);
   const here = ` ${comparable(line).replace(/[^a-z0-9' ]/g, " ")} `;
   let cut = words.length;
   while (cut > 0 && !here.includes(` ${words[cut - 1]} `)) cut -= 1;
   const tail = words.slice(cut).join(" ");
   if (cut === 0 || tail.length < 2) return null;
-  return comparable(next).startsWith(tail) ? `${line} ${next}` : null;
+  return comparable(next).startsWith(tail) ? `${line} ${next.slice(0, price.end)}` : null;
 }
 
 /**
