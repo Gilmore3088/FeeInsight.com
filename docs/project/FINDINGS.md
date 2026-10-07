@@ -13,6 +13,28 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Admin Today read job health from the retired workers' markers
+**What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
+including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
+run Aug 12" and "Hamilton monthly pulse is overdue", while prod showed Atlas lanes completing at
+03:26 UTC Oct 7, agent steps finishing every few minutes, the registry sync at 03:17 and a monthly
+pulse completed Oct 6 06:07.
+**Cause:** `getJobFreshness` read `workers_last_run`, which only the retired Modal workers wrote; its
+newest row is Aug 13. The report freshness gate read the same table for its Atlas health check.
+**Fix:** job health and the report gate now read `agent_runs`, `agent_run_steps` and `report_jobs`
+(this PR). The tick is only overdue while steps are queued.
+**Lesson:** when a runtime is retired, grep for every table it wrote and move each reader to the new
+ledger in the same change.
+
+## 2026-10-07: postgres.js sends numbers untyped, so a CASE of them is text
+
+Darwin's release review read no lessons on prod: all 32 reviews after PR 351 recorded `lessons: 0` though the
+store held 27 lessons for those categories. The query compared `row_number()` with
+`CASE ... THEN ${n} ELSE ${m} END`. postgres.js sends JS numbers with no type, Postgres resolves a CASE of
+untyped values to text, and `bigint <= text` fails. The loader caught the error and returned no lessons.
+Fix: cast numbers used in CASE or COALESCE (`${n}::int`). A loader that falls back on error should log why,
+and its first prod run should be checked for a non-zero count, not just the presence of the field.
+
 ## 2026-10-07: A fee's own schedule line is not enough context to judge it
 **What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
 check of 20 random source-check takedowns (24 hours to 02:50 UTC, `wrong_amount`/`threshold`)
@@ -1777,6 +1799,16 @@ taken down.
 **Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
 stay broken without anyone seeing them.
 
+## 2026-10-07: The newer-copy check could judge a copy Knox never read
+**What happened:** Knox reads a stored text once, so a newer copy whose text is byte-identical to
+one it already read (same `text_hash`, for example Wailuku FCU documents 2917 and 16048) has no fee
+rows of its own. The newer-copy check judged fees by the newer copy's text only, so it never retired
+anything on identical text, but nothing stopped it from judging a copy Knox had not read, or retiring
+a fee Knox did read from the newer text under another category or as a held row.
+**Fix:** the check skips pairs whose texts are identical, waits until Knox has rows for the newer
+text (from any copy with the same `text_hash`), and never retires a fee whose name or amount Knox
+read from that text. These guards only retire less (version 1 retired one fee in total), so the
+strategy version is unchanged. Retires stay logged with a reason and restorable.
 ## 2026-10-07: the free companion finder never reached most hidden banks
 **What happened:** the companion finder (`second-document.ts`) only takes banks in the step's own
 state. On 6-7 Oct it checked 507 banks in 30 smaller states and found pages at 353 (1,307 pages, $0),
@@ -1841,6 +1873,42 @@ comparison without its right-hand side. The fixed query was run read-only on pro
 12 rows.
 **Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
 merging.
+
+## 2026-10-07: transfer limits were live as prices
+**What happened:** Knox read limit lines as fees and nothing downstream caught them, because the
+categories involved (Zelle, mobile deposit, bill pay, cash advance) have no amount range and fall
+back to the $2,500 default. Live examples: "Zelle® transfer limit" $1,000, "Mobile Deposit Checks
+are limited to" $1,000, "Cash Advance: Customer" read from "$2,500 Limit". Prod dry run (read-only,
+7 Oct ~01:50 UTC): 22 live fees.
+**Fix:** Hamilton's limit guard (`hamilton/limit-guard.ts`) rolls them back each publish step,
+archived with a `limit_as_fee:` reason, and refuses new ones at publish. Knox is fixing the read.
+**Lesson:** a category without an amount range accepts any figure; a limit and a price only differ
+in the words next to the figure.
+
+## 2026-10-07: three gaps in Hamilton's own bookkeeping
+**What happened:** (1) The feedback sync named a check after each takedown reason, so PR 311's
+refresh closes ("refreshed by #69017") wrote 632 learning rows, each with its own check name and a
+`wrong` signal, though a refresh means Knox and Darwin were right; 6 more came from "older document
+than #N". (2) The newer-copy check and the rules re-check restore older rows without a new highest
+fee id, so the source check, which re-checks a bank only when that id changes, left restored fees
+unchecked. (3) The rules re-check judged a fee against the document's latest text when its own text
+was gone, so it could take a fee down for what another text says: 438 of 2,158 re-check takedowns
+made 6-30 hours after publishing (Oct 5-7). The rest were newer Knox versions reading the same text
+differently (the burst on Oct 5, 16:00-23:00 UTC, followed a Knox release); only 20 were the
+hint-category case PR 316 fixes.
+**Fix:** reasons that point at a row get one check name (`hamilton.refresh_copy`,
+`hamilton.duplicate_collapse`) with the id in evidence, refreshes count as `right`, and the sync
+relabels the old rows (kept, old name in evidence). Restores leave a marker the source check's due
+query honors. The re-check only takes a fee down for its own text, and brings back the up to 552
+takedowns (195 banks) it judged against another text, each re-judged by the source check.
+Then a second look before any re-check takedown (coordinator, 7 Oct): a fee Knox's newer rules no
+longer read from its own text comes down only if its name and price no longer trace there or the
+category guard rejects it. Sample of 60 past re-check takedowns (read-only, text near each fee):
+40 would have stayed live. Some of those 40 are wrong fees the category guard does not cover (a
+safe deposit size row filed as a cash advance, "Printed Account History" as an ACH return), so
+they wait for the next Knox version instead of coming down.
+**Lesson:** an identifier never belongs in a name something groups by, and a "due" test keyed on
+the highest id misses anything that comes back with an old id.
 
 ## 2026-10-07: Rosetta's free readers looked worse than they were, and reopened pages were never read
 **What happened:** a red-team check found free OCR succeeding on 30 of 146 documents, the
@@ -1986,6 +2054,26 @@ were read from the same page.
 **Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
 consumer/business split for the fee readers, not something Hamilton can fix.
 
+## 2026-10-07: Darwin's dispute threshold was too loose to bring takedowns back
+**What happened:** 4,467 live fees were taken down by the rules re-check before the second look
+existed; 3,783 still have their own text and 3,156 have no live copy of the same category and price.
+Restoring those that pass the second look and that Darwin's category model does not dispute
+(probability above 0.05) was hand-checked on a random 20 (read-only, text near each fee): 16 right.
+Misses were a fax service filed as account research, an in-network ATM filed as non-network, a
+price from the next column, and a refundable key deposit. Each tighter filter was checked on a
+fresh random 20: 17, 15, 16, 16 right. Misses included two-column rows ("Legal Processing ... | Stop
+payments ... $35"), $0 in-house services, "Minimum balance of $25", "UPS Fee + $1", "Copy of Money
+Order check" as a money order, and a safe deposit size row joined to "Credit card cash advance".
+**Fix:** the restore bar (`hamilton/restore-guard.ts`): the model's top category must be the
+fee's own at probability 0.8 or more (first pipe cell too, no other cell disputed), the price must
+sit on the fee's own row, and $0, minimum-balance, refundable, limit, markup, cut-off and copy-of
+rows stay down. A fresh random 20 that passed it: 19 right (bar 18); the miss, a reproduction of
+cashier's checks filed as a cashier's check, led to the copy-of rule. About half of the ~1,400 rows
+the database-side part of the bar keeps passed the full bar in two samples (24 of 50), so roughly
+700 should come back; that is an estimate, and the first run's `restored_by_reason` gives the count.
+**Lesson:** a dispute threshold tuned to flag fees is not a bar for restoring them; restoring
+needs positive agreement, measured on fresh samples rather than the sample a filter was tuned on.
+
 ## 2026-10-07: Limit wordings v28 missed
 **What happened:** v29's first prod run (02:55 UTC, 50 pages, 241 rows) still raised six limits as
 fees: four "the limit will increase to $500/$1,500" rows filed as overdraft and "Daily ATM Limits
@@ -1996,6 +2084,9 @@ at $2,500, is a balance threshold read as a fee and is not fixed here.
 "($/#)" note to `namesALimit`.
 **Lesson:** prove a rules change on its first prod run, not only on the answer keys: prod pages carry
 wordings the keyed schedules lack.
+**Follow-up (v31):** v30's first prod run (03:21 UTC, 362 rows) had none of these wordings but read
+an ATM rebate cap ("The maximum rebate per 12-month cycle" $180/$240) as a fee; v31 reads a maximum
+rebate, refund or reimbursement as a limit.
 
 ## 2026-10-07: Knox's lessons ignored restores
 **What happened:** Hamilton publish found that Knox's lessons read every `wrong_category` takedown as
@@ -2010,3 +2101,24 @@ category it came back with, and drop a takedown only when the fee was restored u
 category. On prod this adds 30 lessons and drops none.
 **Lesson:** a restore can change a fee's category, so check it against the category of the
 verdict it overturns, not just the fee id.
+
+## 2026-10-07: Paid schedule search re-paid for banks whose answer never opens
+**What happened:** the paid schedule search treated a timeout as "not searched", so every paid step
+searched Morgan Stanley Private Bank and Northern Trust again. The model named the schedule each time,
+but the bank's site timed out when we opened it. That made 35 and 34 paid calls in 9 hours. In October
+71 timeouts on 3 banks cost $3.87, a fifth of the step's $15.86, and took 2 of the 10 priority slots
+in every step.
+**Fix:** `MAX_TRANSIENT_TRIES` (3): a bank whose month holds 3 tries that timed out or were refused is
+searched again next month. Budget stops don't count.
+**Lesson:** a retry rule for transient failures needs a count, or a site that always fails is retried
+forever.
+
+## 2026-10-07: Error pages saved as fee links never went back to discovery
+**What happened:** three banks' fee links are the site's own error page: Northern Trust
+(`/united-states/page-not-found`), Service 1st FCU (`/404/`) and Bank of Hays (`.../wcErrors/404.html`).
+Magellan sends a link back to discovery only on a 404, a 410 or a redirect home. Northern Trust's page
+timed out on every fetch, so it kept the link, and the paid schedule search re-searched it.
+**Fix:** `isErrorPageLink` (`link-coverage.ts`): the fetch step treats such a link as gone however the
+fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
+the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
+**Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.

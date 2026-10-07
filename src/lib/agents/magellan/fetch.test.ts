@@ -158,6 +158,27 @@ describe("Magellan agentic fetch", () => {
     expect(sqlText).toContain("locked_by_correction IS TRUE");
   });
 
+  it("sends a bank whose fee link is the site's error page back to discovery, even on a timeout", async () => {
+    const db = createDbMock([
+      {
+        id: 25,
+        institution_name: "Trust Bank",
+        fee_schedule_url: "https://www.trust.example/united-states/page-not-found",
+        asset_size: "500",
+        last_crawl_at: null,
+        consecutive_failures: 0,
+      },
+    ]);
+    const fetchImpl = vi.fn().mockRejectedValueOnce(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
+
+    const result = await runMagellanFetch({ runId: 106, db: asFetchDb(db), fetchImpl });
+
+    expect(result.results[0]).toMatchObject({ outcome: "failed", reason: "Link is the site's error page, not a fee schedule" });
+    const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(sqlText).toContain("rejected_source_urls");
+    expect(sqlText).toContain("failure_reason = 'magellan_dead_link'");
+  });
+
   it("treats a fee link that redirects to the homepage as gone", async () => {
     const db = createDbMock([
       {

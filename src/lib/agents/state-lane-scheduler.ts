@@ -10,7 +10,7 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
-import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
@@ -439,6 +439,13 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
               WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
                 AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                 AND pa.institution_id = live.institution_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts restore
+                   WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                     AND restore.institution_id = live.institution_id
+                     AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                     AND restore.id > pa.id
+                )
            )
         OR (
           live.rolled_back_at IS NULL
@@ -569,6 +576,13 @@ export async function refreshLanePriorities(): Promise<number> {
             WHERE pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
               AND pa.institution_id = newest.institution_id
               AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || newest.max_id::text
+              AND NOT EXISTS (
+                SELECT 1 FROM public.pipeline_attempts restore
+                 WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                   AND restore.institution_id = newest.institution_id
+                   AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                   AND restore.id > pa.id
+              )
          )
          GROUP BY 1
       ),
