@@ -93,6 +93,10 @@ const UNIT_CELL =
 // The previous row's bare price also leads a name in one-line schedules ("100.00 Overdraft (items paid)").
 const LEADING_FRAGMENT = /^(?:(?:\/\s*[A-Za-z.]+|per\s+[a-z/]+(?:\s+[a-z]+)?|each|ea\.)\s+(?=[A-Z“"(•●▪■◦➢►▸])|[a-z]\.\s+(?=[A-Z])|\d{1,2}[.)]\s+(?=[A-Z])|\$?\d[\d,]*\.\d{2}\s+(?=[A-Z]))/;
 
+/** A connector left at the end of a name where the sentence ran on into the price. */
+const MAX_TITLE_WORDS = 8;
+const DANGLING_END = /(?:\s+(?:a|an)\s+(?:fee|charge))?\s+(?:of|for|at|is|to|and|or|with|by|a|an|the)$/i;
+
 /** Trailing stops and separators, except the stop of an abbreviation ("Outside U.S."). */
 function trimEnd(name: string): string {
   let result = name;
@@ -118,6 +122,10 @@ export function tidyFeeName(raw: string): string {
   const notAName = (cell: string) => UNIT_CELL.test(cell) || /^[a-z]/.test(cell) || PROSE.test(cell) || /\.$/.test(cell);
   while (cells.length > 1 && notAName(cells[0])) cells = cells.slice(1);
   while (cells.length > 1 && UNIT_CELL.test(cells[cells.length - 1])) cells = cells.slice(0, -1);
+  // A "None"/"Free" cell between names is the previous row's price: the name starts after it
+  // ("Monthly service fee | None | Bill payment- same day ACH").
+  const lastValue = cells.findLastIndex((cell, index) => index < cells.length - 1 && ZERO_WORD.test(cell));
+  if (lastValue >= 0) cells = cells.slice(lastValue + 1);
   let name = cells.map((cell) => trimEnd(cell.replace(/[\s:]+$/, ""))).join(": ");
   // Bullets and unit fragments can stack ("/transfer ● Drill lock on box").
   for (let pass = 0; pass < 3; pass += 1) {
@@ -129,6 +137,14 @@ export function tidyFeeName(raw: string): string {
     .replace(/[\s:;,\-–|/]+$/, "")
     .trim();
   name = trimEnd(name);
+  // The words that led into the price ("Replacement Card Fee of", "ATM Fee for",
+  // "Debit Card Replacement A fee of") and an article in front ("A minimum balance fee").
+  // A sentence keeps its ending: "required to avoid a minimum balance fee of" is how the
+  // category guard tells a fee sentence from a balance requirement.
+  if (name.split(" ").length <= MAX_TITLE_WORDS) {
+    for (let pass = 0; pass < 2; pass += 1) name = trimEnd(name.replace(DANGLING_END, ""));
+  }
+  name = name.replace(/^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());
   // "(Money Order)" alone is the name in parentheses.
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();

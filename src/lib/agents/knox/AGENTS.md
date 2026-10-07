@@ -126,6 +126,16 @@ of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
 stay held.
 
+v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
+02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
+collection fee on charged-off accounts and a collection phone call are debt collection, not a
+check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
+report to open an account is not a loan fee. Those lines now stay held. Each extract step also
+re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
+today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
+and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
+already verified are Hamilton's rules re-check's to take down.
+
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the
 account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
@@ -363,3 +373,12 @@ text, as the free reader already did. A family expert names a fee after the prev
 ("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
 keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
 Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.
+
+v29 (rules 29) tidies names that ran on into their price. A short name loses the connector before
+the price ("Visa Lost/Stolen Replacement Card Fee of", "Non-Bank of America ATM Fee for",
+"Debit Card Replacement A fee of") and a leading article ("A minimum balance fee" becomes "Minimum
+balance fee"), and a "None" or "Free" cell between two names is the previous row's price, so the name
+starts after it (`tidyFeeName`). A sentence of more than eight words keeps its ending, because the
+category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
+right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
+of 1,437 kept, the same fees.

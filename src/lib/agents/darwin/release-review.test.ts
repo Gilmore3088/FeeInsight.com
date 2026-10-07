@@ -9,6 +9,8 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 import { DARWIN_RELEASE_ACTS, type HeldFeeRow } from "./release-held";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
+  lessonsFor,
+  loadReviewLessons,
   parseReleaseReviews,
   releaseReviewPrompt,
   reviewPasses,
@@ -68,6 +70,49 @@ function attempts(db: DbMock): Array<{ strategy: unknown; outcome: unknown; deta
 }
 
 describe("Darwin held-fee release review", () => {
+  it("puts the learning store's lessons for a batch's categories in the prompt", () => {
+    const stop = { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00" };
+    const lessons = [
+      { filedAs: "stop_payment", feeName: "Stop Payment Removal", amount: 5, scheduleLine: "Stop Payment Removal | $5.00", found: "wrong: filed under the wrong category" },
+      { filedAs: "cashiers_check", feeName: "Cashier's Check", amount: 10, scheduleLine: null, found: "wrong: filed under the wrong category" },
+    ];
+    const forBatch = lessonsFor([stop], lessons);
+    expect(forBatch.map((lesson) => lesson.filedAs)).toEqual(["stop_payment"]);
+    const prompt = releaseReviewPrompt([stop], forBatch);
+    expect(prompt).toContain("Lessons:");
+    expect(prompt).toContain("Stop Payment Removal | $5.00");
+    expect(prompt).not.toContain("Cashier's Check");
+    expect(releaseReviewPrompt([stop])).not.toContain("Lessons:");
+  });
+
+  it("reads lessons only from category judgements and restores, never the source check's amount calls", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback pf")) {
+        return Promise.resolve([
+          { canonical_fee_key: "stop_payment", fee_name: "Stop Payment Removal", amount: "5.00", excerpt: "Stop Payment Removal | $5.00", kind: "wrong_category" },
+          { canonical_fee_key: "stop_payment", fee_name: "Stop Payment", amount: "25.00", excerpt: null, kind: "restored" },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const lessons = await loadReviewLessons(db as never, ["stop_payment", "stop_payment"]);
+    const query = db.mock.calls.map(([strings]) => templateText(strings)).find((text) => text.includes("FROM pipeline_feedback pf")) ?? "";
+    expect(query).toContain("'wrong_category', 'off_taxonomy'");
+    expect(query).not.toContain("hamilton.source_check");
+    expect(lessons).toEqual([
+      { filedAs: "stop_payment", feeName: "Stop Payment Removal", amount: 5, scheduleLine: "Stop Payment Removal | $5.00", found: "wrong: filed under the wrong category" },
+      { filedAs: "stop_payment", feeName: "Stop Payment", amount: 25, scheduleLine: null, found: "right: a check took it down by mistake; it is a real price in this category" },
+    ]);
+  });
+
+  it("reviews without lessons when the learning store cannot be read", async () => {
+    const db = vi.fn(() => Promise.reject(new Error("relation does not exist")));
+    await expect(loadReviewLessons(db as never, ["stop_payment"])).resolves.toEqual([]);
+    await expect(loadReviewLessons(db as never, [])).resolves.toEqual([]);
+  });
+
   it("passes a fee only when it is a fee, fits its category, and the amount is the price", () => {
     const verdicts = parseReleaseReviews({
       verdicts: [

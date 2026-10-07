@@ -79,7 +79,7 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   {
     key: "account_research",
     pattern:
-      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b|\bfax(?:es|ing)?\b/i,
+      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b|^(?![\s\S]*\btransfers?\b)[\s\S]*\bfax(?:es|ing)?\b/i,
   },
   {
     key: "account_research",
@@ -88,12 +88,14 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   },
   {
     key: "check_cashing",
+    // A collection fee on a charged-off or past-due account, or a collection phone call,
+    // is debt collection, not a check sent for collection (v30, from prod's first v26 pass).
     pattern:
-      /\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
+      /^(?![\s\S]*\b(?:charged[- ]?off|past[- ]due|delinquen\w*|calls?)\b)[\s\S]*?\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
   },
   {
     key: "loan_origination",
-    pattern: /\bloan cancell?ation\b|\bcredit report fee\b|\bUCC (?:filing|release|lien)\b|\buniform commercial code\b/i,
+    pattern: /\bloan cancell?ation\b|\bcredit report fee\b(?!.{0,20}\bopen)|\bUCC (?:filing|release|lien)\b|\buniform commercial code\b/i,
   },
   {
     key: "other_lending_fee",
