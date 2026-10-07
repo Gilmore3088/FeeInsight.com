@@ -55,6 +55,8 @@ const PRICE_THEN_QUALIFIER = /^\s*(?:\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:\/\s*[a-z]+|
  */
 const COLUMN_LABEL_LINE = /^(?:(?:current|standard|regular|member)\s+)?(?:fees?(?:\s*(?:&|and)\s*charges?)?|charges?|amount|price|cost|rate)\s*:?$/i;
 /** Or a price, its unit and a sentence about it ("$25.00 Per Month. Applicable after 1 year of inactivity."). */
+// "$2.00 - *Service not available to non-customers": a price, then a dash and its note.
+const PRICE_THEN_DASH_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*[-–—]\s+\*?\s*[a-z]/i;
 const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*\.\s+\S/i;
 /** An allowance before the price ("5 Free per month," / "$2.50 each additional") is not the price. */
 const FREE_ALLOWANCE = /\b\d+\s+(?:free|no\s+charge)\b/gi;
@@ -420,6 +422,7 @@ function feeRow(lines: string[], index: number): string {
       (next) =>
         PRICE_THEN_QUALIFIER.test(next) ||
         PRICE_THEN_SENTENCE.test(next) ||
+        PRICE_THEN_DASH_NOTE.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
           (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
@@ -457,7 +460,10 @@ function inNote(text: string, token: MoneyToken): boolean {
   const open = line.lastIndexOf("(", token.start);
   // A parenthesis left open across a cell ("Replacement Key (1 key | $25.00" / "lost)") is
   // a name wrapped onto the next line, not a note around the price.
-  return open > line.lastIndexOf(")", token.start) && !line.slice(open, token.start).includes("|");
+  // A parenthesis that never closes in its cell ("Check Copy (Front and Back and assisted by CU
+  // Employee. $2.00 per copy | 3 X 5 ...") is a name's unbalanced note, not a note around the price.
+  const closes = line.slice(token.end).split("|")[0].includes(")");
+  return open > line.lastIndexOf(")", token.start) && !line.slice(open, token.start).includes("|") && closes;
 }
 
 function isThreshold(line: string, token: MoneyToken): boolean {

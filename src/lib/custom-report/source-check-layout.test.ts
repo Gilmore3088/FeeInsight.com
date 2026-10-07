@@ -368,4 +368,13 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(cabrillo, "Foreign Wire Transfer", 35, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(cabrillo, "Foreign Wire Transfer", 14, ".").ok).toBe(false);
   });
+
+  it("reads a price with a dash note under its name and a price after an unclosed note (first looks, Oct 7)", () => {
+    const dash = "Cashier's Check Fee*\n\n$5.00 - *Service not available to non-customers\n\nMoney Order Fee*\n\n$2.00 - *Service not available to non-customers";
+    expect(checkFeeAgainstSource(dash, "Money Order Fee", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(dash, "Money Order Fee", 5, ".").ok).toBe(false);
+    const unclosed = "Check Copy (Front and Back and assisted by CU Employee. $2.00 per copy | 3 X 5 ........ $30.00";
+    expect(checkFeeAgainstSource(unclosed, "Check Copy (Front and Back and assisted by CU Employee.", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(unclosed, "Check Copy", 30, ".").ok).toBe(false);
+  });
 });
