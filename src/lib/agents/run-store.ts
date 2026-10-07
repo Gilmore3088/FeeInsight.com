@@ -51,6 +51,8 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
@@ -660,6 +662,8 @@ async function executeAgenticStep(
           learning_log: extraction.learning,
           lessons_loaded: extraction.lessonsLoaded,
           lesson_refiles: extraction.lessonRefiles,
+          takedown_lessons_loaded: extraction.takedownLessonsLoaded,
+          takedown_holds: extraction.takedownHolds,
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
@@ -1402,6 +1406,14 @@ async function executeAgenticStep(
         },
       };
     }
+    case "content-market-spread": {
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+    }
+    case "content-fee-depth": {
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
+    }
     case "marketing-score": {
       const result = await runMarketingScore({
         db: tx,
@@ -2066,6 +2078,19 @@ export async function hasQueuedProviderSteps(): Promise<boolean> {
   return Boolean(row);
 }
 
+/** Queued step keys of a run in the order they run. */
+async function peekQueuedStepKeys(runId: number, limit: number): Promise<string[]> {
+  const rows = await sql`
+    SELECT step_key
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     ORDER BY sequence ASC, id ASC
+     LIMIT ${limit}::int
+  `;
+  return rows.map((row) => String(row.step_key));
+}
+
 async function peekNextQueuedStepKey(runId: number): Promise<string | null> {
   const [row] = await sql`
     SELECT step_key
@@ -2119,6 +2144,25 @@ const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+
+function isQuickStep(stepKey: string): boolean {
+  return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
+}
+
+/**
+ * Expected time to reach real work: the run's leading quick steps plus the first step
+ * that is not quick. A later run in a tick starts only when this fits, because a run
+ * that ran its quick first steps counts as under way and goes ahead of failed-lane
+ * retries in the next tick's order.
+ */
+export function expectedMsToFirstWork(stepKeys: string[]): number {
+  let total = 0;
+  for (const key of stepKeys) {
+    total += expectedStepMs(key);
+    if (!isQuickStep(key)) break;
+  }
+  return total;
+}
 
 export function expectedStepMs(stepKey: string | null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
@@ -2191,6 +2235,19 @@ export async function executeAgentRun(
   const maxSteps = Math.min(Math.max(Math.floor(options.maxSteps ?? 1), 1), 10);
   let executedSteps = 0;
   let lastResult: AgentRunExecutionResult | null = null;
+
+  if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
+    const keys = await peekQueuedStepKeys(runId, maxSteps);
+    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+      return {
+        runId,
+        status: existing.status,
+        terminal: false,
+        executedSteps: 0,
+        message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+      };
+    }
+  }
 
   for (let index = 0; index < maxSteps; index += 1) {
     // A step that could not finish by the caller's deadline waits for the next tick; the
@@ -2339,8 +2396,9 @@ export async function executeQueuedAgentRuns({
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a retry of a failed
-     -- state lane, then any run waiting over an hour, then state lanes by Atlas's priority
-     -- score (open work, report requests, near-ready markets), then launch order.
+     -- state lane, then a lane with a hand-found schedule to fetch, then any run waiting
+     -- over an hour, then state lanes by Atlas's priority score (open work, report
+     -- requests, near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
@@ -2355,6 +2413,16 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
+              -- A state holding a fee schedule found by hand (Magellan's operator list) that
+              -- has not been fetched yet goes next, so those links don't wait behind routine
+              -- passes. The lane's own fetch, read and extract steps then pick it up.
+              (r.run_kind = 'workflow_lane' AND EXISTS (
+                SELECT 1 FROM institution_additional_sources hand
+                  JOIN institution_sources inst ON inst.id = hand.institution_id
+                 WHERE hand.found_by_strategy = 'discover.operator_schedule'
+                   AND hand.status = 'found'
+                   AND upper(btrim(inst.state_code)) = upper(btrim(r.state_code))
+              )) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC

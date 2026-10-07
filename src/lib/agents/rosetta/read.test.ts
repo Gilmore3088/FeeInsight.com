@@ -985,6 +985,53 @@ describe("Rosetta agentic read", () => {
       expect(result.results[0]).toMatchObject({ sourceUrl: "https://testbank.example/docs/fees.pdf" });
     });
 
+    it("reads a fee page's linked scan with free OCR", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const menus = Array.from({ length: 120 }, (_, i) => `<li><a href="/p${i}">Menu item ${i}</a></li>`).join("");
+      // 1streetcu.com's page: two links to its "Service Charge Schedule", both scans.
+      const page = `<html><body><nav><ul>${menus}</ul></nav><h1>Service Charge Schedule</h1><a href="/uploads/schedule-2022">Service Charge Schedule 03-01-2022</a></body></html>`;
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(page))
+        .mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4 scan"), "application/pdf"));
+      const scanText = ["Service Charge Schedule", "Overdraft fee | $30.00", "NSF fee | $30.00", "Stop payment | $25.00", "x".repeat(300)].join("\n");
+
+      const result = await runRosettaRead({
+        runId: 709,
+        db: asReadDb(db),
+        fetchImpl,
+        pdfTextExtractor: noText(),
+        scannedPdfReader: ocrReader(scanText),
+      });
+
+      expect(fetchImpl.mock.calls[1][0]).toBe("https://testbank.example/uploads/schedule-2022");
+      expect(result).toMatchObject({ completed: 1, wrongDocuments: 0, jsFallbackRead: 1 });
+      expect(result.results[0]).toMatchObject({ reader: "read.js_fallback", sourceUrl: "https://testbank.example/uploads/schedule-2022" });
+    });
+
+    it("does not read a linked schedule twice when the bank already has it as a document", async () => {
+      const db = specialistDb([htmlCandidate]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray) => Promise<unknown[]>;
+      db.mockImplementation((strings: TemplateStringsArray) =>
+        templateText(strings).includes("SELECT document_url FROM source_documents")
+          ? Promise.resolve([{ document_url: "https://www.testbank.example/docs/fees.pdf" }])
+          : base(strings),
+      );
+      const menus = Array.from({ length: 120 }, (_, i) => `<li><a href="/p${i}">Menu item ${i}</a></li>`).join("");
+      const page = `<html><body><nav><ul>${menus}</ul></nav><h1>Fee Schedule</h1><a href="/docs/fees.pdf">Schedule of fees</a></body></html>`;
+      const fetchImpl = vi.fn(async (url: string) =>
+        url === htmlCandidate.document_url ? response(page) : response("missing", "text/html", 404),
+      );
+
+      const result = await runRosettaRead({ runId: 710, db: asReadDb(db), fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      expect(fetchImpl.mock.calls.map((call) => call[0])).not.toContain("https://testbank.example/docs/fees.pdf");
+      expect(result).toMatchObject({ completed: 0, wrongDocuments: 1, jsFallbackRead: 0 });
+      const values = JSON.stringify(db.mock.calls);
+      expect(values).toContain("already_a_document");
+      expect(values).toContain("covered_by");
+    });
+
     it("still rejects a menus-only page whose link does not name a fee page", async () => {
       const db = specialistDb([{ ...htmlCandidate, document_url: "https://testbank.example/about-us" }]);
       const menus = Array.from({ length: 120 }, (_, i) => `<li><a href="/p${i}">Menu item ${i}</a></li>`).join("");
