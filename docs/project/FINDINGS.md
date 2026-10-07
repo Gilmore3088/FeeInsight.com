@@ -2308,3 +2308,7 @@ partition is retried only after the 6-hour claim expires.
 and grows each buffer with the data. The whole zip is never held in memory.
 **Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
 that the loader will fit in a function's memory.
+**Follow-up (05:42 UTC):** once streaming worked, the step got through the download and then failed
+with "operator does not exist: text = date". `institution_financial_records.report_date` is text
+('2026-06-30'), and the update cast its parameters to date. The update now compares text with text,
+and a test fails if the update casts to date.
