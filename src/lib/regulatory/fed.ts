@@ -236,3 +236,25 @@ export function parseBlsSeries(body: unknown): FredObservation[] {
   }
   return out.sort((a, b) => a.observation_date.localeCompare(b.observation_date));
 }
+
+export const FOMC_CALENDAR_URL = `${FED_BASE}/monetarypolicy/fomccalendars.htm`;
+
+export function fomcMinutesUrl(meetingDate: string): string {
+  return `${FED_BASE}/monetarypolicy/fomcminutes${meetingDate.replace(/-/g, "")}.htm`;
+}
+
+/** Meeting dates (YYYY-MM-DD) whose minutes are linked from the FOMC calendar page, newest first. */
+export function parseFomcMinutesDates(html: string): string[] {
+  const dates = new Set<string>();
+  for (const match of html.matchAll(/fomcminutes(\d{4})(\d{2})(\d{2})\.htm/g)) dates.add(`${match[1]}-${match[2]}-${match[3]}`);
+  return [...dates].sort().reverse();
+}
+
+/** The minutes' text: the article body when the page marks one, else the page between its h3 title and footer. */
+export function parseFomcMinutesPage(html: string): { title: string | null; text: string } {
+  const title = /<h3[^>]*>\s*(Minutes of the Federal Open Market Committee[^<]*)<\/h3>/i.exec(html)?.[1]?.trim() ?? null;
+  const article = html.search(/<div[^>]+id="article"/i);
+  const start = article >= 0 ? article : Math.max(0, html.search(/<h3[^>]*>\s*Minutes of the Federal Open Market Committee/i));
+  const footer = html.indexOf("<h6", start);
+  return { title, text: htmlToText(html.slice(start, footer > start ? footer : undefined)).slice(0, 300_000) };
+}

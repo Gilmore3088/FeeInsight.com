@@ -274,6 +274,12 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Escheat Notice* (when balance is $25 or more) . . . $2.00", "Escheat Notice (when balance is", 25, ".").ok).toBe(false);
   });
 
+  it("keeps a flat price whose row follows another price's per-$ basis (prod first look, Oct 7)", () => {
+    const text = "Coin deposited | $0.0062 per $1 | Escheat/abandoned account notice | $2\nCoin furnished | $0.13 per roll | (as permitted by law)";
+    expect(checkFeeAgainstSource(text, "Escheat/abandoned account notice", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Cashier Check (per $100.00) $1.00", "Cashier Check", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+  });
+
   it("reads two-column pages flattened row by row (Oct 7, third sample)", () => {
     const twoColumn = [
       "CASHIER'S CHECKS........................ $5.00 per customer, | A $50.00 fee will be assessed for a payment book if the loan was originally",
@@ -289,6 +295,10 @@ describe("checkFeeAgainstSource daily caps", () => {
     // The right column's name runs onto its next row, which states the price.
     expect(checkFeeAgainstSource(twoColumn, "PROCESSING OF LEVIES IR", 100, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(twoColumn, "Lost Key Fee", 25, ".").ok).toBe(true);
+    // A run-on paragraph split at ";" inside a name: the row runs to the next row's first price.
+    const runOn = "Free for age 60+ Certified or Cashier's Check $3.00; Free for age 60+ Check Cashing for non-members; on us only $5.00 Bad Address Correction Fee $3.00 Stop Payment for a PEFCU Check Account $20.00 Reconciliation or Research $20.00 per hour Subpoena/Levy/ Garnishment Fee $75.00 Subpoena/Audit Research Fee $30.00 first hour; $20.00 for additional hours";
+    expect(checkFeeAgainstSource(runOn, "Check Cashing for non-members; on us only", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(runOn, "Check Cashing for non-members; on us only", 3, ".").ok).toBe(false);
     // Still refused: the left column's next row is not the levy's price, and a priced row keeps its own price.
     expect(checkFeeAgainstSource(twoColumn, "PROCESSING OF LEVIES IR", 15, ".").ok).toBe(false);
     expect(checkFeeAgainstSource(twoColumn, "CHECKING ACCOUNT INACTIVITY FEE", 100, ".").ok).toBe(false);

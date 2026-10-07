@@ -23,7 +23,10 @@ import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
-import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
+import { asksWholeSchedule, scheduleOverview, withSchedule, type ScheduleOverview } from "./workspace/schedule";
+import { asksIncomeWhy, explainIncome, incomeSplit, withIncomeSplit, type IncomeExplanation } from "./workspace/why";
+import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
+import { ASSET_TIER_RANGES } from "./peer-index";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
@@ -227,7 +230,10 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
   const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
-  const response: AskResponse = schedule ? withSchedule(built, schedule) : built;
+  const withOverview: AskResponse = schedule ? withSchedule(built, schedule) : built;
+  // "Why is our fee income lower than peers?" leads with what price explains of the gap.
+  const why = await incomeWhyFor(institutionId, question);
+  const response: AskResponse = why ? withIncomeSplit(withOverview, why) : withOverview;
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
   const shown = response.scenario;
   const scenarioEvents =
@@ -297,17 +303,25 @@ async function scheduleFor(institutionId: number, question: string): Promise<Sch
   return briefing ? scheduleOverview(briefing.positions) : null;
 }
 
-/** Puts the overview first; the detailed answer for the furthest fee follows it. */
-function withSchedule(response: AskResponse, schedule: ScheduleOverview): AskResponse {
-  if (!schedule.top) {
-    return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts, positions: schedule.positions };
-  }
-  return {
-    ...response,
-    positions: schedule.positions,
-    shortAnswer: `${schedule.shortAnswer} ${response.shortAnswer}`.trim(),
-    facts: [...schedule.facts, ...(response.facts ?? [])],
-  };
+/** The price split of the bank's fee income gap, for a question asking why income is where it is. */
+async function incomeWhyFor(institutionId: number, question: string): Promise<IncomeExplanation | null> {
+  if (!asksIncomeWhy(question)) return null;
+  const [intensity, briefing] = await Promise.all([
+    getServiceChargeIntensity(institutionId).catch((error) => {
+      console.error("[hamilton-ask] income intensity failed", error);
+      return null;
+    }),
+    getWorkspaceBriefing(institutionId).catch((error) => {
+      console.error("[hamilton-ask] briefing failed", error);
+      return null;
+    }),
+  ]);
+  if (!intensity || !briefing) return null;
+  const kind = intensity.charterType === "credit_union" ? "credit unions" : "banks";
+  const range = ASSET_TIER_RANGES[intensity.assetTier];
+  const peerLabel = range ? `${kind} with ${range} in assets` : `${kind} of the same size`;
+  const split = incomeSplit(intensity, briefing.positions, peerLabel);
+  return split ? explainIncome(split) : null;
 }
 
 export interface AskMemoResult {

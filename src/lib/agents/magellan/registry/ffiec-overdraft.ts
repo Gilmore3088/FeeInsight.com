@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { FFIEC_BULK_URL, fetchFfiecCallBulk, readFfiecOverdraft, type FfiecOverdraftRow } from "@/lib/regulatory/ffiec";
+import { FFIEC_BULK_URL, fetchFfiecCallBulk, readScheduleRiOverdraft, type FfiecOverdraftRow } from "@/lib/regulatory/ffiec";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   compareQuarters,
@@ -142,8 +142,8 @@ export async function runRegistryFfiecOverdraft(options: RegistryFfiecOverdraftO
   const reportDate = quarterEndDate(quarter);
 
   const download = await fetchFfiecCallBulk(quarter, options.fetchOptions);
-  const parsed = download.zip ? readFfiecOverdraft(download.zip) : null;
-  const emptyReason = !download.zip
+  const parsed = download.files ? readScheduleRiOverdraft(download.files) : null;
+  const emptyReason = !download.files
     ? "FFIEC does not list this quarter yet"
     : !parsed?.hasColumn
       ? `The bulk file has no Schedule RI RIADH032 column (files: ${parsed?.files.join(", ") || "none"})`
@@ -174,7 +174,7 @@ export async function runRegistryFfiecOverdraft(options: RegistryFfiecOverdraftO
       rowCount: 0,
       sourceUrl: FFIEC_BULK_URL,
       runId: options.runId ?? null,
-      nextAttemptAfterHours: download.zip ? HISTORICAL_REFRESH_HOURS : EMPTY_RETRY_HOURS,
+      nextAttemptAfterHours: download.files ? HISTORICAL_REFRESH_HOURS : EMPTY_RETRY_HOURS,
       detail: { report_date: reportDate, reason: emptyReason, file: download.fileName },
     });
     return base;

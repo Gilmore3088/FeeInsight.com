@@ -1,10 +1,22 @@
 import type { RegistryDb } from "./partitions";
+import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
+import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
-import { BEIGE_BOOK_SOURCE, FRED_PARTITION, FRED_SOURCE, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import {
+  BEIGE_BOOK_SOURCE,
+  FOMC_MINUTES_PARTITION,
+  FOMC_MINUTES_SOURCE,
+  FRED_PARTITION,
+  FRED_SOURCE,
+  runRegistryBeigeBook,
+  runRegistryFomcMinutes,
+  runRegistryFred,
+} from "./fed";
+import { FED_PUBLICATIONS_PARTITION, FED_PUBLICATIONS_SOURCE, runRegistryFedPublications } from "./fed-publications";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
 import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
@@ -236,6 +248,34 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     },
   },
   {
+    source: CENSUS_ACS_SOURCE,
+    stepKey: "registry-census-acs",
+    title: "Pull Census household income by state, county, ZIP and tract",
+    run: async (input) => {
+      const r = await runRegistryCensusAcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `Census has not published the ${r.partitionKey} ACS 5-year estimates yet; will check again.`
+          : `Magellan loaded ${r.partitionKey} ACS household income for ${n(r.counts.state)} states, ${n(r.counts.county)} counties, ${n(r.counts.zcta)} ZIP areas and ${n(r.counts.tract)} tracts; ${n(r.withIncome)} have a median income${dry(r.dryRun)}.`,
+        detail: { year: r.year, counts: r.counts, with_income: r.withIncome, upserted_rows: r.upsertedRows, empty: r.empty },
+      };
+    },
+  },
+  {
+    source: IRS_ZIP_INCOME_SOURCE,
+    stepKey: "registry-irs-zip-income",
+    title: "Pull IRS income and interest by ZIP code",
+    run: async (input) => {
+      const r = await runRegistryIrsZipIncome({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `The IRS has not published tax year ${r.partitionKey} ZIP income yet; will check again.`
+          : `Magellan loaded tax year ${r.partitionKey} IRS income for ${n(r.zips)} ZIP codes; ${n(r.withInterest)} report taxable interest${dry(r.dryRun)}.`,
+        detail: { tax_year: r.taxYear, zips: r.zips, with_interest: r.withInterest, upserted_rows: r.upsertedRows, empty: r.empty },
+      };
+    },
+  },
+  {
     source: SEC_LINKS_SOURCE,
     stepKey: "registry-sec-links",
     title: "Link SEC filers to bank holding companies",
@@ -292,6 +332,48 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
         detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
+      };
+    },
+  },
+  {
+    source: FOMC_MINUTES_SOURCE,
+    stepKey: "registry-fomc-minutes",
+    title: "Pull FOMC minutes",
+    fixedPartition: FOMC_MINUTES_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryFomcMinutes({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const short = r.tooShort.length > 0 ? ` ${r.tooShort.length} page(s) did not parse: ${r.tooShort.join(", ")}.` : "";
+      return {
+        summary: `Magellan found ${r.linked} FOMC minutes on the Fed calendar, stored ${r.stored} new ones; ${r.remaining} still to pull${dry(r.dryRun)}.${short}`,
+        detail: {
+          linked: r.linked,
+          already_stored: r.alreadyStored,
+          fetched: r.fetched,
+          stored: r.stored,
+          too_short: r.tooShort,
+          remaining: r.remaining,
+        },
+      };
+    },
+  },
+  {
+    source: FED_PUBLICATIONS_SOURCE,
+    stepKey: "registry-fed-publications",
+    title: "Pull regional Fed publications",
+    fixedPartition: FED_PUBLICATIONS_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryFedPublications({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const missing = r.banksWithoutItems.length > 0 ? ` No items from: ${r.banksWithoutItems.join(", ")}.` : "";
+      return {
+        summary: `Magellan read ${r.fetched} regional Fed publications from ${12 - r.banksWithoutItems.length} of 12 Reserve Banks and stored ${r.inserted} new ones${dry(r.dryRun)}.${missing}`,
+        detail: {
+          index_reachable: r.indexReachable,
+          fetched: r.fetched,
+          inserted: r.inserted,
+          by_bank: r.byBank,
+          banks_without_items: r.banksWithoutItems,
+          failed_feeds: r.failedFeeds,
+        },
       };
     },
   },
