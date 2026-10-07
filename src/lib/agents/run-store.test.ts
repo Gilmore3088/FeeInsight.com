@@ -963,6 +963,20 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
+  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+    const retry = order.indexOf("= 'failed') DESC");
+    const review = order.indexOf("::text[])) DESC");
+    expect(review).toBeGreaterThan(retry);
+    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  });
+
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
     sqlMock.mockResolvedValue([]);
 
