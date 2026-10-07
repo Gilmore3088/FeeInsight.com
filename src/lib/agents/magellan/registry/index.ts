@@ -16,6 +16,7 @@ import {
   runRegistryFomcMinutes,
   runRegistryFred,
 } from "./fed";
+import { FED_PUBLICATIONS_PARTITION, FED_PUBLICATIONS_SOURCE, runRegistryFedPublications } from "./fed-publications";
 import { REG_NEWS_PARTITION, REG_NEWS_SOURCE, runRegistryRegNews } from "./reg-news";
 import { FEDERAL_REGISTER_PARTITION, FEDERAL_REGISTER_SOURCE, runRegistryFederalRegister } from "./federal-register";
 import { STATE_BILLS_SOURCE, runRegistryStateBills } from "./state-bills";
@@ -351,6 +352,27 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           stored: r.stored,
           too_short: r.tooShort,
           remaining: r.remaining,
+        },
+      };
+    },
+  },
+  {
+    source: FED_PUBLICATIONS_SOURCE,
+    stepKey: "registry-fed-publications",
+    title: "Pull regional Fed publications",
+    fixedPartition: FED_PUBLICATIONS_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryFedPublications({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const missing = r.banksWithoutItems.length > 0 ? ` No items from: ${r.banksWithoutItems.join(", ")}.` : "";
+      return {
+        summary: `Magellan read ${r.fetched} regional Fed publications from ${12 - r.banksWithoutItems.length} of 12 Reserve Banks and stored ${r.inserted} new ones${dry(r.dryRun)}.${missing}`,
+        detail: {
+          index_reachable: r.indexReachable,
+          fetched: r.fetched,
+          inserted: r.inserted,
+          by_bank: r.byBank,
+          banks_without_items: r.banksWithoutItems,
+          failed_feeds: r.failedFeeds,
         },
       };
     },

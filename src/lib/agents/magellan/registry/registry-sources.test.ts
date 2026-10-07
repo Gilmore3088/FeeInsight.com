@@ -15,6 +15,7 @@ import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
 import { runRegistryStateBills } from "./state-bills";
 import { runRegistryFederalBills } from "./federal-bills";
+import { runRegistryFedPublications } from "./fed-publications";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -400,6 +401,45 @@ describe("registry FOMC minutes worker", () => {
   });
 });
 
+describe("registry regional Fed publications worker", () => {
+  const index = `<ul>
+    <li><a href="/rss/frbatl">Federal Reserve Bank of Atlanta</a></li>
+    <li><a href="https://fedinprint.org/rss/frbchi.rss">Federal Reserve Bank of Chicago</a></li>
+    <li><a href="/series/frbatl">Atlanta series (not a feed)</a></li>
+  </ul>`;
+  const rss = (bank: string) => `<rss><channel>
+    <item><title>${bank} research note</title><link>https://example.org/${bank}/1</link><pubDate>Mon, 05 Oct 2026 12:00:00 GMT</pubDate></item>
+    <item><title>${bank} regional report</title><link>https://example.org/${bank}/2</link></item>
+  </channel></rss>`;
+
+  it("reads the feeds the Fed in Print page links, falls back to a bank's own feed, and reports banks with none", async () => {
+    const { db, statements } = createDb([
+      ["INSERT INTO fed_publications", (values) => payloadOf(values).map((r) => ({ link: r.link }))],
+    ]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://fedinprint.org/rss") return new Response(index, { status: 200 });
+      if (url === "https://fedinprint.org/rss/frbatl") return new Response(rss("atl"), { status: 200 });
+      if (url === "https://fedinprint.org/rss/frbchi.rss") return new Response(rss("chi"), { status: 200 });
+      if (url === "https://www.dallasfed.org/rss/speeches") return new Response(rss("dal"), { status: 200 });
+      return new Response("gone", { status: 404 });
+    });
+    const result = await runRegistryFedPublications({ db, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result).toMatchObject({ indexReachable: true, fetched: 6, inserted: 6 });
+    expect(result.byBank).toMatchObject({ Atlanta: 2, Chicago: 2, Dallas: 2, Boston: 0 });
+    expect(result.banksWithoutItems).toContain("Philadelphia (no feed found)");
+    expect(result.banksWithoutItems).toContain("Boston");
+    expect(fetchImpl).not.toHaveBeenCalledWith("https://www.atlantafed.org/rss/speechindex", expect.anything());
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO fed_publications"))!.values);
+    expect(rows.find((r) => r.link === "https://example.org/atl/1")).toMatchObject({ district: 6, bank: "Atlanta", feed_url: "https://fedinprint.org/rss/frbatl" });
+  });
+
+  it("fails the step when no feed at all can be read", async () => {
+    const { db } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("down", { status: 503 }));
+    await expect(runRegistryFedPublications({ db, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } })).rejects.toThrow(/No Reserve Bank feed/);
+  });
+});
+
 describe("registry federal bills worker", () => {
   const now = new Date("2026-10-07T03:00:00Z");
   const page = {
@@ -530,6 +570,7 @@ describe("registry dispatch", () => {
       "beige-book",
       "fred",
       "fomc-minutes",
+      "fed-publications",
       "reg-news",
       "federal-register",
       "federal-bills",
