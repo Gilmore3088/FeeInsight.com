@@ -13,6 +13,16 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: A hand-found link added after a bank's direct run waited a full day
+**What happened:** on prod (read-only, 07:22 UTC) Citi's corrected US fee chart (link 2070, added
+06:43) and First Horizon's TotalView guide (link 2101, added 07:12) sat unfetched. Both banks had
+already had a direct run that morning (Citi 06:25, First Horizon 07:07).
+**Cause:** the direct path (PR 408) skipped any bank with a run in the last 24 hours and keyed runs
+by bank and day, so a second link the same day reused the finished run.
+**Fix:** this PR keys a hand-found run by its link id and lets a link found after the last run start
+a new one. Merged, not yet proven until Citi's chart is fetched.
+**Lesson:** a retry window should only block retries of the same work; new input is new work.
+
 ## 2026-10-07: Enforcement lists rarely record an end date, so "no end date" is not "active"
 **What happened:** the Pro enforcement card (PR 372) called every action with no termination date
 "active". On prod (read-only, 07:05 UTC) that was 825 of 4,431 OCC and Fed actions: 651 are civil
