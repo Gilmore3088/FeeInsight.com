@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Open States allows about ten requests a minute, so state bill runs hit 429
+**What happened:** the first two 12-state runs (05:32 and 07:12 UTC) read 16 states and failed 10 with
+HTTP 429 (CA, DE, FL, IA, ID, KS, MA, MD, MN, MO in `registry_ingest_partitions`). The failures came after
+about ten requests each time, and retries 6 and 12 seconds later were refused too.
+**Cause:** the step sent each state's four to six requests back to back. Open States' free tier allows
+about ten a minute, inferred from these runs since its docs aren't reachable from the cloud sandbox.
+A failed state then waited six hours.
+**Fix:** requests are paced 6.5 seconds apart. A run starts no new state after 60 seconds, and a 429 stops
+the run and leaves that state due instead of failing it.
+**Lesson:** pace any keyed free-tier API to its limit inside the step, and treat a 429 as "come back
+later", not as a failed item.
+
 ## 2026-10-07: A hand-found link added after a bank's direct run waited a full day
 **What happened:** on prod (read-only, 07:22 UTC) Citi's corrected US fee chart (link 2070, added
 06:43) and First Horizon's TotalView guide (link 2101, added 07:12) sat unfetched. Both banks had

@@ -563,7 +563,7 @@ describe("registry state bills worker", () => {
   it("records a missing key without fetching", async () => {
     const { db, statements } = createDb([]);
     const fetchImpl = vi.fn();
-    const result = await runRegistryStateBills({ partitionKey: "ca", db, now, apiKey: "", fetchOptions: { fetchImpl } });
+    const result = await runRegistryStateBills({ partitionKey: "ca", db, now, apiKey: "", requestIntervalMs: 0, fetchOptions: { fetchImpl } });
     expect(result).toMatchObject({ missingKey: true, fetched: 0 });
     expect(fetchImpl).not.toHaveBeenCalled();
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
@@ -573,7 +573,7 @@ describe("registry state bills worker", () => {
   it("sends the key as a header, keeps bank fee bills only, and stores nothing in shadow mode", async () => {
     const { db, statements } = createDb([]);
     const fetchImpl = vi.fn().mockImplementation(async () => json(page));
-    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: false, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(result).toMatchObject({ fetched: 1, stored: 0, shadow: true, requests: 3 });
     expect(result.stages.passed_chamber).toBe(1);
     const [url, init] = fetchImpl.mock.calls[0];
@@ -586,7 +586,7 @@ describe("registry state bills worker", () => {
   it("upserts bills with their stage when live", async () => {
     const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
     const fetchImpl = vi.fn().mockImplementation(async () => json(page));
-    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(result.stored).toBe(1);
     const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
     expect(rows[0]).toMatchObject({ id: "ocd-bill/1", state_code: "CA", stage: "passed_chamber", stage_date: "2026-05-01" });
@@ -597,7 +597,7 @@ describe("registry state bills worker", () => {
     const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
       String(url).includes("state%3Aaz") ? new Response("nope", { status: 400 }) : json(page),
     );
-    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 3, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 3, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
     expect(result.states).toEqual(["AR", "AZ", "CA"]);
     expect(result.failedStates).toEqual(["AZ"]);
     expect(result).toMatchObject({ fetched: 2, remaining: 52 - 2 - 3 });
@@ -606,11 +606,32 @@ describe("registry state bills worker", () => {
     expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
   });
 
+  it("stops at a 429 and leaves that state due instead of failing it", async () => {
+    const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      String(url).includes("state%3Aal") ? new Response("slow down", { status: 429 }) : json(page),
+    );
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 4, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result).toMatchObject({ states: ["AK"], failedStates: [], rateLimited: true, remaining: 51 });
+    const partitions = statements.filter((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partitions.map((s) => s.values[1])).toEqual(["AK", "current"]);
+  });
+
+  it("starts no new state after the time cutoff", async () => {
+    const { db } = createDb([["FROM registry_ingest_partitions", () => []]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    let t = 0;
+    const clock = () => (t += 40_000);
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, startCutoffMs: 60_000, clock, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result.states).toEqual(["AK", "AL"]);
+    expect(result.remaining).toBe(50);
+  });
+
   it("fails the run when every state in it fails", async () => {
     const { db } = createDb([]);
     const fetchImpl = vi.fn().mockImplementation(async () => new Response("bad key", { status: 401 }));
     await expect(
-      runRegistryStateBillsBatch({ db, now, apiKey: "k", statesPerRun: 2, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } }),
+      runRegistryStateBillsBatch({ db, now, apiKey: "k", statesPerRun: 2, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } }),
     ).rejects.toThrow(/Every state in this run failed/);
   });
 });
