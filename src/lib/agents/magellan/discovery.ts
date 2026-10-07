@@ -28,7 +28,7 @@ import {
   type SearchContext,
   type TrailEntry,
 } from "./finders";
-import { LINK_YIELD_SLOTS, linkYieldSlot } from "./outcomes";
+import { LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
@@ -1061,8 +1061,9 @@ async function selectStaleCandidates(
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
-         -- One slot of banks per UTC hour (as the outcome ledger), so the text check stays small.
-         AND inst.id % ${LINK_YIELD_SLOTS} = ${linkYieldSlot(now)}
+         -- One slot of banks per UTC hour when the step has no state, so the text check stays
+         -- small; a state's step checks the whole state (stepSlot, as the outcome ledger).
+         AND (${stepSlot(normalizedState, now)}::int IS NULL OR inst.id % ${LINK_YIELD_SLOTS} = ${stepSlot(normalizedState, now)}::int)
          AND inst.fee_schedule_url IS NOT NULL
          AND btrim(inst.fee_schedule_url) <> ''
          AND inst.website_url IS NOT NULL

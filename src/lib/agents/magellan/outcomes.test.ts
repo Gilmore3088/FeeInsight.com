@@ -4,6 +4,7 @@ import {
   judgeLink,
   linkFeedbackRow,
   linkYieldSlot,
+  stepSlot,
   recordLinkOutcomes,
   type LinkOutcomeRow,
 } from "./outcomes";
@@ -80,6 +81,12 @@ describe("Magellan outcome ledger", () => {
   it("rotates through 24 slots of banks, one per hour", () => {
     expect(linkYieldSlot(new Date("2026-10-06T00:10:00Z"))).toBe(0);
     expect(linkYieldSlot(new Date("2026-10-06T23:59:00Z"))).toBe(23);
+  });
+
+  it("judges a state's whole bank list, and one hourly slot only without a state", () => {
+    expect(stepSlot("TX", new Date("2026-10-06T07:10:00Z"))).toBeNull();
+    expect(stepSlot(" ", new Date("2026-10-06T07:10:00Z"))).toBe(7);
+    expect(stepSlot(null, new Date("2026-10-06T07:10:00Z"))).toBe(7);
   });
 
   function fakeDb(links: LinkOutcomeRow[], ready = true) {

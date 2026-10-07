@@ -53,6 +53,47 @@ describe("platform path learning scored by link yield", () => {
     expect(rankPeerPaths(learned, platform, "/resources/fee-schedule")).toEqual(["/documents/truth-in-savings.pdf"]);
   });
 
+  it("learns from companion schedules once the ledger has judged them", () => {
+    const companion = (host: string, path: string, kind: string | null, live: number | null = null): PathFactRow => ({
+      ...link(host, path, kind, live),
+      companion: true,
+    });
+    const learned = facts([
+      // A schedule a person or the paid search added beside two banks' links, both live.
+      companion("a.bank", "/disclosures/fee-schedule", "produced_live_fees", 21),
+      companion("b.bank", "/disclosures/fee-schedule", "produced_live_fees", 26),
+      // Not read yet: teaches nothing either way.
+      companion("c.bank", "/rates-and-fees", null),
+      companion("d.bank", "/rates-and-fees", null),
+      // Added by hand and wrong: counts against its path.
+      companion("e.bank", "/schedule-of-fees", "wrong_document"),
+    ]);
+    expect(rankPlatformPaths(learned, ["/schedule-of-fees"])).toEqual(["/disclosures/fee-schedule"]);
+    expect(learned.found.has("/rates-and-fees")).toBe(false);
+  });
+
+  it("reads judged companion schedules on the platform with the ledger", async () => {
+    const statements: string[] = [];
+    const db = vi.fn(async (strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      statements.push(text);
+      if (text.includes("to_regclass")) return [{ ready: true }];
+      if (text.includes("FROM platform_registry")) return [{ fee_paths: [] }];
+      if (text.includes("FROM institution_additional_sources")) {
+        return [
+          { ...link("a.bank", "/disclosures/fee-schedule", "produced_live_fees", 21), companion: true },
+          { ...link("b.bank", "/disclosures/fee-schedule", "produced_live_fees", 26), companion: true },
+        ];
+      }
+      if (text.includes("FROM institution_sources")) return [];
+      return [];
+    });
+    const learner = createPlatformLearner(db as never);
+    expect(await learner.platformPaths("q2")).toEqual(["/disclosures/fee-schedule"]);
+    const companionQuery = statements.find((text) => text.includes("FROM institution_additional_sources"))!;
+    expect(companionQuery).toContain("document_role = 'consumer_supplement'");
+  });
+
   it("reads the ledger when the shared store exists, and still learns without it", async () => {
     const rows = [
       { id: 1, ...link("a.bank", "/fees", "produced_live_fees", 9) },

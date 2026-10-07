@@ -51,7 +51,8 @@ export interface LinkJudgement {
 
 export interface LinkOutcomeResult {
   ready: boolean;
-  slot: number;
+  /** The hour's slot of banks, or null when the step judged its whole state. */
+  slot: number | null;
   links: number;
   judged: Record<LinkLabel, number>;
   undecided: number;
@@ -130,6 +131,16 @@ export function linkYieldSlot(now = new Date()): number {
 }
 
 /**
+ * The slot a step works on, or null for every bank. A state's step covers the whole state:
+ * a state lane runs about once a day, often at the same hour, so an hourly slot inside it
+ * reached the same 24th of the state's banks each time and never the rest (19 of 714 read
+ * companion links had ever been judged, 7 Oct 2026). Steps without a state keep the slot.
+ */
+export function stepSlot(stateCode: string | null | undefined, now = new Date()): number | null {
+  return stateCode && stateCode.trim() ? null : linkYieldSlot(now);
+}
+
+/**
  * Judges the links of one slot of banks (about a 24th of them) and writes changed
  * judgements to `pipeline_feedback`. Reads use the per-bank indexes on documents,
  * attempts and live fees. Never blocks the step it runs in.
@@ -139,7 +150,7 @@ export async function recordLinkOutcomes(
   options: { runId: number | null; stateCode?: string | null; dryRun?: boolean; now?: Date },
 ): Promise<LinkOutcomeResult> {
   const now = options.now ?? new Date();
-  const slot = linkYieldSlot(now);
+  const slot = stepSlot(options.stateCode, now);
   const result: LinkOutcomeResult = {
     ready: false,
     slot,
@@ -158,7 +169,7 @@ export async function recordLinkOutcomes(
         SELECT inst.id, inst.fee_schedule_url
           FROM institution_sources inst
          WHERE COALESCE(inst.status, 'active') = 'active'
-           AND inst.id % ${LINK_YIELD_SLOTS} = ${slot}
+           AND (${slot}::int IS NULL OR inst.id % ${LINK_YIELD_SLOTS} = ${slot}::int)
            AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
       ),
       links AS (

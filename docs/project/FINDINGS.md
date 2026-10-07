@@ -1880,3 +1880,18 @@ categories and fees for going past a limit. The paid reader rejects the same row
 free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
 **Lesson:** a price beside a name is the fee only when the name names a charge. Words like
 "limit", "limited to" and "maximum load" mean the figure is a ceiling.
+
+## 2026-10-07: Magellan's outcome ledger judged one 24th of each state, and never taught from companion pages
+**What happened:** the ledger (`magellan.link_yield`) is what lets Magellan learn which links work. Each
+discover step judged only banks whose id mod 24 matched the UTC hour, inside the step's state. A state
+lane runs about once a day, often at the same hour, so it judged the same 24th of the state every time.
+On prod, 781 banks had ever been judged, and only 19 of the 714 companion links Knox had read. The free
+platform finders also learned paths only from each bank's main link, so a schedule found by the paid
+search, the companion finder or a person (`institution_additional_sources`) never taught them anything.
+The freshness search had the same slot inside its state filter.
+**Fix:** a state's step judges and checks its whole state (`stepSlot`); steps without a state keep the
+hourly slot. The platform learner now counts judged `consumer_supplement` companions like main links
+(live +2, thin -1, wrong or dead -2); an unjudged companion counts for nothing until it is read.
+**Lesson:** a rotation meant to spread load has to be checked against how often its caller runs. Hand
+fixes only help the next bank when they flow into what the finders learn from.
+
