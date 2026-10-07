@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
+**What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
+failed at 01:28 UTC with "operator does not exist: bigint = text", although
+`20260815083600_hamilton_pro_base_tables.sql` creates `user_id integer`.
+**Cause:** not yet known; the column was most likely created as text before that migration ran,
+and `CREATE TABLE IF NOT EXISTS` left it as it was.
+**Fix:** the Pro watchlist alerts and Monday digest (this PR) join on `u.id::text = w.user_id::text`.
+Changing the column type is left alone until someone checks its values.
+**Lesson:** a migration's `CREATE TABLE IF NOT EXISTS` is not proof of prod's column types; join
+`hamilton_watchlists.user_id` through text, or check `information_schema.columns` first.
+
 ## 2026-10-07: The source check took down real fees whose price carried a note
 **What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
 UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned
