@@ -290,7 +290,10 @@ function stemCount(text: string, stems: string[]): number {
 function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
   const money = moneyTokens(line);
   if (amount === 0 && !money.some((t) => t.value > 0 && !isThreshold(line, t))) {
-    return ZERO_WORDS.test(line) ? null : "amount_not_the_fee";
+    // A $0 balance in a condition ("if your Available Balance ... is at least $0") is not a $0 fee.
+    const zeroBands = money.filter((t) => t.value === 0 && isThreshold(line, t));
+    const unbanded = zeroBands.reduce((text, t) => text.slice(0, t.start) + " ".repeat(t.end - t.start) + text.slice(t.end), line);
+    return ZERO_WORDS.test(unbanded) ? null : "amount_not_the_fee";
   }
   // A $0 fee on a line with other prices (a schedule flattened to one line: "Monthly Fee
   // NONE Return Check Fee $30.00") is read like any price: its free word is its price.
@@ -472,8 +475,12 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   // "Under $1000 - $5.00 fee per month": a dash after a balance, then a price named as the fee,
   // is a separator, not a band's upper end.
   if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;
-  return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after);
+  return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after) || OBJECT_BEFORE.test(before);
 }
+
+// "the $34 Overdraft Fee on the $60 gasoline transaction": a figure after "on the" is what the fee
+// is charged on, not a price (Chase, Oct 7).
+const OBJECT_BEFORE = /\bon\s+(?:the|a|an|your|each)\s*$/i;
 
 /** The fee's name carries a band figure that sits in its row as a threshold. */
 function namesItsBand(row: string, feeName: string): boolean {

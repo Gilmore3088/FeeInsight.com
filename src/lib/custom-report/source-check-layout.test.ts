@@ -377,4 +377,13 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(unclosed, "Check Copy (Front and Back and assisted by CU Employee.", 2, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(unclosed, "Check Copy", 30, ".").ok).toBe(false);
   });
+
+  it("never reads the amount a fee is charged on, or a $0 balance condition, as the fee (Chase, U.S. Bank, Oct 7)", () => {
+    const chase = "than $50 on Tuesday and you would have been charged a $34 Overdraft Fee on the check.\ntransaction + $60 gasoline transaction). To avoid the $34 Overdraft Fee on the $60 gasoline transaction from";
+    expect(checkFeeAgainstSource(chase, "Overdraft Fee on", 60, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(chase, "Overdraft Fee on", 34, ".").ok).toBe(true);
+    const usb = "(excluding the Overdraft Paid Fees and\nincluding immediate and same day deposits), is at least $0 we will waive Overdraft Paid Fee(s) charged.";
+    expect(checkFeeAgainstSource(usb, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
+  });
 });
