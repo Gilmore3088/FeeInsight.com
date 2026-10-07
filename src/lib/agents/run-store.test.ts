@@ -140,6 +140,7 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 import {
   cancelAgentRun,
   executeAgentRun,
+  expectedMsToFirstWork,
   expectedStepMs,
   executeQueuedAgentRuns,
   startAgentRun,
@@ -1057,6 +1058,15 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
     ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("counts a lane run's quick first steps together with the first real step", () => {
+    // enhance + state-expert are quick; a later run must also fit discover, or it would
+    // count as under way after only the quick steps and jump ahead of retries.
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(170_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(60_000);
+    expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
+    expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {
