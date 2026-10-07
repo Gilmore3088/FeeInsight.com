@@ -85,6 +85,12 @@ Darwin owns verification and classification.
   caps are set. Each verdict (is it a fee, which category) is recorded per fee with its
   side (`knox`, `model`, `other`, `not_a_fee`); it never changes a decision yet. On live
   data at 2026-10-06 07:20 UTC, 23 approvals and 477 rejects qualified.
+  v2 (2026-10-07) sends each fee with the schedule rows around it (`scheduleContext`) and
+  the shared source check's verdict on its amount (`price_check`), and re-reads v1's
+  disagreements. Scored against the 81 answer-key texts, v1 was right on 27 of the 37
+  disagreements at key banks (Knox on 2); its misses mostly took a neighbouring row's
+  price or a balance threshold as the fee
+  (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:

@@ -14,10 +14,12 @@ import {
   type PaidStepOptions,
 } from "@/lib/agents/paid-pass";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 import { DARWIN_CATEGORY_MODEL_STRATEGY } from "./category-model";
+import { scheduleContext } from "./release-held";
 import { runDarwinReleaseReview } from "./release-review";
-import { rawFeeFingerprint } from "./verify";
+import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
 
@@ -38,7 +40,16 @@ type SqlTag = typeof sql;
  * key; the policy is fail-closed until its caps are set.
  */
 
-export const DARWIN_ADJUDICATE_STRATEGY = { strategy: "verify.adjudicate", version: 1 } as const;
+/**
+ * v2 (2026-10-07): each fee goes with the schedule rows around it and whether its amount
+ * is stated as its price there. Scored against the answer keys, v1 was right on 27 of the
+ * 37 disagreements at key banks, and three of its misses took a price from a neighbouring
+ * row or a balance threshold ("Check Printing (fee depends on style)" at $3). v2 re-reads
+ * the fees v1 disagreed on, so the two versions can be compared fee for fee.
+ */
+export const DARWIN_ADJUDICATE_STRATEGY = { strategy: "verify.adjudicate", version: 2 } as const;
+/** Characters of the fee name used to find its row when the amount does not trace. */
+const NAME_PROBE_CHARS = 40;
 /** The model's probability for its own suggestion at or above which a reject qualifies. */
 export const CONFIDENT_SUGGESTION = 0.9;
 export const FEES_PER_CALL = 25;
@@ -58,6 +69,10 @@ export interface AdjudicationCandidate {
   suggestedKey: string;
   suggestedProbability: number;
   decision: "verified" | "rejected";
+  /** The rows around the fee in its stored schedule, when the fee is found there. */
+  sourceContext?: string | null;
+  /** "stated" when the amount is the fee's price on its row, else the source check's reason. */
+  priceCheck?: string | null;
 }
 
 interface CandidateRow {
@@ -105,6 +120,26 @@ function canonicalFeeList(): string {
     .join("\n");
 }
 
+/**
+ * Pure: the schedule rows around a fee and whether its amount is its price there
+ * (the shared `checkFeeAgainstSource`). A fee whose amount does not trace is still
+ * located by the start of its name, so the reviewer can see where the number came from.
+ */
+export function adjudicationSource(
+  text: string | null | undefined,
+  candidate: Pick<AdjudicationCandidate, "feeName" | "amount" | "knoxKey">,
+): { sourceContext: string | null; priceCheck: string | null } {
+  if (!text) return { sourceContext: null, priceCheck: "no_source_text" };
+  if (candidate.amount != null && candidate.amount > 0) {
+    const check = checkFeeAgainstSource(text, candidate.feeName, candidate.amount, ".", candidate.knoxKey);
+    if (check.ok) return { sourceContext: scheduleContext(text, check.sourceLine), priceCheck: "stated" };
+    const probe = candidate.feeName.trim().slice(0, NAME_PROBE_CHARS);
+    return { sourceContext: probe ? scheduleContext(text, probe) : null, priceCheck: check.reason };
+  }
+  const probe = candidate.feeName.trim().slice(0, NAME_PROBE_CHARS);
+  return { sourceContext: probe ? scheduleContext(text, probe) : null, priceCheck: null };
+}
+
 export function adjudicatePrompt(candidates: AdjudicationCandidate[]): string {
   const items = candidates.map((candidate) => ({
     id: candidate.feeRawId,
@@ -113,11 +148,17 @@ export function adjudicatePrompt(candidates: AdjudicationCandidate[]): string {
     conditions: candidate.conditions,
     filed_as: candidate.knoxKey,
     alternative: candidate.suggestedKey,
+    ...(candidate.sourceContext ? { schedule_rows_around: candidate.sourceContext } : {}),
+    ...(candidate.priceCheck && candidate.priceCheck !== "stated" ? { price_check: candidate.priceCheck } : {}),
   }));
   return [
     "You check fees read from bank and credit union fee schedules. For each item decide:",
     "- is_fee: true only if the text names a price the institution charges a customer.",
     "  False for balance requirements, minimum deposits, limits, caps, rates, reimbursements or sentence fragments.",
+    "  `schedule_rows_around` holds the fee's row with the rows above and below it in the bank's schedule.",
+    "  Read it: is_fee is false when `amount` is not this fee's own price, for example a neighbouring row's price,",
+    "  another column's, a balance the fee depends on, or a price the row says varies. `price_check` set means",
+    "  an automatic check could not find `amount` as this fee's price on its row; take that as a warning, not proof.",
     "- category: the one canonical key below that the fee belongs to, or null if none fits.",
     "  `filed_as` and `alternative` are two guesses; either may be wrong.",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
@@ -158,6 +199,7 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
   const modelStrategy = `$${params.push(DARWIN_CATEGORY_MODEL_STRATEGY.strategy)}`;
   const adjudicateStrategy = `$${params.push(DARWIN_ADJUDICATE_STRATEGY.strategy)}`;
   const confident = `$${params.push(CONFIDENT_SUGGESTION)}`;
+  const version = `$${params.push(DARWIN_ADJUDICATE_STRATEGY.version)}::int`;
   const limit = `$${params.push(scan)}`;
   const normalizedState = normalizeStateCode(stateCode);
   const stateFilter = normalizedState ? `AND upper(btrim(inst.state_code)) = $${params.push(normalizedState)}` : "";
@@ -191,12 +233,15 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
              )
            )
            ${stateFilter}
+           -- Done at this version, or agreed with Knox at an earlier one; an earlier
+           -- disagreement is read again with the schedule rows (v2).
            AND NOT EXISTS (
              SELECT 1 FROM pipeline_attempts done
               WHERE done.stage = 'verify'
                 AND done.strategy = ${adjudicateStrategy}
                 AND done.input_fingerprint = cm.input_fingerprint
                 AND done.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
+                AND (done.strategy_version >= ${version} OR done.outcome <> 'evidence_mismatch')
            )
          ORDER BY fr.fee_raw_id, cm.created_at DESC
       ) latest
@@ -271,6 +316,16 @@ export async function runDarwinAdjudicate(
       decision: candidate.decision,
     })));
     return result;
+  }
+
+  const texts = await loadSourceTexts(db, [
+    ...new Set(candidates.flatMap((candidate) => (candidate.sourceDocumentId == null ? [] : [candidate.sourceDocumentId]))),
+  ]);
+  for (const candidate of candidates) {
+    Object.assign(
+      candidate,
+      adjudicationSource(candidate.sourceDocumentId == null ? null : texts.get(candidate.sourceDocumentId), candidate),
+    );
   }
 
   const model = PAID_PASS_MODELS.verify();
@@ -367,6 +422,8 @@ export async function runDarwinAdjudicate(
           verdict_key: verdict.category,
           side,
           reason: verdict.reason,
+          price_check: candidate.priceCheck ?? null,
+          source_context: candidate.sourceContext ?? null,
           model,
         },
       });

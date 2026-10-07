@@ -2382,3 +2382,10 @@ records the count on the extract event. First-look takedowns don't teach: Darwin
 recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
+
+## Darwin's category review trusted Knox's amount (2026-10-07)
+`verify.adjudicate` v1 judged a fee from its name and amount alone. Against the answer keys it was right on
+27 of 37 disagreements, but it accepted prices that belonged to a neighbouring row ("Check Printing (fee
+depends on style)" at $3) or were a balance threshold ($50 inactivity "balance is less than"). The prod
+`answer_key_institutions` table is empty; the answer keys live in `src/lib/agents/knox/__fixtures__/`.
+v2 sends the schedule rows around each fee and the source check's verdict on its amount.
