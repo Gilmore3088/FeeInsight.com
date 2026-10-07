@@ -379,6 +379,24 @@ describe("checkFeeCategory", () => {
     expect(amountEnvelopeFor("monthly_maintenance").max).toBeLessThan(2500);
   });
 
+  it("v17 rejects overdraft lines cut mid-sentence or naming a balance or statistic", () => {
+    // Live on prod Oct 7: Chase "Overdraft Fee on" $60 (the real fee is $34) and a U.S. Bank fragment at $0.
+    expect(checkFeeCategory("overdraft", "Overdraft Fee on").ok).toBe(false);
+    expect(
+      checkFeeCategory("overdraft", "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least").ok,
+    ).toBe(false);
+    expect(checkFeeCategory("overdraft", "Forty million Americans paid at least one overdraft fee in 2016 which totaled").ok).toBe(false);
+    // Real overdraft lines still pass, including long ones that end in "fee on" or say "excluding".
+    expect(checkFeeCategory("overdraft", "Overdraft Fee per transaction")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "An overdraft fee of")).toEqual({ ok: true });
+    expect(
+      checkFeeCategory("overdraft", "Non-Sufficient Funds/Overdraft created by check, in-person withdrawal, or other electronic means, excluding ATMS and POS"),
+    ).toEqual({ ok: true });
+    expect(
+      checkFeeCategory("overdraft", "Paid NSF (per item) Includes ACH, Personal Checks, Electronic Debit, Online Bill Pay. We do not charge a Paid NSF fee on"),
+    ).toEqual({ ok: true });
+  });
+
   it("explains a rejection in the reason", () => {
     const verdict = checkFeeCategory("nsf", "Returned Deposit Check");
     expect(verdict.ok).toBe(false);
