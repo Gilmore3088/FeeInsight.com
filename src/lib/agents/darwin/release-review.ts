@@ -162,8 +162,8 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
         FROM ranked
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = ranked.fee_raw_id
        WHERE ranked.rank <= CASE WHEN ranked.kind = 'restored'
-                                 THEN ${REVIEW_LESSONS_RESTORED_PER_KEY}
-                                 ELSE ${REVIEW_LESSONS_WRONG_PER_KEY} END
+                                 THEN ${REVIEW_LESSONS_RESTORED_PER_KEY}::int
+                                 ELSE ${REVIEW_LESSONS_WRONG_PER_KEY}::int END
        ORDER BY ranked.canonical_fee_key, ranked.kind
     `);
     return rows.map((row) => ({
@@ -173,7 +173,8 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
       scheduleLine: row.excerpt ? row.excerpt.slice(0, 200) : null,
       found: LESSON_FOUND[row.kind] ?? `wrong: ${row.kind}`,
     }));
-  } catch {
+  } catch (error) {
+    console.warn("[darwin] release review lessons unavailable", error instanceof Error ? error.message : error);
     return [];
   }
 }

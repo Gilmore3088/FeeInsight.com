@@ -113,6 +113,8 @@ describe("Darwin held-fee release review", () => {
     const query = db.mock.calls.map(([strings]) => templateText(strings)).find((text) => text.includes("FROM pipeline_feedback pf")) ?? "";
     expect(query).toContain("'wrong_category', 'off_taxonomy'");
     expect(query).not.toContain("hamilton.source_check");
+    // postgres.js sends numbers untyped; a CASE of untyped values is text, and bigint <= text fails on prod.
+    expect(query).toMatch(/THEN\s+::int\s+ELSE\s+::int END/);
     expect(lessons).toEqual([
       { filedAs: "stop_payment", feeName: "Stop Payment Removal", amount: 5, scheduleLine: "Stop Payment Removal | $5.00", found: "wrong: filed under the wrong category" },
       { filedAs: "stop_payment", feeName: "Stop Payment", amount: 25, scheduleLine: null, found: "right: a check took it down by mistake; it is a real price in this category" },
