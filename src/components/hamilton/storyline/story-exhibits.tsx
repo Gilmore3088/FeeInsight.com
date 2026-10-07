@@ -26,7 +26,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
 
   if (x.kind === "fee_position" || x.kind === "competitor_range" || x.kind === "trend") {
     return (
-      <div>
+      <div className="break-inside-avoid">
         <ExhibitView exhibit={x} number={number} title={item.actionTitle} />
         {takeaway}
       </div>
@@ -34,7 +34,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
   }
   if (x.kind === "segment_table") {
     return (
-      <div>
+      <div className="break-inside-avoid">
         <SegmentTable
           data={{
             segment: { label: "" },
@@ -95,7 +95,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
     const split = item.id === "income-split" ? incomeSplitOf(x) : null;
     if (split) {
       return (
-        <div>
+        <div className="break-inside-avoid">
           <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
             <IncomeSplitChart data={split} />
           </ExhibitFrame>

@@ -310,9 +310,9 @@ function fmtTrendValue(v: number, unit: "dollars" | "percent"): string {
 }
 
 function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
-  const W = 600;
-  const H = 190;
-  const pad = { l: 8, r: 64, t: 12, b: 24 };
+  const W = 640;
+  const H = 230;
+  const pad = { l: 44, r: 128, t: 16, b: 28 };
   const dates = [...new Set(x.series.flatMap((s) => s.points.map((p) => p.date)))].sort();
   const vals = x.series.flatMap((s) => s.points.map((p) => p.value));
   if (dates.length < 2 || vals.length === 0) return <p className="text-sm text-warm-700">Not enough points on file to draw a trend.</p>;
@@ -324,67 +324,124 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   const hi = vMax + span * 0.3;
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
-  const strokes = ["var(--color-terra, #C44B2E)", "#6b6255", "#a39a8c"];
+  const strokes = ["#C44B2E", "#5A5347", "#A09788"];
   const label = (d: string) => shortDate(d) ?? d;
+  const [own, peer] = x.series;
+  const paired = own && peer && own.points.length > 1 && peer.points.length > 1;
+  // The gap at each end, where both series have a point on the same date.
+  const gapAt = (d: string | undefined) => {
+    if (!paired || !d) return null;
+    const a = own.points.find((p) => p.date === d);
+    const b = peer.points.find((p) => p.date === d);
+    return a && b ? { d, a: a.value, b: b.value } : null;
+  };
+  const ends = [gapAt(own?.points[0]?.date), gapAt(own?.points[own.points.length - 1]?.date)].filter((g): g is NonNullable<typeof g> => g != null);
+  // End labels sit beside the last point, nudged apart when the lines finish close together.
+  const endLabels = x.series
+    .map((s, i) => ({ s, i, last: s.points[s.points.length - 1] }))
+    .filter((e) => e.last)
+    .map((e) => ({ ...e, y: py(e.last!.value) }))
+    .sort((m, n) => m.y - n.y);
+  for (let k = 1; k < endLabels.length; k++) {
+    if (endLabels[k].y - endLabels[k - 1].y < 30) endLabels[k].y = endLabels[k - 1].y + 30;
+  }
+  const gradId = `trend-fill-${x.title.length}-${dates.length}`;
   return (
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-3xl" role="img" aria-label={x.title}>
+        <defs>
+          <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#C44B2E" stopOpacity={0.28} />
+            <stop offset="100%" stopColor="#C44B2E" stopOpacity={0.06} />
+          </linearGradient>
+        </defs>
         {[0, 0.5, 1].map((f) => {
           const v = lo + (hi - lo) * f;
           return (
             <g key={f}>
-              <line x1={pad.l} x2={W - pad.r} y1={py(v)} y2={py(v)} stroke="#e8dfd1" />
-              <text x={W - pad.r + 6} y={py(v) + 4} fontSize="11" fill="#8a8073">
+              <line x1={pad.l} x2={W - pad.r} y1={py(v)} y2={py(v)} stroke="#E0D7C9" strokeDasharray={f === 0 ? undefined : "2 4"} />
+              <text x={pad.l - 6} y={py(v) + 4} fontSize="11" fill="#6B6255" textAnchor="end">
                 {fmtTrendValue(v, x.unit)}
               </text>
             </g>
           );
         })}
-        {/* The space between the bank and its peers is shaded, so the gap reads as a shape. */}
-        {x.series.length >= 2 && x.series[0].points.length > 1 && x.series[1].points.length > 1 ? (
+        {/* The space between the bank and its peers is filled, so the gap reads as a shape. */}
+        {paired ? (
           <polygon
-            fill="var(--color-terra, #C44B2E)"
-            fillOpacity={0.1}
+            fill={`url(#${gradId})`}
             points={[
-              ...x.series[0].points.map((p) => `${px(p.date)},${py(p.value)}`),
-              ...[...x.series[1].points].reverse().map((p) => `${px(p.date)},${py(p.value)}`),
+              ...own.points.map((p) => `${px(p.date)},${py(p.value)}`),
+              ...[...peer.points].reverse().map((p) => `${px(p.date)},${py(p.value)}`),
             ].join(" ")}
           />
         ) : null}
+        {ends.map((g, k) => {
+          const xg = px(g.d) + (k === 0 ? 10 : -10);
+          const y1 = py(Math.max(g.a, g.b));
+          const y2 = py(Math.min(g.a, g.b));
+          return (
+            <g key={g.d}>
+              <path d={`M ${xg - (k === 0 ? 4 : -4)} ${y1} H ${xg} V ${y2} H ${xg - (k === 0 ? 4 : -4)}`} fill="none" stroke="#1A1815" strokeWidth={1} />
+              {y2 - y1 > 14 ? (
+                <text x={xg + (k === 0 ? 5 : -5)} y={(y1 + y2) / 2 + 4} fontSize="11" fontWeight={600} fill="#1A1815" textAnchor={k === 0 ? "start" : "end"}>
+                  gap {fmtTrendValue(Math.abs(g.a - g.b), x.unit)}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
         {x.series.map((s, i) => (
           <polyline
             key={s.label}
             fill="none"
             stroke={strokes[i % strokes.length]}
-            strokeWidth={i === 0 ? 2.5 : 1.75}
+            strokeWidth={i === 0 ? 3 : 1.75}
+            strokeLinejoin="round"
+            strokeLinecap="round"
             strokeDasharray={i === 0 ? undefined : "5 4"}
             points={s.points.map((p) => `${px(p.date)},${py(p.value)}`).join(" ")}
           />
         ))}
-        {x.series.map((s, i) => {
-          const last = s.points[s.points.length - 1];
-          return last ? (
-            <circle key={`end-${s.label}`} cx={px(last.date)} cy={py(last.value)} r={i === 0 ? 4 : 3} fill={strokes[i % strokes.length]} stroke="#fff" strokeWidth={1.5} />
-          ) : null;
-        })}
-        <text x={pad.l} y={H - 6} fontSize="11" fill="#8a8073">
+        {x.series.map((s, i) =>
+          s.points.map((p, k) =>
+            i === 0 || k === s.points.length - 1 ? (
+              <circle
+                key={`${s.label}-${p.date}`}
+                cx={px(p.date)}
+                cy={py(p.value)}
+                r={k === s.points.length - 1 ? (i === 0 ? 5 : 3.5) : 2.5}
+                fill={strokes[i % strokes.length]}
+                stroke="#fff"
+                strokeWidth={1.5}
+              />
+            ) : null,
+          ),
+        )}
+        {endLabels.map((e) => (
+          <g key={`label-${e.s.label}`}>
+            <text x={W - pad.r + 12} y={e.y} fontSize="15" fontWeight={600} fill={e.i === 0 ? "#A93D25" : "#1A1815"}>
+              {fmtTrendValue(e.last!.value, x.unit)}
+            </text>
+            <text x={W - pad.r + 12} y={e.y + 13} fontSize="10.5" fill="#6B6255">
+              {e.i === 0 ? e.s.label : e.s.label.length > 20 ? "Peer median" : e.s.label}
+            </text>
+          </g>
+        ))}
+        <text x={pad.l} y={H - 6} fontSize="11" fill="#6B6255">
           {label(dates[0])}
         </text>
-        <text x={W - pad.r} y={H - 6} fontSize="11" fill="#8a8073" textAnchor="end">
+        <text x={W - pad.r} y={H - 6} fontSize="11" fill="#6B6255" textAnchor="end">
           {label(dates[dates.length - 1])}
         </text>
       </svg>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-warm-700">
-        {x.series.map((s, i) => {
-          const last = s.points[s.points.length - 1];
-          return (
-            <span key={s.label} className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-0.5 w-5" style={{ background: strokes[i % strokes.length] }} />
-              {s.label}
-              {last ? <span className="text-warm-900 [font-variant-numeric:tabular-nums]">{fmtTrendValue(last.value, x.unit)}</span> : null}
-            </span>
-          );
-        })}
+        {x.series.map((s, i) => (
+          <span key={s.label} className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-5" style={{ background: strokes[i % strokes.length] }} />
+            {s.label}
+          </span>
+        ))}
       </div>
     </div>
   );
