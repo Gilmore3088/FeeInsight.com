@@ -329,6 +329,15 @@ had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs
 schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
 lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
 direct runs already do, so it was removed.
+**Follow-up (08:10):** score order alone left Tennessee's lane (score 690, eighth) queued
+from 00:55 to past 08:00, while Knox re-reads and Magellan re-searches for the state waited
+on it. A state whose report James is waiting to review (`REPORT_REVIEW_STATES`) now runs
+right after failed-lane retries and carries the report-request weight in its score.
+**Follow-up (09:00):** Tennessee was then first in the order but still did not start. Each
+tick's direct institution runs used the first minutes, so Tennessee's first real step
+(enhance, state-expert, discover: about 170 seconds) no longer fit, and the next lane that
+did fit (WY at 08:48) started instead, counted as under way, and took the next tick. Once a
+lane is held for the deadline, no lower lane starts in that tick.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 

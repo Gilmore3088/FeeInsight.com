@@ -397,6 +397,25 @@ describe("checkFeeCategory", () => {
     ).toEqual({ ok: true });
   });
 
+  it("v18 keeps only inactivity fees under dormant_account", () => {
+    // Live on prod Oct 7: Space Coast's "Money Market Savings Account (below )" $15 beside its real $5 dormant fee.
+    expect(checkFeeCategory("dormant_account", "Money Market Savings Account (below )").ok).toBe(false);
+    expect(checkFeeCategory("dormant_account", "Telephone transfers").ok).toBe(false);
+    expect(checkFeeCategory("dormant_account", "Vacation Club Withdrawal").ok).toBe(false);
+    for (const name of [
+      "Dormant Fee (no member activity for 24 months)",
+      "Inactive Account Fee",
+      "Limited Activity Fee",
+      "Sunshine Checking - Under Utilization",
+      "Checking Account Reactivation Fee",
+      "If there is no transaction activity on your share and/or share draft account for a period of twelve (12) months and AOD",
+      "Cuenta inac=va por más de un año",
+      "Escheatment Fee",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name)).toEqual({ ok: true });
+    }
+  });
+
   it("explains a rejection in the reason", () => {
     const verdict = checkFeeCategory("nsf", "Returned Deposit Check");
     expect(verdict.ok).toBe(false);
