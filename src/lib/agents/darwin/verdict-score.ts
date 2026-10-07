@@ -94,6 +94,8 @@ export function scoreClaim(claim: ReviewClaim, keyFees: KeyFee[]): ScoredClaim {
   const out = (result: ScoreResult): ScoredClaim => ({ result, keySays, keyLine });
 
   if (!claim.isFee) {
+    // A cap or limit the review names in its own category (od_daily_cap) is keyed that way too.
+    if (claim.category && pool.some(([key]) => key === claim.category)) return out("right");
     if (claim.amount === 0) return out("right");
     if (atAmount.length === 0) return out(claim.amount == null ? "unclear" : "right");
     if (atAmount.every(([, amount]) => amount === 0)) return out("right");

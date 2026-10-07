@@ -450,14 +450,16 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       const r = await runRegistryStateBillsBatch({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
       const failed = r.failedStates.length > 0 ? ` Failed: ${r.failedStates.join(", ")}.` : "";
+      const limited = r.rateLimited ? " Open States rate limited the run; the rest stay due." : "";
       return {
         summary: r.missingKey
           ? "Skipped state bills: OPEN_STATES_API_KEY is not set."
-          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}`,
+          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}${limited}`,
         detail: {
           missing_key: r.missingKey,
           states: r.states,
           failed_states: r.failedStates,
+          rate_limited: r.rateLimited,
           remaining: r.remaining,
           fetched: r.fetched,
           stored: r.stored,

@@ -68,6 +68,35 @@ describe("identity matching", () => {
     expect(matchCompany("First State Bank", idx)).toMatchObject({ institutionId: 5, status: "needs_review", method: "ambiguous_name" });
     expect(matchCompany("Unknown Lender LLC", idx)).toBeNull();
   });
+
+  it("accepts a short name only for one large parent", () => {
+    const idx = index([
+      ["PNC", [{ id: 8, hc: "1069778", assets: 609_771_726 }]],
+      ["TD", [{ id: 12, hc: "1238565", assets: 342_803_746 }, { id: 13, hc: "1238565", assets: 50_000_000 }]],
+      ["DMB", [{ id: 20, hc: null, assets: 835_042 }]],
+    ]);
+    expect(matchCompany("PNC Bank N.A.", idx)).toMatchObject({ institutionId: 8, status: "accepted", method: "short_name_large_bank" });
+    expect(matchCompany("TD BANK US HOLDING COMPANY", idx)).toMatchObject({ institutionId: 12, status: "accepted" });
+    // A small bank sharing a short name with a debt-relief firm stays for review.
+    expect(matchCompany("DMB Financial, LLC", idx)).toMatchObject({ status: "needs_review", method: "short_name" });
+  });
+
+  it("matches a full holding-company name before the loose name", () => {
+    const bank = (id: number, hc: string, assets: number) => ({ id, name: "", holdingCompanyRssd: hc, assetSize: assets, via: "holding_company_name" as const });
+    const idx: IdentityIndex = {
+      ...index([["CITIZENS", [{ id: 18, hc: "1132449", assets: 232_517_438 }, { id: 300, hc: "777", assets: 2_000_000 }, { id: 301, hc: "778", assets: 1_500_000 }]]]),
+      byHoldingName: new Map([
+        ["CITIZENS FINANCIAL GROUP", [bank(18, "1132449", 232_517_438)]],
+        ["FIRST CITIZENS BANCSHARES", [bank(17, "1075612", 236_317_000), bank(400, "555", 2_500_000)]],
+        ["INDEPENDENT BANK", [bank(50, "1", 24_968_842), bank(51, "2", 5_000_000)]],
+      ]),
+    };
+    expect(matchCompany("CITIZENS FINANCIAL GROUP, INC.", idx)).toMatchObject({ institutionId: 18, status: "accepted", method: "holding_company_full_name" });
+    // Two parents share the name; the far larger one takes it.
+    expect(matchCompany("FIRST CITIZENS BANCSHARES, INC.", idx)).toMatchObject({ institutionId: 17, method: "holding_company_dominant_parent" });
+    // Comparable parents: no full-name match, and the loose name has no candidates.
+    expect(matchCompany("INDEPENDENT BANK CORP.", idx)).toBeNull();
+  });
 });
 
 describe("registry CFPB worker", () => {
@@ -80,30 +109,54 @@ describe("registry CFPB worker", () => {
       ["FROM institution_identity_links", () => [{ external_key: "JPMORGAN CHASE & CO.", institution_id: 7 }]],
       ["INSERT INTO institution_complaint_records", (values) => payloadOf(values).map(() => ({}))],
     ]);
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(json({ aggregations: { company: { company: { buckets: [{ key: "JPMORGAN CHASE & CO.", doc_count: 24458 }, { key: "EQUIFAX, INC.", doc_count: 1 }] } } } }))
-      .mockResolvedValueOnce(
-        json({
-          hits: { total: { value: 24458 } },
+    const fetchImpl = vi.fn().mockImplementation(async (input: unknown) => {
+      const url = new URL(String(input));
+      if (!url.searchParams.get("company")) {
+        return json({ aggregations: { company: { company: { buckets: [{ key: "JPMORGAN CHASE & CO.", doc_count: 24458 }, { key: "EQUIFAX, INC.", doc_count: 1 }] } } } });
+      }
+      if (url.searchParams.getAll("product").length > 0) {
+        return json({
+          hits: { total: { value: 14888 } },
           aggregations: {
-            product: { product: { buckets: [{ key: "Checking or savings account", doc_count: 8937 }, { key: "Credit card", doc_count: 5951 }] } },
-            issue: { issue: { buckets: [{ key: "Managing an account", doc_count: 4957 }] } },
+            issue: {
+              issue: {
+                buckets: [
+                  { key: "Managing an account", doc_count: 4000, "sub_issue.raw": { buckets: [{ key: "Fee problem", doc_count: 700 }, { key: "Banking errors", doc_count: 900 }] } },
+                  { key: "Problem caused by your funds being low", doc_count: 1200 },
+                ],
+              },
+            },
           },
-        }),
-      );
+        });
+      }
+      return json({
+        hits: { total: { value: 24458 } },
+        aggregations: {
+          product: { product: { buckets: [{ key: "Checking or savings account", doc_count: 8937 }, { key: "Credit card", doc_count: 5951 }] } },
+          issue: { issue: { buckets: [{ key: "Managing an account", doc_count: 4957 }] } },
+        },
+      });
+    });
 
     const result = await runRegistryCfpb({ runId: 3, partitionKey: "2025", db, fetchOptions: { fetchImpl, backoffMs: 0 }, now: new Date("2026-10-03T00:00:00Z") });
 
-    expect(result).toMatchObject({ companies: 2, acceptedCompanies: 1, institutions: 1, complaints: 24458, rowsWritten: 3 });
+    expect(result).toMatchObject({ companies: 2, acceptedCompanies: 1, institutions: 1, complaints: 24458, feeProductComplaints: 14888, subIssuesLoaded: true, rowsWritten: 7 });
+    const feeCall = fetchImpl.mock.calls.map((c) => new URL(String(c[0]))).find((u) => u.searchParams.getAll("product").length > 0);
+    expect(feeCall!.searchParams.getAll("product")).toContain("Checking or savings account");
     const link = statements.find((s) => s.text.includes("INSERT INTO institution_identity_links"));
     expect(payloadOf(link!.values)[0]).toMatchObject({ institution_id: 7, external_key: "JPMORGAN CHASE & CO.", status: "accepted" });
-    expect(statements.some((s) => s.text.includes("DELETE FROM institution_complaint_records"))).toBe(true);
+    // The whole year is replaced, not only the institutions touched.
+    const del = statements.find((s) => s.text.includes("DELETE FROM institution_complaint_records"));
+    expect(del!.text).not.toContain("institution_id IN");
     const insert = statements.find((s) => s.text.includes("INSERT INTO institution_complaint_records"));
     expect(payloadOf(insert!.values)).toEqual([
       { institution_id: 7, product: "Checking or savings account", issue: "_total", complaint_count: 8937 },
       { institution_id: 7, product: "Credit card", issue: "_total", complaint_count: 5951 },
       { institution_id: 7, product: "_all", issue: "Managing an account", complaint_count: 4957 },
+      { institution_id: 7, product: "_fee_products", issue: "Managing an account", complaint_count: 4000 },
+      { institution_id: 7, product: "_fee_products", issue: "Problem caused by your funds being low", complaint_count: 1200 },
+      { institution_id: 7, product: "_fee_products_sub", issue: "Managing an account :: Fee problem", complaint_count: 700 },
+      { institution_id: 7, product: "_fee_products_sub", issue: "Managing an account :: Banking errors", complaint_count: 900 },
     ]);
   });
 
@@ -510,7 +563,7 @@ describe("registry state bills worker", () => {
   it("records a missing key without fetching", async () => {
     const { db, statements } = createDb([]);
     const fetchImpl = vi.fn();
-    const result = await runRegistryStateBills({ partitionKey: "ca", db, now, apiKey: "", fetchOptions: { fetchImpl } });
+    const result = await runRegistryStateBills({ partitionKey: "ca", db, now, apiKey: "", requestIntervalMs: 0, fetchOptions: { fetchImpl } });
     expect(result).toMatchObject({ missingKey: true, fetched: 0 });
     expect(fetchImpl).not.toHaveBeenCalled();
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
@@ -520,7 +573,7 @@ describe("registry state bills worker", () => {
   it("sends the key as a header, keeps bank fee bills only, and stores nothing in shadow mode", async () => {
     const { db, statements } = createDb([]);
     const fetchImpl = vi.fn().mockImplementation(async () => json(page));
-    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: false, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: false, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(result).toMatchObject({ fetched: 1, stored: 0, shadow: true, requests: 3 });
     expect(result.stages.passed_chamber).toBe(1);
     const [url, init] = fetchImpl.mock.calls[0];
@@ -533,7 +586,7 @@ describe("registry state bills worker", () => {
   it("upserts bills with their stage when live", async () => {
     const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
     const fetchImpl = vi.fn().mockImplementation(async () => json(page));
-    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(result.stored).toBe(1);
     const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO reg_tracker_items"))!.values);
     expect(rows[0]).toMatchObject({ id: "ocd-bill/1", state_code: "CA", stage: "passed_chamber", stage_date: "2026-05-01" });
@@ -544,7 +597,7 @@ describe("registry state bills worker", () => {
     const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
       String(url).includes("state%3Aaz") ? new Response("nope", { status: 400 }) : json(page),
     );
-    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 3, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 3, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
     expect(result.states).toEqual(["AR", "AZ", "CA"]);
     expect(result.failedStates).toEqual(["AZ"]);
     expect(result).toMatchObject({ fetched: 2, remaining: 52 - 2 - 3 });
@@ -553,11 +606,32 @@ describe("registry state bills worker", () => {
     expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
   });
 
+  it("stops at a 429 and leaves that state due instead of failing it", async () => {
+    const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      String(url).includes("state%3Aal") ? new Response("slow down", { status: 429 }) : json(page),
+    );
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, statesPerRun: 4, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result).toMatchObject({ states: ["AK"], failedStates: [], rateLimited: true, remaining: 51 });
+    const partitions = statements.filter((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    expect(partitions.map((s) => s.values[1])).toEqual(["AK", "current"]);
+  });
+
+  it("starts no new state after the time cutoff", async () => {
+    const { db } = createDb([["FROM registry_ingest_partitions", () => []]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    let t = 0;
+    const clock = () => (t += 40_000);
+    const result = await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: false, startCutoffMs: 60_000, clock, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    expect(result.states).toEqual(["AK", "AL"]);
+    expect(result.remaining).toBe(50);
+  });
+
   it("fails the run when every state in it fails", async () => {
     const { db } = createDb([]);
     const fetchImpl = vi.fn().mockImplementation(async () => new Response("bad key", { status: 401 }));
     await expect(
-      runRegistryStateBillsBatch({ db, now, apiKey: "k", statesPerRun: 2, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } }),
+      runRegistryStateBillsBatch({ db, now, apiKey: "k", statesPerRun: 2, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } }),
     ).rejects.toThrow(/Every state in this run failed/);
   });
 });
