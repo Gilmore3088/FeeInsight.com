@@ -200,8 +200,15 @@ export function parseOrderTables(html: string, baseUrl: string): StateOrder[] {
     const header = headerAt >= 0 ? rows[headerAt] : rows[0];
     const cols = mapColumns(cellsOf(header).map((c) => clean(textOf(c as unknown as Node))));
     if (cols.party === undefined) continue;
+    const width = cellsOf(header).length;
     for (const row of rows.slice(rows.indexOf(header) + 1)) {
-      const cells = cellsOf(row);
+      let cells = cellsOf(row);
+      // Illinois's header spans its columns (3 headings over 4 cells, one an empty spacer):
+      // a row wider than its header lines up once its empty cells are dropped.
+      if (cells.length > width) {
+        const filled = cells.filter((c) => clean(textOf(c as unknown as Node)) !== "");
+        if (filled.length === width) cells = filled;
+      }
       const cell = (k: Column) => (cols[k] !== undefined && cells[cols[k] as number] ? clean(textOf(cells[cols[k] as number] as unknown as Node)) : "");
       const located = splitPartyLocation(cleanParty(cell("party")));
       const party = located.name;
@@ -247,6 +254,11 @@ export function splitPartyLocation(name: string): { name: string; city: string |
   const parts = name.split(/,\s*/);
   if (parts.length >= 3 && STATE_NAME_SET.has(parts[parts.length - 1].trim().toLowerCase())) {
     return { name: parts.slice(0, -2).join(", "), city: parts[parts.length - 2].trim() || null };
+  }
+  // "Highland Community Bank, Chicago": a bank's name, then its town.
+  if (parts.length === 2 && /\b(bank|trust|savings|bancorp)\b/i.test(parts[0]) && /^[A-Z][a-z]+(?: [A-Z][a-z]+){0,2}$/.test(parts[1].trim())
+      && !/^(company|corporation|association|national association|incorporated)$/i.test(parts[1].trim())) {
+    return { name: parts[0].trim(), city: parts[1].trim() };
   }
   return { name, city: null };
 }
@@ -357,13 +369,23 @@ export function linksMatching(html: string, baseUrl: string, pattern: RegExp, li
 }
 
 /** What a page looks like when a reader finds nothing there, for the run detail. */
-export function describePage(html: string): { tables: number; rows: number; links: number; headers: string[][]; text: string } {
+/** A row's direct children as "tag:text" (for a row whose cells the reader missed). */
+function rowOutline(row: El): string {
+  return row.children
+    .filter(isEl)
+    .map((c) => `${c.name}${c.attribs.class ? `.${c.attribs.class.split(/\s+/)[0]}` : ""}:${clean(textOf(c as unknown as Node)).slice(0, 40)}`)
+    .join(" | ")
+    .slice(0, 400);
+}
+
+export function describePage(html: string): { tables: number; rows: number; links: number; headers: string[][]; outline: string[]; text: string } {
   const doc = parseDocument(html, { decodeEntities: true });
   const tables = all(doc as unknown as Node, "table");
   const main = all(doc as unknown as Node, "main")[0] ?? all(doc as unknown as Node, "body")[0];
   return {
     tables: tables.length,
     rows: tables.reduce((n, t) => n + rowsOf(t).length, 0),
+    outline: tables.slice(0, 1).flatMap((t) => rowsOf(t).slice(0, 4).map(rowOutline)),
     links: all(doc as unknown as Node, "a").length,
     headers: tables.slice(0, 3).map((t) => rowsOf(t).slice(0, 2).flatMap((r) => cellsOf(r).map((c) => clean(textOf(c as unknown as Node)).slice(0, 60)))),
     text: clean(main ? textOf(main as unknown as Node) : "").slice(0, 600),
