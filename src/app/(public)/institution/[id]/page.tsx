@@ -6,7 +6,6 @@ import { getFinancialsByInstitution } from "@/lib/data-store";
 import { getFinancialHistory, getPeerFinancialMedians, getPeerPercentiles } from "@/lib/data-store/financial";
 import {
   getBranchFootprint,
-  getEnforcementRecord,
   getComplaintTrend,
   getHoldingCompanyProfile,
   getRegulatorInfo,
@@ -150,7 +149,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
   // Financial history is Pro-only; free users never receive it in the RSC payload.
   const isPro = canAccessPremium(user);
-  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany, enforcement] = isPro
+  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany] = isPro
     ? await Promise.all([
         getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
         getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
@@ -158,9 +157,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
         getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
         getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
-        getEnforcementRecord(instId).catch(fallbackTo("enforcement actions", null)),
       ])
-    : [[], null, null, null, null, null, null];
+    : [[], null, null, null, null, null];
   const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
@@ -391,7 +389,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   footprint={footprint}
                   complaints={complaints}
                   holdingCompany={holdingCompany}
-                  enforcement={enforcement}
                 />
               )}
             </div>
