@@ -387,6 +387,11 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
   });
 
+  it("never reads a balance \"greater than or equal to $0\" as a $0 fee (Citizens, Oct 7)", () => {
+    const citizens = "transactions that post to the account that day. If the available balance,\nexcluding the overdraft fees, is positive (greater than or equal to $0)\nat the end of the following business day, any overdraft fees will be\nreversed.";
+    expect(checkFeeAgainstSource(citizens, "excluding the overdraft fees, is positive (greater than or equal to", 0, ".", "overdraft").ok).toBe(false);
+  });
+
   it("reads a fee of up to $X as the fee's maximum, and a band before a price as a band (SmartBank, Oct 7)", () => {
     const smartbank = "What You Need to Know about Overdrafts\n• We will charge you a fee of up to $35.00 each time we pay an overdraft.";
     expect(checkFeeAgainstSource(smartbank, "Overdraft Fee", 35, ".", "overdraft").ok).toBe(true);
