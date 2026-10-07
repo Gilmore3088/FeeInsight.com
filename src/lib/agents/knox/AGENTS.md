@@ -372,3 +372,11 @@ starts after it (`tidyFeeName`). A sentence of more than eight words keeps its e
 category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
 right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
 of 1,437 kept, the same fees.
+
+Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
+from the second look or the restore bar) counts as verified under the category it came back with,
+and a takedown under that same category no longer counts against the name. A takedown under another
+category stands, since a fee taken down as a domestic wire and restored as an international wire
+confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
+`wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
+this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.

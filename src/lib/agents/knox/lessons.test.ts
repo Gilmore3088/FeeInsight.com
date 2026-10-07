@@ -114,4 +114,20 @@ describe("Knox lessons query", () => {
     }
     expect(depth).toBe(0);
   });
+
+  it("learns from restores and not from takedowns that were restored under the same category", async () => {
+    const texts: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("$1");
+      texts.push(text);
+      return Promise.resolve(text.includes("to_regclass") ? [{ ready: true }] : []);
+    });
+    await loadKnoxLessons(db as never);
+    const query = (texts.find((text) => text.includes("pipeline_feedback f")) ?? "").replace(/\s+/g, " ");
+    expect(query).toContain("r.kind = 'restored_after_takedown'");
+    // A restore drops only the takedown under the category the fee came back with.
+    expect(query).toContain("rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key");
+    expect(query).toContain("SELECT name, canonical_fee_key, 'right', institution_id FROM restored");
+    for (const kind of ["unreproduced", "not_on_schedule", "wrong_amount", "threshold"]) expect(query).not.toContain(`'${kind}'`);
+  });
 });
