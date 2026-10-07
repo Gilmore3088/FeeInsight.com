@@ -2859,3 +2859,13 @@ Rows already on file gain the fields only when Knox reads their document again.
   wasn't found.
 - **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
   Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
+
+## 2026-10-07: Written Hamilton answers were saved only from the browser
+
+- **Problem.** The Analyze screen saved a written answer to `hamilton_saved_analyses` from the
+  browser after the stream ended, and dropped any save error. One answer on prod (the 07:36
+  `research_stream`, usage row 2928) has no saved row; every earlier answer does.
+- **Fix.** `/api/research/hamilton` saves the answer in its `onFinish` (`src/lib/hamilton/answer-save.ts`)
+  and keeps the stream running if the browser drops it. The row id goes back as message metadata
+  under `savedAnalysisId`; the screen updates that row instead of inserting another.
+- **Watch.** Until the screen reads `savedAnalysisId`, both sides insert, so each answer gets two rows.
