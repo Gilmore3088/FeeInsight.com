@@ -2552,7 +2552,17 @@ export async function executeQueuedAgentRuns({
               -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
               -- a hand-found schedule or a large bank missing its overdraft fee; and its
               -- direct re-search of one state's missed banks (atlas/priority-state-research.ts).
-              COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC,
+              -- They go ahead of state lanes only while a lane has started a step in the last
+              -- ten minutes: three or four direct runs fill a tick, and a lane's first step
+              -- needs most of one, so ranking them first every tick starved every lane
+              -- (no lane started 08:52-09:25 on 2026-10-07, Tennessee included).
+              (COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false)
+                AND EXISTS (
+                  SELECT 1 FROM agent_run_steps lane_step
+                    JOIN agent_runs lane_run ON lane_run.id = lane_step.agent_run_id
+                   WHERE lane_run.run_kind = 'workflow_lane'
+                     AND lane_step.started_at > NOW() - INTERVAL '10 minutes'
+                )) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
