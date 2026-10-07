@@ -98,6 +98,12 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(groundPaidRow({ canonical_key: "stop_payment", amount: 31 }, text)).toBe("missing_fields");
   });
 
+  it("never takes a limit as a fee, and counts prices under a dollar", () => {
+    const line = "Digital Banking | Zelle® transfer limit | $1,000.00";
+    expect(groundPaidRow({ fee_name: "Zelle transfer limit", canonical_key: "zelle_fee", amount: 1000, source_line: line }, line)).toBe("limit_not_fee");
+    expect(pricedLineCount("Paid check | $.50 each\nPhotocopy | 75¢ per page\nCoin | 25 cents")).toBe(3);
+  });
+
   it("never grounds a balance threshold as the fee (Texar $50.01)", () => {
     const line = "Overdraft Protection Items - Negative from $50.01 and more | $35";
     expect(groundPaidRow({ fee_name: "Overdraft Protection Items", canonical_key: "overdraft", amount: 50.01, source_line: line }, line)).toBe("not_in_text");

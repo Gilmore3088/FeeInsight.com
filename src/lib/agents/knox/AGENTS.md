@@ -337,3 +337,14 @@ Change this table and `agent-health.ts` in the same PR.
 | Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_EXTRACT_STRATEGY`, 24 h) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `textsExtracted`, `evidenceMismatch`.
+
+v28 (rules 28) never reads a limit as a price. A name that ends on a limit ("Zelle transfer limit",
+"Mobile Deposit Checks are limited to", "VISA Gift Cards: Maximum card load", "Cash Advance Fee
+(maximum") states the most a customer may move, not what they pay (`namesALimit` in `layout.ts`).
+A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), and a fee for going past a limit
+keeps its price ("Over Limit", "Limit Violation"). The paid reader rejects the same rows
+(`limit_not_fee`). The shared check now also reads a price under a dollar written "$.50" or "75¢",
+and the paid reader counts those lines and skips an older copy of a page whose current copy has a
+text, as the free reader already did. Answer keys: Texas 494 right (491), 15 wrong (14). The new
+wrong read is "Check printing" at $.20 on a one-line schedule, where the $.20 belongs to "Temporary
+check". Seven states unchanged. Live dry run: the same 1,412 of 1,437 kept.

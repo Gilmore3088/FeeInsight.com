@@ -22,6 +22,7 @@ import {
   type KnoxTextRow,
 } from "@/lib/agents/knox/extract";
 import { amountsIn, confidenceFor, detectFrequency, MAX_REASONABLE_FEE_AMOUNT } from "@/lib/agents/knox/rules";
+import { namesALimit } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 type SqlTag = typeof sql;
@@ -81,7 +82,7 @@ export interface AcceptedPaidFee {
   sourceLine: string;
 }
 
-export type PaidRowRejection = "missing_fields" | "unknown_canonical" | "invalid_amount" | "not_in_text";
+export type PaidRowRejection = "missing_fields" | "unknown_canonical" | "invalid_amount" | "not_in_text" | "limit_not_fee";
 
 /** A price in cents ("75¢", "25 cents"), which `amountsIn` leaves out. */
 const CENTS_PRICE = /(?<![\d.,$])\d{1,2}\s*(?:¢|cents?\b)/gi;
@@ -141,6 +142,7 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
   const mapped = CANONICAL_KEY_MAP[canonicalKey] ?? (VALID_CANONICAL_KEYS.has(canonicalKey) ? canonicalKey : null);
   if (!mapped) return "unknown_canonical";
   if (!Number.isFinite(amount) || amount < 0 || amount > MAX_REASONABLE_FEE_AMOUNT) return "invalid_amount";
+  if (namesALimit(feeName, mapped) || namesALimit(sourceLine.replace(/\$?\s*\d[\d,]*(?:\.\d+)?\s*$/, "").trim(), mapped)) return "limit_not_fee";
   const rounded = Math.round(amount * 100) / 100;
 
   const haystack = comparable(text);

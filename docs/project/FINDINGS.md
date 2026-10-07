@@ -1697,3 +1697,17 @@ comparison without its right-hand side. The fixed query was run read-only on pro
 12 rows.
 **Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
 merging.
+
+## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
+**What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
+transfer limit $1,000", "Mobile Deposit Checks are limited to $1,000", "No Bounce Courtesy Pay
+Limit $600" and "cash Advance limit is $500". Knox's rules filed the line under the fee the name
+mentions, and the price beside it was the limit. Separately, the paid reader had no filter for
+superseded copies: since 18:37 Oct 6, 59 of 270 paid reads were older copies whose current copy
+already had text, costing $1.62. Its priced-line count also missed "$.50" and "75¢", and so did the
+shared check, so those prices never traced.
+**Fix:** Knox v28 drops a read whose name ends on a limit (`namesALimit`), except for cap
+categories and fees for going past a limit. The paid reader rejects the same rows and now uses the
+free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
+**Lesson:** a price beside a name is the fee only when the name names a charge. Words like
+"limit", "limited to" and "maximum load" mean the figure is a ceiling.

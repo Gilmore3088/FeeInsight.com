@@ -166,6 +166,26 @@ export function composableTail(name: string): boolean {
   return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 
+/** Categories whose price is itself a cap ("Overdraft daily maximum | $150"). */
+const CAP_CATEGORIES = new Set(["od_daily_cap", "nsf_daily_cap"]);
+/** A fee for going past a limit, which is a real price ("Over Limit Fee", "Regulation D Transfer Limit Violation"). */
+const PAST_A_LIMIT = /\b(?:over|above|exceed\w*|excess\w*|violat\w*|beyond)\b/i;
+/** A name that ends on a limit ("Zelle transfer limit", "Mobile Deposit Checks are limited to", "Cash Advance Fee (maximum"). */
+const ENDS_ON_LIMIT =
+  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:per|daily|each|for)\b[^)]*\)?)?\s*$|\(\s*(?:daily\s+)?limit\b[^)]*\)?\s*$|\(\s*maximum\s*$/i;
+const FEE_WORD = /\b(?:fees?|charges?)\b/i;
+
+/**
+ * v28: a price the name says is a limit is not a fee: "If you use ... Zelle, the limit is
+ * $2,500", "Mobile Deposit (daily limit) $50", "No Bounce Courtesy Pay Limit $600". A cap
+ * category keeps its cap, and a fee for going past a limit keeps its price.
+ */
+export function namesALimit(feeName: string, canonicalKey: string): boolean {
+  if (PAST_A_LIMIT.test(feeName) || !ENDS_ON_LIMIT.test(feeName.trim())) return false;
+  // "Overdraft daily maximum | $150" caps fees; "Courtesy Pay Limit | $600" caps the overdraft.
+  return !CAP_CATEGORIES.has(canonicalKey) || (/\blimit(?:s|ed)?\b(?![\s\S]*\bmax)/i.test(feeName) && !FEE_WORD.test(feeName));
+}
+
 /**
  * A pass 2 specialist emits a fee only when Darwin's own checks would accept it: the
  * name supports the category (the category guard) and the amount sits inside the
