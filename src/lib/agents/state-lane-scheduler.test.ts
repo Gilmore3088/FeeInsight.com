@@ -383,6 +383,21 @@ describe("state lane scheduler", () => {
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
+  it("casts every number it sends, since an uncast $1 - $2 fails to plan", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    const strings = call?.[0] as string[];
+    const values = call?.slice(1) ?? [];
+    const uncast = values.flatMap((value, index) => {
+      const isNumber = typeof value === "number";
+      const isArray = Array.isArray(value);
+      if (!isNumber && !isArray) return [];
+      return strings[index + 1].startsWith("::") ? [] : [index];
+    });
+    expect(uncast).toEqual([]);
+  });
+
   it("runs the busiest due lanes first but never starves an overdue one", async () => {
     sqlMock.mockImplementation(() => Promise.resolve([]));
     withTransactionMock.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(sqlMock));

@@ -69,6 +69,22 @@ selected once more when nothing on their own document is verified as the same fe
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
 
+## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
+**What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
+and near-ready markets. At 00:47 UTC Oct 7 all 55 lanes still had priority_score 0, so Atlas kept
+taking states in waiting order. Postgres logs show "operator is not unique: unknown - unknown" at
+hh:00:32 every hour from 18:00 through 00:00 UTC: the hourly refresh ran and failed each time.
+**Cause:** postgres.js sends JavaScript numbers as untyped parameters, and the near-ready rule wrote
+`${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}`. Postgres cannot pick a "-" for two unknowns, so the
+whole UPDATE failed to plan. The function catches, logs and returns 0, so nothing else noticed.
+**Fix:** every number and array in the refresh query now carries a cast (`::int`, `::text[]`); a
+unit test fails if one is sent uncast. The fixed query, prepared on prod with untyped parameters
+the way postgres.js sends them, plans and scores IL 2274, MO 2173, MA 2169, NJ 2128, CO 2022,
+WA 2017, then TX 299.
+**Lesson:** in a `sql` template, cast every interpolated number unless a column fixes its type
+(`${n}::int`). Arithmetic between two parameters always fails. To test a query, prepare it with
+untyped parameters (`PREPARE q AS ...`), not with the numbers pasted in.
+
 ## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
 **What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
 failed at 01:28 UTC with "operator does not exist: bigint = text", although
