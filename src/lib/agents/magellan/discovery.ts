@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import {
   normalizeStateCode,
   readStrategyFromDocumentType,
@@ -28,7 +29,7 @@ import {
   type SearchContext,
   type TrailEntry,
 } from "./finders";
-import { LINK_YIELD_SLOTS, linkYieldSlot } from "./outcomes";
+import { LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
@@ -80,6 +81,12 @@ export const UPGRADE_SEARCH_VERSION = 2;
  * business companion.
  */
 export const BUSINESS_SEARCH_VERSION = 1;
+/**
+ * Discovery slots kept for business-only links even when banks without a link fill the
+ * step. A business link publishes business prices as the bank's consumer fees, which is
+ * worse than no link, and spare capacity alone reached 41 of 187 such banks (7 Oct 2026).
+ */
+export const BUSINESS_RESERVED_SLOTS = 3;
 /**
  * Banks whose fee link looks out of date get one search for a newer schedule per version
  * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
@@ -318,6 +325,8 @@ export interface RunMagellanDiscoveryOptions {
   stateCode?: string;
   db?: SqlTag;
   fetchImpl?: Fetcher;
+  /** The state's market leader ids, searched first; loaded from the shared ranking when left out. */
+  leaderIds?: number[];
   /** Pause between crawl requests (tests pass 0). */
   politeDelayMs?: number;
   /** Look for second documents of thin banks after the main search (default true in `discover` mode). */
@@ -814,6 +823,7 @@ async function selectCandidates(
   limit: number,
   stateCode: string | undefined,
   learning: boolean,
+  leaderIds: number[],
 ): Promise<DiscoveryCandidateRow[]> {
   const normalizedState = normalizeStateCode(stateCode);
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
@@ -834,6 +844,8 @@ async function selectCandidates(
              AND COALESCE(inst.failure_reason_note, '') LIKE 'out_of_time:%') AS discovery_cut_off,
            row_number() OVER (ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- The state's market leaders (top 15 by deposits or fee income) set its prices.
+       CASE WHEN inst.id = ANY(${leaderIds}::bigint[]) THEN 0 ELSE 1 END,
        -- A bank whose page was ruled out has a page whose links point the way: search it first.
        CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
              AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
@@ -1061,8 +1073,9 @@ async function selectStaleCandidates(
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
-         -- One slot of banks per UTC hour (as the outcome ledger), so the text check stays small.
-         AND inst.id % ${LINK_YIELD_SLOTS} = ${linkYieldSlot(now)}
+         -- One slot of banks per UTC hour when the step has no state, so the text check stays
+         -- small; a state's step checks the whole state (stepSlot, as the outcome ledger).
+         AND (${stepSlot(normalizedState, now)}::int IS NULL OR inst.id % ${LINK_YIELD_SLOTS} = ${stepSlot(normalizedState, now)}::int)
          AND inst.fee_schedule_url IS NOT NULL
          AND btrim(inst.fee_schedule_url) <> ''
          AND inst.website_url IS NOT NULL
@@ -1398,10 +1411,15 @@ export async function runMagellanDiscovery(
   const dryRun = Boolean(options.dryRun);
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
-  const missing = await selectCandidates(db, limit, options.stateCode, learning);
-  // Spare capacity searches banks whose link is a product page, then banks whose link
-  // looks out of date (both need the attempt log).
-  const business = learning ? await selectBusinessCandidates(db, limit - missing.length, options.stateCode) : [];
+  const leaderIds = options.leaderIds ?? (await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []));
+  const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
+  // Business-only links get a few reserved slots, then spare capacity; spare capacity
+  // then searches banks whose link is a product page, then banks whose link looks out of
+  // date (all need the attempt log).
+  const business = learning
+    ? await selectBusinessCandidates(db, Math.max(limit - found.length, Math.min(BUSINESS_RESERVED_SLOTS, limit)), options.stateCode)
+    : [];
+  const missing = found.slice(0, Math.max(0, limit - business.length));
   const upgrades = learning ? await selectUpgradeCandidates(db, limit - missing.length - business.length, options.stateCode) : [];
   const stale = learning
     ? await selectStaleCandidates(db, limit - missing.length - business.length - upgrades.length, options.stateCode)

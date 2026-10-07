@@ -73,7 +73,7 @@ describe("deliverables", () => {
     expect(byHeading["Implementation and compliance"].paragraphs[0]).toBe(`No advance notice is required; the earliest effective date is October 6, 2026.`);
     expect(byHeading["What would reopen this decision"].paragraphs).toHaveLength(3);
     expect(memo.sections[2].table?.rows[1]).toEqual(["$25", "19th percentile", "-$75.6 thousand a year", "Your figures"]);
-    expect(memo.appendix[0].provenance.engineVersion).toBe("1.9.0");
+    expect(memo.appendix[0].provenance.engineVersion).toBe("1.11.0");
   });
 
   it("an implementation checklist needs a choice", () => {

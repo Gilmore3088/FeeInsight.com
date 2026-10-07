@@ -13,16 +13,16 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
 // Since v17 the gate counts only reads that pass Knox's self-check; main at v16 scored 659
-// right / 48 wrong on that basis.
+// right / 48 wrong on that basis. Floors raised to main at v29 (2026-10-07).
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 115, wrong: 8 },
-  FL: { right: 95, wrong: 7 },
-  GA: { right: 141, wrong: 12 },
-  IL: { right: 84, wrong: 7 },
-  MI: { right: 102, wrong: 0 },
-  MN: { right: 85, wrong: 7 },
-  NY: { right: 38, wrong: 7 },
-  all: { right: 660, wrong: 48 },
+  CA: { right: 130, wrong: 8 },
+  FL: { right: 102, wrong: 7 },
+  GA: { right: 149, wrong: 12 },
+  IL: { right: 89, wrong: 7 },
+  MI: { right: 114, wrong: 0 },
+  MN: { right: 93, wrong: 7 },
+  NY: { right: 40, wrong: 6 },
+  all: { right: 717, wrong: 47 },
 };
 
 const fixture = JSON.parse(

@@ -14,17 +14,29 @@
  * 4. Minimum sample: no median or percentile below MIN_INSTITUTIONS_FOR_MEDIAN
  *    institutions; "strong" needs STRONG_INSTITUTION_COUNT.
  * 5. Unknown charter types count as neither banks nor credit unions.
+ * 6. Business-only schedules don't count: a fee read from a schedule whose address names
+ *    business, commercial, corporate or treasury accounts (and no consumer word) is a
+ *    business price, not the consumer's. It stays on the bank's own page and is left out
+ *    of medians, ranges and comparisons until a consumer schedule replaces it. Same
+ *    address test as Magellan's isBusinessOnlyLink (link-coverage.ts).
  */
 import { computePercentile, computeStats } from "./fees";
+import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 3;
+export const STATS_METHOD_VERSION = 4;
+
+/** SQL predicate: the row's source address names a business-only schedule (rule 6). */
+export function businessSourceSql(alias: string): string {
+  const path = `lower(regexp_replace(COALESCE(${alias}.source_url, ''), '^https?://[^/]+', ''))`;
+  return `(${path} ~ '${BUSINESS_PATH_SQL}' AND ${path} !~ '${CONSUMER_PATH_SQL}')`;
+}
 
 /** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
-export const STATS_ROW_FILTER = "ef.source_document_id IS NOT NULL";
+export const STATS_ROW_FILTER = `ef.source_document_id IS NOT NULL AND NOT ${businessSourceSql("ef")}`;
 
 
 export interface StatsInputRow {

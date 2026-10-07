@@ -41,6 +41,10 @@
       "schedule": "7 14 1 * *"
     },
     {
+      "path": "/api/admin/crew/studies",
+      "schedule": "37 15 * * *"
+    },
+    {
       "path": "/api/admin/crew/content",
       "schedule": "37 13 * * 0"
     }

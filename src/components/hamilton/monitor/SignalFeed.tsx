@@ -1,15 +1,15 @@
 /**
- * SignalFeed — Prototype-matched signal timeline.
- * Renders signal cards matching the HTML prototype structure:
- * - border-l-4 accent, signal type label, large serif institution name
- * - WHAT CHANGED / WHY IT MATTERS / RECOMMENDED NEXT MOVE sections
- * - EXECUTE burnished CTA button
+ * SignalFeed — every change for the institutions in scope, newest first, as a memo list:
+ * what kind of change, the institution, what changed, the detail, and where to look next.
+ * Hamilton reports the change; it never recommends a price.
  * Server component — no "use client".
  */
 
 import Link from "next/link";
+import { timeAgo } from "@/lib/format";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import type { SignalEntry, AlertEntry } from "@/lib/hamilton/home-data";
+import { LinkButton, SERIF } from "@/components/hamilton/memo/memo";
 
 interface SignalFeedProps {
   signals: SignalEntry[];
@@ -17,10 +17,10 @@ interface SignalFeedProps {
   selectedInstitutionId?: string | null;
 }
 
-const SEVERITY_BORDER: Record<string, string> = {
-  high: "var(--hamilton-primary)",
-  medium: "#b45309",
-  low: "var(--hamilton-outline)",
+const SEVERITY_DOT: Record<string, string> = {
+  high: "bg-terra",
+  medium: "bg-warm-600",
+  low: "bg-warm-300",
 };
 
 /** Derive a display institution name from signalType + title for seeded demo data */
@@ -42,46 +42,63 @@ function titlePrefixInstitutionName(title: string): string | null {
   return null;
 }
 
-/** Derive "what changed" from body (first sentence) */
-function deriveWhatChanged(body: string): string {
-  const firstSentence = body.split(/[.!?]/)[0];
-  return firstSentence ? firstSentence.trim() + "." : body;
+/** Split on sentence ends followed by a space, so amounts like "$2.50" stay whole. */
+function sentences(body: string): string[] {
+  return body.trim().split(/(?<=[.!?])\s+/).filter(Boolean);
 }
 
-/** Derive "why it matters" from body (second sentence, if present) */
+/** "What changed": the body's first sentence. */
+export function deriveWhatChanged(body: string): string {
+  const first = sentences(body)[0];
+  if (!first) return body;
+  return /[.!?]$/.test(first) ? first : `${first}.`;
+}
+
+/** The rest of the body, if there is more than one sentence. */
 function deriveWhyItMatters(body: string): string | null {
-  const sentences = body.split(/(?<=[.!?])\s+/);
-  if (sentences.length < 2) return null;
-  return sentences.slice(1).join(" ").trim();
+  const parts = sentences(body);
+  if (parts.length < 2) return null;
+  return parts.slice(1).join(" ").trim();
 }
 
-/** Format signal type label from snake_case */
-function formatSignalType(signalType: string): string {
-  return signalType
+const CHANGE_KIND: Record<string, string> = {
+  hamilton_fee_movement_detected: "Fee change",
+  hamilton_publication_completed: "Fees published",
+  darwin_verification_completed: "Fees verified",
+  darwin_verification_needs_review: "Fees need a second look",
+  knox_extraction_completed: "New fee schedule read",
+  knox_extraction_needs_review: "Fee schedule needs a second look",
+  source_accepted: "New fee schedule found",
+};
+
+/** A plain label for the kind of change, without internal agent names. */
+export function formatChangeKind(signalType: string): string {
+  const key = signalType.toLowerCase();
+  if (CHANGE_KIND[key]) return CHANGE_KIND[key];
+  if (key.startsWith("claim_")) return "Institution profile";
+  if (key.startsWith("source_")) return "Fee schedule source";
+  const words = key
+    .replace(/^(hamilton|darwin|knox|atlas|magellan|rosetta)_/, "")
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+    .trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Change";
 }
 
 function formatEvidencePolicy(policy: SignalEntry["evidencePolicy"]): string | null {
   if (!policy) return null;
-  if (policy === "verified-only") return "Verified-only";
-  if (policy === "provisional-first") return "Provisional-first";
-  if (policy === "source-diligence") return "Source diligence";
+  if (policy === "verified-only") return "Verified fees only";
+  if (policy === "provisional-first") return "Includes fees not yet verified";
+  if (policy === "source-diligence") return "Source still being checked";
   return null;
 }
 
-/** Format createdAt as short time string */
-function formatTime(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZoneName: "short",
-    });
-  } catch {
-    return "";
-  }
+function formatWhen(dateStr: string): { ago: string; full: string } {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return { ago: "", full: "" };
+  return {
+    ago: timeAgo(dateStr),
+    full: d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/New_York" }) + " ET",
+  };
 }
 
 function actionForSignal(signal: SignalEntry): { href: string; label: string } {
@@ -92,37 +109,37 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
   if (signalType === "source_accepted") {
     const params = new URLSearchParams({ intent: "source-refresh" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/reports?${params.toString()}`, label: "Build Report" };
+    return { href: `/pro/reports?${params.toString()}`, label: "Build a report" };
   }
 
   if (signalType === "hamilton_publication_completed") {
     const params = new URLSearchParams({ intent: "report-refresh" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/reports?${params.toString()}`, label: "Refresh Report" };
+    return { href: `/pro/reports?${params.toString()}`, label: "Refresh the report" };
   }
 
   if (signalType === "hamilton_fee_movement_detected") {
     const params = new URLSearchParams({ intent: "fee-movement" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/reports?${params.toString()}`, label: "Rerun Brief" };
+    return { href: `/pro/reports?${params.toString()}`, label: "Rerun the brief" };
   }
 
   if (signalType === "darwin_verification_completed") {
     const params = new URLSearchParams({ intent: "verification-refresh" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/analyze?${params.toString()}`, label: "Review Evidence" };
+    return { href: `/pro/analyze?${params.toString()}`, label: "See the evidence" };
   }
 
   if (signalType === "darwin_verification_needs_review") {
     const params = new URLSearchParams({ intent: "verification-review" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/analyze?${params.toString()}`, label: "Review Evidence" };
+    return { href: `/pro/analyze?${params.toString()}`, label: "See the evidence" };
   }
 
   if (signalType === "knox_extraction_completed") {
     const params = new URLSearchParams({ intent: "extraction-review" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/analyze?${params.toString()}`, label: "Review Evidence" };
+    return { href: `/pro/analyze?${params.toString()}`, label: "See the evidence" };
   }
 
   if (signalType === "knox_extraction_needs_review") {
@@ -134,14 +151,14 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
     const institutionName = titlePrefixInstitutionName(signal.title);
     if (hasInstitutionId) params.set("institutionId", institutionId);
     if (institutionName) params.set("institutionName", institutionName);
-    return { href: `/submit-fees?${params.toString()}`, label: "Review Source" };
+    return { href: `/submit-fees?${params.toString()}`, label: "Check the source" };
   }
 
   if (signalType.startsWith("claim_")) {
     const params = new URLSearchParams();
     if (hasInstitutionId) params.set("instId", institutionId);
     const query = params.toString();
-    return { href: query ? `/pro/settings?${query}` : "/pro/settings", label: "Open Settings" };
+    return { href: query ? `/pro/settings?${query}` : "/pro/settings", label: "Open settings" };
   }
 
   if (signalType.startsWith("source_")) {
@@ -153,488 +170,80 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
     const institutionName = titlePrefixInstitutionName(signal.title);
     if (hasInstitutionId) params.set("institutionId", institutionId);
     if (institutionName) params.set("institutionName", institutionName);
-    return { href: `/submit-fees?${params.toString()}`, label: "Submit Source" };
+    return { href: `/submit-fees?${params.toString()}`, label: "Send us the schedule" };
   }
 
   if (signalType.includes("scenario")) {
     const params = new URLSearchParams({ intent: "watch-signal" });
     if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/simulate?${params.toString()}`, label: "Run Scenario" };
+    return { href: `/pro/simulate?${params.toString()}`, label: "Try a price" };
   }
 
   const params = new URLSearchParams({ intent: "watch-signal" });
   if (institutionId && /^[1-9]\d*$/.test(institutionId)) {
     params.set("instId", institutionId);
   }
-  return { href: `/pro/analyze?${params.toString()}`, label: "Analyze" };
+  return { href: `/pro/analyze?${params.toString()}`, label: "Ask about this" };
 }
 
-function SignalCard({ signal, isPriority }: { signal: SignalEntry; isPriority?: boolean }) {
-  const borderColor = SEVERITY_BORDER[signal.severity.toLowerCase()] ?? SEVERITY_BORDER.low;
-  const isHighSeverity = signal.severity.toLowerCase() === "high";
+function ChangeItem({ signal, isAlert }: { signal: SignalEntry; isAlert: boolean }) {
+  const severity = signal.severity.toLowerCase();
   const institutionName = deriveInstitutionName(signal);
   const whatChanged = deriveWhatChanged(signal.body);
-  const whyItMatters = deriveWhyItMatters(signal.body);
-  const timeLabel = formatTime(signal.createdAt);
+  const detail = deriveWhyItMatters(signal.body);
+  const when = formatWhen(signal.createdAt);
   const action = actionForSignal(signal);
-  const evidencePolicyLabel = formatEvidencePolicy(signal.evidencePolicy);
+  const evidence = formatEvidencePolicy(signal.evidencePolicy);
 
   return (
-    <article
-      style={{
-        backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-        padding: "2rem",
-        borderLeft: `4px solid ${borderColor}`,
-        transition: "transform 0.15s ease",
-      }}
-      className="signal-card-hover"
-    >
-      {/* Header row */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div>
-          {/* Signal type label */}
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: "0.5rem",
-              marginBottom: "0.375rem",
-            }}
-          >
-            <span
-              className="font-label"
-              style={{
-                display: "block",
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.625rem",
-                fontWeight: 700,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: isHighSeverity
-                  ? "var(--hamilton-primary)"
-                  : "var(--hamilton-text-tertiary)",
-              }}
-            >
-              {isPriority ? formatSignalType(signal.signalType) : formatSignalType(signal.signalType)}
-            </span>
-            {evidencePolicyLabel && (
-              <span
-                className="font-label"
-                style={{
-                  border: "1px solid var(--hamilton-outline-variant, rgba(216,194,184,0.45))",
-                  borderRadius: "999px",
-                  color: "var(--hamilton-text-tertiary)",
-                  fontFamily: "var(--hamilton-font-sans)",
-                  fontSize: "0.5625rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  padding: "0.125rem 0.375rem",
-                  textTransform: "uppercase",
-                }}
-              >
-                {evidencePolicyLabel}
-              </span>
-            )}
-          </div>
-
-          {/* Institution name — large serif */}
-          <h3
-            className="font-headline"
-            style={{
-              fontFamily: "var(--hamilton-font-serif)",
-              fontSize: "1.5rem",
-              fontWeight: 400,
-              color: "var(--hamilton-on-surface)",
-              lineHeight: 1.2,
-            }}
-          >
-            {institutionName}
-          </h3>
-        </div>
-
-        <time
-          className="font-label"
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.625rem",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--hamilton-text-tertiary)",
-            flexShrink: 0,
-            marginLeft: "1rem",
-          }}
-        >
-          {timeLabel}
-        </time>
-      </div>
-
-      {/* Body sections */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        {/* What Changed */}
-        <div>
-          <p
-            className="font-label"
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.625rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: "var(--hamilton-text-tertiary)",
-              marginBottom: "0.25rem",
-              fontWeight: 600,
-            }}
-          >
-            What Changed
+    <li className="flex items-start gap-3 px-5 py-4">
+      <span
+        className={"mt-2 inline-block h-2 w-2 shrink-0 rounded-full " + (SEVERITY_DOT[severity] ?? SEVERITY_DOT.low)}
+        aria-hidden="true"
+      />
+      <article className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <p className="text-sm text-warm-600">
+            {isAlert ? <span className="mr-1 font-semibold text-terra-text">Alert:</span> : null}
+            {formatChangeKind(signal.signalType)}
+            {severity === "high" && !isAlert ? <span className="text-terra-text"> · High priority</span> : null}
           </p>
-          <p
-            style={{
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.9375rem",
-              color: "var(--hamilton-on-surface)",
-              lineHeight: 1.6,
-            }}
-          >
-            {whatChanged}
-          </p>
+          {when.ago ? (
+            <time dateTime={signal.createdAt} title={when.full} className="shrink-0 text-xs text-warm-600">
+              {when.ago}
+            </time>
+          ) : null}
         </div>
-
-        {/* Why It Matters — only if we have content */}
-        {whyItMatters && (
-          <div
-            style={{
-              backgroundColor: "var(--hamilton-surface-container-low, #f5f3ee)",
-              padding: "1rem",
-            }}
-          >
-            <p
-              className="font-label"
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.625rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                color: "var(--hamilton-text-tertiary)",
-                marginBottom: "0.25rem",
-                fontWeight: 600,
-              }}
-            >
-              Why It Matters
-            </p>
-            <p
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.875rem",
-                color: "var(--hamilton-on-surface)",
-                fontStyle: "italic",
-                lineHeight: 1.6,
-              }}
-            >
-              {whyItMatters}
-            </p>
-          </div>
-        )}
-
-        {/* Recommended Next Move + Execute CTA */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            paddingTop: "1rem",
-          }}
-        >
-          <div>
-            <p
-              className="font-label"
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.625rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                color: "var(--hamilton-text-tertiary)",
-                marginBottom: "0.25rem",
-                fontWeight: 600,
-              }}
-            >
-              Recommended Next Move
-            </p>
-            <p
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.875rem",
-                color: "var(--hamilton-primary)",
-                fontWeight: 600,
-              }}
-            >
-              Review competitive position in{" "}
-              {signal.signalType.replace(/_/g, " ").toLowerCase()}.
-            </p>
-          </div>
-
-          <Link
-            href={action.href}
-            className="burnished-cta"
-            style={{
-              padding: "0.5rem 1.5rem",
-              background:
-                "linear-gradient(to bottom right, var(--hamilton-primary), var(--hamilton-primary-container))",
-              color: "#ffffff",
-              borderRadius: "var(--hamilton-radius-lg, 0.5rem)",
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              border: "none",
-              cursor: "pointer",
-              flexShrink: 0,
-              marginLeft: "1.5rem",
-              textDecoration: "none",
-            }}
-          >
+        <h3 className="mt-1 text-lg leading-snug text-warm-900" style={SERIF}>
+          {institutionName}
+        </h3>
+        <p className="mt-1 text-pretty text-sm leading-relaxed text-warm-800">{whatChanged}</p>
+        {detail ? <p className="mt-1 text-pretty text-sm leading-relaxed text-warm-700">{detail}</p> : null}
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <Link href={action.href} className="text-terra-text underline">
             {action.label}
           </Link>
+          {evidence ? <span className="text-xs text-warm-600">{evidence}</span> : null}
         </div>
-      </div>
-    </article>
+      </article>
+    </li>
   );
 }
 
-function formatSeverity(severity: string): string {
-  const value = severity.trim().toLowerCase();
-  return value ? value[0].toUpperCase() + value.slice(1) : "Unrated";
-}
-
-function ComplaintRiskCard({ signal }: { signal: SignalEntry }) {
-  const whatChanged = deriveWhatChanged(signal.body);
-  const institutionName = deriveInstitutionName(signal);
-  const timeLabel = formatTime(signal.createdAt);
-
-  return (
-    <article
-      style={{
-        backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-        padding: "2rem",
-        borderLeft: "4px solid var(--hamilton-outline-variant, #d8c2b8)",
-        transition: "transform 0.15s ease",
-      }}
-      className="signal-card-hover"
-    >
-      {/* Header row */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div>
-          <span
-            className="font-label"
-            style={{
-              display: "block",
-              fontFamily: "var(--hamilton-font-sans)",
-              fontSize: "0.625rem",
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: "var(--hamilton-text-tertiary)",
-              marginBottom: "0.375rem",
-            }}
-          >
-            {formatSignalType(signal.signalType)}
-          </span>
-          <h3
-            className="font-headline"
-            style={{
-              fontFamily: "var(--hamilton-font-serif)",
-              fontSize: "1.5rem",
-              fontWeight: 400,
-              color: "var(--hamilton-on-surface)",
-              lineHeight: 1.2,
-            }}
-          >
-            {institutionName}
-          </h3>
-        </div>
-        <time
-          className="font-label"
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.625rem",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--hamilton-text-tertiary)",
-            flexShrink: 0,
-            marginLeft: "1rem",
-          }}
-        >
-          {timeLabel}
-        </time>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        {/* What Changed + the signal's own severity side-by-side */}
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <div style={{ flex: 1 }}>
-            <p
-              className="font-label"
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.625rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                color: "var(--hamilton-text-tertiary)",
-                marginBottom: "0.25rem",
-                fontWeight: 600,
-              }}
-            >
-              What Changed
-            </p>
-            <p
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.9375rem",
-                color: "var(--hamilton-on-surface)",
-                lineHeight: 1.6,
-              }}
-            >
-              {whatChanged}
-            </p>
-          </div>
-
-          {/* Severity badge: the signal's stored severity, not a computed score */}
-          <div
-            style={{
-              width: "33%",
-              backgroundColor: "var(--hamilton-tertiary-fixed, #f6decd)",
-              color: "var(--hamilton-on-tertiary-fixed, #25190f)",
-              padding: "1rem",
-              textAlign: "center",
-              borderRadius: "var(--hamilton-radius-md, 0.25rem)",
-              flexShrink: 0,
-            }}
-          >
-            <div
-              className="font-label"
-              style={{
-                fontFamily: "var(--hamilton-font-sans)",
-                fontSize: "0.6875rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                marginBottom: "0.25rem",
-              }}
-            >
-              Severity
-            </div>
-            <div
-              className="font-headline"
-              style={{
-                fontFamily: "var(--hamilton-font-serif)",
-                fontSize: "1.75rem",
-                fontStyle: "italic",
-                lineHeight: 1,
-              }}
-            >
-              {formatSeverity(signal.severity)}
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function EmptyState({
-  selectedInstitutionId,
-}: {
-  selectedInstitutionId?: string | null;
-}) {
+function EmptyState({ selectedInstitutionId }: { selectedInstitutionId?: string | null }) {
   const settingsHref = hrefWithInstitutionContext("/pro/settings", selectedInstitutionId);
 
   return (
-    <div
-      style={{
-        backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-        padding: "2.5rem",
-        borderLeft: "4px solid var(--hamilton-outline-variant, #d8c2b8)",
-        display: "flex",
-        flexDirection: "column",
-        gap: "1rem",
-        borderRadius: "0.5rem",
-      }}
-    >
-      <div style={{ textAlign: "center", maxWidth: "28rem", margin: "0 auto" }}>
-        <div style={{
-          width: "3rem",
-          height: "3rem",
-          borderRadius: "50%",
-          backgroundColor: "var(--hamilton-surface-container-high)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          margin: "0 auto 1.25rem",
-          fontSize: "1.25rem",
-        }}>
-          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hamilton-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-          </svg>
-        </div>
-        <h3
-          className="font-headline"
-          style={{
-            fontFamily: "var(--hamilton-font-serif)",
-            fontSize: "1.25rem",
-            fontStyle: "italic",
-            fontWeight: 400,
-            color: "var(--hamilton-on-surface)",
-            margin: "0 0 0.75rem",
-          }}
-        >
-          Your signal feed is ready.
-        </h3>
-        <p
-          style={{
-            fontFamily: "var(--hamilton-font-sans)",
-            fontSize: "0.875rem",
-            color: "var(--hamilton-text-secondary)",
-            lineHeight: 1.6,
-            margin: "0 0 1.5rem",
-          }}
-        >
-          Hamilton monitors fee movements, regulatory shifts, and competitive signals
-          across your watchlist. Add institutions to start receiving intelligence.
-        </p>
-        <Link
-          href={settingsHref}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.625rem 1.25rem",
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            color: "var(--hamilton-on-primary)",
-            borderRadius: "0.375rem",
-            textDecoration: "none",
-            letterSpacing: "0.05em",
-          }}
-          className="burnished-cta"
-        >
-          Configure Your Institution
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        </Link>
+    <div className="rounded-lg border border-warm-300 bg-warm-50 px-5 py-6">
+      <h3 className="text-lg text-warm-900" style={SERIF}>
+        No changes to show yet
+      </h3>
+      <p className="mt-1 max-w-prose text-pretty text-sm leading-relaxed text-warm-700">
+        Changes appear here when a fee moves, a fee schedule is newly verified or a competitor you watch
+        changes a price. Choose your institution, or add institutions to your watch list, to start.
+      </p>
+      <div className="mt-4">
+        <LinkButton href={settingsHref}>Choose your institution</LinkButton>
       </div>
     </div>
   );
@@ -666,26 +275,10 @@ export function SignalFeed({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      {allSignals.map((signal, index) => {
-        const signalTypeLower = signal.signalType.toLowerCase();
-        const isComplaintRisk =
-          signalTypeLower.includes("complaint") ||
-          signalTypeLower.includes("risk") ||
-          signalTypeLower.includes("regulatory");
-
-        if (isComplaintRisk && index > 0) {
-          return <ComplaintRiskCard key={signal.id} signal={signal} />;
-        }
-
-        return (
-          <SignalCard
-            key={signal.id}
-            signal={signal}
-            isPriority={index === 0}
-          />
-        );
-      })}
-    </div>
+    <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+      {allSignals.map((signal) => (
+        <ChangeItem key={signal.id} signal={signal} isAlert={topAlert?.signalId === signal.id} />
+      ))}
+    </ul>
   );
 }

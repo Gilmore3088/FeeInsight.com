@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { amountEnvelopesJson, outlierReason, rollBackPublishedOutliers } from "./outlier-rollback";
+import { amountEnvelopesJson, outlierReason, restoreOutliersNowInRange, rollBackPublishedOutliers } from "./outlier-rollback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -106,5 +106,28 @@ describe("Hamilton outlier rollback", () => {
       rollBackPublishedOutliers(asDb(db), { runId: 114, batchId: "agentic-run-114", dryRun: false }),
     ).resolves.toEqual([]);
     spy.mockRestore();
+  });
+
+  it("restores an earlier outlier takedown now inside its range, never over a live copy", async () => {
+    const db = createDbMock([{ ...outlier, amount: "25.00" }]);
+
+    const restores = await restoreOutliersNowInRange(asDb(db), { runId: 8, dryRun: false });
+
+    expect(restores.map((fee) => fee.feePublishedId)).toEqual([9001]);
+    const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("SET rolled_back_at = NULL");
+    expect(query).toContain("rolled_back_at IS NOT NULL");
+    expect(query).toContain("NOT EXISTS");
+    expect(params[2]).toBe("amount_outside_category_range");
+    expect(JSON.stringify(db.mock.calls)).toContain("hamilton.outliers_restored");
+  });
+
+  it("only reads when restoring in a dry run", async () => {
+    const db = createDbMock([{ ...outlier, amount: "25.00" }]);
+
+    await restoreOutliersNowInRange(asDb(db), { runId: 8, dryRun: true });
+
+    expect((db.unsafe.mock.calls[0] as [string])[0]).not.toContain("UPDATE");
+    expect(db).not.toHaveBeenCalled();
   });
 });

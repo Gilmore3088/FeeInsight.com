@@ -143,7 +143,16 @@ describe("Magellan agentic discovery", () => {
     const result = await runMagellanDiscovery({ runId: 102, dryRun: true, db: asDiscoveryDb(db), fetchImpl });
 
     expect(result.discovered).toBe(1);
-    expect(db).toHaveBeenCalledTimes(1);
+    // Only reads: the market-leader ranking and the candidate list.
+    expect(db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("market leaders by state"))).toHaveLength(1);
+  });
+
+  it("searches the state's market leaders first", async () => {
+    const db = createDbMock([]);
+    await runMagellanDiscovery({ runId: 103, dryRun: true, stateCode: "TX", leaderIds: [7, 9], db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
+    expect(templateText(call![0])).toMatch(/profile\.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY\(\s*::bigint\[\]\) THEN 0/);
+    expect(call!.slice(1)).toContainEqual([7, 9]);
   });
 
   it("runs every free specialist before calling a bank a miss, and logs each one", async () => {
@@ -710,6 +719,16 @@ describe("Magellan agentic discovery", () => {
     });
     const businessDb = () =>
       createDbMock([], learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
+
+    it("keeps slots for business-only links when banks without a link fill the step", async () => {
+      const missing = [1, 2, 3, 4].map((id) => bank(id, `https://bank${id}.example`));
+      const db = createDbMock(missing, learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
+      const result = await runMagellanDiscovery({ runId: 123, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0, limit: 4 });
+      expect(result.selected).toBe(4);
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(79);
+      const businessCall = db.mock.calls.find((call) => templateText(call[0]).includes("business-only link search"))!;
+      expect(businessCall.slice(1)).toContain(3);
+    });
 
     it("replaces a business-only schedule with the consumer one and keeps it as a business companion", async () => {
       const db = businessDb();

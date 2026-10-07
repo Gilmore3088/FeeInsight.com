@@ -601,3 +601,100 @@ export async function getRevenueByTier(
     avg_sc_income: Number(r.avg_sc_income),
   }));
 }
+
+export interface ServiceChargeIntensity {
+  quarterEnd: string;
+  /** Deposit service charges over the last four quarters per $1,000 of deposits at the latest quarter. */
+  own: number | null;
+  peerMedian: number | null;
+  /** Filers of the same charter and asset tier with all four quarters on file, the subject excluded. */
+  peers: number;
+  /** Peers below the subject, for its percentile. */
+  peersBelow: number;
+  charterType: string;
+  assetTier: string;
+}
+
+/**
+ * One institution's deposit service charge income scaled by its deposits, beside the median of
+ * its charter and asset tier: the income side of the "why" split. Trailing four quarters, NCUA
+ * year-to-date lines split into quarters as in getPeerServiceChargeMedians.
+ */
+export async function getServiceChargeIntensity(institutionId: number): Promise<ServiceChargeIntensity | null> {
+  const sql = getSql();
+  const rows = (await sql.unsafe(
+    `WITH subject AS (
+       SELECT id, charter_type, asset_size_tier FROM institution_sources
+        WHERE id = $1 AND charter_type IS NOT NULL AND asset_size_tier IS NOT NULL
+     ),
+     filed AS (
+       SELECT inf.institution_id,
+              inf.source,
+              inf.report_date::date AS rd,
+              inf.service_charge_income AS amount,
+              inf.total_deposits AS deposits,
+              LAG(inf.service_charge_income) OVER w AS prior_amount,
+              LAG(inf.report_date::date) OVER w AS prior_rd
+         FROM institution_financial_records inf
+         JOIN institution_sources ct ON ct.id = inf.institution_id
+         JOIN subject s ON ct.charter_type = s.charter_type AND ct.asset_size_tier = s.asset_size_tier
+        WHERE ${SAME_SCALE_SOURCES}
+          AND inf.report_date::date >= CURRENT_DATE - INTERVAL '30 months'
+       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
+                    ORDER BY inf.report_date::date)
+     ),
+     quarterly AS (
+       SELECT institution_id, rd, deposits,
+              CASE
+                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
+                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
+                ELSE NULL
+              END AS income
+         FROM filed
+     ),
+     latest AS (SELECT MAX(rd) AS rd FROM quarterly),
+     ttm AS (
+       SELECT q.institution_id,
+              SUM(q.income) AS income,
+              COUNT(q.income) AS quarters,
+              MAX(q.deposits) FILTER (WHERE q.rd = l.rd) AS deposits
+         FROM quarterly q, latest l
+        WHERE q.rd > l.rd - INTERVAL '1 year'
+        GROUP BY q.institution_id
+     ),
+     ratio AS (
+       SELECT institution_id, income * 1000.0 / deposits AS r
+         FROM ttm WHERE quarters = 4 AND income > 0 AND deposits > 0
+     )
+     SELECT TO_CHAR((SELECT rd FROM latest), 'YYYY-MM-DD') AS quarter_end,
+            s.charter_type,
+            s.asset_size_tier,
+            (SELECT r FROM ratio WHERE institution_id = s.id) AS own,
+            (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY r) FROM ratio WHERE institution_id <> s.id) AS peer_median,
+            (SELECT COUNT(*)::int FROM ratio WHERE institution_id <> s.id) AS peers,
+            (SELECT COUNT(*)::int FROM ratio p WHERE p.institution_id <> s.id
+                AND p.r < (SELECT r FROM ratio WHERE institution_id = s.id)) AS peers_below
+       FROM subject s`,
+    [institutionId],
+  )) as {
+    quarter_end: string | null;
+    charter_type: string;
+    asset_size_tier: string;
+    own: string | number | null;
+    peer_median: string | number | null;
+    peers: number;
+    peers_below: number;
+  }[];
+  const r = rows[0];
+  if (!r || !r.quarter_end) return null;
+  const num = (v: string | number | null) => (v === null ? null : Number(v));
+  return {
+    quarterEnd: r.quarter_end,
+    own: num(r.own),
+    peerMedian: r.peers >= MIN_INSTITUTIONS_FOR_MEDIAN ? num(r.peer_median) : null,
+    peers: Number(r.peers),
+    peersBelow: Number(r.peers_below),
+    charterType: r.charter_type,
+    assetTier: r.asset_size_tier,
+  };
+}

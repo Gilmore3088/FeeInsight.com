@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 
@@ -53,6 +54,8 @@ const MAX_OUTPUT_TOKENS = 1024;
 const ANSWER_SCORE = 0.85;
 const COVERAGE_TEXT_CHARS = 60_000;
 const TRANSIENT_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
+/** Paid tries a bank gets in a month when every one ends in a timeout or refusal. */
+export const MAX_TRANSIENT_TRIES = 3;
 
 export interface ScheduleSearchRow {
   id: number | string;
@@ -63,7 +66,11 @@ export interface ScheduleSearchRow {
   fee_schedule_url: string;
   asset_size: number | string | null;
   requested: boolean | null;
+  /** In its state's top 15 by deposits, service charge income or total income. */
+  leader?: boolean | null;
   business_only: boolean | null;
+  /** The free business search already looked for the consumer schedule. */
+  business_searched?: boolean | null;
   no_overdraft_price: boolean | null;
   refers_elsewhere: boolean | null;
   stale_copy?: boolean | null;
@@ -121,13 +128,15 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
   ].join("\n");
 }
 
-/** $10B+ banks and report requesters whose link is not the consumer schedule yet, not searched this month. */
 /**
- * Two lanes: $10B+ banks and report requesters whose link is not the consumer schedule yet
- * (up to `limit`), and banks of any size the catalog hides for having fewer than three
- * live fees (up to `hiddenLimit`). Neither searched this month.
+ * Two lanes, neither searched this month:
+ * - priority (up to `limit`): $10B+ banks, report requesters and each state's market
+ *   leaders (`leaderIds`, top 15 by deposits or fee income) whose link is not the consumer
+ *   schedule yet, or who are hidden for having fewer than three live fees;
+ * - everyone else the catalog hides whose page is a product page or prices no overdraft
+ *   (up to `hiddenLimit`).
  */
-async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promise<ScheduleSearchRow[]> {
+async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leaderIds: number[]): Promise<ScheduleSearchRow[]> {
   return db<ScheduleSearchRow[]>`
     -- incomplete-link schedule search
     WITH live AS (
@@ -139,13 +148,24 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promi
     scoped AS (
       SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
-             (inst.asset_size >= ${LARGE_BANK_ASSETS} OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)) AS priority,
+             inst.id = ANY(${leaderIds}::bigint[]) AS leader,
+             (
+               inst.asset_size >= ${LARGE_BANK_ASSETS}
+               OR inst.id = ANY(${leaderIds}::bigint[])
+               OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)
+             ) AS priority,
              COALESCE(live.categories, 0) < ${HIDDEN_BELOW_CATEGORIES} AS hidden,
              (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}) AS product_page,
              (
                lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
                AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
              ) AS business_only,
+             EXISTS (
+               SELECT 1 FROM pipeline_attempts searched
+                WHERE searched.institution_id = inst.id
+                  AND searched.stage = 'discover'
+                  AND searched.detail ? 'business_search'
+             ) AS business_searched,
              NOT EXISTS (
                SELECT 1 FROM agent_source_texts text
                 WHERE text.institution_id = inst.id
@@ -176,6 +196,8 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promi
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
          AND COALESCE(profile.locked_by_correction, false) = false
+         -- Searched this month: one real answer, or MAX_TRANSIENT_TRIES that timed out or
+         -- were refused (Morgan Stanley and Northern Trust timed out 35 times in 9 hours).
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
@@ -184,18 +206,37 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promi
               AND pa.created_at >= date_trunc('month', NOW())
               AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
          )
+         AND (
+           SELECT count(*) FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
+              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.outcome <> 'budget_blocked'
+         ) < ${MAX_TRANSIENT_TRIES}
     )
     , lanes AS (
       SELECT scoped.*,
-             row_number() OVER (PARTITION BY priority ORDER BY requested DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+             row_number() OVER (PARTITION BY priority ORDER BY requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
         FROM scoped
-       WHERE (priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy))
+       WHERE (priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))
           OR (NOT priority AND hidden AND (product_page OR no_overdraft_price))
+          -- Any bank whose link is a business-only schedule, once the free business search missed.
+          OR (NOT priority AND business_only AND business_searched)
     )
     SELECT * FROM lanes
      WHERE (priority AND lane_rank <= ${limit}) OR (NOT priority AND lane_rank <= ${hiddenLimit})
-     ORDER BY priority DESC, requested DESC, asset_size DESC NULLS LAST, id ASC
+     ORDER BY priority DESC, requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC
   `;
+}
+
+/** Market leaders across every state; none (the lane falls back to size) if the ranking fails. */
+async function leaderIdsOrNone(db: SqlTag): Promise<number[]> {
+  try {
+    return await loadMarketLeaderIds(db);
+  } catch {
+    return [];
+  }
 }
 
 /** Documents this bank already has, as link, stored document or companion. */
@@ -219,6 +260,8 @@ export async function runScheduleSearch(options: {
   stepId?: number | null;
   limit?: number;
   hiddenLimit?: number;
+  /** Market leader ids; loaded from the shared ranking when left out. */
+  leaderIds?: number[];
   dryRun?: boolean;
   db?: SqlTag;
   create?: PaidMessageCreator;
@@ -227,7 +270,8 @@ export async function runScheduleSearch(options: {
   const db = options.db ?? sql;
   const result: ScheduleSearchResult = { selected: 0, processed: 0, found: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [] };
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? SCHEDULE_SEARCH_PER_RUN)) || SCHEDULE_SEARCH_PER_RUN, SCHEDULE_SEARCH_PER_RUN));
-  const rows = await selectRows(db, limit, options.hiddenLimit ?? HIDDEN_BANK_SEARCH_PER_RUN);
+  const leaderIds = options.leaderIds ?? (await leaderIdsOrNone(db));
+  const rows = await selectRows(db, limit, options.hiddenLimit ?? HIDDEN_BANK_SEARCH_PER_RUN, leaderIds);
   result.selected = rows.length;
   if (options.dryRun) {
     result.results = rows.map((row) => ({

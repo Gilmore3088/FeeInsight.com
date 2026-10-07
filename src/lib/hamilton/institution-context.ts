@@ -1,5 +1,6 @@
 import { getInstitutionById } from "@/lib/data-store";
-import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { getSegmentLabel } from "@/app/(public)/institution/[id]/enum-labels";
 import { formatAssets } from "@/lib/format";
 import {
   getFeePublicationStatusLabel,
@@ -60,9 +61,7 @@ export async function getHamiltonInstitutionContext(
       assetSize: inst.asset_size,
       assetSizeLabel: inst.asset_size ? formatAssets(inst.asset_size) : null,
       assetTier: inst.asset_size_tier,
-      assetTierLabel: inst.asset_size_tier
-        ? FDIC_TIER_LABELS[inst.asset_size_tier] ?? inst.asset_size_tier
-        : null,
+      assetTierLabel: getSegmentLabel(inst.asset_size_tier, inst.charter_type),
       fedDistrict: inst.fed_district,
       districtName: inst.fed_district ? DISTRICT_NAMES[inst.fed_district] : null,
       feePublicationStatus: status,

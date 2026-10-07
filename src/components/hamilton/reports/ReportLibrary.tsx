@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import type { HamiltonReportLibraryItem } from "@/lib/hamilton/pro-tables";
+import { SERIF } from "@/components/hamilton/memo/memo";
+import { evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 
 type ReportLibraryItem = HamiltonReportLibraryItem;
 
@@ -21,17 +23,6 @@ interface ReportLibraryProps {
   ) => void;
 }
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
-  quarterly_strategy: "Quarterly Report",
-  monthly_pulse: "Monthly Pulse",
-  state_index: "Regional Analysis",
-  peer_brief: "Peer Brief",
-  peer_benchmarking: "Peer Benchmarking",
-  regional_landscape: "Regional Landscape",
-  category_deep_dive: "Category Deep Dive",
-  competitive_positioning: "Competitive Positioning",
-};
-
 function formatDate(isoString: string): string {
   const date = new Date(isoString);
   return date.toLocaleDateString("en-US", {
@@ -45,10 +36,11 @@ function formatRelative(isoString: string): string {
   const ms = Date.now() - new Date(isoString).getTime();
   const days = Math.floor(ms / 86_400_000);
   if (days < 1) return "today";
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
-  return `${Math.floor(days / 365)}y ago`;
+  const ago = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (days < 7) return ago(days, "day");
+  if (days < 30) return ago(Math.floor(days / 7), "week");
+  if (days < 365) return ago(Math.floor(days / 30), "month");
+  return ago(Math.floor(days / 365), "year");
 }
 
 /** Pull a 1-2 sentence preview from the report JSON for card display. */
@@ -62,16 +54,10 @@ function getCardSnippet(json: ReportSummaryResponse): string {
   return "";
 }
 
-function formatPolicy(policy: ReportArtifactMetadata["evidencePolicy"]): string {
-  if (policy === "verified-only") return "Verified only";
-  if (policy === "source-diligence") return "Source diligence";
-  return "Provisional first";
-}
-
 export function ReportLibrary({
   reports,
-  title = "Published Reports",
-  subtitle = "Curated Hamilton intelligence publications",
+  title = "Published reports",
+  subtitle,
   emptyCopy = "No published reports available yet.",
   getReportHref,
   onViewReport,
@@ -106,192 +92,120 @@ export function ReportLibrary({
     }
   }
 
+  const header = (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="text-xl text-warm-900 sm:text-2xl" style={SERIF}>
+          {title}
+        </h2>
+        {subtitle ? <p className="mt-1 text-pretty text-sm text-warm-600">{subtitle}</p> : null}
+      </div>
+      {reports.length > 0 ? (
+        <span className="shrink-0 text-sm text-warm-600 [font-variant-numeric:tabular-nums]">
+          {reports.length} {reports.length === 1 ? "report" : "reports"}
+        </span>
+      ) : null}
+    </div>
+  );
+
   if (reports.length === 0) {
     return (
-      <section className="mb-16">
-        <div className="mb-6">
-          <h2
-            className="font-headline text-3xl italic text-on-surface mb-1"
-          >
-            {title}
-          </h2>
-          <p
-            className="text-xs"
-            style={{ color: "var(--hamilton-secondary)" }}
-          >
-            {subtitle}
-          </p>
-        </div>
-        <p
-          className="text-sm"
-          style={{ color: "var(--hamilton-secondary)" }}
-        >
-          {emptyCopy}
-        </p>
+      <section className="flex flex-col gap-3">
+        {header}
+        <p className="rounded-lg border border-dashed border-warm-300 px-5 py-4 text-sm text-warm-600">{emptyCopy}</p>
       </section>
     );
   }
 
   return (
-    <section className="mb-16">
-      {/* Section header with report count. */}
-      <div className="mb-8 flex items-end justify-between gap-4">
-        <div>
-          <h2 className="font-headline text-3xl italic text-on-surface mb-1">
-            {title}
-          </h2>
-          <p
-            className="text-xs"
-            style={{ color: "var(--hamilton-secondary)" }}
-          >
-            {subtitle}
-          </p>
-        </div>
-        <span
-          className="shrink-0 text-[11px] tabular-nums"
-          style={{ color: "var(--hamilton-secondary)" }}
-        >
-          {reports.length} {reports.length === 1 ? "report" : "reports"}
-        </span>
-      </div>
+    <section className="flex flex-col gap-3">
+      {header}
 
       {downloadError && (
-        <p role="alert" className="mb-4 text-sm" style={{ color: "#b91c1c" }}>
+        <p role="alert" className="rounded-md border border-terra bg-terra-soft px-4 py-2 text-sm text-terra-text">
           {downloadError}
         </p>
       )}
 
-      {/* Report card grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {reports.map((report) => {
-          const typeLabel =
-            REPORT_TYPE_LABELS[report.report_type] ?? report.report_type;
+          const typeLabel = reportTypeLabel(report.report_type);
           const isDownloading = downloadingId === report.id;
           const snippet = getCardSnippet(report.report_json);
           const snapshotCount = report.report_json.snapshot?.length ?? 0;
 
           return (
-            <article
-              key={report.id}
-              className="bg-surface-container-lowest p-6 editorial-shadow hover:shadow-md transition-shadow flex flex-col"
-            >
-              {/* Top row: report type badge + relative time (audit H-2) */}
-              <div className="flex items-baseline justify-between mb-3 gap-3">
-                <span
-                  className="text-[10px] uppercase tracking-[0.2em] font-semibold text-primary"
-                >
-                  {typeLabel}
-                </span>
-                <span
-                  className="text-[10px] tabular-nums shrink-0"
-                  style={{ color: "var(--hamilton-secondary)" }}
-                  title={formatDate(report.created_at)}
-                >
+            <li key={report.id} className="flex flex-col rounded-lg border border-warm-300 bg-warm-50 p-5">
+              <div className="mb-2 flex items-baseline justify-between gap-3 text-sm">
+                <span className="font-medium text-terra-text">{typeLabel}</span>
+                <span className="shrink-0 text-xs text-warm-600" title={formatDate(report.created_at)}>
                   {formatRelative(report.created_at)}
                 </span>
               </div>
 
-              {/* Title */}
-              <h3 className="font-headline text-xl italic text-on-surface mb-3 leading-tight">
+              <h3 className="mb-2 text-lg leading-snug text-warm-900" style={SERIF}>
                 {report.title}
               </h3>
 
-              {/* Snippet (audit H-3) — first sentence of executive summary */}
-              {snippet && (
-                <p
-                  className="text-sm leading-relaxed mb-4 line-clamp-2"
-                  style={{ color: "var(--hamilton-secondary)" }}
-                >
-                  {snippet}
-                </p>
-              )}
+              {snippet && <p className="mb-3 line-clamp-2 text-sm leading-relaxed text-pretty text-warm-700">{snippet}</p>}
 
-              {/* Metadata row — snapshot count (peer rows covered) + full date */}
-              <div
-                className="flex flex-wrap items-center gap-3 mb-5 text-[11px] tabular-nums"
-                style={{ color: "var(--hamilton-secondary)" }}
-              >
+              <p className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-warm-600 [font-variant-numeric:tabular-nums]">
                 {snapshotCount > 0 && (
-                  <span>
-                    {snapshotCount} fee {snapshotCount === 1 ? "category" : "categories"}
-                  </span>
+                  <>
+                    <span>
+                      {snapshotCount} {snapshotCount === 1 ? "fee" : "fees"}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                  </>
                 )}
-                {snapshotCount > 0 && <span aria-hidden="true">·</span>}
                 <span>{formatDate(report.created_at)}</span>
                 {report.artifact_metadata && (
                   <>
                     <span aria-hidden="true">·</span>
-                    <span>{formatPolicy(report.artifact_metadata.evidencePolicy)}</span>
-                    {report.artifact_metadata.selectedSourceLabel && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span>{report.artifact_metadata.selectedSourceLabel}</span>
-                      </>
-                    )}
+                    <span>{evidencePolicyLabel(report.artifact_metadata.evidencePolicy)}</span>
                   </>
                 )}
-              </div>
+              </p>
 
               {report.artifact_metadata?.peerBaselineLabel && (
                 <p
-                  className="mb-5 truncate text-[11px]"
-                  title={[
-                    report.artifact_metadata.peerBaselineLabel,
-                    report.artifact_metadata.peerFallbackReason,
-                  ].filter(Boolean).join(" · ")}
-                  style={{ color: "var(--hamilton-secondary)" }}
+                  className="truncate text-xs text-warm-600"
+                  title={[report.artifact_metadata.peerBaselineLabel, report.artifact_metadata.peerFallbackReason]
+                    .filter(Boolean)
+                    .join(" · ")}
                 >
-                  Baseline: {report.artifact_metadata.peerBaselineLabel}
+                  Peer group: {report.artifact_metadata.peerBaselineLabel}
                 </p>
               )}
 
-              {/* Action buttons — pinned to bottom for consistent card heights */}
-              <div className="flex items-center gap-6 mt-auto">
+              <div className="mt-auto flex flex-wrap items-center gap-x-5 gap-y-2 pt-4 text-sm">
                 {getReportHref && (
-                  <Link
-                    href={getReportHref(report)}
-                    className="text-primary text-xs uppercase tracking-widest font-bold hover:opacity-70 transition-opacity no-underline"
-                  >
+                  <Link href={getReportHref(report)} className="font-medium text-terra-text underline-offset-2 hover:underline">
                     Open
                   </Link>
                 )}
-
                 <button
                   type="button"
                   onClick={() =>
-                    onViewReport(
-                      report.report_json,
-                      report.report_type,
-                      report.artifact_metadata ?? null,
-                      report.id,
-                    )
+                    onViewReport(report.report_json, report.report_type, report.artifact_metadata ?? null, report.id)
                   }
-                  className="text-primary text-xs uppercase tracking-widest font-bold hover:opacity-70 transition-opacity"
+                  className="font-medium text-terra-text underline-offset-2 hover:underline"
                 >
-                  Read
+                  Read here
                 </button>
-
                 <button
                   type="button"
                   onClick={() => handleDownloadPdf(report)}
                   disabled={isDownloading}
-                  className="flex items-center gap-1.5 text-xs uppercase tracking-widest transition-opacity hover:opacity-70"
-                  style={{
-                    color: "var(--hamilton-secondary)",
-                    opacity: isDownloading ? 0.5 : 1,
-                  }}
-                  aria-label={isDownloading ? "Preparing PDF" : "Download PDF"}
+                  className="text-warm-700 underline-offset-2 hover:text-warm-900 hover:underline disabled:opacity-60"
                 >
-                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                    download
-                  </span>
-                  <span>{isDownloading ? "Preparing..." : "PDF"}</span>
+                  {isDownloading ? "Preparing PDF…" : "Download PDF"}
                 </button>
               </div>
-            </article>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </section>
   );
 }

@@ -5,7 +5,13 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatCompactDollars } from "@/lib/format";
-import type { BranchFootprint, ComplaintTrend, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
+import type {
+  BranchFootprint,
+  ComplaintTrend,
+  EnforcementActionRow,
+  EnforcementRecord,
+  HoldingCompanyProfile,
+} from "@/lib/data-store/registry-profile";
 
 /*
  * Registry cards for the gated Financial profile. Colors reuse the validated
@@ -62,6 +68,14 @@ function SimpleTooltip({ active, payload, label, format }: { active?: boolean; p
   );
 }
 
+/** "2026-06-30" -> "June 30, 2026". */
+function formatQuarterEnd(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? date
+    : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
 export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const byState = useMemo(() => new Map(footprint.byState.map((s) => [s.state, s])), [footprint]);
@@ -75,56 +89,172 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
   };
   const hoveredState = hovered ? byState.get(hovered) : null;
   const trend = footprint.byYear.map((y) => ({ year: String(y.year), branches: y.branches }));
+  const isCu = footprint.source === "ncua";
+  const localMap = footprint.localMap ?? null;
+  const mapped = footprint.mappedOffices ?? 0;
+  const nearby = footprint.nearby ?? [];
+  const nearbyCount = footprint.nearbyCount ?? nearby.length;
+  const stateCount = `${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}`;
+  const subtitle = isCu
+    ? `${latest.branches.toLocaleString("en-US")} ${latest.branches === 1 ? "office" : "offices"} in ${stateCount}${footprint.reportDate ? ` (${formatQuarterEnd(footprint.reportDate)})` : ""}`
+    : `${latest.branches.toLocaleString("en-US")} offices in ${stateCount}, ${formatCompactDollars(thousandsToDollars(latest.deposits))} in branch deposits (June ${footprint.latestYear})`;
+  const caption = isCu
+    ? `Source: NCUA credit union branch file${footprint.reportDate ? `, quarter ending ${formatQuarterEnd(footprint.reportDate)}` : ""}. NCUA does not report deposits by office.`
+    : `Source: FDIC Summary of Deposits, ${footprint.byYear[0].year} to ${footprint.latestYear}. Deposits are booked at the branch as of June 30.`;
 
   return (
     <Card
       title="Branch footprint"
-      subtitle={`${latest.branches.toLocaleString("en-US")} offices in ${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}, ${formatCompactDollars(thousandsToDollars(latest.deposits))} in branch deposits (June ${footprint.latestYear})`}
-      caption={`Source: FDIC Summary of Deposits, ${footprint.byYear[0].year} to ${footprint.latestYear}. Deposits are booked at the branch as of June 30.`}
+      subtitle={subtitle}
+      caption={caption}
     >
       <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="relative">
-          <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Branches by state">
-            {US_STATES.map((state) => (
-              <path
-                key={state.id}
-                d={state.d}
-                fill={fill(state.id)}
-                stroke="#FFFFFF"
-                strokeWidth={1.5}
-                onMouseEnter={() => setHovered(state.id)}
-                onMouseLeave={() => setHovered(null)}
-              />
-            ))}
-          </svg>
-          <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
-            {hoveredState
-              ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`
-              : hovered
-                ? `${STATE_NAMES[hovered] ?? hovered}: no branches`
-                : "Hover a state for its branch count."}
-          </p>
-          <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6B6255]">
-            <span>Fewer</span>
-            {RAMP.map((color) => (
-              <span key={color} className="inline-block h-2 w-5 rounded-sm" style={{ background: color }} />
-            ))}
-            <span>More branches</span>
+        {localMap ? (
+          <div className="relative">
+            <svg viewBox={localMap.viewBox} className="h-auto w-full" role="img" aria-label={`${isCu ? "Offices" : "Branches"} on a map of ${stateCount}`}>
+              {localMap.states.map((state) => (
+                <path
+                  key={state.id}
+                  d={state.d}
+                  fill={state.own ? RAMP[0] : "#F4F1EC"}
+                  stroke="#FFFFFF"
+                  strokeWidth={1.5}
+                  onMouseEnter={() => setHovered(state.id)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              ))}
+              {localMap.othersPath && (
+                <path d={localMap.othersPath} stroke="#8A8174" strokeOpacity={0.45} strokeWidth={8} strokeLinecap="round" fill="none" pointerEvents="none" />
+              )}
+              {localMap.dots.map((dot, i) => (
+                <circle key={i} cx={dot.x} cy={dot.y} r={localMap.dotRadius} fill={RAMP[RAMP.length - 1]} fillOpacity={0.75} stroke="#FFFFFF" strokeWidth={1} />
+              ))}
+              {localMap.labels.map((label) => (
+                <text
+                  key={label.text}
+                  x={label.x}
+                  y={label.y - localMap.dotRadius - 6}
+                  textAnchor="middle"
+                  fontSize={22}
+                  fontWeight={600}
+                  fill="#1A1815"
+                  stroke="#FFFFFF"
+                  strokeWidth={5}
+                  paintOrder="stroke"
+                  pointerEvents="none"
+                >
+                  {label.text}
+                </text>
+              ))}
+            </svg>
+            <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
+              {hoveredState
+                ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
+                : hovered
+                  ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
+                  : `Each dot is one office.`}
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[#6B6255]">
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: RAMP[RAMP.length - 1] }} />
+                {isCu ? "This credit union" : "This bank"}
+              </span>
+              {localMap.othersCount > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[#8A8174] opacity-60" />
+                  Other banks and credit unions
+                </span>
+              )}
+            </div>
+            {(mapped < latest.branches || (footprint.approxOffices ?? 0) > 0) && (
+              <p className="text-[10px] text-[#6B6255]">
+                {mapped < latest.branches &&
+                  `${mapped.toLocaleString("en-US")} of ${latest.branches.toLocaleString("en-US")} ${isCu ? "offices" : "branches"} on the map. `}
+                {(footprint.approxOffices ?? 0) > 0 &&
+                  `${(footprint.approxOffices ?? 0).toLocaleString("en-US")} ${footprint.approxOffices === 1 ? "is" : "are"} shown at the middle of ${footprint.approxOffices === 1 ? "its" : "their"} town until the exact address is found.`}
+              </p>
+            )}
           </div>
-        </div>
+        ) : footprint.mapPending ? (
+          <div className="flex min-h-[10rem] flex-col justify-center rounded-lg border border-dashed border-[#E0D7C9] bg-[#FAF7F2] px-4 py-6 text-center">
+            <p className="text-[12px] font-medium text-[#1A1815]">Map coming soon</p>
+            <p className="mt-1 text-[11px] text-[#6B6255]">
+              We are placing each {isCu ? "office" : "branch"} on the map from its address. {mapped.toLocaleString("en-US")} of{" "}
+              {latest.branches.toLocaleString("en-US")} are placed so far; the map appears once most are.
+            </p>
+          </div>
+        ) : (
+          <div className="relative">
+            <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Branches by state">
+              {US_STATES.map((state) => (
+                <path
+                  key={state.id}
+                  d={state.d}
+                  fill={fill(state.id)}
+                  stroke="#FFFFFF"
+                  strokeWidth={1.5}
+                  onMouseEnter={() => setHovered(state.id)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              ))}
+            </svg>
+            <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
+              {hoveredState
+                ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
+                : hovered
+                  ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
+                  : `Hover a state for its ${isCu ? "office" : "branch"} count.`}
+            </p>
+            <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6B6255]">
+              <span>Fewer</span>
+              {RAMP.map((color) => (
+                <span key={color} className="inline-block h-2 w-5 rounded-sm" style={{ background: color }} />
+              ))}
+              <span>{isCu ? "More offices" : "More branches"}</span>
+            </div>
+          </div>
+        )}
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Largest markets by deposits</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+            {isCu ? "Cities with the most offices" : "Largest markets by deposits"}
+          </p>
           <table className="mt-1 w-full text-left text-[11px] tabular-nums">
             <tbody className="text-[#1A1815]">
               {footprint.topMarkets.map((m) => (
                 <tr key={m.msa_name} className="border-t border-[#F1EBE1]">
                   <td className="py-1 pr-2">{m.msa_name}</td>
                   <td className="py-1 text-right text-[#5A5347]">{m.branches}</td>
-                  <td className="py-1 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>
+                  {!isCu && <td className="py-1 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
+          {nearby.length > 0 && (
+            <>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Largest competitors nearby</p>
+              <table className="mt-1 w-full text-left text-[11px] tabular-nums">
+                <thead className="text-[10px] text-[#6B6255]">
+                  <tr>
+                    <th className="py-1 pr-2 font-normal">{nearbyCount.toLocaleString("en-US")} in its local market</th>
+                    <th className="py-1 pl-2 text-right font-normal">Deposit share</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[#1A1815]">
+                  {nearby.map((n) => (
+                    <tr key={n.name} className="border-t border-[#F1EBE1]">
+                      <td className="py-1 pr-2">{n.name}</td>
+                      <td className="py-1 pl-2 text-right">{n.depositSharePct === null ? "Credit union" : `${n.depositSharePct}%`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {footprint.ownDepositSharePct != null && (
+                <p className="mt-1 text-[11px] text-[#5A5347]">
+                  This bank holds {footprint.ownDepositSharePct}% of the deposits in its local market.
+                </p>
+              )}
+            </>
+          )}
           {trend.length > 1 && (
             <>
               <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Branch count by year</p>
@@ -264,6 +394,81 @@ export function HoldingCompanyCard({ profile }: { profile: HoldingCompanyProfile
               </li>
             ))}
           </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const AGENCY_LABEL = { OCC: "OCC", FRB: "Federal Reserve" } as const;
+
+function ActionItem({ action }: { action: EnforcementActionRow }) {
+  const date = action.start_date ? formatQuarterEnd(action.start_date) : "Date not given";
+  return (
+    <li className="py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-medium text-[#1A1815]">{action.action_type ?? "Enforcement action"}</span>
+        <span className="shrink-0 tabular-nums text-[#6B6255]">{date}</span>
+      </div>
+      <p className="text-[#5A5347]">
+        {AGENCY_LABEL[action.agency]}
+        {action.against_holding_company && <>, against the holding company, {action.party_name}</>}
+        {action.penalty_amount !== null && <>, penalty {formatCompactDollars(action.penalty_amount)}</>}
+        {action.termination_date && <>. Ended {formatQuarterEnd(action.termination_date)}</>}
+        {action.document_url && (
+          <>
+            {" · "}
+            <a href={action.document_url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#A93D25] hover:underline">
+              Order
+            </a>
+          </>
+        )}
+      </p>
+      {action.subject && <p className="text-[#8A8174]">{action.subject}</p>}
+    </li>
+  );
+}
+
+export function EnforcementCard({ record }: { record: EnforcementRecord }) {
+  const agencies = record.agenciesChecked.map((a) => AGENCY_LABEL[a]).join(" and ");
+  const activeCount = record.active.length;
+  const subtitle =
+    activeCount > 0
+      ? `${activeCount} active ${activeCount === 1 ? "action" : "actions"}`
+      : record.terminatedCount > 0
+        ? "No active actions"
+        : `None on file with the ${agencies}`;
+  return (
+    <Card
+      title="Enforcement actions"
+      subtitle={subtitle}
+      caption={`Source: public enforcement action lists from the ${agencies}${record.asOf ? `, read ${formatQuarterEnd(record.asOf)}` : ""}. FDIC orders are not included yet. Actions against individual bank officers are left out.`}
+    >
+      {activeCount === 0 && record.terminatedCount === 0 ? (
+        <p className="text-[12px] text-[#5A5347]">
+          The {agencies} {record.agenciesChecked.length > 1 ? "have" : "has"} no public enforcement action against this bank or its holding company on file.
+        </p>
+      ) : (
+        <div className="text-[12px]">
+          {activeCount > 0 && (
+            <ul className="divide-y divide-[#F1EBE1]">
+              {record.active.map((action, i) => (
+                <ActionItem key={`a-${i}`} action={action} />
+              ))}
+            </ul>
+          )}
+          {record.terminatedCount > 0 && (
+            <>
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                Ended {record.terminatedCount > record.terminated.length ? `(latest ${record.terminated.length} of ${record.terminatedCount})` : ""}
+              </p>
+              <ul className="divide-y divide-[#F1EBE1]">
+                {record.terminated.map((action, i) => (
+                  <ActionItem key={`t-${i}`} action={action} />
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </Card>

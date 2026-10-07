@@ -219,5 +219,100 @@ describe("checkFeeAgainstSource daily caps", () => {
     // A row whose only figure is in parentheses keeps it as the price.
     expect(checkFeeAgainstSource("Stop Payment ($30.00)", "Stop Payment", 30, ".").ok).toBe(true);
   });
-});
 
+  it("refuses a price charged per $100 of the item as a flat fee (Oct 7 spot check)", () => {
+    const rows = "Cashier Check - All Others (per $100.00) $1.00\nMoney Order - All Others (per $100.00) $1.00\nStop Payment $30.00";
+    expect(checkFeeAgainstSource(rows, "Cashier Check - All Others (per )", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+    expect(checkFeeAgainstSource(rows, "Money Order - All Others (per )", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+    expect(checkFeeAgainstSource(rows, "Stop Payment", 30, ".").ok).toBe(true);
+    const merged = "CHECK CASHING FEE (NOT ON US- PER $100) | 3X5 – $30.00";
+    expect(checkFeeAgainstSource(merged, "CHECK CASHING FEE (NOT ON US- PER )", 30, ".").ok).toBe(false);
+    // A neighbouring row's basis on the same line does not count against this fee.
+    const wire = "Domestic - Incoming Wire | $10.00 | Loose Currency Ordered (per $100) | $0.50";
+    expect(checkFeeAgainstSource(wire, "Domestic - Incoming Wire", 10, ".").ok).toBe(true);
+  });
+
+  it("keeps real prices the source check took down (Darwin's sample of takedowns, Oct 7)", () => {
+    const ok = (text: string, name: string, amount: number) => expect(checkFeeAgainstSource(text, name, amount, ".").ok, `${name} ${amount}`).toBe(true);
+    ok("Wire Transfer Outgoing $20.00", "Wire Transfer Outgoing", 20);
+    ok("Minimum Balance Fee (if Balance is Below $7,500):\n$15", "Minimum Balance Fee (if Balance is Below )", 15);
+    ok("Dormant Account Fee\n$5.00/Mo", "Dormant Account Fee", 5);
+    ok("$150.00 Drill Safe Deposit Box", "Drill Safe Deposit Box", 150);
+    ok("Deposit return item\n$10.00", "Deposit return item", 10);
+    ok("Chargebacks\n$15.00 per item", "Chargebacks", 15);
+    // A balance the fee asks you to keep is a condition, not a balance band.
+    ok("Monthly Service Fee for failure to maintain $1,000 daily balance | $3.00", "Monthly Service Fee for failure to maintain daily balance", 3);
+    // A price with its unit and a qualifier under the name, or labelled "Fee".
+    ok("Dormant Account Fee – Checking, Savings, Money Market\n$5.00 per month for each acct., following 18 consecutive months of inactivity", "Dormant Account Fee – Checking, Savings, Money Market", 5);
+    ok("Stop Payment\nFee $35.00", "Stop Payment: Fee", 35);
+    // "$.50" is a price.
+    ok("Coin Counting (Non-Customer)-Mixed Coins---$.50/Per 100 Coins", "Coin Counting (Non-Customer)-Mixed Coins", 0.5);
+    ok("Statement copy | $.50 per copy", "Statement copy", 0.5);
+    // A name wrapped onto the next line leaves its parenthesis open; the price is not in a note.
+    ok("Consulate Letter | $40.00 | Replacement Key (1 key | $25.00\nlost)", "Replacement Key (1 key", 25);
+    // Still refused: a $5 charged per $50 of coin is not a flat fee, and a wrapped name does not take the next fee's price.
+    expect(checkFeeAgainstSource("Coin Counting for non-customers, per $50 of coin counted | $5.00", "Coin Counting for non-customers, per of coin counted", 5, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Consulate Letter | $40.00 | Replacement Key (1 key | $25.00", "Replacement Key (1 key", 40, ".").ok).toBe(false);
+  });
+
+  it("reads table layouts behind the second sample of takedowns (Oct 7)", () => {
+    const ok = (text: string, name: string, amount: number) => expect(checkFeeAgainstSource(text, name, amount, ".").ok, `${name} ${amount}`).toBe(true);
+    // A column heading repeated on every row.
+    const cms = "Items\n\nFees & Charges\n\nATM withdrawals on non-CU ATMs\n\nFees & Charges\n$2.00\n\nDebit Card Replacement\n\nFees & Charges\nFREE";
+    ok(cms, "ATM withdrawals on non-CU ATMs", 2);
+    expect(checkFeeAgainstSource(cms, "ATM withdrawals on non-CU ATMs", 0, ".").ok).toBe(false);
+    // An Area | Per | Fee table one cell per line: the unit sits between name and price.
+    const perTable = "Wire Transfer Fees - Customers Only\n\nArea\n\nPer\n\nFee\n\nWire Fees - Domestic Incoming\n\nWire\n\nFREE\n\nWire Fees - Domestic Outgoing\n\nWire\n\n$20.00\n\nWire Fees - International Outgoing\n\nWire\n\n$50.00";
+    ok(perTable, "Wire Fees - Domestic Outgoing: Wire", 20);
+    expect(checkFeeAgainstSource(perTable, "Wire Fees - Domestic Outgoing: Wire", 50, ".").ok).toBe(false);
+    ok("2 Account Research-Effective 09/09/2022, the Account Reconciliation Fee was combined with the Account Research\nFee @$20 per hour.", "2 Account Research-Effective 09/09/2022, the Account Reconciliation Fee", 20);
+    // A free allowance in a note, a "$200+" condition, a plural "(s)".
+    ok("ATM Withdrawal (Non-Bank ATM) (first 6 free)\n$1.00\nVISA Debit Card Replacement Fee (lost)", "ATM Withdrawal (Non-Bank ATM) (first 6 free)", 1);
+    ok("Monthly Service Fee (with direct deposit(s) of $200+ per month) ...................$10.00", "Monthly Service Fee (with direct deposit(s) of + per month)", 10);
+    // Still refused: a minimum is not the hourly price, a threshold is not the fee.
+    expect(checkFeeAgainstSource("Account research ($10 minimum) | $25/hr.", "Account research (", 10, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Escheat Notice* (when balance is $25 or more) . . . $2.00", "Escheat Notice (when balance is", 25, ".").ok).toBe(false);
+  });
+
+  it("keeps a flat price whose row follows another price's per-$ basis (prod first look, Oct 7)", () => {
+    const text = "Coin deposited | $0.0062 per $1 | Escheat/abandoned account notice | $2\nCoin furnished | $0.13 per roll | (as permitted by law)";
+    expect(checkFeeAgainstSource(text, "Escheat/abandoned account notice", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Cashier Check (per $100.00) $1.00", "Cashier Check", 1, ".")).toEqual({ ok: false, reason: "priced_per_amount" });
+  });
+
+  it("reads two-column pages flattened row by row (Oct 7, third sample)", () => {
+    const twoColumn = [
+      "CASHIER'S CHECKS........................ $5.00 per customer, | A $50.00 fee will be assessed for a payment book if the loan was originally",
+      "$10.00 Non-customer | made on a direct debit basis.",
+      "CHECK CASHING for non-customer .............15% of check amount | PROCESSING OF LEVIES**",
+      "($15.00 Minimum) | IRS or Court-ordered Garnishments ................. $100.00",
+      "CHECK ORDER CHARGES* .............. Prices vary based on check design | RETURNED STATEMENT",
+      "CHECKING ACCOUNT INACTIVITY FEE ..........$6.00 per month | (Due to undeliverable address) .........$6.00 per statement",
+      "after account has been inactive for 6 months | SAFE-DEPOSIT BOXES ...........Prices vary based on box size",
+      "COPIES OF MONTHLY STATEMENTS** ..............$6.00 per statement | stated minimum or cost of service, whichever is greater.",
+      "EARLY ACCOUNT CLOSING** | Lost Key Fee ..........................$25.00",
+    ].join("\n");
+    // The right column's name runs onto its next row, which states the price.
+    expect(checkFeeAgainstSource(twoColumn, "PROCESSING OF LEVIES IR", 100, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(twoColumn, "Lost Key Fee", 25, ".").ok).toBe(true);
+    // A run-on paragraph split at ";" inside a name: the row runs to the next row's first price.
+    const runOn = "Free for age 60+ Certified or Cashier's Check $3.00; Free for age 60+ Check Cashing for non-members; on us only $5.00 Bad Address Correction Fee $3.00 Stop Payment for a PEFCU Check Account $20.00 Reconciliation or Research $20.00 per hour Subpoena/Levy/ Garnishment Fee $75.00 Subpoena/Audit Research Fee $30.00 first hour; $20.00 for additional hours";
+    expect(checkFeeAgainstSource(runOn, "Check Cashing for non-members; on us only", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(runOn, "Check Cashing for non-members; on us only", 3, ".").ok).toBe(false);
+    // Still refused: the left column's next row is not the levy's price, and a priced row keeps its own price.
+    expect(checkFeeAgainstSource(twoColumn, "PROCESSING OF LEVIES IR", 15, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(twoColumn, "CHECKING ACCOUNT INACTIVITY FEE", 100, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(twoColumn, "CHECKING ACCOUNT INACTIVITY FEE", 6, ".").ok).toBe(true);
+    // A table row's price cell is never split off its name: "(FREE on Virtual Branch) | $2.00 per page" is $2, not free.
+    const table = [
+      "Paper Statement Fees | $2.00 (waived for members 55+)",
+      "Gift Cards | $3.50 per item",
+      "Levy/Garnishment Processing Fee | $15.00",
+      "Statement Copy (FREE on Virtual Branch) | $2.00 per page",
+      "Approved Skip-A-Pay/Extension Agreements | $25.00 per loan",
+      "Home Equity Line of Credit Refinance Fee | $250.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(table, "Statement Copy (", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(table, "Statement Copy (FREE on Virtual Branch)", 2, ".").ok).toBe(true);
+  });
+});

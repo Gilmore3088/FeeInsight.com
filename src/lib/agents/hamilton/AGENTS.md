@@ -129,6 +129,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - Persist report/scenario metadata for evidence policy, peer baseline source/label, fallback reason, peer-set ID, and selected-institution evidence counts.
 - Persist selected-institution source/source-label metadata on reports, scenarios, and watchlist rows.
 - Emit publication, refresh, and fee-movement Monitor signals with canonical institution IDs.
+- A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
 ## Publishing (publish.rules version 2)
@@ -213,6 +214,39 @@ batch id, and a `hamilton.outliers_rolled_back` run event. Explicit $0 fees are 
 Clearing `rolled_back_at` restores a row a human confirms is real; widen its range in the
 same change so the next run does not roll it back again.
 
+## Limit Guard
+
+Each publish step, `limit-guard.ts` rolls back live dollar fees whose figure is a transaction
+limit, not a price (`rolled_back_reason = 'limit_as_fee:<reading>: <detail>'`, the run's batch
+id, a `hamilton.limit_guard_rolled_back` event), and `publishSkipReason` refuses new ones. Only
+figures of $100 or more, read three ways: the name ends on the limit ("Bill Payment Limits (per
+24 Hours)", "the limit is"); Knox's excerpt puts limit wording next to the figure ("$2,500
+Limit", "($500 Maximum)", "($2,000 daily"); or the figure is $250 or more in a category whose
+schedules print transfer and load limits (Zelle, mobile deposit, bill pay, cash advance, gift
+card, prepaid reload). Over-limit fees are fees and are never matched; a daily cap category is a
+limit by design, so only a name that caps no fee counts there. First dry run (7 Oct, prod): 22
+live fees, all transfer, deposit or load limits.
+
+A live fee comes down only on its second look (`second-look.ts`, check `hamilton.limit_guard`):
+its first failure is logged `takedown_pending` in `pipeline_feedback`, and it comes down when the
+guard fails it again on another run at least 12 hours later; a fee that passes in between is
+logged `takedown_cleared`. A limit takedown the current guard no longer fails comes back each step
+(`restorePassingLimitTakedowns`), unless the bank already has the same fee live, with a
+`hamilton.limit_guard_restored` event and the source check's restore marker.
+
+## Business Schedule
+
+Each publish step, `business-schedule.ts` looks at live fees read from a business-only document
+(the address names business, commercial, corporate or treasury and not personal or consumer, as
+`isBusinessOnlyLink`). A business fee beside a live consumer fee of the same bank and category
+comes down on its second look (check `hamilton.business_schedule`): `rolled_back_reason =
+'business_schedule: consumer fee #<id>'`, the verified row rejected with the `business_schedule`
+flag. A business fee with no consumer fee beside it stays live until Magellan finds the consumer
+schedule. The lesson is Magellan's: one `wrong_document` row per document (stage discover); the
+feedback sync writes no Knox or Darwin lesson for these. A takedown whose consumer fee is no
+longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
+banks, 61 beside a consumer fee.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
@@ -225,8 +259,14 @@ that differ in name or amount are separate fee lines and are left alone.
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
 free team (`runFreeSpecialists` plus Darwin's rule checks) on the text each live Knox
-fee came from, or the document's latest text when that one is gone. A live fee whose
-category and price the current rules no longer read is rolled back
+fee came from. A fee comes down only for that same text: when it is gone, the fee stays
+live and the source check judges the document's newer text (step detail `kept_text_gone`).
+Before a fee comes down, a second look must fail too: the fee's name and price no longer
+trace in that text (`checkFeeAgainstSource`), or the category guard rejects its name. A fee
+that passes the second look stays live (`disputed` in the attempt, `kept_disputed` in the
+event) for the next Knox version to settle; one that fails carries both reasons, the
+verified row's flags holding `rules_recheck_unreproduced:second_look:<verdict>`.
+A live fee whose category and price the current rules no longer read is rolled back
 (`rolled_back_reason = 'rules_recheck_unreproduced'`, the run's batch id) and its
 verified row is rejected so the next publish does not bring it back. Up to 25 documents
 per step; each document is re-checked once per Knox version signature (attempt log,
@@ -244,7 +284,22 @@ of the institution has that category and price. Knox cannot bring that fee back 
 re-extracting would insert the same raw row, which the raw-row dedupe index (document, name,
 price) refuses. A fee read again under a new name returns the normal way, through Darwin.
 Documents whose live fees were all taken down are re-checked too. Step detail:
-`rules_recheck_restores`.
+`rules_recheck_restores`. A fee an earlier re-check judged against a text other than its own
+also comes back. Every restore here, and in the newer-copy check, leaves a
+`restored:<fee id>:<run>` marker attempt under the source check's strategy
+(`markRestoredForSourceCheck`), so the bank is source-checked again even though no newer
+fee id appeared.
+
+Past takedowns whose own text still states the fee (made before the second look existed)
+come back only over the restore bar (`restore-guard.ts`, strategy version 4, James 7 Oct):
+the second look passes, Darwin's category model files the name under the fee's own category
+with probability at least 0.8 (and, for a name joined across a pipe, files its first cell
+there and disputes no other cell), the text states the fee's price on its own row, and the
+row is not a $0 price, a minimum balance, a refundable deposit, a limit, a markup on a cost,
+a sentence cut before its figure, or a copy of an item filed as the item. Without the model
+nothing comes back this way. Every restore's verified row carries
+`rules_recheck_restored:<same_read|text_gone|restore_bar>`, and the event counts
+`restored_by_reason`.
 
 Each read is filed under the category Darwin files it under (`refileCategory`, strategy
 version 3, 2026-10-07). Before that, a fee Darwin re-filed from Knox's hint, such as First
@@ -275,6 +330,24 @@ playbook (as are the rules re-check's), so its record shows how many of its fees
 Hamilton's checks beside how many Knox read. The hourly scheduler
 tick wakes sleeping state lanes that still have unchecked live fees (source check or
 rules re-check), so a new rule reaches every state within hours.
+
+## Studies (James, 2026-10-07 05:03 UTC "Build it all")
+
+Statistical studies on the joined data, stored so Hamilton can cite a result and place one
+institution in it (`src/lib/agents/hamilton/studies`). One run a day
+(`/api/admin/crew/studies`), one step per study; a step stores only when its data period is new.
+
+- Tables: `hamilton_studies` (read the `is_current` row per `study_key`),
+  `hamilton_study_placements` (an institution against its peers), `inferred_fee_volume`.
+- `fee_dependence`: fee share of revenue every year since 2010, banks and credit unions side by
+  side, never pooled (their definitions differ), closed institutions included.
+- `local_income`, `market_concentration`, `fee_income_share`: price studies on live fees.
+  Cross-sectional only: fee prices are a current snapshot (fee moves over time are artifacts), so
+  a result describes how prices differ across institutions, never what a change would do.
+- `inferred_items_paid`: reported overdraft/NSF income divided by the published fee, a range,
+  always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
+  loads ($1B+ banks, overdraft and NSF together).
+- Nothing from a study is published on the site or sent until James says so.
 
 ## Marketing
 
