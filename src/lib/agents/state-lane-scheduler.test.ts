@@ -32,8 +32,10 @@ import {
   MAX_ACTIVE_STATE_LANE_RUNS,
   STATE_LANE_STARVATION_HOURS,
   UNCOVERED_LEADER_PRIORITY,
+  DAILY_FULL_PASS_FIND_DUE,
   nextDayStart,
   nextMonthStart,
+  nextWeekStart,
   quarterWindowKey,
   scheduleDueStateLaneRuns,
   startStateLaneRun,
@@ -67,6 +69,8 @@ function mockCadence({
   missingLinks = 0,
   paidFindDue = 0,
   websiteFindDue = 0,
+  leaderFindDue = 0,
+  fullThisWeek = fullThisMonth,
 }: {
   fullThisMonth: boolean;
   recheckThisQuarter: boolean;
@@ -75,6 +79,8 @@ function mockCadence({
   missingLinks?: number;
   paidFindDue?: number;
   websiteFindDue?: number;
+  leaderFindDue?: number;
+  fullThisWeek?: boolean;
 }) {
   sqlMock.mockImplementation((strings: TemplateStringsArray) => {
     const text = templateText(strings);
@@ -82,10 +88,12 @@ function mockCadence({
       return Promise.resolve([{
         full_this_month: fullThisMonth,
         full_today: fullToday,
+        full_this_week: fullThisWeek,
         recheck_this_quarter: recheckThisQuarter,
         missing_links: missingLinks,
         paid_find_due: paidFindDue,
         website_find_due: websiteFindDue,
+        leader_find_due: leaderFindDue,
       }]);
     }
     if (text.includes("AS backlog")) return Promise.resolve([{ backlog }]);
@@ -310,13 +318,13 @@ describe("state lane scheduler", () => {
     sqlMock.mockRejectedValueOnce(new Error("boom"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(stateLaneCadence("PA")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: false });
+    await expect(stateLaneCadence("PA")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: false, weekly: false });
     error.mockRestore();
   });
 
   it("runs a daily full pass in any state while it still misses many links", async () => {
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 354 });
-    await expect(stateLaneCadence("TX")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: true });
+    await expect(stateLaneCadence("TX")).resolves.toEqual({ fullDue: true, recheckDue: false, daily: true, weekly: false });
 
     mockCadence({ fullThisMonth: true, fullToday: true, recheckThisQuarter: true, missingLinks: 354 });
     await expect(stateLaneCadence("TX")).resolves.toMatchObject({ fullDue: false, daily: true });
@@ -433,15 +441,29 @@ describe("state lane scheduler", () => {
     expect(STATE_LANE_STARVATION_HOURS).toBe(3);
   });
 
-  it("keeps a state on daily passes while Magellan's paid steps have banks due this month", async () => {
-    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4, paidFindDue: 18 });
+  it("wakes a weekly lane on the next Monday (UTC)", () => {
+    expect(nextWeekStart(new Date("2026-10-07T05:00:00Z")).toISOString()).toBe("2026-10-12T00:00:00.000Z");
+    expect(nextWeekStart(new Date("2026-10-12T00:00:00Z")).toISOString()).toBe("2026-10-19T00:00:00.000Z");
+    expect(nextWeekStart(new Date("2026-10-11T23:59:00Z")).toISOString()).toBe("2026-10-12T00:00:00.000Z");
+  });
+
+  it("keeps a state daily only while many banks, or a market leader, are due a paid find", async () => {
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4, paidFindDue: 18, websiteFindDue: 7 });
     await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: true, daily: true });
 
-    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4, websiteFindDue: 5 });
+    // One market leader due is enough.
+    mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4, paidFindDue: 3, leaderFindDue: 1 });
     await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: true, daily: true });
+
+    // A few banks due: weekly, so a full pass this week is enough.
+    mockCadence({ fullThisMonth: true, fullToday: false, fullThisWeek: true, recheckThisQuarter: true, missingLinks: 4, paidFindDue: 1 });
+    await expect(stateLaneCadence("HI")).resolves.toMatchObject({ fullDue: false, daily: false, weekly: true });
+    mockCadence({ fullThisMonth: true, fullToday: false, fullThisWeek: false, recheckThisQuarter: true, missingLinks: 4, websiteFindDue: 5 });
+    await expect(stateLaneCadence("HI")).resolves.toMatchObject({ fullDue: true, daily: false, weekly: true });
 
     mockCadence({ fullThisMonth: true, fullToday: false, recheckThisQuarter: true, missingLinks: 4 });
-    await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: false, daily: false });
+    await expect(stateLaneCadence("CO")).resolves.toMatchObject({ fullDue: false, daily: false, weekly: false });
+    expect(DAILY_FULL_PASS_FIND_DUE).toBe(25);
 
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("full_this_month"));
     expect(query).toContain("AS paid_find_due");

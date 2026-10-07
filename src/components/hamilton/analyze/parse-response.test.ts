@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerTitle, parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "./parse-response";
+import { answerTitle, headFigure, parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "./parse-response";
 
 describe("parseEvidenceMetrics", () => {
   it("keeps dates, ranges and hyphenated words inside the value", () => {
@@ -132,5 +132,13 @@ describe("Evidence rows a reader can scan", () => {
     expect(tidyEvidence([{ label: "ROA", value: "0.79% against a 1.06% peer median — Eastman at 1.95%" }])).toEqual([
       { label: "ROA", value: "0.79% against a 1.06% peer median", note: "Eastman at 1.95%" },
     ]);
+  });
+});
+
+describe("headFigure", () => {
+  it("takes the figure a value opens with", () => {
+    expect(headFigure("$962 thousand against a $1.06 million peer median")).toEqual({ figure: "$962 thousand", comparison: "against a $1.06 million peer median" });
+    expect(headFigure("6.3% against a 7.1% peer median")?.figure).toBe("6.3%");
+    expect(headFigure("Fees were last collected on 2026-02-17")).toBeNull();
   });
 });
