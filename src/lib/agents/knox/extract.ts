@@ -10,6 +10,7 @@ import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
+import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
@@ -121,6 +122,10 @@ export interface RunKnoxExtractResult {
   /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
   lessonsLoaded: number;
   lessonRefiles: Record<string, number>;
+  /** Confirmed, still-down takedowns read before the run (`takedown-lessons.ts`). */
+  takedownLessonsLoaded: number;
+  /** Fees written held because they repeat a confirmed takedown, by check. */
+  takedownHolds: Record<string, number>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -404,6 +409,8 @@ export async function insertCandidate(
     method?: string;
     /** Shadow calibrated confidence (`calibration.ts`), recorded in the audit text only. */
     calibratedConfidence?: number;
+    /** The check whose confirmed takedown this fee repeats: written held, not sent to Darwin. */
+    takenDownBy?: string | null;
   },
 ): Promise<boolean> {
   const documentTextId = Number(options.row.document_text_id);
@@ -412,7 +419,9 @@ export async function insertCandidate(
   const agentEventId = stableUuid(
     `knox:${options.runId}:${documentTextId}:${sourceDocumentId}:${options.candidate.canonicalHint}:${options.candidate.feeName}:${options.candidate.amount}`,
   );
-  const flags = ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
+  const flags = options.takenDownBy
+    ? [TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag(options.takenDownBy), `canonical_hint:${options.candidate.canonicalHint}`]
+    : ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
   if (options.candidate.waivable) flags.push("waivable");
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
@@ -759,6 +768,8 @@ export async function runKnoxExtract(
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
+  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+  const takedownHolds: Record<string, number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
@@ -800,6 +811,8 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
+        const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
+        if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
         if (
           await insertCandidate(db, {
             runId: options.runId,
@@ -807,6 +820,7 @@ export async function runKnoxExtract(
             candidate,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
+            takenDownBy,
           })
         ) inserted += 1;
       }
@@ -909,6 +923,8 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
+    takedownLessonsLoaded: takedownLessons.size,
+    takedownHolds,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),
