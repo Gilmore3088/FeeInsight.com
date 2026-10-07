@@ -2609,3 +2609,24 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 - **Watch.** A reject whose only reason is `rules_recheck_unreproduced` is a newer Knox version
   replacing the read, so it is counted as superseded. Counting it as a miss put Oct 4's first batch
   at 58% wrong.
+
+## 2026-10-07: Fee links led to foreign banks of the same name
+
+- **Problem.** SouthEast Bank (TN) had a companion document on southeastbank.com.bd, a
+  Bangladesh bank's schedule priced in taka, and Citi's link was Citi Bangladesh's schedule
+  on citigroup.com. Nothing in Magellan's checks looked at the country or the currency.
+- **Fix.** Magellan refuses links on foreign country domains (unless the bank's own website
+  is on that domain) and pages priced mostly in another currency (`foreign_schedule`).
+- **Watch.** Fees already read from those two documents are Knox's and Hamilton's to take
+  down through the 12-hour second look; this fix stops new ones.
+
+## 2026-10-07: Dead-end banks waited a month after Magellan improved
+
+- **Problem.** 60 Tennessee banks with a website were `dead` and the state lane was hours
+  away. A dead end is searched again after 30 days, or at once when the discovery method
+  version changes, but the version was not bumped for the 7 Oct finder fixes, and a state
+  could not be re-searched outside its lane.
+- **Fix.** Discovery method 5, and a direct state re-search run (Atlas
+  `priority-state-research.ts`) for states that must not wait. Each miss now leaves a
+  `magellan.search_miss` lesson.
+

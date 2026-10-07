@@ -103,6 +103,52 @@ export function isSingleProductDisclosureLink(url: string | null | undefined): b
   }
 }
 
+/**
+ * Country domains of places whose banks share US banks' names (SouthEast Bank's link led
+ * to southeastbank.com.bd, 7 Oct 2026). US territories (.pr, .gu, .vi, .as, .mp) and
+ * .us are not on the list. A link on the bank's own website's host is never foreign
+ * (Natbank, N.A. publishes from nbc.ca).
+ */
+const FOREIGN_TLD = /\.(bd|in|pk|lk|np|ca|uk|au|nz|ie|sg|hk|cn|tw|jp|kr|ph|my|id|th|vn|ng|ke|gh|za|ae|sa|qa|kw|bh|om|eg|mx|br|ar|cl|pe|co\.[a-z]{2}|de|fr|es|it|nl|be|ch|at|se|no|dk|fi|pl|pt|gr|tr|ru)$/;
+
+function hostOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+/** True when the link sits on another country's domain that is not the bank's own website. */
+export function isForeignHostLink(url: string | null | undefined, websiteUrl?: string | null): boolean {
+  const host = hostOf(url);
+  if (!host || !FOREIGN_TLD.test(host)) return false;
+  const own = hostOf(websiteUrl);
+  return !(own && (host === own || host.endsWith(`.${own}`) || own.endsWith(`.${host}`)));
+}
+
+/** Amounts in another country's money ("Tk 500", "BDT 1,000", "Rs. 250", "£5", "€10"). */
+const FOREIGN_CURRENCY = /(?:\b(?:bdt|tk|taka|inr|rs|rupees?|pkr|lkr|npr|gbp|eur|cad|aud|nzd|sgd|hkd|php|ngn|naira|kes|ghs|zar|aed|sar|mxn|cny|rmb|yuan|jpy|yen)\b\.?\s?[\d,]+|[£€¥₹৳₱₦]\s?[\d,]+|\b[\d,]+(?:\.\d+)?\s?(?:bdt|tk|taka|inr|rupees?|pkr|gbp|eur|cad|aud)\b)/gi;
+/** A country's central bank or regulator, named only on that country's schedules. */
+const FOREIGN_REGULATOR = /\b(bangladesh bank|reserve bank of india|state bank of pakistan|central bank of sri lanka|nepal rastra bank|bank of canada|financial conduct authority|prudential regulation authority|monetary authority of singapore|hong kong monetary authority|bangko sentral|central bank of nigeria|reserve bank of australia|vat|value added tax|excise duty)\b/i;
+const US_DOLLAR = /\$\s?\d/g;
+
+/**
+ * True when a page's text reads as another country's fee schedule: its amounts are mostly
+ * in another currency, or it names a foreign central bank or VAT alongside foreign
+ * amounts. Citi's link on 7 Oct 2026 was Citi Bangladesh's schedule on citigroup.com, so
+ * the address alone does not catch every case.
+ */
+export function looksForeignSchedule(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const foreign = text.match(FOREIGN_CURRENCY)?.length ?? 0;
+  if (foreign === 0) return false;
+  const dollars = text.match(US_DOLLAR)?.length ?? 0;
+  if (foreign >= 3 && foreign > dollars) return true;
+  return foreign >= 2 && FOREIGN_REGULATOR.test(text) && foreign * 2 > dollars;
+}
+
 /** `urlNamesFeePage` (learning/fee-page.ts) for SQL, on the lowercased link. */
 export const FEE_PAGE_NAME_SQL =
   "(fee-?schedule|schedule-of-(fees|charges)|fee-?disclosure|service-charges|pricing|(^|[/_-])fees?([/_.-]|$))";
