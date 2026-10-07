@@ -2180,3 +2180,13 @@ Still unexplained: three one-page scans returned 0 characters at confidence 0 (8
 csbnetbank.com, onomeafcu.org). The cloud container cannot fetch bank sites, so their bytes were not
 checked.
 **Lesson:** an image inside a PDF is not the page; read it through the matrix that draws it.
+
+## 2026-10-07: 79 reopened pages were selected every run and never read
+**What happened:** after PR 331, 90 reopened pages were read within an hour, but 88 others never
+were. 79 of those 88 still had their earlier failure in the bank playbook's do-not-retry list. The
+read step selected them, the router skipped them as a known failure, and a skip writes nothing, so
+they stayed eligible and were selected again every run. Reopening a page lifted its URL ban but not
+the playbook entry.
+**Fix:** the selection marks a page reopened and not read since (`reopen_pending`). For that one read,
+the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
+**Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.

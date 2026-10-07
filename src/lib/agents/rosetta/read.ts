@@ -29,7 +29,7 @@ import {
   PERMANENT_OUTCOMES,
   type AttemptOutcome,
 } from "@/lib/agents/learning/outcomes";
-import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { playbookFromRow, type Playbook } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
@@ -101,6 +101,11 @@ interface ReadCandidateRow {
   do_not_retry?: unknown;
   /** True when an older reader version already produced a text for these bytes. */
   is_reread?: boolean | null;
+  /**
+   * True when these bytes were reopened (see `reopenScriptLoadedFeePages`) and not read
+   * since: the failure recorded in the playbook before the reopen no longer stands.
+   */
+  reopen_pending?: boolean | null;
   /** Set for a companion page (account page, other fee document); see companion-streams.ts. */
   companion_source_id?: number | string | null;
   /** Text-survival columns (text-survival.ts): the reader of this document's current text, */
@@ -510,6 +515,12 @@ interface FreeText {
   sourceUrl: string | null;
 }
 
+/** A reopened page gets its one read: drop the do-not-retry entries for its bytes. */
+function withoutReopenedFailures(playbook: Playbook, row: ReadCandidateRow): Playbook {
+  if (!row.reopen_pending || !row.content_hash) return playbook;
+  return { ...playbook, doNotRetry: playbook.doNotRetry.filter((entry) => entry.fingerprint !== row.content_hash) };
+}
+
 /** pass 2, scans: free OCR of up to OCR_MAX_PAGES pages. */
 async function tryOcr(
   bytes: Uint8Array,
@@ -703,7 +714,7 @@ async function readCandidate(
   const decision = chooseStrategy({
     stage: "read",
     // The bank's playbook describes its main fee link, not its companion pages.
-    playbook: playbookFromRow(row.companion_source_id == null ? row : null),
+    playbook: withoutReopenedFailures(playbookFromRow(row.companion_source_id == null ? row : null), row),
     fingerprint: row.content_hash,
     candidates: READ_STRATEGIES[format],
   });
@@ -1116,7 +1127,21 @@ async function selectCandidates(
                 AND ${notSettledByCurrentReader}
               )
             )`;
+    // A reopened page's earlier failure is in the playbook's do-not-retry list; the router
+    // would skip it there and write nothing, so the page was selected every run, never read.
+    const reopenPending = `(
+              ${reopenedAt("cr.institution_id", "cr.content_hash")} IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM pipeline_attempts after_reopen
+                 WHERE after_reopen.stage = 'read'
+                   AND after_reopen.strategy <> ALL(${auxiliaryParam}::text[])
+                   AND after_reopen.institution_id = cr.institution_id
+                   AND after_reopen.input_fingerprint = cr.content_hash
+                   AND after_reopen.created_at > ${reopenedAt("cr.institution_id", "cr.content_hash")}
+              )
+            )`;
     playbookColumns = `,
+             ${reopenPending} AS reopen_pending,
              profile.format,
              profile.best_strategy,
              profile.strategy_stats,

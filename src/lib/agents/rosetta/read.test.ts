@@ -404,6 +404,28 @@ describe("Rosetta agentic read", () => {
       expect(attemptValues(db)).toHaveLength(0);
     });
 
+    it("reads a reopened page once although the playbook still lists its earlier failure", async () => {
+      const db = learningDb([
+        {
+          ...htmlCandidate,
+          reopen_pending: true,
+          do_not_retry: [
+            { stage: "read", strategy: "read.html_dom", version: ROSETTA_READ_VERSION, fingerprint: "source-hash", outcome: "wrong_document", at: "2026-09-01T00:00:00Z" },
+          ],
+        },
+      ]);
+      const body = "<h1>Schedule of Fees</h1><table><tr><td>Overdraft fee</td><td>$35.00</td></tr><tr><td>Stop payment</td><td>$30.00</td></tr></table>";
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
+
+      const result = await runRosettaRead({ runId: 305, db: asReadDb(db), fetchImpl });
+
+      expect(result.skippedKnownFailures).toBe(0);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(attemptValues(db).length).toBeGreaterThan(0);
+      const selection = db.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents"));
+      expect(String(selection?.[0])).toContain("AS reopen_pending");
+    });
+
     it("reads a fee table so Knox can pair each fee with its amount", async () => {
       const db = learningDb([htmlCandidate]);
       const body = `
