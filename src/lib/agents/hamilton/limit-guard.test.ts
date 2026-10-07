@@ -131,3 +131,15 @@ describe("rollBackLimitsPublishedAsFees", () => {
     expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
   });
 });
+
+describe("limit guard: worked examples", () => {
+  it("flags a figure from a worked example at any amount", () => {
+    expect(
+      limitGuardVerdict({ canonical_fee_key: "bill_pay", fee_name: "Example: Assume you establish a bill pay payment for a utility bill in the amount of", amount: 100 })?.code,
+    ).toBe("worked_example");
+    expect(limitGuardVerdict({ canonical_fee_key: "od_protection_transfer", fee_name: "example results in total Overdraft Transfer Fees of", amount: 18 })?.code).toBe(
+      "worked_example",
+    );
+    expect(limitGuardVerdict({ canonical_fee_key: "bill_pay", fee_name: "Bill Pay Monthly Fee", amount: 5 })).toBeNull();
+  });
+});
