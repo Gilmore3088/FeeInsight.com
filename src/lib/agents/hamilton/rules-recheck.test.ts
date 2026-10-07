@@ -122,12 +122,40 @@ describe("Hamilton rules re-check", () => {
     expect(result.textGone).toBe(1);
   });
 
-  it("restores a fee an earlier re-check judged against another text, for the source check to judge", async () => {
-    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "nsf", "Returned Item", "25.00", "older", true)], texts);
+  it("restores a fee whose own text is gone only when the newest text clears the restore bar", async () => {
+    const newest = "Stop Payment | $30.00\nReturned Item | $25.00\nLetter of Protest | $10.00";
+    const newestTexts = [
+      { id: 1, source_document_id: 9, text_hash: "zzz-old-read", normalized_text: "Returned Item | $20.00" },
+      { id: 2, source_document_id: 9, text_hash: "abc", normalized_text: newest },
+    ];
+    const categoryModel = trainCategoryModel([
+      { name: "Returned item", categoryKey: "nsf", count: 40 },
+      { name: "Stop payment", categoryKey: "stop_payment", count: 50 },
+      { name: "Gift card", categoryKey: "gift_card_purchase", count: 40 },
+      { name: "Protest letter", categoryKey: "legal_process", count: 40 },
+    ]);
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Payment", "30.00"),
+        live(2, "nsf", "Returned Item", "25.00", "older", true),
+        // Stated in the newest text, but filed under a category the model rejects (NY answer key).
+        live(3, "gift_card_purchase", "Letter of Protest", "10.00", "older", true),
+        // A $0 row never comes back this way.
+        live(4, "atm_non_network", "ATM services are UNLIMITED &", "0.00", "older", true),
+      ],
+      newestTexts,
+    );
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: true });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: true, categoryModel });
 
-    expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+    expect(result.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "newer_text"]]);
+  });
+
+  it("never restores a fee whose own text is gone without Darwin's category model", async () => {
+    const newest = [{ id: 2, source_document_id: 9, text_hash: "abc", normalized_text: "Stop Payment | $30.00\nReturned Item | $25.00" }];
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "nsf", "Returned Item", "25.00", "older", true)], newest);
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 308, batchId: "b", dryRun: true, categoryModel: null });
+    expect(result.restores).toEqual([]);
   });
 
   it("keeps one live copy of a fee the document states once and asks Knox for the fees it misses", async () => {
