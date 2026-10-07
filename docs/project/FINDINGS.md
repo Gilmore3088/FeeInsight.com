@@ -1646,3 +1646,17 @@ states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothin
 taken down.
 **Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
 stay broken without anyone seeing them.
+
+## 2026-10-07: the free companion finder never reached most hidden banks
+**What happened:** the companion finder (`second-document.ts`) only takes banks in the step's own
+state. On 6-7 Oct it checked 507 banks in 30 smaller states and found pages at 353 (1,307 pages, $0),
+while 488 discovery steps ran but only 111 gave it any bank: a state checked this month leaves the
+step idle. Of the ~2,200 banks the catalog hides (fewer than 3 live categories), only 253 had ever
+been checked (197 with a page found); 1,606 product-page or no-overdraft banks had not, most of them
+in states the lanes had not reached (most in Texas 144, Illinois 108, California 97, Ohio 86). Knox's list of
+61 hidden banks was 37 of them.
+**Fix:** spare slots now go to hidden banks from any state (`hiddenOnly` top-up in
+`selectThinBanks`), same order: requesters, $10B+, incomplete links, fewest categories. Free, no
+provider call.
+**Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
+sits in states it has not reached.
