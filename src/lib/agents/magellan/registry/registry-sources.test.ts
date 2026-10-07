@@ -502,6 +502,8 @@ describe("registry dispatch", () => {
       "ncua-branches",
       "ncua-branch-geocode",
       "cfpb",
+      "census-acs",
+      "irs-zip-income",
       "sec-links",
       "sec-filings",
       "beige-book",

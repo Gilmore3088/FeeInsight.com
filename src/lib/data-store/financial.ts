@@ -219,11 +219,14 @@ export async function getCountyDemographics(
   stateFips: string
 ): Promise<DemographicData[]> {
   const rows = await sql`
-    SELECT geo_id, geo_type, geo_name, state_fips,
-           median_household_income, poverty_count, total_population, year
-    FROM demographics
-    WHERE geo_type = 'county' AND state_fips = ${stateFips}
-    ORDER BY total_population DESC`;
+    SELECT * FROM (
+      SELECT DISTINCT ON (geo_id) geo_id, geo_type, geo_name, state_fips,
+             median_household_income, poverty_count, total_population, year
+      FROM demographics
+      WHERE geo_type = 'county' AND state_fips = ${stateFips}
+      ORDER BY geo_id, year DESC
+    ) latest
+    ORDER BY total_population DESC NULLS LAST`;
   return [...rows] as DemographicData[];
 }
 
