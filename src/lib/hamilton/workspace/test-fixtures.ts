@@ -48,7 +48,7 @@ export const economyContext: StateEconomicContext = {
   national_unemployment: series("UNRATE", ["2026-08-01", 3.6], ["2025-08-01", 4.2]),
   fed_funds: series("FEDFUNDS", ["2026-08-01", 3.9], ["2025-08-01", 4.6]),
   cpi_all_items: series("CUUR0000SA0", ["2026-08-01", 330], ["2025-08-01", 320]),
-  cpi_bank_services: series("CUUR0000SEMC01", ["2026-08-01", 210], ["2025-08-01", 200]),
+  cpi_bank_services: series("CUUR0000SS68021", ["2026-08-01", 210], ["2025-08-01", 200]),
   beige_book: {
     release_date: "2026-09-03",
     source_url: "https://www.federalreserve.gov/monetarypolicy/beigebook202609.htm",

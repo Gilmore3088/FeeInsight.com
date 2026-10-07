@@ -32,14 +32,14 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       NULL as median_overdraft
     FROM institution_sources ct
     JOIN published_fee_catalog ef ON ct.id = ef.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
+    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
     WHERE ef.review_status = 'approved'
       AND ef.amount IS NOT NULL
       AND ef.amount > 0
       AND ifin.report_date = (
         SELECT MAX(report_date)
         FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id
+        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
       )
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.id, ct.institution_name, ct.charter_type, ct.state_code,
@@ -84,13 +84,13 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
+    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
     WHERE ct.asset_size_tier IS NOT NULL
       AND ifin.service_charge_income IS NOT NULL
       AND ifin.report_date = (
         SELECT MAX(report_date)
         FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id
+        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
       )
     GROUP BY ct.asset_size_tier
     ORDER BY AVG(ifin.total_assets) ASC
@@ -133,12 +133,12 @@ export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSu
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
+    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
     WHERE ifin.service_charge_income IS NOT NULL
       AND ifin.report_date = (
         SELECT MAX(report_date)
         FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id
+        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
       )
     GROUP BY ct.charter_type
   ` as CharterFeeRevenueSummary[];

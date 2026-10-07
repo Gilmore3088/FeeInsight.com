@@ -11,6 +11,7 @@ import {
   getHoldingCompanyProfile,
   getRegulatorInfo,
 } from "@/lib/data-store/registry-profile";
+import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { canAccessPremium } from "@/lib/access";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getCurrentUser } from "@/lib/auth";
@@ -71,8 +72,8 @@ interface PageProps {
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 
 const FINANCIAL_HISTORY_QUARTERS = 4;
-/** Up to three call-report sources can carry the same quarter; fetch enough rows to dedupe. */
-const FINANCIAL_SOURCES_PER_QUARTER = 3;
+/** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
+const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
 function fallbackTo<T>(label: string, fallback: T) {
   return (error: unknown): T => {
@@ -150,7 +151,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
   // Financial history is Pro-only; free users never receive it in the RSC payload.
   const isPro = canAccessPremium(user);
-  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany, enforcement] = isPro
+  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany, enforcement, regulatoryWatch] = isPro
     ? await Promise.all([
         getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
         getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
@@ -159,8 +160,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
         getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
         getEnforcementRecord(instId).catch(fallbackTo("enforcement actions", null)),
+        getRegulatoryWatch(instId).catch(fallbackTo("regulatory watch", null)),
       ])
-    : [[], null, null, null, null, null, null];
+    : [[], null, null, null, null, null, null, null];
   const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
@@ -380,7 +382,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
 
               {(isPro
-                ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany)
+                ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)
                 : latestFinancial !== null) && (
                 <FinancialProfileSection
                   isPro={isPro}
@@ -392,6 +394,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   complaints={complaints}
                   holdingCompany={holdingCompany}
                   enforcement={enforcement}
+                  regulatoryWatch={regulatoryWatch}
+                  exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
                 />
               )}
             </div>
