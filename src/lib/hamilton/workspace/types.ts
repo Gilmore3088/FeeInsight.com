@@ -405,6 +405,10 @@ export interface EconomicBackdrop {
   indicators: EconomicIndicator[];
   /** The district's latest Beige Book, banking section first. */
   beigeBook: { releaseDate: string; text: string; source: SourceRef } | null;
+  /** The latest FOMC minutes' rate decision, quoted. */
+  fomc?: { meetingDate: string; text: string; source: SourceRef } | null;
+  /** The district Reserve Bank's newest banking or household research piece. */
+  districtResearch?: { title: string; publishedAt: string | null; source: SourceRef } | null;
 }
 
 /** A marker on a fee exhibit: one market's median. */

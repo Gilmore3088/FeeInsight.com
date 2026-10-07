@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
+**What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
+queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
+33 of 36; 66 of the 69 non-ok attempts were `wrong_document` on reopened pages whose link names
+the fee page but whose own text has no fees. None were timeouts, bot blocks or empty renders.
+Of the 66: their routes found a linked scanned PDF on 9 (6 already read as the bank's own
+documents, 3 never read: bogotasavingsbank, 1streetcu, educacu), and most of the rest were landing
+pages whose schedule sits behind a link with no ".pdf" ending (Magellan's crawl shows
+visionsfcu.org/documents/general/service-charge-fee-schedule-effective-june-2026 and
+cu-rockies.org/documents/fee-schedule), plus "available on request" and error pages that are
+correctly not fee pages. Two were real fee tables (emb.bank's 30 rows like "Cashier's check | 5.00").
+**Cause:** the fallback only followed links ending in ".pdf" or labelled print/download, never
+OCR'd a linked scan, and the fee-page check only counted amounts written with "$".
+**Fix:** this PR: follow links that name the fee schedule, OCR a linked scan, skip links the bank
+already has as documents, count bare amounts in fee table cells (15 rejected texts, all fee
+schedule URLs, would now pass), and reopen each such page once per fallback version (144 pages).
+**Lesson:** before calling a reader's non-ok outcomes failures, split them by what the page is: a
+`wrong_document` on a page with no fees is a correct answer, and the fix is to follow where the
+page points, not to count it differently.
+
 ## 2026-10-07: Call report rows for closed institutions store no revenue, and the two charters define revenue differently
 **What happened:** building the fee dependence study, 4,248 of 7,747 FDIC rows for 2010-12-31 had
 `total_revenue` (read-only query on `institution_financial_records`, 05:20 UTC). The rest belong to
@@ -2341,3 +2361,15 @@ whose weekly check is due and records each state under its own partition row. Th
 within the hour while states are still due, so all 52 are covered in five runs.
 **Lesson:** for a registry source with many small, quick items, batch them inside one partition.
 Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Knox re-read fees that were already taken down
+**What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
+the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
+fees whose takedown still stood (152 from the source check, 56 for a price outside the category's
+range). It sent 49 of them back to Darwin, and 6 were published again.
+**Fix:** Knox reads `takedown_confirmed` rows, the second look's verdict, for checks that say the
+read was wrong. It holds a matching re-read for review instead of sending it to Darwin, and
+records the count on the extract event. First-look takedowns don't teach: Darwin found 13 of 20
+recent source-check takedowns were real prices.
+**Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
+logged changes nothing.
