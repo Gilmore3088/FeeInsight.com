@@ -93,6 +93,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   // A box size with three dimensions ("3"X10"X 21"") is a safe deposit box anywhere on the line.
   { key: "safe_deposit_box", pattern: /\b\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\b/i },
   { key: "card_dispute", pattern: /\b(?:card|transaction) disputes?\b|\b(?:debit|credit|card)\b.{0,15}\bchargebacks?\b/i },
+  // v22: "Maximum daily Overdraft or Returned Item fees ..... $140.00" is the daily cap.
+  { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+overdraft\b/i },
   {
     key: "continuous_od",
     pattern: /\b(continuous|sustained|extended|daily).{0,30}\boverdrafts?\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
@@ -289,7 +291,7 @@ export function normalizeSegment(value: string): string {
     .replace(/\s+/g, " ")
     .replace(/^[\s\-–—|:;,.]+/, "")
     .replace(/[\s|:;,\-–—]+$/, "")
-    .replace(/\s*\.{2,}\s*$/, "")
+    .replace(/\s*(?:\.{2,}|…)[.…]*\s*$/, "")
     .trim();
 }
 
@@ -298,13 +300,35 @@ function hasZeroCell(line: string): boolean {
   return line.split(CELL_SEPARATOR).slice(1).some((cell) => ZERO_CELL.test(cell.trim()));
 }
 
+/**
+ * v22: a long line is cut into sentences and schedule rows. A period inside a dot leader
+ * ("Overdraft Fee........ $30.00") does not end a sentence, and a leader row ends right
+ * after its price ("……$36", "....... $35.00/presentment"), so a one-line PDF schedule
+ * keeps each name with its price.
+ */
+const LONG_LINE_BREAK = /\s{2,}|(?<![.…])[.;](?![.…])\s+|(?<=(?:\.{3,}|…)\s*\$\s?\d[\d,]*(?:\.\d{2})?(?:\/[a-z]+)?)\s+/;
+/** "Overdraft Fee Assessed when ... per day. | $36.00": the title that opens a long description row. */
+const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
+
+function longLineParts(line: string): string[] {
+  const parts = line.split(LONG_LINE_BREAK).filter((part) => part != null);
+  // A long description row whose last cell is only its price is named by the row's title.
+  if (line.includes(CELL_SEPARATOR)) {
+    const cells = line.split(CELL_SEPARATOR).map((cell) => cell.trim());
+    const title = cells[0].match(ROW_TITLE)?.[1];
+    const price = cells.at(-1) ?? "";
+    if (cells.length === 2 && title && /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/.test(price)) parts.unshift(`${title}${CELL_SEPARATOR}${price}`);
+  }
+  return parts;
+}
+
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
   for (const rawLine of text.split(/\n+/)) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
-    const parts = line.length > MAX_SEGMENT_CHARS ? line.split(/\s{2,}|[.;]\s+/) : [line];
+    const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];
     for (const part of parts) {
       const segment = part.trim();
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
@@ -339,6 +363,11 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "card_foreign_txn" && /(?<!\/\s?)\bATM'?s?\b[^|/]{0,12}\bforeign transactions?\b/i.test(text)) {
     key = "atm_non_network";
   }
+  // v24: "Overdraft Loan Late Fee" and "Late Payment fee (Overdraft L-O-C)" are a loan's
+  // late payment fee, not an overdraft fee.
+  if (key === "overdraft" && /\blate (?:payment|charge|fee)\b/i.test(text)) {
+    key = "late_payment";
+  }
   // Credit card fees are lending fees, not deposit-account card fees.
   if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text)) return null;
   // A book transfer inside the bank is not a wire.
@@ -359,6 +388,8 @@ export function classifyPatternKey(value: string): string | null {
   ) {
     return "nsf";
   }
+  // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
+  if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
   if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
@@ -598,7 +629,7 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
 
 /** A table cell holding only a price and how often it is charged: "$20.00", "$5 per hour". */
 /** "We (will) charge a fee of", "you will be charged a fee of": the price's name comes after it. */
-const CHARGE_A_FEE_OF = /\b(?:we|you)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of\s*$/i;
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of\s*$/i;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -726,6 +757,16 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   }
   if (!firstAmount) return result;
 
+  // v22: "Customers are charged a fee of $30 each time an overdraft transaction is paid" is
+  // named by what the sentence charges for, even when words earlier on the line name a fee.
+  if (hint && CHARGE_A_FEE_OF.test(prefix)) {
+    const sentence = sentenceFee(segment, firstAmount);
+    if (sentence) {
+      result.candidates.push(sentence);
+      return result;
+    }
+  }
+
   // A line no rule names by the words before its price may still state the account's
   // monthly service charge in prose, with the fee named after the price.
   if (!hint) {
@@ -830,6 +871,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     const chunk = tail && classifyFeeText(tail) ? tail : between;
     const chunkHint = chunk ? classifyFeeText(chunk) : null;
     if (index > 0 && (!chunk || !usableName(chunk) || !chunkHint)) return;
+    // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
+    // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
+    const priceCellAt = segment.lastIndexOf(CELL_SEPARATOR);
+    if (index > 0 && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
+      PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
     const candidateName = index === 0 ? feeName : (chunk as string);
     const canonicalHint = index === 0 ? hint : (chunkHint as string);
     if (!usableName(candidateName) || amount.value <= 0 || amount.value > MAX_REASONABLE_FEE_AMOUNT) return;

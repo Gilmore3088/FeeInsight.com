@@ -67,6 +67,10 @@ function ReportRulePanel({ markets }: { markets: MarketReadiness[] | null }) {
     .filter((m) => !m.ready && m.rich > 0)
     .sort((a, b) => b.rich - a.rich)
     .slice(0, 3);
+  const viaDistrict = (markets ?? [])
+    .filter((m) => !m.ready && (m.richViaDistrict ?? 0) > 0)
+    .sort((a, b) => (b.richViaDistrict ?? 0) - (a.richViaDistrict ?? 0));
+  const viaDistrictTotal = viaDistrict.reduce((sum, m) => sum + (m.richViaDistrict ?? 0), 0);
   return (
     <section className="rounded-md border border-gray-200 p-4 text-sm dark:border-gray-800">
       <h2 className="font-semibold text-gray-900 dark:text-gray-100">Institution reports you can quote today</h2>
@@ -81,6 +85,12 @@ function ReportRulePanel({ markets }: { markets: MarketReadiness[] | null }) {
               ? `: ${ready.map((m) => `${m.state_code} ${charterLabel(m.charter_type)} ${m.rich}`).join(", ")}.`
               : "."}
           </p>
+          {viaDistrictTotal > 0 && (
+            <p className="mt-1 text-gray-700 dark:text-gray-300">
+              {viaDistrictTotal} of them on Fed district peers, where their state has too few:{" "}
+              {viaDistrict.map((m) => `${m.state_code} ${charterLabel(m.charter_type)} ${m.richViaDistrict}`).join(", ")}.
+            </p>
+          )}
           {closest.length > 0 && (
             <p className="mt-1 text-gray-500 dark:text-gray-400">
               Closest next: {closest.map((m) => `${m.state_code} ${charterLabel(m.charter_type)} ${m.rich}`).join(", ")}.

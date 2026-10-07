@@ -21,6 +21,8 @@ export interface McpV1Handlers {
   institutions: V1Handler;
   revenue: V1Handler;
   feeChanges: V1Handler;
+  branches: V1Handler;
+  market: V1Handler;
 }
 
 const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
@@ -29,6 +31,8 @@ const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
   institutions: "/api/v1/institutions",
   revenue: "/api/v1/revenue",
   feeChanges: "/api/v1/fee-changes",
+  branches: "/api/v1/branches",
+  market: "/api/v1/market",
 };
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -40,6 +44,7 @@ const SERVER_INSTRUCTIONS =
   "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name, state, city or size, " +
   "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
   "get_revenue_trend gives market-wide fee revenue by quarter back to 2010; get_fee_changes lists fee changes detected recently. " +
+  "get_branches gives bank branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
   "There is no full fee history yet, so do not infer fee trends from one snapshot. Credit the data as shown in each result's attribution field.";
 
 type Endpoint = keyof McpV1Handlers;
@@ -268,6 +273,54 @@ const TOOLS: ToolDefinition[] = [
     endpoint: "feeChanges",
     toParams: (args) =>
       compact({ days: optionalNumber(args, "days"), category: optionalString(args, "category") }),
+  },
+  {
+    name: "get_branches",
+    title: "Branch locations",
+    description:
+      "Bank branches from the FDIC Summary of Deposits (latest year): name, address, ZIP, county, metro area, latitude/longitude and deposits. Give an institution_id for one bank's branches, or a state with optional city or ZIP for every bank branch there. Credit unions are not included. Use latitude/longitude to draw a map.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        state: stateProperty,
+        city: { type: "string", description: "Exact city name, e.g. Austin (with state)" },
+        zip: { type: "string", description: "Five-digit ZIP code (with state)" },
+        page: { type: "integer", minimum: 1, default: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
+      },
+      additionalProperties: false,
+    },
+    endpoint: "branches",
+    toParams: (args) =>
+      compact({
+        institution_id: optionalNumber(args, "institution_id"),
+        state: optionalString(args, "state"),
+        city: optionalString(args, "city"),
+        zip: optionalString(args, "zip"),
+        page: optionalNumber(args, "page"),
+        limit: optionalNumber(args, "limit"),
+      }),
+  },
+  {
+    name: "get_local_market",
+    title: "Local competitors",
+    description:
+      "Who competes in an institution's local market (the counties holding most of its deposits), with each competitor's deposits there and deposit share. Credit unions appear when headquartered in a market city, with no deposit figure. Pair with rank_institutions_by_fee or get_institution to compare their fees.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+      },
+      required: ["institution_id"],
+      additionalProperties: false,
+    },
+    endpoint: "market",
+    toParams: (args) => {
+      const id = optionalNumber(args, "institution_id");
+      if (!id) throw new ToolArgumentError("institution_id is required");
+      return { institution_id: id };
+    },
   },
 ];
 
