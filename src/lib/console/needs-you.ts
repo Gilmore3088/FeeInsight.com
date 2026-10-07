@@ -1,7 +1,7 @@
 import type { AttentionItem } from "@/lib/admin-command-center";
 import type { FailureAlert } from "@/lib/agents/failure-alerts";
 import type { LeadRow } from "@/lib/admin-queries";
-import { LEAD_STATUS_LABELS, isLeadStatus, leadDueAt } from "@/lib/leads/lead-status";
+import { LEAD_STATUS_LABELS, isLeadStatus, leadDueAt, quoteFollowUpAt } from "@/lib/leads/lead-status";
 
 /**
  * The Needs-you list: everything waiting on a person, gathered from what the
@@ -41,7 +41,25 @@ function hoursLabel(ms: number): string {
   return hours >= 48 ? `${Math.round(hours / 24)} days` : `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
+/** An emailed quote nobody has paid comes back as a follow-up, never as overdue. */
+function quoteItem(lead: LeadRow, now: Date): NeedsYouItem | null {
+  const followUp = quoteFollowUpAt(lead);
+  if (!followUp || followUp.getTime() > now.getTime()) return null;
+  const who = lead.company ? `${lead.name}, ${lead.company}` : lead.name;
+  return {
+    id: `quote:${lead.id}`,
+    severity: "work",
+    area: "Customers",
+    title: `Quote unpaid for ${hoursLabel(now.getTime() - new Date(lead.quote_sent_at!).getTime())}: ${who}`,
+    detail: `Follow up with ${lead.email}, or close the request.`,
+    href: "/admin/leads",
+    action: "Open lead",
+  };
+}
+
 function leadItem(lead: LeadRow, now: Date): NeedsYouItem | null {
+  const quote = quoteItem(lead, now);
+  if (quote) return quote;
   const status = isLeadStatus(lead.status) ? lead.status : "new";
   const due = leadDueAt({ source: lead.source, status, created_at: lead.created_at_iso });
   if (!due) return null;

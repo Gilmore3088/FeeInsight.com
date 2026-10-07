@@ -170,3 +170,50 @@ export function institutionPositions<T extends StatsInputRow & { fee_category: s
   }
   return positions;
 }
+
+export interface RateStatsInputRow {
+  institution_id: number | string;
+  rate_percent: number | string | null;
+  amount_kind?: string | null;
+}
+
+export interface RateStatistics {
+  institution_count: number;
+  median_rate: number | null;
+  p25_rate: number | null;
+  p75_rate: number | null;
+  min_rate: number | null;
+  max_rate: number | null;
+  maturity_tier: MaturityTier;
+}
+
+/**
+ * Statistics over percentage fees' rates (published_fee_rate_catalog), under the same
+ * contract as dollars: sourced rows only (the caller's filter), one value per institution
+ * (the median of its rates), and the same minimum sample. Rates are never pooled with
+ * dollar amounts.
+ */
+export function summarizeRates(rows: RateStatsInputRow[]): RateStatistics {
+  const rates = new Map<number, number[]>();
+  for (const row of rows) {
+    if (row.amount_kind != null && row.amount_kind !== "percent") continue;
+    const rate = row.rate_percent == null ? NaN : Number(row.rate_percent);
+    const id = Number(row.institution_id);
+    if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(id)) continue;
+    const list = rates.get(id);
+    if (list) list.push(rate);
+    else rates.set(id, [rate]);
+  }
+  const values = [...rates.values()].map((list) => computePercentile([...list].sort((a, b) => a - b), 50));
+  const tier = maturityTier(values.length);
+  const stats = tier === "insufficient" ? null : computeStats(values);
+  return {
+    institution_count: values.length,
+    median_rate: stats?.median ?? null,
+    p25_rate: stats?.p25 ?? null,
+    p75_rate: stats?.p75 ?? null,
+    min_rate: stats?.min ?? null,
+    max_rate: stats?.max ?? null,
+    maturity_tier: tier,
+  };
+}

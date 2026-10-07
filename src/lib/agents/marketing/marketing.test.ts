@@ -1,10 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
 
+// The audience test reads state data; the rest of the file uses the real fact helpers.
+vi.mock("./facts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./facts")>()),
+  readNational: vi.fn(async () => [
+    { key: "overdraft", median: 30, p25: 25, p75: 32, institutions: 1509 },
+    { key: "stop_payment", median: 26, p25: 20, p75: 30, institutions: 2212 },
+    { key: "cashiers_check", median: 5, p25: 3, p75: 6, institutions: 1605 },
+  ]),
+  readTotals: vi.fn(async () => ({ institutions: 2665, fees: 40839 })),
+  readStateFees: vi.fn(async (_db: unknown, code: string) => code === "TN"
+    ? [
+        { key: "overdraft", median: 32, p25: 30, p75: 35, institutions: 32 },
+        { key: "stop_payment", median: 30, p25: 25, p75: 32.5, institutions: 49 },
+        { key: "cashiers_check", median: 5, p25: 3, p75: 5, institutions: 36 },
+      ]
+    : [{ key: "overdraft", median: 35, p25: 30, p75: 35, institutions: 12 }]),
+}));
+
 import { allowedNumbers, pickSpotlightState, unbackedNumbers, type FactBundle } from "./facts";
-import { copyProblems, copyText, renderEmail, withMailingAddress, type EmailCopy } from "./email";
+import { copyProblems, copyText, renderEmail, withMailingAddress, writerPrompt, type EmailCopy } from "./email";
 import { campaignName, parseCampaignName, planMonth, scoreCampaign, type CampaignResult, FORMAT_COOLDOWN_MONTHS } from "./formats";
-import { createAbDraft, marketingGroupIds, toAgentCampaign } from "./mailerlite-campaigns";
-import { stateEditionCopy } from "./state-edition";
+import { createAbDraft, toAgentCampaign } from "./mailerlite-campaigns";
+import { nationalAudience, stateEditionCopy } from "./state-edition";
+import { whatsNewFor, WHATS_NEW } from "./whats-new";
 import { lessonsFrom, runMarketingSend, summarizeWrite } from "./monthly";
 
 const bundle: FactBundle = {
@@ -16,7 +35,7 @@ const bundle: FactBundle = {
     { key: "overdraft", median: 30, p25: 25, p75: 32, institutions: 1509 },
     { key: "nsf", median: 30, p25: 25, p75: 31.25, institutions: 1831 },
   ],
-  previousNational: [{ key: "overdraft", median: 29, p25: 25, p75: 32, institutions: 1480 }],
+  previousCoverage: [{ key: "overdraft", institutions: 1480 }],
   byCharter: [{ key: "overdraft", bank: { key: "overdraft", median: 34, p25: 30, p75: 35, institutions: 505 }, creditUnion: { key: "overdraft", median: 28, p25: 25, p75: 30, institutions: 1004 } }],
   state: null,
 };
@@ -25,7 +44,7 @@ const copy: EmailCopy = {
   subjectA: "Overdraft sits at $30",
   subjectB: "Where does your overdraft fee sit?",
   label: "Fee Pulse · November 2026",
-  headline: "Overdraft moved up $1",
+  headline: "Overdraft holds at $30, with 29 more institutions counted",
   intro: "The national overdraft median is $30, across 1,509 institutions.",
   sections: [{ heading: "Banks and credit unions", body: "Banks sit at $34 and credit unions at $28, a $6 gap." }],
   table: "national",
@@ -37,7 +56,8 @@ describe("format rotation", () => {
       { format: "market_move", month: "2026-10", recipients: 500, openRate: 0.5, clickRate: 0.1, unsubscribeRate: 0 },
       { format: "state_spotlight", month: "2026-09", recipients: 500, openRate: 0.5, clickRate: 0.1, unsubscribeRate: 0 },
     ];
-    const plan = planMonth("2026-11", history);
+    expect(planMonth("2026-11", history)).toHaveLength(1);
+    const plan = planMonth("2026-11", history, 2);
     expect(plan).toHaveLength(2);
     expect(plan).not.toContain("market_move");
     expect(plan).not.toContain("state_spotlight");
@@ -72,6 +92,13 @@ describe("format rotation", () => {
 describe("number guard", () => {
   it("accepts numbers from the bundle and their differences", () => {
     expect(unbackedNumbers(`${copy.intro} ${copy.sections[0].body} ${copy.headline}`, allowedNumbers(bundle))).toEqual([]);
+  });
+
+  it("gives the writer last month's coverage, never last month's medians", () => {
+    const prompt = writerPrompt({ format: "market_move", brief: "b", bundle, lessons: [] });
+    expect(prompt).toContain('"coverage_last_month":[{"fee":');
+    expect(prompt).not.toContain("previous_month_national");
+    expect(prompt).not.toMatch(/"coverage_last_month":\[[^\]]*median/);
   });
 
   it("rejects a number the data can't back", () => {
@@ -200,12 +227,40 @@ describe("lessons and summaries", () => {
       alreadyDrafted: false,
       costMicrousd: 0,
       groupSize: 2,
+      thinStates: ["WY"],
       addressMissing: true,
       skipped: null,
     });
     expect(text).toMatch(/Drafted 1 of 2/);
     expect(text).toMatch(/812/);
     expect(text).toMatch(/MARKETING_MAILING_ADDRESS/);
+    expect(text).toMatch(/Readers in WY get it/);
+  });
+});
+
+describe("what's new", () => {
+  it("lists last month's changes in the next month's email, and nothing otherwise", () => {
+    const entries = [
+      { date: "2026-10-06", line: "State editions." },
+      { date: "2026-09-30", line: "Older." },
+      { date: "2026-11-02", line: "Too new." },
+    ];
+    expect(whatsNewFor("2026-11", entries)).toEqual(["State editions."]);
+    expect(whatsNewFor("2027-01", [{ date: "2026-12-15", line: "December." }])).toEqual(["December."]);
+    expect(whatsNewFor("2026-12", entries)).toEqual(["Too new."]);
+    expect(whatsNewFor("2027-02", entries)).toEqual([]);
+  });
+
+  it("keeps figures out of the lines, since every number in these emails comes from live data", () => {
+    for (const entry of WHATS_NEW) {
+      expect(entry.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(entry.line).not.toMatch(/\d/);
+    }
+  });
+
+  it("renders the line above the footer only when there is one", () => {
+    expect(renderEmail(copy, bundle, "market_move", null, ["State editions."])).toContain("<strong>What's new:</strong> State editions.");
+    expect(renderEmail(copy, bundle, "market_move", null)).not.toContain("What's new");
   });
 });
 
@@ -246,13 +301,27 @@ describe("state editions", () => {
     expect(stateEditionCopy({ ...tnBundle, state: { ...tnBundle.state!, fees: tnBundle.state!.fees.slice(0, 2) } })).toBeNull();
   });
 
-  it("sends monthly emails to every signup group unless one is named", () => {
-    process.env.MAILERLITE_GROUP_ID = "news";
-    process.env.MAILERLITE_REPORT_GROUP_ID = "report";
-    process.env.MAILERLITE_WATCHER_GROUP_ID = "watch";
-    expect(marketingGroupIds()).toEqual(["news", "report", "watch"]);
+  it("sends the national email to readers with no state, plus states too thin for their own edition", async () => {
+    process.env.MAILERLITE_API_KEY = "test-key";
+    const groups = [
+      { id: "50", name: "Fee Insight · Monthly · National", active_count: 4 },
+      { id: "1", name: "Fee Insight · State · TN", active_count: 2 },
+      { id: "2", name: "Fee Insight · State · WY", active_count: 1 },
+      { id: "3", name: "Fee Insight · State · TX", active_count: 0 },
+      { id: "123", name: "Newsletter", active_count: 7 },
+    ];
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: groups, meta: { last_page: 1 } })));
+    const audience = await nationalAudience({} as never, "2026-11", { fetcher });
+    expect(audience).toEqual({ groupIds: ["50", "2"], thinStates: ["WY"] });
     process.env.MAILERLITE_MARKETING_GROUP_ID = "only";
-    expect(marketingGroupIds()).toEqual(["only"]);
-    for (const key of ["MAILERLITE_GROUP_ID", "MAILERLITE_REPORT_GROUP_ID", "MAILERLITE_WATCHER_GROUP_ID", "MAILERLITE_MARKETING_GROUP_ID"]) delete process.env[key];
+    expect((await nationalAudience({} as never, "2026-11", { fetcher })).groupIds).toEqual(["only", "2"]);
+    delete process.env.MAILERLITE_MARKETING_GROUP_ID;
+  });
+
+  it("doesn't make the national group on a dry run", async () => {
+    process.env.MAILERLITE_API_KEY = "test-key";
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: "123", name: "Newsletter", active_count: 7 }], meta: { last_page: 1 } })));
+    expect(await nationalAudience({} as never, "2026-11", { fetcher, dryRun: true })).toEqual({ groupIds: [], thinStates: [] });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

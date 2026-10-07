@@ -7,6 +7,15 @@ import { companionStreamsReady } from "@/lib/agents/companion-streams";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import {
+  BUSINESS_PATH_SQL,
+  CONSUMER_PATH_SQL,
+  DOCUMENT_YEAR_SQL,
+  LARGE_BANK_ASSETS,
+  OVERDRAFT_PRICE_SQL,
+  REFERS_ELSEWHERE_SQL,
+  STALE_DOCUMENT_YEARS,
+} from "./link-coverage";
+import {
   cleanText,
   hubPages,
   pageLinks,
@@ -58,6 +67,8 @@ const AGREEMENT_PDF_PAGES = 12;
 export const MAX_SEARCH_PAGES_PER_BANK = 4;
 const MAX_HUBS = 3;
 const RECHECK_DAYS = 30;
+/** How much of each stored text the link-coverage checks read (a schedule's fees come early). */
+const COVERAGE_TEXT_CHARS = 60_000;
 /** Always searched first: it found Triangle FCU's fees. */
 const PRIMARY_SEARCH_QUERY = "fee schedule";
 /**
@@ -341,6 +352,8 @@ interface ThinBankRow {
   website_url: string;
   fee_schedule_url: string;
   categories: number | string;
+  /** The link is not the consumer schedule yet (link-coverage.ts). */
+  incomplete?: boolean | null;
 }
 
 export interface CompanionPage {
@@ -402,27 +415,69 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
        WHERE c.rolled_back_at IS NULL
          AND (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
        GROUP BY c.institution_id
+    ),
+    scoped AS (
+      SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+             COALESCE(thin.categories, 0) AS categories,
+             COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
+             EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+             -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
+             -- schedule, no stored text that prices an overdraft, a text that sends the
+             -- reader to another document for its terms, or a current copy dated years ago.
+             (
+               lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
+               AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
+             ) AS business_only,
+             NOT EXISTS (
+               SELECT 1 FROM agent_source_texts text
+                WHERE text.institution_id = inst.id
+                  AND text.status = 'completed'
+                  AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${OVERDRAFT_PRICE_SQL}
+             ) AS no_overdraft_price,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts text
+                WHERE text.institution_id = inst.id
+                  AND text.status = 'completed'
+                  AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${REFERS_ELSEWHERE_SQL}
+             ) AS refers_elsewhere,
+             EXISTS (
+               SELECT 1 FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                  AND doc.status = 'success'
+                  AND doc.duplicate_of_id IS NULL
+                  AND doc.superseded_by_id IS NULL
+                  AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
+                      <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
+             ) AS stale_copy
+        FROM institution_sources inst
+        LEFT JOIN thin ON thin.institution_id = inst.id
+       WHERE COALESCE(inst.status, 'active') = 'active'
+         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+         AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
+              AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
+              AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
+         )
     )
-    SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, thin.categories
-      FROM thin
-      JOIN institution_sources inst ON inst.id = thin.institution_id
-     WHERE COALESCE(inst.status, 'active') = 'active'
-       AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
-       AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
-       -- Few categories, or an HTML fee link with no monthly fee: the product-page pattern.
-       AND (
-         thin.categories < ${THIN_BANK_CATEGORY_LIMIT}
-         OR (NOT thin.has_monthly_fee AND inst.fee_schedule_url !~* '\\.pdf($|\\?)')
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM pipeline_attempts pa
-          WHERE pa.institution_id = inst.id
-            AND pa.stage = 'discover'
-            AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
-            AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
-            AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
-       )
-     ORDER BY thin.categories ASC, inst.asset_size DESC NULLS LAST, inst.id ASC
+    SELECT id, institution_name, state_code, website_url, fee_schedule_url, categories,
+           (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
+      FROM scoped
+     WHERE categories < ${THIN_BANK_CATEGORY_LIMIT}
+        -- An HTML fee link with no monthly fee: the product-page pattern.
+        OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
+        OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
+     -- Report requesters and $10B+ banks first: the names buyers check.
+     ORDER BY requested DESC,
+              (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
+              (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) DESC,
+              categories ASC,
+              asset_size DESC NULLS LAST,
+              id ASC
      LIMIT ${limit}
   `;
 }

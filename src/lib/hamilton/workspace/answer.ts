@@ -10,6 +10,9 @@
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
+import { buildStoryline, type StoryIntent } from "./storyline";
+import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
 
 export { proseFeeName };
 import type {
@@ -89,7 +92,7 @@ function peerClaim(research: FeeResearch): Fact | null {
   const band = research.band;
   if (!band || band.n < MIN_PEERS_FOR_POSITION) return null;
   return {
-    text: `Across ${count(band.n)} peers (${research.peerLabel}), the median is ${money(band.median)} and the middle half runs ${money(band.p25)} to ${money(band.p75)}.`,
+    text: `Across ${count(band.n)} peers, the median is ${money(band.median)} and the middle half runs ${money(band.p25)} to ${money(band.p75)}.`,
     source: feeSource(research),
     sampleSize: band.n,
   };
@@ -132,9 +135,9 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   }
   const fin = research.institutionFinancials;
   if (fin?.latestTtm != null) {
-    const change = fin.yoyPct != null ? `, ${fin.yoyPct >= 0 ? "up" : "down"} ${pct(Math.abs(fin.yoyPct))} on the year before` : "";
+    const change = fin.yoyPct != null ? `, ${fin.yoyPct >= 0 ? "up" : "down"} ${pct(Math.abs(fin.yoyPct))}` : "";
     out.push({
-      text: `Your ${incomeName(fin.source)} was ${formatDollarsInWords(fin.latestTtm)} over the four quarters to ${longDate(fin.quarterEnd)}${change}.`,
+      text: `Your ${incomeName(fin.source)} was ${formatDollarsInWords(fin.latestTtm)} in the year to ${longDate(fin.quarterEnd)}${change}.`,
       source: { ...fin.sourceRef, asOf: fin.quarterEnd },
     });
   }
@@ -296,17 +299,19 @@ export function buildExhibit(research: FeeResearch, focus: ExhibitFocus = "posit
 // ─── Writer: the headline ────────────────────────────────────────────────────
 
 function headline(research: FeeResearch, name: string): string {
+  const byRate = rateHeadline(research, name);
+  if (byRate) return byRate;
   const band = research.band;
   const amounts = research.peers.map((p) => p.amount);
   if (research.current !== null) {
     const position = pricePosition(research.current, amounts);
     if (band && position !== null) {
-      return `Your ${money(research.current)} ${name} fee sits at the ${ordinal(position)} percentile of ${count(band.n)} peers, whose median is ${money(band.median)}.`;
+      return `Your ${money(research.current)} ${name} fee is at the ${ordinal(position)} percentile of ${count(band.n)} peers (median ${money(band.median)}).`;
     }
-    return `Your ${name} fee is ${money(research.current)}, but only ${count(amounts.length)} peers publish one, too few to rank it.`;
+    return `Your ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
-  if (band) return `Your schedule shows no ${name} fee; across ${count(band.n)} peers the median is ${money(band.median)}.`;
-  return `Your schedule shows no ${name} fee, and too few peers publish one to set a benchmark.`;
+  if (band) return `Your schedule shows no ${name} fee; the median across ${count(band.n)} peers is ${money(band.median)}.`;
+  return `Your schedule shows no ${name} fee, and too few peers publish one to compare.`;
 }
 
 // ─── Economist: the one question ─────────────────────────────────────────────
@@ -321,6 +326,10 @@ function currentFeeQuestion(feeCategory: string): ClarifyingQuestion {
 
 /** The one figure that would most sharpen the answer, or null when nothing is missing. */
 export function missingFigure(research: FeeResearch): ClarifyingQuestion | null {
+  // A fee stated as a rate has no per-item amount; the volume it applies to sets the money.
+  if (research.current === null && ownRate(research)) {
+    return research.provenance.clientFacts.length === 0 ? rateVolumeQuestion(research.feeCategory) : null;
+  }
   if (research.current === null) return currentFeeQuestion(research.feeCategory);
   if (!research.revenueLine && research.provenance.clientFacts.length === 0) return annualItemsQuestion(research.feeCategory);
   return null;
@@ -332,20 +341,34 @@ function evidenceLevel(research: FeeResearch): EvidenceLevel {
   return "market";
 }
 
-export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus } = {}): HamiltonAnswer {
+export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus; story?: StoryIntent } = {}): HamiltonAnswer {
   const name = proseFeeName(research.feeCategory);
-  const claims = [ownFeeClaim(research, name), peerClaim(research), ...layerClaims(research), ...revenueClaims(research, name)].filter(
-    (f): f is Fact => f !== null,
-  );
+  const seg = research.segment ?? null;
   const level = evidenceLevel(research);
-  return {
+  // A segment the question named leads the answer. When it could not be built, the first
+  // claim says so and the default peer group follows; it never stands in silently.
+  const segmentLed = seg !== null && seg.problem === null;
+  // A bank that states the fee only as a rate leads with the rate; otherwise rates follow the dollars.
+  const rates = rateClaims(research, name);
+  const rateLed = research.current === null && ownRate(research) !== null;
+  const claims = [
+    ...(seg ? segmentClaims(seg, research.feeCategory, research.current) : []),
+    ...(rateLed ? rates : []),
+    ownFeeClaim(research, name),
+    ...(segmentLed ? [] : [peerClaim(research)]),
+    ...layerClaims(research).filter((c) => !segmentLed || c.text.startsWith("The national")),
+    ...(rateLed ? [] : rates),
+    ...revenueClaims(research, name),
+  ].filter((f): f is Fact => f !== null);
+  const answer: HamiltonAnswer = {
     feeCategory: research.feeCategory,
-    headline: headline(research, name),
+    headline: segmentLed ? segmentHeadline(seg, research.feeCategory, research.current) : headline(research, name),
     claims,
     drivers: economicDrivers(research.economy, research.feeCategory),
-    exhibit: buildExhibit(research, options.focus),
+    exhibit: (segmentLed ? segmentExhibit(seg, research.feeCategory, research.current, research.institutionName) : null) ?? buildExhibit(research, options.focus),
     question: missingFigure(research),
     evidenceLevel: level,
     provenance: { ...research.provenance, evidenceLevel: level },
   };
+  return { ...answer, storyline: buildStoryline(research, answer, { focus: options.focus, ...options.story }) };
 }

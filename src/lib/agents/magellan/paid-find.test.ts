@@ -27,6 +27,9 @@ function createDb(rows = banks): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+    // Institutions with no website (website-find.ts): none in these tests.
+    if (text.includes("inst.charter_type")) return Promise.resolve([]);
+    if (text.includes("incomplete-link schedule search")) return Promise.resolve([]);
     if (text.includes("inst.city")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -127,6 +130,15 @@ describe("Magellan paid find (pass 3)", () => {
     expect(onBankDomain("https://docs.alpha.example/fees.pdf", "www.alpha.example")).toBe(true);
     expect(onBankDomain("https://alpha.example.evil.example/fees.pdf", "alpha.example")).toBe(false);
     expect(onBankDomain("ftp://alpha.example/fees.pdf", "alpha.example")).toBe(false);
+  });
+
+  it("accepts the bank's corporate domain (Citi's schedule on citigroup.com)", () => {
+    const citi = "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges_Effective_February_26_2026.pdf";
+    expect(onBankDomain(citi, "https://www.citi.com")).toBe(true);
+    expect(onBankDomain("https://online.citibank.com/fees.pdf", "citi.com")).toBe(true);
+    expect(onBankDomain("https://www.citizensbank.com/fees.pdf", "citi.com")).toBe(false);
+    expect(onBankDomain("https://www.notchase.example/fees.pdf", "abc.com")).toBe(false);
+    expect(onBankDomain("https://bigbank.com/fees.pdf", "big.com")).toBe(false);
   });
 
   describe("pick from homepage links", () => {

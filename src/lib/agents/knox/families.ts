@@ -60,19 +60,19 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 4,
+    version: 5,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
       { key: "overdraft", pattern: /\b(overdraft privilege|courtesy pay|paid items?|bounce)\b/i },
     ],
   },
-  { family: "wires", strategy: "extract.family.wires", version: 3, keys: familyKeys("Wire Transfers"), patterns: [] },
-  { family: "atm_card", strategy: "extract.family.atm_card", version: 3, keys: familyKeys("ATM & Card"), patterns: [] },
+  { family: "wires", strategy: "extract.family.wires", version: 4, keys: familyKeys("Wire Transfers"), patterns: [] },
+  { family: "atm_card", strategy: "extract.family.atm_card", version: 4, keys: familyKeys("ATM & Card"), patterns: [] },
   {
     family: "account",
     strategy: "extract.family.account",
-    version: 3,
+    version: 4,
     keys: familyKeys("Account Maintenance"),
     patterns: [
       {
@@ -81,11 +81,11 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
       },
     ],
   },
-  { family: "checks", strategy: "extract.family.checks", version: 3, keys: familyKeys("Check Services"), patterns: [] },
+  { family: "checks", strategy: "extract.family.checks", version: 4, keys: familyKeys("Check Services"), patterns: [] },
   {
     family: "services",
     strategy: "extract.family.services",
-    version: 3,
+    version: 4,
     keys: familyKeys(...Object.keys(FEE_FAMILIES).filter((family) => !EXPERT_FAMILIES.includes(family))),
     patterns: [],
   },
@@ -159,7 +159,18 @@ export function priceWindows(text: string): PriceWindow[] {
     }
     let nameStart = 0;
     let afterCondition: number | null = null;
+    // "... a fee of $25.00 on the 7th day. This fee is in addition to any Overdraft Fees. | $25.00":
+    // a row's price cell repeating the price before it, in the same cell, is the same fee.
+    const lastCell = line.lastIndexOf(CELL_SEPARATOR);
+    const priceCellAt = lastCell >= 0 && /^\s*\$?\s?\d[\d,]*(?:\.\d{1,2})?\s*$/.test(line.slice(lastCell + CELL_SEPARATOR.length))
+      ? lastCell
+      : -1;
     values.forEach((value, index) => {
+      if (priceCellAt >= 0 && index > 0 && value.start > priceCellAt && !value.zero && value.amount === values[index - 1].amount &&
+        line.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < values[index - 1].start) {
+        nameStart = value.end;
+        return;
+      }
       let own = line.slice(nameStart, value.start);
       // After a threshold, a fresh name ("Up to $29 Rush Card Replacement $25") starts
       // the next fee; otherwise the threshold stays part of this fee's name

@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
-import { passesDarwinChecks } from "@/lib/agents/knox/layout";
+import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -94,6 +94,21 @@ interface LiveKnoxRow {
   raw_fee_name?: string | null;
   /** Taken down by an earlier re-check; restored when today's rules read it again. */
   pulled?: boolean | null;
+  /** `knox_lesson:<wrong>-><right>`: Knox's learning reader re-filed the rules' read (knox/lessons.ts). */
+  lesson_flag?: string | null;
+}
+
+/**
+ * The key today's rules read for a fee Knox's learning reader re-filed: a row stored
+ * under the lesson's verified category is reproduced by a read under the rejected one.
+ * Only the category is excused: the read must have the row's own price, and Knox's reads
+ * already pass the shared source check (its self-check), so a wrong amount still goes.
+ * Rate rows never reach this (the live query keeps `amount_kind = 'flat'`). No strategy
+ * bump: lesson rows come from new reads, and new rules versions change the fingerprint.
+ */
+function lessonReadKey(row: LiveKnoxRow, amount: number): string | null {
+  const match = /^knox_lesson:([a-z_]+)->([a-z_]+)$/.exec(row.lesson_flag ?? "");
+  return match && match[2] === row.canonical_fee_key ? feeKey(match[1], amount) : null;
 }
 
 interface DocumentText {
@@ -168,7 +183,9 @@ export async function rollBackUnreproducedFees(
           SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id,
                  substring(fr.conditions from 'text_hash=([^;]+);') AS text_hash,
                  fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name,
-                 fp.rolled_back_at IS NOT NULL AS pulled
+                 fp.rolled_back_at IS NOT NULL AS pulled,
+                 (SELECT flag FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) flag
+                   WHERE flag LIKE 'knox_lesson:%' LIMIT 1) AS lesson_flag
             FROM published_fee_records fp
             JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -180,6 +197,9 @@ export async function rollBackUnreproducedFees(
              AND fr.source = 'knox'
              AND fr.source_document_id IS NOT NULL
              AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
+             -- Knox's free rules read dollar amounts only; a rate is checked by the source
+             -- check (checkRateAgainstSource), never rolled back for lacking a dollar read.
+             AND fp.amount_kind = 'flat'
              ${filters.join("\n             ")}
         ),
         docs AS (
@@ -281,7 +301,8 @@ export async function rollBackUnreproducedFees(
       result.liveFeesChecked += 1;
       const fee = asFee(row);
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
-      if (key != null && reads.has(key) && !keptKeys.has(key)) {
+      const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
+      if (key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey))) && !keptKeys.has(key)) {
         keptKeys.add(key);
         continue;
       }
@@ -294,8 +315,9 @@ export async function rollBackUnreproducedFees(
       const key = feeKey(row.canonical_fee_key, fee.amount);
       if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
       const text = textFor(row);
-      if (!readsFrom(text).get(key)?.has((row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
-      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".");
+      // Knox reads names tidied; a row stored under an older untidy name is the same read.
+      if (!readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
+      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
       if (!traced.ok && traced.reason !== "tiered_fee") continue;
       keptKeys.add(key);
       restoredKeys.add(`${institutionId}:${key}`);
@@ -389,7 +411,6 @@ export async function rollBackUnreproducedFees(
             restored: result.restores.filter((fee) => fee.sourceDocumentId === document.sourceDocumentId).length,
             [MISSING_FEES_DETAIL]: document.missing ?? 0,
           },
-          foldIntoPlaybook: false,
         });
       }
       await scope`

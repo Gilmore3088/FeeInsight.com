@@ -8,8 +8,8 @@
 export const MARKETING_FORMATS = [
   {
     key: "market_move",
-    label: "What moved",
-    brief: "The national fee numbers this month, led by the biggest real change since last month. If nothing moved, say the market held steady and lead with the most-covered fee.",
+    label: "This month's numbers",
+    brief: "The national fee numbers this month, led by the most-covered fee, and how many more institutions stand behind them than last month. Medians are compared with the middle half, never with last month.",
   },
   {
     key: "state_spotlight",
@@ -45,8 +45,11 @@ export const MARKETING_FORMATS = [
 
 export type MarketingFormatKey = (typeof MARKETING_FORMATS)[number]["key"];
 
-/** Campaigns per month. Two keeps the list warm without wearing it out. */
-export const CAMPAIGNS_PER_MONTH = 2;
+/**
+ * National emails per month. One: each reader gets one marketing email a month, their state's
+ * edition or this one (decision 2026-10-06).
+ */
+export const CAMPAIGNS_PER_MONTH = 1;
 /** A format sits out this many months after it is used. */
 export const FORMAT_COOLDOWN_MONTHS = 3;
 /** Below this many recipients a result is too small to learn from. */

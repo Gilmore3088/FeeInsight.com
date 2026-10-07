@@ -1,6 +1,8 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
+import { isBusinessOnlyLink, isBusinessOnlyText } from "./link-coverage";
+
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
  * stored: open the candidate and make sure it is a fee schedule. HTML pages must list
@@ -35,6 +37,11 @@ const FEE_CONTENT_KEYWORDS = [
   "schedule of fees",
   "fee schedule",
   "fee disclosure",
+  // Large banks' names for the same document (Citi's "Schedule of Charges", Oct 6).
+  "schedule of charges",
+  "schedule of service charges",
+  "consumer fees",
+  "deposit account agreement",
 ];
 
 /**
@@ -82,6 +89,7 @@ export type CandidateVerdict =
   | "rate_page"
   | "too_few_fee_words"
   | "product_page"
+  | "business_schedule"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -173,6 +181,9 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
 
 /** Open a candidate and decide whether it is the bank's fee schedule. Throws only on network errors. */
 export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
+  if (isBusinessOnlyLink(candidate.url)) {
+    return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
+  }
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
   if (!response.ok) {
     return rejected(`http_${response.status}`, `Candidate HTTP ${response.status}`, response.status);
@@ -205,6 +216,10 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   // the fee page, or its link label is strong and it lists at least one fee. A checking
   // account page quoting its monthly fee is not the schedule (Magellan audit, Oct 6:
   // 853 of 4,451 fee links were product pages, median 4 live fees vs 15).
+  // A business-only schedule is not the consumer's: keep looking (link-coverage.ts).
+  if (isBusinessOnlyText(mainText)) {
+    return { ...rejected("business_schedule", "Candidate is a business-only fee schedule", response.status, candidate.score), html: rawBody, scoringText: mainText };
+  }
   const accepted =
     page.verdict === "fee_page" ||
     (keywordMatches >= 2 && urlNamesFeePage(candidate.url)) ||
@@ -262,6 +277,9 @@ async function validatePdf(candidate: FeeCandidate, response: Response): Promise
   }
   if (page.verdict !== "fee_page" && page.rateTerms >= 4 && page.feeLines < 2) {
     return { ...rejected("rate_page", `PDF is a rate sheet (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score), scoringText: text };
+  }
+  if (isBusinessOnlyText(text)) {
+    return { ...rejected("business_schedule", "PDF is a business-only fee schedule", response.status, candidate.score), scoringText: text };
   }
   return {
     ok: true,

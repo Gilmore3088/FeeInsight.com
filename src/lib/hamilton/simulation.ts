@@ -71,9 +71,9 @@ export function estimatePercentile(fee: number, dist: DistributionData): number 
 
 /**
  * Classify risk based on percentile position.
- * low: below P50 (below peer median — cost advantage)
- * medium: P50–P75 (near or at median)
- * high: above P75 (above 75th percentile — outlier risk, complaint exposure)
+ * low: below P50 (below the peer median)
+ * medium: P50–P75 (between the median and the 75th percentile)
+ * high: P75 and above (in the top quarter of peers)
  */
 export function classifyRisk(percentile: number): "low" | "medium" | "high" {
   if (percentile < 50) return "low";
@@ -125,24 +125,24 @@ export function computeTradeoffs(
           : "No price change",
     },
     riskMitigation: {
-      label: "Peer Risk Exposure",
+      label: "Peer position change",
       value: `${percentileDelta > 0 ? "+" : ""}${percentileDelta} percentile points`,
       note:
         percentileDelta < 0
-          ? "Moving closer to or below median reduces outlier complaint risk"
+          ? "Moves lower in the peer distribution"
           : percentileDelta > 0
-          ? "Moving above median increases regulatory and reputational exposure"
-          : "No change in peer positioning",
+          ? "Moves higher in the peer distribution"
+          : "No change in peer position",
     },
     operationalImpact: {
-      label: "Risk Profile Shift",
+      label: "Peer band",
       value: riskShift,
       note:
         proposed.riskProfile === "low"
-          ? "Below-median positioning — strongest competitive stance"
+          ? "Below the peer median"
           : proposed.riskProfile === "medium"
-          ? "Near-median positioning — balanced revenue and risk"
-          : "Above 75th percentile — elevated complaint and attrition risk",
+          ? "Between the peer median and the 75th percentile"
+          : "Above the 75th percentile of peers",
     },
   };
 }

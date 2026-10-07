@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { recordFeedback, feedbackSchemaReady, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
-import { buildFactBundle, allowedNumbers, pickSpotlightState, readNational, readSpotlightStates, unbackedNumbers, type FeeStat } from "./facts";
+import { buildFactBundle, allowedNumbers, pickSpotlightState, readNational, readSpotlightStates, unbackedNumbers, type CoverageStat, type FeeStat } from "./facts";
 import { copyProblems, copyText, renderEmail, withMailingAddress, writerPrompt, type EmailCopy } from "./email";
 import {
   CAMPAIGN_NAME_PREFIX,
@@ -14,16 +14,16 @@ import {
   type CampaignResult,
   type MarketingFormatKey,
 } from "./formats";
-import { STATE_EDITION_FORMAT } from "./state-edition";
+import { STATE_EDITION_FORMAT, nationalAudience } from "./state-edition";
+import { whatsNewFor } from "./whats-new";
 import {
   activeSubscriberCount,
   createAbDraft,
   getDraftContent,
   listCampaigns,
   mailerLiteConfigured,
-  marketingGroupIds,
   sendCampaignNow,
-  updateAbDraftHtml,
+  updateDraftHtml,
   type AgentCampaign,
   type FetchLike,
 } from "./mailerlite-campaigns";
@@ -122,8 +122,8 @@ export async function runMarketingScore({
     dedupeKey: `hamilton.marketing:campaign:${result.id}`,
   }));
 
-  // This month's national figures, so next month's email can say what moved.
-  const national = await readNational(db);
+  // This month's national figures, so next month's email can say how coverage grew.
+  const national = await readNational();
   rows.push({
     aboutStage: "publish",
     aboutStrategy: "marketing.snapshot",
@@ -185,7 +185,7 @@ async function readRecentSpotlightStates(db: SqlTag): Promise<string[]> {
   return rows.map((row) => String(row.state_code ?? "")).filter(Boolean);
 }
 
-async function readPreviousSnapshot(db: SqlTag, month: string): Promise<FeeStat[] | null> {
+async function readPreviousSnapshot(db: SqlTag, month: string): Promise<CoverageStat[] | null> {
   const [row] = await db`
     SELECT evidence FROM pipeline_feedback
      WHERE reported_by = 'hamilton' AND kind = 'market_snapshot'
@@ -194,7 +194,7 @@ async function readPreviousSnapshot(db: SqlTag, month: string): Promise<FeeStat[
      ORDER BY dedupe_key DESC LIMIT 1`;
   if (!row) return null;
   const e = (typeof row.evidence === "string" ? JSON.parse(row.evidence) : row.evidence) as { national?: FeeStat[] };
-  return Array.isArray(e.national) ? e.national : null;
+  return Array.isArray(e.national) ? e.national.map((f) => ({ key: f.key, institutions: f.institutions })) : null;
 }
 
 /** Plain-language lessons from learnable results: the best and worst, with what won. */
@@ -215,6 +215,8 @@ export interface WriteResult {
   alreadyDrafted: boolean;
   costMicrousd: number;
   groupSize: number | null;
+  /** States whose readers get the national email because their state has no edition yet. */
+  thinStates: string[];
   addressMissing: boolean;
   skipped: string | null;
 }
@@ -249,7 +251,8 @@ async function writeOne(
       continue;
     }
     copy.sections = Array.isArray(copy.sections) ? copy.sections : [];
-    if (!["national", "state", "charter", "none"].includes(copy.table)) copy.table = "none";
+    // Signup promises one table every month, so an email never goes out without one.
+    if (!["national", "state", "charter"].includes(copy.table)) copy.table = "national";
     const unbacked = unbackedNumbers(copyText(copy), allowed);
     problems = [...copyProblems(copy), ...(unbacked.length ? [`numbers not in FACTS: ${unbacked.join(", ")}`] : [])];
     if (problems.length === 0) return { copy, problems, costMicrousd: cost };
@@ -272,7 +275,6 @@ export async function runMarketingWrite({
   fetcher?: FetchLike;
   create?: PaidMessageCreator;
 }): Promise<WriteResult> {
-  const groupIds = marketingGroupIds();
   const base: WriteResult = {
     month,
     planned: [],
@@ -281,15 +283,19 @@ export async function runMarketingWrite({
     alreadyDrafted: false,
     costMicrousd: 0,
     groupSize: null,
+    thinStates: [],
     addressMissing: !mailingAddress(),
     skipped: null,
   };
   if (!(await feedbackSchemaReady(db))) return { ...base, skipped: "pipeline_feedback is not migrated yet" };
-  if (!mailerLiteConfigured() || !groupIds.length) return { ...base, skipped: "MAILERLITE_API_KEY or the marketing group id is not set" };
+  if (!mailerLiteConfigured()) return { ...base, skipped: "MAILERLITE_API_KEY is not set" };
 
   // State editions are drafted by their own step; only the rotating formats count here.
   const existing = (await listCampaigns("draft", `${CAMPAIGN_NAME_PREFIX} ${month} `, fetcher))
     .filter((campaign) => parseCampaignName(campaign.name)?.format !== STATE_EDITION_FORMAT);
+  const audience = await nationalAudience(db, month, { fetcher, dryRun });
+  const groupIds = audience.groupIds;
+  base.thinStates = audience.thinStates;
   base.groupSize = await activeSubscriberCount(groupIds, fetcher);
   if (existing.length) {
     return {
@@ -306,7 +312,7 @@ export async function runMarketingWrite({
   const stateCode = pickSpotlightState(states, recentStates);
   const bundle = await buildFactBundle(db, {
     month,
-    previousNational: await readPreviousSnapshot(db, month),
+    previousCoverage: await readPreviousSnapshot(db, month),
     stateCode: planned.includes("state_spotlight") ? stateCode : null,
   });
   const allowed = allowedNumbers(bundle);
@@ -327,7 +333,7 @@ export async function runMarketingWrite({
         result.failures.push({ format, reason: `rejected twice: ${written.problems.join("; ")}` });
         continue;
       }
-      const html = renderEmail(written.copy, bundle, format, mailingAddress());
+      const html = renderEmail(written.copy, bundle, format, mailingAddress(), whatsNewFor(month));
       const draft: AgentCampaign = await createAbDraft(
         {
           name: campaignName(month, format, written.copy.headline.slice(0, 60)),
@@ -392,7 +398,7 @@ export async function runMarketingSend({ month, fetcher }: { month: string; fetc
         result.failures.push({ campaignId: draft.id, reason: "no unsubscribe link to put the mailing address beside; not sent" });
         continue;
       }
-      if (html !== content.html) await updateAbDraftHtml(draft.id, content, html, fetcher);
+      if (html !== content.html) await updateDraftHtml(draft.id, content, html, fetcher);
       await sendCampaignNow(draft.id, fetcher);
       result.sent.push({ campaignId: draft.id, name: draft.name });
     } catch (error) {
@@ -413,10 +419,11 @@ export function summarizeScore(result: ScoreResult): string {
 export function summarizeWrite(result: WriteResult): string {
   if (result.skipped) return `Skipped writing: ${result.skipped}.`;
   if (result.alreadyDrafted) return `${result.month} is already drafted (${result.drafts.length} campaign${result.drafts.length === 1 ? "" : "s"}), waiting for approval.`;
-  const parts = [`Drafted ${result.drafts.length} of ${result.planned.length} ${result.month} campaigns (${result.planned.join(", ")}) as A/B subject tests, waiting for James's approval.`];
+  const parts = [`Drafted ${result.drafts.length} of ${result.planned.length} national ${result.month} email${result.planned.length === 1 ? "" : "s"} (${result.planned.join(", ")}) as A/B subject tests, waiting for James's approval.`];
   if (result.failures.length) parts.push(`Not drafted: ${result.failures.map((f) => `${f.format} (${f.reason})`).join("; ")}.`);
   if (result.addressMissing) parts.push("Sending is blocked until MARKETING_MAILING_ADDRESS is set.");
-  if (result.groupSize !== null) parts.push(`The newsletter group has ${result.groupSize} active subscriber${result.groupSize === 1 ? "" : "s"}.`);
+  if (result.groupSize !== null) parts.push(`It goes to ${result.groupSize} active reader${result.groupSize === 1 ? "" : "s"} without a state edition.`);
+  if (result.thinStates.length) parts.push(`Readers in ${result.thinStates.join(", ")} get it because their state has too little data for its own edition.`);
   return parts.join(" ");
 }
 

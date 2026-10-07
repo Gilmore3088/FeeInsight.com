@@ -56,7 +56,9 @@ James runs by hand in the SQL editor, the steps go in a numbered GitHub issue la
   `source_collection_runs`, and `agent_source_texts`.
 - Fee tiers are `raw_fee_observations` (Knox) -> `verified_fee_observations` (Darwin) ->
   `published_fee_records` (Hamilton). Product, report, research and API fee reads use
-  `published_fee_catalog`.
+  `published_fee_catalog` (dollar fees); a fee stated as a rate ("1.1% of the transaction")
+  is read from `published_fee_rate_catalog` and never pooled with dollar amounts
+  (`src/lib/percent-fees.ts`).
 - Pipeline order: Atlas -> Magellan -> Rosetta -> Knox -> Darwin -> Hamilton. Each agent's
   role and boundaries are in `AGENTS.md` and `src/lib/agents/*/AGENTS.md`.
 

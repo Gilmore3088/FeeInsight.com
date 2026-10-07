@@ -6,6 +6,7 @@ import {
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import {
   documentVaultSchemaReady,
@@ -14,9 +15,11 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { markCurrentCopy } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
+import { addOperatorSchedules, type OperatorScheduleResult } from "./operator-schedules";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -128,8 +131,11 @@ export interface RunMagellanFetchResult {
   storedDocuments: number;
   vault: "on" | "not_configured" | "schema_pending";
   outcomes: Partial<Record<AttemptOutcome, number>>;
+  /** Older copies of fetched pages newly marked as history (superseded_by_id). */
+  supersededCopies: number;
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
+  operatorSchedules: OperatorScheduleResult | null;
   results: FetchResult[];
 }
 
@@ -807,12 +813,17 @@ export async function runMagellanFetch(
   const vaultOn = vaultSchema && vault.configured;
 
   const results: FetchResult[] = [];
+  let supersededCopies = 0;
   for (const row of rows) {
     const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
     const result = await fetchCandidate(row, fetchImpl, previous);
     results.push(result);
     if (dryRun) continue;
     const sourceDocumentId = await recordFetchResult(db, result, learning);
+    // The copy this fetch stored or confirmed is the page's current one.
+    if (result.outcome === "success" || result.outcome === "unchanged") {
+      supersededCopies += await markCurrentCopy(db, sourceDocumentId);
+    }
     if (linkIsGone(result)) {
       result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
     }
@@ -851,7 +862,16 @@ export async function runMagellanFetch(
   // Companion pages ride on the same step, each stored as its own document stream. A
   // failure here never fails the fee-link fetch.
   let companions: RunCompanionFetchResult | null = null;
+  let operatorSchedules: OperatorScheduleResult | null = null;
   if (!dryRun) {
+    // Schedules James found by hand join the companions before they are fetched.
+    try {
+      operatorSchedules = await inSavepoint(db, (scope) =>
+        addOperatorSchedules({ db: scope, runId: options.runId, stepId: options.stepId ?? null }),
+      );
+    } catch (error) {
+      console.error("Operator schedules failed:", error);
+    }
     try {
       const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
       companions = await runCompanionFetch({
@@ -883,7 +903,9 @@ export async function runMagellanFetch(
     storedDocuments: results.filter((result) => result.vaultStatus === "stored" || result.vaultStatus === "already_stored").length,
     vault: vaultOn ? "on" : vaultSchema ? "not_configured" : "schema_pending",
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
+    supersededCopies,
     companions,
+    operatorSchedules,
     results,
   };
 }
