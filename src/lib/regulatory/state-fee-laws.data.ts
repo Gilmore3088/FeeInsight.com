@@ -220,22 +220,42 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "az_cu_membership_fees_bylaws",
+    "state_code": "AZ",
+    "topic": "fee_authority",
+    "name": "Credit union membership fees set by bylaws",
+    "citation": "A.R.S. § 6-523",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions organized under A.R.S. title 6, chapter 4 (Arizona-chartered credit unions); not federal credit unions.",
+    "applies_to": [],
+    "summary": "Arizona credit unions may charge one-time or periodic membership fees under conditions set in their bylaws.",
+    "detail": "An Arizona-chartered credit union may impose one-time or periodic membership fees under the conditions its bylaws provide.",
+    "evidence": "A credit union may impose onetime or periodic membership fees under the conditions the bylaws provide.",
+    "url": "https://azleg.gov/ars/6/00523.htm",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "ca_cu_overdraft_nsf_cap",
     "state_code": "CA",
     "topic": "overdraft_nsf",
     "name": "Credit union overdraft and NSF fee cap and per-fee notice",
-    "citation": "Cal. Fin. Code § 14053 (SB 1075, Stats. 2024, approved Sept. 24, 2024)",
+    "citation": "Cal. Fin. Code § 14053 (SB 1075, Ch. 521, Stats. 2024, approved Sept. 24, 2024)",
     "date": "in force since 2026-01-01",
     "effective_date": "2026-01-01",
     "status": "in_force",
     "institutions": "state_credit_unions",
+    "coverage_note": "Binds any 'credit union' under the California Credit Union Law (Fin. Code div. 5), i.e. California-chartered credit unions; federal credit unions are not covered. Whether out-of-state credit unions operating in California under § 14157 are reached was not checked. The notice duty may have applied before the 2026 cap date (bill operative Jan. 1, 2025); not confirmed. No DFPI implementing regulation or bulletin interpreting § 14053 was found.",
     "applies_to": [
       "overdraft",
       "nsf"
     ],
     "summary": "Starting in 2026, a state credit union may not charge an overdraft or NSF fee above $14 or the CFPB amount, whichever is lower.",
-    "detail": "Beginning January 1, 2026, a credit union may not charge an overdraft fee or an NSF fee above $14 or the amount set by the CFPB for that fee, whichever is lower. It must notify the member each time it assesses such a fee, by the member's designated communication method, on the same business day as the transaction or the next business day if same-day notice is not feasible.",
-    "evidence": "leginfo bill text: 'Beginning January 1, 2026, ... prohibited from charging an overdraft fee or a nonsufficient funds fee exceeding $14 or the amount set by the federal Consumer Financial Protection Bureau for the fee, whichever is lower'; notice 'on the same business day the transaction occurred, or the next business day if not feasible'.",
+    "detail": "Beginning January 1, 2026, a credit union may not charge an overdraft fee or an NSF fee above $14 or the amount set by the CFPB for that fee, whichever is lower. It must notify the member each time it assesses such a fee, by the member's designated communication method, on the same business day as the transaction or the next business day if same-day notice is not feasible, stating the transaction date and type, whether it was declined or processed, and, if applicable, the overdraft amount and the amount needed to return the account to a positive balance.",
+    "evidence": "leginfo bill text: 'Beginning January 1, 2026, ... prohibited from charging an overdraft fee or a nonsufficient funds fee exceeding $14 or the amount set by the federal Consumer Financial Protection Bureau for the fee, whichever is lower'; notice 'on the same business day the transaction occurred, or the next business day if not feasible'. Notice contents per leginfo search excerpts: 'the date of the transaction, the type of transaction, whether the transaction was declined or processed', 'the amount of the overdraft', 'the amount necessary to return the account to a positive balance'. Chapter number (Ch. 521, Stats. 2024) per leginfo bill-status search summary.",
     "url": "https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202320240SB1075",
     "figures": {
       "max_fee_amount": 14
@@ -253,6 +273,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "2026-01-01",
     "status": "in_force",
     "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "Binds a 'bank or credit union subject to the examination authority of the commissioner' (DFPI), so state-chartered banks and credit unions; not national banks or federal credit unions. NSF fee is defined by cross-reference to § 521.",
     "applies_to": [
       "nsf"
     ],
@@ -267,20 +288,24 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "id": "ca_od_nsf_revenue_report",
     "state_code": "CA",
     "topic": "overdraft_nsf",
-    "name": "Annual overdraft/NSF fee revenue report to DFPI",
-    "citation": "Cal. Fin. Code § 521",
-    "date": "in force, effective date not confirmed",
-    "effective_date": "unknown",
+    "name": "Annual overdraft/NSF fee revenue reporting to DFPI",
+    "citation": "Cal. Fin. Code § 521 (SB 1415, Ch. 847, Stats. 2022)",
+    "date": "in force since 2023",
+    "effective_date": "2023",
     "status": "in_force",
     "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "Binds banks and credit unions 'subject to the examination authority of the commissioner', i.e. California state-chartered banks and credit unions. DFPI says national banks, federal credit unions and out-of-state banks and credit unions with California offices are not covered.",
     "applies_to": [
       "overdraft",
       "nsf"
     ],
-    "summary": "A state bank or credit union must report its yearly overdraft and NSF fee revenue to the DFPI by March 1, with no fee cap.",
-    "detail": "Banks and credit unions subject to the DFPI commissioner's examination authority must report each year, by March 1, the revenue they earned from overdraft and NSF fees in the prior calendar year and that revenue as a percentage of net income. It is a reporting duty and does not cap fees.",
-    "evidence": "DFPI page: 'Financial Code section 521 requires state-chartered banks and credit unions to notify DFPI annually of the revenue they received from fees on nonsufficient funds and overdraft charges'; report 'on or before March 1 ... and the percentage of that revenue as a proportion of the net income'.",
+    "summary": "A state bank or credit union must report its yearly overdraft and NSF fee revenue to DFPI, which publishes the results each year.",
+    "detail": "Banks and credit unions subject to the DFPI commissioner's examination authority must report each year, by March 1, the revenue they earned from overdraft and NSF fees in the prior calendar year and that revenue as a percentage of net income. DFPI publishes each institution's figures on its website by March 31, and the duty does not cap fees.",
+    "evidence": "DFPI page: 'Financial Code section 521 requires state-chartered banks and credit unions to notify DFPI annually of the revenue they received from fees on nonsufficient funds and overdraft charges'; report 'on or before March 1 ... and the percentage of that revenue as a proportion of the net income'. leginfo SB 1415 (2021-22) search excerpt: adds § 521; 'shall report annually, on or before March 1, to the commissioner on the amount of revenue earned from overdraft fees and nonsufficient funds fees ... and the percentage of that revenue as a proportion of the net income'; commissioner 'shall publish ... the data for each bank or credit union'; first report on or before March 31, 2023 (2022 data); chaptered Ch. 847, Stats. 2022 (Sept. 29, 2022). DFPI page: does not apply to national banks, federal credit unions, or out-of-state banks and credit unions with California offices; NSF fee = fee when the institution declines the payment, OD fee = fee when it processes a debit exceeding the balance; DFPI reporting FAQ: returned-deposit fees are reported as NSF fees. DFPI lists annual reports for 2023-2026 (2025 report = 2024 data, covering 108 state-chartered credit unions per search summary); calendar-2025 reports were due Monday, March 2, 2026.",
     "url": "https://dfpi.ca.gov/regulated-industries/commercial-banks/california-state-bank-charter-the-charter-of-choice/income-from-fees-on-nonsufficient-funds-and-overdraft-charges/",
+    "figures": {
+      "first_report_year": 2023
+    },
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -353,6 +378,90 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "ca_cu_periodic_certificate_no_charge",
+    "state_code": "CA",
+    "topic": "other",
+    "name": "No charge for missed or late installments on credit union periodic certificates",
+    "citation": "Cal. Fin. Code § 14863",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds any 'credit union' under Fin. Code div. 5 (California-chartered credit unions).",
+    "applies_to": [],
+    "summary": "A state credit union may not charge a member for missing or making late installment deposits on a periodic certificate.",
+    "detail": "A credit union may not charge a member or depositor holding a periodic certificate for funds for failing to make, or making late, an agreed periodic installment investment, and must pay the same interest rate as on certificates without installment agreements.",
+    "evidence": "leginfo search excerpt: 'A credit union shall not impose any charge on a member or depositor holding a periodic certificate for funds for the failure of such member or depositor to invest, or for the late investment of, any agreed periodic installment investment'.",
+    "url": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=FIN&division=5.&chapter=6.&article=1.",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ca_cu_address_locator_charge_cap",
+    "state_code": "CA",
+    "topic": "other",
+    "name": "Credit union address locator charge capped at $5",
+    "citation": "Cal. Fin. Code § 14802 (section number per search summary; confirm)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds any 'credit union' under Fin. Code div. 5 (California-chartered credit unions).",
+    "applies_to": [
+      "account_research"
+    ],
+    "summary": "A state credit union may charge a member no more than $5, at actual cost, to locate the member's address.",
+    "detail": "If a member fails to keep the credit union informed of a current address, the credit union may charge the member's share account the actual cost of a necessary locator service, but no more than $5.",
+    "evidence": "leginfo search excerpt: 'a charge may be made to the member's share account for the actual cost of necessary locator service incurred in determining such an address; provided, however, that such charge shall not exceed five dollars ($5).' Search summary placed this in § 14802 (Fin. Code div. 5, ch. 5, members); exact section number not seen in the text itself.",
+    "url": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?article=&chapter=5.&division=5.&lawCode=FIN&part=&title=",
+    "figures": {
+      "max_fee_amount": 5
+    },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ca_cu_share_transfer_fee",
+    "state_code": "CA",
+    "topic": "fee_authority",
+    "name": "Credit union may charge a reasonable share transfer fee",
+    "citation": "Cal. Fin. Code § 14852 (section number per search summary; confirm)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds any 'credit union' under Fin. Code div. 5 (California-chartered credit unions).",
+    "applies_to": [],
+    "summary": "A state credit union may charge a reasonable fee to transfer a member's shares, with no set dollar limit.",
+    "detail": "Every credit union may charge a reasonable fee for the transfer of its shares. The statute sets no dollar limit.",
+    "evidence": "leginfo search excerpt from Fin. Code div. 5, ch. 6 (Share Accounts and Certificates for Funds): 'Every credit union may charge a reasonable fee for the transfer of its shares.'",
+    "url": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=FIN&division=5.&chapter=6.&article=1.",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ca_ag_surprise_od_returned_item_warning",
+    "state_code": "CA",
+    "topic": "returned_item",
+    "name": "Attorney General warning on surprise overdraft and returned deposited item fees (enforcement position)",
+    "citation": "Cal. Atty. Gen. letter to California banks and credit unions, Feb. 20, 2024 (Bus. & Prof. Code § 17200, Unfair Competition Law)",
+    "date": "in force since 2024-02-20",
+    "effective_date": "2024-02-20",
+    "status": "in_force",
+    "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "Letter addressed to small California banks and credit unions; the UCL itself applies to any business, so national banks and federal credit unions are not formally excluded, subject to preemption questions not checked.",
+    "applies_to": [
+      "overdraft",
+      "deposited_item_return"
+    ],
+    "summary": "The Attorney General warned banks and credit unions that surprise overdraft and returned deposited item fees likely violate state unfair competition law.",
+    "detail": "The Attorney General told small banks and credit unions that overdraft fees consumers cannot reasonably anticipate and fees charged when a deposited check is returned likely are unfair practices under the Unfair Competition Law and the federal CFPA. This is an enforcement warning, not a statute or regulation.",
+    "evidence": "oag.ca.gov press release and letter (search excerpts): 'charging surprise fees that cannot be reasonably anticipated by a consumer likely is an unfair business practice that violates the UCL and CFPA'; returned deposited item fees 'likely is an unfair business practice that violates the UCL'.",
+    "url": "https://oag.ca.gov/system/files/attachments/press-docs/Blanket%20CA%20Banks%20and%20Credit%20Unions%20re%20Overdraft%20Fees%20(1).pdf",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
+  },
+  {
     "id": "co_no_overdraft_nsf_cap_regulator_statement",
     "state_code": "CO",
     "topic": "overdraft_nsf",
@@ -392,6 +501,49 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "url": "http://leg.colorado.gov/bill_files/65189/download",
     "verification": "official_excerpt",
     "source_kind": "statute"
+  },
+  {
+    "id": "co_cu_uniform_membership_fees",
+    "state_code": "CO",
+    "topic": "fee_authority",
+    "name": "Credit union entrance and annual membership fees must be uniform",
+    "citation": "C.R.S. title 11, art. 30 (Colorado Credit Union Act); search result attributed the text to § 11-30-112, section not independently confirmed",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions chartered under the Colorado Credit Union Act (C.R.S. art. 30 of title 11) and supervised by the commissioner; not federal credit unions.",
+    "applies_to": [],
+    "summary": "Colorado credit unions may charge entrance and annual membership fees only if the fees are the same for all members.",
+    "detail": "A Colorado-chartered credit union may charge an entrance fee and an annual membership fee, but the fees must be uniform for all members.",
+    "evidence": "A credit union may charge an entrance fee and an annual membership fee, but the fees must be uniform to all members.",
+    "url": "https://content.leg.colorado.gov/sites/default/files/images/olls/crs2024-title-11.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "co_cu_federal_incidental_powers_parity",
+    "state_code": "CO",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal incidental powers",
+    "citation": "C.R.S. § 11-30-104(1)(i); Division of Financial Services rule referencing 12 C.F.R. part 721 as of Oct. 31, 2012",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Colorado state-chartered credit unions; the parity is tied to federal incidental powers as of a fixed 2012 date.",
+    "applies_to": [],
+    "summary": "Colorado credit unions may do any activity NCUA rules allowed federal credit unions as an incidental power as of October 31, 2012.",
+    "detail": "Under C.R.S. § 11-30-104(1)(i) and a Division of Financial Services rule, a Colorado credit union may engage in any activity authorized for a federal credit union as an incidental power under NCUA rules at 12 C.F.R. part 721 as in effect on October 31, 2012.",
+    "evidence": "In accordance with C.R.S. 11-30-104(1)(i), a credit union may engage in any activity authorized for a federal credit union as an incidental power under ... 12 C.F.R. part 721, in effect as of October 31, 2012.",
+    "url": "https://www.sos.state.co.us/CCR/GenerateRulePdf.do?ruleVersionId=1560",
+    "figures": {
+      "parity_reference_day": 31,
+      "parity_reference_year": 2012,
+      "cfr_part": 721
+    },
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
   },
   {
     "id": "ct_ssa_direct_deposit_overdraft_fee_ban",
@@ -543,6 +695,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "ct_cu_federal_parity_powers",
+    "state_code": "CT",
+    "topic": "fee_authority",
+    "name": "Credit union powers parity with federal and out-of-state credit unions",
+    "citation": "Conn. Gen. Stat. § 36a-455a",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Connecticut credit unions organized under chapter 667; any conditions on exercising the parity power were not seen in the excerpt.",
+    "applies_to": [],
+    "summary": "Connecticut credit unions may engage in activities that federal or out-of-state credit unions are authorized to engage in.",
+    "detail": "Connecticut credit unions may exercise incidental powers and engage in any activity that a federal credit union or out-of-state credit union may be authorized to engage in under state or federal law.",
+    "evidence": "§ 36a-455a authorizes such credit unions to exercise incidental powers and to engage in ... any activity that a federal credit union or out-of-state credit union may be authorized to engage in under state or federal law (search summary of chapter 667).",
+    "url": "https://cga.ct.gov/2021/pub/chap_667.htm",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "dc_unclaimed_property_dormancy_charge",
     "state_code": "DC",
     "topic": "dormancy",
@@ -603,6 +774,44 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "detail": "The Commissioner may authorize a DC universal bank to exercise any power that another state bank, a state or federal savings bank or savings and loan association, or a national bank may exercise. The provision is a general powers parity rule and does not mention deposit fees specifically.",
     "evidence": "Official code text (via search result): 'The Commissioner may authorize a universal bank to exercise a power that may be exercised by any other state bank, state or federally chartered savings bank, state or federally chartered savings and loan association, or federally charted national bank.'",
     "url": "https://code.dccouncil.gov/us/dc/council/code/sections/26-1401.08",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "dc_cu_membership_fees_and_member_charges",
+    "state_code": "DC",
+    "topic": "fee_authority",
+    "name": "Credit union power to charge membership fees and member fees",
+    "citation": "D.C. Code § 26-503.01 (Credit Union Act of 2020, D.C. Law 23-86)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds District credit unions chartered under the Credit Union Act of 2020; not federal credit unions.",
+    "applies_to": [],
+    "summary": "DC credit unions may charge entrance and annual membership fees under their bylaws and may assess fees and charges to members.",
+    "detail": "A District credit union may require an entrance fee, an annual membership fee, or both under its bylaws, and may assess fees and charges to members.",
+    "evidence": "District credit unions may require the payment of an entrance fee, annual membership fee, or both ... pursuant to the credit union's bylaws, and ... assess fees and charges to members.",
+    "url": "https://code.dccouncil.gov/us/dc/council/code/sections/26-503.01",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "dc_cu_federal_parity_commissioner",
+    "state_code": "DC",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal credit unions by Commissioner authorization",
+    "citation": "D.C. Code § 26-503.03",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds District credit unions; parity is not automatic and requires Commissioner authorization.",
+    "applies_to": [],
+    "summary": "The DC Commissioner may let District credit unions use powers held by federal or foreign credit unions, with conditions.",
+    "detail": "The Commissioner may authorize District credit unions to exercise any power conferred on federal credit unions or on foreign credit unions operating in the District, and may set conditions or limits on that power.",
+    "evidence": "The Commissioner may authorize District credit unions to exercise, and may establish conditions or limitations for the exercise of, any of the powers conferred upon federal credit unions and upon foreign credit unions operating in the District.",
+    "url": "https://code.dccouncil.gov/us/dc/council/code/sections/26-503.03",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -695,6 +904,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "figures": {
       "garnishee_fee_amount": 100
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "fl_cu_fee_and_member_charge_power",
+    "state_code": "FL",
+    "topic": "fee_authority",
+    "name": "Credit union power to charge fees and assess member charges",
+    "citation": "Fla. Stat. § 657.031 (general powers)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions chartered under Fla. Stat. ch. 657; not federal credit unions.",
+    "applies_to": [],
+    "summary": "Florida credit unions may charge fees for services, assess member charges, and require entrance or membership fees.",
+    "detail": "A Florida credit union has the power to charge fees for its services, assess charges to its members, and require an entrance or membership fee.",
+    "evidence": "Credit unions have the power to charge fees for their services, and credit unions may assess charges to its members ... power to require an entrance or membership fee (seen in flsenate.gov versions of § 657.031; current-year wording not separately confirmed).",
+    "url": "https://flsenate.gov/Laws/Statutes/2010/0657.031",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -1090,6 +1318,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "il_cu_federal_parity_sec65",
+    "state_code": "IL",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal credit unions",
+    "citation": "205 ILCS 305/65",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions incorporated under Illinois law; automatic parity limited by the Act itself.",
+    "applies_to": [],
+    "summary": "Illinois credit unions have the rights of federal credit unions unless using them would violate the Illinois Credit Union Act.",
+    "detail": "An Illinois credit union has all the rights, privileges and benefits a federal credit union may exercise, so long as exercising them does not violate the Illinois Credit Union Act.",
+    "evidence": "any credit union incorporated under the laws of this State shall have all of the rights, privileges and benefits which may be exercised by a federal credit union; provided, however, that the exercise of such rights, privileges and benefits may not violate any provision of this Act.",
+    "url": "https://www.ilga.gov/legislation/ilcs/ilcs3.asp?ActID=1185&ChapterID=20",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "in_unclaimed_dormancy_charge_conditions",
     "state_code": "IN",
     "topic": "dormancy",
@@ -1106,6 +1353,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "detail": "Under Indiana's unclaimed property act, a holder may deduct a dormancy charge from property it must report or deliver to the attorney general only if a valid written contract with the owner allows the charge, the holder regularly imposes it, and the charge is not regularly reversed or canceled.",
     "evidence": "Official sources seen in search results: the 2014 statute posted on indianaunclaimed.gov (Attorney General) states a holder 'may not deduct a charge' imposed because the owner failed to claim the property unless there is 'a valid and enforceable written contract' allowing it, the holder 'regularly imposes the charge,' and the charge 'is not regularly reversed or otherwise canceled'; the 2021 Indiana Senate Journal (iga.in.gov) shows new IC 32-34-1.5 carrying the same conditions ('a holder may deduct a dormancy charge ... if' a valid contract exists and the holder regularly imposes the charge).",
     "url": "https://iga.in.gov/ic/2026/Title_32.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "in_cu_federal_parity_by_request",
+    "state_code": "IN",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal credit unions on request",
+    "citation": "Ind. Code § 28-7-1-9.2; Indiana DFI credit union parity order",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Indiana state-chartered credit unions; parity is by request and DFI approval, not automatic.",
+    "applies_to": [],
+    "summary": "Indiana credit unions may ask the Department of Financial Institutions for permission to match federal credit union powers.",
+    "detail": "An Indiana state-chartered credit union may request permission from the Department of Financial Institutions to obtain parity with federally chartered credit unions under Ind. Code § 28-7-1-9.2.",
+    "evidence": "Indiana state chartered credit unions can request permission to obtain parity with federally chartered credit unions pursuant to IC 28-7-1-9.2.",
+    "url": "https://www.in.gov/dfi/files/CU_ParityOrder.pdf",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -1196,6 +1462,47 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "ky_cu_money_instrument_reasonable_fee",
+    "state_code": "KY",
+    "topic": "fee_authority",
+    "name": "Credit union reasonable fee for checks, money orders and member services",
+    "citation": "KRS 286.6-565",
+    "date": "in force since 1984-07-13",
+    "effective_date": "1984-07-13",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions organized under KRS Subtitle 6 of chapter 286; \"reasonable\" is not defined in the excerpt.",
+    "applies_to": [
+      "money_order",
+      "cashiers_check"
+    ],
+    "summary": "Kentucky credit unions may charge a reasonable fee for checks, money orders and other member convenience services.",
+    "detail": "A Kentucky credit union may provide negotiable checks, money orders, travelers' checks and other money-type instruments and other member-convenience services, and may charge a reasonable fee for them.",
+    "evidence": "A credit union may collect, receive and disburse moneys in connection with the providing of negotiable checks, money orders, travelers' checks, and other money-type instruments, and for such other purposes as may provide benefit or convenience to its members, and charge a reasonable fee for such services.",
+    "url": "https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=14816",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ky_cu_charges_failure_to_meet_obligations",
+    "state_code": "KY",
+    "topic": "other",
+    "name": "Credit union charges for failure to meet obligations per bylaws",
+    "citation": "KRS 286.6-445",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Kentucky state-chartered credit unions; the charge must be authorized by the bylaws.",
+    "applies_to": [],
+    "summary": "Kentucky credit unions may charge members, under the bylaws, for failing to meet obligations to the credit union on time.",
+    "detail": "A Kentucky credit union may assess charges to members, as its bylaws provide, for failure to meet their obligations to the credit union on time.",
+    "evidence": "A credit union may assess charges to members, in accordance with the bylaws, for failure to meet their obligations to the credit union in a timely manner.",
+    "url": "https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=14803",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "la_state_bank_national_parity",
     "state_code": "LA",
     "topic": "fee_authority",
@@ -1213,6 +1520,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "figures": {
       "objection_period_days": 45
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "la_cu_federal_parity_6_644",
+    "state_code": "LA",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal credit unions",
+    "citation": "La. R.S. 6:644(A)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions organized under Louisiana law; the statute text was seen as quoted by the Office of Financial Institutions.",
+    "applies_to": [],
+    "summary": "Louisiana credit unions have the same rights and powers that federal law grants federal credit unions.",
+    "detail": "Louisiana credit unions and their members have all the rights, powers, privileges and benefits that federal law, including the Federal Credit Union Act, grants to federal credit unions and their members.",
+    "evidence": "Credit unions organized under the laws of Louisiana and their members possess all of the rights, powers, privileges, benefits, immunities, and exemptions that are now granted or hereafter may be granted ... by virtue of federal law, including the Federal Credit Union Act as amended, to federal credit unions and their members (OFI, quoting LSA-R.S. 6:644(A)).",
+    "url": "https://ofi.la.gov/ofi-docs/Advantages-CU.pdf",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -1334,6 +1660,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "regulation"
   },
   {
+    "id": "ma_cu_federal_parity_209_cmr_50",
+    "state_code": "MA",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal credit unions by regulation",
+    "citation": "Mass. Gen. Laws ch. 171, § 6A; 209 CMR 50.00",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Massachusetts-chartered credit unions; parity is limited to powers the regulation grants. Fee-specific parity content was not seen.",
+    "applies_to": [],
+    "summary": "Massachusetts credit unions get federal credit union parity only for powers the Commissioner grants by regulation.",
+    "detail": "Massachusetts law lets the Commissioner of Banks issue regulations giving Massachusetts-chartered credit unions certain powers in parity with federal credit unions, and 209 CMR 50.00 implements that authority.",
+    "evidence": "209 CMR 50.00 implements M.G.L. c. 171, § 6A, which authorizes the Commissioner of Banks to promulgate regulations to grant Massachusetts-chartered credit unions certain expanded powers in parity with federally chartered credit unions.",
+    "url": "https://www.mass.gov/regulations/209-CMR-50-parity-with-federal-credit-unions-1",
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
+  },
+  {
     "id": "md_dormant_account_charges",
     "state_code": "MD",
     "topic": "dormancy",
@@ -1396,6 +1741,28 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     },
     "verification": "official_excerpt",
     "source_kind": "regulator_guidance"
+  },
+  {
+    "id": "md_cu_federal_parity_45_day_notice",
+    "state_code": "MD",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federal credit unions after 45-day notice",
+    "citation": "Md. Code, Fin. Inst. § 6-313",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Maryland state-chartered credit unions; parity requires advance notice to the Commissioner.",
+    "applies_to": [],
+    "summary": "Maryland credit unions may use federal credit union powers after giving the Commissioner 45 days written notice.",
+    "detail": "A Maryland-chartered credit union may engage in an activity authorized for federal credit unions but not expressly authorized by Maryland law after giving the Commissioner written notice at least 45 calendar days in advance.",
+    "evidence": "Financial Institutions Article § 6-313 allows state-chartered credit unions to provide written notice at least 45 calendar days before engaging in any activity, service, or other practice authorized under federal law, but not expressly authorized under Maryland law (Commissioner of Financial Regulation industry advisory).",
+    "url": "https://labor.maryland.gov/finance/advisories/advisory-credituniongeneralpowers.pdf",
+    "figures": {
+      "notice_days": 45
+    },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
   },
   {
     "id": "me_multiple_nsf_fee_guidance",
@@ -1502,6 +1869,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "me_cu_federal_activity_parity_828",
+    "state_code": "ME",
+    "topic": "fee_authority",
+    "name": "Credit union parity with federally chartered credit unions",
+    "citation": "9-B M.R.S. § 828",
+    "date": "in force since 1997",
+    "effective_date": "1997",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions organized under Title 9-B, Part 4; automatic parity subject to Superintendent rules.",
+    "applies_to": [],
+    "summary": "Maine credit unions may engage in any activity federal law allows federally chartered credit unions.",
+    "detail": "A Maine credit union may engage in any activity that a federally chartered credit union may be authorized to engage in by federal law or regulation, and the Superintendent may adopt rules to ensure safe and sound exercise with adequate consumer protections.",
+    "evidence": "A credit union has the power to engage in any activity that a credit union chartered by or otherwise subject to the jurisdiction of the Federal Government may be authorized to engage in by federal legislation or regulations ... The superintendent may adopt rules to ensure that such powers are exercised in a safe and sound manner with adequate consumer protections.",
+    "url": "https://legislature.maine.gov/statutes/9-b/title9-Bsec828.html",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "mi_dormancy_charge_conditions",
     "state_code": "MI",
     "topic": "dormancy",
@@ -1562,6 +1948,27 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
       "max_pct_personal_money_order_other": 10,
       "max_first_check_fee": 25
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "mi_cu_inactive_account_no_fees",
+    "state_code": "MI",
+    "topic": "dormancy",
+    "name": "Credit union may not charge fees on an account designated inactive",
+    "citation": "MCL 490.355 (Credit Union Act, 2003 PA 215)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Michigan domestic (state-chartered) credit unions for accounts designated inactive under MCL 490.355; the criteria for the designation were not seen.",
+    "applies_to": [
+      "dormant_account"
+    ],
+    "summary": "Michigan credit unions may not charge any fees to an account while it is designated inactive.",
+    "detail": "While a Michigan domestic credit union has designated an account inactive under this section, it may not charge any fees to the account.",
+    "evidence": "While an account is inactive, the domestic credit union shall not charge any fees to the account.",
+    "url": "https://legislature.mi.gov/Laws/MCL?objectName=mcl-490-355",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -1702,6 +2109,32 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "mn_cu_inactive_small_balance_transfer",
+    "state_code": "MN",
+    "topic": "dormancy",
+    "name": "Credit union inactive small-balance account transfer to reserve",
+    "citation": "Minn. Stat. § 52.191",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Minnesota credit unions organized under chapter 52; subject to the law governing abandoned funds.",
+    "applies_to": [
+      "dormant_account"
+    ],
+    "summary": "Minnesota credit unions may move balances under $25 untouched for 3 years to reserves after 30 days notice.",
+    "detail": "If a member's share or deposit balance is under $25 and the member has done no business with the credit union for at least 3 years, the board may, after 30 days' written notice by certified mail, move the balance to the operating reserve, though the member may later recover it without dividends or interest.",
+    "evidence": "whenever a member's share or deposit balance is less than $25 and the member has not transacted any business with the credit union for a period of at least three years, the board of directors, after giving 30 days' written notice by certified mail ... may transfer the balance to the operating reserve fund.",
+    "url": "https://www.revisor.mn.gov/statutes/cite/52.191",
+    "figures": {
+      "balance_threshold": 25,
+      "inactive_years": 3,
+      "notice_days": 30
+    },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "mo_bank_deposit_fee_authority_federal_parity",
     "state_code": "MO",
     "topic": "fee_authority",
@@ -1760,6 +2193,27 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
       "inactive_months": 12,
       "max_statement_fee": 5
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "mo_cu_deposit_fee_federal_parity_370_073",
+    "state_code": "MO",
+    "topic": "fee_authority",
+    "name": "Credit union deposit account fees with federal parity floor",
+    "citation": "RSMo § 370.073",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Missouri state-chartered credit unions under chapter 370; regulations by the director and credit union commission may add conditions.",
+    "applies_to": [
+      "overdraft"
+    ],
+    "summary": "Missouri credit unions may charge deposit fees, and overdraft fees are not interest under state law.",
+    "detail": "A Missouri credit union may impose fees or service charges on deposit accounts, subject to conditions set by regulation that may not be more restrictive than those allowed for federally chartered depository institutions, and a contractual overdraft fee is not interest.",
+    "evidence": "A credit union may impose fees or service charges on deposit accounts ... subject to such conditions or requirements that may be fixed by regulations ... no such condition or requirement shall be more restrictive than the fees or service charges on deposit accounts ... permitted any federally chartered depository institution and no contractual fee charged for overdrawing the balance of a deposit account shall be deemed interest.",
+    "url": "https://revisor.mo.gov/main/OneSection.aspx?section=370.073",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -2046,6 +2500,30 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "nd_cu_board_account_usage_fees",
+    "state_code": "ND",
+    "topic": "fee_authority",
+    "name": "Credit union board may set account usage fees",
+    "citation": "N.D. Admin. Code ch. 13-03-08 (account fee provision)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds North Dakota state-chartered credit unions (State Credit Union Board rules). Same chapter as nd_cu_overdraft_policy_fee, different provision.",
+    "applies_to": [
+      "stop_payment",
+      "overdraft",
+      "minimum_balance",
+      "monthly_maintenance"
+    ],
+    "summary": "A North Dakota credit union board may set fees for stop payments, overdrafts, low balances and account upkeep.",
+    "detail": "The board of a North Dakota credit union may provide for fees for account usage, including stop-payment orders, overdrafts, failure to maintain required balances and the cost of maintaining the account. No amount is set.",
+    "evidence": "13-03-08: 'The board of directors of a credit union may provide for fees to be assessed for account usage to include but not limited to, charges for stop-payment orders, overdrafts, failure to maintain required balances, and costs required to maintain the account.'",
+    "url": "https://ndlegis.gov/information/acdata/pdf/13-03-08.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
+  },
+  {
     "id": "ne_unclaimed_property_dormancy_charge",
     "state_code": "NE",
     "topic": "dormancy",
@@ -2122,6 +2600,33 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "detail": "Nebraska-chartered credit unions have the same rights, powers, privileges and immunities as federally chartered credit unions doing business in Nebraska.",
     "evidence": "Committee statement (nebraskalegislature.gov): 'Section 21-17,115 of the Nebraska Credit Union Act is the \"wildcard\" statute for state-chartered credit unions that provides state-chartered credit unions have the same rights, powers, privileges, and immunities as federally chartered credit unions doing business in Nebraska.'",
     "url": "https://ndbf.nebraska.gov/about/legal/credit-union-act",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ne_cu_member_account_fees_30day_notice",
+    "state_code": "NE",
+    "topic": "fee_change_notice",
+    "name": "Credit union member account fees and 30-day notice of new or higher fees",
+    "citation": "Neb. Rev. Stat. § 21-1780",
+    "date": "in force since 1996-10-01",
+    "effective_date": "1996-10-01",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions under the Nebraska Credit Union Act (state-chartered).",
+    "applies_to": [
+      "paper_statement",
+      "deposited_item_return",
+      "nsf",
+      "stop_payment"
+    ],
+    "summary": "A Nebraska credit union may charge reasonable member account fees but must give 30 days notice before adding or raising one.",
+    "detail": "A Nebraska credit union may collect reasonable fees on member accounts, including for extra statement copies, per-transaction charges, returned checks or drafts (closed account or insufficient funds), stop-payment orders and rejected withdrawal requests. Since October 1, 1996 it may not impose or increase a fee until 30 calendar days after notice is provided or made available to members.",
+    "evidence": "§ 21-1780: 'A credit union may collect reasonable fees and charges with respect to member accounts' ... (c) check or draft returned ... insufficient funds ... (d) Stop-payment orders; 'No credit union shall impose or increase any fee after October 1, 1996, until thirty calendar days after notification has been provided or made available to credit union members.'",
+    "url": "https://nebraskalegislature.gov/laws/statutes.php?statute=21-1780",
+    "figures": {
+      "notice_days": 30
+    },
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -2347,6 +2852,28 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "nm_fid_no_state_overdraft_cap",
+    "state_code": "NM",
+    "topic": "overdraft_nsf",
+    "name": "Regulator states no state cap on overdraft or NSF fees",
+    "citation": "New Mexico Financial Institutions Division, FAQs (regulator guidance, not a statute)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "Regulator FAQ addressed to banks and credit unions it supervises; it is guidance, not a rule.",
+    "applies_to": [
+      "overdraft",
+      "nsf"
+    ],
+    "summary": "New Mexico regulators say banks and credit unions set their own overdraft and NSF fees with no state maximum.",
+    "detail": "The New Mexico Financial Institutions Division states that banks and credit unions set their own overdraft and NSF fees and that the state imposes no maximum on overdraft charges.",
+    "evidence": "FID FAQ: 'Banks and credit unions can set their own overdraft and NSF fees. There is no maximum limit on overdraft charges imposed by the state.'",
+    "url": "https://www.rld.nm.gov/financial-institutions/about-us/faqs/",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
+  },
+  {
     "id": "nv_fee_disclosure_and_nsf_check_order",
     "state_code": "NV",
     "topic": "overdraft_nsf",
@@ -2453,6 +2980,28 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "nv_cu_fees_and_assessments",
+    "state_code": "NV",
+    "topic": "fee_authority",
+    "name": "Credit union fees for money instruments and member charges",
+    "citation": "NRS 672.480",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions organized under NRS chapter 672 (Nevada-chartered).",
+    "applies_to": [
+      "money_order",
+      "cashiers_check"
+    ],
+    "summary": "A Nevada credit union may charge membership fees and fees for money orders and official checks, with no amount set.",
+    "detail": "A Nevada credit union may require an entrance or annual membership fee, charge a fee for selling negotiable checks, money orders and other money-type instruments, and assess charges under its bylaws when members fail to meet obligations promptly. No fee amount is set.",
+    "evidence": "NRS 672.480 (Fees and assessments): may require 'an entrance fee or annual membership fee'; may 'charge a fee for services rendered in connection with the sale of negotiable checks, money orders and other money-type instruments'; may 'assess charges to members in accordance with the bylaws for failure to meet promptly their obligations'.",
+    "url": "https://www.leg.state.nv.us/nrs/NRS-672.html",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "ny_basic_banking_account",
     "state_code": "NY",
     "topic": "basic_account",
@@ -2513,6 +3062,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "effective_date": "unknown",
     "status": "proposed",
     "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "DFS states the regulations apply to New York State chartered banks and credit unions (2026 search of dfs.ny.gov); pre-proposal only.",
     "applies_to": [
       "overdraft",
       "nsf",
@@ -2529,7 +3079,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
       "max_od_nsf_fees_per_day": 3
     },
     "verification": "official_excerpt",
-    "source_kind": "regulation"
+    "source_kind": "regulator_guidance"
   },
   {
     "id": "ny_cplr_5222j_no_fee_unlawful_restraint",
@@ -2682,6 +3232,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     },
     "verification": "official_excerpt",
     "source_kind": "statute"
+  },
+  {
+    "id": "oh_cu_fees_disclosed_before_assessment",
+    "state_code": "OH",
+    "topic": "fee_change_notice",
+    "name": "Credit union fees must be reasonable and disclosed before assessment",
+    "citation": "Ohio Adm. Code 1301:9-2-26",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions chartered under R.C. Chapter 1733.",
+    "applies_to": [],
+    "summary": "An Ohio credit union may charge reasonable fees set by its board only after disclosing them to members.",
+    "detail": "An Ohio credit union may, by board resolution, assess reasonable fees or service charges only if they are disclosed to the membership before they are assessed.",
+    "evidence": "Rule 1301:9-2-26: 'A credit union may, by resolution of the board of directors, assess reasonable fees or service charges if such charges or fees are disclosed to the membership prior to assessment.' (amplifies R.C. 1733.04)",
+    "url": "https://codes.ohio.gov/ohio-administrative-code/rule-1301:9-2-26",
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
   },
   {
     "id": "ok_unclaimed_dormancy_charge_notice",
@@ -2954,6 +3523,47 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "pa_cu_service_fees_actual_cost",
+    "state_code": "PA",
+    "topic": "fee_authority",
+    "name": "Credit union service fees limited to actual cost",
+    "citation": "17 Pa.C.S. § 509",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions under the Pennsylvania Credit Union Code (state-chartered). Lawyer should confirm how the actual-cost limit interacts with parity powers (pa_cu_federal_parity).",
+    "applies_to": [],
+    "summary": "A Pennsylvania credit union may charge members service fees only at the actual cost of the service, with a 1 dollar entrance fee cap.",
+    "detail": "A Pennsylvania credit union may charge members fees for other services provided the fees are for the actual cost of those services. The section also caps the entrance fee at $1.",
+    "evidence": "17 Pa.C.S. § 509: credit union may 'charge fees for other services to its members, provided that the fees charged will be for the actual cost of the respective services provided by the credit union'; entrance fee 'not in excess of $1'.",
+    "url": "https://www.legis.state.pa.us/WU01/LI/LI/CT/HTM/17/00.005..HTM",
+    "figures": {
+      "max_entrance_fee": 1
+    },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "pa_cu_fee_change_notice",
+    "state_code": "PA",
+    "topic": "fee_change_notice",
+    "name": "Notice of credit union fees and fee changes to members",
+    "citation": "17 Pa.C.S. § 510",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions under the Pennsylvania Credit Union Code.",
+    "applies_to": [],
+    "summary": "A Pennsylvania credit union must list its fees for new members and notify all members when fees change.",
+    "detail": "A Pennsylvania credit union must give each new member a notice listing its fees, service charges and policy on moving funds to noninterest-bearing accounts, and must notify all members when the amount or type of fees or that policy changes.",
+    "evidence": "§ 510: 'Each new member to a credit union shall be provided with notice ... listing any fees, service charges or policies regarding the transfer of funds to noninterest bearing accounts. A new member and each existing member shall subsequently be provided with similar notice if there is a change ... in the amount or type of fees or service charges'.",
+    "url": "https://www.legis.state.pa.us/WU01/LI/LI/CT/HTM/17/00.005..HTM",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "pr_unclaimed_money_no_service_charges",
     "state_code": "PR",
     "topic": "dormancy",
@@ -2997,6 +3607,28 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
       "report_threshold_amount": 1,
       "dormancy_years": 5
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "pr_coop_service_charges_not_account_activity",
+    "state_code": "PR",
+    "topic": "dormancy",
+    "name": "Cooperative service charges do not count as account activity; unpaid charges are recoverable debt",
+    "citation": "Ley Núm. 255-2002, según enmendada (Ley de Sociedades Cooperativas de Ahorro y Crédito de 2002); article not confirmed",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds Puerto Rico savings and credit cooperatives (cooperativas de ahorro y crédito, supervised by COSSEC), Puerto Rico's credit union equivalent.",
+    "applies_to": [
+      "dormant_account",
+      "overdraft"
+    ],
+    "summary": "In Puerto Rico, cooperative service charges do not count as account activity, and unpaid charges or overdrafts are recoverable debt.",
+    "detail": "Under Puerto Rico Law 255-2002, imposing service charges or paying interest or dividends is not treated as a transaction or activity on a savings and credit cooperative account, and service charges or overdrafts a member owes are a recognized debt the cooperative may recover in court, subject to a statutory lien. Cooperatives must notify owners of inactive accounts before transfer.",
+    "evidence": "Ley 255-2002 (search excerpts): 'la imposición de cargos por servicio ni el pago de intereses o dividendos se considerarán como una transacción o actividad en la cuenta'; money owed 'por concepto de cargos por servicio, sobregiros o cualquier otro concepto, se considerará deuda reconocida'.",
+    "url": "https://bvirtualogp.pr.gov/ogp/Bvirtual/leyesreferencia/PDF/Cooperativas/255-2002/255-2002.pdf",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -3104,6 +3736,29 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
       "max_fee_amount": 25,
       "notice_days": 10
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "sc_cu_board_service_charges_instrument_fees",
+    "state_code": "SC",
+    "topic": "fee_authority",
+    "name": "Credit union board sets service charges; fees for checks, money orders and ATM services",
+    "citation": "S.C. Code Title 34, Chapter 26 (South Carolina Credit Union Act), board-powers and credit-union-powers provisions; exact sections not confirmed",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions under the South Carolina Credit Union Act (state-chartered).",
+    "applies_to": [
+      "money_order",
+      "cashiers_check",
+      "atm_non_network"
+    ],
+    "summary": "A South Carolina credit union board sets service charges, and the credit union may charge for money orders, official checks and ATM services.",
+    "detail": "The board of a South Carolina credit union determines the amount of fines and service charges, if any, and a credit union may charge fees for negotiable checks, money orders, travelers checks, wire transfers, sight drafts and ATM services. No amounts are set.",
+    "evidence": "Ch. 34-26: board may 'determine the amount of fines and service charges, if any'; credit union may provide 'negotiable checks, money orders, travelers checks, wire transfers, and sight drafts, and the providing of services through automated teller machines ... A credit union may charge fees for such services.'",
+    "url": "https://www.scstatehouse.gov/code/t34c026.php",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -3740,6 +4395,28 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "wi_cu_remote_terminal_charge_disclosure",
+    "state_code": "WI",
+    "topic": "fee_change_notice",
+    "name": "Credit union must disclose account maintenance and remote terminal charges",
+    "citation": "Wis. Stat. § 186.113 (remote terminal provision; search pointed to § 186.113(15)(b))",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "Binds credit unions organized under Wis. Stat. ch. 186. Subsection number should be checked.",
+    "applies_to": [
+      "monthly_maintenance",
+      "atm_non_network"
+    ],
+    "summary": "A Wisconsin credit union must disclose account maintenance and terminal charges in writing when access is issued and when terms change.",
+    "detail": "A Wisconsin credit union must give each member whose account can be reached through a remote terminal a written statement of the account terms, including any charges for account maintenance or terminal use, when access is issued and whenever the terms change.",
+    "evidence": "§ 186.113 (search excerpt): written statement of terms and conditions 'provided when the customer is issued a card or other means of access and whenever the terms and conditions are amended', disclosing 'any charges to the customer for account maintenance or for the use of the remote terminal'.",
+    "url": "https://docs.legis.wisconsin.gov/statutes/statutes/186/113/15/b",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "wv_unclaimed_deposit_dormancy_charge_limits",
     "state_code": "WV",
     "topic": "dormancy",
@@ -3943,7 +4620,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "topics_no_rule_found": [
       "overdraft_nsf",
       "dormancy",
-      "fee_authority"
+      "fee_authority",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -3963,9 +4641,21 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "The Division of Banking and Securities found no Alaska statute on the amount of ATM fees a bank or credit union may charge; only fee disclosure before the transaction is required.",
         "where_seen": "commerce.alaska.gov / akleg.gov documents (search summary)",
         "why_unconfirmed": "Search summary only; the disclosure statute was not identified."
+      },
+      {
+        "topic": "fee_authority",
+        "claim": "Division of Banking and Securities found no reference in Alaska Statutes or federal law to the amount of fees a bank or credit union can charge; only fee disclosure requirements identified.",
+        "where_seen": "https://www.akleg.gov/basis/get_documents.asp?session=34&docid=11679",
+        "why_unconfirmed": "regulator statement in a legislative document, not a statute; exact document context not seen"
+      },
+      {
+        "topic": "fee_authority",
+        "claim": "Alaska law lets state financial institutions exercise powers of, or be subject to limits on, federally chartered institutions if the department finds it serves public convenience and equalizes competition.",
+        "where_seen": "https://www.akleg.gov/basis/get_documents.asp?session=32&docid=78316",
+        "why_unconfirmed": "statute section number not seen; text seen in a bill or bill document only"
       }
     ],
-    "notes": "Wave 1: 4 searches. Wave 2: 4 searches (overdraft/dormancy, unclaimed property, garnishment, parity). No Alaska statute capping overdraft, NSF or other deposit fees was found; the Division of Banking and Securities is reported to say none exists. AS 34.45 dormancy-charge text was not seen (only the 5-year dormancy period for checking and savings, and a ban on gift card dormancy fees). No bank or credit union parity provision on fees was found (HB 85 2023 regs concern branch application fee parity). NOT SEARCHED: check_cashing, returned_item, fee_change_notice, basic_account."
+    "notes": "Wave 1: 4 searches. Wave 2: 4 searches (overdraft/dormancy, unclaimed property, garnishment, parity). No Alaska statute capping overdraft, NSF or other deposit fees was found; the Division of Banking and Securities is reported to say none exists. AS 34.45 dormancy-charge text was not seen (only the 5-year dormancy period for checking and savings, and a ban on gift card dormancy fees). No bank or credit union parity provision on fees was found (HB 85 2023 regs concern branch application fee parity). NOT SEARCHED: check_cashing, returned_item, fee_change_notice, basic_account. CU pass: AS 06.45 (Credit Union Code) fee provisions not found beyond AS 06.45.295 ATM reference."
   },
   {
     "state_code": "AL",
@@ -3976,7 +4666,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "returned_item",
       "fee_change_notice",
       "basic_account",
-      "fee_authority"
+      "fee_authority",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -3984,9 +4675,15 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "Up to $7,500 of personal property including bank accounts may be exempt from garnishment in some circumstances.",
         "where_seen": "https://judicial.alabama.gov/docs/library/rules/cv64_A.pdf",
         "why_unconfirmed": "Debtor exemption notice in court rule; statute not seen and it does not address bank fees."
+      },
+      {
+        "topic": "fee_authority",
+        "claim": "Alabama credit unions have the power to assess each member a recurring or nonrecurring membership fee.",
+        "where_seen": "https://alison.legislature.state.al.us/files/pdf/SearchableInstruments/2019RS/PrintFiles/SB33-Eng.pdf",
+        "why_unconfirmed": "seen in bill text (2019 HB228/SB33 or later); enactment and Code section not confirmed"
       }
     ],
-    "notes": "Alabama State Banking Department consumer FAQ (https://banking.alabama.gov/con_affairs/faq/) says there is no maximum NSF fee a bank may charge (set by the account agreement) and that a bank may charge non-customers a fee to cash a check. 2025 SB281 (earned wage access, introduced only) would require EWA providers to reimburse bank overdraft/NSF fees; not a bank rule. Search budget ran out; about 7 searches used."
+    "notes": "Alabama State Banking Department consumer FAQ (https://banking.alabama.gov/con_affairs/faq/) says there is no maximum NSF fee a bank may charge (set by the account agreement) and that a bank may charge non-customers a fee to cash a check. 2025 SB281 (earned wage access, introduced only) would require EWA providers to reimburse bank overdraft/NSF fees; not a bank rule. Search budget ran out; about 7 searches used. CU pass: annual operating fee owed by credit unions to the Alabama Credit Union Administration is a supervisory fee, not a member fee; not recorded."
   },
   {
     "state_code": "AR",
@@ -3996,7 +4693,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "garnishment_legal_process",
       "basic_account",
       "fee_change_notice",
-      "check_cashing"
+      "check_cashing",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4012,7 +4710,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Low priority payee rule; statutory text not reviewed."
       }
     ],
-    "notes": "Six searches used. Arkansas AG debit card page describes only the federal opt-in rule for overdraft on one-time debit purchases. Garnishment results described court procedure and federal-benefit exemptions only; nothing on a bank's own fees. NOT SEARCHED: ATM rules, returned deposited item fees specifically."
+    "notes": "Six searches used. Arkansas AG debit card page describes only the federal opt-in rule for overdraft on one-time debit purchases. Garnishment results described court procedure and federal-benefit exemptions only; nothing on a bank's own fees. NOT SEARCHED: ATM rules, returned deposited item fees specifically. CU pass: one search of Arkansas official domains found no credit-union-specific member fee rule."
   },
   {
     "state_code": "AZ",
@@ -4031,7 +4729,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Advocacy press release, not a state rule."
       }
     ],
-    "notes": "Wave 1: 2 searches. Wave 2: 4 searches (garnishment, SB 1206, parity, overdraft). No general Arizona cap on bank overdraft or NSF fees was found; the only overdraft-fee provision found is the 2025 Uniform Special Deposits Act. A.R.S. § 6-635 ('other allowable fees') is in the consumer lender chapter, not deposit accounts. Credit union fee authority/parity: only a bylaw-based membership fee power and incidental powers were seen, no federal parity text. NOT SEARCHED: atm. azleg.gov is egress-blocked for fetch."
+    "notes": "Wave 1: 2 searches. Wave 2: 4 searches (garnishment, SB 1206, parity, overdraft). No general Arizona cap on bank overdraft or NSF fees was found; the only overdraft-fee provision found is the 2025 Uniform Special Deposits Act. A.R.S. § 6-635 ('other allowable fees') is in the consumer lender chapter, not deposit accounts. Credit union fee authority/parity: only a bylaw-based membership fee power and incidental powers were seen, no federal parity text. NOT SEARCHED: atm. azleg.gov is egress-blocked for fetch. CU pass: also saw A.R.S. § 6-562 (loan-related charges and charges for failure to meet obligations) and § 6-593 (corporate credit union federal parity only); not recorded as deposit-fee rules."
   },
   {
     "state_code": "CA",
@@ -4050,13 +4748,25 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Last version seen was 'Amended in Assembly January 12, 2000'; no evidence it was enacted. Almost certainly died; do NOT treat as law."
       },
       {
-        "topic": "returned_item",
-        "claim": "Attorney General Bonta warned small banks and credit unions (Feb. 20, 2024) that surprise overdraft and returned-deposited-item fees harm consumers.",
-        "where_seen": "https://oag.ca.gov/news/press-releases/attorney-general-bonta-issues-warning-small-banks-and-credit-unions-surprise",
-        "why_unconfirmed": "Enforcement warning letter, not a statute or regulation; contents not read."
+        "topic": "fee_authority",
+        "claim": "Fin. Code § 14202 lets the commissioner by regulation authorize state credit unions to engage in any activity authorized for federal credit unions (parity).",
+        "where_seen": "WebSearch summary over leginfo/dfpi results (search for Fin. Code 14250/14252)",
+        "why_unconfirmed": "Section text was not shown in any official excerpt; a follow-up search did not return § 14202 text."
+      },
+      {
+        "topic": "other",
+        "claim": "AB 2795 (Committee on Banking and Finance, 2025-26), 'Financial regulation', chaptered as Ch. 410, Stats. 2026 (approved Sept. 20, 2026); may amend credit union provisions.",
+        "where_seen": "https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=202520260AB2795",
+        "why_unconfirmed": "Contents not read; no evidence it touches credit union fees, § 521, § 530 or § 14053."
+      },
+      {
+        "topic": "basic_account",
+        "claim": "AB 1365 (2025-26) would create a CalAccount Program offering a zero-fee, zero-penalty public transaction account.",
+        "where_seen": "https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202520260AB1365",
+        "why_unconfirmed": "Not a credit union fee rule; floor votes/passage status not checked."
       }
     ],
-    "notes": "Web search budget for the session ran out partway through; CA got ~10 searches. Not checked: public-benefit (CCP 704.080) exemptions, bank levy processing fees, Fin. Code fee-authority/parity provisions, any 2025-26 bills. leginfo.legislature.ca.gov is egress-blocked, so all leginfo evidence is from search-result excerpts."
+    "notes": "Web search budget for the session ran out partway through; CA got ~10 searches. Not checked: public-benefit (CCP 704.080) exemptions, bank levy processing fees, Fin. Code fee-authority/parity provisions, any 2025-26 bills. leginfo.legislature.ca.gov is egress-blocked, so all leginfo evidence is from search-result excerpts. CREDIT UNION PASS (Oct 7, 2026, ~24 searches): leginfo and dfpi.ca.gov are egress-blocked, so all evidence is from search-result excerpts. Changes to existing rules: ca_cu_overdraft_nsf_cap -> added Ch. 521 Stats. 2024 and the notice contents from leginfo excerpts; ca_od_nsf_revenue_report -> renamed to say 'reporting', added SB 1415 / Ch. 847 Stats. 2022, effective_date 'unknown' -> '2023' (first report due March 31, 2023 per leginfo bill text), added March 31 publication figure and DFPI's exclusions (national banks, FCUs, out-of-state institutions); ca_instant_decline_nsf_ban -> coverage_note only. Removed the AG Feb. 2024 lead because it is now rule ca_ag_surprise_od_returned_item_warning. No DFPI implementing regulation, bulletin or opinion on § 14053 was found (DFPI only restates the law in monthly bulletins). 10 CCR subchapter 30 (credit union regs, from § 30.1) search returned investment/membership rules only, no member fee, disclosure or dormancy rule. No 2025-26 bill on credit union fees that passed a chamber was found. Credit union dormancy is governed by the Unclaimed Property Law (CCP § 1513, existing rule) for all depository institutions; no separate dormancy rule found in div. 5."
   },
   {
     "state_code": "CO",
@@ -4161,7 +4871,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "basic_account",
       "garnishment_legal_process",
       "fee_authority",
-      "atm"
+      "atm",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4171,7 +4882,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Could not find any Delaware statute or regulation text on dormancy charges; delcode.delaware.gov and legis.delaware.gov are blocked for direct fetch, and searches returned only the Uniform Act rule and a $5-per-mailing cap on holder notice costs for securities (12 DE Admin. Code 104), which is not a deposit fee rule."
       }
     ],
-    "notes": "Searches of delcode.delaware.gov, legis.delaware.gov and banking.delaware.gov found no Delaware statute capping overdraft, NSF, maintenance or other consumer deposit fees. Direct fetches of the Delaware Code were blocked, so the Title 5 PDF could not be read in full; that is a gap, not proof no rule exists. The Delaware Banking Modernization Act of 2026 (SB 16, signed July 7, 2026) covers digital assets, governance and trust companies; search results showed no deposit fee provisions in it. Delaware's 2017 unclaimed property rewrite should be checked by a reviewer for a dormancy-charge provision."
+    "notes": "Searches of delcode.delaware.gov, legis.delaware.gov and banking.delaware.gov found no Delaware statute capping overdraft, NSF, maintenance or other consumer deposit fees. Direct fetches of the Delaware Code were blocked, so the Title 5 PDF could not be read in full; that is a gap, not proof no rule exists. The Delaware Banking Modernization Act of 2026 (SB 16, signed July 7, 2026) covers digital assets, governance and trust companies; search results showed no deposit fee provisions in it. Delaware's 2017 unclaimed property rewrite should be checked by a reviewer for a dormancy-charge provision. CU pass: one search of Delaware official domains found no credit-union-specific member fee rule."
   },
   {
     "state_code": "FL",
@@ -4194,13 +4905,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Service-of-process rule, not a fee rule; recorded only as context."
       }
     ],
-    "notes": "Six searches used. No Florida overdraft/NSF cap found in chapter 655; a 2025-2026 bill search found no passed overdraft/NSF bill. Florida chapter 655 'financial institution' definition was not reviewed, hence institutions 'other' for § 655.85. NOT SEARCHED: fee change notice beyond Reg DD, ATM rules, returned deposited item fees. Chapter 832 (worthless checks) payee fees not recorded."
+    "notes": "Six searches used. No Florida overdraft/NSF cap found in chapter 655; a 2025-2026 bill search found no passed overdraft/NSF bill. Florida chapter 655 'financial institution' definition was not reviewed, hence institutions 'other' for § 655.85. NOT SEARCHED: fee change notice beyond Reg DD, ATM rules, returned deposited item fees. Chapter 832 (worthless checks) payee fees not recorded. CU pass: § 657.031 fee-power wording was seen in older flsenate.gov versions (1999-2010) and a chapter-wide summary; reviewer should confirm the current subsection."
   },
   {
     "state_code": "GA",
     "state_name": "Georgia",
     "topics_no_rule_found": [
-      "overdraft_nsf"
+      "overdraft_nsf",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4216,14 +4928,15 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Content not seen."
       }
     ],
-    "notes": "Six searches used. No Georgia dollar cap on overdraft/NSF fees found; the DBF 2013 declaratory orders classify overdraft fees as non-interest deposit fees not subject to usury limits. The two dormancy descriptions (no-contract $5 cap in Rule 80-1-8 vs. 'greater of $5 or active-account charge' on the DBF page) should be reconciled by the reviewer against current rule text. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules; garnishment search found no direct bank fee limit."
+    "notes": "Six searches used. No Georgia dollar cap on overdraft/NSF fees found; the DBF 2013 declaratory orders classify overdraft fees as non-interest deposit fees not subject to usury limits. The two dormancy descriptions (no-contract $5 cap in Rule 80-1-8 vs. 'greater of $5 or active-account charge' on the DBF page) should be reconciled by the reviewer against current rule text. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules; garnishment search found no direct bank fee limit. CU pass: search returned the existing 2013 DBF credit union overdraft parity order (already recorded); nothing new."
   },
   {
     "state_code": "HI",
     "state_name": "Hawaii",
     "topics_no_rule_found": [
       "overdraft_nsf",
-      "garnishment_legal_process"
+      "garnishment_legal_process",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4245,7 +4958,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Exact section not identified; no bank garnishment fee rule found."
       }
     ],
-    "notes": "Six searches used. Overdraft/NSF search on official sites returned only a $20 NSF check collection fee for depository financial services loan companies (a lender rule, not a deposit fee) and nothing on bank overdraft caps. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules."
+    "notes": "Six searches used. Overdraft/NSF search on official sites returned only a $20 NSF check collection fee for depository financial services loan companies (a lender rule, not a deposit fee) and nothing on bank overdraft caps. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules. CU pass: HRS ch. 412 art. 10 lists loan \"other charges\" (§ 412:10-404) and federal powers sections but no deposit-fee text was seen."
   },
   {
     "state_code": "IA",
@@ -4255,7 +4968,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "returned_item",
       "basic_account",
       "garnishment_legal_process",
-      "atm"
+      "atm",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4265,13 +4979,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "No fee-specific text found for banks."
       }
     ],
-    "notes": "The 1994 bulletin is interpretive guidance, not a statute; it is still posted on the Division of Banking site. Dollar amounts in the bulletin ($3 daily, $12-$15 one-time) describe market practice in 1994 and are not limits, so they are not recorded as figures."
+    "notes": "The 1994 bulletin is interpretive guidance, not a statute; it is still posted on the Division of Banking site. Dollar amounts in the bulletin ($3 daily, $12-$15 one-time) describe market practice in 1994 and are not limits, so they are not recorded as figures. CU pass: Iowa Code ch. 533 share draft fee power already covered by ia_cu_fee_authority; insider overdraft limits in ch. 533 are not consumer fee rules."
   },
   {
     "state_code": "ID",
     "state_name": "Idaho",
     "topics_no_rule_found": [
-      "overdraft_nsf"
+      "overdraft_nsf",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4299,7 +5014,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Creditor rule, low priority; amount not seen."
       }
     ],
-    "notes": "Six searches used. No Idaho dollar cap on bank or credit union overdraft/NSF fees found; Idaho Code § 28-4-401 (UCC) lets a bank charge an item that creates an overdraft. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules."
+    "notes": "Six searches used. No Idaho dollar cap on bank or credit union overdraft/NSF fees found; Idaho Code § 28-4-401 (UCC) lets a bank charge an item that creates an overdraft. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules. CU pass: Idaho Credit Union Act fee power and federal parity text confirmed again on legislature.idaho.gov; already covered by id_bank_parity_and_cu_fee_power, not duplicated."
   },
   {
     "state_code": "IL",
@@ -4327,7 +5042,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Search summary did not show any monthly fee limit; the full section text could not be fetched (ilga.gov egress blocked)."
       }
     ],
-    "notes": "Seven searches used. ilga.gov WebFetch is EGRESS_BLOCKED, so all text is from search-result summaries of ilga.gov pages; the reviewer should read 205 ILCS 605/4 in full (subsection (d) exception and any monthly fee terms). 'institutions: other' for the Consumer Deposit Account Act because the Act's definition of 'financial institution' was not seen. NOT SEARCHED: check cashing by banks, ATM surcharge, stop payment / deposited item return beyond the basic account provision, payee returned check."
+    "notes": "Seven searches used. ilga.gov WebFetch is EGRESS_BLOCKED, so all text is from search-result summaries of ilga.gov pages; the reviewer should read 205 ILCS 605/4 in full (subsection (d) exception and any monthly fee terms). 'institutions: other' for the Consumer Deposit Account Act because the Act's definition of 'financial institution' was not seen. NOT SEARCHED: check cashing by banks, ATM surcharge, stop payment / deposited item return beyond the basic account provision, payee returned check. CU pass: search attributed \"Assess charges and fees to members in accordance with board resolution\" to 205 ILCS 305/13; existing rule il_cu_fees_by_board_resolution can use that section (not changed here)."
   },
   {
     "state_code": "IN",
@@ -4357,7 +5072,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "returned_item",
       "fee_change_notice",
       "basic_account",
-      "atm"
+      "atm",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4367,7 +5083,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Official text seen, but no source ties it to deposit fees; recorded as a lead only."
       }
     ],
-    "notes": "Garnishment fee text was seen on the 2020 statute page; confirm no later amendment. Kansas UCCC (K.S.A. 16a-2-501) insufficient-check charges apply to consumer credit lenders, not deposit accounts, and were not recorded. 2026 SB 352 (digital assets in unclaimed property) does not touch deposit fees."
+    "notes": "Garnishment fee text was seen on the 2020 statute page; confirm no later amendment. Kansas UCCC (K.S.A. 16a-2-501) insufficient-check charges apply to consumer credit lenders, not deposit accounts, and were not recorded. 2026 SB 352 (digital assets in unclaimed property) does not touch deposit fees. CU pass: K.S.A. 17-2204 powers (checks, money orders, safe deposit) seen but no member fee text."
   },
   {
     "state_code": "KY",
@@ -4456,7 +5172,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Section number not shown in results."
       }
     ],
-    "notes": "All official text came through WebSearch excerpts of malegislature.gov and mass.gov; direct fetches were blocked. The $5 NSF cap on 18-65 accounts was seen in the Division of Banks bulletin; whether it is in the statute text itself should be checked. The 18-65 scope (all accounts of qualifying persons vs. a designated account product) should be read in the statute. The DRI cap changes every August; the 2025 figure ($7.14) ran to July 31, 2026 and a 2026 decision was not looked up. The search budget ran out partway through this assignment. Topics not listed as rules or leads were not all searched; absence here is not a finding."
+    "notes": "All official text came through WebSearch excerpts of malegislature.gov and mass.gov; direct fetches were blocked. The $5 NSF cap on 18-65 accounts was seen in the Division of Banks bulletin; whether it is in the statute text itself should be checked. The 18-65 scope (all accounts of qualifying persons vs. a designated account product) should be read in the statute. The DRI cap changes every August; the 2025 figure ($7.14) ran to July 31, 2026 and a 2026 decision was not looked up. The search budget ran out partway through this assignment. Topics not listed as rules or leads were not all searched; absence here is not a finding. CU pass: 209 CMR 50.00 was amended December 19, 2025; content of the amendments not seen."
   },
   {
     "state_code": "MD",
@@ -4588,7 +5304,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "state_name": "Mississippi",
     "topics_no_rule_found": [
       "overdraft_nsf",
-      "garnishment_legal_process"
+      "garnishment_legal_process",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4622,7 +5339,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Contents not seen; no sign either addresses consumer deposit fees."
       }
     ],
-    "notes": "Extended from a partial earlier pass (three searches) with six more searches this pass. 'institutions: other' on the parity rule because it covers state banks, savings associations and savings banks (not credit unions). Overdraft search found only bills: 2025 SB2082 and HB1044 would let the State Treasurer set fees (including overdraft, NSF and stop payment) on state depository accounts, which concern the State's own accounts, not consumer accounts. Garnishment search found only bill texts on bank garnishee procedure (accounting for deposits between service and answer; exempt directly deposited Social Security/VA funds) and no bank fee rule. NOT SEARCHED: basic/lifeline account, fee change notice, ATM, stop payment / deposited item return."
+    "notes": "Extended from a partial earlier pass (three searches) with six more searches this pass. 'institutions: other' on the parity rule because it covers state banks, savings associations and savings banks (not credit unions). Overdraft search found only bills: 2025 SB2082 and HB1044 would let the State Treasurer set fees (including overdraft, NSF and stop payment) on state depository accounts, which concern the State's own accounts, not consumer accounts. Garnishment search found only bill texts on bank garnishee procedure (accounting for deposits between service and answer; exempt directly deposited Social Security/VA funds) and no bank fee rule. NOT SEARCHED: basic/lifeline account, fee change notice, ATM, stop payment / deposited item return. CU pass: DBCF Regulation 2 parity covers banks and savings institutions, not credit unions; no CU member fee rule seen."
   },
   {
     "state_code": "MT",
@@ -4633,7 +5350,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "basic_account",
       "check_cashing",
       "fee_change_notice",
-      "garnishment_legal_process"
+      "garnishment_legal_process",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4651,7 +5369,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "topics_no_rule_found": [
       "overdraft_nsf",
       "basic_account",
-      "garnishment_legal_process"
+      "garnishment_legal_process",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4661,7 +5380,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Regulator FAQ seen only as a search summary; it does not cite a state statute and may describe federal Reg DD requirements."
       }
     ],
-    "notes": "No state overdraft/NSF dollar cap for banks or credit unions surfaced; the savings bank and S&L statutes authorize a returned/NSF check processing fee, and whether they set an amount was not visible in the search result. Garnishment search returned only tax-collection attachment (G.S. 105-368) and benefit-specific exemptions, nothing on bank fees. NOT SEARCHED: check_cashing, atm, credit union parity with federal credit unions (searched once, not found), state bank wild-card parity."
+    "notes": "No state overdraft/NSF dollar cap for banks or credit unions surfaced; the savings bank and S&L statutes authorize a returned/NSF check processing fee, and whether they set an amount was not visible in the search result. Garnishment search returned only tax-collection attachment (G.S. 105-368) and benefit-specific exemptions, nothing on bank fees. NOT SEARCHED: check_cashing, atm, credit union parity with federal credit unions (searched once, not found), state bank wild-card parity. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "ND",
@@ -4713,7 +5432,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "state_name": "New Hampshire",
     "topics_no_rule_found": [
       "overdraft_nsf",
-      "basic_account"
+      "basic_account",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4735,7 +5455,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "state_code": "NJ",
     "state_name": "New Jersey",
     "topics_no_rule_found": [
-      "overdraft_nsf"
+      "overdraft_nsf",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4755,6 +5476,12 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "$10,000 in a deposit account ($15,000 joint) exempt from execution; garnishee to garnish only the excess.",
         "where_seen": "https://pub.njleg.state.nj.us/Bills/2024/A4000/3513_I1.PDF",
         "why_unconfirmed": "Appears in introduced bill text (A3513, 2024); enactment not confirmed."
+      },
+      {
+        "topic": "overdraft_nsf",
+        "claim": "Bill text would bar financial institutions from charging overdraft or NSF fees on prepaid accounts, with civil penalty up to $1,000 per day.",
+        "where_seen": "https://pub.njleg.gov/bills/2016/A5000/4965_I1.HTM",
+        "why_unconfirmed": "Introduced bill A4965 (2016) only; not enacted as far as seen."
       }
     ],
     "notes": "A NJ DOBI consumer FAQ (https://www.nj.gov/dobi/division_consumers/finance/bankfaqs.htm), per the search summary, says no state or federal law limits what a bank can charge for its fees; no enacted overdraft/NSF cap was found in 2025-2026 bill searches. The Consumer Checking Account number-of-checks term was not found in official text. NOT SEARCHED: check_cashing (beyond one incidental result), returned_item beyond the old bill, fee_change_notice (searched once without result), atm, payee_returned_check."
@@ -4780,7 +5507,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Applies to small loan licensees as payee, not to deposit fees; recorded only as context."
       }
     ],
-    "notes": "The NM Financial Institutions Division FAQ (https://www.rld.nm.gov/financial-institutions/about-us/faqs/), per the search summary, says there is no maximum on overdraft or NSF fees and banks and credit unions set their own. Dormancy: only the possibly-unenacted 2023 RUUPA text was found (see leads). NOT SEARCHED: check_cashing, fee_change_notice, atm, returned_item beyond the broad search."
+    "notes": "The NM Financial Institutions Division FAQ (https://www.rld.nm.gov/financial-institutions/about-us/faqs/), per the search summary, says there is no maximum on overdraft or NSF fees and banks and credit unions set their own. Dormancy: only the possibly-unenacted 2023 RUUPA text was found (see leads). NOT SEARCHED: check_cashing, fee_change_notice, atm, returned_item beyond the broad search. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "NV",
@@ -4794,7 +5521,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Search summary said the bill 'has been passed', but enactment, chapter number and effective date were not seen. If enacted, the NRS 21.105 rule above is outdated."
       }
     ],
-    "notes": "NRS 657.120 applies to 'financial institutions' as defined for NRS chapter 657; exact definition not checked, so institutions is 'other'. The SB 142 (2025) status must be checked before relying on the NRS 21.105 figures. NOT SEARCHED: basic_account, check_cashing, fee_change_notice, atm, returned_item beyond NRS 657.120."
+    "notes": "NRS 657.120 applies to 'financial institutions' as defined for NRS chapter 657; exact definition not checked, so institutions is 'other'. The SB 142 (2025) status must be checked before relying on the NRS 21.105 figures. NOT SEARCHED: basic_account, check_cashing, fee_change_notice, atm, returned_item beyond NRS 657.120. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "NY",
@@ -4856,9 +5583,15 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "A Banking Law § 9-x requires written notice to a customer 30 days before charging any fee based on account inactivity.",
         "where_seen": "nysenate.gov bill pages (search summary of 2009-2021 bills)",
         "why_unconfirmed": "Seen only in bill text; whether this is enacted § 9-x was not confirmed."
+      },
+      {
+        "topic": "overdraft_nsf",
+        "claim": "A bill would amend Banking Law § 456 to bar credit unions from imposing an overdraft or NSF fee within 10 days of the transaction, during which the member may cover it.",
+        "where_seen": "https://www.nysenate.gov/legislation/bills/2025/S7031",
+        "why_unconfirmed": "Search summary tied this to pending bills; bill number and status not confirmed."
       }
     ],
-    "notes": "The task brief referred to '3 NYCRR Part 6' for basic banking; DFS's own pages place the basic banking rules in 3 NYCRR Part 9, while the 2025 overdraft pre-proposal amends Parts 32 and 6 (law firm summaries). The DFS overdraft/NSF rules are a pre-proposal draft (Jan. 22, 2025), followed by a Sept. 5, 2025 RFI and a 2026 Regulatory Agenda listing; no formal State Register proposal or adoption was found as of this research (Oct. 2026), but a later formal proposal may exist. DFS Industry Letter July 12, 2022 is guidance on unfair/deceptive OD/NSF practices (not a rule). Wave 2 (3 searches) covered fee_authority/parity (Banking Law 12-a found), atm (only GBL 399-y seen in bill pages) and fee_change_notice (no enacted rule beyond Reg DD found; the 180-day overdraft-fee notice under 9-y and a 30-day inactivity-fee notice under 9-x were seen only in bill text). NOT SEARCHED: minors/seniors fee limits, payee_returned_check, credit union-specific fee powers under Banking Law § 454. Direct fetches to nysenate.gov, dfs.ny.gov and assembly sites were blocked; evidence comes from search-result excerpts of those official pages."
+    "notes": "The task brief referred to '3 NYCRR Part 6' for basic banking; DFS's own pages place the basic banking rules in 3 NYCRR Part 9, while the 2025 overdraft pre-proposal amends Parts 32 and 6 (law firm summaries). The DFS overdraft/NSF rules are a pre-proposal draft (Jan. 22, 2025), followed by a Sept. 5, 2025 RFI and a 2026 Regulatory Agenda listing; no formal State Register proposal or adoption was found as of this research (Oct. 2026), but a later formal proposal may exist. DFS Industry Letter July 12, 2022 is guidance on unfair/deceptive OD/NSF practices (not a rule). Wave 2 (3 searches) covered fee_authority/parity (Banking Law 12-a found), atm (only GBL 399-y seen in bill pages) and fee_change_notice (no enacted rule beyond Reg DD found; the 180-day overdraft-fee notice under 9-y and a 30-day inactivity-fee notice under 9-x were seen only in bill text). NOT SEARCHED: minors/seniors fee limits, payee_returned_check, credit union-specific fee powers under Banking Law § 454. Direct fetches to nysenate.gov, dfs.ny.gov and assembly sites were blocked; evidence comes from search-result excerpts of those official pages. CU pass (Oct 7): DFS 2026 search confirms the Part 32 overdraft/NSF pre-proposal \"appl[ies] to New York State Chartered Banks and Credit Unions\"; coverage_note added to ny_dfs_overdraft_nsf_preproposal_2025. Still a pre-proposal, not a State Register proposal."
   },
   {
     "state_code": "OH",
@@ -4895,7 +5628,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "fee_change_notice",
       "basic_account",
       "garnishment_legal_process",
-      "atm"
+      "atm",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4911,7 +5645,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Did not read the bill text."
       }
     ],
-    "notes": "Garnishment statutes (12 O.S. §§ 1170 et seq.) require notice of exemptions when the garnishee is a financial institution, but no bank fee limit or garnishee fee for banks was confirmed. Oklahoma credit union parity not researched in depth."
+    "notes": "Garnishment statutes (12 O.S. §§ 1170 et seq.) require notice of exemptions when the garnishee is a financial institution, but no bank fee limit or garnishee fee for banks was confirmed. Oklahoma credit union parity not researched in depth. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "OR",
@@ -4922,7 +5656,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "fee_change_notice",
       "basic_account",
       "atm",
-      "returned_item"
+      "returned_item",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4930,9 +5665,15 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "DFR Bulletin 2025-7 directs/asks depository institutions to waive overdraft and NSF fees for affected Oregon residents (appears to be emergency/disaster guidance).",
         "where_seen": "https://dfr.oregon.gov/laws-rules/Documents/Bulletins/Bulletin2025-7.pdf",
         "why_unconfirmed": "Did not read the bulletin; guidance, likely temporary, not a statute."
+      },
+      {
+        "topic": "check_cashing",
+        "claim": "A state credit union operating in Oregon may not charge a customer a fee for cashing a check drawn on an account at that credit union if presented in Oregon; 'state credit union' includes credit unions chartered under ORS ch. 723 or another state's laws.",
+        "where_seen": "https://olis.oregonlegislature.gov/liz/2021R1/Downloads/MeasureDocument/HB2356",
+        "why_unconfirmed": "Seen only in HB 2356 (2021) bill text; enactment and ORS section number not confirmed."
       }
     ],
-    "notes": "Search snippets showed two phrasings of the Oregon dormancy-charge rule (one general, one specific to deposit accounts that also requires notice whenever an account becomes dormant); a reviewer should confirm the current section number (98.311 per one snippet) and wording, and whether 2025 SB 146 (unclaimed property) changed it. ORS 18.790 also mentions a $2 per-week processing fee tied to wage payments, which applies to wage garnishees, not deposit accounts. Fetch of oregonlegislature.gov was egress-blocked."
+    "notes": "Search snippets showed two phrasings of the Oregon dormancy-charge rule (one general, one specific to deposit accounts that also requires notice whenever an account becomes dormant); a reviewer should confirm the current section number (98.311 per one snippet) and wording, and whether 2025 SB 146 (unclaimed property) changed it. ORS 18.790 also mentions a $2 per-week processing fee tied to wage payments, which applies to wage garnishees, not deposit accounts. Fetch of oregonlegislature.gov was egress-blocked. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "PA",
@@ -4963,7 +5704,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "state_name": "Rhode Island",
     "topics_no_rule_found": [
       "basic_account",
-      "garnishment_legal_process"
+      "garnishment_legal_process",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -4983,6 +5725,12 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "A Rhode Island credit union may engage in any activity authorized for federal credit unions that the director (or designee) does not consider unsafe and unsound.",
         "where_seen": "Search summary of results on webserver.rilegislature.gov / rules.sos.ri.gov (possibly Title 19 or 230-RICR-40-05-4)",
         "why_unconfirmed": "The specific section or regulation the text comes from was not identified."
+      },
+      {
+        "topic": "overdraft_nsf",
+        "claim": "R.I. Gen. Laws § 19-9-21.1 (fee disclosure by banks, credit unions and other financial institutions) would bar an overdraft fee when the day's aggregate overdraft is under $10 and more than 3 overdraft fees a day unless the day's overdraft exceeds $100.",
+        "where_seen": "https://webserver.rilegislature.gov/BillText12/SenateText12/S2437.htm",
+        "why_unconfirmed": "Seen only in 2012 bill S 2437; not confirmed as enacted or in force."
       }
     ],
     "notes": "6 searches used plus one egress-blocked fetch. Basic/lifeline account: an extended search of rilegislature.gov, dbr.ri.gov and rules.sos.ri.gov found no basic-account statute (the brief lists RI as having one; not confirmed). Garnishment search returned only general attachment/trustee-process and wage provisions, nothing on bank fees. NOT SEARCHED: check cashing by banks (230-RICR-40-20-2 covers licensed check cashers, not banks), ATM, returned item/stop payment. The earlier placeholder leads (from recall) were dropped."
@@ -5021,7 +5769,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "state_name": "South Dakota",
     "topics_no_rule_found": [
       "overdraft_nsf",
-      "basic_account"
+      "basic_account",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -5043,13 +5792,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Section not identified; appears to concern credit accounts rather than deposit accounts."
       }
     ],
-    "notes": "6 searches used. The overdraft/NSF search on sdlegislature.gov and dlr.sd.gov returned no deposit-fee statute. The garnishment search found exemptions (social security and veterans' disability benefits excluded from 'earnings'; public assistance exempt) but no ban on bank fees against exempt funds. No basic-account law found. NOT SEARCHED: credit union parity (search found none), check cashing, ATM, fee-change notice."
+    "notes": "6 searches used. The overdraft/NSF search on sdlegislature.gov and dlr.sd.gov returned no deposit-fee statute. The garnishment search found exemptions (social security and veterans' disability benefits excluded from 'earnings'; public assistance exempt) but no ban on bank fees against exempt funds. No basic-account law found. NOT SEARCHED: credit union parity (search found none), check cashing, ATM, fee-change notice. CU pass (Oct 7): Division of Banking FAQ says it does not regulate credit unions and sends credit union complaints to NCUA; no state credit union fee rule searched beyond that (1 search)."
   },
   {
     "state_code": "TN",
     "state_name": "Tennessee",
     "topics_no_rule_found": [
-      "basic_account"
+      "basic_account",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -5071,12 +5821,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Not a fee rule; enactment status and section not confirmed."
       }
     ],
-    "notes": "6 searches used. No overdraft/NSF fee cap for banks found on official domains. Credit union search found only Tenn. Code Ann. § 45-4-803 (tax parity with federal credit unions), not a fee or powers parity, so not recorded. Garnishment: an AG opinion (2007 op07-016) says statutes do not let a private employer-garnishee withhold a processing fee from garnished wages; not specific to banks, not recorded. NOT SEARCHED: check cashing, ATM, fee-change notice. Earlier placeholder had no leads."
+    "notes": "6 searches used. No overdraft/NSF fee cap for banks found on official domains. Credit union search found only Tenn. Code Ann. § 45-4-803 (tax parity with federal credit unions), not a fee or powers parity, so not recorded. Garnishment: an AG opinion (2007 op07-016) says statutes do not let a private employer-garnishee withhold a processing fee from garnished wages; not specific to banks, not recorded. NOT SEARCHED: check cashing, ATM, fee-change notice. Earlier placeholder had no leads. CU pass (Oct 7): Only the Commissioner-approved standard bylaws (share transfer fee max $5) and a bank overdraft bulletin (B-04-1) surfaced; neither is a statute on CU deposit fees."
   },
   {
     "state_code": "TX",
     "state_name": "Texas",
-    "topics_no_rule_found": [],
+    "topics_no_rule_found": [
+      "credit_union_specific"
+    ],
     "leads_unconfirmed": [
       {
         "topic": "garnishment_legal_process",
@@ -5097,7 +5849,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "state_code": "UT",
     "state_name": "Utah",
     "topics_no_rule_found": [
-      "overdraft_nsf"
+      "overdraft_nsf",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -5107,32 +5860,42 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Only search summaries; the garnishee fee amount and whether a bank may charge the debtor a fee were not seen."
       }
     ],
-    "notes": "Wave 2: 6 searches. Overdraft: only UCC Article 4 (Utah Code 70A-4-401, a bank may charge an overdraft item) was found; no fee cap. Utah Code 7-3-26 ('Overdraft as asset') is an accounting rule, not a fee rule. NOT SEARCHED: check_cashing, basic_account, fee_change_notice, returned_item (bank side). le.utah.gov fetches were not attempted."
+    "notes": "Wave 2: 6 searches. Overdraft: only UCC Article 4 (Utah Code 70A-4-401, a bank may charge an overdraft item) was found; no fee cap. Utah Code 7-3-26 ('Overdraft as asset') is an accounting rule, not a fee rule. NOT SEARCHED: check_cashing, basic_account, fee_change_notice, returned_item (bank side). le.utah.gov fetches were not attempted. CU pass (Oct 7): Utah Credit Union Act lets the board close a dormant account and move it to an unclaimed shares account; no fee rule, not added."
   },
   {
     "state_code": "VA",
     "state_name": "Virginia",
     "topics_no_rule_found": [
       "overdraft_nsf",
-      "check_cashing"
+      "check_cashing",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [],
-    "notes": "Wave 2: 6 searches. Overdraft: Title 6.2 ch. 6 and Title 8.4 (UCC 8.4-401, bank may charge an overdraft item) show no fee cap; §§ 6.2-877 and 6.2-1129 only let insiders' inadvertent overdrafts of $1,000 or less be paid if charged the same fee as other customers (insider-lending rule, not a consumer fee limit). The $25 returned-item cap seen was for short-term lenders (Title 6.2 ch. 18), not banks. Check cashing: only the check casher registration chapter (Title 6.2 ch. 21) was found. § 8.01-27.1 (payee recovery on bad checks) was seen but its amounts were not read. NOT SEARCHED: basic_account, fee_change_notice, atm."
+    "notes": "Wave 2: 6 searches. Overdraft: Title 6.2 ch. 6 and Title 8.4 (UCC 8.4-401, bank may charge an overdraft item) show no fee cap; §§ 6.2-877 and 6.2-1129 only let insiders' inadvertent overdrafts of $1,000 or less be paid if charged the same fee as other customers (insider-lending rule, not a consumer fee limit). The $25 returned-item cap seen was for short-term lenders (Title 6.2 ch. 18), not banks. Check cashing: only the check casher registration chapter (Title 6.2 ch. 21) was found. § 8.01-27.1 (payee recovery on bad checks) was seen but its amounts were not read. NOT SEARCHED: basic_account, fee_change_notice, atm. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "VT",
     "state_name": "Vermont",
     "topics_no_rule_found": [
-      "overdraft_nsf"
+      "overdraft_nsf",
+      "credit_union_specific"
     ],
-    "leads_unconfirmed": [],
+    "leads_unconfirmed": [
+      {
+        "topic": "fee_authority",
+        "claim": "A Vermont credit union may at its option impose an entrance fee or annual membership fee on all members (8 V.S.A. ch. 221; search pointed to § 31405).",
+        "where_seen": "https://legislature.vermont.gov/statutes/section/08/221/31405",
+        "why_unconfirmed": "Section number not confirmed; membership fee, not a deposit account fee."
+      }
+    ],
     "notes": "Searched about 6 times; official sites (legislature.vermont.gov) are egress-blocked for direct fetch, so all evidence is from search-result excerpts. Not searched before the shared web-search budget ran out: check cashing, fee-change notice, garnishment/trustee-process fees (12 V.S.A.), ATM, state bank parity. Pending/2026: H.648 (banking, insurance and securities bill, passed House 2026) and Act 142 of 2026 appeared in results but their deposit-fee content, if any, was not reviewed. H.99 (2025) is earned wage access, not overdraft."
   },
   {
     "state_code": "WA",
     "state_name": "Washington",
     "topics_no_rule_found": [
-      "overdraft_nsf"
+      "overdraft_nsf",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -5148,7 +5911,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Guidance and a survey of fee levels, not a fee limit; report date not seen."
       }
     ],
-    "notes": "Wave 1: 3 searches. Wave 2: 5 searches (dormancy, overdraft, SB 5651 x2, parity). Overdraft/NSF: no RCW cap found; DFI treats fees as set by the institution with disclosure. SB 5651 (2025) was enacted as ch. 391, Laws of 2025 and raised the consumer-debt automatic protection from $1,000 to $2,000 (the introduced bill's $5,000 figures were not enacted). NOT SEARCHED: basic_account, check_cashing, fee_change_notice, atm, returned_item. The garnishee processing-fee lead (ch. 6.27 RCW) is still unconfirmed."
+    "notes": "Wave 1: 3 searches. Wave 2: 5 searches (dormancy, overdraft, SB 5651 x2, parity). Overdraft/NSF: no RCW cap found; DFI treats fees as set by the institution with disclosure. SB 5651 (2025) was enacted as ch. 391, Laws of 2025 and raised the consumer-debt automatic protection from $1,000 to $2,000 (the introduced bill's $5,000 figures were not enacted). NOT SEARCHED: basic_account, check_cashing, fee_change_notice, atm, returned_item. The garnishee processing-fee lead (ch. 6.27 RCW) is still unconfirmed. CU pass (Oct 7): DFI credit union compliance document request asks about overdraft fee structures and collections; that is exam information, not a reporting duty. No new rule."
   },
   {
     "state_code": "WI",
@@ -5181,7 +5944,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     "topics_no_rule_found": [
       "fee_change_notice",
       "basic_account",
-      "atm"
+      "atm",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -5191,14 +5955,15 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Did not locate the rule; search budget ran out."
       }
     ],
-    "notes": "Section numbers for 36-8-2 and 31A-4-30b come from search-engine summaries of code.wvlegislature.gov pages; direct fetches were blocked, so a reviewer should open the pages. The § 31A-4-30b merchant wording may mean it covers only merchant accounts. Garnishment: no WV statute found on bank fees for processing legal process (searched 38-5A/5B). The DFI FAQ says no overdraft/returned-check fee cap. No 2025-2026 overdraft bill found. The § 36-8 dormancy rules are from the existing Uniform Unclaimed Property Act. The shared search budget ran out partway through Wisconsin."
+    "notes": "Section numbers for 36-8-2 and 31A-4-30b come from search-engine summaries of code.wvlegislature.gov pages; direct fetches were blocked, so a reviewer should open the pages. The § 31A-4-30b merchant wording may mean it covers only merchant accounts. Garnishment: no WV statute found on bank fees for processing legal process (searched 38-5A/5B). The DFI FAQ says no overdraft/returned-check fee cap. No 2025-2026 overdraft bill found. The § 36-8 dormancy rules are from the existing Uniform Unclaimed Property Act. The shared search budget ran out partway through Wisconsin. CU pass (Oct 7): Ch. 31C provisions seen (money instrument fees, charges for failure to meet obligations) already covered or loan-related; nothing added. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
     "state_code": "WY",
     "state_name": "Wyoming",
     "topics_no_rule_found": [
       "overdraft_nsf",
-      "fee_authority"
+      "fee_authority",
+      "credit_union_specific"
     ],
     "leads_unconfirmed": [
       {
@@ -5212,6 +5977,12 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "Wyoming Judicial Branch self-help guidance says exempt funds in a garnished bank account (other than federal benefits) are not automatically protected and must be claimed by objection; even if released as exempt, the debtor remains liable for NSF fees, garnishment fees and costs, and the bank will probably charge a garnishment fee. Writs of garnishment are W.S. 1-15-401 to -425; exemptions are W.S. ch. 1-20.",
         "where_seen": "https://www.wyocourts.gov/legal-help-by-topic/garnishment/ ; https://www.wyocourts.gov/app/uploads/2025/06/Garnishment-Instructions-06.01.2021.pdf",
         "why_unconfirmed": "Official court guidance, not statute text; no statutory limit on a bank's garnishment fee was seen."
+      },
+      {
+        "topic": "fee_authority",
+        "claim": "W.S. 9-21-110: 'The administrator by rule may establish fees, service charges and penalties to be charged to a depository account holder ... including a fee for an overdraft, an insufficient fund check or draft or a stop payment order.'",
+        "where_seen": "https://wyoleg.gov/2016/Introduced/HB0124.pdf",
+        "why_unconfirmed": "Seen in a 2016 introduced bill; context (which program or depository) and enactment not confirmed; not a credit union rule."
       }
     ],
     "notes": "Wave 2: 6 searches (plus 1 from wave 1). Overdraft/NSF: Title 13 searches found no fee cap. Fee authority/parity: searches of wyoleg.gov and the Division of Banking found no state bank or credit union parity or fee-authority text (Title 13 compressed PDF is egress-blocked, so W.S. 13-2 and 13-10 were not read). The Wyoming post-dated check limit ($30 or 20% per month finance charge) applies to licensed post-dated check cashers under the consumer credit code, not banks. NOT SEARCHED: check_cashing (banks), basic_account, fee_change_notice, atm, returned_item."
