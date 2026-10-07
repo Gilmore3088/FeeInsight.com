@@ -11,6 +11,7 @@ vi.mock("@/lib/data-store/connection", () => ({
   sql: sqlMock,
   withTransaction: withTransactionMock,
 }));
+vi.mock("@/lib/data-store/market-leaders", () => ({ loadMarketLeaderIds: vi.fn().mockResolvedValue([117, 281]) }));
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 vi.mock("./state-lane-memory", () => ({
   normalizeStateCode: (value: string) => value?.trim().toUpperCase() || null,
@@ -30,6 +31,7 @@ import {
   REPORT_REQUEST_PRIORITY,
   MAX_ACTIVE_STATE_LANE_RUNS,
   STATE_LANE_STARVATION_HOURS,
+  UNCOVERED_LEADER_PRIORITY,
   nextDayStart,
   nextMonthStart,
   quarterWindowKey,
@@ -397,6 +399,14 @@ describe("state lane scheduler", () => {
       expect(text).toContain(part);
     }
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
+  });
+
+  it("puts states whose market leaders lack headline fees ahead", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    expect(templateText(call?.[0])).toContain("leaders AS");
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([[117, 281], UNCOVERED_LEADER_PRIORITY]));
   });
 
   it("casts every number it sends, since an uncast $1 - $2 fails to plan", async () => {
