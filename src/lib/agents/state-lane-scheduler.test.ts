@@ -409,6 +409,14 @@ describe("state lane scheduler", () => {
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
+  it("gives a state whose report James is waiting to review the report-request weight", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  });
+
   it("puts states whose market leaders lack headline fees ahead", async () => {
     sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
     await refreshLanePriorities();
