@@ -462,6 +462,42 @@ Funnel fixes PR (this branch).
 **Fix:** freshness search in `magellan/discovery.ts` (this PR): one re-search per stale bank in spare capacity, an hourly slot at a time (48 ms per slot); the link changes only when a different page passes the fee-page check.
 **Lesson:** a link that still loads is not a current schedule. Check age, not just reachability.
 
+## 2026-10-06: Ask Hamilton failed on the preview and saved an empty answer
+**What happened:** At 03:01 UTC James asked a question on the PR 89 preview. The route audit
+(`api_route_audit_events`) shows `/api/research/hamilton` answered 503 in 160 ms, and
+`ai_api_usage_events` shows no provider call. The page showed a red error and an empty
+"Hamilton's view" card, and it said "Analysis saved to workspace".
+**Cause:** Vercel preview deployments have no `ANTHROPIC_API_KEY`, so the route stops before any model
+call. The page's `onFinish` ran on the failed reply and saved an empty analysis, and its error text
+didn't say why.
+**Fix:** PR 89 ignores failed or empty replies (no answer shown, nothing saved) and says plainly when
+the AI isn't switched on for a preview. The Ask screen was rebuilt as a memo. A preview still can't
+answer questions; feeinsight.com can.
+**Lesson:** Test paid-model screens on production, or add a preview-scoped key in Vercel if James
+wants previews to answer. Never save or show a reply the stream marked as an error.
+
+## 2026-10-06: A paid user could be offered checkout a second time
+**What happened:** the full funnel audit (finding 9) traced a path where someone who had just paid
+opened a Pro page before Stripe's webhook marked them active. The Pro gate sent them to
+/subscribe, which offered checkout again with no word on why they were there (finding 12). No
+double charge is known; the path was found by reading the code.
+**Cause:** only /account/welcome asked Stripe directly whether a user had paid. Every other page
+trusted the webhook-written status, and /subscribe never explained the redirect.
+**Fix:** PR 201 (merged): `activateIfPaid` in `src/lib/subscription-activation.ts` runs on
+/subscribe before plans are shown, so a paid user goes straight back to the page they opened. PR 89
+dropped its own copy of the check in favour of this one, and its /pro redirects now pass a reason
+that /subscribe shows in one line ("activating" for a Stripe customer, otherwise "pro_required").
+**Lesson:** any page that can sell must first check whether the person has already paid.
+
+## 2026-10-05: A supply price was published as a Night Deposit fee
+**What happened:** Hamilton's briefing for Texas National Bank of Jacksonville led with "Night
+Deposit $3.00 against a $5.00 median". The $3.00 row in `published_fee_catalog` is "Zipper Bags",
+the price of deposit bags the bank sells, filed under `night_deposit`.
+**Cause:** not yet traced; most likely the category rule lets product and supply prices that sit
+near a fee name into that category.
+**Fix:** none yet; reported to Improving Hamilton for whoever owns Knox and Darwin.
+**Lesson:** a headline fee should be checked against its row's fee name before it leads a page.
+
 ## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
 **What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
 our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
@@ -567,6 +603,7 @@ the URL as rejected and marks the bank due a search (`failure_reason = 'magellan
 is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
 **Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
 loop on a dead address is a silent failure.
+
 ## 2026-10-06: Slow bank sites were cut off at the same point on every discovery search
 **What happened:** the Magellan audit (read-only, 6 Oct) counted 513 active banks with a website and no
 fee link whose last free search ended `retry_after` because the `discover` step ran out of time partway
@@ -745,6 +782,9 @@ read from stored rows, and finished quarters were not due again for a year.
 the registry scheduler re-pulls succeeded quarters recorded under an older parser version
 (`REGISTRY_PARSER_VERSIONS`), as ordinary visible runs, newest first.
 **Lesson:** when a parser learns a new field, bump its version so history fills in through runs.
+**Follow-up (04:10 UTC Oct 6, read-only check):** `overdraft_revenue` and `nsf_revenue` are still
+empty on every fdic and ncua row from 2025 Q1 to 2026 Q2, so no screen can show overdraft or NSF
+income yet. Hamilton's My fees says so under its filing exhibits rather than leaving a blank.
 
 ## 2026-10-06: Supabase Preview fails on any PR that adds a migration
 **What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
@@ -1262,6 +1302,7 @@ records the guard version with each decision and re-selects a category rejection
 version rises (now v9, which also adds a minimum-balance rule). Other decided rows stay closed, so
 `duplicate_in_batch` rows are never re-verified.
 **Lesson:** a "bump to re-check" version constant needs a test that the re-check really happens.
+
 ## 2026-10-06: Rosetta rejected fee pages whose fees load by script
 **What happened:** the Rosetta audit compared stored text with 91 Texas fee schedules read
 independently. Two of them (atfcu.org/fees, firstcommand.com/.../fees/) were real schedules that
@@ -2187,6 +2228,32 @@ timed out on every fetch, so it kept the link, and the paid schedule search re-s
 fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
 the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
 **Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
+
+## 2026-10-07: free OCR read scanned pages sideways and upside down
+**What happened:** the audit tracker scored Rosetta's OCR at 7 of 45 OK over 12 hours. 43 of the
+45 ran before PR 331 and 31 of those were text PDFs the old ladder sent to OCR (PR 331 stopped
+that). The real scans that failed mostly came back with plenty of characters at confidence 25 to 45
+(Certificate disclosures at edufcu.org and cmecreditunion.org). OCR took each page's largest image
+as stored, but scanners often store a page bottom row first or sideways and let the PDF's placement
+matrix or the page's /Rotate turn it back. Tesseract was reading mirrored or sideways text. A test
+set of 8 scans in those layouts read 3 of 8 before and 8 of 8 after.
+**Fix:** `ocr.ts` version 2 follows the placement matrix and /Rotate and turns each page image the way
+the page shows it. A page that still reads poorly is probed at the other quarter turns, for paper
+fed in sideways. Scans an older OCR version rejected or found empty get one read with the new one.
+Still unexplained: three one-page scans returned 0 characters at confidence 0 (802cu.com,
+csbnetbank.com, onomeafcu.org). The cloud container cannot fetch bank sites, so their bytes were not
+checked.
+**Lesson:** an image inside a PDF is not the page; read it through the matrix that draws it.
+
+## 2026-10-07: 79 reopened pages were selected every run and never read
+**What happened:** after PR 331, 90 reopened pages were read within an hour, but 88 others never
+were. 79 of those 88 still had their earlier failure in the bank playbook's do-not-retry list. The
+read step selected them, the router skipped them as a known failure, and a skip writes nothing, so
+they stayed eligible and were selected again every run. Reopening a page lifted its URL ban but not
+the playbook entry.
+**Fix:** the selection marks a page reopened and not read since (`reopen_pending`). For that one read,
+the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
+**Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
 
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address

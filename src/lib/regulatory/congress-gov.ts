@@ -113,8 +113,8 @@ export function parseCongressBill(raw: RawBill): FederalBillItem | null {
 }
 
 export const PAGE_SIZE = 250;
-/** About 15,000 bills a Congress: 80 pages covers it with room to spare. */
-export const MAX_PAGES = 80;
+/** The 119th Congress had 19,580 bills by Oct 2026 (79 pages); 120 pages leaves room for the rest of a Congress. */
+export const MAX_PAGES = 120;
 
 export function congressBillsUrl(congress: number, offset: number): string {
   const params = new URLSearchParams({ format: "json", limit: String(PAGE_SIZE), offset: String(offset) });

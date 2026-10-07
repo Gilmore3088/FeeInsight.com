@@ -10,7 +10,7 @@ vi.mock("@/app/pro/(hamilton)/monitor/actions", () => ({
 }));
 
 describe("WatchlistPanel", () => {
-  it("shows operational monitoring posture instead of prototype brand copy", () => {
+  it("lists watched institutions and waiting updates in plain language, in the memo style", () => {
     const entries: WatchlistEntry[] = [
       { institutionId: "2945", displayName: "Example Bank", status: "current" },
     ];
@@ -38,10 +38,14 @@ describe("WatchlistPanel", () => {
       <WatchlistPanel entries={entries} refreshJobs={refreshJobs} />,
     );
 
-    expect(html).toContain("Monitoring Posture");
-    expect(html).toContain("Canonical IDs");
-    expect(html).toContain("Manual reruns");
-    expect(html).toContain("Provider queued");
+    expect(html).toContain("Institutions you watch");
+    expect(html).toContain("Example Bank");
+    expect(html).toContain("Fees verified and current");
+    expect(html).toContain("Updates waiting");
+    expect(html).toContain("Waiting for you to rerun");
+    expect(html).toContain('href="/pro/reports?instId=2945&amp;intent=refresh-queue"');
+    expect(html).not.toContain("var(--hamilton");
+    expect(html).not.toContain("Canonical IDs");
     expect(html).not.toContain("Recurring Value preserves institutional permanence");
     expect(html).not.toContain("Hamilton Strategy Protocol");
     expect(html).not.toContain("Custodial Premium");
