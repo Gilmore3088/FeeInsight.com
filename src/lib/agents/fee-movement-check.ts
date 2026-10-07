@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { confirmFeeChange, type RecordedChangeRow } from "@/lib/report-assemblers/monthly-pulse";
 
 /**
  * Hamilton's fee-movement signals fire whenever a newer read of a fee carries a new
@@ -7,9 +8,10 @@ import { sql } from "@/lib/data-store/connection";
  * the 546 movements signalled from Sep 30 to Oct 7, 2026 passed the test below.
  *
  * A movement counts as a price change only when the old and new rows trace to two
- * different copies of the same page URL, the new copy is newer and not byte-identical,
- * the fee name is the same, and the old price is no longer listed anywhere on the new
- * copy. Alerts and the digest report only those; the rest are marked `confirmed: false`.
+ * different copies of the same page URL, the new copy is newer, and `confirmFeeChange`
+ * (the rule Hamilton and the Monthly Pulse use) bears it out: same fee name, the old copy
+ * states the old price, the new copy states the new price and no longer the old one.
+ * Alerts and the digest report only those; the rest are marked `confirmed: false`.
  */
 
 interface MovementPair {
@@ -68,7 +70,16 @@ export function markConfirmedMovements<T extends { signal_type?: string; source_
   });
 }
 
-/** previous:new published-fee pairs among these movements that pass the same-page test. */
+interface MovementCheckRow extends RecordedChangeRow {
+  previous_id: number | string;
+  new_id: number | string;
+}
+
+/**
+ * previous:new published-fee pairs among these movements that are price changes. The query
+ * keeps pairs read from two different copies of the same page URL, the new copy newer; the
+ * rule itself is `confirmFeeChange`, the one Hamilton and the Monthly Pulse use.
+ */
 export async function loadConfirmedMovementPairs(
   rows: Array<{ signal_type?: string; source_json: unknown }>,
 ): Promise<Set<string>> {
@@ -84,14 +95,26 @@ export async function loadConfirmedMovementPairs(
     }
   }
   if (previousIds.length === 0) return new Set();
-  const passed = await sql<{ previous_id: number | string; new_id: number | string }[]>`
+  // Document texts are read only for the pairs that pass the same-page filter.
+  const candidates = await sql<MovementCheckRow[]>`
     WITH pairs AS (
-      SELECT * FROM unnest(${previousIds}::bigint[], ${newIds}::bigint[]) AS p(previous_id, new_id)
+      SELECT DISTINCT * FROM unnest(${previousIds}::bigint[], ${newIds}::bigint[]) AS p(previous_id, new_id)
     )
-    SELECT p.previous_id, p.new_id
+    SELECT p.previous_id, p.new_id,
+           ct.institution_name, ct.state_code, ct.charter_type,
+           pn.canonical_fee_key AS fee_key, pn.fee_name, po.fee_name AS old_fee_name,
+           po.amount AS old_amount, pn.amount AS new_amount, dnew.crawled_at AS changed_at,
+           dnew.document_url AS source_url,
+           (SELECT t.normalized_text FROM agent_source_texts t
+             WHERE t.source_document_id = dnew.id AND t.status = 'completed'
+             ORDER BY t.id DESC LIMIT 1) AS new_document_text,
+           (SELECT t.normalized_text FROM agent_source_texts t
+             WHERE t.source_document_id = dold.id AND t.status = 'completed'
+             ORDER BY t.id DESC LIMIT 1) AS old_document_text
     FROM pairs p
     JOIN published_fee_records po ON po.fee_published_id = p.previous_id
     JOIN published_fee_records pn ON pn.fee_published_id = p.new_id
+    JOIN institution_sources ct ON ct.id = pn.institution_id
     JOIN verified_fee_observations vo ON vo.fee_verified_id = po.lineage_ref
     JOIN verified_fee_observations vn ON vn.fee_verified_id = pn.lineage_ref
     JOIN raw_fee_observations ro ON ro.fee_raw_id = vo.fee_raw_id
@@ -100,15 +123,13 @@ export async function loadConfirmedMovementPairs(
     JOIN source_documents dnew ON dnew.id = rn.source_document_id
     WHERE dold.id <> dnew.id
       AND dnew.crawled_at > dold.crawled_at
-      AND (dold.content_hash IS NULL OR dnew.content_hash IS NULL OR dold.content_hash <> dnew.content_hash)
       AND rtrim(lower(dold.document_url), '/') = rtrim(lower(dnew.document_url), '/')
-      AND regexp_replace(lower(po.fee_name), '[^a-z0-9]', '', 'g') = regexp_replace(lower(pn.fee_name), '[^a-z0-9]', '', 'g')
-      AND NOT EXISTS (
-        SELECT 1 FROM raw_fee_observations x
-        WHERE x.source_document_id = dnew.id AND round(x.amount, 2) = round(po.amount, 2)
-      )
   `;
-  return new Set(passed.map((row) => `${Number(row.previous_id)}:${Number(row.new_id)}`));
+  return new Set(
+    candidates
+      .filter((row) => confirmFeeChange(row) !== null)
+      .map((row) => `${Number(row.previous_id)}:${Number(row.new_id)}`),
+  );
 }
 
 /** Loads the check and marks the rows. A failed check confirms nothing. */

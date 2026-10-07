@@ -45,9 +45,27 @@ describe("isConfirmedMovement", () => {
 });
 
 describe("loadConfirmedMovementPairs", () => {
+  const candidate = (overrides: Record<string, unknown> = {}) => ({
+    previous_id: "1",
+    new_id: 2,
+    institution_name: "First Bank",
+    state_code: "TX",
+    charter_type: "bank",
+    fee_key: "overdraft",
+    fee_name: "Overdraft fee",
+    old_fee_name: "Overdraft fee",
+    old_amount: "30.00",
+    new_amount: "35.00",
+    changed_at: "2026-10-06T00:00:00Z",
+    source_url: "https://firstbank.example/fees",
+    old_document_text: "Overdraft fee $30.00\nStop payment $25.00",
+    new_document_text: "Overdraft fee $35.00\nStop payment $25.00",
+    ...overrides,
+  });
+
   it("asks once for every pair and skips the query when there are none", async () => {
     mocks.sql.mockReset();
-    mocks.sql.mockResolvedValue([{ previous_id: "1", new_id: 2 }]);
+    mocks.sql.mockResolvedValue([candidate()]);
     expect(await loadConfirmedMovementPairs([signal([])])).toEqual(new Set());
     expect(mocks.sql).not.toHaveBeenCalled();
     const pairs = await loadConfirmedMovementPairs([signal([move(1, 2)]), signal([move(3, 4)])]);
@@ -55,7 +73,15 @@ describe("loadConfirmedMovementPairs", () => {
     expect(mocks.sql).toHaveBeenCalledTimes(1);
     const text = (mocks.sql.mock.calls[0][0] as TemplateStringsArray).join("?");
     expect(text).toContain("document_url");
-    expect(text).toContain("NOT EXISTS");
+  });
+
+  it("applies confirmFeeChange: a reread of the same edition or a renamed line is not a change", async () => {
+    mocks.sql.mockReset();
+    mocks.sql.mockResolvedValue([
+      candidate({ new_document_text: "Overdraft fee $30.00\nStop payment $25.00" }),
+      candidate({ previous_id: 3, new_id: 4, old_fee_name: "Paid item fee" }),
+    ]);
+    expect(await loadConfirmedMovementPairs([signal([move(1, 2), move(3, 4)])])).toEqual(new Set());
   });
 
   it("confirms nothing when the check fails", async () => {

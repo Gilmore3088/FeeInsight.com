@@ -95,11 +95,13 @@ was a clean price change on the same page.
 **Cause:** Hamilton publish signals a movement whenever a newer read supersedes a live row at a new
 amount. While fees are loading, those reads are rereads, recategorizations and new copies, not banks
 changing prices.
-**Fix:** `src/lib/agents/fee-movement-check.ts` marks a movement as a price change only when both rows
-trace to different copies of the same page URL, the new copy is newer and not byte-identical, the fee
-name matches, and the old price is gone from the new copy. Fee alerts (free and watchlist) and the Pro
-digest report only those. The same query run on prod passed 0 of the 546 pairs. Publish itself still
-signals every movement; that call belongs to the Hamilton publish owners.
+**Fix:** `src/lib/agents/fee-movement-check.ts` keeps a movement only when both rows trace to
+different copies of the same page URL, the new copy is newer, and `confirmFeeChange` (the rule Hamilton
+and the Monthly Pulse use, in `monthly-pulse.ts`) bears it out. Fee alerts (free and watchlist) and the
+Pro digest report only those. On prod, 19 of the 546 pairs pass the same-page filter; 3 of those have
+the same fee name, and the two checked by hand (Mount Dora's "Monthly fee", a credit union's "Stop
+Payments") were two lines or two layouts of one unchanged schedule. Publish itself still signals every
+movement; that call belongs to the Hamilton publish owners.
 **Lesson:** a "movement" signal is not evidence of a price change. Check the documents behind it before
 telling a reader a fee moved.
 
