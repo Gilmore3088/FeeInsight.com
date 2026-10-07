@@ -974,7 +974,7 @@ describe("agentic run store", () => {
       .find((text) => text.includes("SELECT r.id"));
     const order = selection!.slice(selection!.indexOf("ORDER BY"));
     const underWay = order.indexOf("done.status <> 'queued'");
-    const direct = order.indexOf("COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC");
+    const direct = order.indexOf("COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC");
     const retry = order.indexOf("= 'failed') DESC");
     expect(underWay).toBeGreaterThan(0);
     expect(direct).toBeGreaterThan(underWay);

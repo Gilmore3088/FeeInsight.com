@@ -142,6 +142,21 @@ describe("business-only schedules", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("rejects another country's schedule by its domain without opening it, and by its currency once read", async () => {
+    const fetchImpl = page(lines);
+    const foreignHost = await validateFeeCandidate({ url: "https://www.southeastbank.com.bd/documents/schedule-of-charges.pdf", score: 0.95, reasons: [] }, fetchImpl);
+    expect(foreignHost).toMatchObject({ ok: false, verdict: "foreign_schedule" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const ownSite = await validateFeeCandidate({ url: "https://www.nbc.ca/natbank/fees", score: 0.95, reasons: [], websiteUrl: "https://www.nbc.ca/natbank" }, page(lines));
+    expect(ownSite.verdict).not.toBe("foreign_schedule");
+    const taka = "<h1>Schedule of Charges</h1>" + [
+      "Account maintenance fee Tk 500", "Cheque book issue fee Tk 10 per leaf", "Debit card annual fee BDT 1,000",
+      "Statement fee Tk 50", "Stop payment fee Tk 100", "Standing instruction fee Tk 200",
+    ].map((line) => `<p>${line}</p>`).join("");
+    const foreignText = await validateFeeCandidate({ url: "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges.html", score: 0.95, reasons: [] }, page(taka));
+    expect(foreignText).toMatchObject({ ok: false, verdict: "foreign_schedule" });
+  });
+
   it("rejects a page whose own heading is a business schedule, and keeps a combined one", async () => {
     const business = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Business Account Fee Schedule</h1>${lines}`));
     expect(business).toMatchObject({ ok: false, verdict: "business_schedule" });

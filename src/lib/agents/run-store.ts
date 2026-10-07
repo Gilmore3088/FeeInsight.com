@@ -418,6 +418,7 @@ async function executeAgenticStep(
         mode: step.stepKey === "rescue" ? "rescue" : "discover",
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
+        upgradeSlots: numericRunParam(params, ["upgrade_slots"]),
         stateCode,
       });
       // Outcome ledger: judge one slot of banks' links by the live fees they produced and
@@ -456,6 +457,7 @@ async function executeAgenticStep(
           second_documents_found: discovery.secondDocuments?.found ?? 0,
           restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
+          search_miss_lessons: discovery.searchMisses,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,
@@ -2541,8 +2543,9 @@ export async function executeQueuedAgentRuns({
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
               ) DESC,
               -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
-              -- a hand-found schedule or a large bank missing its overdraft fee.
-              COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC,
+              -- a hand-found schedule or a large bank missing its overdraft fee; and its
+              -- direct re-search of one state's missed banks (atlas/priority-state-research.ts).
+              COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
