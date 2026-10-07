@@ -127,4 +127,24 @@ describe("StructuredAsk", () => {
     expect(screen.getByText("Call reports, 2026-06-30 · 25 institutions")).toBeTruthy();
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
+
+  it("leads an every-fee answer with its takeaways, then the table, then the top fee's storyline", async () => {
+    const answer = buildFeeAnswer(overdraftResearch());
+    mockFetch(
+      {
+        kind: "research",
+        shortAnswer: "Test figures: two of three fees sit above their peer medians; overdraft is furthest.",
+        pageChange: { screen: "none" },
+        answer,
+        positions: [
+          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher" },
+        ],
+      },
+      { status: "withheld", reason: "held" },
+    );
+    render(<StructuredAsk question="Where do we stand on every fee?" institutionId="8109" modelHrefFor={() => "/"} />);
+    const lead = await screen.findByText(/two of three fees sit above/);
+    const table = screen.getByText("Every fee against its peer median");
+    expect(lead.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
