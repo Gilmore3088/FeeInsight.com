@@ -66,6 +66,7 @@ describe("change helpers", () => {
   it("names change kinds without internal agent names", () => {
     expect(formatChangeKind("darwin_verification_completed")).toBe("Fees verified");
     expect(formatChangeKind("hamilton_scenario_drift")).toBe("Scenario drift");
+    expect(formatChangeKind("hamilton_competitor_fee_change")).toBe("Competitor fee change");
     expect(formatChangeKind("source_missing")).toBe("Fee schedule source");
   });
 });

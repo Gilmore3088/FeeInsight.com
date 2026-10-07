@@ -54,6 +54,8 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
+import { runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
+import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
@@ -1441,6 +1443,31 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
+        detail: { ...result },
+      };
+    }
+    case "briefing-refresh": {
+      const institutionId = Number(params.institution_id);
+      const result = await runBriefingRefresh({
+        dryRun: run.runKind === "dry_run",
+        institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
+        runId: run.id,
+      });
+      return {
+        status: "completed",
+        summary: summarizeBriefingRefresh(result),
+        detail: { ...result },
+      };
+    }
+    case "competitor-alerts": {
+      const institutionId = Number(params.institution_id);
+      const result = await runCompetitorAlerts({
+        dryRun: run.runKind === "dry_run",
+        institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
+      });
+      return {
+        status: "completed",
+        summary: summarizeCompetitorAlerts(result),
         detail: { ...result },
       };
     }

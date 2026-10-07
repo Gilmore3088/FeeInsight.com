@@ -360,6 +360,14 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.wilsonbank.com/personal/overdraft-services",
     givenBy: "web search for the Tennessee report's largest banks, 2026-10-07 07:00",
   },
+  {
+    // "Outline of Services 2025, Personal Checking Accounts" (31 pages), the bank's own file on
+    // its site host's storage. ACNB holds 61% of Adams County deposits and had no link on file.
+    institutionId: 393,
+    institutionName: "ACNB Bank",
+    url: "https://trabian-canvas-prd-files.s3.amazonaws.com/acnb-com/files/document/7_list_of_services.pdf",
+    givenBy: "web search for the Adams County market study, 2026-10-07 07:10",
+  },
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
