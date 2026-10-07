@@ -179,6 +179,7 @@ export function narrateStepFinished(
     case "registry-beige-book":
     case "registry-fred":
     case "registry-reg-news":
+    case "registry-fomc-minutes":
     case "registry-federal-register":
     case "registry-federal-bills":
     case "registry-state-bills":
@@ -278,6 +279,8 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
     case "registry-reg-news":
       return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
+    case "registry-fomc-minutes":
+      return `Stored ${count(n(detail, "stored"), "new set of FOMC minutes", "new sets of FOMC minutes")}; ${n(detail, "remaining")} still to pull.`;
     case "registry-federal-register": {
       const stages = (detail.stages ?? {}) as Record<string, unknown>;
       const open = typeof stages.comment_open === "number" ? stages.comment_open : 0;
@@ -369,6 +372,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-beige-book": "magellan",
   "registry-fred": "magellan",
   "registry-reg-news": "magellan",
+  "registry-fomc-minutes": "magellan",
   "registry-federal-register": "magellan",
   "registry-federal-bills": "magellan",
   "registry-state-bills": "magellan",

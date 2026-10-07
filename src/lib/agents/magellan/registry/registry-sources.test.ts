@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
-import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFred } from "./fed";
+import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
 import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
 import { matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
@@ -379,6 +379,27 @@ describe("registry Federal Register worker", () => {
   });
 });
 
+describe("registry FOMC minutes worker", () => {
+  const calendar = '<a href="/monetarypolicy/fomcminutes20260729.htm">Minutes</a> <a href="/monetarypolicy/fomcminutes20260617.htm">Minutes</a>';
+  const minutes = `<div id="article"><h3>Minutes of the Federal Open Market Committee</h3><p>${"Participants discussed. ".repeat(400)}</p></div><h6>footer</h6>`;
+
+  it("pulls minutes it does not have yet and skips pages that don't parse", async () => {
+    const { db, statements } = createDb([
+      ["FROM fed_fomc_minutes", () => [{ meeting_date: "2026-06-17" }]],
+      ["INSERT INTO fed_fomc_minutes", (values) => payloadOf(values).map((r) => ({ meeting_date: r.meeting_date }))],
+    ]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      new Response(url.endsWith("fomccalendars.htm") ? calendar : minutes, { status: 200 }),
+    );
+    const result = await runRegistryFomcMinutes({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ linked: 2, alreadyStored: 1, fetched: 1, stored: 1, remaining: 0, tooShort: [] });
+    expect(fetchImpl).toHaveBeenCalledWith("https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm", expect.anything());
+    const rows = payloadOf(statements.find((s) => s.text.includes("INSERT INTO fed_fomc_minutes"))!.values);
+    expect(rows[0]).toMatchObject({ meeting_date: "2026-07-29", title: "Minutes of the Federal Open Market Committee" });
+    expect(String(rows[0].content_text)).not.toContain("footer");
+  });
+});
+
 describe("registry federal bills worker", () => {
   const now = new Date("2026-10-07T03:00:00Z");
   const page = {
@@ -506,6 +527,7 @@ describe("registry dispatch", () => {
       "sec-filings",
       "beige-book",
       "fred",
+      "fomc-minutes",
       "reg-news",
       "federal-register",
       "federal-bills",
