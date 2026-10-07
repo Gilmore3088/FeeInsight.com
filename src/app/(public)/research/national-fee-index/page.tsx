@@ -15,7 +15,9 @@ import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { SAMPLE_REPORT_LIVE, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
@@ -44,6 +46,7 @@ export default async function NationalFeeIndexPage() {
   // The count of categories with published fees, the same figure the homepage, pricing and
   // institution pages show (not the taxonomy size, which includes categories with no data yet).
   const { categoriesLabel } = await getPublicStatsSummary();
+  const sampleLive = await sampleReportAvailable();
 
   // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
   const headlineCats = new Set(getFeaturedCategories());
@@ -128,7 +131,7 @@ export default async function NationalFeeIndexPage() {
         headline="Get the national fee index in your inbox"
         body="New national medians and one table worth bringing to a pricing meeting. No more than once a month."
         buttonLabel="Subscribe"
-        secondaryLink={SAMPLE_REPORT_LIVE ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
+        secondaryLink={sampleLive ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
       />
 
       {/* CPI context strip */}

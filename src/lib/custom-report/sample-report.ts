@@ -95,3 +95,8 @@ export async function loadSampleReport(): Promise<MarketReport | null> {
   const chosen = chooseSample(evaluated);
   return evaluated.find((c) => c.id === chosen)?.report ?? null;
 }
+
+/** Whether the live sample exists today, so links to it never land on the "on its way" note. */
+export async function sampleReportAvailable(): Promise<boolean> {
+  return (await loadSampleReport().catch(() => null)) !== null;
+}
