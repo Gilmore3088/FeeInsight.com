@@ -78,7 +78,7 @@ function depositsLabel(dollars: number): string {
 export function footprintLine(branches: MarketBranchFootprint | null | undefined, institutionId: number): string | null {
   const own = branches?.byInstitution[institutionId];
   if (!branches || !own || own.branches === 0) return null;
-  const share = branches.totalDeposits > 0 ? (own.deposits / branches.totalDeposits) * 100 : null;
+  const share = own.deposits !== null && branches.totalDeposits > 0 ? (own.deposits / branches.totalDeposits) * 100 : null;
   const shareText = share === null ? "" : share < 0.1 ? " · under 0.1% of local deposits" : ` · ${share.toFixed(1)}% of local deposits`;
   return `${own.branches} ${own.branches === 1 ? "branch" : "branches"}${shareText}`;
 }
@@ -256,7 +256,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how many of
                 your fees they publish. Each amount links to the schedule it was read from.
                 {branches &&
-                  ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits.`}
+                  ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits. Credit unions show branches only, in the market's cities, because NCUA reports no deposits by branch.`}
               </p>
               <table className="mt-4 w-full min-w-[760px] text-left text-sm">
                 <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">

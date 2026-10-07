@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { REPORT_BULLETS, REPORT_PRICE_LABEL } from "./pricing";
 
@@ -40,7 +40,7 @@ export function FreeTierCard({ summary }: { summary: PublicStatsSummary }) {
 }
 
 /** The one commissioned product. Eyebrow is the product name, not the Advisory tier. */
-export function ReportCard() {
+export function ReportCard({ sampleLive = false }: { sampleLive?: boolean }) {
   return (
     <div className={CARD_CLASS}>
       <div className="md:flex md:items-start md:justify-between md:gap-8">
@@ -62,7 +62,7 @@ export function ReportCard() {
           <p className="mt-3 text-sm text-[#5A5347]">
             One institution, one peer set, one PDF for your pricing committee.{" "}
             {REPORT_OFFER.nextStep}.
-            {SAMPLE_REPORT_LIVE && (
+            {sampleLive && (
               <>
                 {" "}
                 <TrackLink
