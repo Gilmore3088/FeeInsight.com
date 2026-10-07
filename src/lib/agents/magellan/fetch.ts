@@ -15,7 +15,7 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
-import { markCurrentCopy } from "@/lib/agents/magellan/current-copy";
+import { markCurrentCopy, supersedeSamePageCopies, type SamePageCopyResult } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
@@ -136,6 +136,8 @@ export interface RunMagellanFetchResult {
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
   operatorSchedules: OperatorScheduleResult | null;
+  /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
+  samePageCopies: SamePageCopyResult | null;
   results: FetchResult[];
 }
 
@@ -863,7 +865,15 @@ export async function runMagellanFetch(
   // failure here never fails the fee-link fetch.
   let companions: RunCompanionFetchResult | null = null;
   let operatorSchedules: OperatorScheduleResult | null = null;
+  let samePageCopies: SamePageCopyResult | null = null;
   if (!dryRun) {
+    try {
+      samePageCopies = await inSavepoint(db, (scope) =>
+        supersedeSamePageCopies(scope, { runId: options.runId, institutionId: options.institutionId ?? null }),
+      );
+    } catch (error) {
+      console.error("Same-page copies failed:", error);
+    }
     // Schedules James found by hand join the companions before they are fetched.
     try {
       operatorSchedules = await inSavepoint(db, (scope) =>
@@ -906,6 +916,7 @@ export async function runMagellanFetch(
     supersededCopies,
     companions,
     operatorSchedules,
+    samePageCopies,
     results,
   };
 }
