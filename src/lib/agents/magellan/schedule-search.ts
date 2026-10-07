@@ -13,6 +13,7 @@ import {
   DOCUMENT_YEAR_SQL,
   FEE_NAMED_LINK_SQL,
   hasOverdraftPrice,
+  HIDDEN_BELOW_CATEGORIES,
   LARGE_BANK_ASSETS,
   onBankDomain,
   OVERDRAFT_PRICE_SQL,
@@ -47,8 +48,6 @@ export const SCHEDULE_SEARCH_PER_RUN = 10;
  * A few per paid step, largest first, beside the large-bank lane (Knox handoff, Oct 7).
  */
 export const HIDDEN_BANK_SEARCH_PER_RUN = 10;
-/** Fewer live fee categories than this and the catalog hides the bank. */
-const HIDDEN_BELOW_CATEGORIES = 3;
 const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 1024;
 const ANSWER_SCORE = 0.85;
