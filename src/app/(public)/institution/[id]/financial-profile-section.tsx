@@ -2,7 +2,8 @@ import { UpgradeGate } from "@/components/upgrade-gate";
 import type { FinancialPoint, GrowthRow, OutlierFlag, PeerMedianPoints, PeerRankRow } from "./financial-history";
 import { FinancialInsights } from "./financial-insights";
 import { FinancialProfileCharts } from "./financial-profile";
-import { BranchFootprintCard, ComplaintsCard, EnforcementCard, HoldingCompanyCard, RegulatoryWatchCard } from "./registry-cards";
+import { BranchFootprintCard, ComplaintsCard, EnforcementCard, HoldingCompanyCard } from "./registry-cards";
+import { RegulatoryWatchSection } from "./regulatory-watch";
 import type { RegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import type { BranchFootprint, ComplaintTrend, EnforcementRecord, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
 
@@ -99,7 +100,7 @@ export function FinancialProfileSection({
                   {enforcement && <EnforcementCard record={enforcement} />}
                   {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
                 </div>
-                {regulatoryWatch && <RegulatoryWatchCard watch={regulatoryWatch} exportHref={exportHref} />}
+                {regulatoryWatch && <RegulatoryWatchSection watch={regulatoryWatch} exportHref={exportHref} />}
               </div>
             )}
           </>

@@ -18,6 +18,8 @@ import { isOpenAction } from "./registry-profile";
 export const WATCH_ACTION_YEARS = 3;
 /** Competitors checked: the largest by deposits in the market counties. */
 export const WATCH_PEER_LIMIT = 25;
+/** Market fee medians use the same 40 competitors as the benchmark export, so the card and the CSV agree. */
+const MARKET_FEE_PEERS = 40;
 /** Rule items published, open for comment, or taking effect within this many days. */
 export const WATCH_RULE_DAYS = 365;
 
@@ -32,6 +34,8 @@ export interface WatchPeerAction {
   subject: string | null;
   /** True when the agency's subject names consumer law (UDAP, Regulation E or DD, fees). */
   consumer_law: boolean;
+  /** What the agency's subject is mostly about, for colouring the timeline. */
+  theme: ActionTheme;
   /** An order with no end date on file (registry-profile isOpenAction); never called active. */
   no_end_date_on_file: boolean;
   start_date: string | null;
@@ -69,6 +73,8 @@ export interface WatchRuleChange {
 export interface RegulatoryWatch {
   market: { places: string[]; peers_checked: number } | null;
   peer_actions: WatchPeerAction[];
+  /** The institution's fees that consumer regulators watch most, beside the local market median. */
+  fee_focus: WatchFeeTie[];
   /** Agencies whose lists are loaded; empty means no enforcement source yet. */
   agencies_loaded: Array<"OCC" | "FRB">;
   rule_changes: WatchRuleChange[];
@@ -81,6 +87,40 @@ const CONSUMER_LAW = /consumer law|unfair|deceptive|udap|udaap|abusive|overdraft
 
 export function isConsumerLaw(subject: string | null | undefined): boolean {
   return Boolean(subject && CONSUMER_LAW.test(subject));
+}
+
+export type ActionTheme = "consumer" | "bsa_aml" | "governance" | "other";
+
+/** Consumer law first: an action that names it is the one a fee owner reads. */
+export function actionTheme(subject: string | null | undefined): ActionTheme {
+  if (isConsumerLaw(subject)) return "consumer";
+  if (!subject) return "other";
+  if (/\bBSA\b|AML|OFAC|SAR\/CTR|due diligence/i.test(subject)) return "bsa_aml";
+  if (/governance|internal controls|risk management|board|management oversight|capital|audit|information technology|heightened standards/i.test(subject)) return "governance";
+  return "other";
+}
+
+/** Fees consumer regulators have targeted (overdraft and NSF, returned items, stop payments, card and ATM). */
+export const FOCUS_CATEGORIES: readonly string[] = [
+  ...(FEE_FAMILIES["Overdraft & NSF"] ?? []).filter((c) => !c.endsWith("_cap")),
+  "deposited_item_return",
+  "stop_payment",
+  "atm_non_network",
+  "card_replacement",
+];
+const FOCUS_SHOWN = 6;
+
+/** The focus fees the institution publishes that the market also prices, in FOCUS_CATEGORIES order. */
+export function focusFees(
+  ownFees: ReadonlyMap<string, number>,
+  marketMedians: ReadonlyMap<string, { median: number | null; count: number }>,
+): WatchFeeTie[] {
+  return FOCUS_CATEGORIES.flatMap((category) => {
+    const amount = ownFees.get(category);
+    const market = marketMedians.get(category);
+    if (amount === undefined || !market || market.median === null) return [];
+    return [{ fee_category: category, display_name: getDisplayName(category), amount, market_median: market.median, market_count: market.count }];
+  }).slice(0, FOCUS_SHOWN);
 }
 
 const ALL_FEE_TOPICS = new Set(["fees", "deposit_disclosure"]);
@@ -162,7 +202,9 @@ const strings = (value: unknown): string[] => (Array.isArray(value) ? value.map(
 export async function getRegulatoryWatch(institutionId: number, today: Date = new Date()): Promise<RegulatoryWatch> {
   const todayIso = today.toISOString().slice(0, 10);
   const market = await getLocalMarketMembers(institutionId).catch(() => null);
-  const peers = (market?.members ?? []).filter((m) => !m.is_subject).slice(0, WATCH_PEER_LIMIT);
+  const rivals = (market?.members ?? []).filter((m) => !m.is_subject);
+  const peers = rivals.slice(0, WATCH_PEER_LIMIT);
+  const feePeerIds = rivals.slice(0, MARKET_FEE_PEERS).map((m) => m.institution_id);
   const peerIds = peers.map((p) => p.institution_id);
   const peerName = new Map(peers.map((p) => [p.institution_id, p.institution_name]));
 
@@ -208,6 +250,7 @@ export async function getRegulatoryWatch(institutionId: number, today: Date = ne
       action_type: actionType,
       subject,
       consumer_law: isConsumerLaw(subject),
+      theme: actionTheme(subject),
       no_end_date_on_file: isOpenAction({ action_type: actionType, start_date: start, termination_date: end }, today),
       start_date: start,
       termination_date: end,
@@ -231,8 +274,8 @@ export async function getRegulatoryWatch(institutionId: number, today: Date = ne
   ]);
 
   const ownFees = await getInstitutionFeeValues(institutionId).catch(() => new Map<string, number>());
-  const peerFees = peerIds.length > 0 && ownFees.size > 0
-    ? await getFeeValuesForInstitutions(peerIds, [...ownFees.keys()]).catch(() => new Map<number, Map<string, number>>())
+  const peerFees = feePeerIds.length > 0 && ownFees.size > 0
+    ? await getFeeValuesForInstitutions(feePeerIds, [...ownFees.keys()]).catch(() => new Map<number, Map<string, number>>())
     : new Map<number, Map<string, number>>();
   const medians = marketMediansFrom(peerFees);
 
@@ -268,6 +311,7 @@ export async function getRegulatoryWatch(institutionId: number, today: Date = ne
   return {
     market: market ? { places: market.places, peers_checked: peers.length } : null,
     peer_actions,
+    fee_focus: focusFees(ownFees, medians),
     agencies_loaded: (["OCC", "FRB"] as const).filter((a) => loaded.some((r) => r.agency === a)),
     rule_changes: rule_changes.slice(0, 12),
     rules_tracked: Number(trackedRows[0]?.n ?? 0) > 0,

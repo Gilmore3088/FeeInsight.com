@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feesTouched, isConsumerLaw, marketMediansFrom } from "./regulatory-watch";
+import { actionTheme, feesTouched, focusFees, isConsumerLaw, marketMediansFrom } from "./regulatory-watch";
 import { benchmarkCsvRows, positionAgainst } from "./benchmark-export";
 
 describe("regulatory watch", () => {
@@ -55,5 +55,25 @@ describe("benchmark export", () => {
       }],
     });
     expect(rows).toEqual([["nsf", "NSF", "Overdraft & NSF", 30, 29.99, 25, 35, 900, null, 2, 30, 26, 34, 300, null, 1, "typical", null]]);
+  });
+});
+
+describe("watch themes and focus fees", () => {
+  it("colours an action by what the agency says it was about", () => {
+    expect(actionTheme("Consumer Law; Unfair or Deceptive (UDAP)")).toBe("consumer");
+    expect(actionTheme("BSA Internal Controls; BSA/AML; OFAC Compliance Issue")).toBe("bsa_aml");
+    expect(actionTheme("Enterprise Governance / Internal Controls / General Risk Management")).toBe("governance");
+    expect(actionTheme("Trading & Securities; Trading Issues")).toBe("other");
+    expect(actionTheme(null)).toBe("other");
+  });
+
+  it("keeps the regulator-watched fees the market also prices, overdraft first", () => {
+    const own = new Map([["stop_payment", 0], ["nsf", 39.5], ["overdraft", 39.5], ["safe_deposit_box", 167.5], ["rush_card", 45]]);
+    const market = new Map([["overdraft", { median: 32, count: 13 }], ["nsf", { median: 20, count: 7 }], ["stop_payment", { median: 30, count: 15 }], ["rush_card", { median: null, count: 2 }]]);
+    expect(focusFees(own, market).map((f) => [f.fee_category, f.amount, f.market_median])).toEqual([
+      ["overdraft", 39.5, 32],
+      ["nsf", 39.5, 20],
+      ["stop_payment", 0, 30],
+    ]);
   });
 });

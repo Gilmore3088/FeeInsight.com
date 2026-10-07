@@ -214,6 +214,7 @@ describe("/api/v1/institutions", () => {
       vi.mocked(getRegulatoryWatch).mockResolvedValue({
         market: { places: ["Austin, TX"], peers_checked: 25 },
         peer_actions: [],
+        fee_focus: [],
         agencies_loaded: ["OCC", "FRB"],
         rule_changes: [],
         rules_tracked: false,
