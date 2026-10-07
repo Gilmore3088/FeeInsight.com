@@ -4,7 +4,7 @@ import { StoryExhibitView } from "./story-exhibits";
 import { incomeSplitOf } from "./income-split";
 
 // Test figures only.
-const split = { unit: "per_1000_deposits", own: 4.1, peerMedian: 5, peerLabel: "Credit unions $5B to $10B", n: 25, priceIndex: 108, priceExplained: -0.3, otherExplained: -0.6, quarterEnd: "Q2 2026" };
+const split = { unit: "per_1000_deposits", own: 4.1, peerMedian: 5, peerLabel: "Credit unions $5B to $10B", n: 25, priceIndex: 108, priceExplained: -0.3, otherExplained: -0.6, quarterEnd: "2026-06-30" };
 
 describe("income split", () => {
   it("draws the gap split into price and how often fees are charged, not a table", () => {
@@ -19,6 +19,7 @@ describe("income split", () => {
       />,
     );
     expect(html).toContain("$4.10");
+    expect(html).toContain("year to Jun 30, 2026");
     expect(html).toContain("$5.00");
     expect(html).toContain("−$0.90");
     expect(html).toContain("Published prices");

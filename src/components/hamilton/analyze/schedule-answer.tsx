@@ -9,7 +9,7 @@ import type { Fact, SchedulePosition } from "@/lib/hamilton/workspace/types";
 import { fmtMoney } from "@/components/hamilton/memo/memo";
 
 /** Engine 1.12.1 adds each fee's peer middle half; answers saved before it have the median only. */
-type PositionRow = SchedulePosition & { band?: { p25: number; p75: number } | null };
+type PositionRow = SchedulePosition;
 
 const DIRECTION: Record<SchedulePosition["direction"], { text: string; chip: string; dot: string }> = {
   higher: { text: "Higher", chip: "border-terra/40 bg-terra-soft text-terra-text", dot: "bg-terra" },

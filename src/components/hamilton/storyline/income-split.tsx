@@ -4,19 +4,14 @@
  * prices account for and the rest (how often fees are charged and waived). Engine 1.12.1 puts
  * the numbers on the "income-split" exhibit as `incomeSplit`.
  */
+import type { IncomeSplitData } from "@/lib/hamilton/workspace/storyline-types";
 
-export interface IncomeSplitData {
-  unit: "per_1000_deposits";
-  own: number;
-  peerMedian: number;
-  peerLabel: string;
-  n: number;
-  /** The bank's published prices against the peer median as 100; null when no fee compares. */
-  priceIndex: number | null;
-  /** Signed $ per $1,000 of deposits; the two add up to own minus peerMedian. */
-  priceExplained: number;
-  otherExplained: number;
-  quarterEnd?: string | null;
+export type { IncomeSplitData };
+
+/** "2026-06-30" reads as "Jun 30, 2026"; anything else ("Q2 2026") as given. */
+function quarterLabel(q: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(q)) return q;
+  return new Date(`${q.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 /** The split carried on an exhibit, when it is there and its numbers are usable. */
@@ -57,7 +52,7 @@ export function IncomeSplitChart({ data }: { data: IncomeSplitData }) {
   return (
     <div className="flex flex-col gap-5 rounded-md border border-warm-200 bg-white p-4 [font-variant-numeric:tabular-nums]">
       <div className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-[0.08em] text-warm-600">Service charges per $1,000 of deposits{data.quarterEnd ? `, year to ${data.quarterEnd}` : ""}</p>
+        <p className="text-xs uppercase tracking-[0.08em] text-warm-600">Service charges per $1,000 of deposits{data.quarterEnd ? `, year to ${quarterLabel(data.quarterEnd)}` : ""}</p>
         <Bar label="You" value={data.own} max={max} own />
         <Bar label={`Peer median (${data.n})`} value={data.peerMedian} max={max} />
       </div>

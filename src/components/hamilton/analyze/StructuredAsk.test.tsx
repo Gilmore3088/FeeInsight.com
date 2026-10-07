@@ -93,7 +93,7 @@ describe("StructuredAsk", () => {
         pageChange: { screen: "none" },
         facts: [{ text: "Overdraft $35 against a $29 median.", source: { label: "Bank Fee Index" } }],
         positions: [
-          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher", ...({ band: { p25: 25, p75: 32 } } as object) },
+          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher", band: { p25: 25, p75: 32 } },
           { feeCategory: "nsf", displayName: "NSF / returned item", current: 20, peerMedian: 25, peerCount: 38, peerLabel: "Banks $10B and up", direction: "lower" },
           { feeCategory: "stop_payment", displayName: "Stop payment", current: 30, peerMedian: 30, peerCount: 30, peerLabel: "Banks $10B and up", direction: "at" },
         ],
