@@ -400,3 +400,8 @@ v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 1
 ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
 Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
 Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
+
+Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
+Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
+publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
+the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
