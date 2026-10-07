@@ -1649,3 +1649,14 @@ start in shadow mode (`SAME_PAGE_SUPERSEDE_LIVE = false`), logging `magellan.sam
 events; switching on is a one-line follow-up after the logged pairs are checked. Hamilton's
 newer-copy check and identical-copy move then handle the fees, as for any superseded copy.
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
+
+## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
+**What happened:** PR 314 rewrote the schedule-search query and lost the `''` after
+`btrim(inst.fee_schedule_url) <>`. Every `discover-paid` step failed with "syntax error at or near
+AND" from 01:21 UTC Oct 7 (4 failures before the fix). The unit tests mock the database, so they
+never parsed the SQL.
+**Fix:** the `''` is back, and a test now checks that no SQL sent by the schedule search leaves a
+comparison without its right-hand side. The fixed query was run read-only on prod and returned its
+12 rows.
+**Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
+merging.
