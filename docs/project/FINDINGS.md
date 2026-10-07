@@ -1905,3 +1905,14 @@ their ending, since the category guard reads "fee of" as the sign of a fee sente
 **Lesson:** a name is tidied for the reader, but the category guard still reads it, so a tidy rule
 has to be checked against the guard and the answer keys, not only by eye.
 
+## 2026-10-07: a rules change could not take back a category it had given a held line
+**What happened:** Knox v26 folded held lines into existing categories. Its first prod pass (runs
+1927, 1929, 1930) promoted 60 lines. Six of them went to the wrong category, and two of those were
+verified and published within minutes (published 69934, 69503). Nothing re-read a line after it was
+promoted, so the next rules version could stop new misfiles but could not pull back these.
+**Fix:** PR 336. Knox v30 narrows the fold. `recheckPromotedRows` puts unverified promotions that
+today's rules no longer file the same back on hold, logged as `wrong` and never deleted; rate fees are
+skipped. Category guard v15 rejects the two live rows, so Hamilton's rules re-check takes them down.
+Dry run on 794 unverified promotions: 7 go back on hold.
+**Lesson:** sample real prod output right after a rules change ships, and give every automatic
+promotion a way back.
