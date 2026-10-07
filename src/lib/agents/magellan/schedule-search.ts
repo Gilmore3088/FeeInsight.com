@@ -11,11 +11,16 @@ import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
   DOCUMENT_YEAR_SQL,
+  FEE_NAMED_LINK_SQL,
   hasOverdraftPrice,
+  HIDDEN_BELOW_CATEGORIES,
   LARGE_BANK_ASSETS,
+  onBankDomain,
   OVERDRAFT_PRICE_SQL,
+  PRODUCT_LINK_SQL,
   REFERS_ELSEWHERE_SQL,
   STALE_DOCUMENT_YEARS,
+  websiteHost,
 } from "./link-coverage";
 
 type SqlTag = typeof sql;
@@ -36,6 +41,13 @@ type Fetcher = typeof fetch;
 export const SCHEDULE_SEARCH_STRATEGY = { strategy: "discover.paid_schedule_search", version: 1 } as const;
 /** Banks one paid step searches. Not tied to the step's state: these are national names. */
 export const SCHEDULE_SEARCH_PER_RUN = 10;
+/**
+ * Banks of any size hidden from the index because we read fewer than three fees for them
+ * (the catalog's 3-fee rule) and whose stored page is an account product page or prices no
+ * overdraft: a product, rate or Truth-in-Savings page, not the schedule.
+ * A few per paid step, largest first, beside the large-bank lane (Knox handoff, Oct 7).
+ */
+export const HIDDEN_BANK_SEARCH_PER_RUN = 10;
 const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 1024;
 const ANSWER_SCORE = 0.85;
@@ -55,6 +67,8 @@ export interface ScheduleSearchRow {
   no_overdraft_price: boolean | null;
   refers_elsewhere: boolean | null;
   stale_copy?: boolean | null;
+  hidden?: boolean | null;
+  product_page?: boolean | null;
 }
 
 interface ScheduleAnswer {
@@ -72,48 +86,25 @@ export interface ScheduleSearchResult {
   results: Array<Record<string, unknown>>;
 }
 
-function host(website: string): string | null {
-  for (const candidate of [website.trim(), `https://${website.trim()}`]) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") return url.hostname.toLowerCase().replace(/^www\./, "");
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-/** On the bank's own domain: the website host or a subdomain of it. */
-function onDomain(url: string, website: string): boolean {
-  const site = host(website);
-  if (!site) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    const candidate = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    return candidate === site || candidate.endsWith(`.${site}`);
-  } catch {
-    return false;
-  }
-}
-
 /** Why the page we hold is not the schedule, in the prompt's words. */
 function whyNotIt(row: ScheduleSearchRow): string {
   if (row.business_only) return "it is the business account schedule, not the personal one";
   if (row.refers_elsewhere) return "it refers to the deposit account agreement or another document for the fees";
+  if (row.product_page) return "it is an account product page, not the fee schedule";
+  if (row.hidden && !row.no_overdraft_price) return "we could read fewer than three fees from it, so it is not the full fee schedule";
   if (row.stale_copy && !row.no_overdraft_price) return "it is dated several years ago and its prices are likely out of date; find the current edition";
   return "it does not list the overdraft or NSF fee amount";
 }
 
 export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
-  const site = host(row.website_url) ?? row.website_url;
+  const site = websiteHost(row.website_url) ?? row.website_url;
   return [
     "Find the URL of this bank's consumer (personal) fee schedule: the document, usually a PDF,",
     "that lists personal deposit account fees with dollar amounts, including the overdraft and",
     "NSF / returned item fee, stop payment, wires and monthly maintenance. It may be titled",
-    "\"Schedule of Fees\", \"Personal Fee Schedule\", \"Consumer Deposit Account Agreement\" or",
-    "\"Truth in Savings Disclosure\".",
+    "\"Schedule of Fees\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Personal Fee Schedule\",",
+    "\"Account Fee Schedule\", \"Consumer Fees\", \"Consumer Deposit Account Agreement\" or \"Truth in Savings",
+    "Disclosure\". Large banks often publish it on their parent company's domain.",
     "",
     `Bank: ${row.institution_name}`,
     `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
@@ -121,7 +112,7 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
     `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find a different document.`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${site} or a subdomain of it).`,
+    `- The URL must be on the bank's own domain (${site}, a subdomain of it, or its parent company's domain).`,
     "- Not a business or commercial schedule, a rate sheet, a press release, or a marketing page.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -131,12 +122,26 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
 }
 
 /** $10B+ banks and report requesters whose link is not the consumer schedule yet, not searched this month. */
-async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[]> {
+/**
+ * Two lanes: $10B+ banks and report requesters whose link is not the consumer schedule yet
+ * (up to `limit`), and banks of any size the catalog hides for having fewer than three
+ * live fees (up to `hiddenLimit`). Neither searched this month.
+ */
+async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promise<ScheduleSearchRow[]> {
   return db<ScheduleSearchRow[]>`
     -- incomplete-link schedule search
-    WITH scoped AS (
+    WITH live AS (
+      SELECT record.institution_id, count(DISTINCT record.canonical_fee_key)::int AS categories
+        FROM published_fee_records record
+       WHERE record.rolled_back_at IS NULL
+       GROUP BY record.institution_id
+    ),
+    scoped AS (
       SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+             (inst.asset_size >= ${LARGE_BANK_ASSETS} OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)) AS priority,
+             COALESCE(live.categories, 0) < ${HIDDEN_BELOW_CATEGORIES} AS hidden,
+             (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}) AS product_page,
              (
                lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
                AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
@@ -164,10 +169,10 @@ async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[
              ) AS stale_copy
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+        LEFT JOIN live ON live.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
-         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
-         AND (inst.asset_size >= ${LARGE_BANK_ASSETS} OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id))
+         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> 
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
          AND COALESCE(profile.locked_by_correction, false) = false
@@ -180,10 +185,16 @@ async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[
               AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
          )
     )
-    SELECT * FROM scoped
-     WHERE business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
-     ORDER BY requested DESC, asset_size DESC NULLS LAST, id ASC
-     LIMIT ${limit}
+    , lanes AS (
+      SELECT scoped.*,
+             row_number() OVER (PARTITION BY priority ORDER BY requested DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+        FROM scoped
+       WHERE (priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy))
+          OR (NOT priority AND hidden AND (product_page OR no_overdraft_price))
+    )
+    SELECT * FROM lanes
+     WHERE (priority AND lane_rank <= ${limit}) OR (NOT priority AND lane_rank <= ${hiddenLimit})
+     ORDER BY priority DESC, requested DESC, asset_size DESC NULLS LAST, id ASC
   `;
 }
 
@@ -207,6 +218,7 @@ export async function runScheduleSearch(options: {
   runId: number;
   stepId?: number | null;
   limit?: number;
+  hiddenLimit?: number;
   dryRun?: boolean;
   db?: SqlTag;
   create?: PaidMessageCreator;
@@ -215,7 +227,7 @@ export async function runScheduleSearch(options: {
   const db = options.db ?? sql;
   const result: ScheduleSearchResult = { selected: 0, processed: 0, found: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [] };
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? SCHEDULE_SEARCH_PER_RUN)) || SCHEDULE_SEARCH_PER_RUN, SCHEDULE_SEARCH_PER_RUN));
-  const rows = await selectRows(db, limit);
+  const rows = await selectRows(db, limit, options.hiddenLimit ?? HIDDEN_BANK_SEARCH_PER_RUN);
   result.selected = rows.length;
   if (options.dryRun) {
     result.results = rows.map((row) => ({
@@ -262,7 +274,7 @@ export async function runScheduleSearch(options: {
       if (!proposed) {
         outcome = "no_candidates";
         reason = "Web search found no consumer fee schedule";
-      } else if (!onDomain(proposed, row.website_url)) {
+      } else if (!onBankDomain(proposed, row.website_url)) {
         outcome = "invalid_url";
         reason = `Answer is not on the bank's domain: ${proposed}`;
       } else if ((await knownUrls(db, institutionId, row.fee_schedule_url)).has(urlIdentity(proposed))) {

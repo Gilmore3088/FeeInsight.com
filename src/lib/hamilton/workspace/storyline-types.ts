@@ -36,6 +36,8 @@ export interface StoryExhibit {
 
 export interface StoryOption {
   label: string;
+  /** The dollar price the option tests (0 removes the fee). */
+  price?: number;
   consequences: Fact[];
 }
 

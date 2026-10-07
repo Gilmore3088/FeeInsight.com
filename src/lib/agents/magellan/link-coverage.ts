@@ -64,9 +64,9 @@ export function hasOverdraftPrice(text: string): boolean {
 
 /** A sentence that sends the reader to another document for terms or amounts. */
 const REFERS_ELSEWHERE =
-  /\b(refer to|see|described in|disclosed in|found in|outlined in|listed in|provided in)\b[^.]{0,160}\b(account agreement|deposit agreement|terms and conditions|truth in savings|account disclosures?|fee schedule|schedule of fees|account pages?|product pages?)\b/i;
+  /\b(refer to|see|described in|disclosed in|found in|outlined in|listed in|provided in)\b[^.]{0,160}\b(account agreement|deposit agreement|terms and conditions|truth in savings|account disclosures?|fee schedule|schedule of fees|schedule of (?:service )?charges|account pages?|product pages?)\b/i;
 export const REFERS_ELSEWHERE_SQL =
-  "\\m(refer to|see|described in|disclosed in|found in|outlined in|listed in|provided in)\\M[^.]{0,160}(account agreement|deposit agreement|terms and conditions|truth in savings|account disclosure|fee schedule|schedule of fees|account page|product page)";
+  "\\m(refer to|see|described in|disclosed in|found in|outlined in|listed in|provided in)\\M[^.]{0,160}(account agreement|deposit agreement|terms and conditions|truth in savings|account disclosure|fee schedule|schedule of fees|schedule of charges|schedule of service charges|account page|product page)";
 
 export function refersElsewhere(text: string): boolean {
   return REFERS_ELSEWHERE.test(text);
@@ -86,5 +86,58 @@ export function isStaleDatedLink(url: string, now: Date = new Date()): boolean {
   return Number(match[1]) <= now.getUTCFullYear() - STALE_DOCUMENT_YEARS;
 }
 
+/** Same address test as `looksLikeProductPage` (find-validate.ts), for SQL: an account or product page... */
+export const PRODUCT_LINK_SQL =
+  "^https?://[^/]+/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)";
+/** ...unless its address names a fee document. */
+export const FEE_NAMED_LINK_SQL = "(fee|schedule|charge|disclos|truth|pricing|\\.pdf($|\\?))";
+
 /** Assets (thousands, as call reports) at which a bank is one buyers check first: $10B. */
 export const LARGE_BANK_ASSETS = 10_000_000;
+
+/** Fewer live fee categories than this and the catalog hides the bank (the 3-fee rule). */
+export const HIDDEN_BELOW_CATEGORIES = 3;
+
+/** The host of a bank's website, without "www.". */
+export function websiteHost(website: string): string | null {
+  for (const candidate of [website.trim(), `https://${website.trim()}`]) {
+    try {
+      const url = new URL(candidate);
+      if (url.protocol === "http:" || url.protocol === "https:") return url.hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** The domain's name part: "citigroup" for www.citigroup.com, "chase" for secure.chase.com. */
+function domainName(host: string): string {
+  const labels = host.split(".");
+  return labels.length >= 2 ? labels[labels.length - 2] : host;
+}
+
+const CORPORATE_SUFFIX = /^-?(group|corp|corporation|bancorp|bancshares|financial|holdings|inc|bank|banking|online|direct)$/;
+
+/**
+ * The bank's own domain: its website host, a subdomain of it, or its corporate domain.
+ * Large banks publish their schedules on the parent company's site (Citi's consumer
+ * "Schedule of Charges" is on citigroup.com while its website is citi.com), so a domain
+ * named the website's name (4+ letters) plus a corporate word counts too. Only those
+ * words: "citizensbank" is not Citi's.
+ */
+export function onBankDomain(url: string, website: string): boolean {
+  const host = websiteHost(website);
+  if (!host) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const candidate = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (candidate === host || candidate.endsWith(`.${host}`)) return true;
+    const bank = domainName(host);
+    const other = domainName(candidate);
+    return bank.length >= 4 && other.startsWith(bank) && CORPORATE_SUFFIX.test(other.slice(bank.length));
+  } catch {
+    return false;
+  }
+}
