@@ -4,9 +4,10 @@
  * into the short answer. Pure.
  */
 
+import type { IntensityQuarter } from "@/lib/data-store/call-reports";
 import { formatFeeAmount } from "@/lib/format";
 import { MAX_STORY_EXHIBITS } from "./storyline";
-import type { StoryExhibit } from "./storyline-types";
+import type { IncomeSplitData, StoryExhibit } from "./storyline-types";
 import type { AskResponse, SchedulePosition, SourceRef } from "./types";
 import { withSchedule, type ScheduleOverview } from "./schedule";
 import { withIncomeSplit, type IncomeExplanation, type IncomeSplit } from "./why";
@@ -44,6 +45,24 @@ export function scheduleExhibit(positions: readonly SchedulePosition[], feesAsOf
   };
 }
 
+/** The split as numbers: the price part is the peer median at the bank's prices, the rest is everything else. */
+export function incomeSplitData(split: IncomeSplit): IncomeSplitData {
+  const ratio = split.priceGap === null ? 1 : 1 + split.priceGap;
+  const atYourPrices = split.peerMedian * ratio;
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    unit: "per_1000_deposits",
+    own: split.own,
+    peerMedian: split.peerMedian,
+    peerLabel: split.peerLabel,
+    n: split.peers,
+    priceIndex: split.priceGap === null ? null : Math.round(100 * ratio),
+    priceExplained: round(atYourPrices - split.peerMedian),
+    otherExplained: round(split.own - atYourPrices),
+    quarterEnd: split.quarterEnd,
+  };
+}
+
 /** The bank's fee income against peers of its size, and what its prices explain of the gap. */
 export function incomeExhibit(split: IncomeSplit): StoryExhibit {
   const gap = `${Math.round(Math.abs(split.incomeGap) * 100)}%`;
@@ -73,11 +92,50 @@ export function incomeExhibit(split: IncomeSplit): StoryExhibit {
       ],
       sources: [source, { label: "Fees on each institution's own published schedule (verified, live)", table: "published_fee_catalog" }],
       note: "How often fees are charged and which ones are shown together.",
+      incomeSplit: incomeSplitData(split),
     },
     takeaway: {
       text: `${money(split.own)} per $1,000 of deposits against a ${money(split.peerMedian)} median, four quarters to ${quarterLabel(split.quarterEnd)}.`,
       source,
       sampleSize: split.peers,
+    },
+  };
+}
+
+const MIN_TREND_QUARTERS = 4;
+
+/** Service charges per $1,000 of deposits by quarter, the bank against its peer median. */
+export function incomeTrendExhibit(trend: readonly IntensityQuarter[], peerLabel: string): StoryExhibit | null {
+  const own = trend.filter((q) => q.own !== null);
+  const peer = trend.filter((q) => q.peerMedian !== null);
+  if (own.length < MIN_TREND_QUARTERS || peer.length < MIN_TREND_QUARTERS) return null;
+  const below = own.filter((q) => q.peerMedian !== null && q.own! < q.peerMedian).length;
+  const actionTitle =
+    below === own.length
+      ? `Your fee income per $1,000 of deposits sat below the peer median in each of the last ${own.length} quarters.`
+      : below === 0
+        ? `Your fee income per $1,000 of deposits sat above the peer median in each of the last ${own.length} quarters.`
+        : `Your fee income per $1,000 of deposits sat below the peer median in ${below} of the last ${own.length} quarters.`;
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    id: "income-trend",
+    actionTitle,
+    exhibit: {
+      kind: "trend",
+      title: "Service charges per $1,000 of deposits, by quarter (annualized)",
+      unit: "dollars",
+      series: [
+        { label: "You", points: own.map((q) => ({ date: q.quarterEnd, value: round(q.own!) })) },
+        { label: `${peerLabel[0].toUpperCase()}${peerLabel.slice(1)} median`, points: peer.map((q) => ({ date: q.quarterEnd, value: round(q.peerMedian!) })) },
+      ],
+      sources: [
+        {
+          label: "FDIC call reports and NCUA 5300 reports, service charges on deposit accounts and total deposits",
+          table: "institution_financial_records",
+          asOf: trend[trend.length - 1].quarterEnd,
+        },
+      ],
+      note: "Each quarter's service charges times four, per $1,000 of that quarter's deposits.",
     },
   };
 }
@@ -96,6 +154,8 @@ export function withStoryExhibits(response: AskResponse, extra: readonly (StoryE
 export interface IncomeWhy {
   split: IncomeSplit;
   explained: IncomeExplanation;
+  /** Quarter by quarter, oldest first; empty when the call reports are not on file. */
+  trend?: IntensityQuarter[];
   /** The fee furthest from its peer median, answered in detail when the question named none. */
   top: string | null;
 }
@@ -107,5 +167,9 @@ export interface IncomeWhy {
 export function withDepth(built: AskResponse, schedule: ScheduleOverview | null, why: IncomeWhy | null, feesAsOf: string | null): AskResponse {
   let response = schedule ? withSchedule(built, schedule) : built;
   if (why) response = withIncomeSplit(response, why.explained);
-  return withStoryExhibits(response, [why ? incomeExhibit(why.split) : null, schedule ? scheduleExhibit(schedule.positions, feesAsOf) : null]);
+  return withStoryExhibits(response, [
+    why ? incomeExhibit(why.split) : null,
+    why?.trend ? incomeTrendExhibit(why.trend, why.split.peerLabel) : null,
+    schedule ? scheduleExhibit(schedule.positions, feesAsOf) : null,
+  ]);
 }

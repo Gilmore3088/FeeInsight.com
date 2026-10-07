@@ -33,10 +33,13 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "James, 2026-10-07 00:51",
   },
   {
+    // James's link (2026-10-07 00:52) was Citi Bangladesh's schedule of charges (taka), which
+    // Rosetta rightly rejected. Citi publishes no single US fee schedule; this is its US
+    // consumer account comparison chart. Citi charges no overdraft fee (dropped in 2022).
     institutionId: 3,
     institutionName: "Citibank, National Association",
-    url: "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges_Effective_February_26_2026.pdf",
-    givenBy: "James, 2026-10-07 00:52",
+    url: "https://online.citi.com/JRS/popups/comparison_chart.pdf",
+    givenBy: "web search for the US consumer schedule, 2026-10-07 06:30",
   },
   {
     institutionId: 5,
