@@ -308,7 +308,8 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-state-bills": {
       if (detail.missing_key) return "Skipped state bills: the Open States key is not set.";
       const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
-      return `Found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
+      const states = Array.isArray(detail.states) ? detail.states.length : 0;
+      return `Read ${count(states, "state")} and found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
     }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;

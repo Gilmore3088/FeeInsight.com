@@ -139,6 +139,10 @@ in run-store) fits before 270 seconds. Short steps use the end of a tick, and lo
 still start early enough to finish inside the 300-second limit. Runs stay serial, so the
 database load per moment is unchanged. A state whose last finished lane run failed now
 retries ahead of routine passes.
+**Follow-up (04:30):** 22 of the 27 schedules found by hand (`discover.operator_schedule`, among
+them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
+their state's lane run fetches them and those runs waited in line. Next in the order after
+retries now comes a lane whose state holds a hand-found schedule with status `found`.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2325,3 +2329,27 @@ partition is retried only after the 6-hour claim expires.
 and grows each buffer with the data. The whole zip is never held in memory.
 **Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
 that the loader will fit in a function's memory.
+
+## 2026-10-07: State bills would have taken about four days to cover 52 states
+**What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
+only Alaska had run.
+**Cause:** the registry scheduler starts one step every five minutes. It works round-robin across about
+20 sources and picks the first partition that is due. A source with 52 small partitions gets one
+turn per round, behind every other source's history and retries.
+**Fix:** state bills now has one scheduled partition, `current`. Each run reads the next 12 states
+whose weekly check is due and records each state under its own partition row. The step comes back
+within the hour while states are still due, so all 52 are covered in five runs.
+**Lesson:** for a registry source with many small, quick items, batch them inside one partition.
+Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Knox re-read fees that were already taken down
+**What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
+the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
+fees whose takedown still stood (152 from the source check, 56 for a price outside the category's
+range). It sent 49 of them back to Darwin, and 6 were published again.
+**Fix:** Knox reads `takedown_confirmed` rows, the second look's verdict, for checks that say the
+read was wrong. It holds a matching re-read for review instead of sending it to Darwin, and
+records the count on the extract event. First-look takedowns don't teach: Darwin found 13 of 20
+recent source-check takedowns were real prices.
+**Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
+logged changes nothing.
