@@ -217,7 +217,9 @@ export function ReportWorkspace({
   }, [selectedTemplate, focusArea, selectedInstitution?.id, peerSetId]);
 
   function handleTemplateClick(type: ReportTemplateType) {
-    setSelectedTemplate((prev) => (prev === type ? null : type));
+    // Selecting only: a second click on the chosen card used to clear it, which
+    // silently disabled the Generate button.
+    setSelectedTemplate(type);
   }
 
   function handlePeerSetChange(nextPeerSetId: string | null) {
@@ -298,6 +300,8 @@ export function ReportWorkspace({
       setGeneratedReportMetadata(result.artifactMetadata);
     } else {
       setError(result.error);
+      // The banner sits at the top of the page; bring it into view so a failed run is never silent.
+      setTimeout(() => document.getElementById("report-error")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
     }
   }
 
@@ -391,6 +395,7 @@ export function ReportWorkspace({
       {/* Error banner */}
       {(error || pdfError) && (
         <div
+          id="report-error"
           role="alert"
           className="mb-8 p-4 text-sm border"
           style={{
@@ -535,7 +540,7 @@ export function ReportWorkspace({
                   arrow_upward
                 </span>
                 <span>
-                  Pick a template above and click <strong style={{ color: "var(--hamilton-on-surface)" }}>Generate Intelligence</strong> to draft a report from your live fee data.
+                  Pick a report type above, then click the <strong style={{ color: "var(--hamilton-on-surface)" }}>Generate</strong> button in the panel to draft a report from your live fee data.
                 </span>
               </div>
             )}

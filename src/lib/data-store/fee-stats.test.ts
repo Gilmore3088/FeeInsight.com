@@ -5,7 +5,10 @@ import {
   summarizeFeesBy,
   valuePerInstitution,
   institutionPositions,
+  STATS_ROW_FILTER,
+  businessSourceSql,
 } from "./fee-stats";
+import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 
 function rowsFor(amounts: (number | string | null)[], charter = "bank") {
   return amounts.map((amount, index) => ({ institution_id: index + 1, amount, charter_type: charter }));
@@ -109,5 +112,26 @@ describe("institutionPositions", () => {
     const top = positions.find((position) => position.institution_id === 5)!;
     expect(top.value).toBe(60);
     expect(top.value).toBeGreaterThan(top.p75);
+  });
+});
+
+describe("business-only sources (rule 6)", () => {
+  it("leaves business-only schedules out of statistics with the same address test Magellan uses", () => {
+    expect(STATS_ROW_FILTER).toContain("ef.source_document_id IS NOT NULL AND NOT (");
+    expect(businessSourceSql("c")).toContain("COALESCE(c.source_url, '')");
+    // The SQL applies BUSINESS_PATH_SQL / CONSUMER_PATH_SQL to the lowercased path; mirror it here.
+    const sqlSays = (url: string) => {
+      const path = url.replace(/^https?:\/\/[^/]+/, "").toLowerCase();
+      return new RegExp(BUSINESS_PATH_SQL).test(path) && !new RegExp(CONSUMER_PATH_SQL).test(path);
+    };
+    for (const url of [
+      "https://www.fnbalaska.com/docs/Business-Account-Fee-Schedule.pdf",
+      "https://bank.com/personal/fee-schedule.pdf",
+      "https://bank.com/commercial-and-consumer-fees.pdf",
+      "https://businessbank.com/fees.pdf",
+      "https://bank.com/treasury-management/pricing",
+    ]) {
+      expect(sqlSays(url)).toBe(isBusinessOnlyLink(url));
+    }
   });
 });
