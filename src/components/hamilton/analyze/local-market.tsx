@@ -6,6 +6,8 @@
 import type { LocalMarketAnswer, MarketCompetitor } from "@/lib/hamilton/local-market-answer";
 import { SERIF, fmtMoney } from "@/components/hamilton/memo/memo";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
+import type { SourceRef } from "@/lib/hamilton/workspace/types";
 
 /** "$1.2B", "$850M", "$40K". */
 export function fmtDeposits(v: number): string {
@@ -24,22 +26,6 @@ function Tile({ value, label, accent }: { value: string; label: string; accent?:
       </span>
       <span className="text-[11px] leading-tight text-warm-600">{label}</span>
     </div>
-  );
-}
-
-function Frame({ eyebrow, title, children, note }: { eyebrow: string; title: string; children: React.ReactNode; note?: string }) {
-  return (
-    <figure className="relative overflow-hidden rounded-xl border border-warm-300 bg-white p-5 shadow-[0_1px_2px_rgba(26,24,21,0.04)] break-inside-avoid sm:p-6 print:shadow-none">
-      <span aria-hidden className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-terra via-terra/50 to-transparent" />
-      <figcaption className="mb-5 flex flex-col gap-1">
-        <span className="inline-flex w-fit items-center rounded-full bg-terra-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-terra-text">{eyebrow}</span>
-        <span className="text-lg leading-snug text-warm-900" style={SERIF}>
-          {title}
-        </span>
-      </figcaption>
-      {children}
-      {note ? <p className="mt-4 border-t border-warm-200 pt-2 text-xs text-warm-600">{note}</p> : null}
-    </figure>
   );
 }
 
@@ -190,7 +176,10 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
     data.market.basis === "branch_counties"
       ? `the ${data.market.countyCount === 1 ? "county" : `${data.market.countyCount} counties`} where you hold the most deposits`
       : `the ${data.market.countyCount === 1 ? "county" : "counties"} around your headquarters city`;
-  const sourceNote = `Sources: FDIC Summary of Deposits, June 30, ${data.market.sodYear} (bank branches and deposits); NCUA branch file (credit union branches, counted by city); Bank Fee Index published fee schedules.`;
+  // Exhibits share the report frame, so every answer and report carries the same rule, pill and source line.
+  const sod: SourceRef = { label: `FDIC Summary of Deposits, June 30, ${data.market.sodYear}`, table: "institution_branch_deposits" };
+  const ncua: SourceRef = { label: "NCUA credit union branch file", table: "credit_union_branches" };
+  const fees: SourceRef = { label: "Bank Fee Index, published fee schedules", table: "published_fee_catalog" };
   return (
     <section className="flex flex-col gap-5">
       <div className="flex flex-col gap-4 rounded-xl border border-warm-300 bg-warm-100/70 px-5 py-5">
@@ -209,17 +198,17 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
           <Tile value={String(competitorCount)} label="Competitors shown" />
         </div>
       </div>
-      <Frame eyebrow="Exhibit 1" title="Who holds the market: branches here, and deposits for banks" note={sourceNote}>
+      <ExhibitFrame number={1} title="Who holds the market: branches here, and deposits for banks" note="Credit union branches are counted by city; NCUA reports no deposits by branch." sources={[sod, ncua]}>
         <MarketHolders data={data} />
-      </Frame>
+      </ExhibitFrame>
       {data.you.cities.length > 0 ? (
-        <Frame eyebrow="Exhibit 2" title={`Where your ${data.you.branches} branches are`}>
+        <ExhibitFrame number={2} title={`Where your ${data.you.branches} branches are`} sources={data.charterType === "credit_union" ? [ncua] : [sod]}>
           <BranchCities data={data} />
-        </Frame>
+        </ExhibitFrame>
       ) : null}
-      <Frame eyebrow={data.you.cities.length > 0 ? "Exhibit 3" : "Exhibit 2"} title="What they charge for the main fees, beside yours">
+      <ExhibitFrame number={data.you.cities.length > 0 ? 3 : 2} title="What they charge for the main fees, beside yours" sources={[fees]}>
         <FeeGrid data={data} />
-      </Frame>
+      </ExhibitFrame>
     </section>
   );
 }
