@@ -60,7 +60,7 @@ export interface ComplaintSummary {
 export async function getFinancialStats(): Promise<FinancialStats> {
   const [fdic] = await sql`SELECT COUNT(*) as cnt FROM institution_financial_records WHERE source = 'fdic'`;
   const [ncua] = await sql`SELECT COUNT(*) as cnt FROM institution_financial_records WHERE source = 'ncua'`;
-  const [instFin] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_financial_records`;
+  const [instFin] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_financial_records WHERE source IN ('fdic', 'ncua')`;
   const [complaints] = await sql`SELECT COUNT(*) as cnt FROM institution_complaint_records`;
   const [instComp] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_complaint_records`;
 
@@ -88,6 +88,7 @@ export async function getFinancialsByInstitution(
            total_revenue, fee_income_ratio, overdraft_revenue
     FROM institution_financial_records
     WHERE institution_id = ${targetId}
+      AND source IN ('fdic', 'ncua')
     ORDER BY report_date DESC
     LIMIT ${rowLimit}`];
 
@@ -333,13 +334,15 @@ export async function getRevenueIndexByDate(reportDate?: string): Promise<Revenu
       SELECT fee_income_ratio, service_charge_income
       FROM institution_financial_records
       WHERE fee_income_ratio IS NOT NULL AND report_date = ${reportDate}
+        AND source IN ('fdic', 'ncua')
       ORDER BY fee_income_ratio` as typeof rows;
   } else {
     rows = await sql`
       SELECT fee_income_ratio, service_charge_income
       FROM institution_financial_records
       WHERE fee_income_ratio IS NOT NULL
-        AND report_date = (SELECT MAX(report_date) FROM institution_financial_records)
+        AND source IN ('fdic', 'ncua')
+        AND report_date = (SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua'))
       ORDER BY fee_income_ratio` as typeof rows;
   }
 
@@ -362,7 +365,7 @@ export async function getRevenueIndexByDate(reportDate?: string): Promise<Revenu
   if (reportDate) {
     rd = reportDate;
   } else {
-    const [maxRow] = await sql`SELECT MAX(report_date) as d FROM institution_financial_records`;
+    const [maxRow] = await sql`SELECT MAX(report_date) as d FROM institution_financial_records WHERE source IN ('fdic', 'ncua')`;
     rd = (maxRow as { d: string }).d;
   }
 
@@ -590,8 +593,8 @@ const HISTORY_EXTRA_NUMERIC = [
 ] as const;
 
 /**
- * Up to `maxQuarters` quarters of call-report history (all sources; callers pick
- * one row per quarter). Reads only columns added by the regulatory registry
+ * Up to `maxQuarters` quarters of call-report history (fdic and ncua rows only;
+ * callers pick one row per quarter). Reads only columns added by the regulatory registry
  * migration, so it must only be called once that migration is applied; callers
  * wrap it with a fallback.
  */
@@ -617,6 +620,7 @@ export async function getFinancialHistory(
            fetched_at
     FROM institution_financial_records
     WHERE institution_id = ${targetId}
+      AND source IN ('fdic', 'ncua')
     ORDER BY report_date DESC
     LIMIT ${rowLimit}`];
 

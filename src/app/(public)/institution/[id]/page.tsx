@@ -71,8 +71,8 @@ interface PageProps {
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 
 const FINANCIAL_HISTORY_QUARTERS = 4;
-/** Up to three call-report sources can carry the same quarter; fetch enough rows to dedupe. */
-const FINANCIAL_SOURCES_PER_QUARTER = 3;
+/** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
+const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
 function fallbackTo<T>(label: string, fallback: T) {
   return (error: unknown): T => {

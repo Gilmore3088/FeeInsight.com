@@ -13,6 +13,35 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: ffiec rows in institution_financial_records mixed units with fdic/ncua
+**Owner:** the Data inventory thread.
+**What happened:** `institution_financial_records` has three `source` values. `fdic` and `ncua`
+rows carry every dollar column in thousands. The 13,215 `ffiec` rows (report dates 2025-09-30,
+2025-12-31 and 2026-03-31, all written on 2026-08-10) use other units: balance-sheet columns in
+whole dollars, `service_charge_income` about 1,000,000x the fdic figure (Orrstown, institution 270,
+2026-03-31: 946,778,000 against 2,077 in its fdic row), `fee_income_ratio` about 1,000x, and
+`net_income` null. 12,934 of them duplicate an fdic/ncua row for the same institution and quarter
+(counts from the Data inventory thread's read-only queries). Readers that did not filter by source
+could take an ffiec row as "the latest" quarter, or average and sum both rows: the industry health
+medians and growth trends, the revenue index, fee-revenue correlation and tier/charter summaries
+(the public /research/fee-revenue-analysis page joins each institution's latest quarter, so an
+institution whose latest quarter is an ffiec quarter could appear with the ffiec figures, or twice), fee dependency and revenue-per-institution trends, the latest-quarter lookups behind top revenue,
+district and tier revenue, the institution financials and history reads (public institution page,
+admin institution and peers pages, API v1 institutions, evidence route), and the admin
+financial-coverage counts, call-report freshness and missing-financials check.
+**Cause:** a loader that no longer exists wrote the ffiec rows once in its own units. Some readers
+filtered or rescaled them (`call-reports.ts`, the institution page's `financial-units.ts`, report
+exhibits, the briefing and research tool); most did not.
+**Fix:** this change. `src/lib/data-store/financial-sources.ts` holds `FINANCIAL_SOURCES`
+(`fdic`, `ncua`) and `financialSourceFilter()`; every read in `src/` now filters to those sources,
+the ffiec rescaling in `financial-units.ts` and `annualServiceCharges` is gone, and
+`scripts/ci-guards.sh financial-source-kill` fails any `FROM`/`JOIN institution_financial_records`
+without a source filter in the next eight lines. The Hamilton studies
+(`src/lib/agents/hamilton/studies/drivers.ts`, `fee-dependence.ts`, `inferred-volume.ts`) already
+read only `source = 'fdic'` / `'ncua'` rows, so their results were not affected.
+**Still open:** the 13,215 ffiec rows stay in the table until James approves archiving them. Until
+then any new reader must use the source filter; the guard checks this.
+
 ## 2026-10-07: Open States allows about ten requests a minute, so state bill runs hit 429
 **What happened:** the first two 12-state runs (05:32 and 07:12 UTC) read 16 states and failed 10 with
 HTTP 429 (CA, DE, FL, IA, ID, KS, MA, MD, MN, MO in `registry_ingest_partitions`). The failures came after
