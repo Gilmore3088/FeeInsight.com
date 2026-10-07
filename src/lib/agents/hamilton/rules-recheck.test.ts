@@ -11,27 +11,10 @@ const TEXT = [
   "per Overdraft 3\"X10\"X 21\" | $30.00",
 ].join("\n");
 
-/** First looks logged by an earlier run, 13 hours ago: these fees are due their second look. */
-function firstLooks(ids: number[], hoursAgo = 13) {
-  return ids.map((id) => ({
-    fee_published_id: id,
-    kind: "takedown_pending",
-    evidence: { flag_run_id: 7, flagged_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(), reason: RULES_RECHECK_REASON },
-  }));
-}
-
-function createDbMock(
-  liveRows: Array<Record<string, unknown>>,
-  texts: Array<Record<string, unknown>>,
-  flags: Array<Record<string, unknown>> = [],
-): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) => {
-    const query = strings.join("?");
-    if (query.includes("FROM agent_source_texts")) return Promise.resolve(texts);
-    if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
-    if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(flags);
-    return Promise.resolve([]);
-  }) as DbMock;
+function createDbMock(liveRows: Array<Record<string, unknown>>, texts: Array<Record<string, unknown>>): DbMock {
+  const db = vi.fn((strings: TemplateStringsArray) =>
+    Promise.resolve(strings.join("?").includes("FROM agent_source_texts") ? texts : []),
+  ) as DbMock;
   db.unsafe = vi.fn(() => Promise.resolve(liveRows));
   return db;
 }
@@ -81,7 +64,6 @@ describe("Hamilton rules re-check", () => {
         live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00"),
       ],
       texts,
-      firstLooks([2, 3]),
     );
 
     const result = await rollBackUnreproducedFees(asDb(db), {
@@ -111,7 +93,7 @@ describe("Hamilton rules re-check", () => {
     // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
     const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
     const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
-    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), refiled, unrelated], texts, firstLooks([2, 3]));
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), refiled, unrelated], texts);
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
 
@@ -201,25 +183,8 @@ describe("Hamilton rules re-check", () => {
     expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
   });
 
-  it("logs a first failure and keeps the fee live until a later look fails it again", async () => {
-    const overdraft = live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00");
-    const first = createDbMock([overdraft], texts);
-    const flagged = await rollBackUnreproducedFees(asDb(first), { runId: 310, batchId: "b", dryRun: false });
-    expect(flagged.rollbacks).toEqual([]);
-    expect(flagged.flagged).toBe(1);
-    const writes = JSON.stringify(first.mock.calls);
-    expect(writes).toContain("INSERT INTO pipeline_feedback");
-    expect(writes).not.toContain("UPDATE published_fee_records");
-    expect((first.unsafe.mock.calls[0] as [string])[0]).toMatch(/OR \(NOT live\.pulled AND EXISTS[\s\S]*FROM pipeline_feedback[\s\S]*takedown_pending/);
-
-    const recent = createDbMock([overdraft], texts, firstLooks([3], 1));
-    const waiting = await rollBackUnreproducedFees(asDb(recent), { runId: 311, batchId: "b", dryRun: true });
-    expect(waiting.rollbacks).toEqual([]);
-    expect(waiting.awaitingSecondLook).toBe(1);
-  });
-
   it("only reads in a dry run", async () => {
-    const db = createDbMock([live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00")], texts, firstLooks([3]));
+    const db = createDbMock([live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00")], texts);
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
 

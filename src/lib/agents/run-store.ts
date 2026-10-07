@@ -885,7 +885,6 @@ async function executeAgenticStep(
         : null;
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
-      const recheckAwaiting = (rulesRecheck?.flagged ?? 0) + (rulesRecheck?.awaitingSecondLook ?? 0);
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
@@ -968,9 +967,6 @@ async function executeAgenticStep(
           : "") +
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
-          : "") +
-        (recheckAwaiting > 0
-          ? ` Kept ${recheckAwaiting.toLocaleString()} live fee(s) today's Knox rules do not read until a second look.`
           : "");
       const sourceNote =
         sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
@@ -1065,8 +1061,6 @@ async function executeAgenticStep(
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
           rules_recheck_restores: recheckRestores,
-          rules_recheck_awaiting_second_look: recheckAwaiting,
-          rules_recheck_cleared: rulesRecheck?.cleared ?? 0,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,

@@ -27,9 +27,8 @@ at least 12 hours on, that fails it again takes it down. Of 1,345 source-check t
 restored, 1,311 came back within 12 hours (453 within one), so the 12-hour wait would have kept
 about 97% of them live instead of flickering off and on. Wired into the source check and the category guard, and the
 category guard now restores earlier takedowns that today's guard passes (PR 324). The rules
-re-check followed: of its 4,580 takedowns, 184 were later restored, so a fee its rules no longer
-read now waits for a second look too; an older copy of a fee the newest row still shows comes
-down at once, since the fee stays live. The outlier range (768 takedowns) and off-taxonomy (94)
+re-check (4,580 takedowns, 184 later restored) gets its second look in PR 320: an independent
+check (the source trace or the category guard) must fail too. The outlier range (768 takedowns) and off-taxonomy (94)
 checks never had a restore, because their verdict only changes when a range or the taxonomy
 changes; they now restore a takedown that passes today (0 qualify as of 02:40 UTC Oct 7). A second
 look would add nothing there: the same amount fails the same range 12 hours later.

@@ -8,7 +8,6 @@ import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
-import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 
 type SqlTag = typeof sql;
 
@@ -88,12 +87,6 @@ export interface RulesRecheckResult {
   rollbacks: RulesRecheckRollback[];
   /** Fees an earlier re-check took down that today's rules read again. */
   restores: RulesRecheckRollback[];
-  /** Unreproduced fees logged for a second look this run (still live). */
-  flagged: number;
-  /** Unreproduced fees whose first look is too recent (still live). */
-  awaitingSecondLook: number;
-  /** Fees that failed an earlier look and are reproduced now. */
-  cleared: number;
 }
 
 interface LiveKnoxRow {
@@ -132,16 +125,7 @@ interface DocumentText {
   normalized_text: string;
 }
 
-const EMPTY_RESULT: RulesRecheckResult = {
-  documentsChecked: 0,
-  documentsWithoutText: 0,
-  liveFeesChecked: 0,
-  rollbacks: [],
-  restores: [],
-  flagged: 0,
-  awaitingSecondLook: 0,
-  cleared: 0,
-};
+const EMPTY_RESULT: RulesRecheckResult = { documentsChecked: 0, documentsWithoutText: 0, liveFeesChecked: 0, rollbacks: [], restores: [] };
 
 /**
  * Hamilton repair: roll back live fees Knox's free rules extracted that today's rules
@@ -166,12 +150,6 @@ const EMPTY_RESULT: RulesRecheckResult = {
  * dedupe (document, name, price) refuses. A fee read again under a new name returns the
  * normal way, as a new raw row through Darwin. Documents whose live fees were all taken
  * down are re-checked too.
- *
- * A takedown is a last resort (second-look.ts): a fee today's rules do not read is logged
- * the first time and stays live; a later re-check, at least 12 hours on, takes it down only
- * if it still is not read. A document with a fee due its second look is re-checked again.
- * An older copy of a fee the document's newest row already shows comes down at once: the
- * fee itself stays live.
  */
 export async function rollBackUnreproducedFees(
   db: SqlTag,
@@ -245,14 +223,6 @@ export async function rollBackUnreproducedFees(
                 AND pa.source_document_id = live.source_document_id
                 AND pa.input_fingerprint = $4
            )
-              -- A live fee that failed its first look is due its second.
-              OR (NOT live.pulled AND EXISTS (
-                SELECT 1 FROM pipeline_feedback f
-                 WHERE f.check_name = $2
-                   AND f.kind = '${PENDING_KIND}'
-                   AND f.fee_published_id = live.fee_published_id
-                   AND (f.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => ${SECOND_LOOK_MIN_MINUTES})
-              ))
            ORDER BY live.source_document_id
            LIMIT $1
         )
@@ -293,9 +263,6 @@ export async function rollBackUnreproducedFees(
 
   const result: RulesRecheckResult = { ...EMPTY_RESULT, rollbacks: [], restores: [] };
   const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number; missing?: number }> = [];
-  // Fees today's rules do not read: taken down only after a second look.
-  const unreproduced: Array<RulesRecheckRollback & { reason: string }> = [];
-  const passing: number[] = [];
   // One restore per institution, category and price in a batch.
   const restoredKeys = new Set<string>();
   for (const [documentId, documentRows] of rowsByDocument) {
@@ -332,6 +299,7 @@ export async function rollBackUnreproducedFees(
       amount: row.amount == null ? null : Math.round(Number(row.amount) * 100) / 100,
     });
     const newestFirst = (rows: LiveKnoxRow[]) => [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id));
+    let rolledBack = 0;
     // One document states a fee once: when a re-extraction publishes the same category and
     // price under a better name ("Negative $25 or less" for "Negative or less"), the newest
     // row stays and older copies are rolled back.
@@ -342,17 +310,12 @@ export async function rollBackUnreproducedFees(
       const fee = asFee(row);
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
       const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
-      const read = key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
-      if (read && !keptKeys.has(key)) {
+      if (key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey))) && !keptKeys.has(key)) {
         keptKeys.add(key);
-        passing.push(fee.feePublishedId);
-      } else if (read) {
-        // An older copy of a fee a newer row of this document already shows.
-        passing.push(fee.feePublishedId);
-        result.rollbacks.push(fee);
-      } else {
-        unreproduced.push({ ...fee, reason: RULES_RECHECK_REASON });
+        continue;
       }
+      rolledBack += 1;
+      result.rollbacks.push(fee);
     }
     for (const row of newestFirst(documentRows.filter((candidate) => candidate.pulled))) {
       const fee = asFee(row);
@@ -374,33 +337,7 @@ export async function rollBackUnreproducedFees(
       liveRows.filter((row) => row.amount != null).map((row) => feeKey(row.canonical_fee_key, Number(row.amount))),
     );
     const missing = [...readsFrom(latest).keys()].filter((key) => !live.has(key) && !keptKeys.has(key)).length;
-    checked.push({ institutionId, sourceDocumentId: documentId, checked: liveRows.length, rolledBack: 0, missing });
-  }
-
-  // A takedown is a last resort: only a fee that failed an earlier look too comes down.
-  const look = await secondLook(db, {
-    check: RULES_RECHECK_STRATEGY.strategy,
-    runId: options.runId,
-    failing: unreproduced,
-    passing,
-    dryRun: options.dryRun,
-  });
-  result.flagged = look.flagged;
-  result.awaitingSecondLook = look.waiting;
-  result.cleared = look.cleared;
-  for (const fee of look.confirmed) {
-    result.rollbacks.push({
-      feePublishedId: fee.feePublishedId,
-      feeVerifiedId: fee.feeVerifiedId,
-      institutionId: fee.institutionId,
-      sourceDocumentId: fee.sourceDocumentId,
-      canonicalFeeKey: fee.canonicalFeeKey,
-      feeName: fee.feeName,
-      amount: fee.amount,
-    });
-  }
-  for (const document of checked) {
-    document.rolledBack = result.rollbacks.filter((fee) => fee.sourceDocumentId === document.sourceDocumentId).length;
+    checked.push({ institutionId, sourceDocumentId: documentId, checked: liveRows.length, rolledBack, missing });
   }
 
   result.rollbacks.sort((a, b) => a.feePublishedId - b.feePublishedId);
@@ -488,7 +425,7 @@ export async function rollBackUnreproducedFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.rules_recheck', 'completed',
-          ${`Re-checked ${result.liveFeesChecked} live fee(s) in ${result.documentsChecked} document(s) against today's rules; rolled back ${result.rollbacks.length}, restored ${result.restores.length}, ${result.flagged + result.awaitingSecondLook} awaiting a second look`},
+          ${`Re-checked ${result.liveFeesChecked} live fee(s) in ${result.documentsChecked} document(s) against today's rules; rolled back ${result.rollbacks.length}, restored ${result.restores.length}`},
           ${JSON.stringify({
             batch_id: options.batchId,
             signature,
@@ -497,9 +434,6 @@ export async function rollBackUnreproducedFees(
             live_fees_checked: result.liveFeesChecked,
             rolled_back: result.rollbacks.length,
             restored: result.restores.length,
-            flagged: result.flagged,
-            awaiting_second_look: result.awaitingSecondLook,
-            cleared: result.cleared,
             restored_samples: result.restores.slice(0, 20).map((fee) => ({
               fee_published_id: fee.feePublishedId,
               canonical_fee_key: fee.canonicalFeeKey,
