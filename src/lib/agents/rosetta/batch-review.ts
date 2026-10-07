@@ -35,6 +35,8 @@ export const BATCH_REVIEW_SIZE = 50;
 export const BATCH_REVIEW_MAX_BATCHES = 2;
 /** A read is judged only after Knox and the later readers have had this long. */
 export const BATCH_REVIEW_SETTLE_HOURS = 6;
+/** Only reads this recent are reviewed: the rate is about today's readers, not last year's. */
+export const BATCH_REVIEW_LOOKBACK_DAYS = 3;
 export const SHORT_TEXT_CHARS = 600;
 export const SHORT_TEXT_MIN_FEES = 3;
 /** Knox fees from a later text that prove a rejected page was a fee page. */
@@ -154,6 +156,16 @@ export async function loadBatch(db: SqlTag, afterId: number, size = BATCH_REVIEW
        AND a.id > ${afterId}
        AND a.strategy = ANY(${BATCH_REVIEW_READERS}::text[])
        AND a.created_at < NOW() - make_interval(hours => ${BATCH_REVIEW_SETTLE_HOURS})
+       AND a.created_at > NOW() - make_interval(days => ${BATCH_REVIEW_LOOKBACK_DAYS})
+       -- Only the bank's current document: a lesson on a replaced copy is never read.
+       AND NOT EXISTS (
+         SELECT 1 FROM source_documents newer
+          WHERE newer.institution_id = doc.institution_id
+            AND newer.id > doc.id
+            AND newer.status = 'success'
+            AND newer.duplicate_of_id IS DISTINCT FROM doc.id
+            AND newer.companion_source_id IS NOT DISTINCT FROM doc.companion_source_id
+       )
      ORDER BY a.id
      LIMIT ${size}
   `;
