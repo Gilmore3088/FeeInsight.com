@@ -1743,6 +1743,20 @@ provider call.
 **Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
 sits in states it has not reached.
 
+## 2026-10-07: Two-column schedules hid wire and stop payment fees behind footnote text
+**What happened:** First National Bank Alaska, a report requester, had 7 of 15 headline fees live and
+needed 9. Its schedule is stored as two columns flattened row by row, so the right column's
+footnotes sit beside the left column's headings ("Wire Transfer Fees | being returned NSF."). Knox
+read those lines as rows, not headings, so "Domestic Outgoing | $35.00" and "International
+Outgoing | $50.00" had nothing to name them, and the stop payment rows were held. One line
+priced both NSF and overdraft ("NSFs/Overdrafts | $33.00") and was filed as NSF only. A balance
+requirement was held as an unclassified fee, and a savings transfer was filed as an overdraft fee.
+**Fix:** Knox v27 sets the heading from a priceless two-cell line whose right cell is prose, files a
+joined NSF/overdraft price under both, never holds a balance requirement, and reads an
+"Insufficient Funds Transfer" as an overdraft protection transfer.
+**Lesson:** a flattened second column can sit on any line, including a heading's. The heading
+test has to look at the left cell on its own.
+
 ## 2026-10-07: one page stored under two spellings kept two current copies
 **What happened:** Magellan marks a page's older copies as history only when the address matches
 exactly. "https://www.wailukufcu.com:443/about/rates-and-fees" and ".../about/rates-and-fees/" are
@@ -1791,3 +1805,16 @@ that is the current copy of its page gets its one read even when the bank has a 
 document, and only current copies are reopened.
 **Lesson:** a success rate is only meaningful over inputs the reader could ever handle.
 Check which inputs a ladder or reopen sends before reading its score.
+## 2026-10-07: Fed districts were assigned by state, and Arizona was in the wrong one
+**What happened:** every institution in a state carried one Fed district, set long ago from a state
+table that put Arizona in District 11 (Dallas) instead of 12 (San Francisco) and West Virginia in 4
+instead of mostly 5. Split states (Missouri, Tennessee, Kentucky, Pennsylvania and others) were all
+assigned to a single district. FDIC sends each bank's real district (its FED field, set by the head
+office's county) on every universe refresh, but the update kept the stored value
+(`COALESCE(s.fed_district, r.fed_district)`), so FDIC's value never landed. NCUA has no district
+field, so credit unions were never corrected either.
+**Fix:** the FDIC universe step now takes FDIC's district, then gives credit unions and closed banks
+the district most active banks in their city have (else their state's). A parser version bump makes it
+run on the next registry tick (`registry/fdic-universe.ts`).
+**Lesson:** `COALESCE(stored, fresh)` freezes the first value forever; refreshed regulator fields go
+`COALESCE(fresh, stored)`.

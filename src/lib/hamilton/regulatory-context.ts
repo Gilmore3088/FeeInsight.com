@@ -23,6 +23,18 @@ export interface RegulatoryRule {
   figures?: Record<string, number>;
 }
 
+/**
+ * A reviewed state rule in the same shape, tagged with its state. The "State fee laws for Hamilton"
+ * thread supplies these from src/lib/regulatory/state-fee-laws.ts (stateFeeLawsFor), already
+ * filtered to the institution's state and charter, and empty until James's legal review.
+ */
+export type StateRule = RegulatoryRule & { state_code: string };
+
+/** Federal rules, then the reviewed state rules passed in for the institution. */
+export function rulesForInstitution(stateRules: readonly StateRule[] = []): RegulatoryRule[] {
+  return [...REGULATORY_RULES, ...stateRules];
+}
+
 /** Reviewed 2026-10-05. Add a rule here only with its citation and date. */
 export const REGULATORY_RULES: readonly RegulatoryRule[] = [
   {
@@ -91,10 +103,13 @@ export interface RegulatoryReportData {
   limits: string;
 }
 
-const REGULATORY_LIMITS =
-  "There is no source of state fee laws or enforcement actions in the data yet. Do not state what a state law requires. CFPB complaints are counted only where the CFPB company name matched this institution; no match is not proof of no complaints.";
+const NO_STATE_RULES =
+  "There is no source of state fee laws for this state in the data yet. Do not state what a state law requires.";
 
-function stateAgency(stateCode: string | null | undefined, charterType: string | null | undefined): string | null {
+const REGULATORY_LIMITS =
+  "There is no source of enforcement actions in the data yet. CFPB complaints are counted only where the CFPB company name matched this institution; no match is not proof of no complaints.";
+
+export function stateAgency(stateCode: string | null | undefined, charterType: string | null | undefined): string | null {
   const regulator = STATE_REGULATORS.find((entry) => entry.stateCode === stateCode);
   if (!regulator) return null;
   return charterType === "credit_union" && regulator.creditUnionAgency ? regulator.creditUnionAgency : regulator.agency;
@@ -107,9 +122,13 @@ export function buildRegulatoryContext(params: {
   /** The institution's own fees by category. */
   fees: Array<{ fee_category: string; institution_amount: number }>;
   complaintYears: InstitutionComplaintYear[];
+  /** Reviewed state rules for this institution (stateFeeLawsFor); none until reviewed. */
+  stateRules?: readonly StateRule[];
 }): { data: RegulatoryReportData; exhibit: ReportExhibit | null; sources: ReportSource[] } {
   const feeByCategory = new Map(params.fees.map((fee) => [fee.fee_category, fee.institution_amount]));
-  const rules = REGULATORY_RULES.flatMap((rule) => {
+  const all = rulesForInstitution(params.stateRules);
+  const hasStateRules = all.length > REGULATORY_RULES.length;
+  const rules = all.flatMap((rule) => {
     const applies = rule.applies_to.length === 0 ? [] : rule.applies_to.filter((category) => feeByCategory.has(category));
     if (rule.applies_to.length > 0 && applies.length === 0) return [];
     return [{ rule, applies }];
@@ -137,9 +156,12 @@ export function buildRegulatoryContext(params: {
       applies_to_fees: applies.length > 0 ? applies.map(getDisplayName) : ["every published consumer deposit fee"],
     })),
     cfpb_complaints: complaints,
-    limits: REGULATORY_LIMITS,
+    limits: hasStateRules ? REGULATORY_LIMITS : `${NO_STATE_RULES} ${REGULATORY_LIMITS}`,
   };
 
+  const ruleListNote = hasStateRules
+    ? "Federal and state rules from a reviewed list."
+    : "Federal rules from a reviewed list; state fee laws are not yet in the data.";
   const specific = rules.filter(({ applies }) => applies.length > 0);
   const complaintText = complaints
     ? `the CFPB recorded ${complaints.total_complaints} complaints against ${params.institutionName} in ${complaints.year}, ${complaints.fee_related_complaints} about fees or low funds`
@@ -150,11 +172,11 @@ export function buildRegulatoryContext(params: {
           id: "regulatory",
           title:
             specific.length > 0
-              ? `${specific.length} federal ${specific.length === 1 ? "rule bears" : "rules bear"} directly on ${params.institutionName}'s fees, and ${complaintText}`
+              ? `${specific.length} ${hasStateRules ? "" : "federal "}${specific.length === 1 ? "rule bears" : "rules bear"} directly on ${params.institutionName}'s fees, and ${complaintText}`
               : `Disclosure rules apply to every fee shown, and ${complaintText}`,
           subtitle: agency
-            ? `State chartering agency: ${agency}. Federal rules from a reviewed list; state fee laws are not yet in the data.`
-            : "Federal rules from a reviewed list; state fee laws are not yet in the data.",
+            ? `State chartering agency: ${agency}. ${ruleListNote}`
+            : ruleListNote,
           columns: ["Rule", "Citation", "Your fees it touches", "What it requires"],
           rows: rules.map(({ rule, applies }) => [
             rule.name,

@@ -166,6 +166,31 @@ describe("registry FDIC universe worker", () => {
     expect(payloadOf(deactivate!.values)).toEqual([{ cert: "2", closed_date: "2026-06-01" }]);
   });
 
+  it("takes the Fed district from FDIC, then gives credit unions their nearby banks' district", async () => {
+    const { db, statements } = createDb([
+      ["SELECT cert_number, regulatory_status", () => [{ cert_number: "1", regulatory_status: "active" }]],
+      [
+        "UPDATE institution_sources s SET\n      rssd_id",
+        () => [{ id: 1, district_changed: true }],
+      ],
+      ["WITH banks AS", () => [{ id: 7 }, { id: 8 }]],
+    ]);
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ meta: { total: 1 }, data: [{ data: { ...active(1, "Phoenix Bank"), STALP: "AZ", FED: 12 } }] }));
+
+    const result = await runRegistryFdicUniverse({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+
+    expect(result).toMatchObject({ banksDistrictChanged: 1, othersDistrictChanged: 2 });
+    const update = statements.find((s) => s.text.includes("rssd_id = COALESCE"));
+    expect(update!.text).toContain("fed_district = COALESCE(r.fed_district, s.fed_district)");
+    expect(payloadOf(update!.values)[0]).toMatchObject({ cert: "1", fed_district: 12 });
+    const derive = statements.find((s) => s.text.includes("WITH banks AS"));
+    expect(derive!.text).toContain("i.source <> 'fdic'");
+    const partition = statements.find((s) => s.text.includes("registry_ingest_partitions"));
+    expect(partition).toBeDefined();
+  });
+
   it("refuses to sync when FDIC returns no active institutions", async () => {
     const { db, statements } = createDb([
       ["SELECT cert_number, regulatory_status", () => [{ cert_number: "1", regulatory_status: "active" }]],

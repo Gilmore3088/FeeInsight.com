@@ -16,6 +16,12 @@ every takedown and restore is synced to `pipeline_feedback`, and a check that is
 back the fees it now passes. Started with the source check and the category guard. The rules
 re-check, outlier range and off-taxonomy checks follow.
 
+**The public sample report names a real bank.** James, 01:00 UTC, in the value funnel thread.
+The sample is a live report for one real community bank and its named competitors, with the
+source link on every fee, rather than an anonymized copy without links. Every figure on it is
+already public on the institution pages. James approved the previews and said to move forward
+at 01:37 UTC, so links to the sample show across the site whenever a sample market qualifies.
+
 **Scrapping a fee is a last resort: looked at more than once, logged, archived, never deleted.**
 James, 01:20 UTC ("we need to constantly learn from fees we pass or scrap ... It needs to be last
 case decision, picked over multiple times, decision log. And it's never deleted, just archive and
