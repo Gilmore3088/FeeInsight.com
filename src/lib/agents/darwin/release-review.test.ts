@@ -6,7 +6,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
-import { DARWIN_RELEASE_ACTS, type HeldFeeRow } from "./release-held";
+import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release-held";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
   lessonsFor,
@@ -70,6 +70,18 @@ function attempts(db: DbMock): Array<{ strategy: unknown; outcome: unknown; deta
 }
 
 describe("Darwin held-fee release review", () => {
+  it("shows the review the schedule rows around a fee's line", () => {
+    const text = ["Account Fees", "Return item $5.00", "Early close $10.00", "Stop Payment $30.00", "Wire $20.00", "Notary Free"].join("\n");
+    expect(scheduleContext(text, "Return item $5.00")).toBe("Account Fees\nReturn item $5.00\nEarly close $10.00\nStop Payment $30.00\nWire $20.00");
+    expect(scheduleContext(text, "Not on this page $1")).toBeNull();
+    expect(scheduleContext(null, "Return item $5.00")).toBeNull();
+    const prompt = releaseReviewPrompt([
+      { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00", sourceContext: "Early close $10.00\nStop Payment $30.00" },
+    ]);
+    expect(prompt).toContain("schedule_rows_around");
+    expect(prompt).toContain("Early close $10.00");
+  });
+
   it("puts the learning store's lessons for a batch's categories in the prompt", () => {
     const stop = { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00" };
     const lessons = [
