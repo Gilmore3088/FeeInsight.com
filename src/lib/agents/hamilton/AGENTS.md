@@ -246,6 +246,12 @@ price) refuses. A fee read again under a new name returns the normal way, throug
 Documents whose live fees were all taken down are re-checked too. Step detail:
 `rules_recheck_restores`.
 
+Each read is filed under the category Darwin files it under (`refileCategory`, strategy
+version 3, 2026-10-07). Before that, a fee Darwin re-filed from Knox's hint, such as First
+National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)" (hint overdraft,
+filed as an overdraft protection transfer), was read under the hint, failed the category
+guard there, and was taken down as unreproduced: 140 fees at 128 banks on 2026-10-07.
+
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every

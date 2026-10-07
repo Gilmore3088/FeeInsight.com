@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
+**What happened:** First National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)
+$10.00", a report requester's headline overdraft fee, was verified by Darwin as
+`od_protection_transfer`, published, then rolled back as `rules_recheck_unreproduced`. On prod,
+140 fees at 128 banks were taken down the same way.
+**Cause:** the re-check filed Knox's reads under Knox's hint (overdraft); Darwin's category guard
+fails that name under overdraft, so the read was dropped and the live fee looked unreproduced.
+Darwin itself files it under `refileCategory`.
+**Fix:** the re-check files reads with `refileCategory`, and strategy version 3 re-checks every
+document once, which restores what still traces to its text.
+**Lesson:** any check that re-reads a fee must file it the way Darwin files it, through the one
+shared `refileCategory`.
+
 ## 2026-10-07: Darwin's paid pass never ran because other agents used its per-run call cap
 **What happened:** at 01:20 UTC there were no `verify.adjudicate` or `verify.release_review`
 attempts on prod at all, and no `verify-paid` step had run in 7 days. Every one ended "Paid pass
