@@ -198,6 +198,7 @@ export async function getFeeDependencyTrend(
         COUNT(DISTINCT institution_id) as institution_count
       FROM institution_financial_records
       WHERE service_charge_income IS NOT NULL
+        AND source IN ('fdic', 'ncua')
       GROUP BY report_date
       ORDER BY report_date DESC
       LIMIT ${quarters}
@@ -241,9 +242,10 @@ export async function getRevenuePerInstitutionTrend(
       FROM institution_sources ct
       JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
       WHERE ifin.service_charge_income IS NOT NULL
+        AND ifin.source IN ('fdic', 'ncua')
         AND ct.asset_size_tier IS NOT NULL
         AND ifin.report_date = (
-          SELECT MAX(report_date) FROM institution_financial_records
+          SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua')
         )
       GROUP BY ct.asset_size_tier
       ORDER BY AVG(ifin.total_assets) ASC
@@ -258,8 +260,9 @@ export async function getRevenuePerInstitutionTrend(
       FROM institution_sources ct
       JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
       WHERE ifin.service_charge_income IS NOT NULL
+        AND ifin.source IN ('fdic', 'ncua')
         AND ifin.report_date = (
-          SELECT MAX(report_date) FROM institution_financial_records
+          SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua')
         )
       GROUP BY ct.charter_type
     `;
@@ -272,6 +275,7 @@ export async function getRevenuePerInstitutionTrend(
         COUNT(DISTINCT institution_id) as institution_count
       FROM institution_financial_records
       WHERE service_charge_income IS NOT NULL
+        AND source IN ('fdic', 'ncua')
       GROUP BY report_date
       ORDER BY report_date DESC
       LIMIT ${quarters}

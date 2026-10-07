@@ -186,6 +186,7 @@ export function narrateStepFinished(
     case "registry-state-bills":
     case "registry-state-regulators":
     case "registry-enforcement":
+    case "registry-state-enforcement":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -340,6 +341,10 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
     case "registry-enforcement":
       return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
+    case "registry-state-enforcement": {
+      const states = Array.isArray(detail.by_state) ? (detail.by_state as Array<{ pages?: number }>).filter((s) => (s.pages ?? 0) > 0).length : 0;
+      return `Read ${count(states, "state banking department")} and refreshed ${count(n(detail, "upserted"), "state enforcement order")}.`;
+    }
     default:
       return null;
   }
@@ -429,6 +434,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
   "registry-enforcement": "magellan",
+  "registry-state-enforcement": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

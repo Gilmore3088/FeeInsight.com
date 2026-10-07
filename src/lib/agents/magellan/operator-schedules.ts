@@ -35,11 +35,13 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   {
     // James's link (2026-10-07 00:52) was Citi Bangladesh's schedule of charges (taka), which
     // Rosetta rightly rejected. Citi publishes no single US fee schedule; this is its US
-    // consumer account comparison chart. Citi charges no overdraft fee (dropped in 2022).
+    // Consumer Deposit Account Agreement, U.S. markets, effective 2025-11-20, with its Appendix 1
+    // fee schedule (the comparison chart returned HTTP 404 on 2026-10-07 07:35). Citi charges no
+    // overdraft fee (dropped in 2022).
     institutionId: 3,
     institutionName: "Citibank, National Association",
-    url: "https://online.citi.com/JRS/popups/comparison_chart.pdf",
-    givenBy: "web search for the US consumer schedule, 2026-10-07 06:30",
+    url: "https://online.citi.com/JRS/popups/ao/CDAA.pdf",
+    givenBy: "web search for the US consumer schedule, 2026-10-07 08:05",
   },
   {
     // The deposit products guide (fetched 2026-10-07, document 20724) names the Overdraft Paid
@@ -369,12 +371,12 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the Adams County market study, 2026-10-07 07:10",
   },
   {
-    // Overdraft Coverage disclosure: $35 per item from 2025-08-26, at most 5 a day, none when
-    // $5 or less overdrawn. Fifth Third had no fee link on file.
+    // Consumer banking welcome kit dated 6/2026, with the account fees. The overdraft coverage
+    // disclosure PDF now serves a "page doesn't exist" page (doc 20860, 2026-10-07 07:53).
     institutionId: 19,
     institutionName: "Fifth Third Bank, National Association",
-    url: "https://www.53.com/content/dam/fifth-third/docs/legal/disclosure-overdraft-coverage.pdf",
-    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
+    url: "https://www.53.com/content/dam/fifth-third/docs/reference/fifth-third-consumer-banking-welcome-kit-accessible.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 08:05",
   },
   {
     // The Tennessee bank's own consumer overdraft page: Bounce Protection $33 per item, at most

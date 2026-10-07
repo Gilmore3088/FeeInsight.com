@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const chat = vi.hoisted(() => ({
   status: "ready" as string,
   messages: [] as Array<{ id: string; role: string; parts: Array<{ type: string; text?: string }> }>,
+  opts: null as null | { onFinish?: (e: { message: unknown; isError?: boolean; isAbort?: boolean }) => Promise<void> },
 }));
 
 vi.mock("@ai-sdk/react", () => ({
-  useChat: () => ({
+  useChat: (opts: typeof chat.opts) => ((chat.opts = opts), {
     messages: chat.messages,
     status: chat.status,
     sendMessage: vi.fn(),
@@ -16,7 +17,8 @@ vi.mock("@ai-sdk/react", () => ({
     clearError: vi.fn(),
   }),
 }));
-vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ saveAnalysis: vi.fn() }));
+const saveAnalysis = vi.hoisted(() => vi.fn(async () => ({ id: "client-row" })));
+vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ saveAnalysis }));
 
 import { AnalyzeWorkspace } from "./AnalyzeWorkspace";
 
@@ -82,5 +84,71 @@ describe("withEarlierQuestion", () => {
     expect(withEarlierQuestion("how does this compare nationally?", "What is our overdraft fee against Florida peers?")).toContain(
       'my previous question was: "What is our overdraft fee against Florida peers?"',
     );
+  });
+});
+
+describe("AnalyzeWorkspace while a written answer is drafted", () => {
+  beforeEach(() => {
+    chat.messages = [];
+  });
+
+  it("says what is happening and how long it has taken, never an empty page", () => {
+    chat.status = "submitted";
+    const html = render();
+    expect(html).toContain("Hamilton is writing this answer from the fee data and filings.");
+    expect(html).toContain("0s so far.");
+  });
+
+  it("keeps the progress note while the stream has started but no answer text is readable yet", () => {
+    chat.status = "streaming";
+    chat.messages = [{ id: "a1", role: "assistant", parts: [{ type: "text", text: "## Hamilton's View\n" }] }];
+    expect(render()).toContain("Hamilton is writing this answer");
+  });
+});
+
+describe("EvidenceExhibit", () => {
+  it("draws the Evidence rows as figure tiles under their group headings, figures unchanged", async () => {
+    const { EvidenceExhibit } = await import("./AnalyzeWorkspace");
+    const html = renderToStaticMarkup(
+      <EvidenceExhibit
+        rows={[
+          { label: "Your fees", value: "" },
+          { label: "Overdraft", value: "**$30**", note: "against a $29 peer median" },
+          { label: "Peers", value: "42 institutions" },
+        ]}
+      />,
+    );
+    expect(html).toContain("The figures behind this answer");
+    expect(html).toContain("Your fees");
+    expect(html).toContain("$30");
+    expect(html).not.toContain("**");
+    expect(html).toContain("against a $29 peer median");
+    expect(html).toContain("42 institutions");
+  });
+});
+
+describe("AnalyzeWorkspace saving a written answer", () => {
+  const finished = (metadata?: unknown) => ({
+    message: { id: "m1", role: "assistant", metadata, parts: [{ type: "text", text: ANSWER }] },
+    isError: false,
+    isAbort: false,
+  });
+
+  beforeEach(() => {
+    chat.status = "ready";
+    chat.messages = [];
+    saveAnalysis.mockClear();
+  });
+
+  it("uses the row the route already saved and never saves it twice", async () => {
+    renderToStaticMarkup(<AnalyzeWorkspace userId={1} institutionId="8109" />);
+    await chat.opts?.onFinish?.(finished({ savedAnalysisId: "server-row" }));
+    expect(saveAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("saves from the browser when the route sent no saved id", async () => {
+    renderToStaticMarkup(<AnalyzeWorkspace userId={1} institutionId="8109" />);
+    await chat.opts?.onFinish?.(finished());
+    expect(saveAnalysis).toHaveBeenCalledTimes(1);
   });
 });
