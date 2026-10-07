@@ -24,7 +24,8 @@ export type FeedbackReporter = "atlas" | "magellan" | "rosetta" | "knox" | "darw
  *   Fee level: wrong_category, wrong_amount, not_a_fee, threshold, not_on_schedule,
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
- *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link
+ *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
+ *     business_schedule (a main link that is a business-only schedule)
  *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
  */
 export type FeedbackKind =

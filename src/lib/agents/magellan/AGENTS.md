@@ -74,7 +74,7 @@ and `detail.method_version`).
 | 1 | `discover.homepage_links` | Fee-like links on the homepage (homepage request logged here). |
 | 1 | `discover.sitemap` | robots.txt `Sitemap:` entries, else `/sitemap.xml`, then `/sitemap_index.xml`; an index opens its page/document children. robots.txt Disallow rules for FeeInsightBot are respected for every same-site request. Fee links and PDFs whose name says fee, schedule, disclosure or truth-in-savings are opened (version 2). |
 | 1 | `discover.hub_pages` | One hop through Disclosures / Rates & Fees / Documents / Forms pages. |
-| 1 | `discover.platform_paths` | Version 2. Paths for the detected platform (`platform-learning.ts`): the registry's seeds plus paths that are the fee link at 2+ banks, each bank's link scored by the outcome ledger (good +2, not judged +1, thin -1, rejected or dead -2). A seed whose links keep failing drops out. |
+| 1 | `discover.platform_paths` | Version 2. Paths for the detected platform (`platform-learning.ts`): the registry's seeds plus paths that are the fee link at 2+ banks, each bank's link scored by the outcome ledger (good +2, not judged +1, thin -1, rejected or dead -2). Judged companion schedules (`consumer_supplement`: paid-search, companion-finder and hand-added pages) count the same way, so a page a person adds teaches the free finders and a wrong one counts against its path. A seed whose links keep failing drops out. |
 | 1 | `discover.common_paths` | Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Version 2. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
@@ -103,7 +103,9 @@ and `detail.method_version`).
 - Business-only search (`BUSINESS_SEARCH_VERSION`): before the upgrade searches, banks
   whose link is a business-only schedule are searched once per version for the consumer
   schedule (`detail.business_search`). A find replaces the link and keeps the old one as a
-  `business` companion; a miss leaves the link alone.
+  `business` companion; a miss leaves the link alone, and the paid schedule search then
+  takes the bank. Each step keeps `BUSINESS_RESERVED_SLOTS` (3) for these banks even when
+  banks without a link fill it.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -113,7 +115,8 @@ and `detail.method_version`).
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
   schedule's own "Effective ..." date (first 4,000 characters of its latest stored text),
   or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
-  Only the hour's slot of banks (id mod 24, as the outcome ledger) is checked each step.
+  A state's step checks the whole state; a step without a state checks only the hour's
+  slot of banks (id mod 24, `stepSlot`, as the outcome ledger).
   A different page that passes the fee-page check replaces the link (the old one is not
   kept); the same page or a miss changes nothing.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
@@ -192,8 +195,8 @@ and `detail.method_version`).
 
 ## Outcome ledger (`outcomes.ts`)
 
-Every discover step judges one 24th of the banks (bank id mod 24 = the UTC hour, so each
-bank once a day) by what their links produced downstream, and writes the judgement to
+Every discover step judges its state's banks (a step without a state judges one 24th of
+all banks, bank id mod 24 = the UTC hour; `stepSlot`) by what their links produced downstream, and writes the judgement to
 the shared learning store (`pipeline_feedback`, `check_name = magellan.link_yield`,
 dedupe `magellan.link_yield:doc:<first source_document_id of the link>`). A link is the
 bank's main fee link or a companion page; all fetches of the same address count as one.
@@ -204,6 +207,7 @@ bank's main fee link or a companion page; all fetches of the same address count 
 | dead | last fetch 404/410, or Rosetta's last read was a 404 | wrong, `dead_link`, 1 |
 | rejected | Rosetta's last read ruled it the wrong document | wrong, `wrong_document`, 1 |
 | thin | Knox extracted it over 24 hours ago, fewer than 3 live fees | wrong, `thin_link`, 1 |
+| business | the bank's main link is a business-only schedule (`isBusinessOnlyLink`), whatever it produced | wrong, `business_schedule`, 1 |
 
 Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
 is the Magellan specialist whose attempt found the address (null for links the old
