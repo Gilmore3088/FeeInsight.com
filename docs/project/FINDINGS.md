@@ -13,6 +13,87 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The CPI "bank services" series was physicians' services
+**Owner:** the Data inventory thread.
+**What happened:** the app read BLS series `CUUR0000SEMC01` as "CPI: Checking Account and Other
+Bank Services" in the economic context (Hamilton briefing and benchmark), `getCpiContext` and the
+research tools. In the CPI item codes, `SEMC` is medical "Professional services" and `SEMC01` is
+physicians' services. On prod it reads 439.389 for August 2026, a medical-care index level. The four
+regional `CUUR0x00SEMC` series, also loaded as bank context, are medical professional services.
+**Cause:** the series id was picked by name, not checked against the BLS catalogue.
+**Fix:** `CPI_BANK_SERVICES_SERIES = "CUUR0000SS68021"` (Checking account and other bank services)
+and `CPI_FINANCIAL_SERVICES_SERIES = "CUUR0000SEGD05"` (Financial services) in
+`src/lib/regulatory/fed.ts`, loaded as required series; every reader uses the constant. Stored
+SEMC rows are relabelled as medical series on the next refresh. With a BLS key the step asks for
+BLS's own catalog title and records it in the partition detail (`bls_catalog_titles`). The ids were
+checked against BLS item-code listings found by search, not against api.bls.gov (blocked from the
+sandbox); proof is the step loading both series on prod with no `missing_series`.
+**Lesson:** check any external series id against its publisher's catalogue before naming it.
+
+## 2026-10-07: ffiec rows in institution_financial_records mixed units with fdic/ncua
+**Owner:** the Data inventory thread.
+**What happened:** `institution_financial_records` has three `source` values. `fdic` and `ncua`
+rows carry every dollar column in thousands. The 13,215 `ffiec` rows (report dates 2025-09-30,
+2025-12-31 and 2026-03-31, all written on 2026-08-10) use other units: balance-sheet columns in
+whole dollars (`total_assets` exactly 1,000x), `service_charge_income` not a fixed multiple of the
+fdic figure (median about 750,000x, 10th-90th percentile about 146,000x-3,150,000x, some banks 0;
+Orrstown, institution 270, 2026-03-31: 946,778,000 against 2,077 in its fdic row), `fee_income_ratio`
+195x-750x, `tier1_capital_ratio` about 10% against fdic's 15-28%, and `net_income` null. No rescaling
+recovers the right figure. 12,934 of them duplicate an fdic/ncua row for the same institution and quarter
+(counts from the Data inventory thread's read-only queries). Readers that did not filter by source
+could take an ffiec row as "the latest" quarter, or average and sum both rows: the industry health
+medians and growth trends, the revenue index, fee-revenue correlation and tier/charter summaries
+(the public /research/fee-revenue-analysis page joins each institution's latest quarter, so an
+institution whose latest quarter is an ffiec quarter could appear with the ffiec figures, or twice), fee dependency and revenue-per-institution trends, the latest-quarter lookups behind top revenue,
+district and tier revenue, the institution financials and history reads (public institution page,
+admin institution and peers pages, API v1 institutions, evidence route), and the admin
+financial-coverage counts, call-report freshness and missing-financials check.
+**Cause:** a loader that no longer exists wrote the ffiec rows once in its own units. Some readers
+filtered or rescaled them (`call-reports.ts`, the institution page's `financial-units.ts`, report
+exhibits, the briefing and research tool); most did not.
+**Fix:** this change. `src/lib/data-store/financial-sources.ts` holds `FINANCIAL_SOURCES`
+(`fdic`, `ncua`) and `financialSourceFilter()`; every read in `src/` now filters to those sources,
+the ffiec rescaling in `financial-units.ts` and `annualServiceCharges` is gone, and
+`scripts/ci-guards.sh financial-source-kill` fails any `FROM`/`JOIN institution_financial_records`
+without a source filter in the next eight lines. The Hamilton studies
+(`src/lib/agents/hamilton/studies/drivers.ts`, `fee-dependence.ts`, `inferred-volume.ts`) already
+read only `source = 'fdic'` / `'ncua'` rows, so their results were not affected.
+**Applied:** with James's typed approval (07:18), the 13,215 rows were copied to
+`institution_financial_records_ffiec_archive` (count checked, 13,215) and removed from the live
+table at 07:22 UTC on 2026-10-07. The live table now holds fdic (386,056) and ncua (382,278) only.
+**Saved items that used ffiec figures** (read-only prod audit, 07:35 UTC; none deleted):
+- `hamilton_saved_analyses` bf1a5278 (Texas National Bank of Jacksonville, 1165, 2026-10-05): the
+  $20,279,000 service charges, 221.7% fee-income ratio, 9,000,000% change and 9.9% Tier 1 are ffiec.
+  The analysis itself calls them a units problem; its headline ($209K, Q2 2026) is fdic.
+- `hamilton_saved_analyses` 6c74e9e1 (1165, 2026-10-05): the 9,565,466% change for 2026 Q1 is ffiec
+  over fdic. It also calls this a units problem.
+- `hamilton_saved_analyses` b1ec5e7b (Angelina Savings Bank, 3827, 2026-10-05): "100% drop ... $0
+  service charges" for 2025Q3-2026Q1 is the ffiec rows (0). Its other figures are fdic.
+- `hamilton_messages` b5fba6d6 (National Overdraft Benchmark chat reply, 2026-10-06): the bank row
+  (average service charges $2,511,310, ratio 15.82) was inflated by ffiec rows through
+  `getCharterFeeRevenueSummary`. Recomputed on fdic only today: about $5,966 thousand and 3.13.
+  Credit-union figures are unaffected.
+These rows have no flag column and re-running them needs James's session, so they are listed here
+instead. Cleared: hamilton_reports, the other 19 saved analyses, report_jobs rows, hamilton_signals,
+the five Hamilton studies and their placements. Not checkable: report_jobs HTML output files (not
+in storage) and whether fdic 2026Q1/Q2 existed between 08-10 and 10-03.
+**Also seen (not ffiec, not yet verified):** saved report f2ae49ae prints fdic thousands as dollars
+("$209"), and analyses bf1a5278 and b1ec5e7b put institution 1165 in a "micro" peer tier although it
+is community_mid, possibly from fdic `total_assets` in thousands read as dollars.
+Any new reader must use the source filter; the guard checks this.
+
+## 2026-10-07: Open States allows about ten requests a minute, so state bill runs hit 429
+**What happened:** the first two 12-state runs (05:32 and 07:12 UTC) read 16 states and failed 10 with
+HTTP 429 (CA, DE, FL, IA, ID, KS, MA, MD, MN, MO in `registry_ingest_partitions`). The failures came after
+about ten requests each time, and retries 6 and 12 seconds later were refused too.
+**Cause:** the step sent each state's four to six requests back to back. Open States' free tier allows
+about ten a minute, inferred from these runs since its docs aren't reachable from the cloud sandbox.
+A failed state then waited six hours.
+**Fix:** requests are paced 6.5 seconds apart. A run starts no new state after 60 seconds, and a 429 stops
+the run and leaves that state due instead of failing it.
+**Lesson:** pace any keyed free-tier API to its limit inside the step, and treat a 429 as "come back
+later", not as a failed item.
+
 ## 2026-10-07: A hand-found link added after a bank's direct run waited a full day
 **What happened:** on prod (read-only, 07:22 UTC) Citi's corrected US fee chart (link 2070, added
 06:43) and First Horizon's TotalView guide (link 2101, added 07:12) sat unfetched. Both banks had
@@ -2707,3 +2788,33 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 **Also:** `institution_financial_records.total_deposits` is in thousands for `fdic` and `ncua` rows but in dollars for `ffiec` rows. Readers must filter by source.
 
 **Unverified:** whether CFPB's search API returns sub-issue buckets. The run ledger records `sub_issues_loaded`.
+
+## 2026-10-07: Checking account lineup fields were never captured
+**What happened:** none of the 1,914 monthly maintenance fees on prod named its product, the
+balance that avoids the fee, the opening deposit, or the waiver (audit:
+`data-inventory/account-lineup-audit-2026-10-07.md`).
+**Cause:**
+- No fee tier had a column for them, and `published_fee_catalog.account_product_type` was a
+  hard-coded `NULL::text`.
+- Knox's paid prompt asked for `conditions` but kept only a `waivable` flag and threw the text
+  away. It also told the model to skip balance requirements.
+- The rule candidate had no field for a product, threshold or waiver.
+**Fix:** migration `20270110000020_account_lineup_fields.sql` adds `product_name`,
+`min_balance_to_avoid`, `min_opening_deposit` and `waiver_text` to `raw_fee_observations`. The
+catalog reads `account_product_type` from `product_name` and adds the other three at its end.
+Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
+`knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
+Rows already on file gain the fields only when Knox reads their document again.
+
+## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
+
+- **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
+  `CONNECT tunnel failed, 403`). So the readers for state orders were written against the page
+  formats described in search results, not against fetched pages.
+- **Fix.** `registry-state-enforcement` runs on the live pipeline, which can reach those sites, and
+  records each state's pages read, orders found, matches and three sample rows in the run detail.
+  The first prod run is the check: a state whose reader finds nothing is fixed there and the parser
+  version bumped. Seven states for now (NJ, NY, IL, MD, WA, TX, NC); Pennsylvania's listing page
+  wasn't found.
+- **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
+  Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.

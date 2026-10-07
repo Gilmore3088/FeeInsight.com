@@ -8,6 +8,8 @@ import {
   getComplaintsByInstitution,
 } from "@/lib/data-store";
 import { searchInstitutions } from "@/lib/data-store/search";
+import { BENCHMARK_CSV_HEADER, benchmarkCsvRows, getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
+import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
@@ -22,6 +24,8 @@ import {
   apiKeyRequiredError,
   apiOptions,
   assetTierParam,
+  formatParam,
+  toCsv,
   charterParam,
   getAnonymousId,
   intParam,
@@ -75,6 +79,8 @@ async function handleGET(request: NextRequest) {
   let assetTiers: string[] | null;
   let city: string | null;
   let quarters: number;
+  let view: "detail" | "benchmark" | "regulatory_watch";
+  let format: "json" | "csv";
   try {
     id = searchParams.has("id")
       ? intParam(searchParams, "id", { fallback: 0, min: 1, max: Number.MAX_SAFE_INTEGER })
@@ -108,6 +114,14 @@ async function handleGET(request: NextRequest) {
       throw new ApiParamError("asset_tier and city work on the plain list, not with q or fee_category");
     }
     quarters = intParam(searchParams, "quarters", { fallback: 8, min: 1, max: 66 });
+    const viewRaw = searchParams.get("view")?.trim() || "detail";
+    if (viewRaw !== "detail" && viewRaw !== "benchmark" && viewRaw !== "regulatory_watch") {
+      throw new ApiParamError("view must be detail, benchmark or regulatory_watch");
+    }
+    view = viewRaw;
+    if (view !== "detail" && id === null) throw new ApiParamError(`view=${view} needs id`);
+    format = formatParam(searchParams);
+    if (format === "csv" && view !== "benchmark") throw new ApiParamError("format=csv is available for view=benchmark");
   } catch (error) {
     if (error instanceof ApiParamError) {
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
@@ -133,6 +147,43 @@ async function handleGET(request: NextRequest) {
         status: 404,
       }).catch(() => {});
       return apiError(404, "not_found", "Institution not found", { rateLimit });
+    }
+
+    // Analyst export: each published fee against national, state, asset-size and local market benchmarks.
+    if (view === "benchmark") {
+      const benchmark = await getInstitutionBenchmark(id);
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.benchmark", {
+        institution_id: id,
+        format,
+        count: benchmark?.rows.length ?? 0,
+        status: 200,
+      }).catch(() => {});
+      if (format === "csv") {
+        const slug = String(inst.institution_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+        return withApiHeaders(
+          new NextResponse(toCsv(BENCHMARK_CSV_HEADER, benchmark ? benchmarkCsvRows(benchmark) : []), {
+            headers: {
+              "Content-Type": "text/csv",
+              "Content-Disposition": `attachment; filename=${slug || "institution"}-fee-benchmarks.csv`,
+            },
+          }),
+          rateLimit,
+        );
+      }
+      return withApiHeaders(NextResponse.json({ ...benchmark, attribution: API_ATTRIBUTION }), rateLimit);
+    }
+
+    // Regulatory watch: enforcement actions against local competitors and federal rule changes on its fees.
+    if (view === "regulatory_watch") {
+      const watch = await getRegulatoryWatch(id);
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.regulatory_watch", {
+        institution_id: id,
+        status: 200,
+      }).catch(() => {});
+      return withApiHeaders(
+        NextResponse.json({ id: Number(inst.id), name: inst.institution_name, ...watch, attribution: API_ATTRIBUTION }),
+        rateLimit,
+      );
     }
 
     const fees = (await getFeesByInstitution(id))
