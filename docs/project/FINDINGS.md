@@ -1538,3 +1538,20 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 **Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
+
+## 2026-10-07: 14,133 live fees still pointed at a superseded copy of their page
+**What happened:** when Magellan fetches a newer copy of a fee page, Knox reads it and Darwin
+verifies its rows. A line whose amount did not change is skipped by Hamilton's publish rules as
+"identical fee already published", so the live fee kept its old document, old source date and old
+published date. On 7 Oct, 14,133 live fees at 1,051 banks pointed at a superseded copy; for 8,607
+of them (669 banks) the current copy states the same fee under the same name at the same amount,
+verified by Darwin and never published.
+**Fix:** every publish step moves up to 300 of those fees to the current copy
+(`hamilton/refresh-copy.ts`): it publishes the current copy's verified row under today's publish
+rules and category guard, and closes the old row as `refreshed by #<new id>`. Amounts are
+unchanged, so no price change is recorded and no fee comes down without its replacement.
+**Still open:** the other ~5,500 have no same-amount row in the current copy: a changed price
+(the publish rules supersede it), a line the newer-copy check is judging, or a row Knox did not
+read.
+**Lesson:** a dedupe that only asks "is this value already live?" also has to ask "from which
+copy?", or freshness silently stops moving.

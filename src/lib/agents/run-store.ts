@@ -11,6 +11,7 @@ import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
+import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import {
   currentMonth,
   mailingAddress,
@@ -840,6 +841,15 @@ async function executeAgenticStep(
       });
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
       const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
+      // A live fee the current copy of its page still states at the same amount moves to
+      // that copy, so it no longer points at a superseded copy and its date is current.
+      const refreshCopy = await refreshFeesFromCurrentCopy(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
@@ -932,13 +942,17 @@ async function executeAgenticStep(
         newerCopyRetired > 0 || newerCopyRestored > 0
           ? ` ${published.dryRun ? "Would retire" : "Retired"} ${newerCopyRetired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${newerCopyRestored > 0 ? ` and ${published.dryRun ? "would restore" : "restored"} ${newerCopyRestored.toLocaleString()} a later copy states again` : ""}.`
           : "";
+      const refreshNote =
+        refreshCopy.refreshed > 0
+          ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -983,6 +997,10 @@ async function executeAgenticStep(
             amount: rollback.amount,
             companion_source_id: rollback.companionSourceId,
           })),
+          refresh_copy_checked: refreshCopy.checked,
+          refresh_copy_refreshed: refreshCopy.refreshed,
+          refresh_copy_skipped: refreshCopy.skipped,
+          refresh_copy_samples: refreshCopy.samples.slice(0, 10),
           newer_copy_live: newerCopy.live,
           newer_copy_documents: newerCopy.documentsChecked,
           newer_copy_unrecognized: newerCopy.unrecognized,
