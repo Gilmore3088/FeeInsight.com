@@ -12,6 +12,8 @@ import { TrackLink } from "@/components/track-link";
 import { TrackView } from "@/components/track-view";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER, REPORT_OFFER_LINE } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { MarketReportBody } from "@/app/market-report/report-body";
 import { PrintButton } from "@/app/market-report/[token]/print-button";
 
@@ -104,6 +106,11 @@ export default async function SampleReportPage() {
   });
   if (!report) return <SampleComingSoon />;
   const name = report.data.subject.institution_name;
+  const market = report.data.market;
+  const branches = market
+    ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
+    : null;
+  const revenue = await getRevenueContextCached(report.data.subject.institution_id).catch(() => null);
 
   return (
     <div className="mx-auto max-w-6xl px-6 pb-24 pt-14">
@@ -147,6 +154,8 @@ export default async function SampleReportPage() {
       <div className="pt-2">
         <MarketReportBody
           report={report}
+          revenue={revenue}
+          branches={branches}
           eyebrow={REPORT_OFFER.name}
           preparedOn={new Date()}
           contactHref="/contact?source=sample_report"

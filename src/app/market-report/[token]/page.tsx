@@ -11,6 +11,8 @@ import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chr
 import { verifyReportToken } from "@/lib/custom-report/link";
 import { loadMarketReport } from "@/lib/custom-report/report-data";
 import { TrackView } from "@/components/track-view";
+import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { MarketReportBody } from "../report-body";
 import { PrintButton } from "./print-button";
 
@@ -47,6 +49,11 @@ export default async function MarketReportPage({ params }: PageProps) {
   if (!report || !report.data.market) notFound();
   const { analysis, savedAt } = report;
   const name = report.data.subject.institution_name;
+  const market = report.data.market;
+  const branches = market
+    ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
+    : null;
+  const revenue = await getRevenueContextCached(verified.institutionId).catch(() => null);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
@@ -62,6 +69,8 @@ export default async function MarketReportPage({ params }: PageProps) {
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-10">
         <MarketReportBody
           report={report}
+          revenue={revenue}
+          branches={branches}
           eyebrow="Competitive Fee Position Report"
           preparedOn={verified.issuedOn}
           contactHref={contactHref(name)}

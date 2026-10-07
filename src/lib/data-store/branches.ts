@@ -116,3 +116,39 @@ export async function getBranchesInArea(
     LIMIT ${opts.limit} OFFSET ${opts.offset}`;
   return toPage(rows);
 }
+
+export interface MarketBranchFootprint {
+  sod_year: number;
+  /** Bank branches in the market counties. */
+  totalBranches: number;
+  /** Deposits held in those branches, whole dollars. */
+  totalDeposits: number;
+  /** Per institution: its branches and deposits in the market counties. */
+  byInstitution: Record<number, { branches: number; deposits: number }>;
+}
+
+/**
+ * Branch counts and deposit totals for a report's market counties (FDIC Summary of Deposits),
+ * so the report can show each named competitor's footprint and local deposit share. Banks only:
+ * credit unions are not in the SOD. Null when the counties hold no branches.
+ */
+export async function getMarketBranchFootprint(countyFips: string[], sodYear: number): Promise<MarketBranchFootprint | null> {
+  if (countyFips.length === 0) return null;
+  const rows = await sql<{ institution_id: string | number | null; branches: string | number; deposits: string | number | null }[]>`
+    SELECT b.institution_id, COUNT(*) AS branches, SUM(COALESCE(b.deposits, 0)) AS deposits
+    FROM institution_branch_deposits b
+    WHERE b.year = ${sodYear} AND b.county_fips::text = ANY(${countyFips})
+    GROUP BY b.institution_id`;
+  if (rows.length === 0) return null;
+  const byInstitution: MarketBranchFootprint["byInstitution"] = {};
+  let totalBranches = 0;
+  let totalDeposits = 0;
+  for (const row of rows) {
+    const branches = Number(row.branches);
+    const deposits = Number(row.deposits ?? 0) * SOD_THOUSANDS;
+    totalBranches += branches;
+    totalDeposits += deposits;
+    if (row.institution_id !== null) byInstitution[Number(row.institution_id)] = { branches, deposits };
+  }
+  return { sod_year: sodYear, totalBranches, totalDeposits, byInstitution };
+}

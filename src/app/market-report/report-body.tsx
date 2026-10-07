@@ -15,6 +15,8 @@ import {
 } from "@/lib/custom-report/analysis";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import type { MarketReport } from "@/lib/custom-report/report-data";
+import type { MarketBranchFootprint } from "@/lib/data-store/branches";
+import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
 import { AtAGlance, SinceBought } from "./[token]/at-a-glance";
 import { HamiltonClose } from "./[token]/hamilton-close";
 
@@ -60,9 +62,75 @@ export interface MarketReportBodyProps {
   contactHref: string;
   /** The closing line of sources and method: who to tell about a wrong figure. */
   correctionNote: ReactNode;
+  /** Reported service-charge income; the section is left out when null. */
+  revenue?: RevenueContext | null;
+  /** Branch counts and deposits in the market counties; footprint lines are left out when null. */
+  branches?: MarketBranchFootprint | null;
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote }: MarketReportBodyProps) {
+/** Whole dollars -> "$2.4 billion" / "$310 million". */
+function depositsLabel(dollars: number): string {
+  if (dollars >= 1e9) return `$${(dollars / 1e9).toFixed(1)} billion`;
+  return `$${Math.round(dollars / 1e6).toLocaleString("en-US")} million`;
+}
+
+/** "12 branches · 8.4% of local deposits", or null when the institution has no SOD branches here. */
+export function footprintLine(branches: MarketBranchFootprint | null | undefined, institutionId: number): string | null {
+  const own = branches?.byInstitution[institutionId];
+  if (!branches || !own || own.branches === 0) return null;
+  const share = branches.totalDeposits > 0 ? (own.deposits / branches.totalDeposits) * 100 : null;
+  const shareText = share === null ? "" : share < 0.1 ? " · under 0.1% of local deposits" : ` · ${share.toFixed(1)}% of local deposits`;
+  return `${own.branches} ${own.branches === 1 ? "branch" : "branches"}${shareText}`;
+}
+
+function RevenueSection({ name, charterType, revenue }: { name: string; charterType: string | null; revenue: RevenueContext }) {
+  const latest = revenue.quarters[0];
+  const filing = charterType === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
+  return (
+    <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="revenue-heading">
+      <h2 id="revenue-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+        Fee income behind these prices
+      </h2>
+      <dl className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B6255]">
+            Deposit service charges, {quarterLabel(latest.quarter)}
+          </dt>
+          <dd className="mt-1 text-[1.35rem] tabular-nums text-[#1A1815]" style={SERIF}>
+            {incomeLabel(latest.thousands)}
+          </dd>
+        </div>
+        {revenue.trailingThousands !== null && (
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B6255]">Last four quarters</dt>
+            <dd className="mt-1 text-[1.35rem] tabular-nums text-[#1A1815]" style={SERIF}>
+              {incomeLabel(revenue.trailingThousands)}
+            </dd>
+          </div>
+        )}
+        {revenue.peer && (
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B6255]">
+              Median for its size, {quarterLabel(latest.quarter)}
+            </dt>
+            <dd className="mt-1 text-[1.35rem] tabular-nums text-[#1A1815]" style={SERIF}>
+              {incomeLabel(revenue.peer.medianThousands)}
+            </dd>
+          </div>
+        )}
+      </dl>
+      <p className="mt-4 text-[13px] leading-relaxed text-[#5A5347]">
+        {name} reported these figures in its {filing}.
+        {revenue.peer &&
+          ` Among the ${revenue.peer.count.toLocaleString("en-US")} institutions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
+        A published schedule does not say how often each fee is charged, so this report does not estimate what any one
+        fee earns.
+      </p>
+    </section>
+  );
+}
+
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -176,6 +244,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </table>
           </section>
 
+          {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
+
           {analysis.named.length > 0 && (
             <section className="mt-8 overflow-x-auto rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="named-heading">
               <h2 id="named-heading" className="text-xl text-[#1A1815]" style={SERIF}>
@@ -185,11 +255,13 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 Banks by deposits held in your market (FDIC Summary of Deposits, {market.sod_year}), then up to{" "}
                 {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how many of
                 your fees they publish. Each amount links to the schedule it was read from.
+                {branches &&
+                  ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits.`}
               </p>
-              <table className="mt-4 w-full min-w-[640px] text-left text-sm">
+              <table className="mt-4 w-full min-w-[760px] text-left text-sm">
                 <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
                   <tr>
-                    <th className="py-2 pr-3 font-semibold">Institution</th>
+                    <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
                     {tableKeys.map((key) => (
                       <th key={key} className="py-2 pr-3 text-right font-semibold">
                         {FEE_LINE_LABELS[key]}
@@ -199,7 +271,12 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 </thead>
                 <tbody>
                   <tr className="border-b border-[#EFE8DD] bg-[#FBF3EF] font-semibold">
-                    <td className="py-2 pr-3">{name}</td>
+                    <td className="py-2 pr-3">
+                      {name}
+                      {footprintLine(branches, data.subject.institution_id) && (
+                        <span className="block whitespace-nowrap text-[12px] font-normal text-[#6B6255]">{footprintLine(branches, data.subject.institution_id)}</span>
+                      )}
+                    </td>
                     {tableKeys.map((key) => (
                       <td key={key} className="py-2 pr-3 text-right tabular-nums">
                         {money(ownFees[key])}
@@ -212,7 +289,10 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <a href={`/institution/${competitor.institution_id}`} className="text-[#1A1815] underline-offset-2 hover:underline">
                           {competitor.institution_name}
                         </a>
-                        {competitor.city && <span className="text-[12px] text-[#8A8173]"> · {competitor.city}</span>}
+                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-[#8A8173]"> · {competitor.city}</span>}
+                        {footprintLine(branches, competitor.institution_id) && (
+                          <span className="block whitespace-nowrap text-[12px] text-[#6B6255]">{footprintLine(branches, competitor.institution_id)}</span>
+                        )}
                       </td>
                       {tableKeys.map((key) => {
                         const source = competitor.sources[key];

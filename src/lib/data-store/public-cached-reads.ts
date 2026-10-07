@@ -23,6 +23,7 @@ import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-cont
 import { getMarketReadiness } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
 import { getInstitutionPeerRank } from "./peer-fee-rank";
+import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 
 /**
@@ -95,3 +96,4 @@ export const getStateEconomicContextCached = cachedPublicRead(
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
 export const getInstitutionPeerRankCached = cachedPublicRead("institution-peer-rank", getInstitutionPeerRank);
+export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
