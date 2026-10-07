@@ -11,6 +11,8 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  */
 
 export const CENSUS_ACS_SOURCE = "census-acs";
+/** v2: a non-data reply is an error, not "not published" (v1 recorded 2024 as unpublished). */
+export const CENSUS_ACS_PARSER_VERSION = 2;
 const UPSERT_CHUNK = 1000;
 const REFRESH_HOURS = 24 * 90;
 const EMPTY_RETRY_HOURS = 24 * 7;
@@ -91,7 +93,7 @@ export async function runRegistryCensusAcs(options: RegistryCensusAcsOptions): P
         rowCount: 0,
         runId: options.runId ?? null,
         nextAttemptAfterHours: EMPTY_RETRY_HOURS,
-        detail: { year, reason: "Census has not published this ACS 5-year vintage yet" },
+        detail: { year, reason: "Census has not published this ACS 5-year vintage yet", parser_version: CENSUS_ACS_PARSER_VERSION },
       });
     }
     return { ...base, empty: true };
@@ -124,7 +126,7 @@ export async function runRegistryCensusAcs(options: RegistryCensusAcsOptions): P
     sourceUrl: states.url,
     runId: options.runId ?? null,
     nextAttemptAfterHours: missingTractStates.length > 0 || !counties || !zctas ? EMPTY_RETRY_HOURS : REFRESH_HOURS,
-    detail: { year, counts, with_income: withIncome, missing_tract_states: missingTractStates, counties_missing: !counties, zctas_missing: !zctas },
+    detail: { parser_version: CENSUS_ACS_PARSER_VERSION, year, counts, with_income: withIncome, missing_tract_states: missingTractStates, counties_missing: !counties, zctas_missing: !zctas },
   });
   return { ...result, upsertedRows: upserted };
 }

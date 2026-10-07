@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { DAILY_CAP_CATEGORIES } from "@/lib/custom-report/source-check";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { namesAWorkedExample, WORKED_EXAMPLE_PG } from "@/lib/agents/knox/layout";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
@@ -26,7 +27,7 @@ type SqlTag = typeof sql;
  * category (`od_daily_cap`, `nsf_daily_cap`) is a limit by design, so only a name that
  * caps no fee ("No Bounce Courtesy Pay Limit") counts there.
  */
-export type LimitGuardCode = "name_states_limit" | "source_states_limit" | "above_category_ceiling";
+export type LimitGuardCode = "name_states_limit" | "source_states_limit" | "above_category_ceiling" | "worked_example";
 
 export const LIMIT_GUARD_REASON = "limit_as_fee";
 export const LIMIT_GUARD_MIN_AMOUNT = 100;
@@ -112,6 +113,11 @@ function sourceStatesLimit(excerpt: string, amount: number): boolean {
 /** Pure: does this fee's figure read as a transaction limit rather than a price? */
 export function limitGuardVerdict(row: LimitGuardInput): LimitGuardVerdict | null {
   const amount = dollars(row.amount);
+  // A worked example's figure ("Example: Assume you establish a bill pay payment ... in the
+  // amount of $100") is not a price at any amount.
+  if (amount != null && amount > 0 && namesAWorkedExample(row.fee_name ?? "")) {
+    return { code: "worked_example", detail: `the figure is from a worked example ("${plainName(row.fee_name ?? "").slice(0, 80)}")` };
+  }
   if (amount == null || amount < LIMIT_GUARD_MIN_AMOUNT) return null;
   const name = plainName(row.fee_name ?? "");
   if (OVER_LIMIT.test(name)) return null;
@@ -179,7 +185,7 @@ export async function rollBackLimitsPublishedAsFees(
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
-         AND fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT}
+         AND (fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT} OR fp.fee_name ~* ${WORKED_EXAMPLE_PG})
          ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
        ORDER BY fp.fee_published_id
     `);

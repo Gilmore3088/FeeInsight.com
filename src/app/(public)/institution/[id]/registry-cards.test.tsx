@@ -56,7 +56,7 @@ describe("BranchFootprintCard map waiting on addresses", () => {
 });
 
 describe("EnforcementCard", () => {
-  const base: EnforcementRecord = { agenciesChecked: ["OCC", "FRB"], active: [], terminated: [], terminatedCount: 0, asOf: "2026-10-07" };
+  const base: EnforcementRecord = { agenciesChecked: ["OCC", "FRB"], open: [], past: [], pastCount: 0, asOf: "2026-10-07" };
 
   it("says none only for the lists that were checked", () => {
     render(<EnforcementCard record={base} />);
@@ -64,22 +64,23 @@ describe("EnforcementCard", () => {
     expect(screen.getByText(/FDIC orders are not included yet/)).toBeInTheDocument();
   });
 
-  it("lists active actions and labels holding-company ones", () => {
+  it("lists orders with no end date on file, never calling them active, and labels holding-company ones", () => {
     render(
       <EnforcementCard
         record={{
           ...base,
-          active: [
+          open: [
             { agency: "FRB", party_name: "Example Bancorp", against_holding_company: true, action_type: "Written Agreement", subject: null, start_date: "2023-03-01", termination_date: null, penalty_amount: null, document_url: "https://www.federalreserve.gov/x.pdf" },
           ],
-          terminated: [
+          past: [
             { agency: "OCC", party_name: "Example Bank", against_holding_company: false, action_type: "Formal Agreement", subject: "BSA/AML", start_date: "2018-01-05", termination_date: "2020-02-01", penalty_amount: 1_000_000, document_url: null },
           ],
-          terminatedCount: 3,
+          pastCount: 3,
         }}
       />,
     );
-    expect(screen.getByText("1 active action")).toBeInTheDocument();
+    expect(screen.getByText("1 order with no end date on file")).toBeInTheDocument();
+    expect(screen.queryByText(/active/i)).toBeNull();
     expect(screen.getByText(/against the holding company, Example Bancorp/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Order" })).toHaveAttribute("href", "https://www.federalreserve.gov/x.pdf");
     expect(screen.getByText(/latest 1 of 3/)).toBeInTheDocument();

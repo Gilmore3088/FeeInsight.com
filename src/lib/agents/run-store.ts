@@ -15,6 +15,7 @@ import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
+import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
@@ -36,6 +37,7 @@ import { recheckHeldRates, recheckHeldRows, recheckPromotedRows } from "@/lib/ag
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -52,6 +54,8 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
+import { runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
+import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
@@ -423,11 +427,15 @@ async function executeAgenticStep(
         stateCode,
         dryRun: run.runKind === "dry_run",
       });
+      // Error review: every chunk of judged links is scored against Darwin and the answer
+      // key, per finder; finders that keep failing run last (magellan/batch-review.ts).
+      const batchReview = await reviewLinkBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
           link_outcomes: linkOutcomes,
+          batch_review: batchReview,
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -446,6 +454,8 @@ async function executeAgenticStep(
           second_documents_status: discovery.secondDocuments?.status ?? null,
           second_documents_checked: discovery.secondDocuments?.checked ?? 0,
           second_documents_found: discovery.secondDocuments?.found ?? 0,
+          restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
+          restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,
@@ -645,13 +655,19 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Every 500 settled reads: the batch's error rate and its misses, written for learning.
+      const batchReview = await reviewKnoxBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      const batchNote = batchReview.batches
+        .map((batch) => ` Batch review of reads ${batch.firstFeeRawId}-${batch.lastFeeRawId}: ${batch.errorRate == null ? "none judged" : `${(batch.errorRate * 100).toFixed(1)}% wrong`} (${batch.darwinRejected} rejected by Darwin, ${batch.takenDown} taken down, of ${batch.judged} judged).`)
+        .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
+          batch_review: batchReview,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
           extracted_fee_candidates: extraction.extractedFees,
@@ -1427,6 +1443,31 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeFeeAlertDispatch(result),
+        detail: { ...result },
+      };
+    }
+    case "briefing-refresh": {
+      const institutionId = Number(params.institution_id);
+      const result = await runBriefingRefresh({
+        dryRun: run.runKind === "dry_run",
+        institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
+        runId: run.id,
+      });
+      return {
+        status: "completed",
+        summary: summarizeBriefingRefresh(result),
+        detail: { ...result },
+      };
+    }
+    case "competitor-alerts": {
+      const institutionId = Number(params.institution_id);
+      const result = await runCompetitorAlerts({
+        dryRun: run.runKind === "dry_run",
+        institutionId: Number.isInteger(institutionId) && institutionId > 0 ? institutionId : null,
+      });
+      return {
+        status: "completed",
+        summary: summarizeCompetitorAlerts(result),
         detail: { ...result },
       };
     }
