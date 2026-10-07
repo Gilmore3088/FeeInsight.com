@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.9.1";
+export const WORKSPACE_ENGINE_VERSION = "1.10.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -613,6 +613,19 @@ export interface AskResponse {
   decisionId?: string;
   /** The saved analysis this answer was filed as (history and "Add to report"); send it with the memo request. */
   savedAnalysisId?: string;
+  /** For a question about every fee: each fee against its peer median, furthest first. */
+  positions?: SchedulePosition[];
+}
+
+export interface SchedulePosition {
+  feeCategory: string;
+  displayName: string;
+  current: number;
+  peerMedian: number;
+  peerCount: number;
+  peerLabel: string;
+  /** Against the peer median, within half a cent counts as "at". */
+  direction: "higher" | "lower" | "at";
 }
 
 export interface AskRequest {
