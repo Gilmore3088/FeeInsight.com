@@ -944,6 +944,25 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
+  it("orders failed-lane retries, then lanes with an unfetched hand-found schedule, ahead of routine passes", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    expect(selection).toBeDefined();
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const retry = order.indexOf("= 'failed') DESC");
+    const handFound = order.indexOf("hand.found_by_strategy = 'discover.operator_schedule'");
+    const waiting = order.indexOf("INTERVAL '1 hour'");
+    expect(retry).toBeGreaterThan(0);
+    expect(handFound).toBeGreaterThan(retry);
+    expect(order).toContain("hand.status = 'found'");
+    expect(waiting).toBeGreaterThan(handFound);
+  });
+
   it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
     sqlMock.mockImplementation((strings: TemplateStringsArray) => {
       const text = templateText(strings);
