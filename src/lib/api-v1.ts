@@ -14,6 +14,7 @@ export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
 
 export type ApiErrorCode =
   | "api_key_required"
+  | "data_unavailable"
   | "invalid_api_key"
   | "invalid_parameter"
   | "not_found"
@@ -159,4 +160,26 @@ export function csvField(value: unknown): string {
 
 export function toCsv(header: string[], rows: unknown[][]): string {
   return [header.join(","), ...rows.map((row) => row.map(csvField).join(","))].join("\n");
+}
+
+/** Asset-size tiers as stored on institution_sources, smallest first. */
+export const ASSET_TIERS = [
+  "community_small",
+  "community_mid",
+  "community_large",
+  "regional",
+  "large_regional",
+  "super_regional",
+] as const;
+
+/** Comma-separated asset tiers, or null when absent. */
+export function assetTierParam(params: URLSearchParams): string[] | null {
+  const raw = params.get("asset_tier");
+  if (raw === null || raw === "") return null;
+  const parts = raw.split(",").map((part) => part.trim());
+  const allowed = new Set<string>(ASSET_TIERS);
+  if (parts.some((part) => !allowed.has(part))) {
+    throw new ApiParamError(`asset_tier must be one or more of ${ASSET_TIERS.join(", ")}`);
+  }
+  return [...new Set(parts)];
 }

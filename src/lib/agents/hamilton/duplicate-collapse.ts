@@ -60,6 +60,7 @@ export async function collapsePublishedDuplicates(
                            COALESCE(fp.variant_type, ''),
                            COALESCE(fp.frequency, ''),
                            fp.amount,
+                           fp.rate_percent,
                            lower(btrim(fp.fee_name))
               ORDER BY fp.published_at DESC, fp.fee_published_id DESC
             )

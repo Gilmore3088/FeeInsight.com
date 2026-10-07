@@ -102,13 +102,70 @@ function zeroTokens(line: string): MoneyToken[] {
   }));
 }
 
+/** "Overdraft Fee Assessed when ... per day. | $36.00": the title that opens a long description row. */
+const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
+const PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/;
+
+/**
+ * A long line split into sentences. A description row whose only other cell is its price
+ * also keeps its title with that price, since the sentences leave the price on its own.
+ */
+function longLineParts(line: string): string[] {
+  const parts = line.split(/(?<=[.;])\s+|\s{3,}|•/);
+  const cells = line.split("|").map((cell) => cell.trim());
+  const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
+  return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
+}
+
+/** A fee card's name field ("Fee TypeCheckOK Fee", "Fee Name: Rush Order") and its price field ("Fee$5.00"). */
+const CARD_NAME = /^\s*fee\s*(?:type|name)\s*:?\s*(?=[A-Za-z])([^|]+)$/i;
+const CARD_PRICE = /^\s*(?:fee|price|cost|amount)\s*:?\s*(?=\$|\d|free\b|none\b|no charge\b)(.+)$/i;
+/** How many filled lines (a description, "Ways to avoid fees" bullets) may sit between them. */
+const CARD_FIELD_LINES = 8;
+
+/**
+ * Fees laid out as labeled cards, one field per line, as some credit union pages print
+ * them ("Fee TypeCourtesy Pay Overdraft Fee" / "DescriptionOverdraft Service for ..." /
+ * "Fee$5.00"): the card's name and price are one row ("Courtesy Pay Overdraft Fee | $5.00"),
+ * and the price line is emptied so it is not read again as a fee named "Fee". The card
+ * ends at the next card's name, so one card never takes another's price. Lines keep
+ * their positions; only the name line and the price line change. Shared with Knox.
+ */
+export function joinLabeledFeeCards(lines: string[]): string[] {
+  const out = [...lines];
+  for (let i = 0; i < out.length; i += 1) {
+    const name = out[i].match(CARD_NAME)?.[1]?.trim();
+    if (!name) continue;
+    let filled = 0;
+    for (let j = i + 1; j < out.length && filled < CARD_FIELD_LINES; j += 1) {
+      if (!out[j].trim()) continue;
+      filled += 1;
+      if (CARD_NAME.test(out[j])) break;
+      const price = out[j].match(CARD_PRICE)?.[1]?.trim();
+      if (!price) continue;
+      out[i] = `${name} | ${price}`;
+      out[j] = "";
+      break;
+    }
+  }
+  return out;
+}
+
+/** `joinLabeledFeeCards` over a whole text; the text is returned as is when it has no cards. */
+export function joinLabeledFeeCardText(text: string): string {
+  if (!/^\s*fee\s*(?:type|name)\s*:?\s*[A-Za-z]/im.test(text)) return text;
+  return joinLabeledFeeCards(text.split(/\r?\n/)).join("\n");
+}
+
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .flatMap((line) => (line.length > LONG_LINE ? line.split(/(?<=[.;])\s+|\s{3,}|•/) : [line]))
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 0);
+  return joinLabeledFeeCards(
+    text
+      .split(/\r?\n/)
+      .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line) => line.length > 0),
+  ).filter((line) => line.length > 0);
 }
 
 function nameStems(feeName: string): string[] {
@@ -222,6 +279,22 @@ export function statesDailyCap(line: string, amount: number): boolean {
   });
 }
 
+/**
+ * A two-column schedule flattened row by row puts the right column's heading at the end
+ * of a left-column row ("• Business | $5.00 | Overdrafts (OD)"); its sub-rows follow
+ * ("• Personal | $36.00"). The heading is the last cell when that cell states no price
+ * and reads as a title, not a bullet or a lowercase note. It names only a bulleted line under it.
+ */
+/** A bulleted sub-row ("• Personal | $36.00"), the only line a right-column heading names. */
+const SUB_ROW = /^[•·▪◦‣*-]\s*[A-Za-z]/;
+
+function rightColumnHeading(line: string): string | null {
+  const cells = line.split("|").map((cell) => cell.trim());
+  const last = cells.at(-1) ?? "";
+  if (cells.length < 2 || !/^[A-Z]/.test(last) || last.length > 60) return null;
+  return moneyTokens(last).length === 0 && !ZERO_WORDS.test(last) ? last : null;
+}
+
 /** The fee's row: its line, plus the short lines under it when the line states no price. */
 function feeRow(lines: string[], index: number): string {
   const line = lines[index];
@@ -322,6 +395,10 @@ function checkAgainstLines(
     const headings: string[] = [];
     for (let j = Math.max(0, i - NAME_HEADING_LINES); j < i; j += 1) {
       if (feeRow(lines, j) === lines[j] && moneyTokens(lines[j]).length === 0 && !ZERO_WORDS.test(lines[j])) headings.push(lines[j]);
+      else if (SUB_ROW.test(line)) {
+        const columnHeading = rightColumnHeading(lines[j]);
+        if (columnHeading) headings.push(columnHeading);
+      }
     }
     const underHeading =
       namesFee(line, stems, 1) &&
@@ -345,6 +422,60 @@ function checkAgainstLines(
       continue;
     }
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
+    if (!category.test(context)) {
+      best = "category_not_in_text";
+      continue;
+    }
+    return { ok: true, sourceLine: row.slice(0, 240) };
+  }
+  return { ok: false, reason: best };
+}
+
+/** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.
+ * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
+const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
+const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
+
+/**
+ * Pure: is this percentage fee stated in its source text? The rate's twin of
+ * `checkFeeAgainstSource`: one row has to name the fee, state the rate as a percent, say it
+ * is a fee or charge, and not be an interest or dividend rate. The rate never stands in for
+ * a dollar amount, so a "1%" row never confirms a $1.00 fee or the reverse.
+ */
+export function checkRateAgainstSource(
+  text: string | null | undefined,
+  feeName: string,
+  ratePercent: number,
+  categoryPattern: string,
+): SourceCheckResult {
+  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  const lines = cachedSourceLines(text);
+  const stems = nameStems(feeName);
+  const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
+  let best: SourceCheckFailure = "name_not_in_text";
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!namesFee(lines[i], stems)) continue;
+    // The rate may sit on the line under the name ("Foreign Transaction Fee" / "1.10%").
+    const next = lines[i + 1] ?? "";
+    const row = lines[i].match(RATE) || next.length > PRICE_BELOW_MAX_LENGTH ? lines[i] : `${lines[i]} | ${next}`;
+    // When one row states several rates ("Cash Advance 3.0% ... Foreign Transaction 1.0%"),
+    // each rate belongs to the words since the previous rate, as prices do.
+    const rates = [...row.matchAll(RATE)].map((match) => ({ value: Number(match[1]), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+    const own = rates.filter(
+      (rate, k) => rates.length === 1 || stemCount(row.slice(k === 0 ? 0 : rates[k - 1].end, rate.start), stems) > 0,
+    );
+    if (!own.some((rate) => Math.abs(rate.value - ratePercent) < 0.00005)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
+    // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
+    // Counting | 10% of total"); interest wording is judged on the row itself.
+    const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
+    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
     if (!category.test(context)) {
       best = "category_not_in_text";
       continue;

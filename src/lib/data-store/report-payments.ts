@@ -88,6 +88,25 @@ export async function flagQuoteNotReady(leadId: number): Promise<void> {
 }
 
 /**
+ * Records which institution a report request is about as soon as it comes in (given by the
+ * form, or matched by name), so the pipeline can put requesters' institutions first and James's
+ * quote starts from it. Keeps an id already set. Never throws: a failure is logged and the
+ * request is still stored.
+ */
+export async function recordRequestedInstitution(leadId: number, institutionId: number): Promise<void> {
+  try {
+    await sql`
+      UPDATE leads SET quote_institution_id = ${institutionId}
+      WHERE id = ${leadId} AND quote_institution_id IS NULL AND paid_at IS NULL`;
+  } catch (error) {
+    console.error("[api/leads] requested institution not recorded", {
+      leadId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * Saves the report data the buyer is about to pay for (migration 20270110000005). Never
  * throws: before the migration has run the save is skipped and logged, and checkout goes on.
  */

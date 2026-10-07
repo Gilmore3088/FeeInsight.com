@@ -95,6 +95,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 ## Authority
 
 - Hamilton publishes eligible `verified_fee_observations` into `published_fee_records` and the `published_fee_catalog` read model.
+- A percentage fee (`amount_kind = 'percent'`, `rate_percent` set, amount NULL) publishes only in a
+  category listed in `PERCENT_FEE_RANGES` (`src/lib/percent-fees.ts`: foreign transaction, cash
+  advance, coin counting, late payment) and inside that range. It appears in `published_fee_rate_catalog`, not in
+  `published_fee_catalog`, counts toward a bank's 3 fees and toward headline coverage, traces
+  by its rate (`checkRateAgainstSource`), and is skipped by the rules re-check, whose free
+  readers state dollar amounts only.
 - Hamilton reads selected institution context, evidence policy, peer baseline metadata, financial context, Monitor signals, and refresh jobs.
 - Hamilton may generate public-safe, Pro-grade, or internal/admin analysis depending on audience and access control.
 
@@ -109,9 +115,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - The `category-guard` step (`hamilton/category-guard.ts`) rolls back live
   `published_fee_records` that fail the guard: soft delete only (`rolled_back_at`,
   `rolled_back_by_batch_id = category-guard-run-<id>`, `rolled_back_reason =
-  category_guard:<code>: ...`), rejects their verified rows, and refreshes the fee index. Start it from
-  Atlas details -> Catalog repair; a `dry_run` run reports counts and samples and writes
-  nothing.
+  category_guard:<code>: ...`), rejects their verified rows, and refreshes the fee index. Every
+  publish step runs it (up to 100 rollbacks a step), so a guard change takes effect on its own;
+  Atlas details -> Catalog repair still starts it by hand, and a `dry_run` run reports counts and
+  samples and writes nothing.
 
 ## Required Behavior
 
@@ -242,7 +249,7 @@ Documents whose live fees were all taken down are re-checked too. Step detail:
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
-publish step runs `source-check.ts` on up to 40 institutions not checked since their
+publish step runs `source-check.ts` on up to 120 institutions not checked since their
 newest live fee: its own state's (or institution's) first, then any state's to fill
 the batch, institutions never checked first. A new strategy version (bumped whenever
 the shared reader changes) re-checks every institution and restores fees an older

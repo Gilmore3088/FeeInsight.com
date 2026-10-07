@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { CAMPAIGN_NAME_PREFIX, formatBrief, parseCampaignName, scoreCampaign } from "@/lib/agents/marketing/formats";
-import { listCampaigns, mailerLiteConfigured, marketingGroupIds, activeSubscriberCount, type AgentCampaign } from "@/lib/agents/marketing/mailerlite-campaigns";
+import { listCampaigns, listGroups, mailerLiteConfigured, nationalGroupId, toStateGroups, type AgentCampaign } from "@/lib/agents/marketing/mailerlite-campaigns";
 import { mailingAddress } from "@/lib/agents/marketing/monthly";
 import { STATE_EDITION_FORMAT } from "@/lib/agents/marketing/state-edition";
 
@@ -12,12 +12,16 @@ const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
 async function load() {
   if (!mailerLiteConfigured()) return { error: "MAILERLITE_API_KEY is not set, so Hamilton can't read campaigns." } as const;
   try {
-    const groupIds = marketingGroupIds();
-    const [drafts, sent, groupSize] = await Promise.all([
+    const [drafts, sent, groups] = await Promise.all([
       listCampaigns("draft", CAMPAIGN_NAME_PREFIX),
       listCampaigns("sent", CAMPAIGN_NAME_PREFIX),
-      groupIds.length ? activeSubscriberCount(groupIds) : Promise.resolve(null),
+      listGroups().catch(() => null),
     ]);
+    // Every reader sits in the national group or one state group, so these add up once each.
+    const national = groups ? await nationalGroupId(undefined, groups, false) : null;
+    const groupSize = groups
+      ? (groups.find((group) => group.id === national)?.activeCount ?? 0) + toStateGroups(groups).reduce((sum, group) => sum + group.activeCount, 0)
+      : null;
     return { drafts, sent, groupSize } as const;
   } catch (error) {
     return { error: error instanceof Error ? error.message : "MailerLite could not be read." } as const;

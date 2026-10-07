@@ -238,3 +238,45 @@ describe("Knox layout helpers", () => {
     expect(composableTail("Gift Cards")).toBe(false);
   });
 });
+
+describe("Knox v23 layouts", () => {
+  it("reads labeled fee cards (ESL: \"Fee TypeX\" / description / \"Fee$5.00\")", () => {
+    const text = [
+      "Fee TypeCourtesy Pay Overdraft Fee",
+      "DescriptionOverdraft Service for checks, bill pay, and automatic ACH payments. The monthly maximum overdraft is $250 for Free and Premier Checking accounts.",
+      "Ways to avoid fees",
+      "- Monitor account activity with online banking and/or mobile banking.",
+      "Fee$5.00",
+      "Fee TypeStop Payment",
+      "DescriptionStop a check you wrote.",
+      "Fee$30.00",
+    ].join("\n\n");
+    expect(fees(text)).toEqual(expect.arrayContaining([["Courtesy Pay Overdraft Fee", 5, "overdraft"], ["Stop Payment", 30, "stop_payment"]]));
+    expect(held(text).some(([, name]) => name === "Fee")).toBe(false);
+  });
+
+  it("reads a two-column table's right-column heading and its sub-rows (Trustmark)", () => {
+    const text = [
+      "• $0.25 per $100 deposited over $5,000 per month | Non-Sufficient Funds (NSF)",
+      "• Business accounts only | $36.00",
+      "Collection Items | $25.00 | • Per each item* returned unpaid",
+      "Copies of Checks (per item) | Official Checks | $8.00",
+      "• Personal | $3.00",
+      "• Business | $5.00 | Overdrafts (OD)",
+      "• Personal | $36.00",
+      "Customized Debit or Credit Card | • Per each item* paid in overdraft",
+      "Deposit Bags",
+      "• Locking (small) | $40.00",
+    ].join("\n");
+    const found = fees(text, "extract.table");
+    expect(found).toEqual(
+      expect.arrayContaining([
+        ["Non-Sufficient Funds (NSF): Business accounts only", 36, "nsf"],
+        ["Overdrafts (OD): Personal", 36, "overdraft"],
+      ]),
+    );
+    // Copies of Checks' own sub-row is not the NSF heading's, and the heading ends with its rows.
+    expect(found.some(([name, amount]) => /Non-Sufficient|Overdrafts/.test(name) && (amount === 3 || amount === 40))).toBe(false);
+  });
+});
+

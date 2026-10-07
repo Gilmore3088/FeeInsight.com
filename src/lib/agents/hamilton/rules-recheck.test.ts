@@ -81,6 +81,19 @@ describe("Hamilton rules re-check", () => {
     expect(writes).toContain("hamilton.rules_recheck");
   });
 
+  it("keeps a fee Knox's learning reader re-filed when today's rules read it under the rejected category", async () => {
+    // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
+    const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
+    const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), refiled, unrelated], texts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
+
+    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([3]);
+    const [query] = db.unsafe.mock.calls[0] as [string];
+    expect(query).toContain("knox_lesson:%");
+  });
+
   it("keeps one live copy of a fee the document states once and asks Knox for the fees it misses", async () => {
     const db = createDbMock(
       [live(1, "stop_payment", "Stop Payment", "30.00"), live(5, "stop_payment", "Stop Payment Fee", "30.00")],

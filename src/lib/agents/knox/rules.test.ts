@@ -521,6 +521,16 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("For personal accounts, overdrafts and fees up to a total of")).toBeNull();
   });
 
+  it("v20 files an ATM foreign transaction fee as a foreign-ATM fee, not a card's foreign transaction fee", () => {
+    expect(classifyPatternKey("ATM Foreign Transaction Fee")).toBe("atm_non_network");
+    expect(classifyPatternKey("ATM – Foreign Transaction Customer")).toBe("atm_non_network");
+    expect(classifyPatternKey("Debit ATM Foreign Transaction Fee")).toBe("atm_non_network");
+    expect(classifyPatternKey("ATM foreign transaction-non owned Chessie ATM")).toBe("atm_non_network");
+    expect(classifyPatternKey("Debit Card International Transaction Fee")).toBe("card_foreign_txn");
+    expect(classifyPatternKey("Debit/ATM Foreign Transaction (C/B fee) of")).toBe("card_foreign_txn");
+    expect(classifyPatternKey("Foreign Transaction Fee")).toBe("card_foreign_txn");
+  });
+
   it("v19 names a sentence-form fee by what it charges for (First Merchants, Navy Federal)", () => {
     expect(fees("We charge a fee of $37.00 each time we pay an overdraft.")).toEqual([
       ["Overdraft fee (each time we pay an overdraft)", 37, "overdraft"],
@@ -547,5 +557,80 @@ describe("Knox extract.rules", () => {
   it("v19 never names a price by a prose note in the next cell (Ent)", () => {
     const text = "Courtesy Pay\n$30.00 | everyday debit card transactions and ATM withdrawals are not covered unless you opt in";
     expect(runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Courtesy Pay", 30, "overdraft"]]);
+  });
+
+  it("v21 knows the other names for the card's currency fee and for coin counting", () => {
+    for (const name of ["VISA Foreign Transactions in Foreign Currency", "International Point of Sale Fee", "International Currency Fee", "Cross-Border Assessment", "International purchase transaction fee", "Multi currency"]) {
+      expect(classifyFeeText(name)).toBe("card_foreign_txn");
+    }
+    for (const name of ["Coin Counter Fee per use", "COIN MACHINE PROCESSING FEE (Non-Members)", "Loose Coin (non-member)", "Count and roll coins - Noncustomer"]) {
+      expect(classifyFeeText(name)).toBe("coin_counting");
+    }
+    // A neighbouring column's "(international transactions)" note is not the fee.
+    expect(classifyFeeText("(international transactions) amount (per inactive account)")).not.toBe("card_foreign_txn");
+    expect(classifyFeeText("Foreign Currency Order")).not.toBe("card_foreign_txn");
+  });
+
+  it("v21 holds a rate named by the words before it, even with a dollar minimum after", () => {
+    const held = extractCandidatesFromText("Cash Advance | 3% of each advance ($5.00 minimum)").held;
+    expect(held.map((row) => [row.shape, row.canonicalHint, row.feeName])).toEqual([["percentage", "cash_advance", "Cash Advance"]]);
+  });
+
+  describe("v22 large-bank overdraft layouts", () => {
+    const freeFees = (text: string) =>
+      runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+    it("reads a fee charged to customers in a sentence, even after a question naming it", () => {
+      expect(fees("• Customers are charged a fee of $30 each time an overdraft transaction is paid.")).toEqual([
+        ["Overdraft fee (each time an overdraft transaction is paid)", 30, "overdraft"],
+      ]);
+      expect(
+        fees(
+          "What fees will I be charged if OceanFirst pays my overdraft on my consumer account? Under the Bank's consumer overdraft program: " +
+            "• Customers are charged a fee of $30 each time an overdraft transaction is paid. • The number of overdraft fees charged for " +
+            "overdrawing an account are limited to 1 per day.",
+        ),
+      ).toEqual([["Overdraft fee (each time an overdraft transaction is paid)", 30, "overdraft"]]);
+    });
+
+    it("keeps a dot-leader name with its price in a one-line PDF schedule", () => {
+      const glacier =
+        "FEE SCHEDULE EFFECTIVE JANUARY 1, 2026 Overdraft Fees: Overdraft created by items or transactions including, but not limited to, checks. " +
+        `Overdraft Fee${".".repeat(90)} $30.00 - fee assessed for each item paid1 Continuous Overdraft Fee${".".repeat(60)} $5.00 - fee assessed each day`;
+      expect(fees(glacier)).toEqual(expect.arrayContaining([["Overdraft Fee", 30, "overdraft"]]));
+      const united =
+        "International Transactions: EFT Service Charge……...Up to 2.5% Replacement ATM/Debit Card……$10 Overdrafts Overdrafts fee (per item)……………$36 " +
+        "Maximum 3 Overdraft fees per day. If your account is overdrawn, you will not be charged if your ending account balance is overdrawn by $50 or less.";
+      expect(fees(united)).toEqual(expect.arrayContaining([["Overdrafts Overdrafts fee (per item)", 36, "overdraft"]]));
+    });
+
+    it("names a long description row's price cell by the row's title", () => {
+      const dollar = [
+        "Continuous Overdraft Fee If your account remains negative for a period of 7 consecutive calendar days, you will be assessed a fee of $25.00 on the 7th consecutive day. This fee is in addition to any Overdraft Fees assessed. | $25.00",
+        "Overdraft Fee Assessed when the available balance in your account is insufficient to cover an item (check, fee, returned check, ATM/POS authorization, Online Banking, other electronic debit, etc.) of $5.00 or greater that is presented for payment. An Overdraft Fee is assessed when such items are paid. Overdraft Fee limited to four (4) charges per day. | $36.00",
+      ].join("\n");
+      const read = freeFees(dollar);
+      expect(read).toEqual(expect.arrayContaining([["Overdraft Fee", 36, "overdraft"]]));
+      // The continuous fee's repeated price cell is not a $25 overdraft fee.
+      expect(read.filter(([, amount, key]) => key === "overdraft" && amount === 25)).toEqual([]);
+    });
+
+    it("keeps a price cell that names its own fee, even at the same price", () => {
+      expect(freeFees("Deposit Return Item | $5.00 | Overdraft Transfer (Per Transfer) | $5.00")).toEqual(
+        expect.arrayContaining([["Overdraft Transfer (Per Transfer)", 5, "od_protection_transfer"]]),
+      );
+    });
+
+    it("files a returned overdraft as NSF and a maximum daily overdraft charge as the daily cap", () => {
+      expect(classifyFeeText("Overdrafts Returned")).toBe("nsf");
+      expect(classifyFeeText("Overdrafts Paid")).toBe("overdraft");
+      expect(classifyFeeText("Maximum daily Overdraft or Returned Item fees (per day, personal accounts)")).toBe("od_daily_cap");
+    });
+  });
+
+  it("v24 files a loan's late fee as a late payment fee, not an overdraft fee", () => {
+    expect(classifyFeeText("Late Payment fee (Overdraft L-O-C)")).toBe("late_payment");
+    expect(classifyFeeText("Overdraft Loan Late Fee (no grace period)")).toBe("late_payment");
+    expect(classifyFeeText("Overdraft Fee")).toBe("overdraft");
   });
 });

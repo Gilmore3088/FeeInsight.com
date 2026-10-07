@@ -26,6 +26,8 @@ export const HEALTH_CHANGE_SHARE = 0.25;
 export const ATLAS_MAX_MEDIAN_GAP_MINUTES = 90;
 /** More than this share of catch-up runs doing nothing means a lane is looping. */
 export const ATLAS_MAX_EMPTY_RUN_SHARE = 0.1;
+/** A lane whose last this-many catch-up runs all did nothing is looping. */
+export const ATLAS_EMPTY_STREAK_RUNS = 3;
 /** The same link failing this often in a day is a retry loop, not bad luck. */
 export const REPEAT_FAILURE_ATTEMPTS = 3;
 /** Most of the published fees Darwin passed should survive Hamilton's source check. */
@@ -185,6 +187,27 @@ export async function readAtlasNumbers(db: SqlTag): Promise<HealthNumbers> {
           ))::int AS empty_backlog_runs,
       (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM gap) / 60.0)
          FROM gaps WHERE gap IS NOT NULL) AS median_gap_minutes,
+      (SELECT COUNT(*) FROM (
+         SELECT state_code
+           FROM (
+             SELECT lane.state_code, lane.empty,
+                    row_number() OVER (PARTITION BY lane.state_code ORDER BY lane.started_at DESC) AS recent
+               FROM (
+                 SELECT l.state_code, l.started_at,
+                        NOT EXISTS (
+                          SELECT 1 FROM agent_run_steps s
+                           WHERE s.agent_run_id = l.id
+                             AND s.step_key = ANY(${WORK_STEP_KEYS}::text[])
+                             AND COALESCE((regexp_match(s.summary, ${WORK_COUNT_PATTERN}))[1]::int, 0) > 0
+                        ) AS empty
+                   FROM lane l
+                  WHERE l.mode = 'backlog' AND l.status = 'completed'
+               ) lane
+           ) ranked
+          WHERE recent <= ${ATLAS_EMPTY_STREAK_RUNS}
+          GROUP BY state_code
+         HAVING COUNT(*) = ${ATLAS_EMPTY_STREAK_RUNS} AND bool_and(empty)
+       ) streaks)::int AS empty_streak_lanes,
       (SELECT COUNT(*) FROM agent_state_lanes l
         WHERE l.next_run_after <= NOW()
           AND NOT EXISTS (
@@ -254,6 +277,7 @@ export async function readAtlasNumbers(db: SqlTag): Promise<HealthNumbers> {
     laneRunsFailed: num(runs?.lane_runs_failed),
     backlogRuns: num(runs?.backlog_runs),
     emptyBacklogRuns: num(runs?.empty_backlog_runs),
+    emptyStreakLanes: num(runs?.empty_streak_lanes),
     medianGapMinutes: numOrNull(runs?.median_gap_minutes),
     overdueLanes: num(runs?.overdue_lanes),
     queuedRuns: num(runs?.queued_runs),
@@ -291,6 +315,12 @@ export function atlasRules(n: HealthNumbers): HealthRule[] {
       label: "Catch-up runs only start when there is work",
       ok: share(empty, backlogRuns) <= ATLAS_MAX_EMPTY_RUN_SHARE,
       detail: `${empty} of ${backlogRuns} did nothing`,
+    },
+    {
+      key: "no_empty_streaks",
+      label: `No lane does nothing ${ATLAS_EMPTY_STREAK_RUNS} catch-up runs in a row`,
+      ok: num(n.emptyStreakLanes) === 0,
+      detail: `${num(n.emptyStreakLanes)} lanes did`,
     },
     {
       key: "backlog_matches_steps",

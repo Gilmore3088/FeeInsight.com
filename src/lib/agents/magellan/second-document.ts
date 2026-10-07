@@ -6,7 +6,15 @@ import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page"
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, LARGE_BANK_ASSETS, OVERDRAFT_PRICE_SQL, REFERS_ELSEWHERE_SQL } from "./link-coverage";
+import {
+  BUSINESS_PATH_SQL,
+  CONSUMER_PATH_SQL,
+  DOCUMENT_YEAR_SQL,
+  LARGE_BANK_ASSETS,
+  OVERDRAFT_PRICE_SQL,
+  REFERS_ELSEWHERE_SQL,
+  STALE_DOCUMENT_YEARS,
+} from "./link-coverage";
 import {
   cleanText,
   hubPages,
@@ -414,8 +422,8 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
              COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
              -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
-             -- schedule, no stored text that prices an overdraft, or a text that sends the
-             -- reader to another document for its terms.
+             -- schedule, no stored text that prices an overdraft, a text that sends the
+             -- reader to another document for its terms, or a current copy dated years ago.
              (
                lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
                AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
@@ -431,7 +439,16 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
                 WHERE text.institution_id = inst.id
                   AND text.status = 'completed'
                   AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${REFERS_ELSEWHERE_SQL}
-             ) AS refers_elsewhere
+             ) AS refers_elsewhere,
+             EXISTS (
+               SELECT 1 FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                  AND doc.status = 'success'
+                  AND doc.duplicate_of_id IS NULL
+                  AND doc.superseded_by_id IS NULL
+                  AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
+                      <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
+             ) AS stale_copy
         FROM institution_sources inst
         LEFT JOIN thin ON thin.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
@@ -448,16 +465,16 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
          )
     )
     SELECT id, institution_name, state_code, website_url, fee_schedule_url, categories,
-           (business_only OR no_overdraft_price OR refers_elsewhere) AS incomplete
+           (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
       FROM scoped
      WHERE categories < ${THIN_BANK_CATEGORY_LIMIT}
         -- An HTML fee link with no monthly fee: the product-page pattern.
         OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
-        OR business_only OR no_overdraft_price OR refers_elsewhere
+        OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
      -- Report requesters and $10B+ banks first: the names buyers check.
      ORDER BY requested DESC,
               (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
-              (business_only OR no_overdraft_price OR refers_elsewhere) DESC,
+              (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) DESC,
               categories ASC,
               asset_size DESC NULLS LAST,
               id ASC

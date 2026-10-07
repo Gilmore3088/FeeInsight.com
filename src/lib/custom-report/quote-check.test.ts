@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeQuoteCheck } from "./quote-check";
+import { describeQuoteCheck, describeReportRule } from "./quote-check";
 
 const readiness = {
   ready: true,
@@ -35,7 +35,17 @@ describe("describeQuoteCheck", () => {
 });
 
 describe("report rule in the quote check", () => {
-  const rule = { state_code: "TX", charter_type: "credit_union", ownCategories: 11, richCompetitors: 22, passes: true };
+  const rule = {
+    state_code: "TX",
+    charter_type: "credit_union",
+    fed_district: 11,
+    ownCategories: 11,
+    richCompetitors: 22,
+    peerScope: "state" as const,
+    stateRichCompetitors: 22,
+    districtRichCompetitors: 22,
+    passes: true,
+  };
 
   it("states the rule counts alongside a ready check", () => {
     const line = describeQuoteCheck({ status: "ready", readiness, rule, path: null }, "https://feeinsight.com");
@@ -46,11 +56,35 @@ describe("report rule in the quote check", () => {
 
   it("is not ready when the local market passes but the rule does not", () => {
     const line = describeQuoteCheck(
-      { status: "thin", readiness, rule: { ...rule, charter_type: "bank", richCompetitors: 4, passes: false } },
+      { status: "thin", readiness, rule: { ...rule, charter_type: "bank", fed_district: null, richCompetitors: 4, stateRichCompetitors: 4, districtRichCompetitors: null, passes: false } },
       "https://feeinsight.com",
     );
     expect(line).toBe(
       "Report check: not ready to quote (9 comparable fee lines, 22 of 40 local competitors with data). Report rule: not met (11 of 15 headline fees; 4 other banks in TX with 9+; needs 9+ and 15+).",
+    );
+  });
+
+  it("labels district peers plainly when the state had too few", () => {
+    const district = {
+      ...rule,
+      state_code: "WA",
+      charter_type: "bank",
+      fed_district: 12,
+      ownCategories: 10,
+      richCompetitors: 18,
+      peerScope: "district" as const,
+      stateRichCompetitors: 1,
+      districtRichCompetitors: 18,
+    };
+    expect(describeReportRule(district)).toBe(
+      "Report rule: passes (10 of 15 headline fees; peers: Fed 12th District banks, WA had too few; 18 other banks with 9+).",
+    );
+  });
+
+  it("names the district count too when neither peer group is enough", () => {
+    const thin = { ...rule, state_code: "WA", charter_type: "bank", fed_district: 12, ownCategories: 7, richCompetitors: 1, stateRichCompetitors: 1, districtRichCompetitors: 9, passes: false };
+    expect(describeReportRule(thin)).toBe(
+      "Report rule: not met (7 of 15 headline fees; 1 other banks in WA with 9+, 9 in the Fed 12th District; needs 9+ and 15+).",
     );
   });
 });

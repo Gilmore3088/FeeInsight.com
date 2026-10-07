@@ -6,7 +6,8 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
+import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -71,7 +72,8 @@ export type DarwinReasonCode =
   | "outside_envelope"
   | "peer_outlier"
   | "duplicate_in_batch"
-  | "duplicate_verified";
+  | "duplicate_verified"
+  | "percent_not_publishable";
 
 /**
  * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
@@ -92,6 +94,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   peer_outlier: "Amount far outside the state's peer range for this fee and asset size",
   duplicate_in_batch: "Same fee already verified in this batch",
   duplicate_verified: "Duplicate verified row",
+  percent_not_publishable: "A rate in a category that does not publish rates (often an interest rate, not a fee)",
 };
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
@@ -101,7 +104,7 @@ function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   return "rejected";
 }
 
-export interface RawFeeRow {
+export interface RawFeeRow extends RateFields {
   fee_raw_id: number | string;
   institution_id: number | string;
   source_url: string | null;
@@ -245,8 +248,15 @@ export function verificationReasonCode(
 ): DarwinReasonCode | null {
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
-  if (!checkFeeCategory(canonicalFeeKey, row.fee_name).ok) return "category_mismatch";
+  if (!checkFeeCategory(canonicalFeeKey, row.fee_name, row).ok) return "category_mismatch";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
+  if (isPercentFee(row)) {
+    if (!percentFeeAllowed(canonicalFeeKey)) return "percent_not_publishable";
+    const rate = ratePercentOf(row);
+    if (rate == null || row.amount != null) return "invalid_amount";
+    const range = PERCENT_FEE_RANGES[canonicalFeeKey];
+    return rate < range.min || rate > range.max ? "outside_envelope" : null;
+  }
   const amount = normalizedAmount(row.amount);
   if (amount == null || amount < 0) return "invalid_amount";
   if (amount === 0) {
@@ -263,10 +273,15 @@ export function verificationReasonCode(
  * bank's real price for its band. A row with no stored text cannot be traced. Exported for tests.
  */
 export function statedInOwnSource(
-  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id">,
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent">,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
 ): boolean {
+  if (isPercentFee(row)) {
+    const rate = ratePercentOf(row);
+    const text = row.source_document_id == null ? undefined : texts.get(Number(row.source_document_id));
+    return rate != null && !!text && checkRateAgainstSource(text, row.fee_name, rate, ".").ok;
+  }
   const amount = normalizedAmount(row.amount);
   if (amount == null || row.source_document_id == null) return false;
   const text = texts.get(Number(row.source_document_id));
@@ -295,6 +310,7 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
     Number(row.institution_id),
     canonicalFeeKey,
     normalizedAmount(row.amount),
+    isPercentFee(row) ? `rate:${ratePercentOf(row)}` : "",
     (row.frequency ?? "").trim().toLowerCase(),
     (row.source_url ?? row.document_r2_key ?? "").trim(),
   ].join("|");
@@ -352,6 +368,11 @@ async function selectRawFees(
              fr.frequency,
              fr.outlier_flags,
              fr.conditions,
+             fr.amount_kind,
+             fr.rate_percent,
+             fr.rate_min_amount,
+             fr.rate_max_amount,
+             fr.rate_basis,
              inst.institution_name,
              fr.source_document_id,
              upper(btrim(inst.state_code)) AS state_code,
@@ -384,15 +405,18 @@ export async function insertVerifiedFee(
     row: RawFeeRow;
     canonicalFeeKey: string;
     secondSourceAgrees?: boolean;
+    extraFlags?: string[];
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
   const institutionId = Number(options.row.institution_id);
-  const amount = normalizedAmount(options.row.amount);
+  const percent = isPercentFee(options.row);
+  const amount = percent ? null : normalizedAmount(options.row.amount);
   const eventId = stableUuid(`darwin:${options.runId}:${feeRawId}:${options.canonicalFeeKey}`);
   const flags = ["agentic_darwin_verified"];
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
+  if (options.extraFlags) flags.push(...options.extraFlags);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -407,7 +431,12 @@ export async function insertVerifiedFee(
       fee_name,
       amount,
       frequency,
-      review_status
+      review_status,
+      amount_kind,
+      rate_percent,
+      rate_min_amount,
+      rate_max_amount,
+      rate_basis
     )
     VALUES (
       ${feeRawId},
@@ -422,7 +451,12 @@ export async function insertVerifiedFee(
       ${options.row.fee_name},
       ${amount},
       ${options.row.frequency},
-      'verified'
+      'verified',
+      ${percent ? "percent" : "flat"},
+      ${percent ? ratePercentOf(options.row) : null},
+      ${percent ? options.row.rate_min_amount ?? null : null},
+      ${percent ? options.row.rate_max_amount ?? null : null},
+      ${percent ? options.row.rate_basis ?? null : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_verified_id
