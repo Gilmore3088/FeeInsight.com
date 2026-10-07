@@ -265,6 +265,7 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 | `registry-federal-bills` | `current` (daily) | `reg_tracker_items` (bank and credit union fee bills in the current Congress from the Congress.gov API, found by title, stage from the latest action; scheduled only when `CONGRESS_GOV_API_KEY` is set; shadow mode, nothing stored, until `FEDERAL_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-bills` | state code (50 states, DC, PR; weekly) | `reg_tracker_items` (bank and credit union fee bills from the Open States API with their stage from the action history, last 400 days; scheduled only when `OPEN_STATES_API_KEY` is set; shadow mode, nothing stored, until `STATE_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
+| `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
 - `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It merges candidates round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).

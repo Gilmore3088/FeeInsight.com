@@ -576,6 +576,7 @@ describe("registry dispatch", () => {
       "federal-bills",
       "state-bills",
       "state-regulators",
+      "enforcement",
     ]);
   });
 

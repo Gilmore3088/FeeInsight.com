@@ -5,7 +5,13 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatCompactDollars } from "@/lib/format";
-import type { BranchFootprint, ComplaintTrend, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
+import type {
+  BranchFootprint,
+  ComplaintTrend,
+  EnforcementActionRow,
+  EnforcementRecord,
+  HoldingCompanyProfile,
+} from "@/lib/data-store/registry-profile";
 
 /*
  * Registry cards for the gated Financial profile. Colors reuse the validated
@@ -388,6 +394,81 @@ export function HoldingCompanyCard({ profile }: { profile: HoldingCompanyProfile
               </li>
             ))}
           </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const AGENCY_LABEL = { OCC: "OCC", FRB: "Federal Reserve" } as const;
+
+function ActionItem({ action }: { action: EnforcementActionRow }) {
+  const date = action.start_date ? formatQuarterEnd(action.start_date) : "Date not given";
+  return (
+    <li className="py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-medium text-[#1A1815]">{action.action_type ?? "Enforcement action"}</span>
+        <span className="shrink-0 tabular-nums text-[#6B6255]">{date}</span>
+      </div>
+      <p className="text-[#5A5347]">
+        {AGENCY_LABEL[action.agency]}
+        {action.against_holding_company && <>, against the holding company, {action.party_name}</>}
+        {action.penalty_amount !== null && <>, penalty {formatCompactDollars(action.penalty_amount)}</>}
+        {action.termination_date && <>. Ended {formatQuarterEnd(action.termination_date)}</>}
+        {action.document_url && (
+          <>
+            {" · "}
+            <a href={action.document_url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#A93D25] hover:underline">
+              Order
+            </a>
+          </>
+        )}
+      </p>
+      {action.subject && <p className="text-[#8A8174]">{action.subject}</p>}
+    </li>
+  );
+}
+
+export function EnforcementCard({ record }: { record: EnforcementRecord }) {
+  const agencies = record.agenciesChecked.map((a) => AGENCY_LABEL[a]).join(" and ");
+  const activeCount = record.active.length;
+  const subtitle =
+    activeCount > 0
+      ? `${activeCount} active ${activeCount === 1 ? "action" : "actions"}`
+      : record.terminatedCount > 0
+        ? "No active actions"
+        : `None on file with the ${agencies}`;
+  return (
+    <Card
+      title="Enforcement actions"
+      subtitle={subtitle}
+      caption={`Source: public enforcement action lists from the ${agencies}${record.asOf ? `, read ${formatQuarterEnd(record.asOf)}` : ""}. FDIC orders are not included yet. Actions against individual bank officers are left out.`}
+    >
+      {activeCount === 0 && record.terminatedCount === 0 ? (
+        <p className="text-[12px] text-[#5A5347]">
+          The {agencies} {record.agenciesChecked.length > 1 ? "have" : "has"} no public enforcement action against this bank or its holding company on file.
+        </p>
+      ) : (
+        <div className="text-[12px]">
+          {activeCount > 0 && (
+            <ul className="divide-y divide-[#F1EBE1]">
+              {record.active.map((action, i) => (
+                <ActionItem key={`a-${i}`} action={action} />
+              ))}
+            </ul>
+          )}
+          {record.terminatedCount > 0 && (
+            <>
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                Ended {record.terminatedCount > record.terminated.length ? `(latest ${record.terminated.length} of ${record.terminatedCount})` : ""}
+              </p>
+              <ul className="divide-y divide-[#F1EBE1]">
+                {record.terminated.map((action, i) => (
+                  <ActionItem key={`t-${i}`} action={action} />
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </Card>
