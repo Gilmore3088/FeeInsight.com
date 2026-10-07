@@ -18,7 +18,7 @@ export const OPERATOR_SCHEDULE_STRATEGY = { strategy: "discover.operator_schedul
 
 export interface OperatorSchedule {
   institutionId: number;
-  /** For readers of this file; the id decides. */
+  /** Must match the stored name, so a renumbered or different database never gets the link. */
   institutionName: string;
   url: string;
   /** Who gave the link and when (UTC). */
@@ -92,7 +92,21 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.pnfp.com/Overdraft",
     givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
   },
+  {
+    institutionId: 104,
+    institutionName: "FirstBank Puerto Rico",
+    url: "https://www.1firstbank.com/pr/en/documents/accounts/Disclosures-of-Rates-Terms-and-Fees-Deposit-UNO-Account-Eng.pdf",
+    givenBy: "web search for banks hidden by the 3-fee rule, 2026-10-07 01:10",
+  },
+  {
+    institutionId: 122,
+    institutionName: "FirstBank",
+    url: "https://www.firstbankonline.com/wp-content/uploads/2024/04/Schedule-of-Fees_Consumer-04.08.2024.pdf",
+    givenBy: "web search for banks hidden by the 3-fee rule, 2026-10-07 01:10",
+  },
 ];
+
+const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
 
 export interface OperatorScheduleResult {
   added: Array<{ institutionId: number; url: string }>;
@@ -115,17 +129,19 @@ export async function addOperatorSchedules(options: {
 
   const ids = [...new Set(schedules.map((schedule) => schedule.institutionId))];
   const held = await db`
-    SELECT inst.id AS institution_id, inst.fee_schedule_url AS url FROM institution_sources inst WHERE inst.id = ANY(${ids}::bigint[])
+    SELECT inst.id AS institution_id, inst.fee_schedule_url AS url, inst.institution_name FROM institution_sources inst WHERE inst.id = ANY(${ids}::bigint[])
     UNION ALL
-    SELECT doc.institution_id, doc.document_url FROM source_documents doc WHERE doc.institution_id = ANY(${ids}::bigint[])
+    SELECT doc.institution_id, doc.document_url, NULL FROM source_documents doc WHERE doc.institution_id = ANY(${ids}::bigint[])
     UNION ALL
-    SELECT ias.institution_id, ias.url FROM institution_additional_sources ias WHERE ias.institution_id = ANY(${ids}::bigint[])
+    SELECT ias.institution_id, ias.url, NULL FROM institution_additional_sources ias WHERE ias.institution_id = ANY(${ids}::bigint[])
   `;
-  const exists = new Set(held.map((row) => Number(row.institution_id)));
+  const names = new Map(
+    held.filter((row) => row.institution_name).map((row) => [Number(row.institution_id), sameName(String(row.institution_name))]),
+  );
   const known = new Set(held.filter((row) => row.url).map((row) => `${Number(row.institution_id)}:${urlIdentity(String(row.url))}`));
 
   for (const schedule of schedules) {
-    if (!exists.has(schedule.institutionId)) continue;
+    if (names.get(schedule.institutionId) !== sameName(schedule.institutionName)) continue;
     if (known.has(`${schedule.institutionId}:${urlIdentity(schedule.url)}`)) continue;
     const reason = `Consumer fee schedule given by ${schedule.givenBy}`;
     const inserted = await db`

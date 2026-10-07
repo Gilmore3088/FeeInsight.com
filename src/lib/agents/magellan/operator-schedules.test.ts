@@ -13,7 +13,7 @@ const chase: OperatorSchedule = {
   givenBy: "James, 2026-10-07 00:51",
 };
 
-function createDb(held: Array<{ institution_id: number; url: string | null }>, insertReturns = [{ id: 7 }]): DbMock {
+function createDb(held: Array<{ institution_id: number; url: string | null; institution_name?: string | null }>, insertReturns = [{ id: 7 }]): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const sqlText = text(strings);
     if (sqlText.includes("UNION ALL")) return Promise.resolve(held);
@@ -26,7 +26,7 @@ const attempts = (db: DbMock) => db.mock.calls.filter((call) => text(call[0]).in
 
 describe("schedules James found by hand", () => {
   it("adds a schedule the bank does not hold as a consumer companion, with its attempt", async () => {
-    const db = createDb([{ institution_id: 1, url: "https://www.jpmorganchase.com/ir/news/2021/press-release" }]);
+    const db = createDb([{ institution_id: 1, url: "https://www.jpmorganchase.com/ir/news/2021/press-release", institution_name: chase.institutionName }]);
     const result = await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [chase] });
     expect(result.added).toEqual([{ institutionId: 1, url: chase.url }]);
     const [insert] = inserts(db);
@@ -38,7 +38,7 @@ describe("schedules James found by hand", () => {
   });
 
   it("leaves a schedule the bank already holds, and an institution that does not exist", async () => {
-    const held = createDb([{ institution_id: 1, url: chase.url }]);
+    const held = createDb([{ institution_id: 1, url: chase.url, institution_name: chase.institutionName }]);
     expect((await addOperatorSchedules({ db: asDb(held), runId: 5, schedules: [chase] })).added).toEqual([]);
     expect(inserts(held)).toHaveLength(0);
 
@@ -47,8 +47,14 @@ describe("schedules James found by hand", () => {
     expect(inserts(missing)).toHaveLength(0);
   });
 
+  it("leaves a bank whose stored name does not match the listed one", async () => {
+    const other = createDb([{ institution_id: 1, url: null, institution_name: "Maple Test Bank" }]);
+    expect((await addOperatorSchedules({ db: asDb(other), runId: 5, schedules: [chase] })).added).toEqual([]);
+    expect(inserts(other)).toHaveLength(0);
+  });
+
   it("records nothing when the companion row already existed", async () => {
-    const db = createDb([{ institution_id: 1, url: null }], []);
+    const db = createDb([{ institution_id: 1, url: null, institution_name: chase.institutionName }], []);
     expect((await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [chase] })).added).toEqual([]);
     expect(attempts(db)).toHaveLength(0);
   });
