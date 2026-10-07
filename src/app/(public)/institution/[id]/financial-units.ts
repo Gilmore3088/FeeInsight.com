@@ -1,4 +1,5 @@
 import type { InstitutionFinancial } from "@/lib/data-store/financial";
+import { FINANCIAL_SOURCES, isFinancialSource } from "@/lib/data-store/financial-sources";
 
 /**
  * Unit normalization for the public profile.
@@ -6,45 +7,31 @@ import type { InstitutionFinancial } from "@/lib/data-store/financial";
  * institution_sources.asset_size is stored in thousands of dollars for every
  * charter (FDIC/NCUA filing convention; e.g. 158,694 = $158.7M).
  *
- * institution_financial_records carries up to three sources for the same
- * quarter, and their scales differ. Verified 2026-08-17 by comparing 12,934
- * paired fdic/ffiec rows for the same institution and report_date (median
- * ffiec / fdic ratios: total_assets 1,000x; service_charge_income ~1,000,000x;
- * fee_income_ratio ~1,000x):
- *   - fdic / ncua: every dollar column in thousands; fee_income_ratio a fraction.
- *   - ffiec: balance-sheet columns (total_assets, total_deposits, total_loans,
- *     total_revenue) in whole dollars; service_charge_income over-scaled by a
- *     further 1,000 (JPMorgan Q1 2026: 821,921,000,000 against fdic 821,921
- *     thousands, i.e. $822M), and fee_income_ratio inflated by the same 1,000
- *     because it is derived from that income figure.
+ * institution_financial_records is read from its fdic and ncua rows only
+ * (FINANCIAL_SOURCES): every dollar column in thousands, fee_income_ratio a
+ * fraction. The table's ffiec rows are in other units and duplicate fdic
+ * quarters; financial-sources.ts explains why they are excluded.
  * Everything here is converted to whole dollars / percent so one formatter can
- * render all of it, and one row is chosen per quarter (fdic, then ffiec, then
- * ncua) so a quarter never renders twice.
+ * render all of it, and one row is chosen per quarter (fdic, then ncua) so a
+ * quarter never renders twice.
  */
 const THOUSANDS = 1_000;
 const PERCENT = 100;
-const FFIEC_INCOME_OVERSCALE = 1_000;
-const FFIEC_RATIO_OVERSCALE = 1_000;
-export const SOURCE_PREFERENCE = ["fdic", "ffiec", "ncua"] as const;
+export const SOURCE_PREFERENCE = FINANCIAL_SOURCES;
 
 function finite(value: number | null): value is number {
   return value !== null && Number.isFinite(value);
 }
 
-export function balanceToDollars(value: number | null, source: string): number | null {
+/** Thousands of dollars (fdic/ncua convention) to whole dollars. */
+export function balanceToDollars(value: number | null): number | null {
   if (!finite(value)) return null;
-  return source === "ffiec" ? value : value * THOUSANDS;
+  return value * THOUSANDS;
 }
 
-function incomeToDollars(value: number | null, source: string): number | null {
+function ratioToPercent(value: number | null): number | null {
   if (!finite(value)) return null;
-  return source === "ffiec" ? value / FFIEC_INCOME_OVERSCALE : value * THOUSANDS;
-}
-
-function ratioToPercent(value: number | null, source: string): number | null {
-  if (!finite(value)) return null;
-  const fraction = source === "ffiec" ? value / FFIEC_RATIO_OVERSCALE : value;
-  return fraction * PERCENT;
+  return value * PERCENT;
 }
 
 export function assetSizeToDollars(assetSize: number | null | undefined): number | null {
@@ -71,10 +58,10 @@ export function normalizeFinancial(record: InstitutionFinancial): NormalizedFina
   return {
     reportDate: record.report_date,
     source,
-    totalAssets: balanceToDollars(record.total_assets, source),
-    totalDeposits: balanceToDollars(record.total_deposits, source),
-    serviceChargeIncome: incomeToDollars(record.service_charge_income, source),
-    feeIncomeRatioPct: ratioToPercent(record.fee_income_ratio, source),
+    totalAssets: balanceToDollars(record.total_assets),
+    totalDeposits: balanceToDollars(record.total_deposits),
+    serviceChargeIncome: balanceToDollars(record.service_charge_income),
+    feeIncomeRatioPct: ratioToPercent(record.fee_income_ratio),
     roaPct: roa,
     branchCount: record.branch_count,
   };
@@ -86,13 +73,15 @@ export function sourceRank(source: string): number {
 }
 
 /**
- * One normalized row per report_date (fdic preferred, then ffiec, then ncua),
- * newest quarter first. Callers render the first row as "latest" and the whole
- * list as history, so both always come from the same source and quarter.
+ * One normalized row per report_date (fdic preferred, then ncua), newest
+ * quarter first. Any other source is dropped. Callers render the first row as
+ * "latest" and the whole list as history, so both always come from the same
+ * source and quarter.
  */
 export function selectFinancialsByQuarter(records: InstitutionFinancial[]): NormalizedFinancial[] {
   const byQuarter = new Map<string, InstitutionFinancial>();
   for (const record of records) {
+    if (!isFinancialSource(record.source)) continue;
     const current = byQuarter.get(record.report_date);
     if (!current || sourceRank(record.source) < sourceRank(current.source)) {
       byQuarter.set(record.report_date, record);

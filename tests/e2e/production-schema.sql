@@ -1750,7 +1750,11 @@ CREATE TABLE public.raw_fee_observations (  fee_raw_id bigint DEFAULT nextval('r
   frequency text,
   conditions text,
   outlier_flags jsonb DEFAULT '[]'::jsonb NOT NULL,
-  source text DEFAULT 'knox'::text NOT NULL
+  source text DEFAULT 'knox'::text NOT NULL,
+  product_name text,
+  min_balance_to_avoid numeric,
+  min_opening_deposit numeric,
+  waiver_text text
 );
 CREATE TABLE public.reg_articles (  guid text NOT NULL,
   source text NOT NULL,

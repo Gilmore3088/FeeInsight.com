@@ -945,7 +945,7 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
-  it("orders failed-lane retries, then lanes with an unfetched hand-found schedule, ahead of routine passes", async () => {
+  it("orders failed-lane retries ahead of routine passes, without promoting hand-found lanes", async () => {
     sqlMock.mockResolvedValue([]);
 
     await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
@@ -956,12 +956,11 @@ describe("agentic run store", () => {
     expect(selection).toBeDefined();
     const order = selection!.slice(selection!.indexOf("ORDER BY"));
     const retry = order.indexOf("= 'failed') DESC");
-    const handFound = order.indexOf("hand.found_by_strategy = 'discover.operator_schedule'");
     const waiting = order.indexOf("INTERVAL '1 hour'");
     expect(retry).toBeGreaterThan(0);
-    expect(handFound).toBeGreaterThan(retry);
-    expect(order).toContain("hand.status = 'found'");
-    expect(waiting).toBeGreaterThan(handFound);
+    expect(waiting).toBeGreaterThan(retry);
+    // Hand-found schedules run through Atlas's direct institution runs instead.
+    expect(order).not.toContain("discover.operator_schedule");
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {

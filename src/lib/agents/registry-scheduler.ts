@@ -7,7 +7,7 @@ import { FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/m
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
-import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
 import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
 import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
@@ -16,6 +16,7 @@ import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
 import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
 import { ENFORCEMENT_MATCHER_VERSION, ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/enforcement";
+import { STATE_ENFORCEMENT_PARSER_VERSION, STATE_ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/state-enforcement";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -52,7 +53,9 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
+  [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,
   [CENSUS_ACS_SOURCE]: CENSUS_ACS_PARSER_VERSION,
+  [CFPB_SOURCE]: CFPB_PARSER_VERSION,
 };
 
 export function isParserStale(source: string, status: string | null, parserVersion: number | null): boolean {

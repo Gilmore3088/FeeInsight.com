@@ -360,6 +360,38 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.wilsonbank.com/personal/overdraft-services",
     givenBy: "web search for the Tennessee report's largest banks, 2026-10-07 07:00",
   },
+  {
+    // "Outline of Services 2025, Personal Checking Accounts" (31 pages), the bank's own file on
+    // its site host's storage. ACNB holds 61% of Adams County deposits and had no link on file.
+    institutionId: 393,
+    institutionName: "ACNB Bank",
+    url: "https://trabian-canvas-prd-files.s3.amazonaws.com/acnb-com/files/document/7_list_of_services.pdf",
+    givenBy: "web search for the Adams County market study, 2026-10-07 07:10",
+  },
+  {
+    // Overdraft Coverage disclosure: $35 per item from 2025-08-26, at most 5 a day, none when
+    // $5 or less overdrawn. Fifth Third had no fee link on file.
+    institutionId: 19,
+    institutionName: "Fifth Third Bank, National Association",
+    url: "https://www.53.com/content/dam/fifth-third/docs/legal/disclosure-overdraft-coverage.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
+  },
+  {
+    // The Tennessee bank's own consumer overdraft page: Bounce Protection $33 per item, at most
+    // 4 a day; NSF charge dropped 2023-02-01. Replaces a Bangladesh bank's schedule Magellan found.
+    institutionId: 371,
+    institutionName: "SouthEast Bank",
+    url: "https://www.southeastbank.com/consumer-overdraft-services/",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
+  },
+  {
+    // Overdraft consent form: up to $35 per item, $210 a day cap. Its main link is the account
+    // terms PDF.
+    institutionId: 255,
+    institutionName: "SmartBank",
+    url: "https://smartbank.com/wp-content/uploads/OverdraftConsentform.pdf",
+    givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
+  },
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");

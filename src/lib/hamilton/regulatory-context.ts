@@ -4,6 +4,7 @@
  * Rules come from a short reviewed list (no live regulation feed exists yet), so
  * Hamilton cites only these and never invents a rule or a state law.
  */
+import { enforcementAgencyLabel } from "@/lib/regulatory/state-enforcement";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
@@ -122,10 +123,7 @@ export interface EnforcementActionSummary {
   penalty_amount: number | null;
 }
 
-const AGENCY_LIST_NAMES: Record<"OCC" | "FRB", string> = {
-  OCC: "OCC enforcement actions",
-  FRB: "Federal Reserve enforcement actions",
-};
+const agencyListName = (agency: string) => `${enforcementAgencyLabel(agency)} enforcement actions`;
 
 function summarizeAction(action: EnforcementActionRow): EnforcementActionSummary {
   return {
@@ -202,7 +200,7 @@ export function buildRegulatoryContext(params: {
     cfpb_complaints: complaints,
     enforcement_actions: enforcement
       ? {
-          lists_checked: enforcement.agenciesChecked.map((agency) => AGENCY_LIST_NAMES[agency]),
+          lists_checked: enforcement.agenciesChecked.map(agencyListName),
           as_of: enforcement.asOf,
           no_end_date_on_file: enforcement.open.map(summarizeAction),
           past_count: enforcement.pastCount,
@@ -255,7 +253,7 @@ export function buildRegulatoryContext(params: {
   if (enforcement) {
     sources.push({
       label: "Federal enforcement actions",
-      detail: `${enforcement.agenciesChecked.map((a) => AGENCY_LIST_NAMES[a]).join(" and ")}${enforcement.asOf ? `, read ${enforcement.asOf}` : ""}.`,
+      detail: `${enforcement.agenciesChecked.map(agencyListName).join(" and ")}${enforcement.asOf ? `, read ${enforcement.asOf}` : ""}.`,
       url: null,
     });
   }

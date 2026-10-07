@@ -13,11 +13,14 @@ vi.mock("./connection", () => {
 });
 
 import {
+  getFinancialHistory,
+  getFinancialStats,
   getFinancialsByInstitution,
   getRevenueIndexByDate,
   _dollarOrNull_FOR_TESTING as dollarOrNull,
 } from "./financial";
 import { sql } from "./connection";
+import { unfilteredFinancialReads } from "./financial-sources.test-helper";
 
 type MockSql = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -285,5 +288,41 @@ describe("capital ratios", () => {
     ]);
     const [r] = await getFinancialsByInstitution(7);
     expect(r.tier1_capital_ratio).toBeCloseTo(10.9, 9);
+  });
+});
+
+describe("source filter (ffiec rows use other units)", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+  });
+
+  const expectEveryReadFiltered = () => expect(unfilteredFinancialReads(getMock())).toEqual([]);
+
+  it("getFinancialStats counts only fdic and ncua rows", async () => {
+    getMock().mockResolvedValue([{ cnt: 0 }]);
+    await getFinancialStats();
+    expectEveryReadFiltered();
+  });
+
+  it("getFinancialsByInstitution reads only fdic and ncua rows", async () => {
+    getMock().mockResolvedValue([]);
+    await getFinancialsByInstitution(270);
+    expectEveryReadFiltered();
+  });
+
+  it("getRevenueIndexByDate filters the rows and the latest-quarter lookups", async () => {
+    getMock().mockResolvedValueOnce([{ fee_income_ratio: 0.04, service_charge_income: 1 }]);
+    getMock().mockResolvedValueOnce([{ d: "2026-06-30" }]);
+    await getRevenueIndexByDate();
+    getMock().mockResolvedValueOnce([{ fee_income_ratio: 0.04, service_charge_income: 1 }]);
+    await getRevenueIndexByDate("2026-03-31");
+    expect(getMock().mock.calls).toHaveLength(3);
+    expectEveryReadFiltered();
+  });
+
+  it("getFinancialHistory reads only fdic and ncua rows", async () => {
+    getMock().mockResolvedValue([]);
+    await getFinancialHistory(270);
+    expectEveryReadFiltered();
   });
 });

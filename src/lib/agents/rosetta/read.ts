@@ -252,6 +252,7 @@ export interface RunRosettaReadResult {
   readerEscalationsUsed: number;
   /** Batches of reads reviewed this step (batch-review.ts): each one's error rate and misses by kind. */
   batchReviews: BatchReviewResult["batches"];
+  batchReviewError: string | null;
   /** Institutions whose learned format was filled in from an earlier text. */
   formatsBackfilled: number;
   /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
@@ -1843,8 +1844,13 @@ export async function runRosettaRead(
     : { ready: false, refreshed: false, texts: 0, held: 0, lost: 0, written: 0 };
   // Every BATCH_REVIEW_SIZE settled reads: judge the batch, write its misses as lessons (read
   // below by the candidate and paid-read selections) and its error rate. Not in a dry run.
+  // A failed review never stops the reads; its error is on the step result.
+  let batchReviewError: string | null = null;
   const batchReview = textSurvivalReady
-    ? await reviewReadBatches(db, { runId: options.runId })
+    ? await reviewReadBatches(db, { runId: options.runId }).catch((error: unknown) => {
+        batchReviewError = error instanceof Error ? error.message : String(error);
+        return { ready: false, batches: [], written: 0 } as BatchReviewResult;
+      })
     : { ready: false, batches: [], written: 0 };
   const rows = await selectCandidates(
     db,
@@ -2057,6 +2063,7 @@ export async function runRosettaRead(
     readerEscalations: results.filter((result) => result.escalation != null).length,
     readerEscalationsUsed: results.filter((result) => result.escalation?.used).length,
     batchReviews: batchReview.batches,
+    batchReviewError,
     formatsBackfilled: formats.updated,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,

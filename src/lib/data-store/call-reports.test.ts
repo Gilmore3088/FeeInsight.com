@@ -14,6 +14,7 @@ vi.mock("./connection", () => {
 import { getRevenueTrend, getTopRevenueInstitutions, getDistrictFeeRevenue, getRevenueByTier, getInstitutionRevenueTrend, getInstitutionPeerRanking } from "./call-reports";
 import type { RevenueSnapshot, RevenueTrend, TopRevenueInstitution, DistrictFeeRevenue, TierRevenue, InstitutionRevenueQuarter, PeerRanking } from "./call-reports";
 import { getSql } from "./connection";
+import { unfilteredFinancialReads } from "./financial-sources.test-helper";
 
 type MockSql = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -861,5 +862,16 @@ describe("single-quarter reads use each credit union's quarter, not its year to 
     const text = String(getMock().unsafe.mock.calls[0]?.[0] ?? "");
     expect(text).toContain("LEFT JOIN institution_financial_records prev");
     expect(text).toContain("inf.service_charge_income - prev.service_charge_income");
+  });
+
+  it.each([
+    ["getDistrictFeeRevenue", () => getDistrictFeeRevenue(6)],
+    ["getRevenueByTier", () => getRevenueByTier()],
+    ["getTopRevenueInstitutions", () => getTopRevenueInstitutions(5)],
+    ["getRevenueTrend", () => getRevenueTrend()],
+    ["getInstitutionRevenueTrend", () => getInstitutionRevenueTrend(1)],
+  ])("%s reads only fdic and ncua rows, including the latest-quarter lookup", async (_name, read) => {
+    await read();
+    expect(unfilteredFinancialReads(getMock())).toEqual([]);
   });
 });

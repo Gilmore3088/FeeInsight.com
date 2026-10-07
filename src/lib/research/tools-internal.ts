@@ -1,3 +1,4 @@
+import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { tool } from "ai";
 import { z } from "zod";
 import { getDistrictStats, getStateStats } from "@/lib/data-store/geographic";
@@ -676,7 +677,7 @@ async function handleDerived(
 
 // ── New source handlers (Phase 36) ───────────────────────────────────────────
 
-const BLS_LABOR_SERIES = ["LNS14000000", "CES0000000001", "CUUR0000SEMC01"] as const;
+const BLS_LABOR_SERIES = ["LNS14000000", "CES0000000001", CPI_BANK_SERVICES_SERIES] as const;
 
 async function handleFedContent(district: number | undefined, limit: number) {
   if (district) {
