@@ -1,3 +1,4 @@
+import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 
 // Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
@@ -285,7 +286,7 @@ export interface CpiContext {
 }
 
 export async function getCpiContext(): Promise<CpiContext> {
-  const BANK_FEES = "CUUR0000SEMC01";
+  const BANK_FEES = CPI_BANK_SERVICES_SERIES;
   const ALL_ITEMS = "CUUR0000SA0";
 
   async function getYoY(seriesId: string) {
