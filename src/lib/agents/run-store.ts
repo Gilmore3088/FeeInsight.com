@@ -551,6 +551,7 @@ async function executeAgenticStep(
           reopened_fee_pages: read.reopenedFeePages,
           reopened_bans_lifted: read.reopenedBansLifted,
           reopened_links_restored: read.reopenedLinksRestored,
+          thin_copies_set_aside: read.thinCopiesSetAside,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
           texts_lost_fees: read.textsLostFees,

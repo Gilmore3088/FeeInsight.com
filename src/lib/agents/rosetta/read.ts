@@ -33,6 +33,7 @@ import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { restoreReadableCopies } from "@/lib/agents/magellan/current-copy";
 import {
   ALTERNATE_READERS,
   PRIMARY_READERS,
@@ -233,6 +234,8 @@ export interface RunRosettaReadResult {
   reopenedFeePages: number;
   reopenedBansLifted: number;
   reopenedLinksRestored: number;
+  /** Current copies read as a bot check, script shell or bare title, put back on the page's readable copy. */
+  thinCopiesSetAside: number[];
   /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
   textSurvivalRefreshed: boolean;
   textsHeldUp: number;
@@ -1681,6 +1684,10 @@ export async function runRosettaRead(
         stateCode: options.stateCode,
       })
     : { reopened: 0, unbanned: 0, relinked: 0 };
+  // A copy read as a bot check or script shell never displaces the page's readable copy.
+  const thinCopies = learning
+    ? await restoreReadableCopies(db, { institutionId: options.institutionId })
+    : { thinCopies: [], superseded: 0 };
   // Learning plan step 1: score each text by whether its fees stayed live (once a day).
   const textSurvivalReady = learning && textColumns && (await feedbackSchemaReady(db));
   const survival = textSurvivalReady
@@ -1888,6 +1895,7 @@ export async function runRosettaRead(
     reopenedFeePages: reopen.reopened,
     reopenedBansLifted: reopen.unbanned,
     reopenedLinksRestored: reopen.relinked,
+    thinCopiesSetAside: thinCopies.thinCopies,
     textSurvivalRefreshed: survival.refreshed,
     textsHeldUp: survival.held,
     textsLostFees: survival.lost,
