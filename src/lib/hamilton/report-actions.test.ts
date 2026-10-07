@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   completeHamiltonRefreshJobsForInstitution: vi.fn(),
   checkProAiQuota: vi.fn(),
   recordProRequest: vi.fn(),
+  getLocalFeeMoves: vi.fn(),
+  getLocalMarketCompetitors: vi.fn(),
+  getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
 }));
 
@@ -34,6 +37,16 @@ vi.mock("@/lib/data-store", () => ({
 
 vi.mock("@/lib/data-store/connection", () => ({
   sql: mocks.sql,
+}));
+
+vi.mock("@/lib/data-store/local-market", () => ({
+  getLocalMarketCompetitors: mocks.getLocalMarketCompetitors,
+  getLocalFeeMoves: mocks.getLocalFeeMoves,
+  FEE_MOVES_TRACKED_SINCE: "2026-10-05T06:43:00Z",
+}));
+
+vi.mock("@/lib/data-store/complaints", () => ({
+  getInstitutionComplaintYears: mocks.getInstitutionComplaintYears,
 }));
 
 vi.mock("@/lib/data-store/call-reports", () => ({
@@ -149,6 +162,9 @@ describe("Hamilton Reports generateReport", () => {
     vi.resetAllMocks();
     mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
     mocks.recordProRequest.mockResolvedValue(1);
+    mocks.getLocalMarketCompetitors.mockResolvedValue(null);
+    mocks.getLocalFeeMoves.mockResolvedValue([]);
+    mocks.getInstitutionComplaintYears.mockResolvedValue([]);
 
     mocks.getCurrentUser.mockResolvedValue({
       id: 7,
@@ -281,9 +297,16 @@ describe("Hamilton Reports generateReport", () => {
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
 
-    expect(mocks.generateSection).toHaveBeenCalledTimes(3);
+    // The default mock answer is unformatted prose, so the partner review sends it
+    // back once; the identical rewrite fixes nothing and the first draft is kept.
+    expect(mocks.generateSection).toHaveBeenCalledTimes(4);
     expect(mocks.recordProRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ operation: "report", status: "completed", userId: expect.any(Number) }),
+      expect.objectContaining({
+        operation: "report",
+        status: "completed",
+        userId: expect.any(Number),
+        detail: expect.objectContaining({ partner_review: expect.objectContaining({ rewritten: false, remaining: 1 }) }),
+      }),
     );
     const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
     for (const input of calls) {
@@ -447,5 +470,93 @@ describe("Hamilton Reports generateReport", () => {
       }),
     );
     expect(mocks.completeHamiltonRefreshJobsForInstitution).not.toHaveBeenCalled();
+  });
+
+  it("builds the answer page, named local competitors and dollar exhibits, and briefs later sections with the answer", async () => {
+    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
+    mocks.getFeesByInstitution.mockResolvedValue([
+      {
+        fee_name: "Domestic wire",
+        fee_category: "wire_transfer",
+        amount: 35,
+        review_status: "pending",
+        extraction_confidence: 0.8,
+        source_url: "https://example.com/fees",
+      },
+    ]);
+    mocks.getFinancialsByInstitution.mockResolvedValue(
+      ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"].map((report_date) => ({
+        report_date,
+        source: "fdic",
+        service_charge_income: 375,
+      })),
+    );
+    mocks.getLocalMarketCompetitors.mockResolvedValue({
+      basis: "branch_counties",
+      label: "Flora, IL area",
+      county_fips: [17025],
+      sod_year: 2026,
+      competitors: [
+        { institution_id: 1, institution_name: "First  Flora Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 25 }, document_url: "https://a.example/fees", document_date: "2026-09-01" },
+        { institution_id: 2, institution_name: "Clay County Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 30 }, document_url: null, document_date: null },
+        { institution_id: 3, institution_name: "Prairie Trust", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 40 }, document_url: null, document_date: null },
+      ],
+    });
+    mocks.getLocalFeeMoves.mockResolvedValue([
+      { institution_id: 2, institution_name: "Clay County Bank", fee_category: "wire_transfer", previous_amount: 25, new_amount: 30, detected_at: "2026-10-05" },
+    ]);
+    mocks.generateSection.mockImplementation(async (input: SectionInput) => ({
+      narrative:
+        input.type === "executive_summary"
+          ? [
+              "HEADLINE: Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
+              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 3 local competitors, provisional row",
+            ].join("\n")
+          : input.type === "recommendation"
+            ? "Clay County Bank already charges $30, so business customers will notice. The row is provisional.\n\nWATCH: Prairie Trust's wire price"
+            : "The provisional $35 wire sits above Clay County Bank at $30.",
+      wordCount: 30,
+      model: "mock",
+      usage: { inputTokens: 10, outputTokens: 8 },
+    }));
+
+    const result = await generateReport({ ...reportParams(), clientGoal: "lower_risk" });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    const summaryInput = mocks.generateSection.mock.calls.find(([input]) => input.type === "executive_summary")?.[0] as SectionInput;
+    expect(summaryInput.context).toContain("CLIENT GOAL: lower regulatory and complaint risk");
+    expect(result.report.answer).toEqual({
+      goal: "Lower regulatory risk",
+      headline: "Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
+      decisions: [
+        {
+          action: "Lower the domestic wire fee to $30",
+          why: "Clay County Bank charges $30, the local median; the row is provisional.",
+          confidence: "Medium",
+          confidenceReason: "3 local competitors, provisional row",
+        },
+      ],
+    });
+    expect(result.report.exhibits?.map((exhibit) => exhibit.id)).toEqual(["local_market", "peer_range", "dollar_impact", "competitor_moves", "regulatory"]);
+    expect(result.report.exhibits?.[0].rows[0]).toEqual([
+      "Wire Transfer",
+      "$35.00",
+      "$30.00",
+      "$25.00 to $40.00",
+      "First Flora Bank $25.00; Clay County Bank $30.00; Prairie Trust $40.00",
+    ]);
+    expect(result.report.exhibits?.[2].title).toContain("$1.5M in deposit service charges in 2025");
+    expect(result.report.watchlist).toEqual(["Prairie Trust's wire price"]);
+    expect(result.report.sources?.map((source) => source.label)).toContain("First Flora Bank fee schedule");
+
+    const calls = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput);
+    expect(calls[0].type).toBe("executive_summary");
+    for (const input of calls.slice(1)) expect(input.context).toContain("ANSWER PAGE");
+    for (const input of calls) expect(input.context).toContain("REGULATORY RULES");
+    expect(calls[0].data.exhibits).toMatchObject({
+      local_market: { comparisons: [expect.objectContaining({ local_median: 30, position_vs_local: "above" })] },
+      fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],
+    });
   });
 });

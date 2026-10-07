@@ -645,6 +645,27 @@ export async function getFinancialHistory(
   });
 }
 
+/**
+ * Service-charge income for every FDIC and NCUA quarter held since 2009, oldest first
+ * (thousands of dollars; NCUA figures are year-to-date). Feeds the report trend analysis.
+ */
+export async function getServiceChargeHistory(
+  targetId: number,
+): Promise<Array<{ report_date: string; source: string; service_charge_income: number | null }>> {
+  const rows = await sql`
+    SELECT report_date, source, service_charge_income
+      FROM institution_financial_records
+     WHERE institution_id = ${targetId}
+       AND source IN ('fdic', 'ncua')
+       AND report_date >= '2009-01-01'
+     ORDER BY report_date`;
+  return rows.map((r: Record<string, unknown>) => ({
+    report_date: r.report_date instanceof Date ? r.report_date.toISOString().slice(0, 10) : String(r.report_date),
+    source: String(r.source),
+    service_charge_income: numOrNull(r.service_charge_income),
+  }));
+}
+
 /** Peer medians for the institution's charter + asset tier, latest common quarter. */
 export interface PeerFinancialMedians {
   report_date: string;
