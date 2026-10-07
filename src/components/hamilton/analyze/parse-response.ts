@@ -221,3 +221,14 @@ export function shapeHamiltonView(content: string): { lead: string; paragraphs: 
   for (const block of blocks.slice(1)) pushChunks(splitSentences(block));
   return { lead: first ?? "", paragraphs };
 }
+
+/**
+ * The headline figure of an Evidence value, for a key-figure tile:
+ * "$962 thousand against a $1.06 million peer median" -> "$962 thousand" and "against a $1.06 million peer median".
+ * Null when the value does not open with a short figure.
+ */
+export function headFigure(value: string): { figure: string; comparison: string } | null {
+  const m = value.match(/^(.{1,18}?) ((?:against|vs\.?|versus|compared with)\b.*)$/i);
+  if (!m || !/\d/.test(m[1])) return null;
+  return { figure: m[1].trim(), comparison: m[2].trim() };
+}

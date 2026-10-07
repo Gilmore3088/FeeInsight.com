@@ -78,3 +78,10 @@ describe("explainIncome", () => {
     expect(response.shortAnswer).not.toContain("Which fee");
   });
 });
+
+describe("explainIncome near the median", () => {
+  it("says both sit close when neither gap is material", () => {
+    const split = incomeSplit(intensity(4.63, 4.76), [row("atm", 3.62, 2.25), row("stop", 15, 29.5), row("od", 30, 30)], "credit unions")!;
+    expect(explainIncome(split).shortAnswer).toContain("That is about the median");
+  });
+});
