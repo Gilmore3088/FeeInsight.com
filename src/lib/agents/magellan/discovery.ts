@@ -29,10 +29,25 @@ import {
   type SearchContext,
   type TrailEntry,
 } from "./finders";
-import { LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
+import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
+import {
+  ARTICLE_LINK_SQL,
+  BUSINESS_PATH_SQL,
+  CONSUMER_PATH_SQL,
+  FEE_DOCUMENT_NAME_SQL,
+  FEE_NAMED_LINK_SQL,
+  FEE_SCHEDULE_NAME_SQL,
+  isArticleLink,
+  isSingleProductDisclosureLink,
+  PRODUCT_DISCLOSURE_SQL,
+  PRODUCT_LINK_SQL,
+  SINGLE_PRODUCT_SQL,
+} from "./link-coverage";
+import { loadDemotedFinders } from "./batch-review";
+import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
+import { recordSearchMisses } from "./search-misses";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
@@ -58,8 +73,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * 4: a homepage that blocks bots (HTTP 401/403 or a challenge page) no longer ends the
  * search: the known link and the site map (robots.txt rules respected) still run; the
  * stored website is repaired first ("wwwbank.com", "www.bankcom").
+ * 5: one product's disclosure is never the schedule, finders that fail two error reviews
+ * in a row run last, and links to another country's schedule are refused (7 Oct 2026).
  */
-export const DISCOVERY_METHOD_VERSION = 4;
+export const DISCOVERY_METHOD_VERSION = 5;
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**
@@ -87,6 +104,14 @@ export const BUSINESS_SEARCH_VERSION = 1;
  * worse than no link, and spare capacity alone reached 41 of 187 such banks (7 Oct 2026).
  */
 export const BUSINESS_RESERVED_SLOTS = 3;
+/**
+ * Slots kept for product-page links and for out-of-date links. In spare capacity alone a
+ * state with many banks without a link never reached them: on 7 Oct 2026 1,208 of 5,232
+ * links (23%) were product pages, 129 searched at this version, and 260 links named 2023
+ * or earlier, 18 searched.
+ */
+export const UPGRADE_RESERVED_SLOTS = 3;
+export const FRESHNESS_RESERVED_SLOTS = 2;
 /**
  * Banks whose fee link looks out of date get one search for a newer schedule per version
  * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
@@ -321,6 +346,12 @@ export interface RunMagellanDiscoveryOptions {
   stepId?: number;
   mode?: "discover" | "rescue";
   limit?: number;
+  /**
+   * Slots kept for product-page links searched for the real schedule (default
+   * UPGRADE_RESERVED_SLOTS). A direct state re-search raises it so thin links are not
+   * left behind dead banks.
+   */
+  upgradeSlots?: number;
   dryRun?: boolean;
   stateCode?: string;
   db?: SqlTag;
@@ -356,9 +387,13 @@ export interface RunMagellanDiscoveryResult {
   /** The shadow page classifier this step scored candidates with, if one is stored. */
   pageClassifier: { trainedAt: string | null; positives: number; negatives: number } | null;
   /** Specialist strategies in the order this step ran them, and whether the state expert set it. */
-  finderOrder: { strategies: string[]; source: "state_expert" | "default" };
+  finderOrder: { strategies: string[]; source: "state_expert" | "default"; demoted?: string[] };
   methodVersion: number;
   secondDocuments: RunSecondDocumentFindResult | null;
+  /** Fee pages put back as the main link after a blank read had swapped them out. */
+  restoredFeePages: RestoreFeePagesResult | null;
+  /** Search-miss lessons written (`magellan.search_miss`). */
+  searchMisses: number;
   limit: number;
   dryRun: boolean;
   results: CandidateDiscoveryResult[];
@@ -865,8 +900,18 @@ async function selectCandidates(
          -- A link the old crawler left behind that failed and was never read since
          -- (Southside Bank's ".../404") holds no live fee: search for the real page
          -- instead of waiting for the fetch queue to reach it.
+         -- A 404 or 410 is due at once: 51 links fetched as 404 before the fetch step
+         -- learned to clear gone links (6 Oct 2026) would otherwise wait out the 30 days.
          OR (
-           inst.last_crawl_at < NOW() - INTERVAL '30 days'
+           (
+             inst.last_crawl_at < NOW() - INTERVAL '30 days'
+             OR (
+               SELECT doc.status_code FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                ORDER BY doc.id DESC
+                LIMIT 1
+             ) IN (404, 410)
+           )
            AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
            AND (
              SELECT doc.status FROM source_documents doc
@@ -938,8 +983,52 @@ async function selectCandidates(
 }
 
 /**
- * Banks whose fee link is an account or product page, not yet searched for the real
- * schedule at this upgrade version. Their link is kept until a fee schedule is found.
+ * Banks in other states with no fee link that no finder has ever searched (no `discover`
+ * attempt), largest first. They fill a step's spare slots, so a state whose lane runs
+ * rarely does not hold them back. Locked, offline and manual-review banks stay out.
+ */
+async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode: string): Promise<DiscoveryCandidateRow[]> {
+  if (limit <= 0) return [];
+  const normalizedState = normalizeStateCode(stateCode);
+  return db<DiscoveryCandidateRow[]>`
+    -- never-searched banks in other states
+    SELECT inst.id,
+           inst.institution_name,
+           inst.state_code,
+           inst.website_url,
+           inst.asset_size,
+           inst.rescue_status,
+           profile.canonical_source_url AS profile_canonical_source_url,
+           profile.source_kind AS profile_source_kind,
+           profile.read_strategy AS profile_read_strategy,
+           profile.locked_by_correction AS profile_locked_by_correction,
+           profile.consecutive_failures AS profile_consecutive_failures
+      FROM institution_sources inst
+      LEFT JOIN institution_source_profiles profile
+        ON profile.institution_id = inst.id
+     WHERE COALESCE(inst.status, 'active') = 'active'
+       AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
+       AND inst.website_url IS NOT NULL
+       AND btrim(inst.website_url) <> ''
+       AND upper(btrim(COALESCE(inst.state_code, ''))) <> COALESCE(${normalizedState}::text, '')
+       AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+       )
+     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     LIMIT ${limit}
+  `;
+}
+
+/**
+ * Banks whose fee link is an account or product page, an article, blog post or news
+ * item (`isArticleLink`), or one deposit product's disclosure such as a CD truth-in-savings
+ * sheet (`isSingleProductDisclosureLink`), not yet searched for the real schedule at this upgrade version.
+ * Their link is kept until a fee schedule is found.
  */
 async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
   if (limit <= 0) return [];
@@ -963,8 +1052,13 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
-       AND lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL}
-       AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}
+       AND (
+             (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
+             OR (lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
+             OR (lower(inst.fee_schedule_url) ~ ${SINGLE_PRODUCT_SQL}
+                 AND lower(inst.fee_schedule_url) ~ ${PRODUCT_DISCLOSURE_SQL}
+                 AND lower(inst.fee_schedule_url) !~ ${FEE_SCHEDULE_NAME_SQL})
+           )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
@@ -1044,7 +1138,9 @@ async function selectStaleCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
-  const rows = await db<Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null }>>`
+  const rows = await db<
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; searched_at: string | Date | null }>
+  >`
     -- stale-link freshness search
     WITH due AS (
       SELECT inst.id,
@@ -1084,22 +1180,40 @@ async function selectStaleCandidates(
          AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
-         AND NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.detail @> ${marker}::jsonb
-         )
+    ),
+    marked AS (
+      SELECT due.*,
+             (
+               SELECT max(pa.created_at) FROM pipeline_attempts pa
+                WHERE pa.institution_id = due.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${marker}::jsonb
+             ) AS searched_at,
+             -- The outcome ledger judged the link a wrong source of fees (confirmed takedowns).
+             (
+               SELECT max(f.updated_at) FROM pipeline_feedback f
+                WHERE f.check_name = ${LINK_YIELD_CHECK}
+                  AND f.kind = 'confirmed_wrong_fees'
+                  AND f.institution_id = due.id
+                  AND f.source_url = due.fee_schedule_url
+             ) AS wrong_at
+        FROM due
     )
-    SELECT * FROM due
-     WHERE COALESCE(effective_year, url_year) <= ${staleYear}
-     ORDER BY asset_size DESC NULLS LAST, id ASC
+    SELECT * FROM marked
+     WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
+        OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
+     ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, ...row }) => ({
     ...row,
     freshness: true,
-    stale_reason: effective_year != null ? `effective ${effective_year}` : `address names ${url_year}`,
+    stale_reason:
+      wrong_at != null
+        ? "fees read from it were confirmed wrong on a second look"
+        : effective_year != null
+          ? `effective ${effective_year}`
+          : `address names ${url_year}`,
   }));
 }
 
@@ -1402,6 +1516,17 @@ export function finderOrderFromHints(hints: StateExpertHints | null): typeof FIN
   return [first, ...ordered.map((strategy) => byStrategy.get(strategy)!)];
 }
 
+/**
+ * Finders the error review marked wrong in their last two chunks (`batch-review.ts`) run
+ * after the others. The known link still runs first, and nothing is dropped.
+ */
+export function demoteFinders(order: typeof FINDER_ORDER, demoted: ReadonlySet<string>): typeof FINDER_ORDER {
+  if (demoted.size === 0) return order;
+  const [first, ...rest] = order;
+  const isDemoted = (finder: (typeof FINDER_ORDER)[number]) => demoted.has(FINDERS[finder.key].strategy);
+  return [first, ...rest.filter((finder) => !isDemoted(finder)), ...rest.filter(isDemoted)];
+}
+
 export async function runMagellanDiscovery(
   options: RunMagellanDiscoveryOptions,
 ): Promise<RunMagellanDiscoveryResult> {
@@ -1413,18 +1538,45 @@ export async function runMagellanDiscovery(
   const learning = !dryRun && (await learningSchemaReady(db));
   const leaderIds = options.leaderIds ?? (await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []));
   const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
-  // Business-only links get a few reserved slots, then spare capacity; spare capacity
-  // then searches banks whose link is a product page, then banks whose link looks out of
-  // date (all need the attempt log).
+  // Links that are not the schedule each keep a few reserved slots, searched right after
+  // the cut-off banks resuming their search: business-only links, then product pages, then
+  // links that look out of date. Spare capacity then takes more of each, in that order
+  // (all need the attempt log).
+  const reserved = (slots: number) => Math.min(slots, limit);
   const business = learning
-    ? await selectBusinessCandidates(db, Math.max(limit - found.length, Math.min(BUSINESS_RESERVED_SLOTS, limit)), options.stateCode)
+    ? await selectBusinessCandidates(db, Math.max(limit - found.length, reserved(BUSINESS_RESERVED_SLOTS)), options.stateCode)
     : [];
-  const missing = found.slice(0, Math.max(0, limit - business.length));
-  const upgrades = learning ? await selectUpgradeCandidates(db, limit - missing.length - business.length, options.stateCode) : [];
+  const upgradeSlots = Math.max(0, Math.floor(options.upgradeSlots ?? UPGRADE_RESERVED_SLOTS));
+  const upgrades = learning
+    ? await selectUpgradeCandidates(db, Math.max(limit - found.length - business.length, reserved(upgradeSlots)), options.stateCode)
+    : [];
   const stale = learning
-    ? await selectStaleCandidates(db, limit - missing.length - business.length - upgrades.length, options.stateCode)
+    ? await selectStaleCandidates(
+        db,
+        Math.max(limit - found.length - business.length - upgrades.length, reserved(FRESHNESS_RESERVED_SLOTS)),
+        options.stateCode,
+      )
     : [];
-  const rows = [...missing, ...business, ...upgrades, ...stale];
+  const missing = found.slice(0, Math.max(0, limit - business.length - upgrades.length - stale.length));
+  // The selector puts up to RESUME_FIRST_PER_STEP cut-off banks first; they keep the front.
+  let resumeCount = 0;
+  while (resumeCount < Math.min(RESUME_FIRST_PER_STEP, missing.length) && cutOff(missing[resumeCount])) resumeCount += 1;
+  const rows = [
+    ...missing.slice(0, resumeCount),
+    ...business.slice(0, BUSINESS_RESERVED_SLOTS),
+    ...upgrades.slice(0, upgradeSlots),
+    ...stale.slice(0, FRESHNESS_RESERVED_SLOTS),
+    ...missing.slice(resumeCount),
+    ...business.slice(BUSINESS_RESERVED_SLOTS),
+    ...upgrades.slice(upgradeSlots),
+    ...stale.slice(FRESHNESS_RESERVED_SLOTS),
+  ];
+  // A state with little left to search fills its spare slots with banks no finder has ever
+  // searched, in any state, largest first (65 of 405 steps on 6-7 Oct ended in under 30 s
+  // while 1,418 banks with a website had never been searched).
+  if (learning && options.stateCode && rows.length < limit) {
+    rows.push(...(await selectNeverSearchedElsewhere(db, limit - rows.length, options.stateCode)));
+  }
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();
@@ -1432,7 +1584,9 @@ export async function runMagellanDiscovery(
   // MG-4 in shadow: the stored classifier scores every opened candidate (trail `page_p`).
   const pageClassifier = learning ? await loadPageClassifier(db) : null;
   const hints = options.stateCode ? await stateExpertHints(options.stateCode, db).catch(() => null) : null;
-  const finderOrder = finderOrderFromHints(hints);
+  const demotedFinders = learning ? await loadDemotedFinders(db) : new Set<string>();
+  const hintedOrder = finderOrderFromHints(hints);
+  const finderOrder = demoteFinders(hintedOrder, demotedFinders);
 
   const startedAt = Date.now();
   const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
@@ -1469,7 +1623,8 @@ export async function runMagellanDiscovery(
     );
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
-    if (upgraded && row.upgrade && row.fee_schedule_url) {
+    // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
+    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {
@@ -1494,6 +1649,32 @@ export async function runMagellanDiscovery(
         learning,
       })
     : null;
+  const restoredFeePages = learning && options.mode !== "rescue" && Date.now() - startedAt < STEP_START_BUDGET_MS
+    ? await restoreSwappedFeePages({
+        db,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        dryRun,
+      })
+    : null;
+
+  // A bank searched from scratch that ended with nothing leaves a lesson (search-misses.ts).
+  const searchMisses = learning && !dryRun
+    ? await recordSearchMisses(
+        db,
+        results.filter((result) => {
+          const row = rows.find((candidate) => Number(candidate.id) === result.institutionId);
+          return row && !(row.upgrade || row.business || row.freshness);
+        }),
+        {
+          runId: options.runId,
+          method: DISCOVERY_METHOD,
+          methodVersion: DISCOVERY_METHOD_VERSION,
+          websites: new Map(rows.map((row) => [Number(row.id), row.website_url])),
+        },
+      )
+    : 0;
 
   const codes: Partial<Record<DiscoveryCode, number>> = {};
   const foundBy: Partial<Record<FinderKey, number>> = {};
@@ -1519,10 +1700,13 @@ export async function runMagellanDiscovery(
     pageClassifier: pageClassifier ? { trainedAt: pageClassifier.trainedAt, positives: pageClassifier.positives, negatives: pageClassifier.negatives } : null,
     finderOrder: {
       strategies: finderOrder.map((finder) => FINDERS[finder.key].strategy),
-      source: finderOrder === FINDER_ORDER ? "default" : "state_expert",
+      source: hintedOrder === FINDER_ORDER ? "default" : "state_expert",
+      demoted: [...demotedFinders],
     },
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
+    restoredFeePages,
+    searchMisses,
     limit,
     dryRun,
     results,

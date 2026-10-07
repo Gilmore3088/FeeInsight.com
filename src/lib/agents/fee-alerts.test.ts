@@ -2,11 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sql: vi.fn(),
+  withConfirmedMovements: vi.fn(),
   sendResendEmail: vi.fn(),
   getTransactionalFromAddress: vi.fn(() => "alerts@feeinsight.com"),
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
+// The same-page check has its own tests; here every movement passes unless a test says not.
+vi.mock("./fee-movement-check", async () => {
+  const actual = await vi.importActual<typeof import("./fee-movement-check")>("./fee-movement-check");
+  return { ...actual, withConfirmedMovements: mocks.withConfirmedMovements };
+});
 vi.mock("@/lib/email/resend", async () => {
   const actual = await vi.importActual<typeof import("@/lib/email/resend")>("@/lib/email/resend");
   return {
@@ -24,6 +30,7 @@ import {
   summarizeFeeAlertDispatch,
   type CandidateRow,
 } from "./fee-alerts";
+import { markConfirmedMovements } from "./fee-movement-check";
 
 function movement(overrides: Partial<CandidateRow> = {}, movements: unknown[] = []): CandidateRow {
   return {
@@ -141,6 +148,8 @@ describe("runFeeAlertDispatch", () => {
     mocks.sql.mockReset();
     mocks.sendResendEmail.mockReset();
     mocks.getTransactionalFromAddress.mockReturnValue("alerts@feeinsight.com");
+    mocks.withConfirmedMovements.mockReset();
+    mocks.withConfirmedMovements.mockImplementation(async (rows: unknown[]) => rows);
   });
 
   function installCandidates(rows: CandidateRow[], watchlistRows: Array<Record<string, unknown>> = []) {
@@ -220,6 +229,18 @@ describe("runFeeAlertDispatch", () => {
     const result = await runFeeAlertDispatch({ maxRecipients: 1 });
     expect(result).toMatchObject({ sent: 1, deferred: 1 });
     expect(summarizeFeeAlertDispatch(result)).toContain("1 reader(s) wait for the next run");
+  });
+
+  it("emails nothing about a movement the same-page check did not confirm", async () => {
+    installCandidates([movement()]);
+    mocks.withConfirmedMovements.mockImplementation(async (rows: CandidateRow[]) =>
+      markConfirmedMovements(rows, new Set()),
+    );
+    const result = await runFeeAlertDispatch();
+    expect(result).toMatchObject({ readers: 0, changes: 0, sent: 0 });
+    expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+    // The reader's mark still moves past it, so it is not re-read forever.
+    expect(updates()).toHaveLength(1);
   });
 
   describe("Pro watchlists", () => {

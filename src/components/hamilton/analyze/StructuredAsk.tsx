@@ -16,7 +16,7 @@ import { StorylineView, type MemoState } from "@/components/hamilton/storyline/S
 import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
-import { FactList, SchedulePositionsTable } from "./schedule-answer";
+import { FactList, SchedulePositionsChart } from "./schedule-answer";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -350,7 +350,12 @@ export function StructuredAsk({
   // The market slice the question named ("$10B and up"), when the engine sends it.
   const segment = response.segment ?? null;
   // The storyline answer (engine 1.6.0), when the engine sends one.
-  const storyline = response.answer?.storyline ?? null;
+  // When every fee is drawn above, the storyline's own overview matrix would repeat it as a table.
+  const rawStoryline = response.answer?.storyline ?? null;
+  const storyline =
+    rawStoryline && response.positions?.length
+      ? { ...rawStoryline, exhibits: rawStoryline.exhibits.filter((e) => e.id !== "schedule-overview").map((e, i) => ({ ...e, number: i + 1 })) }
+      : rawStoryline;
   const answerExhibit = response.answer?.exhibit ?? null;
   const exhibitOwn =
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
@@ -365,7 +370,7 @@ export function StructuredAsk({
               {response.shortAnswer}
             </p>
           ) : null}
-          <SchedulePositionsTable rows={response.positions} hrefFor={researchHrefFor} />
+          <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} />
         </>
       ) : null}
       {response.answer && storyline ? (
