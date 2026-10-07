@@ -1620,3 +1620,17 @@ states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothin
 taken down.
 **Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
 stay broken without anyone seeing them.
+
+## 2026-10-07: Fed districts were assigned by state, and Arizona was in the wrong one
+**What happened:** every institution in a state carried one Fed district, set long ago from a state
+table that put Arizona in District 11 (Dallas) instead of 12 (San Francisco) and West Virginia in 4
+instead of mostly 5. Split states (Missouri, Tennessee, Kentucky, Pennsylvania and others) were all
+assigned to a single district. FDIC sends each bank's real district (its FED field, set by the head
+office's county) on every universe refresh, but the update kept the stored value
+(`COALESCE(s.fed_district, r.fed_district)`), so FDIC's value never landed. NCUA has no district
+field, so credit unions were never corrected either.
+**Fix:** the FDIC universe step now takes FDIC's district, then gives credit unions and closed banks
+the district most active banks in their city have (else their state's). A parser version bump makes it
+run on the next registry tick (`registry/fdic-universe.ts`).
+**Lesson:** `COALESCE(stored, fresh)` freezes the first value forever; refreshed regulator fields go
+`COALESCE(fresh, stored)`.
