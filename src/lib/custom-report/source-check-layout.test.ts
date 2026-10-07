@@ -191,4 +191,19 @@ describe("checkFeeAgainstSource daily caps", () => {
     // A heading at the end of a row names only bulleted lines under it.
     expect(checkFeeAgainstSource("Notary | $5.00 | Counter Checks\nChecks | $10.00", "Counter Checks", 10, ".").ok).toBe(false);
   });
+
+  it("reads a price with a note in parentheses, and a name whose only figure is a limit (takedowns, Oct 7)", () => {
+    const nsf = "Item Returned for Non-Sufficient Funds\n\n$29.00/presentment (applies to transactions of $10 or more. Limit of three (3) NSF charges per day)";
+    expect(checkFeeAgainstSource(nsf, "Item Returned for Non-Sufficient Funds", 29, ".").ok).toBe(true);
+    const card = "Debit Card Replacement\n\n$10.00 per card replacement (normally up to 7 to 10 business days delivery)\n\n$75.00 for rush delivery (normally 2 business days through UPS)";
+    expect(checkFeeAgainstSource(card, "Debit Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(card, "Debit Card Replacement", 75, ".").ok).toBe(false);
+    const cashing = "Customer Services\nFee\nNon-Customer check cashing (or 1% if check is over $500)\n$5\nPhotocopies (per page)\n$0.10";
+    expect(checkFeeAgainstSource(cashing, "Non-Customer check cashing (or 1% if check is over )", 5, ".").ok).toBe(true);
+    const gift = "Foreign Item Processing | $25 per item processed\nGift Cards ($25 up to $500 Only) | $5 per card";
+    expect(checkFeeAgainstSource(gift, "Gift Cards ($25 up to $500 Only)", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(gift, "Gift Cards ($25 up to $500 Only)", 25, ".").ok).toBe(false);
+    // A row whose only figure is in parentheses keeps it as the price.
+    expect(checkFeeAgainstSource("Stop Payment ($30.00)", "Stop Payment", 30, ".").ok).toBe(true);
+  });
 });

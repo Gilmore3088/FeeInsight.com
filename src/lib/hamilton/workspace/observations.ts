@@ -14,7 +14,7 @@
 
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
-import type { Fact, Observation, SourceRef } from "./types";
+import type { Fact, FeePositionRow, Observation, SourceRef } from "./types";
 
 export const POSITION_EXTREME_PCT = 15;
 export const REVENUE_SHIFT_PCT = 15;
@@ -66,6 +66,24 @@ function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+}
+
+/** Every reviewed fee against its peer band, in the order given: no ranking and no price direction. */
+export function feePositionRows(positions: FeePositionInput[]): FeePositionRow[] {
+  return positions.map((p) => {
+    const sorted = [...p.peers].sort((a, b) => a - b);
+    const round = (n: number) => Math.round(n * 100) / 100;
+    return {
+      feeCategory: p.feeCategory,
+      displayName: getDisplayName(p.feeCategory),
+      current: p.current,
+      band:
+        sorted.length >= MIN_PEERS_FOR_POSITION
+          ? { p25: round(quantile(sorted, 0.25)), median: round(quantile(sorted, 0.5)), p75: round(quantile(sorted, 0.75)), n: sorted.length }
+          : null,
+      peerLabel: p.peerLabel,
+    };
+  });
 }
 
 export function marketPositionObservations(positions: FeePositionInput[]): Observation[] {

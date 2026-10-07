@@ -10,6 +10,7 @@ import {
   RESUME_MAX_TICKS,
   runMagellanDiscovery,
   type DiscoveryResume,
+  UPGRADE_SEARCH_VERSION,
 } from "./discovery";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -682,7 +683,7 @@ describe("Magellan agentic discovery", () => {
       const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
       expect(companion).toBeDefined();
       expect(companion).toContain("https://upbank.example/personal/checking");
-      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
     });
 
     it("leaves the bank's link and rescue state alone when no schedule is found", async () => {
@@ -698,7 +699,7 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
-      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
     });
   });
 
