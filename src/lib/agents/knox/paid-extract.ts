@@ -83,12 +83,15 @@ export interface AcceptedPaidFee {
 
 export type PaidRowRejection = "missing_fields" | "unknown_canonical" | "invalid_amount" | "not_in_text";
 
+/** A price in cents ("75¢", "25 cents"), which `amountsIn` leaves out. */
+const CENTS_PRICE = /(?<![\d.,$])\d{1,2}\s*(?:¢|cents?\b)/gi;
+
 /** Lines with a dollar amount; a flattened line counts once per amount. */
 export function pricedLineCount(text: string): number {
   let total = 0;
   for (const raw of text.split(/\n+/)) {
     const line = raw.replace(/\s+/g, " ").trim();
-    const amounts = amountsIn(line).length;
+    const amounts = amountsIn(line).length + (line.match(CENTS_PRICE) ?? []).length;
     if (amounts === 0) continue;
     total += line.length <= 280 ? 1 : amounts;
   }
@@ -234,7 +237,19 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
               AND paid.strategy = ${paidStrategy}
               AND paid.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
          )
-         AND (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, '\\$\\s*\\d', 'g')) >= ${minDollars}
+         -- An older copy of a page whose current copy has a text is history: the paid reader
+         -- reads the current copy, as the free reader does.
+         AND NOT EXISTS (
+           SELECT 1
+             FROM source_documents old_copy
+             JOIN agent_source_texts current_text
+               ON current_text.source_document_id = old_copy.superseded_by_id
+              AND current_text.status = 'completed'
+              AND current_text.char_count > 0
+            WHERE old_copy.id = adt.source_document_id
+              AND old_copy.superseded_by_id IS NOT NULL
+         )
+         AND (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, '\\$\\s*\\.?\\d|\\d\\s*(?:¢|cents?\\M)', 'gi')) >= ${minDollars}
        ORDER BY adt.updated_at DESC, adt.id DESC
        LIMIT ${scan}
     `,
