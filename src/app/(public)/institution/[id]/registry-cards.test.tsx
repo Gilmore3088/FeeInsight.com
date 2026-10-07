@@ -52,6 +52,8 @@ describe("BranchFootprintCard map waiting on addresses", () => {
     expect(screen.getByText("Map coming soon")).toBeInTheDocument();
     expect(screen.getByText(/1 of 12 are placed so far/)).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /Branches by state/ })).toBeNull();
+  });
+});
 
 describe("EnforcementCard", () => {
   const base: EnforcementRecord = { agenciesChecked: ["OCC", "FRB"], active: [], terminated: [], terminatedCount: 0, asOf: "2026-10-07" };
