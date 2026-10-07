@@ -1982,3 +1982,14 @@ fee "no-fee" or opens its summary with a limit. A recorded fee change now counts
 were read from the same page.
 **Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
 consumer/business split for the fee readers, not something Hamilton can fix.
+
+## 2026-10-07: Limit wordings v28 missed
+**What happened:** v29's first prod run (02:55 UTC, 50 pages, 241 rows) still raised six limits as
+fees: four "the limit will increase to $500/$1,500" rows filed as overdraft and "Daily ATM Limits
+($/#)" at $505. v28's `namesALimit` only knew a limit followed by "is/are/to/of", and a trailing
+note only when it began "per/daily/each/for". A sixth row, "Money Market Minimum Balance Fee if"
+at $2,500, is a balance threshold read as a fee and is not fixed here.
+**Fix:** Knox v30 adds "will increase to" / "will be increased (raised) to" after a limit and a
+"($/#)" note to `namesALimit`.
+**Lesson:** prove a rules change on its first prod run, not only on the answer keys: prod pages carry
+wordings the keyed schedules lack.
