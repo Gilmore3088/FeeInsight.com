@@ -216,6 +216,10 @@ export function sourceLines(text: string): string[] {
 const SIZE_CELL = /^\d+\s*["”']?\s*x\s*\d+(?:\s*["”']?\s*x\s*\d+)?\s*["”']?$/i;
 const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
 const NAME_CELL = /^[A-Z][^$|]*[a-z]{3}[^$|]*$/;
+const PRICE_OR_FREE_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{2})?|free|no charge|none|n\/c)$/i;
+// A second column's own fee name has at least two words of its own, not a qualifier of the first
+// ("Monthly Statement – Electronic", "Withdrawals at Allpoint & Presto! ATMs"; not "Non-network").
+const SECOND_COLUMN_NAME = /^[A-Z]\S*\s+\S+/;
 
 /**
  * Two table layouts that print a fee's price on a different row than its name are rewritten
@@ -259,6 +263,12 @@ function regridRows(lines: string[]): string[] {
     ) {
       out.push(`${cells[0]} | ${next[0]}`, `${cells[1]} | ${cells[2]}`, next.slice(1).join(" | "));
       i += 1;
+      continue;
+    }
+    // Two columns' names on one row and one price ("Stop Payment | Monthly Statement – Electronic |
+    // Free"): the price is the second name's; the first name's price is printed under it.
+    if (cells.length === 3 && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
+      out.push(cells[0], `${cells[1]} | ${cells[2]}`);
       continue;
     }
     out.push(lines[i]);

@@ -160,7 +160,9 @@ stored). Rosetta writes them only once the migration is applied.
 
 `batch-review.ts` runs in each read step, before candidates are picked. It takes the next 50
 primary reads (html_dom, pdf_layout, plain_text, docx) once they are 6 hours old, so Knox and
-the later readers have had them. It judges each read against what happened next, never a guess:
+the later readers have had them, from the last 3 days and only of each bank's current
+document (a lesson on a replaced copy is never read). A failed review never stops the reads:
+its error is `batchReviewError` on the step result. It judges each read against what happened next, never a guess:
 
 | Miss | Rule | Fix that picks it up |
 |---|---|---|
