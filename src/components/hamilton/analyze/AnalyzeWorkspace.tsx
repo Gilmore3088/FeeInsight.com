@@ -249,6 +249,7 @@ export function AnalyzeWorkspace({
   const [lookups, setLookups] = useState<string[]>([]);
   const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
   const [exportError, setExportError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
   const lastPromptRef = useRef<string>("");
   // The question before this one, so a follow-up's written answer knows what "this" refers to.
@@ -278,7 +279,15 @@ export function AnalyzeWorkspace({
       setAnsweredAt(new Date().toISOString());
       setParsedResponse(parsed);
       setSavedAnalysisId(null);
+      setSaveError(null);
 
+      // The route saves the answer itself and sends the row's id, so a reload mid-stream loses
+      // nothing; the browser saves only when an older route sent no id.
+      const serverSaved = (message.metadata as { savedAnalysisId?: string } | undefined)?.savedAnalysisId;
+      if (serverSaved) {
+        setSavedAnalysisId(serverSaved);
+        return;
+      }
       if (userId) {
         const result = await saveAnalysis({
           institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId) ?? "",
@@ -295,6 +304,7 @@ export function AnalyzeWorkspace({
           } satisfies AnalyzeResponse,
         });
         if ("id" in result) setSavedAnalysisId(result.id);
+        else setSaveError("This answer couldn't be saved to your history.");
       }
     },
   });
@@ -566,6 +576,7 @@ export function AnalyzeWorkspace({
                   {exportError}
                 </p>
               ) : null}
+              {saveError ? <p className="text-xs text-warm-600">{saveError}</p> : null}
 
               {shown.exploreFurther.length > 0 ? (
                 <MemoSection title="Ask next">
