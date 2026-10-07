@@ -124,7 +124,7 @@ const AGREEMENT =
   /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
 const NOT_A_FEE_DOCUMENT =
-  /\b(privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
+  /\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
 /** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
 const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
@@ -163,6 +163,8 @@ function linkText(link: PageLink): string {
 export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string | null = null): CompanionCandidate | null {
   const lower = linkText(link);
   if (BUSINESS.test(lower) || NOT_A_FEE_DOCUMENT.test(lower)) return null;
+  // A rates page ("Savings Rates", "/rates-fees/account-rates") lists rates, not fees.
+  if (/\brates?\b/.test(lower) && !/\b(fees?|charges?)\b/.test(lower.replace(/\brates? fees\b/g, ""))) return null;
   let url: URL;
   try {
     url = new URL(link.url);
@@ -278,9 +280,21 @@ export function siteSearchUrl(html: string, site: URL, query: string = PRIMARY_S
 }
 
 /** An account page is kept when it lists at least one fee with an amount. */
-export function accountPageListsFees(html: string, url: string): { ok: boolean; feeLines: number; reason: string } {
+/**
+ * Fee lines an account page or agreement must show to be kept. On prod (7 Oct) account
+ * pages kept with 1 or 2 fee lines gave live fees 9-11% of the time (77 of 781), with 3+
+ * 23-40%; agreements with 1 fee line 2 of 37. Knox read nothing from the rest.
+ */
+export const ACCOUNT_PAGE_MIN_FEE_LINES = 3;
+export const AGREEMENT_MIN_FEE_LINES = 2;
+
+export function accountPageListsFees(
+  html: string,
+  url: string,
+  minFeeLines = ACCOUNT_PAGE_MIN_FEE_LINES,
+): { ok: boolean; feeLines: number; reason: string } {
   const page = scoreFeePage(htmlToScoringText(html), url);
-  if (page.verdict === "wrong_document" || page.feeLines < 1) {
+  if (page.verdict === "wrong_document" || page.feeLines < minFeeLines) {
     return { ok: false, feeLines: page.feeLines, reason: page.reason };
   }
   return { ok: true, feeLines: page.feeLines, reason: `${page.feeLines} fee line${page.feeLines === 1 ? "" : "s"} on the account page` };
@@ -339,12 +353,12 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     const text = await pdfCheckText(bytes, AGREEMENT_PDF_PAGES);
     if (!text) return { ok: false, documentType: "pdf", feeLines: 0, verdict: "unreadable_pdf", reason: "Agreement PDF has no readable text" };
     const page = scoreFeePage(text);
-    return page.feeLines >= 1 ? kept("pdf", page.feeLines) : noFee("pdf");
+    return page.feeLines >= AGREEMENT_MIN_FEE_LINES ? kept("pdf", page.feeLines) : noFee("pdf", page.feeLines);
   }
   if (!contentType.includes("text/html")) {
     return { ok: false, documentType: null, feeLines: 0, verdict: "unsupported_type", reason: `Unsupported content type ${contentType || "unknown"}` };
   }
-  const check = accountPageListsFees(await response.text(), url);
+  const check = accountPageListsFees(await response.text(), url, AGREEMENT_MIN_FEE_LINES);
   return check.ok ? kept("html", check.feeLines) : noFee("html", check.feeLines);
 }
 
@@ -425,7 +439,8 @@ async function selectThinBanks(
       -- which are the banks this finder exists for.
       SELECT c.institution_id,
              count(DISTINCT c.canonical_fee_key)::int AS categories,
-             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee
+             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee,
+             bool_or(c.canonical_fee_key = 'overdraft') AS has_overdraft
         FROM published_fee_records c
         JOIN institution_sources scoped ON scoped.id = c.institution_id
        WHERE c.rolled_back_at IS NULL
@@ -436,6 +451,7 @@ async function selectThinBanks(
       SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              COALESCE(thin.categories, 0) AS categories,
              COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
+             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
              -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
              -- schedule, no stored text that prices an overdraft, a text that sends the
@@ -489,6 +505,11 @@ async function selectThinBanks(
              -- An HTML fee link with no monthly fee: the product-page pattern.
              OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
              OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
+             -- Near the report bar but missing a headline fee its link does not price: the
+             -- monthly maintenance or overdraft item fee often sits in a separate account
+             -- disclosure (Coulee Bank, Spencer Savings, Community Bank PA on Oct 7).
+             OR NOT has_monthly_fee
+             OR NOT has_overdraft
            )
        AND (
              NOT ${hiddenOnly}::boolean
@@ -504,6 +525,8 @@ async function selectThinBanks(
      ORDER BY requested DESC,
               (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
               (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) DESC,
+              -- Then banks one headline fee short of a full schedule, before thinner ones.
+              (categories >= ${THIN_BANK_CATEGORY_LIMIT} AND (NOT has_monthly_fee OR NOT has_overdraft)) DESC,
               categories ASC,
               asset_size DESC NULLS LAST,
               id ASC

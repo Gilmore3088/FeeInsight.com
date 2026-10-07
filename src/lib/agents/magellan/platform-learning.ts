@@ -53,6 +53,7 @@ export const LINK_YIELD_SCORE: Record<string, number> = {
   wrong_document: -2,
   dead_link: -2,
   business_schedule: -2,
+  confirmed_wrong_fees: -2,
 };
 /** A link the ledger has not judged yet. */
 const UNJUDGED_SCORE = 1;
