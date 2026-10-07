@@ -2087,3 +2087,13 @@ in every step.
 searched again next month. Budget stops don't count.
 **Lesson:** a retry rule for transient failures needs a count, or a site that always fails is retried
 forever.
+
+## 2026-10-07: Error pages saved as fee links never went back to discovery
+**What happened:** three banks' fee links are the site's own error page: Northern Trust
+(`/united-states/page-not-found`), Service 1st FCU (`/404/`) and Bank of Hays (`.../wcErrors/404.html`).
+Magellan sends a link back to discovery only on a 404, a 410 or a redirect home. Northern Trust's page
+timed out on every fetch, so it kept the link, and the paid schedule search re-searched it.
+**Fix:** `isErrorPageLink` (`link-coverage.ts`): the fetch step treats such a link as gone however the
+fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
+the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
+**Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.

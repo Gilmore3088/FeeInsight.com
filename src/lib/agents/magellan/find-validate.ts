@@ -1,7 +1,7 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
-import { isBusinessOnlyLink, isBusinessOnlyText } from "./link-coverage";
+import { isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink } from "./link-coverage";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -183,6 +183,9 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
 export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
   if (isBusinessOnlyLink(candidate.url)) {
     return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
+  }
+  if (isErrorPageLink(candidate.url)) {
+    return rejected("error_page", "Candidate address is the site's error page", null, candidate.score);
   }
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
   if (!response.ok) {
