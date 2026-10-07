@@ -10,6 +10,7 @@ import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmo
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
+import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -34,7 +35,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 32 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 33 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -99,13 +100,24 @@ export function closesUnopenedParen(name: string): boolean {
   return close >= 0 && (name.indexOf("(") < 0 || name.indexOf("(") > close);
 }
 
+/**
+ * v33: pass 1 adds fees named by their page context (`context-names.ts`), and a line saying
+ * its fee is being eliminated or no longer charged holds no fee for review.
+ */
+function withContextFees(text: string, read: ExtractionRulesResult): ExtractionRulesResult {
+  return {
+    candidates: [...contextFees(text), ...read.candidates.filter((fee) => !NO_LONGER_CHARGED.test(fee.excerpt))],
+    held: read.held.filter((row) => !NO_LONGER_CHARGED.test(row.excerpt)),
+  };
+}
+
 export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
   const text = joinLabeledFeeCardText(sourceText);
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
-    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => extractCandidatesFromText(text) },
+    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
     { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(text) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
