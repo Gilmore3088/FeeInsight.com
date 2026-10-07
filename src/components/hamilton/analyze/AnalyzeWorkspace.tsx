@@ -143,6 +143,36 @@ export function withEarlierQuestion(question: string, earlier: string): string {
   return `${question}\n\n(For context, my previous question was: "${earlier}")`;
 }
 
+/**
+ * Shown while a written answer is drafted, which can take most of a minute: what is happening and
+ * the seconds waited, so the page never sits empty. Only the elapsed time is live; no step is
+ * claimed done that the server has not reported.
+ */
+export function WrittenAnswerProgress() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div role="status" aria-live="polite" className="flex flex-col gap-3 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
+      <p className="flex items-center gap-2 text-sm font-medium text-warm-900">
+        <Loader2 aria-hidden className="h-4 w-4 animate-spin text-terra" />
+        Hamilton is writing this answer from the fee data and filings.
+      </p>
+      <p className="text-sm text-warm-700">
+        Written answers can take up to a minute. <span className="[font-variant-numeric:tabular-nums]">{seconds}s so far.</span>
+      </p>
+      <div className="space-y-2" aria-hidden="true">
+        <div className="skeleton h-5 w-full rounded" />
+        <div className="skeleton h-5 w-4/6 rounded" />
+        <div className="skeleton h-4 w-5/6 rounded" />
+      </div>
+    </div>
+  );
+}
+
 export function AnalyzeWorkspace({
   userId,
   institutionId,
@@ -333,7 +363,9 @@ export function AnalyzeWorkspace({
   // sent counts; an earlier answer must not stand in for it.
   const lastMessage = messages[messages.length - 1];
   const streamingContent = lastMessage?.role === "assistant" ? extractTextFromMessage(lastMessage) : "";
-  const liveParsed = isLoading && streamingContent ? parseAnalyzeResponse(streamingContent) : null;
+  // A stream that so far holds only a section heading has nothing to read yet; the progress note stays.
+  const streamingHasText = streamingContent.replace(/^#+[^\n]*$/gm, "").trim().length > 0;
+  const liveParsed = isLoading && streamingHasText ? parseAnalyzeResponse(streamingContent) : null;
   const shown = chatError && !isLoading ? null : (parsedResponse ?? liveParsed);
   const view = shown ? shapeHamiltonView(shown.hamiltonView) : { lead: "", paragraphs: [] };
   const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
@@ -404,16 +436,7 @@ export function AnalyzeWorkspace({
         />
       ) : null}
 
-      {isLoading && !shown ? (
-        <div role="status" aria-live="polite" className="flex flex-col gap-3">
-          <p className="text-sm text-warm-700">Hamilton is reading the fee data and filings for this answer…</p>
-          <div className="space-y-2" aria-hidden="true">
-            <div className="skeleton h-6 w-full rounded" />
-            <div className="skeleton h-6 w-4/6 rounded" />
-            <div className="skeleton h-4 w-5/6 rounded" />
-          </div>
-        </div>
-      ) : null}
+      {isLoading && !(shown && view.lead) ? <WrittenAnswerProgress /> : null}
 
       {shown && view.lead ? (
         <>

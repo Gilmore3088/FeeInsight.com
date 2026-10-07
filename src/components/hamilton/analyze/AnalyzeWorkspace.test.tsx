@@ -84,3 +84,22 @@ describe("withEarlierQuestion", () => {
     );
   });
 });
+
+describe("AnalyzeWorkspace while a written answer is drafted", () => {
+  beforeEach(() => {
+    chat.messages = [];
+  });
+
+  it("says what is happening and how long it has taken, never an empty page", () => {
+    chat.status = "submitted";
+    const html = render();
+    expect(html).toContain("Hamilton is writing this answer from the fee data and filings.");
+    expect(html).toContain("0s so far.");
+  });
+
+  it("keeps the progress note while the stream has started but no answer text is readable yet", () => {
+    chat.status = "streaming";
+    chat.messages = [{ id: "a1", role: "assistant", parts: [{ type: "text", text: "## Hamilton's View\n" }] }];
+    expect(render()).toContain("Hamilton is writing this answer");
+  });
+});
