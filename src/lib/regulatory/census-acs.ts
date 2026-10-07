@@ -101,6 +101,14 @@ export function parseAcsTable(table: unknown, geo: AcsGeoType, year: number): Ac
   return out;
 }
 
+/** Census answered with its "Missing Key" / "Invalid Key" page: the data API needs CENSUS_API_KEY. */
+export class CensusKeyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CensusKeyError";
+  }
+}
+
 /** One geography level for one ACS 5-year vintage; null when Census has not published it. */
 export async function fetchAcs(
   year: number,
@@ -121,7 +129,9 @@ export async function fetchAcs(
   if (!text.trim().startsWith("[")) {
     // A 200 with a page instead of data is a key, quota or outage problem, never "not published".
     const snippet = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
-    throw new Error(`Census returned no data for ${safeUrl}: ${snippet || "empty body"}`);
+    const message = `Census returned no data for ${safeUrl}: ${snippet || "empty body"}`;
+    if (/\b(missing|invalid) key\b/i.test(snippet)) throw new CensusKeyError(message);
+    throw new Error(message);
   }
   return { url: safeUrl, rows: parseAcsTable(JSON.parse(text), geo, year) };
 }

@@ -13,6 +13,24 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
+**Owner:** the Data inventory thread.
+**What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
+(05:42-06:27 UTC). PR 399 fixed it at 06:52, but the six quarters stayed claimed until
+10:32-12:27, because a failed run leaves its partition "scheduled" for `CLAIM_RETRY_HOURS`, and a
+parser version bump re-ran only succeeded or empty partitions. `registry-census-acs` failed at 07:02
+(2025) and 07:32 (2024) with Census's "Missing Key" page. No `CENSUS_API_KEY` is set (the logged
+URL has no key), and Census refuses keyless requests from prod. `demographics` holds only 2022
+state and county rows (loaded 2026-04-06), and readers use the latest year on file.
+**Cause:** the scheduler had no way to tell that a failure came from code since fixed. Census
+answers a missing key with a 200 page, which the step treated as a failure.
+**Fix:** the claim records `claimed_parser_version`. A partition still "scheduled" from a claim
+under an older parser is due at once, so a parser bump retries its failures on the next tick.
+`ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
+partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
+completes instead of failing. Other non-data replies still fail.
+**Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
+
 ## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
 **What happened:** James asked Hamilton "who are my local competitors and locations" at 07:36 UTC.
 The written answer (`api.research.hamilton`, `ai_api_usage_events` id 2928) read 127,096 input
