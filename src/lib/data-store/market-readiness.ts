@@ -1,5 +1,7 @@
 import { sql } from "./connection";
 
+type SqlTag = typeof sql;
+
 /**
  * Market readiness: is there enough live fee data in a market for a competitive report?
  *
@@ -81,6 +83,57 @@ export function countInstitutionsPassingReportRule(
   markets: Pick<MarketReadiness, "rich" | "ready" | "richViaDistrict">[],
 ): number {
   return markets.reduce((total, market) => total + (market.ready ? market.rich : (market.richViaDistrict ?? 0)), 0);
+}
+
+/** The report-rule count Atlas stores each day in pipeline_scoreboard_snapshots.detail.report_ready. */
+export interface ReportReadyCount {
+  /** Institutions passing the report rule (countInstitutionsPassingReportRule). */
+  institutions: number;
+  /** Of those, the ones passing on Fed district peers because their state has too few. */
+  viaDistrict: number;
+  /** State markets (state + charter type) that are ready on their own. */
+  marketsReady: number;
+}
+
+export function summarizeReportReady(markets: MarketReadiness[]): ReportReadyCount {
+  return {
+    institutions: countInstitutionsPassingReportRule(markets),
+    viaDistrict: markets.reduce((total, m) => total + (m.ready ? 0 : (m.richViaDistrict ?? 0)), 0),
+    marketsReady: markets.filter((m) => m.ready).length,
+  };
+}
+
+export interface ReportReadyWeek {
+  /** Monday (UTC) of the week, YYYY-MM-DD. */
+  weekStart: string;
+  /** The day of the snapshot used: the newest one recorded that week. */
+  snapshotDate: string;
+  count: ReportReadyCount;
+}
+
+/**
+ * One row per week from Atlas's daily snapshots: the newest snapshot of each week that has
+ * a report_ready count, newest week first. Weeks before the count was recorded have no row.
+ */
+export async function listReportReadyWeeks(weeks = 8, db: SqlTag = sql): Promise<ReportReadyWeek[]> {
+  const rows = await db<{ week_start: string; snapshot_date: string; report_ready: Record<string, unknown> }[]>`
+    SELECT DISTINCT ON (date_trunc('week', snapshot_date))
+           date_trunc('week', snapshot_date)::date::text AS week_start,
+           snapshot_date::text AS snapshot_date,
+           detail->'report_ready' AS report_ready
+      FROM pipeline_scoreboard_snapshots
+     WHERE detail ? 'report_ready'
+       AND snapshot_date >= CURRENT_DATE - ${weeks * 7}::int
+     ORDER BY date_trunc('week', snapshot_date) DESC, snapshot_date DESC`;
+  return rows.map((row) => ({
+    weekStart: String(row.week_start),
+    snapshotDate: String(row.snapshot_date),
+    count: {
+      institutions: Number(row.report_ready?.institutions ?? 0),
+      viaDistrict: Number(row.report_ready?.via_district ?? 0),
+      marketsReady: Number(row.report_ready?.markets_ready ?? 0),
+    },
+  }));
 }
 
 export interface ReportRuleCheck {
@@ -179,12 +232,12 @@ export function toMarketReadiness(row: {
 }
 
 /** Readiness for every state and charter type the index tracks. */
-export async function getMarketReadiness(): Promise<MarketReadiness[]> {
+export async function getMarketReadiness(db: SqlTag = sql): Promise<MarketReadiness[]> {
   const keys = [...HEADLINE_FEE_KEYS];
-  const rows = await sql<
+  const rows = await db<
     { state_code: string; charter_type: string; institutions: string; rich: string; rich_via_district: string }[]
   >`
-    WITH coverage AS (${headlineCoverageSql(keys)}),
+    WITH coverage AS (${headlineCoverageSql(keys, undefined, db)}),
     districts AS (
       SELECT s.fed_district, s.charter_type, COUNT(*) AS rich
       FROM institution_sources s
@@ -221,8 +274,8 @@ export async function getInstitutionHeadlineCoverage(ids: number[]): Promise<Map
   return coverage;
 }
 
-function headlineCoverageSql(keys: string[], institutionIds?: number[]) {
-  return sql`
+function headlineCoverageSql(keys: string[], institutionIds?: number[], db: SqlTag = sql) {
+  return db`
     SELECT institution_id, COUNT(DISTINCT canonical_fee_key) AS categories
     FROM (
       SELECT institution_id, canonical_fee_key FROM published_fee_catalog
@@ -231,6 +284,6 @@ function headlineCoverageSql(keys: string[], institutionIds?: number[]) {
       SELECT institution_id, canonical_fee_key FROM published_fee_rate_catalog
     ) live
     WHERE canonical_fee_key = ANY(${keys})
-      ${institutionIds ? sql`AND institution_id = ANY(${institutionIds})` : sql``}
+      ${institutionIds ? db`AND institution_id = ANY(${institutionIds})` : db``}
     GROUP BY institution_id`;
 }

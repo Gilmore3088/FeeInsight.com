@@ -17,6 +17,7 @@ const NUMBERS: ScoreboardSnapshotResult["numbers"] = {
     published: 1000,
     byStrategy: [{ strategy: "extract.rules", rate: 0.88, live: 880, published: 1000 }],
   },
+  reportReady: { institutions: 1401, viaDistrict: 247, marketsReady: 6 },
 };
 
 describe("scoreboard", () => {
@@ -30,7 +31,7 @@ describe("scoreboard", () => {
   it("summarizes the numbers with units", () => {
     const summary = summarizeScoreboard({ schemaReady: true, snapshotDate: "2026-10-04", numbers: NUMBERS, stored: true });
     expect(summary).toBe(
-      "Atlas recorded the 2026-10-04 scoreboard: coverage 41.2% (4,123 of 10,000), right documents 75.0%, Knox yield 0.80 fees per priced line, depth 9 categories, accuracy 90.0% precision / 60.0% recall, freshness 12.5 days, Knox survival 88.0% of 1,000 published fees still live.",
+      "Atlas recorded the 2026-10-04 scoreboard: coverage 41.2% (4,123 of 10,000), right documents 75.0%, Knox yield 0.80 fees per priced line, depth 9 categories, accuracy 90.0% precision / 60.0% recall, freshness 12.5 days, Knox survival 88.0% of 1,000 published fees still live, 1,401 institutions pass the report rule (247 on Fed district peers).",
     );
   });
 
@@ -38,10 +39,11 @@ describe("scoreboard", () => {
     const summary = summarizeScoreboard({
       schemaReady: false,
       snapshotDate: "2026-10-04",
-      numbers: { ...NUMBERS, rightDocument: null, knoxYield: null, accuracy: null },
+      numbers: { ...NUMBERS, rightDocument: null, knoxYield: null, accuracy: null, reportReady: null },
       stored: false,
     });
     expect(summary).toContain("migration is not applied");
     expect(summary).toContain("right documents n/a");
+    expect(summary).toContain("report-ready count n/a");
   });
 });

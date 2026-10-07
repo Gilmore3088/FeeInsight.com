@@ -192,6 +192,19 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Notary | $5.00 | Counter Checks\nChecks | $10.00", "Counter Checks", 10, ".").ok).toBe(false);
   });
 
+  it("keeps a one-line PDF schedule's dot-leader rows whole", () => {
+    const row =
+      "SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES MISCELLANEOUS SERVICES Activity/Statement Printout……………………………. $5.00 " +
+      "Cashier’s Checks………………………………………..……. $4.00 Chargeback (Returned Deposited Item)............ No Charge " +
+      "Personal Money Order………………………………...…. $2.00 Special Statement Date…………………………………. $5.00 " +
+      "Stop Payment………………………………………………… $35.00 Over $300 USD…………………………..……. $40.00 Dormant Account Fee……………………………………. $7.00/Month " +
+      "Garnishments, Levies and Liens…..………………… $75.00 Debit Card Replacement……………………………..... $7.00 Notary Service (non-customer)……………………….. $10.00";
+    expect(checkFeeAgainstSource(row, "Stop Payment", 35, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(row, "Cashier’s Checks", 4, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(row, "Dormant Account Fee", 7, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(row, "Personal Money Order", 5, ".").ok).toBe(false);
+  });
+
   it("reads a price with a note in parentheses, and a name whose only figure is a limit (takedowns, Oct 7)", () => {
     const nsf = "Item Returned for Non-Sufficient Funds\n\n$29.00/presentment (applies to transactions of $10 or more. Limit of three (3) NSF charges per day)";
     expect(checkFeeAgainstSource(nsf, "Item Returned for Non-Sufficient Funds", 29, ".").ok).toBe(true);
@@ -207,3 +220,4 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Stop Payment ($30.00)", "Stop Payment", 30, ".").ok).toBe(true);
   });
 });
+
