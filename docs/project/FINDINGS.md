@@ -2805,3 +2805,16 @@ catalog reads `account_product_type` from `product_name` and adds the other thre
 Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
+
+## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
+
+- **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
+  `CONNECT tunnel failed, 403`). So the readers for state orders were written against the page
+  formats described in search results, not against fetched pages.
+- **Fix.** `registry-state-enforcement` runs on the live pipeline, which can reach those sites, and
+  records each state's pages read, orders found, matches and three sample rows in the run detail.
+  The first prod run is the check: a state whose reader finds nothing is fixed there and the parser
+  version bumped. Seven states for now (NJ, NY, IL, MD, WA, TX, NC); Pennsylvania's listing page
+  wasn't found.
+- **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
+  Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
