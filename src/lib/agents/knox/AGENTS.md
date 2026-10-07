@@ -112,6 +112,19 @@ re-reads up to 300 held unclassified lines from the document's current text with
 (`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
 (`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
 version. A categorized insert that meets a held row takes it over the same way.
+Each re-read is logged in `pipeline_feedback` under `knox.held:raw:<id>` (the versions that read
+it and the outcome). A line still uncategorized after three versions is set aside
+(`knox_set_aside`), never deleted, and later versions keep re-reading it.
+
+v26 (rules 26) folds the held groups James chose to fold (decision card, Oct 7 2026) into the
+category the taxonomy already gives them (`FOLDED_PATTERNS`): returned mail, bad address, fax
+and excess withdrawals into account research; collection items and foreign checks into check
+cashing; loan cancellation, credit reports and UCC filings into loan origination; loan
+refinancing and document fees into other lending. The answer keys left these lines "unmapped",
+so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
+of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
+fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
+stay held.
 
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the

@@ -3,6 +3,25 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-07
+
+**Held fees with no category fold into an existing one; nothing beyond the ~50 tracked
+categories gets its own.** James, 01:18 UTC, chose "Fold into existing" on the Knox held-lines
+card, then: "do our best to match fees to the right category, but at some point we just need to
+stop caring about anything beyond the top 50." Knox rules v26 (`FOLDED_PATTERNS` in
+`knox/rules.ts`) file returned mail, bad address, fax and excess-withdrawal fees under account
+research, collection items and foreign checks under check cashing, and loan cancellation, credit
+report and UCC fees under loan origination, as the taxonomy and answer keys already map them.
+Groups with no right home (membership, phone transfers, credit card, uncollected funds,
+returned statements) stay held rather than skew a featured fee.
+
+**Nothing Knox sets aside is deleted.** James, 01:20 UTC: "We can't just aimless toss. It needs
+to be last case decision, picked over multiple times, decision log. And it's never deleted, just
+archive and can always be revisited." A held line is set aside (`knox_set_aside`) only after three
+rules versions have read it; every read is logged in `pipeline_feedback`
+(`knox.held:raw:<id>`, versions checked, outcome), the row stays, and every later rules version
+re-reads it.
+
 ## 2026-10-06
 
 **Value funnel answers.** James, 23:49 UTC, in the value funnel thread.
