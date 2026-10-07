@@ -13,8 +13,9 @@ import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/mage
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
-import { STATE_BILLS_SOURCE, stateBillPartitions } from "@/lib/agents/magellan/registry/state-bills";
+import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
 import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
+import { ENFORCEMENT_MATCHER_VERSION, ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/enforcement";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -50,6 +51,7 @@ const CLAIM_RETRY_HOURS = 6;
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
+  [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
 };
 
 export function isParserStale(source: string, status: string | null, parserVersion: number | null): boolean {
@@ -100,8 +102,9 @@ export function registryPartitionsBySource(
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
-    // No key, no runs: state bills wait for OPEN_STATES_API_KEY rather than queue 52 skips.
-    [STATE_BILLS_SOURCE]: env.OPEN_STATES_API_KEY?.trim() ? stateBillPartitions() : [],
+    // No key, no runs: state bills wait for OPEN_STATES_API_KEY rather than queue skips.
+    // One partition; each run works through the states that are due (state-bills.ts).
+    [STATE_BILLS_SOURCE]: env.OPEN_STATES_API_KEY?.trim() ? [STATE_BILLS_PARTITION] : [],
     [FEDERAL_BILLS_SOURCE]: env.CONGRESS_GOV_API_KEY?.trim() ? [FEDERAL_BILLS_PARTITION] : [],
   };
   return REGISTRY_SOURCES.map((definition) => ({

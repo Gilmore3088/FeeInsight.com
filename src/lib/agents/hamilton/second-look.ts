@@ -95,7 +95,16 @@ interface FlagRow {
  */
 export async function secondLook<T extends SecondLookCandidate>(
   db: SqlTag,
-  options: { check: string; runId: number; failing: T[]; passing?: number[]; dryRun: boolean; now?: Date },
+  options: {
+    check: string;
+    runId: number;
+    failing: T[];
+    passing?: number[];
+    dryRun: boolean;
+    now?: Date;
+    /** Minutes a first look must age before it confirms; Infinity logs first looks and confirms none. */
+    minMinutes?: number;
+  },
 ): Promise<SecondLookResult<T>> {
   const { check, runId, failing, dryRun } = options;
   const passing = options.passing ?? [];
@@ -129,7 +138,7 @@ export async function secondLook<T extends SecondLookCandidate>(
     ]),
   );
   const now = options.now ?? new Date();
-  const plan = planSecondLook(failing, pending, runId, now);
+  const plan = planSecondLook(failing, pending, runId, now, options.minMinutes ?? SECOND_LOOK_MIN_MINUTES);
   const failingIds = new Set(failing.map((fee) => fee.feePublishedId));
   const cleared = passing.filter((id) => !failingIds.has(id) && pending.get(id)?.kind === PENDING_KIND);
   const result: SecondLookResult<T> = {

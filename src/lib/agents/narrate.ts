@@ -185,6 +185,7 @@ export function narrateStepFinished(
     case "registry-federal-bills":
     case "registry-state-bills":
     case "registry-state-regulators":
+    case "registry-enforcement":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -192,10 +193,29 @@ export function narrateStepFinished(
       if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
       return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
+    case "study-fee-dependence":
+    case "study-local-income":
+    case "study-concentration":
+    case "study-fee-income":
+    case "study-inferred-volume": {
+      if (detail.schema_ready === false) return "Read the study; its tables are not created yet, so nothing was stored.";
+      const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
+      return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
+    }
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
       return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+    }
+    case "content-market-spread": {
+      const picked = (detail.picked ?? null) as Detail | null;
+      if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a market-spread post for ${String(picked.metro)} for James to approve.`;
+      return `Drafted no market-spread post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
+    }
+    case "content-fee-depth": {
+      const picked = (detail.picked ?? null) as Detail | null;
+      if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a fee-depth post for ${String(picked.metro)} for James to approve.`;
+      return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
     case "marketing-score": {
       const scored = n(detail, "scored");
@@ -298,10 +318,13 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-state-bills": {
       if (detail.missing_key) return "Skipped state bills: the Open States key is not set.";
       const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
-      return `Found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
+      const states = Array.isArray(detail.states) ? detail.states.length : 0;
+      return `Read ${count(states, "state")} and found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
     }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
+    case "registry-enforcement":
+      return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
     default:
       return null;
   }
@@ -351,12 +374,19 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "daily-brief": "atlas",
   "lead-watch": "atlas",
   "pro-digest": "atlas",
+  "content-fee-depth": "hamilton",
+  "content-market-spread": "hamilton",
   "marketing-score": "hamilton",
   "marketing-write": "hamilton",
   "marketing-send": "hamilton",
   "marketing-states": "hamilton",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
+  "study-fee-dependence": "hamilton",
+  "study-local-income": "hamilton",
+  "study-concentration": "hamilton",
+  "study-fee-income": "hamilton",
+  "study-inferred-volume": "hamilton",
   discover: "magellan",
   "discover-paid": "magellan",
   rescue: "magellan",
@@ -381,6 +411,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-federal-bills": "magellan",
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
+  "registry-enforcement": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

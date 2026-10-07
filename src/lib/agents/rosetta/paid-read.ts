@@ -32,6 +32,7 @@ import {
 } from "@/lib/agents/rosetta/read";
 import { OCR_STRATEGY } from "@/lib/agents/rosetta/ocr";
 import { PRIMARY_READERS, TEXT_SURVIVAL_CHECK } from "@/lib/agents/rosetta/text-survival";
+import { BATCH_REVIEW_CHECK } from "@/lib/agents/rosetta/batch-review";
 import {
   ROSETTA_TABLE_ROWS_VERSION,
   rosettaTextColumnsReady,
@@ -137,6 +138,8 @@ async function selectPaidReadCandidates(
   let lostAfterFreeReaders = "FALSE";
   if (textSurvival) {
     const survivalParam = `$${params.push(TEXT_SURVIVAL_CHECK)}`;
+    // A batch review lesson that names the paid pass as the fix (a short PDF text).
+    const batchParam = `$${params.push(BATCH_REVIEW_CHECK)}`;
     const ocrParam = `$${params.push(OCR_STRATEGY)}`;
     const layoutParam = `$${params.push(PRIMARY_READERS.pdf)}`;
     lostAfterFreeReaders = `(
@@ -144,7 +147,8 @@ async function selectPaidReadCandidates(
              AND adt.document_type = 'pdf'
              AND EXISTS (
                SELECT 1 FROM pipeline_feedback lost
-                WHERE lost.check_name = ${survivalParam}
+                WHERE (lost.check_name = ${survivalParam}
+                       OR (lost.check_name = ${batchParam} AND lost.evidence->>'remedy' = 'paid_read'))
                   AND lost.signal = 'wrong'
                   AND lost.source_document_id = adt.source_document_id
                   AND lost.evidence->>'text_hash' = adt.text_hash

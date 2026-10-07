@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, humanizeAnswerText, shapeHamiltonView, splitSentences } from "./parse-response";
+import { answerTitle, headFigure, parseAnalyzeResponse, parseEvidenceMetrics, parseFollowUps, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "./parse-response";
 
 describe("parseEvidenceMetrics", () => {
   it("keeps dates, ranges and hyphenated words inside the value", () => {
@@ -93,5 +93,52 @@ describe("humanizeAnswerText", () => {
     const parsed = parseAnalyzeResponse("## Hamilton's View\nCompared with community_mid peers.\n\n## Evidence\n- **Tier:** COMMUNITY_MID");
     expect(parsed.hamiltonView).toBe("Compared with $300M to $1B peers.");
     expect(parsed.evidence).toEqual([{ label: "Tier", value: "$300M to $1B peers" }]);
+  });
+});
+
+// From the Space Coast answer of Oct 7, 2026 (hamilton_saved_analyses 53b3d2cd), shortened.
+describe("Evidence rows a reader can scan", () => {
+  it("starts a new row at every bullet, even when the label ends in a year", () => {
+    const rows = parseEvidenceMetrics(
+      [
+        "- Fee income as a share of revenue: 6.3% against a 7.1% peer median — MidFlorida at 7.8%",
+        "- Year-over-year service-charge growth, Q2 2026: 8.2% against a 9.9% peer median",
+      ].join("\n"),
+    );
+    expect(rows).toEqual([
+      { label: "Fee income as a share of revenue", value: "6.3% against a 7.1% peer median", note: "MidFlorida at 7.8%" },
+      { label: "Year-over-year service-charge growth, Q2 2026", value: "8.2% against a 9.9% peer median" },
+    ]);
+  });
+
+  it("leaves out prose written under the list", () => {
+    const rows = parseEvidenceMetrics("- ATM: $2.50 against a $1.50 median\nConfidence is strong on income figures.");
+    expect(rows).toEqual([{ label: "ATM", value: "$2.50 against a $1.50 median" }]);
+  });
+
+  it("writes thousands of thousands as millions", () => {
+    expect(humanizeAnswerText("$962 thousand against a $1,063 thousand median; $1,000 thousand; $100,000 thousand")).toBe(
+      "$962 thousand against a $1.06 million median; $1 million; $100 million",
+    );
+  });
+
+  it("titles an answer with its whole first sentence", () => {
+    expect(answerTitle("Space Coast's national rank of 23rd out of 1,325 midsize institutions overstates its position. Among the 9 peers, it earns less.")).toBe(
+      "Space Coast's national rank of 23rd out of 1,325 midsize institutions overstates its position.",
+    );
+  });
+
+  it("splits notes out of rows saved before the split", () => {
+    expect(tidyEvidence([{ label: "ROA", value: "0.79% against a 1.06% peer median — Eastman at 1.95%" }])).toEqual([
+      { label: "ROA", value: "0.79% against a 1.06% peer median", note: "Eastman at 1.95%" },
+    ]);
+  });
+});
+
+describe("headFigure", () => {
+  it("takes the figure a value opens with", () => {
+    expect(headFigure("$962 thousand against a $1.06 million peer median")).toEqual({ figure: "$962 thousand", comparison: "against a $1.06 million peer median" });
+    expect(headFigure("6.3% against a 7.1% peer median")?.figure).toBe("6.3%");
+    expect(headFigure("Fees were last collected on 2026-02-17")).toBeNull();
   });
 });

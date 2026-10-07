@@ -36,6 +36,22 @@ describe("scoreFeePage", () => {
     expect(score.reason).toContain("not a fee schedule");
   });
 
+  it("accepts a fee table whose amount column drops the dollar sign", () => {
+    // emb.bank's Schedule of Common Fees, as the DOM reader writes it (Oct 7).
+    const table = [
+      "Schedule of Common Fees",
+      "Service | Fee Amount",
+      "365 Club account, withdrawal | $ 2.00",
+      "Canadian check fee, per check | 5.00",
+      "Cashier's check | 5.00",
+      "Garnishment and levy fee | 75.00",
+      "Paid overdraft fee, non-sufficient funds, per item* | 32.00",
+    ].join("\n");
+    expect(scoreFeePage(table)).toMatchObject({ verdict: "fee_page", feeLines: 4, dollarAmounts: 1 });
+    // A bare number in running text, or a table cell with no fee word, is not a fee line.
+    expect(scoreFeePage("Fee schedule updated 10.25 at noon\nChecking | 5.00")).toMatchObject({ feeLines: 0 });
+  });
+
   it("rejects a rates page with a single dollar amount", () => {
     expect(scoreFeePage(RATES_PAGE)).toMatchObject({ verdict: "wrong_document", rateTerms: 2 });
   });

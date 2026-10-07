@@ -16,6 +16,12 @@ import { StorylineView, type MemoState } from "@/components/hamilton/storyline/S
 import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { FactList, SchedulePositionsTable } from "./schedule-answer";
+
+/** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
+export function engineAnswered(res: AskResponse): boolean {
+  return Boolean(res.answer || (res.positions && res.positions.length > 0) || (res.facts && res.facts.length > 0));
+}
 
 const OBJECTIVES: { key: AskObjective; label: string }[] = [
   { key: "revenue", label: "Revenue" },
@@ -286,6 +292,8 @@ export function StructuredAsk({
       // "Which fee?" is never a wall: a question that names no fee (often a follow-up such as
       // "how does this compare nationally?") gets a written answer at once.
       if (res?.question && res.question.fieldKey !== "ask.fee_category") return;
+      // The engine's own answer stands; a second, model-written answer would bury it.
+      if (res && !res.question && engineAnswered(res)) return;
       onNoStoryline?.(asked);
     },
     [institutionId, onNoStoryline],
@@ -348,6 +356,18 @@ export function StructuredAsk({
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
   return (
     <div className="flex flex-col gap-5">
+      {response.positions && response.positions.length > 0 ? (
+        <>
+          {/* The takeaways lead; the table and the top fee's storyline follow. Without a storyline
+              or answer the same sentence already shows below, so it is not repeated. */}
+          {response.answer && response.shortAnswer.trim() ? (
+            <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
+              {response.shortAnswer}
+            </p>
+          ) : null}
+          <SchedulePositionsTable rows={response.positions} hrefFor={researchHrefFor} />
+        </>
+      ) : null}
       {response.answer && storyline ? (
         <StorylineView
           story={storyline}
@@ -382,6 +402,7 @@ export function StructuredAsk({
           {response.shortAnswer}
         </p>
       )}
+      {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
       {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "You"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
         <Callout>

@@ -140,6 +140,7 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 import {
   cancelAgentRun,
   executeAgentRun,
+  expectedMsToFirstWork,
   expectedStepMs,
   executeQueuedAgentRuns,
   startAgentRun,
@@ -944,6 +945,42 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
+  it("orders failed-lane retries, then lanes with an unfetched hand-found schedule, ahead of routine passes", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    expect(selection).toBeDefined();
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const retry = order.indexOf("= 'failed') DESC");
+    const handFound = order.indexOf("hand.found_by_strategy = 'discover.operator_schedule'");
+    const waiting = order.indexOf("INTERVAL '1 hour'");
+    expect(retry).toBeGreaterThan(0);
+    expect(handFound).toBeGreaterThan(retry);
+    expect(order).toContain("hand.status = 'found'");
+    expect(waiting).toBeGreaterThan(handFound);
+  });
+
+  it("runs Atlas's direct institution runs right after runs already under way", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const underWay = order.indexOf("done.status <> 'queued'");
+    const direct = order.indexOf("COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC");
+    const retry = order.indexOf("= 'failed') DESC");
+    expect(underWay).toBeGreaterThan(0);
+    expect(direct).toBeGreaterThan(underWay);
+    expect(retry).toBeGreaterThan(direct);
+  });
+
   it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
     sqlMock.mockImplementation((strings: TemplateStringsArray) => {
       const text = templateText(strings);
@@ -1038,6 +1075,15 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
     ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("counts a lane run's quick first steps together with the first real step", () => {
+    // enhance + state-expert are quick; a later run must also fit discover, or it would
+    // count as under way after only the quick steps and jump ahead of retries.
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(170_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(60_000);
+    expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
+    expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {

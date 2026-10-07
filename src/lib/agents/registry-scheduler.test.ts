@@ -26,7 +26,7 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 19)).toEqual([
+    expect(candidates.slice(0, 20)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
@@ -46,10 +46,11 @@ describe("registry scheduler", () => {
       "reg-news:current",
       "federal-register:current",
       "state-regulators:current",
+      "enforcement:current",
     ]);
     // Round two continues each source's history.
     // Credit union branches pull only the newest quarter, so they drop out after round one.
-    expect(candidates.slice(19, 27)).toEqual([
+    expect(candidates.slice(20, 28)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
       "ffiec-overdraft:2026Q2",
@@ -66,7 +67,7 @@ describe("registry scheduler", () => {
     const bills = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
     expect(bills({})).toEqual([]);
-    expect(bills({ OPEN_STATES_API_KEY: "key" })).toHaveLength(52);
+    expect(bills({ OPEN_STATES_API_KEY: "key" })).toEqual(["current"]);
     const federal = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "federal-bills")?.partitions;
     expect(federal({})).toEqual([]);
@@ -82,6 +83,10 @@ describe("registry scheduler", () => {
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
     expect(isParserStale("ncua-financials", "succeeded", null)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);
+    // The first enforcement load (no parser_version) re-runs as soon as the matcher changes.
+    expect(isParserStale("enforcement", "succeeded", null)).toBe(true);
+    expect(isParserStale("enforcement", "succeeded", 2)).toBe(true);
+    expect(isParserStale("enforcement", "succeeded", 3)).toBe(false);
     expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 3)).toBe(false);
     // A claimed or failed partition follows its normal retry time instead of looping.

@@ -23,7 +23,11 @@ import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
-import { asksWholeSchedule, scheduleOverview, withSchedule, type ScheduleOverview } from "./workspace/schedule";
+import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
+import { asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
+import { withDepth, type IncomeWhy } from "./workspace/story-extras";
+import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
+import { peerPhrase } from "./answer-brief";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
@@ -201,6 +205,10 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   // then the fee furthest from its peer median in detail.
   const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question) : null;
   if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  // "Why is our fee income lower than peers?" leads with what price explains of the gap, then
+  // answers in full for the fee furthest from its median when the question named none.
+  const why = await incomeWhyFor(institutionId, question);
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
   const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment }) : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
@@ -227,7 +235,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
   const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
-  const response: AskResponse = schedule ? withSchedule(built, schedule) : built;
+  const response = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null);
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
   const shown = response.scenario;
   const scenarioEvents =
@@ -297,6 +305,29 @@ async function scheduleFor(institutionId: number, question: string): Promise<Sch
   return briefing ? scheduleOverview(briefing.positions) : null;
 }
 
+/** The price split of the bank's fee income gap, for a question asking why income is where it is. */
+/** The price split of the bank's fee income gap, for a question asking why income is where it is. */
+async function incomeWhyFor(institutionId: number, question: string): Promise<IncomeWhy | null> {
+  if (!asksIncomeWhy(question)) return null;
+  const [intensity, briefing, trend] = await Promise.all([
+    getServiceChargeIntensity(institutionId).catch((error) => {
+      console.error("[hamilton-ask] income intensity failed", error);
+      return null;
+    }),
+    getWorkspaceBriefing(institutionId).catch((error) => {
+      console.error("[hamilton-ask] briefing failed", error);
+      return null;
+    }),
+    getServiceChargeIntensityTrend(institutionId).catch((error) => {
+      console.error("[hamilton-ask] income trend failed", error);
+      return [];
+    }),
+  ]);
+  if (!intensity || !briefing) return null;
+  const split = incomeSplit(intensity, briefing.positions, peerPhrase(intensity.charterType, intensity.assetTier));
+  return split ? { split, explained: explainIncome(split), top: scheduleOverview(briefing.positions).top, trend } : null;
+}
+
 export interface AskMemoResult {
   status: number;
   body: StorylineMemoResult | { error: string };
@@ -321,16 +352,17 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   const ready = await workspaceSchemaReady();
   const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
   let intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
-  if (!intent.feeCategory) {
-    const schedule = await scheduleFor(institutionId, question);
-    if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
-  }
+  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question) : null;
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  const why = await incomeWhyFor(institutionId, question);
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
   if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
   const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment });
   if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
   const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
   const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
-  const response = buildAskResponse({ question, intent, research, memory, objective });
+  // The same storyline the Ask returned, overview and income split included.
+  const response = withDepth(buildAskResponse({ question, intent, research, memory, objective }), schedule, why, research.provenance.dataAsOf.fees ?? null);
   const storyline = response.answer?.storyline;
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 

@@ -83,4 +83,68 @@ describe("StructuredAsk", () => {
     await screen.findByText(/no charts for .Overdraft. yet/);
   });
 
+
+  // Test figures only; not any institution's real fees.
+  it("draws every fee against its peer median and keeps the engine's answer without a written one", async () => {
+    const calls = mockFetch(
+      {
+        kind: "research",
+        shortAnswer: "Two of three fees sit above their peer medians.",
+        pageChange: { screen: "none" },
+        facts: [{ text: "Overdraft $35 against a $29 median.", source: { label: "Bank Fee Index" } }],
+        positions: [
+          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher" },
+          { feeCategory: "nsf", displayName: "NSF / returned item", current: 20, peerMedian: 25, peerCount: 38, peerLabel: "Banks $10B and up", direction: "lower" },
+          { feeCategory: "stop_payment", displayName: "Stop payment", current: 30, peerMedian: 30, peerCount: 30, peerLabel: "Banks $10B and up", direction: "at" },
+        ],
+      },
+      {},
+    );
+    const onNoStoryline = vi.fn();
+    render(<StructuredAsk question="Where do we stand on every fee?" institutionId="8109" modelHrefFor={() => "/"} researchHrefFor={(f) => `/pro/research?fee=${f}`} onNoStoryline={onNoStoryline} />);
+    await screen.findByText("Every fee against its peer median");
+    expect(screen.getByText("1 lower · 1 at median · 1 higher")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Overdraft" }).getAttribute("href")).toBe("/pro/research?fee=overdraft");
+    // The table carries the figures, so the same lines are not listed again.
+    expect(screen.queryByText("Overdraft $35 against a $29 median.")).toBeNull();
+    expect(onNoStoryline).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask"]);
+  });
+
+  it("lists sourced findings for a why question instead of handing it to a written answer", async () => {
+    mockFetch(
+      {
+        kind: "research",
+        shortAnswer: "Price explains about a third of the gap.",
+        pageChange: { screen: "none" },
+        facts: [{ text: "Service charges of $4.10 per $1,000 of deposits against a $5.00 median.", source: { label: "Call reports", asOf: "2026-06-30" }, sampleSize: 25 }],
+      },
+      {},
+    );
+    const onNoStoryline = vi.fn();
+    render(<StructuredAsk question="Why is our fee income lower than peers?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    await screen.findByText(/per \$1,000 of deposits/);
+    expect(screen.getByText("Call reports, 2026-06-30 · 25 institutions")).toBeTruthy();
+    expect(onNoStoryline).not.toHaveBeenCalled();
+  });
+
+  it("leads an every-fee answer with its takeaways, then the table, then the top fee's storyline", async () => {
+    const answer = buildFeeAnswer(overdraftResearch());
+    mockFetch(
+      {
+        kind: "research",
+        shortAnswer: "Test figures: two of three fees sit above their peer medians; overdraft is furthest.",
+        pageChange: { screen: "none" },
+        answer,
+        positions: [
+          { feeCategory: "overdraft", displayName: "Overdraft", current: 35, peerMedian: 29, peerCount: 40, peerLabel: "Banks $10B and up", direction: "higher" },
+        ],
+      },
+      { status: "withheld", reason: "held" },
+    );
+    render(<StructuredAsk question="Where do we stand on every fee?" institutionId="8109" modelHrefFor={() => "/"} />);
+    const lead = await screen.findByText(/two of three fees sit above/);
+    const table = screen.getByText("Every fee against its peer median");
+    expect(lead.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

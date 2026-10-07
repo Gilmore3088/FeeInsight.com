@@ -13,6 +13,43 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
+**What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
+queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
+33 of 36; 66 of the 69 non-ok attempts were `wrong_document` on reopened pages whose link names
+the fee page but whose own text has no fees. None were timeouts, bot blocks or empty renders.
+Of the 66: their routes found a linked scanned PDF on 9 (6 already read as the bank's own
+documents, 3 never read: bogotasavingsbank, 1streetcu, educacu), and most of the rest were landing
+pages whose schedule sits behind a link with no ".pdf" ending (Magellan's crawl shows
+visionsfcu.org/documents/general/service-charge-fee-schedule-effective-june-2026 and
+cu-rockies.org/documents/fee-schedule), plus "available on request" and error pages that are
+correctly not fee pages. Two were real fee tables (emb.bank's 30 rows like "Cashier's check | 5.00").
+**Cause:** the fallback only followed links ending in ".pdf" or labelled print/download, never
+OCR'd a linked scan, and the fee-page check only counted amounts written with "$".
+**Fix:** this PR: follow links that name the fee schedule, OCR a linked scan, skip links the bank
+already has as documents, count bare amounts in fee table cells (15 rejected texts, all fee
+schedule URLs, would now pass), and reopen each such page once per fallback version (144 pages).
+**Lesson:** before calling a reader's non-ok outcomes failures, split them by what the page is: a
+`wrong_document` on a page with no fees is a correct answer, and the fix is to follow where the
+page points, not to count it differently.
+
+## 2026-10-07: Call report rows for closed institutions store no revenue, and the two charters define revenue differently
+**What happened:** building the fee dependence study, 4,248 of 7,747 FDIC rows for 2010-12-31 had
+`total_revenue` (read-only query on `institution_financial_records`, 05:20 UTC). The rest belong to
+institutions no longer in `institution_sources`, which the loaders store with `institution_id` NULL
+and only a few columns. Separately, banks' `total_revenue` is net interest income plus noninterest
+income (FDIC NIMQ + NONIIQ), while credit unions' is gross interest income plus noninterest income
+(NCUA 115 + 117), and the credit union fee line (131) is all fee income, not only deposit service
+charges.
+**Cause:** the `unmatched` insert in `fdic-financials.ts` and `ncua-financials.ts` keeps only assets,
+deposits, loans, net income and service charges; `raw_json` still holds every field. The definitions
+follow what each regulator files.
+**Fix:** Hamilton's fee dependence study (this PR) reads each filing's raw fields, so closed and
+merged institutions count and the series has no survivor bias; it reports banks and credit unions
+side by side and never pools them.
+**Lesson:** a study over history must read the raw filing fields, not only the matched-row columns,
+and must not compare a bank ratio with a credit union ratio as if they were the same measure.
+
 ## 2026-10-07: Admin Today read job health from the retired workers' markers
 **What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
 including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
@@ -122,6 +159,19 @@ in run-store) fits before 270 seconds. Short steps use the end of a tick, and lo
 still start early enough to finish inside the 300-second limit. Runs stay serial, so the
 database load per moment is unchanged. A state whose last finished lane run failed now
 retries ahead of routine passes.
+**Follow-up (04:30):** 22 of the 27 schedules found by hand (`discover.operator_schedule`, among
+them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
+their state's lane run fetches them and those runs waited in line. Next in the order after
+retries now comes a lane whose state holds a hand-found schedule with status `found`.
+**Follow-up (05:40):** after the change, runs per hour stayed at 6 (04:00 to 05:00). Two
+causes. A later run in a tick ran only its quick first steps (enhance, state-expert), then
+counted as under way and went ahead of the failed-lane retries (TX, CA, MI, NY, WI did this
+from 04:39). A later run now starts only when its quick steps and its first real step fit
+before the deadline. And a full pass is about 8 to 10 minutes of steps, mostly the paid
+search and paid read (140 to 290 seconds each), so serial runs top out near 6 an hour. The
+daily rule also put 36 of 55 states on daily full passes for any bank due a paid find (HI
+had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs weekly
+(21 daily states on the Oct 7 numbers).
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2255,6 +2305,20 @@ the playbook entry.
 the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
 **Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
 
+## 2026-10-07: The rules re-check restored fees with no check when their text was gone
+**What happened:** a fee the rules re-check had taken down came back live, with no category
+guard, schedule check or category model, whenever the text it was read from was no longer stored
+(`rules-recheck.ts`, restore reason `text_gone`). 84 live fees at 16 banks came back that way,
+among them NY answer-key misses: an international wire filed as bill pay, "Letter of Protest" as a
+gift card, a $0 "ATM services are UNLIMITED" and a check photocopy filed as document reproduction.
+Each restore also wrote a `restored_after_takedown` lesson that told Knox the takedown was wrong.
+The re-check's "latest" text was also the last by text hash, not the newest read.
+**Fix:** that restore now needs the restore bar (`disputedRestoreVerdict`) on the document's newest
+text; texts are ordered by read id. `restore-recheck.ts` gives the 84 the same bar on a second look
+(archive, never delete), and Knox's lesson readers skip the lessons those unchecked restores wrote.
+**Lesson:** every path that puts a fee live passes the same checks as publish; a restore is a
+publish.
+
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
 names business, commercial, corporate or treasury accounts, the same test Magellan's
@@ -2312,3 +2376,58 @@ that the loader will fit in a function's memory.
 with "operator does not exist: text = date". `institution_financial_records.report_date` is text
 ('2026-06-30'), and the update cast its parameters to date. The update now compares text with text,
 and a test fails if the update casts to date.
+
+## 2026-10-07: State bills would have taken about four days to cover 52 states
+**What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
+only Alaska had run.
+**Cause:** the registry scheduler starts one step every five minutes. It works round-robin across about
+20 sources and picks the first partition that is due. A source with 52 small partitions gets one
+turn per round, behind every other source's history and retries.
+**Fix:** state bills now has one scheduled partition, `current`. Each run reads the next 12 states
+whose weekly check is due and records each state under its own partition row. The step comes back
+within the hour while states are still due, so all 52 are covered in five runs.
+**Lesson:** for a registry source with many small, quick items, batch them inside one partition.
+Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Knox re-read fees that were already taken down
+**What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
+the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
+fees whose takedown still stood (152 from the source check, 56 for a price outside the category's
+range). It sent 49 of them back to Darwin, and 6 were published again.
+**Fix:** Knox reads `takedown_confirmed` rows, the second look's verdict, for checks that say the
+read was wrong. It holds a matching re-read for review instead of sending it to Darwin, and
+records the count on the extract event. First-look takedowns don't teach: Darwin found 13 of 20
+recent source-check takedowns were real prices.
+**Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
+logged changes nothing.
+
+## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
+**What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
+that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
+ending on "of", "is", "for" and similar, and 1,407 longer than 80 characters.
+**Cause:** `tidyFeeName` (Knox v17, v29) fixes new reads only. Rows published earlier kept the name
+as read ("Stop Payment | Item", "/mo. | Dormant Fee", "An overdraft fee of"), and nothing
+re-tidied them.
+**Fix:** `src/lib/agents/knox/name-retidy.ts` runs in each publish step on a batch of 40 banks. A
+live name takes its tidy name only when it still traces in the fee's own schedule (if it did before),
+still passes the category guard, and does not collide with another live fee of the bank. The old
+name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
+Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
+**Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: Rosetta had no per-batch error review
+**What happened:** Rosetta learned only from fees taken down later (text survival), so a read that
+gave Knox nothing, or rejected a real schedule, taught nothing. James asked for a fix per error type
+and a review after every N reads.
+**Measured (prod, read-only, the 200 latest reads 6 to 36 hours old at 06:25 UTC Oct 7):** batches of
+50 had 19, 7, 6 and 7 misses (38%, 14%, 12%, 14%). 37 of the 39 were completed texts Knox found no
+fee in; 2 were unread. No short texts, no rejected page later proven a fee page. Counting only Knox
+rows written after the read overstates the misses, because Knox dedupes rereads, so the review
+counts every Knox fee from the document. A no-fee text is a miss either way: a real schedule Knox
+could not read (an earlier 30-hour window had several fee-schedule pages and a 2,626-char PDF), or a
+page that passed the fee-page check without being one (in this window the 4 fee-named links were
+funds-availability, checking and rates pages; the other 33 were not sampled).
+**Fix:** `rosetta/batch-review.ts` reviews each settled batch of 50, writes every miss as a lesson
+with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
+pass read those lessons. See rosetta/AGENTS.md "Batch review".
+**Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
