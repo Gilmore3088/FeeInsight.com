@@ -6,7 +6,7 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
-import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { namesALimit, passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
@@ -34,7 +34,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 27 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 28 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -123,6 +123,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     for (const read of found.candidates) {
       if (candidates.length >= MAX_FEES_PER_DOCUMENT) break;
       const candidate = { ...read, feeName: tidyFeeName(read.feeName) };
+      // v28: a limit is not a price ("Zelle transfer limit | $1,000").
+      if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
       if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
         selfCheckFailed += 1;
         untraced.push({
