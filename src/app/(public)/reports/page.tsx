@@ -14,6 +14,8 @@ import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
 import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
@@ -213,6 +215,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   ]);
   // The sample is offline until it is re-rendered from source-checked data.
   const positionMap = SAMPLE_REPORT_LIVE ? extractPositionMap(readSampleReportHtml()) : null;
+  const sampleLive = await sampleReportAvailable();
   const hasReports = reports.length > 0;
   // Only show filter controls once there is a catalog to filter (or a filter is already applied).
   const showFilters = hasReports || filtersActive;
@@ -254,7 +257,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               >
                 {REPORT_OFFER.ctaLabel}
               </TrackLink>
-              {SAMPLE_REPORT_LIVE && (
+              {sampleLive && (
                 <Link href={SAMPLE_REPORT_HREF} className={SECONDARY_BUTTON}>
                   Read the full sample
                 </Link>
@@ -448,7 +451,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             >
               {REPORT_OFFER.ctaLabel}
             </TrackLink>
-            {SAMPLE_REPORT_LIVE && (
+            {sampleLive && (
               <Link
                 href={SAMPLE_REPORT_HREF}
                 className="inline-flex items-center rounded-md border border-[#5A5347] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:border-white"

@@ -270,7 +270,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // The fee's own name ends right before its price; earlier lowercase terms belong
     // to the fee before it.
     const tail = cleaned ? titleTail(cleaned) : null;
-    const name = tail && classifyPatternKey(tail) ? tail : cleaned;
+    // v28: a fee named after the previous fee's note ("Check printing – (fee depends on
+    // style) Temporary check – $.20") is the words after the note.
+    const afterNote = cleanFeeName(split.name.match(/\)\s*([A-Z][^()]*?)\s*[–—-]?\s*$/)?.[1] ?? "");
+    const name = afterNote && classifyPatternKey(afterNote) ? afterNote : tail && classifyPatternKey(tail) ? tail : cleaned;
     const recent = last && window.lineIndex - last.lineIndex <= 2 ? last : null;
     const detail = `${window.rawName} ${window.after}`;
     const frequency = detectFrequency(detail);

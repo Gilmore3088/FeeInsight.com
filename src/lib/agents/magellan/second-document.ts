@@ -10,8 +10,11 @@ import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
   DOCUMENT_YEAR_SQL,
+  FEE_NAMED_LINK_SQL,
+  HIDDEN_BELOW_CATEGORIES,
   LARGE_BANK_ASSETS,
   OVERDRAFT_PRICE_SQL,
+  PRODUCT_LINK_SQL,
   REFERS_ELSEWHERE_SQL,
   STALE_DOCUMENT_YEARS,
 } from "./link-coverage";
@@ -402,7 +405,20 @@ export interface RunSecondDocumentFindResult {
   results: SecondDocumentResult[];
 }
 
-async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: number): Promise<ThinBankRow[]> {
+/**
+ * Spare slots after the state's own thin banks go to banks the catalog hides (fewer than 3
+ * live fee categories) whose link is a product page or prices no overdraft, from any state:
+ * a state lane that has checked all its banks this month would otherwise leave the step idle,
+ * while most hidden banks sit in states the lane has not reached yet (Knox handoff, Oct 7).
+ */
+async function selectThinBanks(
+  db: SqlTag,
+  stateCode: string | null,
+  limit: number,
+  options: { hiddenOnly?: boolean; excludeIds?: number[] } = {},
+): Promise<ThinBankRow[]> {
+  const hiddenOnly = options.hiddenOnly ?? false;
+  const excludeIds = options.excludeIds ?? [];
   return db<ThinBankRow[]>`
     WITH thin AS (
       -- Every live row, not the catalog: the catalog hides banks with fewer than 3 fees,
@@ -455,6 +471,7 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
          AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
+         AND inst.id <> ALL(${excludeIds}::bigint[])
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
@@ -467,10 +484,22 @@ async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: numb
     SELECT id, institution_name, state_code, website_url, fee_schedule_url, categories,
            (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
       FROM scoped
-     WHERE categories < ${THIN_BANK_CATEGORY_LIMIT}
-        -- An HTML fee link with no monthly fee: the product-page pattern.
-        OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
-        OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
+     WHERE (
+             categories < ${THIN_BANK_CATEGORY_LIMIT}
+             -- An HTML fee link with no monthly fee: the product-page pattern.
+             OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
+             OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
+           )
+       AND (
+             NOT ${hiddenOnly}::boolean
+             OR (
+               categories < ${HIDDEN_BELOW_CATEGORIES}
+               AND (
+                 no_overdraft_price
+                 OR (lower(fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
+               )
+             )
+           )
      -- Report requesters and $10B+ banks first: the names buyers check.
      ORDER BY requested DESC,
               (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
@@ -728,6 +757,8 @@ export async function runSecondDocumentFind(options: {
   learning: boolean;
   /** Which slice of the site-search queries to run; defaults to the current recheck window. */
   searchRotation?: number;
+  /** Fill spare slots with hidden banks from any state (default on). */
+  hiddenTopUp?: boolean;
 }): Promise<RunSecondDocumentFindResult> {
   const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, results: [] });
   if (!options.learning) return empty("no_attempt_log");
@@ -735,7 +766,12 @@ export async function runSecondDocumentFind(options: {
   if (!(await companionStreamsReady(options.db))) return empty("schema_pending");
 
   const db = options.db;
-  const rows = await selectThinBanks(db, normalizeStateCode(options.stateCode ?? undefined), options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP);
+  const limit = options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP;
+  const stateCode = normalizeStateCode(options.stateCode ?? undefined);
+  const rows = await selectThinBanks(db, stateCode, limit);
+  if (stateCode && rows.length < limit && options.hiddenTopUp !== false) {
+    rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: rows.map((row) => Number(row.id)) })));
+  }
   const results: SecondDocumentResult[] = [];
   for (const row of rows) {
     if (Date.now() > options.deadline) break;

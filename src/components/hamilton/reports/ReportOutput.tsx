@@ -203,7 +203,7 @@ function LegacyReportBody({ report }: { report: ReportSummaryResponse }) {
 
       <AddedFindings report={report} />
 
-      {/* Today vs tested price — only if scenario data present */}
+      {/* Snapshot: current figure against its benchmark (never a proposed price) */}
       {report.snapshot.length > 0 && (
         <ReportSection heading={h.snapshot}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

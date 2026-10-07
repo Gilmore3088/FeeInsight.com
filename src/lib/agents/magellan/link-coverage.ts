@@ -95,6 +95,9 @@ export const FEE_NAMED_LINK_SQL = "(fee|schedule|charge|disclos|truth|pricing|\\
 /** Assets (thousands, as call reports) at which a bank is one buyers check first: $10B. */
 export const LARGE_BANK_ASSETS = 10_000_000;
 
+/** Fewer live fee categories than this and the catalog hides the bank (the 3-fee rule). */
+export const HIDDEN_BELOW_CATEGORIES = 3;
+
 /** The host of a bank's website, without "www.". */
 export function websiteHost(website: string): string | null {
   for (const candidate of [website.trim(), `https://${website.trim()}`]) {

@@ -14,10 +14,24 @@ import {
   EMAIL_PREFERENCES_PATH,
   FEE_ALERT_UNSUBSCRIBE_ACTION,
   FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  PRO_DIGEST_UNSUBSCRIBE_ACTION,
   SUBSCRIPTION_API_PATH,
 } from "./subscription-paths";
 
-export { EMAIL_PREFERENCES_PATH, FEE_ALERT_UNSUBSCRIBE_ACTION, FEE_ALERT_UNSUBSCRIBE_API_PATH, SUBSCRIPTION_API_PATH };
+export {
+  EMAIL_PREFERENCES_PATH,
+  FEE_ALERT_UNSUBSCRIBE_ACTION,
+  FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  PRO_DIGEST_UNSUBSCRIBE_ACTION,
+  SUBSCRIPTION_API_PATH,
+};
+
+/** Account-level stop links: each signs its own action with the user id and address. */
+export type AccountUnsubscribeAction = typeof FEE_ALERT_UNSUBSCRIBE_ACTION | typeof PRO_DIGEST_UNSUBSCRIBE_ACTION;
+
+export function isAccountUnsubscribeAction(value: unknown): value is AccountUnsubscribeAction {
+  return value === FEE_ALERT_UNSUBSCRIBE_ACTION || value === PRO_DIGEST_UNSUBSCRIBE_ACTION;
+}
 
 export function isSubscriptionAction(value: unknown): value is SubscriptionAction {
   return value === "confirm" || value === "unsubscribe";
@@ -66,22 +80,38 @@ function feeAlertSubject(userId: number, email: string) {
   return `${userId}:${normalizeSubscriptionEmail(email)}`;
 }
 
-export function signFeeAlertUnsubscribeToken(userId: number, email: string, secret: string) {
-  return sign(FEE_ALERT_UNSUBSCRIBE_ACTION, feeAlertSubject(userId, email), secret);
+export function signFeeAlertUnsubscribeToken(
+  userId: number,
+  email: string,
+  secret: string,
+  action: AccountUnsubscribeAction = FEE_ALERT_UNSUBSCRIBE_ACTION,
+) {
+  return sign(action, feeAlertSubject(userId, email), secret);
 }
 
-export function verifyFeeAlertUnsubscribeToken(userId: number, email: string, token: string, secret: string): boolean {
+export function verifyFeeAlertUnsubscribeToken(
+  userId: number,
+  email: string,
+  token: string,
+  secret: string,
+  action: AccountUnsubscribeAction = FEE_ALERT_UNSUBSCRIBE_ACTION,
+): boolean {
   if (!secret || !token || !Number.isInteger(userId) || userId <= 0) return false;
-  return safeEqual(signFeeAlertUnsubscribeToken(userId, email, secret), token);
+  return safeEqual(signFeeAlertUnsubscribeToken(userId, email, secret, action), token);
 }
 
 /** The page link (a button, so prefetching scanners change nothing) and the RFC 8058 target. */
-export function feeAlertUnsubscribeUrls(userId: number, email: string, secret: string): { page: string; oneClick: string } {
+export function feeAlertUnsubscribeUrls(
+  userId: number,
+  email: string,
+  secret: string,
+  action: AccountUnsubscribeAction = FEE_ALERT_UNSUBSCRIBE_ACTION,
+): { page: string; oneClick: string } {
   const query = new URLSearchParams({
-    action: FEE_ALERT_UNSUBSCRIBE_ACTION,
+    action,
     uid: String(userId),
     email: normalizeSubscriptionEmail(email),
-    token: signFeeAlertUnsubscribeToken(userId, email, secret),
+    token: signFeeAlertUnsubscribeToken(userId, email, secret, action),
   }).toString();
   return {
     page: `${siteBase()}${EMAIL_PREFERENCES_PATH}?${query}`,
