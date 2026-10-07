@@ -7,6 +7,7 @@ import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
@@ -71,6 +72,8 @@ export interface RulesRecheckRollback {
   canonicalFeeKey: string;
   feeName: string;
   amount: number | null;
+  /** The second look's verdict: why the source trace or the category guard also failed. */
+  secondLook?: string;
 }
 
 export interface RulesRecheckResult {
@@ -86,6 +89,12 @@ export interface RulesRecheckResult {
    * fee down for what another text says.
    */
   textGone: number;
+  /**
+   * Fees today's rules did not read from their own text that stay live because the second
+   * look passed: the fee's name and price still trace in that text and the category guard
+   * accepts its name. The next Knox version settles them.
+   */
+  disputed: RulesRecheckRollback[];
 }
 
 interface LiveKnoxRow {
@@ -131,6 +140,7 @@ const EMPTY_RESULT: RulesRecheckResult = {
   rollbacks: [],
   restores: [],
   textGone: 0,
+  disputed: [],
 };
 
 /**
@@ -267,8 +277,8 @@ export async function rollBackUnreproducedFees(
     rowsByDocument.set(id, [...(rowsByDocument.get(id) ?? []), row]);
   }
 
-  const result: RulesRecheckResult = { ...EMPTY_RESULT, rollbacks: [], restores: [] };
-  const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number; missing?: number }> = [];
+  const result: RulesRecheckResult = { ...EMPTY_RESULT, rollbacks: [], restores: [], disputed: [] };
+  const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number; disputed?: number; missing?: number }> = [];
   // One restore per institution, category and price in a batch.
   const restoredKeys = new Set<string>();
   for (const [documentId, documentRows] of rowsByDocument) {
@@ -306,6 +316,7 @@ export async function rollBackUnreproducedFees(
     });
     const newestFirst = (rows: LiveKnoxRow[]) => [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id));
     let rolledBack = 0;
+    let disputed = 0;
     // One document states a fee once: when a re-extraction publishes the same category and
     // price under a better name ("Negative $25 or less" for "Negative or less"), the newest
     // row stays and older copies are rolled back.
@@ -327,6 +338,19 @@ export async function rollBackUnreproducedFees(
       if (!reproduced && !documentTexts.some((candidate) => candidate.text_hash === row.text_hash)) {
         result.textGone += 1;
         continue;
+      }
+      // A second look before a fee comes down (James: re-examined, never scrapped on one
+      // pass): an independent check must fail too. The fee stays live while its name and
+      // price still trace in its own text and the category guard accepts its name.
+      if (!reproduced && fee.amount != null) {
+        const traced = checkFeeAgainstSource(textFor(row).normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
+        const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+        if ((traced.ok || traced.reason === "tiered_fee") && category.ok) {
+          result.disputed.push(fee);
+          disputed += 1;
+          continue;
+        }
+        fee.secondLook = !category.ok ? `category_guard:${category.code}` : `source_trace:${traced.ok ? "ok" : traced.reason}`;
       }
       rolledBack += 1;
       result.rollbacks.push(fee);
@@ -357,7 +381,7 @@ export async function rollBackUnreproducedFees(
       liveRows.filter((row) => row.amount != null).map((row) => feeKey(row.canonical_fee_key, Number(row.amount))),
     );
     const missing = [...readsFrom(latest).keys()].filter((key) => !live.has(key) && !keptKeys.has(key)).length;
-    checked.push({ institutionId, sourceDocumentId: documentId, checked: liveRows.length, rolledBack, missing });
+    checked.push({ institutionId, sourceDocumentId: documentId, checked: liveRows.length, rolledBack, disputed, missing });
   }
 
   result.rollbacks.sort((a, b) => a.feePublishedId - b.feePublishedId);
@@ -377,15 +401,22 @@ export async function rollBackUnreproducedFees(
            WHERE fee_published_id = ANY(${publishedIds}::bigint[])
              AND rolled_back_at IS NULL
         `;
+        // Both reasons stay on the row: the re-check's, and the second look's verdict.
+        const secondLooks = result.rollbacks.map((rollback) =>
+          rollback.secondLook ? `${RULES_RECHECK_REASON}:second_look:${rollback.secondLook}` : RULES_RECHECK_REASON,
+        );
         await scope`
-          UPDATE verified_fee_observations
+          UPDATE verified_fee_observations fv
              SET review_status = 'rejected',
-                 outlier_flags = CASE
-                   WHEN outlier_flags ? ${RULES_RECHECK_REASON} THEN outlier_flags
-                   ELSE COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([RULES_RECHECK_REASON])}::jsonb
-                 END
-           WHERE fee_verified_id = ANY(${verifiedIds}::bigint[])
-             AND review_status IN ('verified', 'approved')
+                 outlier_flags = (
+                   SELECT jsonb_agg(DISTINCT flag)
+                     FROM jsonb_array_elements_text(
+                       COALESCE(fv.outlier_flags, '[]'::jsonb) || jsonb_build_array(${RULES_RECHECK_REASON}::text, v.second_look)
+                     ) flag
+                 )
+            FROM unnest(${verifiedIds}::bigint[], ${secondLooks}::text[]) AS v(fee_verified_id, second_look)
+           WHERE fv.fee_verified_id = v.fee_verified_id
+             AND fv.review_status IN ('verified', 'approved')
         `;
       }
       if (result.restores.length > 0) {
@@ -436,6 +467,7 @@ export async function rollBackUnreproducedFees(
           detail: {
             live_fees_checked: document.checked,
             rolled_back: document.rolledBack,
+            disputed: document.disputed ?? 0,
             // What the write restored, not what was proposed: a live copy can win in between.
             restored: result.restores.filter((fee) => fee.sourceDocumentId === document.sourceDocumentId).length,
             [MISSING_FEES_DETAIL]: document.missing ?? 0,
@@ -446,7 +478,7 @@ export async function rollBackUnreproducedFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.rules_recheck', 'completed',
-          ${`Re-checked ${result.liveFeesChecked} live fee(s) in ${result.documentsChecked} document(s) against today's rules; rolled back ${result.rollbacks.length}, restored ${result.restores.length}, kept ${result.textGone} whose text is gone`},
+          ${`Re-checked ${result.liveFeesChecked} live fee(s) in ${result.documentsChecked} document(s) against today's rules; rolled back ${result.rollbacks.length}, restored ${result.restores.length}, kept ${result.textGone} whose text is gone and ${result.disputed.length} the second look still traces`},
           ${JSON.stringify({
             batch_id: options.batchId,
             signature,
@@ -456,6 +488,13 @@ export async function rollBackUnreproducedFees(
             rolled_back: result.rollbacks.length,
             restored: result.restores.length,
             kept_text_gone: result.textGone,
+            kept_disputed: result.disputed.length,
+            disputed_samples: result.disputed.slice(0, 20).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              canonical_fee_key: fee.canonicalFeeKey,
+              fee_name: fee.feeName,
+              amount: fee.amount,
+            })),
             restored_samples: result.restores.slice(0, 20).map((fee) => ({
               fee_published_id: fee.feePublishedId,
               canonical_fee_key: fee.canonicalFeeKey,
@@ -469,6 +508,7 @@ export async function rollBackUnreproducedFees(
               canonical_fee_key: rollback.canonicalFeeKey,
               fee_name: rollback.feeName,
               amount: rollback.amount,
+              second_look: rollback.secondLook ?? null,
             })),
           })}::jsonb
         )

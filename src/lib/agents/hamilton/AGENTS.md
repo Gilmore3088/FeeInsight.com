@@ -240,6 +240,11 @@ In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs 
 free team (`runFreeSpecialists` plus Darwin's rule checks) on the text each live Knox
 fee came from. A fee comes down only for that same text: when it is gone, the fee stays
 live and the source check judges the document's newer text (step detail `kept_text_gone`).
+Before a fee comes down, a second look must fail too: the fee's name and price no longer
+trace in that text (`checkFeeAgainstSource`), or the category guard rejects its name. A fee
+that passes the second look stays live (`disputed` in the attempt, `kept_disputed` in the
+event) for the next Knox version to settle; one that fails carries both reasons, the
+verified row's flags holding `rules_recheck_unreproduced:second_look:<verdict>`.
 A live fee whose category and price the current rules no longer read is rolled back
 (`rolled_back_reason = 'rules_recheck_unreproduced'`, the run's batch id) and its
 verified row is rejected so the next publish does not bring it back. Up to 25 documents

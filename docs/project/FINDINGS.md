@@ -1724,5 +1724,11 @@ hint-category case PR 316 fixes.
 relabels the old rows (kept, old name in evidence). Restores leave a marker the source check's due
 query honors. The re-check only takes a fee down for its own text, and brings back the up to 552
 takedowns (195 banks) it judged against another text, each re-judged by the source check.
+Then a second look before any re-check takedown (coordinator, 7 Oct): a fee Knox's newer rules no
+longer read from its own text comes down only if its name and price no longer trace there or the
+category guard rejects it. Sample of 60 past re-check takedowns (read-only, text near each fee):
+40 would have stayed live. Some of those 40 are wrong fees the category guard does not cover (a
+safe deposit size row filed as a cash advance, "Printed Account History" as an ACH return), so
+they wait for the next Knox version instead of coming down.
 **Lesson:** an identifier never belongs in a name something groups by, and a "due" test keyed on
 the highest id misses anything that comes back with an old id.

@@ -54,6 +54,8 @@ describe("Hamilton rules re-check", () => {
         live(1, "stop_payment", "Stop Payment", "30.00"),
         live(2, "bill_pay", "Copy of Draft (Check)", "3.00"),
         live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00"),
+        live(4, "stop_payment", "Stop Payment", "25.00"),
+        live(6, "overdraft", "Copy of Draft (Check)", "3.00"),
       ],
       texts,
     );
@@ -66,8 +68,15 @@ describe("Hamilton rules re-check", () => {
     });
 
     expect(result.documentsChecked).toBe(1);
-    expect(result.liveFeesChecked).toBe(3);
-    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([2, 3]);
+    expect(result.liveFeesChecked).toBe(5);
+    // Down only when the second look fails too: $25 is not on the Stop Payment row, and the
+    // category guard rejects "Copy of Draft (Check)" as an overdraft fee.
+    expect(result.rollbacks.map((rollback) => [rollback.feePublishedId, rollback.secondLook])).toEqual([
+      [4, "source_trace:amount_not_the_fee"],
+      [6, "category_guard:name_unsupported"],
+    ]);
+    // Still traced, and no guard covers them: live until the next Knox version settles them.
+    expect(result.disputed.map((fee) => fee.feePublishedId)).toEqual([3, 2]);
     const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
     expect(query).toContain("fr.source = 'knox'");
     expect(query).toContain("knox_paid_extraction");
@@ -84,7 +93,7 @@ describe("Hamilton rules re-check", () => {
   it("keeps a fee Knox's learning reader re-filed when today's rules read it under the rejected category", async () => {
     // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
     const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
-    const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
+    const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "4.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), refiled, unrelated], texts);
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
@@ -195,7 +204,7 @@ describe("Hamilton rules re-check", () => {
   });
 
   it("only reads in a dry run", async () => {
-    const db = createDbMock([live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00")], texts);
+    const db = createDbMock([live(4, "stop_payment", "Stop Payment", "25.00")], texts);
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
 
