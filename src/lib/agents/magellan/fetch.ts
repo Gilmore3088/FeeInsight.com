@@ -867,14 +867,6 @@ export async function runMagellanFetch(
   let operatorSchedules: OperatorScheduleResult | null = null;
   let samePageCopies: SamePageCopyResult | null = null;
   if (!dryRun) {
-    // Schedules James found by hand join the companions before they are fetched.
-    try {
-      operatorSchedules = await inSavepoint(db, (scope) =>
-        addOperatorSchedules({ db: scope, runId: options.runId, stepId: options.stepId ?? null }),
-      );
-    } catch (error) {
-      console.error("Operator schedules failed:", error);
-    }
     try {
       samePageCopies = await inSavepoint(db, (scope) =>
         supersedeSamePageCopies(scope, { runId: options.runId, institutionId: options.institutionId ?? null }),
