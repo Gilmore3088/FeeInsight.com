@@ -14,11 +14,16 @@ import type { Placement, StudyRecord } from "./store";
  *                  date. NCUA collected these only through 2024.
  *   banks          overdraft and NSF together (RIAD H032, $1B+ banks), four quarters
  *                  ending at the newest quarter with all four, divided by the bank's
- *                  overdraft and NSF fees together.
+ *                  overdraft and NSF fees together. Only banks whose window ends at the
+ *                  newest bank quarter count: a bank whose H032 stopped earlier (it fell
+ *                  under $1B, merged or closed) would mix years into one peer group.
+ *
+ * Rows keep their study_id; read them through the current study (is_current), since
+ * an institution that drops out keeps its older row under the older study.
  */
 
 export const INFERRED_VOLUME_KEY = "inferred_items_paid";
-export const INFERRED_VOLUME_VERSION = 1;
+export const INFERRED_VOLUME_VERSION = 2;
 
 export interface IncomeFeeRow {
   institutionId: number;
@@ -120,7 +125,14 @@ export interface InferredVolumeResult {
   placements: Placement[];
 }
 
-export function buildInferredVolume(input: IncomeFeeRow[]): InferredVolumeResult {
+/** Bank rows whose four quarters end at the newest bank quarter; credit union rows as read. */
+export function currentRows(rows: IncomeFeeRow[]): IncomeFeeRow[] {
+  const bankPeriod = rows.filter((r) => r.charter === "bank").map((r) => r.period).sort().at(-1);
+  return rows.filter((r) => r.charter !== "bank" || r.period === bankPeriod);
+}
+
+export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
+  const input = currentRows(all);
   const midpoint = (r: IncomeFeeRow) => (r.incomeDollars / r.feeHigh + r.incomeDollars / r.feeLow) / 2;
   const peerKey = (r: IncomeFeeRow) => `${r.feeCategory}|${r.charter}|${assetBand(r.assetsThousands)}`;
   const groups = new Map<string, IncomeFeeRow[]>();
@@ -178,8 +190,16 @@ export function buildInferredVolume(input: IncomeFeeRow[]): InferredVolumeResult
   });
   const asOf = input.length ? [...input.map((r) => r.period)].sort().at(-1)! : "none";
   const cu = summary.find((s) => s.fee_category === "overdraft");
-  const headline = cu && cu.institutions > 0
-    ? `Inferred: the typical credit union with a published overdraft fee was paid about ${cu.median_items?.toLocaleString("en-US")} overdraft items in ${cu.periods.at(-1)?.slice(0, 4)}.`
+  const bank = summary.find((s) => s.fee_category === "overdraft_nsf");
+  const parts: string[] = [];
+  if (bank && bank.institutions > 0) {
+    parts.push(`the typical $1B+ bank was paid about ${bank.median_items?.toLocaleString("en-US")} overdraft and NSF items in the four quarters to ${bank.periods.at(-1)} (${bank.institutions} banks)`);
+  }
+  if (cu && cu.institutions > 0) {
+    parts.push(`the typical credit union about ${cu.median_items?.toLocaleString("en-US")} overdraft items in ${cu.periods.at(-1)?.slice(0, 4)} (${cu.institutions} credit unions)`);
+  }
+  const headline = parts.length
+    ? `Inferred: ${parts.join("; ")}.`
     : "No institution has both reported overdraft income and a published fee yet.";
   return {
     rows,
@@ -193,7 +213,7 @@ export function buildInferredVolume(input: IncomeFeeRow[]): InferredVolumeResult
       n: input.length,
       sources: [
         { name: "NCUA 5300 overdraft and NSF fee income (IS0048, IS0049)", asOf: "2024" },
-        { name: "FFIEC call report RIAD H032 (banks over $1B)", asOf: input.some((r) => r.charter === "bank") ? asOf : null },
+        { name: "FFIEC call report RIAD H032 (banks over $1B)", asOf: bank?.periods.at(-1) ?? null },
         { name: "Bank Fee Index live published fees (published_fee_catalog)", asOf: null },
       ],
       findings: {
