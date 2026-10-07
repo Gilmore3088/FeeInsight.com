@@ -2736,3 +2736,13 @@ catalog reads `account_product_type` from `product_name` and adds the other thre
 Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
+
+## 2026-10-07: Darwin's release review only read the held fees of the lane's own state
+
+- **Problem.** `verify-paid` runs inside each state lane, and the release review picked held fees
+  from that state only. State lanes start hours after they are queued (Utah's, queued 02:05 UTC,
+  reached `verify-paid` at 08:07). At 08:25 Utah had 1 held fee waiting while about 1,000 waited
+  in other states, so release review v7 reviewed 1 fee in 90 minutes.
+- **Fix.** A lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (`release-review.ts`). Releases stay off; this changes only
+  which held fees get reviewed.

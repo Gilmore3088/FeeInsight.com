@@ -111,6 +111,8 @@ Darwin owns verification and classification.
   the category it was filed under (the prompt lists the names the taxonomy files there), and
   the amount is the price, not a cap or a misread number. Released rows carry the
   `darwin_released_hold` flag so the whole release can be found and rolled back.
+  A state lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (2026-10-07: Utah's lane had 1 while about 1,000 waited elsewhere).
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
