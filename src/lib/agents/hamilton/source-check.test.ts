@@ -68,12 +68,12 @@ describe("traceLiveFee", () => {
 });
 
 describe("takeDownUntraceableFees", () => {
-  // Fee 1 failed its first look two hours ago, on another run.
+  // Fee 1 failed its first look 13 hours ago, on another run.
   const firstLook = [
     {
       fee_published_id: 1,
       kind: "takedown_pending",
-      evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), reason: "amount_is_a_threshold" },
+      evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "amount_is_a_threshold" },
     },
   ];
   function createDb(rows: LiveFeeRow[], flags: unknown[] = firstLook) {

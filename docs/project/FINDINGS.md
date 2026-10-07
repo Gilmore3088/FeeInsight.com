@@ -22,8 +22,10 @@ check, the rules re-check and the newer-copy retire restored fees when a fix mad
 category guard (1,099 takedowns), outlier range (768) and off-taxonomy (94) checks had no way back.
 **Cause:** each check was written as a one-shot cleanup, and restore was added later only where a
 wrong takedown showed up.
-**Fix:** `hamilton/second-look.ts`. A first failure is logged and the fee stays live; a later run
-that fails it again takes it down. Wired into the source check and the category guard, and the
+**Fix:** `hamilton/second-look.ts`. A first failure is logged and the fee stays live; a later run,
+at least 12 hours on, that fails it again takes it down. Of 1,345 source-check takedowns later
+restored, 1,311 came back within 12 hours (453 within one), so the 12-hour wait would have kept
+about 97% of them live instead of flickering off and on. Wired into the source check and the category guard, and the
 category guard now restores earlier takedowns that today's guard passes. The rules re-check,
 outlier range and off-taxonomy checks are next.
 **Lesson:** every new takedown path goes through `secondLook` and has a restore path.

@@ -12,7 +12,9 @@ type SqlTag = typeof sql;
  * read of the page or a fixed rule can clear it first. A fee that passes after a first
  * failure is logged `takedown_cleared`. Every decision stays in the log; nothing is deleted.
  */
-export const SECOND_LOOK_MIN_MINUTES = 50;
+// 12 hours: of 1,345 source-check takedowns later restored (Oct 6-7), 453 came back within an
+// hour and 1,311 within 12 hours, mostly as same-day reader fixes landed.
+export const SECOND_LOOK_MIN_MINUTES = 12 * 60;
 export const PENDING_KIND = "takedown_pending";
 export const CONFIRMED_KIND = "takedown_confirmed";
 export const CLEARED_KIND = "takedown_cleared";

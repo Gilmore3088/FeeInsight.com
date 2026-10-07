@@ -17,7 +17,7 @@ describe("planSecondLook", () => {
   });
 
   it("confirms only a failure first seen on another run, long enough ago", () => {
-    const pending = new Map([flag(1, 9, 120), flag(2, 10, 120), flag(3, 9, 10)]);
+    const pending = new Map([flag(1, 9, 800), flag(2, 10, 800), flag(3, 9, 60)]);
     const plan = planSecondLook([fee(1), fee(2), fee(3)], pending, 10, now);
     expect(plan.confirmed.map((entry) => entry.candidate.feePublishedId)).toEqual([1]);
     expect(plan.waiting.map((f) => f.feePublishedId)).toEqual([2, 3]);

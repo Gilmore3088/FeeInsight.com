@@ -13,11 +13,11 @@ const liveRows = [
   { fee_published_id: 4, lineage_ref: 14, institution_id: 8, canonical_fee_key: "atm_non_network", fee_name: "You may withdraw up to", amount: "500.00" },
 ];
 
-// Rows 2 and 4 failed their first look two hours ago, on another run.
+// Rows 2 and 4 failed their first look 13 hours ago, on another run.
 const firstLooks = [2, 4].map((id) => ({
   fee_published_id: id,
   kind: "takedown_pending",
-  evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), reason: "name" },
+  evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "name" },
 }));
 
 function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = []) {
