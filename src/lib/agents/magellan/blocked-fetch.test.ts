@@ -15,7 +15,7 @@ vi.mock("@/lib/agents/paid-pass", () => ({
   PAID_PASS_MODELS: { find: () => "test-model" },
   paidModelCall: paidModelCallMock,
 }));
-vi.mock("./fetch", () => ({ fetchAndRecordLink: fetchAndRecordLinkMock }));
+vi.mock("./fetch", () => ({ fetchAndRecordLink: fetchAndRecordLinkMock, MAGELLAN_FETCH_STRATEGY: { strategy: "fetch.http", version: 2 } }));
 
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { BLOCKED_FETCH_STRATEGY, responseFromWebFetch, runBlockedFetch } from "./blocked-fetch";
@@ -49,7 +49,10 @@ describe("responseFromWebFetch", () => {
       content: [{ type: "web_fetch_tool_result", tool_use_id: "t1", caller: { type: "direct" }, content: { type: "web_fetch_tool_result_error", error_code: "url_not_accessible" } }],
     } as unknown as Message;
     expect(responseFromWebFetch(refused).status).toBe(403);
-    expect(responseFromWebFetch({ content: [] } as unknown as Message).status).toBe(502);
+    expect(responseFromWebFetch(refused).statusText).toBe("web fetch error: url_not_accessible");
+    const cutOff = responseFromWebFetch({ content: [], stop_reason: "max_tokens" } as unknown as Message);
+    expect(cutOff.status).toBe(502);
+    expect(cutOff.statusText).toBe("no web fetch (stop: max_tokens)");
   });
 });
 
@@ -72,6 +75,8 @@ describe("runBlockedFetch", () => {
     expect(result).toMatchObject({ selected: 2, processed: 2, stored: 2, costMicrousd: 2400, budgetStopped: false });
     const tool = paidModelCallMock.mock.calls[0][0].params.tools[0];
     expect(tool).toMatchObject({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 1, allowed_domains: ["pnfp.com"] });
+    // Room for the tool call: at 64 tokens the model stopped before calling it.
+    expect(paidModelCallMock.mock.calls[0][0].params.max_tokens).toBeGreaterThanOrEqual(512);
     const [, row, fetcher, ctx] = fetchAndRecordLinkMock.mock.calls[0];
     expect(row.id).toBe(47);
     expect(ctx).toMatchObject({ strategy: BLOCKED_FETCH_STRATEGY, costMicrousd: 1200, learning: true });
@@ -90,5 +95,25 @@ describe("runBlockedFetch", () => {
     const result = await runBlockedFetch({ runId: 5, db, dryRun: true });
     expect(result.selected).toBe(2);
     expect(paidModelCallMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("selectBlockedLinks", () => {
+  it("takes refused links and links that keep timing out, on the bank's own site", async () => {
+    const { selectBlockedLinks, BLOCKED_TIMEOUT_MIN_FAILURES } = await import("./blocked-fetch");
+    const texts: string[] = [];
+    const values: unknown[][] = [];
+    const db = vi.fn(async (strings: TemplateStringsArray, ...args: unknown[]) => {
+      texts.push(strings.join("?"));
+      values.push(args);
+      return [
+        { id: 37, institution_name: "First Horizon Bank", state_code: "TN", website_url: "https://www.firsthorizon.com", fee_schedule_url: "https://www.firsthorizon.com/Personal/Products-and-Services/Banking/Checking-Accounts/Account-and-Service-Fees", asset_size: 1, last_crawl_at: null, consecutive_failures: 4 },
+      ];
+    }) as unknown as Parameters<typeof selectBlockedLinks>[0];
+    const rows = await selectBlockedLinks(db, 3);
+    expect(rows.map((row) => row.id)).toEqual([37]);
+    expect(texts[0]).toContain("plain.outcome = 'http_403'");
+    expect(texts[0]).toContain("plain.outcome = 'timeout'");
+    expect(values[0]).toContain(BLOCKED_TIMEOUT_MIN_FAILURES);
   });
 });
