@@ -254,5 +254,24 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Coin Counting for non-customers, per $50 of coin counted | $5.00", "Coin Counting for non-customers, per of coin counted", 5, ".").ok).toBe(false);
     expect(checkFeeAgainstSource("Consulate Letter | $40.00 | Replacement Key (1 key | $25.00", "Replacement Key (1 key", 40, ".").ok).toBe(false);
   });
+
+  it("reads table layouts behind the second sample of takedowns (Oct 7)", () => {
+    const ok = (text: string, name: string, amount: number) => expect(checkFeeAgainstSource(text, name, amount, ".").ok, `${name} ${amount}`).toBe(true);
+    // A column heading repeated on every row.
+    const cms = "Items\n\nFees & Charges\n\nATM withdrawals on non-CU ATMs\n\nFees & Charges\n$2.00\n\nDebit Card Replacement\n\nFees & Charges\nFREE";
+    ok(cms, "ATM withdrawals on non-CU ATMs", 2);
+    expect(checkFeeAgainstSource(cms, "ATM withdrawals on non-CU ATMs", 0, ".").ok).toBe(false);
+    // An Area | Per | Fee table one cell per line: the unit sits between name and price.
+    const perTable = "Wire Transfer Fees - Customers Only\n\nArea\n\nPer\n\nFee\n\nWire Fees - Domestic Incoming\n\nWire\n\nFREE\n\nWire Fees - Domestic Outgoing\n\nWire\n\n$20.00\n\nWire Fees - International Outgoing\n\nWire\n\n$50.00";
+    ok(perTable, "Wire Fees - Domestic Outgoing: Wire", 20);
+    expect(checkFeeAgainstSource(perTable, "Wire Fees - Domestic Outgoing: Wire", 50, ".").ok).toBe(false);
+    ok("2 Account Research-Effective 09/09/2022, the Account Reconciliation Fee was combined with the Account Research\nFee @$20 per hour.", "2 Account Research-Effective 09/09/2022, the Account Reconciliation Fee", 20);
+    // A free allowance in a note, a "$200+" condition, a plural "(s)".
+    ok("ATM Withdrawal (Non-Bank ATM) (first 6 free)\n$1.00\nVISA Debit Card Replacement Fee (lost)", "ATM Withdrawal (Non-Bank ATM) (first 6 free)", 1);
+    ok("Monthly Service Fee (with direct deposit(s) of $200+ per month) ...................$10.00", "Monthly Service Fee (with direct deposit(s) of + per month)", 10);
+    // Still refused: a minimum is not the hourly price, a threshold is not the fee.
+    expect(checkFeeAgainstSource("Account research ($10 minimum) | $25/hr.", "Account research (", 10, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Escheat Notice* (when balance is $25 or more) . . . $2.00", "Escheat Notice (when balance is", 25, ".").ok).toBe(false);
+  });
 });
 

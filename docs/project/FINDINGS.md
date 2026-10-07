@@ -1869,9 +1869,17 @@ zero), a price with a unit and a qualifier under its name ("$5.00 per month for 
 following ..."), "Fee $35.00" under a name, "failure to maintain $1,000 daily balance | $3.00"
 (the balance read as a band), and a name wrapped onto the next line ("Replacement Key (1 key |
 $25.00" / "lost)") whose open parenthesis made the price look like a note.
-**Fix:** the shared reader reads all five (source check v6); 55 of the 384 takedowns with stored
-text now trace, and a spot check of 20 of them found 19 real (the miss: "$5.00 or 2% cash advance"
-shown as its $5 minimum). v6 re-checks banks with source-check takedowns first, so the restore
+A second pass over two samples of the fees still down found more: a column heading repeated
+on every row ("Name" / "Fees & Charges" / "$2.00", one credit union's whole schedule), an
+"Area | Per | Fee" table one cell per line, "Fee @$20 per hour", a free allowance in a note
+("(first 6 free)" / "$1.00"), "$200+", "<$100" and a plural "(s)" read as a note.
+**Fix:** the shared reader reads all of these (source check v6); 99 of the 384 takedowns with stored
+text now trace. Spot checks: 19 of 20 restored fees real (the miss: "$5.00 or 2% cash advance"
+shown as its $5 minimum), 34 of 36 from the second pass real. Of Darwin's 13, 4 now trace; 5 are
+right to stay down on the full page (Darwin judged from Knox's excerpt: the price belonged to the
+next row or column); 1 is a rate per $50 (refused by design); 3 have garbled names. Of a fresh
+random 20 still down, 15 are rightly down; the 5 misses are two-column layouts and names glued to
+a neighbouring fee, which the reader does not untangle yet. v6 re-checks banks with source-check takedowns first, so the restore
 runs through the normal check, logged, with `hamilton.restore` rows in `pipeline_feedback`. The
 12-hour second look (PR 324) has gated every source-check takedown since 02:32 UTC.
 **Lesson:** after a reader version bump, count how far the re-check has got before judging what
