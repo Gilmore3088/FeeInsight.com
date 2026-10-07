@@ -255,10 +255,12 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     run: async (input) => {
       const r = await runRegistryCensusAcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return {
-        summary: r.empty
+        summary: r.skippedNoKey
+          ? `Skipped the ${r.partitionKey} ACS 5-year estimates: Census requires CENSUS_API_KEY and none is set. Readers keep the latest vintage already loaded; will check again daily.`
+          : r.empty
           ? `Census has not published the ${r.partitionKey} ACS 5-year estimates yet; will check again.`
           : `Magellan loaded ${r.partitionKey} ACS household income for ${n(r.counts.state)} states, ${n(r.counts.county)} counties, ${n(r.counts.zcta)} ZIP areas and ${n(r.counts.tract)} tracts; ${n(r.withIncome)} have a median income${dry(r.dryRun)}.`,
-        detail: { year: r.year, counts: r.counts, with_income: r.withIncome, upserted_rows: r.upsertedRows, empty: r.empty },
+        detail: { year: r.year, counts: r.counts, with_income: r.withIncome, upserted_rows: r.upsertedRows, empty: r.empty, skipped_no_key: Boolean(r.skippedNoKey) },
       };
     },
   },
