@@ -103,7 +103,7 @@ describe("four-roles eval catches each kind of failure", () => {
 describe("answer edge cases", () => {
   it("asks for the current fee when the schedule has none", () => {
     const answer = buildFeeAnswer(overdraftResearch({ current: null, ownRows: [] }));
-    expect(answer.headline).toBe("Your schedule shows no overdraft fee; the median across 16 peers is $29.50.");
+    expect(answer.headline).toBe("Your overdraft fee is not in the index yet; the median across 16 peers is $29.50.");
     expect(answer.question).toMatchObject({ fieldKey: "fee.overdraft.current_amount" });
     expect(answer.exhibit?.title).toBe("The overdraft fee across 16 peers");
   });
