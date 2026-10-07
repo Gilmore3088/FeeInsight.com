@@ -5,6 +5,7 @@ import {
   enforcementAgencyLabel,
   enforcementAgencyList,
   cleanParty,
+  splitPartyLocation,
   isBankParty,
   parseStateOrders,
   mapColumns,
@@ -92,6 +93,23 @@ describe("readers after the first prod run (Oct 7)", () => {
   it("skips menu links that name no order and no date", () => {
     const html = `<a href="/banking">Banking and Sending Money</a><a href="/ea/20240827_nordea.pdf">Consent Order to Nordea Bank Abp</a>`;
     expect(parseStateOrders("links", html, "https://www.dfs.ny.gov/").map((o) => [o.party_name, o.start_date])).toEqual([["Nordea Bank Abp", "2024-08-27"]]);
+  });
+});
+
+describe("readers after the second prod run (Oct 7)", () => {
+  it("reads Texas's order table and splits the city and state off the bank name", () => {
+    const html = `<table><tr><th>Number</th><th>Date</th><th>Title of Order</th><th>Name</th></tr>
+      <tr><td><a href="/o/2021-015a.pdf">2021-015a</a></td><td>05/01/2026</td><td>Order Terminating Consent Order</td><td>Herring Bank, Amarillo, Texas</td></tr></table>`;
+    expect(parseStateOrders("table", html, "https://www.dob.texas.gov/x")).toEqual([
+      { party_name: "Herring Bank", party_city: "Amarillo", action_type: "Order terminating consent order", start_date: "2026-05-01", termination_date: null, document_url: "https://www.dob.texas.gov/o/2021-015a.pdf" },
+    ]);
+    expect(splitPartyLocation("Industry Bancshares, Inc., Industry, Texas")).toEqual({ name: "Industry Bancshares, Inc.", city: "Industry" });
+    expect(splitPartyLocation("Paxos Trust Company, LLC")).toEqual({ name: "Paxos Trust Company, LLC", city: null });
+  });
+
+  it("does not read a listing link as an order from a bare 'Order' in its URL", () => {
+    const html = `<a href="https://www.nccob.gov/Online/Shared/BRTSCommissionOrderListing.aspx">State-Chartered Bank Enforcement Actions</a>`;
+    expect(parseStateOrders("links", html, "https://nccob.nc.gov/")).toEqual([]);
   });
 });
 
