@@ -62,6 +62,8 @@ export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
   8109, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
   749, 1680, 2334, 2580, 2756, 156, 528, 641, 1068, 1200, 1411, 1104, 3262, 7096, 8078, 6775, 6358, 5058, 7503,
   6788, 5998,
+  // Magellan confirmed these current copies are full fee pages (2026-10-07).
+  161, 321, 836, 1170, 1024, 8082, 7723, 8606, 5622,
 ];
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;

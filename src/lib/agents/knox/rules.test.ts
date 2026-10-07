@@ -699,4 +699,9 @@ describe("Knox extract.rules", () => {
       fees("Account Fees - You must maintain a daily balance in your account of $2,500 each statement cycle to avoid a minimum balance fee of $3.95."),
     ).toEqual([["Minimum balance fee", 3.95, "minimum_balance"]]);
   });
+
+  it("v32 files a linked-account overdraft protection fee as a transfer, not an overdraft", () => {
+    expect(classifyFeeText("Account Link Overdraft Protection")).toBe("od_protection_transfer");
+    expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
+  });
 });

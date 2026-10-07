@@ -420,5 +420,6 @@ v32 (rules 32, from Space Coast CU's page, Oct 7):
 - Answer keys: TX 503 right / 15 wrong (unchanged), 7 states 721 / 47 (was 719 / 47). Live dry run: 1,418 of 1,437 kept, the same as v31.
 - "... to avoid a minimum balance fee of $3.95" is read as the $3.95 fee, not the balance thresholds (Security First Bank of ND).
 - A price followed by "when performed at an ATM we do not own or operate" keeps that clause in its name. It is read only once the category guard accepts the name; today the guard refuses "Deposits/Withdrawals" as an ATM fee (Pathfinder).
+- "Account Link Overdraft Protection | $10" is an overdraft protection transfer, not an overdraft fee (Spencer Savings).
 - Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
 - Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").
