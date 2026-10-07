@@ -110,6 +110,8 @@ export const MAX_STEP_ATTEMPTS = 3;
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
+  "briefing-refresh",
+  "competitor-alerts",
   "content-fee-depth",
   "content-market-spread",
   "daily-brief",

@@ -25,6 +25,14 @@
       "schedule": "31 13 * * *"
     },
     {
+      "path": "/api/admin/crew/briefing-refresh",
+      "schedule": "7 15 * * *"
+    },
+    {
+      "path": "/api/admin/crew/competitor-alerts",
+      "schedule": "51 14 * * *"
+    },
+    {
       "path": "/api/admin/crew/lead-watch",
       "schedule": "41 * * * *"
     },

@@ -13,6 +13,21 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Enforcement lists rarely record an end date, so "no end date" is not "active"
+**What happened:** the Pro enforcement card (PR 372) called every action with no termination date
+"active". On prod (read-only, 07:05 UTC) that was 825 of 4,431 OCC and Fed actions: 651 are civil
+money penalties alone, which are done once assessed, and 86 are orders from before 2016. Only 88
+are orders from the last ten years with no end date. PR 401 had also matched 48 actions to holding
+companies by name alone; most were unrelated companies sharing a generic name (State Holding Co of
+Thermopolis, WY on an Arkansas bank), found by checking all 28 names after its re-match ran.
+**Cause:** the OCC export and the Fed CSV leave the end date blank for penalties and for many old
+orders; holding-company names like "Community Bankshares Inc" repeat across states.
+**Fix:** PR 410 withdrew name-only matching (merged). This PR shows "no end date on file" only for
+orders from the last ten years and puts penalties and older ones under "Past"; Hamilton is told never
+to call such an action active.
+**Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
+match, count how many rows it covers on prod and read a sample of them.
+
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
 queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
@@ -2642,3 +2657,16 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
   (an LPL disclosure, a car-price site); they are wrong links and are skipped.
 
+## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
+
+- **Problem.** 48 open Tennessee banks have Darwin-verified fees that Hamilton holds back: Knox read
+  only 1 or 2 fee types from each, below the 3-fee publish bar. All were last read at v2-v22. Hand
+  checks of 5 current copies (Heritage Bank & Trust, Union Bank, Peoples Bank of the South,
+  BankTennessee, First Vision) show checking product pages listing only 1-3 kinds of fee. So the reads
+  are short because the pages are, not because Knox stopped early.
+- **Fix.** The 44 with a read copy are queued for a v32 re-read after the priority banks
+  (`KNOX_PRIORITY_REREAD_IDS`). The 3-fee bar stays.
+- **Watch.** The real lever is finding each bank's fee schedule. Two known schedules were never read:
+  Resound CU (document 16143) and Enbright CU (PDF document 10293). Two links are wrong:
+  - Tsu FCU (5080) points at a Tennessee State University tuition page.
+  - SouthEast Bank (371) also holds copies of a Bangladesh bank's schedule.
