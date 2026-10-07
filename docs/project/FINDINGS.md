@@ -13,6 +13,56 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
+**What happened:** First National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)
+$10.00", a report requester's headline overdraft fee, was verified by Darwin as
+`od_protection_transfer`, published, then rolled back as `rules_recheck_unreproduced`. On prod,
+140 fees at 128 banks were taken down the same way.
+**Cause:** the re-check filed Knox's reads under Knox's hint (overdraft); Darwin's category guard
+fails that name under overdraft, so the read was dropped and the live fee looked unreproduced.
+Darwin itself files it under `refileCategory`.
+**Fix:** the re-check files reads with `refileCategory`, and strategy version 3 re-checks every
+document once, which restores what still traces to its text.
+**Lesson:** any check that re-reads a fee must file it the way Darwin files it, through the one
+shared `refileCategory`.
+
+## 2026-10-07: Darwin's paid pass never ran because other agents used its per-run call cap
+**What happened:** at 01:20 UTC there were no `verify.adjudicate` or `verify.release_review`
+attempts on prod at all, and no `verify-paid` step had run in 7 days. Every one ended "Paid pass
+skipped: Provider call cap exhausted for run N under agent:darwin" before Darwin made a call
+(runs 1843, 1849, 1850, 1853 had 29, 24, 25 and 22 calls, all from Knox, Magellan and Rosetta).
+**Cause:** `assertRunCaps` compared each agent policy's `max_provider_calls_per_run` (Darwin 10)
+with the whole run's `agent_runs.actual_provider_calls`. A state run holds several agents' paid
+steps, so the earlier agents spent Darwin's cap for it.
+**Fix:** an agent policy's per-run caps count only that agent's completed calls in the run
+(`ai_api_usage_events` by `agent_run_id` and `agent_name`). Daily, monthly and global caps are
+unchanged and still bind.
+**Lesson:** a per-agent cap reads per-agent usage; a run-wide counter is only right for run-wide caps.
+
+## 2026-10-07: Darwin held current-copy fees as duplicates of older copies at the same URL
+**What happened:** at about 01:05 UTC, Hamilton's read-only counts found 1,108 live fees whose
+Knox row on the bank's current page copy was held as `duplicate_in_batch` with no verified row on
+that document. On prod, 1,919 current-copy rows at 199 banks were held that way.
+**Cause:** Darwin's in-batch duplicate key used the source URL, not the stored document. When an
+older and a newer copy of one page were in the same batch, only the older copy's fee was verified;
+the current copy's fee was held as its duplicate and never selected again.
+**Fix:** the key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2), and those rows are
+selected once more when nothing on their own document is verified as the same fee. Dry run at
+01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
+live fee by name and amount. Nothing live comes down.
+**Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
+## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
+**What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
+failed at 01:28 UTC with "operator does not exist: bigint = text", although
+`20260815083600_hamilton_pro_base_tables.sql` creates `user_id integer`.
+**Cause:** not yet known; the column was most likely created as text before that migration ran,
+and `CREATE TABLE IF NOT EXISTS` left it as it was.
+**Fix:** the Pro watchlist alerts and Monday digest (this PR) join on `u.id::text = w.user_id::text`.
+Changing the column type is left alone until someone checks its values.
+**Lesson:** a migration's `CREATE TABLE IF NOT EXISTS` is not proof of prod's column types; join
+`hamilton_watchlists.user_id` through text, or check `information_schema.columns` first.
+
 ## 2026-10-07: The source check took down real fees whose price carried a note
 **What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
 UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned
@@ -1585,6 +1635,47 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
 
+## 2026-10-07: A bot check or script shell became a page's current copy and hid its readable text
+**What happened:** 87 live fees sat on 5 pages whose current copy had no usable text, so Knox and
+the source check had nothing to read. None was a scan. Three newer copies were a bot check ("Please
+wait while your request is being verified", tvfcu.com, bankofbotetourt.com) or a bare title
+(koolaufcu.org); two were 188- and 233-byte script shells (tcu37.com, yourgcu.org). Each page's
+older copy had a full completed text (3,125 to 40,272 characters) carrying those fees.
+**Cause:** `markCurrentCopy` made every successful fetch the page's current copy, so a fetch the
+site blocked or answered with an empty shell superseded the readable copy, and an unchanged
+re-fetch of the same block page would have done it again.
+**Fix:** same PR. A copy whose text Rosetta read as not a fee page and under 300 characters is a
+thin copy; `markCurrentCopy` hands the place to the page's latest readable copy instead, and
+Rosetta's read step runs `restoreReadableCopies` each pass (`thin_copies_set_aside` in its step
+detail). Read-only dry run: 6 pages qualify (these 5 plus one with no live fees).
+**Lesson:** "newest" is not "current" unless the newer copy is at least readable.
+
+## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
+**What happened:** some PDF schedules are stored as a single line holding every row
+("Stop Payment………………. $35.00 Dormant Account Fee……. $7.00/Month ..."). The shared check
+(`source-check.ts`) splits long lines into sentences after every period, and the last period of
+each dot leader counted as one. So each fee's name ended one piece and its price began the next.
+Knox read West Shore Bank's stop payment, cashier's check, dormant, overdraft and late charge
+correctly, then held every one as untraced. The bank stayed hidden behind the 3-fee rule.
+**Fix:** the shared check no longer splits inside a leader (Knox's own splitter already worked
+this way since v22). Knox v25 also files a box size in inches as a safe deposit box.
+**Also found:** of the 108 hidden banks under $10B, 61 have no fee schedule stored at all
+(checking, rate or Truth-in-Savings pages), so they went to Magellan. 49 have 128 Knox rows that
+Darwin hasn't judged yet.
+**Lesson:** Knox and the shared check must split text the same way. When one learns a layout,
+change the other in the same PR.
+
+**Same day, newer page copies:** 898 live fees on older page copies had no matching Knox row on the
+page's current copy, though the current text still carried the amount. The causes:
+- about 370 were read on the current copy under another category;
+- about 110 were held there;
+- 211 were read on a second document holding the identical text;
+- the remaining ~200 sat on current copies last read at rules v1 to v7.
+
+Nothing re-read a current copy, because the re-read triggers only reach thin texts, flagged texts
+and $10B+ banks. Knox now reads a current copy again once per rules version while an older copy
+still carries live fees.
+
 ## 2026-10-07: 14,133 live fees still pointed at a superseded copy of their page
 **What happened:** when Magellan fetches a newer copy of a fee page, Knox reads it and Darwin
 verifies its rows. A line whose amount did not change is skipped by Hamilton's publish rules as
@@ -1635,6 +1726,20 @@ provider call.
 **Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
 sits in states it has not reached.
 
+## 2026-10-07: Two-column schedules hid wire and stop payment fees behind footnote text
+**What happened:** First National Bank Alaska, a report requester, had 7 of 15 headline fees live and
+needed 9. Its schedule is stored as two columns flattened row by row, so the right column's
+footnotes sit beside the left column's headings ("Wire Transfer Fees | being returned NSF."). Knox
+read those lines as rows, not headings, so "Domestic Outgoing | $35.00" and "International
+Outgoing | $50.00" had nothing to name them, and the stop payment rows were held. One line
+priced both NSF and overdraft ("NSFs/Overdrafts | $33.00") and was filed as NSF only. A balance
+requirement was held as an unclassified fee, and a savings transfer was filed as an overdraft fee.
+**Fix:** Knox v27 sets the heading from a priceless two-cell line whose right cell is prose, files a
+joined NSF/overdraft price under both, never holds a balance requirement, and reads an
+"Insufficient Funds Transfer" as an overdraft protection transfer.
+**Lesson:** a flattened second column can sit on any line, including a heading's. The heading
+test has to look at the left cell on its own.
+
 ## 2026-10-07: one page stored under two spellings kept two current copies
 **What happened:** Magellan marks a page's older copies as history only when the address matches
 exactly. "https://www.wailukufcu.com:443/about/rates-and-fees" and ".../about/rates-and-fees/" are
@@ -1660,3 +1765,63 @@ comparison without its right-hand side. The fixed query was run read-only on pro
 12 rows.
 **Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
 merging.
+
+## 2026-10-07: Rosetta's free readers looked worse than they were, and reopened pages were never read
+**What happened:** a red-team check found free OCR succeeding on 30 of 146 documents, the
+JavaScript fallback on 104 of 229 pages, and 95 of the pages PR 253 reopened banned again.
+**Causes:**
+- OCR: 96 of the 146 were text-layer PDFs the text-survival ladder (PR 257) sent to OCR.
+  OCR reads only page images, so they had none or only a logo; it replaced none of their
+  texts. On real scans it read 22 of 50.
+- JavaScript fallback: 79 of the 229 were pages with plenty of their own text that just
+  isn't a fee schedule (home pages and "not found" pages at guessed `/fees` links). The
+  fallback found nothing on all 79 and logged `js_required`, as if they were script pages.
+  On real script pages it read 67 of 113.
+- Reopen: the read step reads only a bank's newest document. 380 of the 464 reopened pages
+  had a newer document at the same bank, so they were never re-read; 190 of them are
+  still the current copy of their page. The 95 re-banned pages were read again and still
+  failed (49 wrong page, 4 script-only). Reopening stopped at 16:07 Oct 6 because every
+  eligible page had been reopened once.
+**Fix:** same PR. A text-layer PDF whose text lost fees goes straight to the paid pass (no
+OCR rung). The fallback logs `wrong_document` for a page with its own text. A reopened page
+that is the current copy of its page gets its one read even when the bank has a newer
+document, and only current copies are reopened.
+**Lesson:** a success rate is only meaningful over inputs the reader could ever handle.
+Check which inputs a ladder or reopen sends before reading its score.
+## 2026-10-07: Fed districts were assigned by state, and Arizona was in the wrong one
+**What happened:** every institution in a state carried one Fed district, set long ago from a state
+table that put Arizona in District 11 (Dallas) instead of 12 (San Francisco) and West Virginia in 4
+instead of mostly 5. Split states (Missouri, Tennessee, Kentucky, Pennsylvania and others) were all
+assigned to a single district. FDIC sends each bank's real district (its FED field, set by the head
+office's county) on every universe refresh, but the update kept the stored value
+(`COALESCE(s.fed_district, r.fed_district)`), so FDIC's value never landed. NCUA has no district
+field, so credit unions were never corrected either.
+**Fix:** the FDIC universe step now takes FDIC's district, then gives credit unions and closed banks
+the district most active banks in their city have (else their state's). A parser version bump makes it
+run on the next registry tick (`registry/fdic-universe.ts`).
+**Lesson:** `COALESCE(stored, fresh)` freezes the first value forever; refreshed regulator fields go
+`COALESCE(fresh, stored)`.
+
+## 2026-10-07: Knox's learning reader never loaded a lesson after PR 300
+**What happened:** PR 300 added per-bank lessons to the lessons query in `knox/lessons.ts` and
+left an extra ")" after the `tally` step. Postgres rejected the query on every extract run.
+`loadKnoxLessons` caught the error inside its savepoint and returned no lessons, so Knox re-filed
+nothing (the audit red team counted 0 lesson refiles in 110 extract runs). Darwin kept rejecting the
+same names under the same wrong categories ("Statement Copy" as a paper statement, "Overdraft
+Transfer" as an overdraft).
+**Fix:** the paren is gone. The same query, run read-only on prod, returns 79 global lessons and
+567 per-bank lessons. A test now checks that the query's parentheses balance.
+**Lesson:** a reader that swallows its own errors needs a test of the SQL it sends, because a
+silent empty result looks the same as "nothing to learn".
+
+## 2026-10-07: Knox's calibration counted every takedown as a misread
+**What happened:** Knox's shadow calibration (`knox/calibration.ts`) scores each strategy and
+category by how many of its recent published fees are still live. It counted every rollback as a
+misread, including rules re-checks (4,467 in 14 days), newer copies (915), duplicates (174) and
+takedowns Hamilton later restored. Overall survival read 85.6%, and the learning signal mixed
+Knox's mistakes with changes elsewhere in the pipeline.
+**Fix:** calibration v2 counts a takedown against a read only when it says Knox misread the fee
+(`source_check_untraceable`, `amount_outside_category_range`, `category_guard`) and was not later
+restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
+balance (62%) are still the weakest reads.
+**Lesson:** a learning signal has to say whose mistake it records.

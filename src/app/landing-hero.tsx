@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId, useState, type KeyboardEvent } from "react";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
@@ -14,6 +14,8 @@ const REPORT_REQUEST_HREF = "#for-banks";
 
 interface LandingHeroProps {
   institutionsLabel: string;
+  /** Show the "Read the full sample" link: the live sample report exists today. */
+  sampleLive?: boolean;
 }
 
 type PathKey = "lookup" | "explore" | "benchmark";
@@ -41,7 +43,7 @@ const EXPLORE_LINKS = [
  * Looking up a bank is the default panel; bank staff switch to "Benchmark your institution",
  * which leads to the one report offer (explained in full further down the page).
  */
-export function LandingHero({ institutionsLabel }: LandingHeroProps) {
+export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHeroProps) {
   const [active, setActive] = useState<PathKey>("lookup");
   const baseId = useId();
   const tabId = (key: PathKey) => `${baseId}-tab-${key}`;
@@ -168,7 +170,7 @@ export function LandingHero({ institutionsLabel }: LandingHeroProps) {
               >
                 {REPORT_OFFER.ctaLabel}
               </TrackLink>
-              {SAMPLE_REPORT_LIVE && (
+              {sampleLive && (
                 <Link
                   href="/reports/sample-competitive-fee-position"
                   className="text-sm font-semibold text-[#1A1815] underline-offset-4 hover:text-[#A93D25] hover:underline"

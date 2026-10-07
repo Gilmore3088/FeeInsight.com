@@ -280,3 +280,69 @@ describe("Knox v23 layouts", () => {
   });
 });
 
+describe("Knox v25 one-line dot-leader schedules", () => {
+  const text =
+    "Revised May 4, 2022 SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier’s Checks………………………………………..……. $4.00 " +
+    "Stop Payment………………………………………………… $35.00 Over $300 USD…………………………..……. $40.00 Dormant Account Fee……………………………………. $7.00/Month " +
+    "SAFE DEPOSIT BOX FEES 5x10 & 6x10 Inch $60.00 $65.00 OVERDRAFT AND NSF FEES 10.5x10.5 Inch $90.00 100.00 Overdraft (items paid)……………………. $10.00 " +
+    "Late Charge………………………………………………………. $20.00";
+
+  it("keeps fees whose name and price sit on one leader row", () => {
+    expect(fees(text)).toEqual(
+      expect.arrayContaining([
+        ["Stop Payment", 35, "stop_payment"],
+        ["Cashier’s Checks", 4, "cashiers_check"],
+        ["Dormant Account Fee", 7, "dormant_account"],
+        ["Overdraft (items paid)", 10, "overdraft"],
+      ]),
+    );
+  });
+
+  it("reads a box size in inches as a box, not the heading glued before it", () => {
+    expect(fees(text).some(([, amount, key]) => key === "overdraft" && amount === 90)).toBe(false);
+  });
+});
+
+
+describe("Knox v27 two-column headings and joined NSF/overdraft rows", () => {
+  // First National Bank Alaska, personal fee schedule (doc 19925): the right column's
+  // footnotes run beside the left column's headings.
+  const text = [
+    "Other Account Fees | • Mobile banking at no additional cost",
+    "Stop Payments | ledger balance for the monthly statement cycle required to waive the",
+    "Online per check | $25.00 | Monthly Service Fee. Other account fees or restrictions may apply.",
+    "Non-sufficient funds item (NSFs/Overdrafts)9 | $33.00 per item | 3. Automatic Transfer Agreement enrollment required.",
+    "Insufficient Funds Transfer (Savings Overdraft | $10.00 per transfer | met. Other account fees or restrictions may apply.",
+    "Money Orders | $5.00 per item | Multiple fees will not be assessed for any item identified as previously",
+    "Wire Transfer Fees | being returned NSF.",
+    "Domestic Outgoing | $35.00 per wire | 10. Account type no longer offered.",
+    "International Outgoing | $50.00 per wire | 11. Service assisted refers to transactions processed with bank staff.",
+  ].join("\n");
+
+  it("reads rows under a heading that shares its line with the next column's prose", () => {
+    const read = fees(text);
+    expect(read).toContainEqual(["Wire Transfer Fees: Domestic Outgoing", 35, "wire_domestic_outgoing"]);
+    expect(read).toContainEqual(["Wire Transfer Fees: International Outgoing", 50, "wire_intl_outgoing"]);
+    expect(read).toContainEqual(["Stop Payments: Online per check", 25, "stop_payment"]);
+  });
+
+  it("files one price that names both NSF and overdraft under both", () => {
+    const read = fees(text);
+    expect(read).toContainEqual(["Non-sufficient funds item (NSFs/Overdrafts)", 33, "nsf"]);
+    expect(read).toContainEqual(["Non-sufficient funds item (NSFs/Overdrafts)", 33, "overdraft"]);
+    // A transfer from savings that covers an overdraft is not an overdraft fee.
+    expect(read).toContainEqual(["Insufficient Funds Transfer (Savings Overdraft", 10, "od_protection_transfer"]);
+    expect(read.some(([, amount, key]) => key === "overdraft" && amount === 10)).toBe(false);
+  });
+
+  it("does not hold a balance an account requires as a fee", () => {
+    const result = runFreeSpecialists("Checking\nMinimum Daily Balance Requirement1 | $1,500 | Monthly Service Fee | $7.00");
+    expect(result.held.some((row) => row.amount === 1500)).toBe(false);
+    expect(result.candidates.map((fee) => [fee.canonicalHint, fee.amount])).toEqual([["monthly_maintenance", 7]]);
+  });
+
+  it("lends a stop payment heading only to the item it stops", () => {
+    expect(composableTail("Online per check")).toBe(false);
+    expect(fees("Loan Modification\nForeign check fee | $25.00")).not.toContainEqual(expect.arrayContaining(["mortgage_modification"]));
+  });
+});

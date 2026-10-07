@@ -17,6 +17,10 @@
       "schedule": "23 13 * * *"
     },
     {
+      "path": "/api/admin/crew/pro-digest",
+      "schedule": "11 13 * * 1"
+    },
+    {
       "path": "/api/admin/crew/lead-watch",
       "schedule": "41 * * * *"
     },

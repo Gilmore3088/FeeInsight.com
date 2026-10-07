@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
+import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
@@ -43,6 +44,7 @@ const CLAIM_RETRY_HOURS = 6;
  */
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
+  [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
 };
 
 export function isParserStale(source: string, status: string | null, parserVersion: number | null): boolean {

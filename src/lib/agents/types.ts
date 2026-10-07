@@ -116,6 +116,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "marketing-score",
   "marketing-send",
   "marketing-states",
+  "pro-digest",
   "score-answer-key",
   "scoreboard-snapshot",
 ];
