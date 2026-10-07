@@ -23,6 +23,7 @@ import {
   scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
+import { loadReviewMisses } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
@@ -390,7 +391,18 @@ export async function runDarwinReleaseReview(
       candidate.sourceContext = scheduleContext(texts.get(Number(candidate.row.source_document_id)), candidate.sourceLine);
     }
   }
-  const lessons = await loadReviewLessons(db, candidates.map(({ row }) => row.held_canonical_fee_key));
+  const heldKeys = candidates.map(({ row }) => row.held_canonical_fee_key);
+  // The pipeline's own outcomes, then this review's misses against the answer keys (verdict-score.ts).
+  const lessons = [
+    ...(await loadReviewLessons(db, heldKeys)),
+    ...(await loadReviewMisses(db, "verify.release_review", heldKeys)).map((miss) => ({
+      filedAs: miss.filedAs ?? "",
+      feeName: miss.feeName,
+      amount: miss.amount,
+      scheduleLine: miss.keyLine,
+      found: `wrong: this review said ${miss.said}; the hand-keyed schedule says ${miss.keySays.join(" or ") || "no fee at this amount"}`,
+    })),
+  ];
   result.lessons = lessons.length;
   for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
     const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
