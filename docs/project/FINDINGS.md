@@ -110,6 +110,21 @@ selected once more when nothing on their own document is verified as the same fe
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
 
+## 2026-10-07: Ticks sat idle up to half the time because no step started after 150 s
+**What happened:** at 04:00 UTC Oct 7, 43 lane runs were queued and about 6 finished an hour.
+The tick audit rows (`api_route_audit_events`, 02:55 to 04:05) show ticks lasting 150 to 294
+seconds out of each 300. Steps ran about 170 seconds per tick. A full lane pass is about 4
+minutes of steps but took 10 to 15 minutes, because it spread over three ticks.
+**Cause:** the tick started no new step 150 seconds after it began, however short the step.
+A 6-second publish step waited for the next tick just like a 190-second paid search.
+**Fix:** a step starts only when its expected runtime (p99 over 3 days, `STEP_EXPECTED_MS`
+in run-store) fits before 270 seconds. Short steps use the end of a tick, and long ones
+still start early enough to finish inside the 300-second limit. Runs stay serial, so the
+database load per moment is unchanged. A state whose last finished lane run failed now
+retries ahead of routine passes.
+**Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
+tick latency in `api_route_audit_events` before guessing where the time goes.
+
 ## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
 **What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
 MN was queued at 00:40 and started at 02:21. NE, queued at 00:40, had not started at 02:35.

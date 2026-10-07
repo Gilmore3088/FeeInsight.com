@@ -28,11 +28,13 @@ const DEFAULT_MAX_STEPS_PER_RUN = 10;
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
- * No new step starts this long after the tick began. Ticks fire every 5 minutes and a
- * killed tick leaves its query running on the database, so a tick must end well inside
- * its interval; this leaves a slow last step about two minutes to finish.
+ * Started steps should finish this long after the tick began: a step starts only when its
+ * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 5 minutes and a
+ * killed tick leaves its query running on the database, so a tick must end inside its
+ * interval and maxDuration. Until 2026-10-07 no step started after 150 s, which left
+ * ticks idle for 10 to 150 s and lane passes spread over three ticks.
  */
-const STEP_START_BUDGET_MS = 150_000;
+const STEP_FINISH_BUDGET_MS = 270_000;
 
 async function isAuthorized(request: NextRequest): Promise<boolean> {
   if (matchesConfiguredCronSecret(request.headers.get("authorization"))) return true;
@@ -144,7 +146,7 @@ async function handleGET(request: NextRequest) {
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
     providerRunLimit,
-    deadlineAt: tickStartedAt + STEP_START_BUDGET_MS,
+    deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
   });
   return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
 }

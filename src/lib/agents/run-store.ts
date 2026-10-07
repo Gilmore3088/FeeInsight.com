@@ -2067,12 +2067,48 @@ async function providerStepGate(
   return { allowed: true };
 }
 
+/**
+ * About the longest each step runs (p99 over 3 days on prod, 2026-10-07, rounded up). A
+ * step starts only when it can finish by the caller's deadline, so a short step can use
+ * the end of a tick that a long one could not.
+ */
+const STEP_EXPECTED_MS: Record<string, number> = {
+  "discover-paid": 200_000,
+  "registry-cfpb": 180_000,
+  "read-paid": 165_000,
+  read: 110_000,
+  discover: 110_000,
+  "report-render": 110_000,
+  rescue: 110_000,
+  "extract-paid": 80_000,
+  "verify-paid": 80_000,
+  fetch: 60_000,
+  extract: 40_000,
+  publish: 30_000,
+  classify: 25_000,
+};
+/** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
+const DEFAULT_STEP_EXPECTED_MS = 120_000;
+/** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
+const QUICK_STEP_EXPECTED_MS = 30_000;
+const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+
+export function expectedStepMs(stepKey: string | null): number {
+  if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
+  if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
+  if (QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix))) return QUICK_STEP_EXPECTED_MS;
+  return DEFAULT_STEP_EXPECTED_MS;
+}
+
 export async function executeAgentRun(
   runId: number,
   options: {
     maxSteps?: number;
     allowProviderSteps?: boolean;
+    /** Epoch ms by which a started step should finish; see STEP_EXPECTED_MS. */
     deadlineAt?: number;
+    /** False for later runs in a tick: then even the first step waits for the deadline. */
+    alwaysRunFirstStep?: boolean;
     /** Leave a paid step queued for a later tick instead of running or skipping it. */
     deferProviderSteps?: boolean;
   } = {},
@@ -2130,12 +2166,14 @@ export async function executeAgentRun(
   let lastResult: AgentRunExecutionResult | null = null;
 
   for (let index = 0; index < maxSteps; index += 1) {
-    // Past the caller's deadline no further step starts; the run stays queued for the
-    // next tick. The first step always runs so a late tick still makes progress.
-    if (index > 0 && options.deadlineAt != null && Date.now() >= options.deadlineAt) break;
+    // A step that could not finish by the caller's deadline waits for the next tick; the
+    // run stays queued. The tick's first step always runs so a late tick still progresses.
+    const nextStepKey = await peekNextQueuedStepKey(runId);
+    const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
+    if (!firstOfTick && options.deadlineAt != null
+      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) break;
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
-    const nextStepKey = await peekNextQueuedStepKey(runId);
     if (nextStepKey && isProviderStep(nextStepKey)) {
       if (options.deferProviderSteps) {
         return {
@@ -2243,7 +2281,7 @@ export async function executeQueuedAgentRuns({
    * their next paid step queued. Null means every run may.
    */
   providerRunLimit?: number | null;
-  /** Epoch ms after which no new step or run starts (the first run still gets its first step). */
+  /** Epoch ms by which started steps should finish (the first run still gets its first step). */
   deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
@@ -2273,14 +2311,23 @@ export async function executeQueuedAgentRuns({
          )
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
-     -- run already under way finishes before a new one starts, then any run waiting over
-     -- an hour, then state lanes by Atlas's priority score (open work, report requests,
-     -- near-ready markets), then launch order.
+     -- run already under way finishes before a new one starts, then a retry of a failed
+     -- state lane, then any run waiting over an hour, then state lanes by Atlas's priority
+     -- score (open work, report requests, near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
               ) DESC,
+              -- A state whose last finished lane run failed retries ahead of routine passes.
+              (r.run_kind = 'workflow_lane' AND (
+                SELECT prior.status FROM agent_runs prior
+                 WHERE prior.run_kind = 'workflow_lane'
+                   AND upper(btrim(prior.state_code)) = upper(btrim(r.state_code))
+                   AND prior.id < r.id
+                   AND prior.status IN ('completed', 'failed')
+                 ORDER BY prior.id DESC LIMIT 1
+              ) = 'failed') DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC
@@ -2293,9 +2340,9 @@ export async function executeQueuedAgentRuns({
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
   for (const row of rows) {
-    // The first run always gets a step; later runs start only before the deadline, so
-    // a larger run limit fills the tick's time budget without running past it.
-    if (results.length > 0 && deadlineAt != null && Date.now() >= deadlineAt) break;
+    // The first run always gets a step; a later run starts a step only when that step can
+    // finish by the deadline, so a larger run limit fills the tick without running past it.
+    if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -2314,6 +2361,7 @@ export async function executeQueuedAgentRuns({
         maxSteps: maxStepsPerRun,
         allowProviderSteps,
         deadlineAt,
+        alwaysRunFirstStep: results.length === 0,
         deferProviderSteps: allowProviderSteps && !providerSlot,
       }),
     );
