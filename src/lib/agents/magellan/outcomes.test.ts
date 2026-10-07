@@ -83,6 +83,15 @@ describe("Magellan outcome ledger", () => {
     expect(linkYieldSlot(new Date("2026-10-06T23:59:00Z"))).toBe(23);
   });
 
+  it("judges a business-only main link as wrong even when it produced live fees", () => {
+    const business = link({ url: "https://www.launchcu.com/wpcms/wp-content/uploads/Business-Account-Fee-Schedule.pdf", live_fees: 26 });
+    expect(judgeLink(business, NOW)).toEqual({ label: "business", signal: "wrong", kind: "business_schedule", weight: 1 });
+    // The same page kept beside a consumer link is a business companion, judged by its fees.
+    expect(judgeLink({ ...business, role: "business" }, NOW)).toMatchObject({ label: "good" });
+    // A consumer schedule whose address also names business is not business-only.
+    expect(judgeLink(link({ url: "https://bank.com/personal-and-business-fee-schedule.pdf", live_fees: 26 }), NOW)).toMatchObject({ label: "good" });
+  });
+
   it("judges a state's whole bank list, and one hourly slot only without a state", () => {
     expect(stepSlot("TX", new Date("2026-10-06T07:10:00Z"))).toBeNull();
     expect(stepSlot(" ", new Date("2026-10-06T07:10:00Z"))).toBe(7);

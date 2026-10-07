@@ -81,6 +81,12 @@ export const UPGRADE_SEARCH_VERSION = 2;
  */
 export const BUSINESS_SEARCH_VERSION = 1;
 /**
+ * Discovery slots kept for business-only links even when banks without a link fill the
+ * step. A business link publishes business prices as the bank's consumer fees, which is
+ * worse than no link, and spare capacity alone reached 41 of 187 such banks (7 Oct 2026).
+ */
+export const BUSINESS_RESERVED_SLOTS = 3;
+/**
  * Banks whose fee link looks out of date get one search for a newer schedule per version
  * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
  * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
@@ -1399,10 +1405,14 @@ export async function runMagellanDiscovery(
   const dryRun = Boolean(options.dryRun);
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
-  const missing = await selectCandidates(db, limit, options.stateCode, learning);
-  // Spare capacity searches banks whose link is a product page, then banks whose link
-  // looks out of date (both need the attempt log).
-  const business = learning ? await selectBusinessCandidates(db, limit - missing.length, options.stateCode) : [];
+  const found = await selectCandidates(db, limit, options.stateCode, learning);
+  // Business-only links get a few reserved slots, then spare capacity; spare capacity
+  // then searches banks whose link is a product page, then banks whose link looks out of
+  // date (all need the attempt log).
+  const business = learning
+    ? await selectBusinessCandidates(db, Math.max(limit - found.length, Math.min(BUSINESS_RESERVED_SLOTS, limit)), options.stateCode)
+    : [];
+  const missing = found.slice(0, Math.max(0, limit - business.length));
   const upgrades = learning ? await selectUpgradeCandidates(db, limit - missing.length - business.length, options.stateCode) : [];
   const stale = learning
     ? await selectStaleCandidates(db, limit - missing.length - business.length - upgrades.length, options.stateCode)

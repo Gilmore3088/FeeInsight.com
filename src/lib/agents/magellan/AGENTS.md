@@ -103,7 +103,9 @@ and `detail.method_version`).
 - Business-only search (`BUSINESS_SEARCH_VERSION`): before the upgrade searches, banks
   whose link is a business-only schedule are searched once per version for the consumer
   schedule (`detail.business_search`). A find replaces the link and keeps the old one as a
-  `business` companion; a miss leaves the link alone.
+  `business` companion; a miss leaves the link alone, and the paid schedule search then
+  takes the bank. Each step keeps `BUSINESS_RESERVED_SLOTS` (3) for these banks even when
+  banks without a link fill it.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -205,6 +207,7 @@ bank's main fee link or a companion page; all fetches of the same address count 
 | dead | last fetch 404/410, or Rosetta's last read was a 404 | wrong, `dead_link`, 1 |
 | rejected | Rosetta's last read ruled it the wrong document | wrong, `wrong_document`, 1 |
 | thin | Knox extracted it over 24 hours ago, fewer than 3 live fees | wrong, `thin_link`, 1 |
+| business | the bank's main link is a business-only schedule (`isBusinessOnlyLink`), whatever it produced | wrong, `business_schedule`, 1 |
 
 Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
 is the Magellan specialist whose attempt found the address (null for links the old

@@ -2,6 +2,8 @@ import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
+import { isBusinessOnlyLink } from "./link-coverage";
+
 type SqlTag = typeof sql;
 
 /**
@@ -19,7 +21,7 @@ export const LINK_THIN_AFTER_HOURS = 24;
 /** Banks are judged in 24 slots by id, one slot per UTC hour, so each is judged daily. */
 export const LINK_YIELD_SLOTS = 24;
 
-export type LinkLabel = "good" | "thin" | "rejected" | "dead";
+export type LinkLabel = "good" | "thin" | "rejected" | "dead" | "business";
 
 export interface LinkOutcomeRow {
   institution_id: number | string;
@@ -45,7 +47,7 @@ export interface LinkOutcomeRow {
 export interface LinkJudgement {
   label: LinkLabel;
   signal: "right" | "wrong";
-  kind: "produced_live_fees" | "thin_link" | "wrong_document" | "dead_link";
+  kind: "produced_live_fees" | "thin_link" | "wrong_document" | "dead_link" | "business_schedule";
   weight: number;
 }
 
@@ -63,12 +65,17 @@ export interface LinkOutcomeResult {
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
 
 /**
- * Labels one link. Live fees decide first: a link with enough live fees is good however
- * it was fetched. Then a dead address, then a page Rosetta ruled out, then a page Knox
+ * Labels one link. A bank's main link that is a business-only schedule is wrong whatever
+ * it produced: its prices are published as the bank's consumer fees (Launch CU, Community
+ * CU of Florida, Oct 2026), so finders must learn not to pick such pages as the main link.
+ * Then live fees decide: a link with enough live fees is good however it was fetched. Then a dead address, then a page Rosetta ruled out, then a page Knox
  * read a day ago that still has too few live fees. Anything else (not read yet, read but
  * not extracted, a bot wall) is not judged yet.
  */
 export function judgeLink(row: LinkOutcomeRow, now = new Date()): LinkJudgement | null {
+  if (row.role === "main" && isBusinessOnlyLink(row.url)) {
+    return { label: "business", signal: "wrong", kind: "business_schedule", weight: 1 };
+  }
   const live = num(row.live_fees) ?? 0;
   if (live >= LINK_GOOD_MIN_LIVE) {
     return { label: "good", signal: "right", kind: "produced_live_fees", weight: live };
@@ -155,7 +162,7 @@ export async function recordLinkOutcomes(
     ready: false,
     slot,
     links: 0,
-    judged: { good: 0, thin: 0, rejected: 0, dead: 0 },
+    judged: { good: 0, thin: 0, rejected: 0, dead: 0, business: 0 },
     undecided: 0,
     unchanged: 0,
     written: 0,

@@ -1895,3 +1895,20 @@ hourly slot. The platform learner now counts judged `consumer_supplement` compan
 **Lesson:** a rotation meant to spread load has to be checked against how often its caller runs. Hand
 fixes only help the next bank when they flow into what the finders learn from.
 
+## 2026-10-07: business fee schedules stayed banks' consumer links, and their prices went live as consumer fees
+**What happened:** Hamilton's audit found Launch CU ($15 NSF) and Community CU of Florida ($30) showing
+prices from their business fee schedules. Both main links are business-only PDFs the old crawler chose
+(no Magellan attempt on either). Magellan's business search, which looks for the consumer schedule, only
+ran in spare discovery capacity, so in states with many banks lacking a link it never ran: 41 of 187
+business-link banks had been searched, 2 replaced. The paid schedule search took business links only
+for $10B+ banks and report requesters. The outcome ledger judged a business link by its live fees, so a
+business schedule with many fees counted as a good link and taught the finders its path.
+On prod (read-only, 7 Oct), 1,028 live fees at 91 banks are read from business-only documents; 61 of
+those fees have a live consumer fee in the same category at the same bank.
+**Fix (Magellan):** three discovery slots per step are kept for business-only links; the paid schedule
+search takes any business-link bank once the free search missed (36 banks today); the ledger judges a
+business-only main link as wrong (`business_schedule`, -2 for its path), so the finders learn not to pick
+such pages. The live business-schedule fees are Hamilton's to archive through its second look (never
+deleted); the dry-run counts above went to the Hamilton publish thread.
+**Lesson:** a link that produces many fees is not a good link if they are the wrong customer's fees.
+
