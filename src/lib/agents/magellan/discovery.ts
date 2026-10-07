@@ -31,7 +31,7 @@ import {
 import { LINK_YIELD_SLOTS, linkYieldSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "./link-coverage";
+import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
@@ -71,7 +71,8 @@ const BLOCKED_HOMEPAGE_FINDERS = new Set<FinderKey>(["knownLink", "sitemap"]);
  * schedule per version (`detail.upgrade_search`), in spare discovery capacity. Bump it
  * to search those banks again after a finder change.
  */
-export const UPGRADE_SEARCH_VERSION = 1;
+// v2 (Oct 7): the finders learned big-bank names ("Schedule of Charges", "Consumer Fees").
+export const UPGRADE_SEARCH_VERSION = 2;
 /**
  * Banks whose fee link is a business-only schedule (link-coverage.ts) get one search for the
  * consumer schedule per version (`detail.business_search`), before the product-page
@@ -91,10 +92,6 @@ export const STALE_AFTER_YEARS = 3;
 const EFFECTIVE_YEAR_SQL = "(?i)effective(?:\\s+date)?[:\\s]+(?:[a-z]+\\.?\\s+\\d{1,2},?\\s+|\\d{1,2}/\\d{1,2}/)(20\\d{2})";
 /** A year in the link's address ("/2022-fee-schedule.pdf", "/uploads/2021/05/"). */
 const URL_YEAR_SQL = "(?:^|[^0-9])(20[0-2][0-9])(?:[^0-9]|$)";
-/** Same address test as `looksLikeProductPage` (find-validate.ts), for SQL. */
-const PRODUCT_LINK_SQL =
-  "^https?://[^/]+/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)";
-const FEE_NAMED_LINK_SQL = "(fee|schedule|charge|disclos|truth|pricing|\\.pdf($|\\?))";
 /** One bank never takes longer than this. */
 const INSTITUTION_BUDGET_MS = 45_000;
 // The tick starts no step after 180 s of its 300 s limit, so a step must end within ~110 s:
