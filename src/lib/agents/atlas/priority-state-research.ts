@@ -105,6 +105,7 @@ export interface SchedulePriorityStateResearchResult {
 
 /**
  * One run per requested state at a time, and none while the state's own lane is running
+ * (a queued lane does not count)
  * (the lane's discovery would search the same banks). Called once per tick.
  */
 export async function schedulePriorityStateResearchRuns(
@@ -125,9 +126,14 @@ export async function schedulePriorityStateResearchRuns(
       const [{ busy }] = await db<Array<{ busy: number | string }>>`
         SELECT COUNT(*)::int AS busy
           FROM agent_runs
-         WHERE status IN ('queued', 'running', 'cancel_requested')
-           AND upper(btrim(state_code)) = ${stateCode}
-           AND (params_json->>'source' = ${PRIORITY_STATE_RESEARCH_SOURCE}::text OR run_kind = 'workflow_lane')
+         WHERE upper(btrim(state_code)) = ${stateCode}
+           AND (
+             (params_json->>'source' = ${PRIORITY_STATE_RESEARCH_SOURCE}::text
+               AND status IN ('queued', 'running', 'cancel_requested'))
+             -- Only a lane actually running: TN's lane sat queued from 00:55 to past 08:00 on
+             -- 7 Oct, and waiting on a queued lane is exactly the wait this path skips.
+             OR (run_kind = 'workflow_lane' AND status IN ('running', 'cancel_requested'))
+           )
       `;
       if (Number(busy) > 0) {
         result.states.push({ stateCode, status: "in_flight" });

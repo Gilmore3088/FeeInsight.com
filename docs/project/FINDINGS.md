@@ -31,6 +31,23 @@ partition as empty with `no_key: true` and a plain reason, checks again daily, a
 completes instead of failing. Other non-data replies still fail.
 **Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
 
+## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
+**What happened:** James asked Hamilton "who are my local competitors and locations" at 07:36 UTC.
+The written answer (`api.research.hamilton`, `ai_api_usage_events` id 2928) read 127,096 input
+tokens and took 47 seconds, and the page looked like it had reset. Over the 30 days before, the 10
+written answers averaged 63k input tokens (median 47k) and 34 seconds.
+**Cause:** an answer runs up to 4 model steps, and each step re-sends the system prompt (about 15k
+characters), the tool definitions (about 9k) and every earlier tool result in full. A tool result
+had no size limit (`getInstitution` returns every fee with its conditions and source link), and
+nothing was cached, so a large result was paid for again on each later step.
+**Fix:** `src/lib/research/tool-output.ts`: tool results over 12,000 characters have their longest
+lists shortened with a note saying so; the system prompt and the newest message are Anthropic cache
+points, and the ledger records cache reads apart from uncached input. Proof after merge is the
+next written answer's row in `ai_api_usage_events`. Competitor questions themselves go to a
+deterministic market answer in the Pro page thread's PR 435.
+**Lesson:** anything handed to the model inside a tool loop is paid for once per step. Give every
+tool result a size limit, and cache what repeats.
+
 ## 2026-10-07: The CPI "bank services" series was physicians' services
 **Owner:** the Data inventory thread.
 **What happened:** the app read BLS series `CUUR0000SEMC01` as "CPI: Checking Account and Other
@@ -2772,6 +2789,12 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 - **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
   (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
   (an LPL disclosure, a car-price site); they are wrong links and are skipped.
+- **First run (08:03).** Citizens, Pinnacle and Flagstar were tried, and none was fetched: at
+  64 output tokens the model stopped while writing the fetch call. Room raised to 1,024
+  (only used tokens bill), version 2. Those tries no longer count toward the weekly wait, and
+  the bank list now reads the plain fetch's last outcome, because a failed paid try rewrote
+  `failure_reason`. Banks whose site keeps timing out (First Horizon, Northern Trust, USAA,
+  Morgan Stanley, Associated) are included too.
 
 ## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
 
@@ -2823,3 +2846,16 @@ catalog reads `account_product_type` from `product_name` and adds the other thre
 Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
+
+## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
+
+- **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
+  `CONNECT tunnel failed, 403`). So the readers for state orders were written against the page
+  formats described in search results, not against fetched pages.
+- **Fix.** `registry-state-enforcement` runs on the live pipeline, which can reach those sites, and
+  records each state's pages read, orders found, matches and three sample rows in the run detail.
+  The first prod run is the check: a state whose reader finds nothing is fixed there and the parser
+  version bumped. Seven states for now (NJ, NY, IL, MD, WA, TX, NC); Pennsylvania's listing page
+  wasn't found.
+- **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
+  Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
