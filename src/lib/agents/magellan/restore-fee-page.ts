@@ -20,7 +20,7 @@ type SqlTag = typeof sql;
  * page found in its place is kept beside it as a companion (unless it is an article or
  * one product's disclosure), and a `discover`/`restore_fee_page` attempt records the
  * swap. Only a link that names the schedule itself counts (`namesFeeSchedulePage`), and a
- * found page that is a PDF or already gives 8 or more live fees is left alone. Once per bank and version: a page that still reads blank is set aside by
+ * found page that is a PDF or gives any live fee is left alone, so no live fee is touched. Once per bank and version: a page that still reads blank is set aside by
  * Rosetta as before and the bank is not restored again at this version.
  */
 export const RESTORE_FEE_PAGE_VERSION = 1;
@@ -33,8 +33,11 @@ const RESTORE_LIMIT = 25;
  */
 const FEE_SCHEDULE_PAGE =
   /(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|fees-?and-?charges|service-?charges|fee-?disclosure|\/(rates-and-|additional-services-and-)?fees(\.html?)?\/?$)/i;
-/** A link already giving this many live fees is kept: it is doing the job. */
-const KEEP_LIVE_FEES = 8;
+/**
+ * A link giving any live fee is kept, so no live fee depends on the swap. A product
+ * disclosure with live fees goes to the upgrade search instead (`discovery.ts`).
+ */
+const KEEP_LIVE_FEES = 1;
 const PDF_LINK_SQL = "\\.pdf($|\\?)";
 const BLANK_READ_REASON_SQL = "(only 0 dollar amounts|built by javascript)";
 
@@ -119,10 +122,10 @@ export async function restoreSwappedFeePages(options: {
   const result: RestoreFeePagesResult = { checked: rows.length, restored: 0, dryRun, samples: [] };
   for (const row of rows) {
     const institutionId = Number(row.institution_id);
-    // A page already giving the bank its fees stays, unless it is one product's disclosure.
+    // A page already giving the bank live fees stays.
     const keep = !namesFeeSchedulePage(row.fee_url)
       ? "set-aside page does not name the fee schedule"
-      : Number(row.current_live_fees) >= KEEP_LIVE_FEES && !isSingleProductDisclosureLink(row.current_url)
+      : Number(row.current_live_fees) >= KEEP_LIVE_FEES
         ? `current link gives ${Number(row.current_live_fees)} live fees`
         : null;
     if (keep) {

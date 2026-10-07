@@ -133,7 +133,7 @@ and `detail.method_version`).
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
-  PDF, fewer than 8 live fees unless it is one product's disclosure), gets the fee page back
+  PDF, no live fee, so no live fee depends on the swap), gets the fee page back
   as its main link, up to 25 per step after the companion search. The weaker page stays as a
   companion `account_page` (not an article or a product disclosure). Each bank is checked
   once per version (`discover`/`restore_fee_page` attempt, `ok` or `unchanged` with the

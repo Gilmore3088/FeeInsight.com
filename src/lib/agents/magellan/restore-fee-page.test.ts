@@ -23,7 +23,7 @@ const rows = [
     current_url: "https://www.fiveriversbank.com/documents/truth-in-savings-12-month-time-deposit-disclosure",
     fee_url: "https://www.fiveriversbank.com/fee-schedule",
     reason: "Page is built by JavaScript and no free route reads it; handed to Magellan's paid finder",
-    current_live_fees: 14,
+    current_live_fees: 0,
   },
   {
     institution_id: 242,

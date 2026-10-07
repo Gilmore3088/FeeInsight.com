@@ -2466,7 +2466,7 @@ set aside that way; 65 of them now link a page that is not fee-named. 20 active 
 certificate or time-deposit disclosure.
 **Fix:** finders reject one product's disclosure (`single_product_disclosure`), such links go to the
 upgrade search, and a bank whose fee-named page was set aside for a blank read gets it back as its main
-link once (the weaker page stays as a companion) so Rosetta's newer readers try it.
+link once when the weaker page gives no live fee (it stays as a companion), so Rosetta's newer readers try it. About 43 banks qualify.
 **Lesson:** a page that reads blank is a reading problem first. Swap it only for a page that is at least
 as clearly the fee schedule.
 
