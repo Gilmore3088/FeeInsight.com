@@ -62,6 +62,14 @@ function SimpleTooltip({ active, payload, label, format }: { active?: boolean; p
   );
 }
 
+/** "2026-06-30" -> "June 30, 2026". */
+function formatQuarterEnd(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? date
+    : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
 export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const byState = useMemo(() => new Map(footprint.byState.map((s) => [s.state, s])), [footprint]);
@@ -75,12 +83,20 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
   };
   const hoveredState = hovered ? byState.get(hovered) : null;
   const trend = footprint.byYear.map((y) => ({ year: String(y.year), branches: y.branches }));
+  const isCu = footprint.source === "ncua";
+  const stateCount = `${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}`;
+  const subtitle = isCu
+    ? `${latest.branches.toLocaleString("en-US")} ${latest.branches === 1 ? "office" : "offices"} in ${stateCount}${footprint.reportDate ? ` (${formatQuarterEnd(footprint.reportDate)})` : ""}`
+    : `${latest.branches.toLocaleString("en-US")} offices in ${stateCount}, ${formatCompactDollars(thousandsToDollars(latest.deposits))} in branch deposits (June ${footprint.latestYear})`;
+  const caption = isCu
+    ? `Source: NCUA credit union branch file${footprint.reportDate ? `, quarter ending ${formatQuarterEnd(footprint.reportDate)}` : ""}. NCUA does not report deposits by office.`
+    : `Source: FDIC Summary of Deposits, ${footprint.byYear[0].year} to ${footprint.latestYear}. Deposits are booked at the branch as of June 30.`;
 
   return (
     <Card
       title="Branch footprint"
-      subtitle={`${latest.branches.toLocaleString("en-US")} offices in ${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}, ${formatCompactDollars(thousandsToDollars(latest.deposits))} in branch deposits (June ${footprint.latestYear})`}
-      caption={`Source: FDIC Summary of Deposits, ${footprint.byYear[0].year} to ${footprint.latestYear}. Deposits are booked at the branch as of June 30.`}
+      subtitle={subtitle}
+      caption={caption}
     >
       <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="relative">
@@ -99,7 +115,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           </svg>
           <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
             {hoveredState
-              ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`
+              ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
               : hovered
                 ? `${STATE_NAMES[hovered] ?? hovered}: no branches`
                 : "Hover a state for its branch count."}
@@ -113,14 +129,16 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           </div>
         </div>
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Largest markets by deposits</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+            {isCu ? "Cities with the most offices" : "Largest markets by deposits"}
+          </p>
           <table className="mt-1 w-full text-left text-[11px] tabular-nums">
             <tbody className="text-[#1A1815]">
               {footprint.topMarkets.map((m) => (
                 <tr key={m.msa_name} className="border-t border-[#F1EBE1]">
                   <td className="py-1 pr-2">{m.msa_name}</td>
                   <td className="py-1 text-right text-[#5A5347]">{m.branches}</td>
-                  <td className="py-1 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>
+                  {!isCu && <td className="py-1 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>}
                 </tr>
               ))}
             </tbody>

@@ -2,7 +2,7 @@ import { sql } from "./connection";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
- * branch footprint (FDIC SOD), CFPB complaints, SEC filings and holding-company
+ * branch footprint (FDIC SOD for banks, NCUA's branch file for credit unions), CFPB complaints, SEC filings and holding-company
  * financials, and regulator identity. Every function reads only registry
  * tables, so callers wrap each one in a fallback.
  */
@@ -19,6 +19,7 @@ export interface BranchYear {
 }
 
 export interface BranchMarket {
+  /** A metro area for banks; a city ("Austin, TX") for credit unions. */
   msa_name: string;
   branches: number;
   deposits: number;
@@ -31,6 +32,10 @@ export interface BranchState {
 }
 
 export interface BranchFootprint {
+  /** fdic_sod: bank branches with deposits. ncua: credit union offices, no deposits (all zero). */
+  source: "fdic_sod" | "ncua";
+  /** NCUA only: the quarter-end date of the branch file. */
+  reportDate?: string | null;
   latestYear: number;
   byYear: BranchYear[];
   byState: BranchState[];
@@ -44,7 +49,7 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
      WHERE institution_id = ${institutionId}
      GROUP BY year
      ORDER BY year`;
-  if (byYear.length === 0) return null;
+  if (byYear.length === 0) return getCreditUnionFootprint(institutionId);
   const latestYear = Number(byYear[byYear.length - 1].year);
   const [byState, topMarkets] = await Promise.all([
     sql<Array<{ state: string; branches: number; deposits: string }>>`
@@ -63,10 +68,50 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
        LIMIT 8`,
   ]);
   return {
+    source: "fdic_sod",
     latestYear,
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
     topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
+  };
+}
+
+/**
+ * A credit union's offices from NCUA's branch file (latest quarter only, so one year).
+ * NCUA reports no deposits by office, so deposit fields are zero and the card hides them;
+ * markets are the cities with the most offices.
+ */
+async function getCreditUnionFootprint(institutionId: number): Promise<BranchFootprint | null> {
+  const [byState, topCities, [latest]] = await Promise.all([
+    sql<Array<{ state: string; branches: number }>>`
+      SELECT state, COUNT(*)::int AS branches
+        FROM credit_union_branches
+       WHERE institution_id = ${institutionId} AND state IS NOT NULL
+       GROUP BY state
+       ORDER BY branches DESC`,
+    sql<Array<{ city: string; branches: number }>>`
+      SELECT INITCAP(city) || ', ' || state AS city, COUNT(*)::int AS branches
+        FROM credit_union_branches
+       WHERE institution_id = ${institutionId} AND city IS NOT NULL AND state IS NOT NULL
+       GROUP BY 1
+       ORDER BY 2 DESC, 1
+       LIMIT 8`,
+    sql<Array<{ branches: number; report_date: unknown }>>`
+      SELECT COUNT(*)::int AS branches, MAX(report_date) AS report_date
+        FROM credit_union_branches
+       WHERE institution_id = ${institutionId}`,
+  ]);
+  const total = Number(latest?.branches ?? 0);
+  if (total === 0) return null;
+  const reportDate = dateStr(latest.report_date);
+  const year = reportDate ? Number(reportDate.slice(0, 4)) : new Date().getUTCFullYear();
+  return {
+    source: "ncua",
+    reportDate,
+    latestYear: year,
+    byYear: [{ year, branches: total, deposits: 0 }],
+    byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: 0 })),
+    topMarkets: topCities.map((r) => ({ msa_name: r.city, branches: Number(r.branches), deposits: 0 })),
   };
 }
 
