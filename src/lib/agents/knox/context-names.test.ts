@@ -89,14 +89,14 @@ describe("fees named by page context (v33)", () => {
   });
 
   it("reads the Reg E notice's \"fee of up to $35.00 each time we pay an overdraft\"", () => {
-    // Held for review until the shared source check stops reading "up to $35.00" as a threshold.
+    // The shared source check reads "a fee of up to $35.00" as the fee's maximum (PR 458), so it passes.
     const read = runFreeSpecialists(SMARTBANK);
-    expect(read.held.map((row) => [row.shape, row.canonicalHint, row.feeName, row.amount])).toContainEqual([
-      "untraced",
+    expect(read.candidates.map((fee) => [fee.canonicalHint, fee.feeName, fee.amount])).toContainEqual([
       "overdraft",
       "Overdraft fee (each time we pay an overdraft)",
       35,
     ]);
+    expect(read.held).toEqual([]);
   });
 
   it("leaves a per-item price with no overdraft heading alone", () => {
