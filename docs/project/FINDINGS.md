@@ -2625,6 +2625,20 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   replacing the read, so it is counted as superseded. Counting it as a miss put Oct 4's first batch
   at 58% wrong.
 
+## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
+
+- **Problem.** 48 open Tennessee banks have Darwin-verified fees that Hamilton holds back: Knox read
+  only 1 or 2 fee types from each, below the 3-fee publish bar. All were last read at v2-v22. Hand
+  checks of 5 current copies (Heritage Bank & Trust, Union Bank, Peoples Bank of the South,
+  BankTennessee, First Vision) show checking product pages listing only 1-3 kinds of fee. So the reads
+  are short because the pages are, not because Knox stopped early.
+- **Fix.** The 44 with a read copy are queued for a v32 re-read after the priority banks
+  (`KNOX_PRIORITY_REREAD_IDS`). The 3-fee bar stays.
+- **Watch.** The real lever is finding each bank's fee schedule. Two known schedules were never read:
+  Resound CU (document 16143) and Enbright CU (PDF document 10293). Two links are wrong:
+  - Tsu FCU (5080) points at a Tennessee State University tuition page.
+  - SouthEast Bank (371) also holds copies of a Bangladesh bank's schedule.
+
 ## 2026-10-07: CFPB fee complaints were over-counted, cut short, and missing for big banks
 
 **What happened:** Checking the complaint data for the peer benchmark found four problems.
