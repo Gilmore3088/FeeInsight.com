@@ -6,6 +6,7 @@ import { getPublicStats } from "../data-store";
 import { sql } from "../data-store/connection";
 import { getKnoxReviewCounts } from "../data-store/knox-reviews";
 import { HAMILTON_SYSTEM_PROMPT } from "../hamilton/voice";
+import { withCompactResults } from "./tool-output";
 
 export interface AgentConfig {
   id: string;
@@ -86,16 +87,16 @@ REQUIRED RESPONSE STRUCTURE:
 You MUST format your response with exactly these five ## sections in order:
 
 ## Hamilton's View
-[The answer first, in 2 to 3 sentences and under 70 words: the core finding through the ${analysisFocus} lens, with the one or two figures that prove it. The finding is something the institution page does not already say: a peer gap and what it costs or earns, revenue at stake, a trend or outlier, or a mismatch between fees, financials and complaints. Never open by restating a fee, a median or a figure shown on the page. Be direct about the finding, never prescriptive about the price. Detail belongs in the sections below.]
+[The answer first, in 1 to 2 sentences and under 45 words: the core finding through the ${analysisFocus} lens, with the one or two figures that prove it. The finding is something the institution page does not already say: a peer gap and what it costs or earns, revenue at stake, a trend or outlier, or a mismatch between fees, financials and complaints. Never open by restating a fee, a median or a figure shown on the page. Be direct about the finding, never prescriptive about the price. Detail belongs in the sections below.]
 
 ## What This Means
-[2 to 3 sentences, under 60 words: practical implications for the institution — what does this finding mean for their position, risk, or competitive standing? No figure already given above.]
+[1 to 2 sentences, under 40 words: practical implications for the institution — what does this finding mean for their position, risk, or competitive standing? No figure already given above.]
 
 ## Why It Matters
-[3 to 4 bullet points, each on its own line starting with "- ". Explain the strategic importance of each dimension. Each bullet is one sentence under 20 words.]
+[Exactly 3 bullet points, each on its own line starting with "- ". Explain the strategic importance of each dimension. Each bullet is one sentence under 15 words.]
 
 ## Evidence
-[3 to 6 market figures that support the analysis, one per line, formatted exactly as "- Label: Value — brief note". The label is a fee or metric name, the value is a short figure (for example "$35 against a $30 median (13 banks)"), and the note after the em dash is optional. No bold, no nested bullets, no blank label lines. Evidence rows are market facts only: never a row about data quality, sources, duplicates or the pipeline.]
+[3 to 5 market figures that support the analysis, one per line, formatted exactly as "- Label: Value — brief note". The label is a fee or metric name, the value is a short figure (for example "$35 against a $30 median (13 banks)"), and the note after the em dash is optional. No bold, no nested bullets, no blank label lines. Evidence rows are market facts only: never a row about data quality, sources, duplicates or the pipeline.]
 
 ## Explore Further
 [Exactly 3 follow-up questions the user could ask to deepen their analysis. Format as "- Question text?" for each. Make each question specific to the current analysis focus and the institution context.]
@@ -109,6 +110,7 @@ SCREEN BOUNDARY RULE (NON-NEGOTIABLE):
 - If the user asks for a recommendation, lay out the options and what each would mean, and say the choice is theirs
 
 FORMAT RULES:
+- The reader is on a phone. The Evidence rows carry the figures; the prose around them stays short. Answer what was asked, then stop: no restating the question, no closing summary.
 - Plain sentences. No markdown other than the five ## headings and "- " bullets: no **bold**, no tables, no code fences.
 
 FIGURE RULES (a banker checks the arithmetic):
@@ -147,7 +149,7 @@ const EXTERNAL_INTELLIGENCE_INSTRUCTION =
 
 // Toolset definitions — curated to stay under 200K token context limit
 // queryNationalData (11 sources) replaces most individual data tools
-const consumerTools: ToolSet = { ...publicTools };
+const consumerTools: ToolSet = withCompactResults({ ...publicTools });
 const chatInternalTools: ToolSet = {
   queryNationalData: internalTools.queryNationalData,
   queryRegulatoryRisk: internalTools.queryRegulatoryRisk,
@@ -155,14 +157,14 @@ const chatInternalTools: ToolSet = {
   searchInstitutionsByName: internalTools.searchInstitutionsByName,
   rankInstitutions: internalTools.rankInstitutions,
 };
-const proTools: ToolSet = { ...publicTools, ...chatInternalTools };
-const adminTools: ToolSet = {
+const proTools: ToolSet = withCompactResults({ ...publicTools, ...chatInternalTools });
+const adminTools: ToolSet = withCompactResults({
   ...publicTools,
   ...chatInternalTools,
   getCollectionStatus: internalTools.getCollectionStatus,
   getReviewQueueStats: internalTools.getReviewQueueStats,
   queryJobStatus: internalTools.queryJobStatus,
-};
+});
 
 async function opsContext(): Promise<string> {
   try {

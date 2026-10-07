@@ -1,9 +1,6 @@
 import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/hamilton/institution-membership", () => ({
-  acceptPendingWorkspaceInvitationsForUser: vi.fn(async () => []),
-}));
 
 import { applyStripeEvent, mapStripeStatus } from "./stripe-webhook";
 

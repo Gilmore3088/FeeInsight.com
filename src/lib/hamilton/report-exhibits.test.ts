@@ -119,7 +119,7 @@ describe("annualServiceCharges", () => {
     expect(annualServiceCharges([partial, ...quarters])).toEqual({ year: 2025, amount: 1_000_000, source: "fdic" });
   });
 
-  it("uses the December year-to-date value for NCUA and descales FFIEC", () => {
+  it("uses the December year-to-date value for NCUA and ignores ffiec rows", () => {
     expect(
       annualServiceCharges([
         { report_date: "2025-06-30", source: "ncua", service_charge_income: 282_949 },
@@ -128,7 +128,7 @@ describe("annualServiceCharges", () => {
     ).toEqual({ year: 2025, amount: 574_830_000, source: "ncua" });
     expect(
       annualServiceCharges([{ report_date: "2025-12-31", source: "ffiec", service_charge_income: 821_921_000_000 }]),
-    ).toEqual({ year: 2025, amount: 821_921_000, source: "ffiec" });
+    ).toBeNull();
   });
 
   it("returns null without a complete year", () => {

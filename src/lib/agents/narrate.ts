@@ -186,6 +186,7 @@ export function narrateStepFinished(
     case "registry-state-bills":
     case "registry-state-regulators":
     case "registry-enforcement":
+    case "registry-state-enforcement":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -240,6 +241,21 @@ export function narrateStepFinished(
       return detail.alert === "sent"
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
+    }
+    case "briefing-refresh": {
+      const stored = n(detail, "stored");
+      const quarter = String(detail.quarter ?? "this quarter");
+      if (detail.dryRun === true) return `Dry run: built ${quarter} briefings without storing them.`;
+      return stored === 0
+        ? `Every workspace already has its ${quarter} briefing.`
+        : `Stored ${count(stored, `${quarter} briefing`)}.`;
+    }
+    case "competitor-alerts": {
+      const alerts = n(detail, "alerts");
+      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Monitor.`;
+      return alerts === 0
+        ? "Checked local competitors; no verified fee change to show."
+        : `Showed ${count(alerts, "competitor change alert")} in Monitor.`;
     }
     case "pro-digest": {
       const withNews = n(detail, "withNews");
@@ -325,6 +341,10 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
     case "registry-enforcement":
       return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
+    case "registry-state-enforcement": {
+      const states = Array.isArray(detail.by_state) ? (detail.by_state as Array<{ pages?: number }>).filter((s) => (s.pages ?? 0) > 0).length : 0;
+      return `Read ${count(states, "state banking department")} and refreshed ${count(n(detail, "upserted"), "state enforcement order")}.`;
+    }
     default:
       return null;
   }
@@ -374,6 +394,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "daily-brief": "atlas",
   "lead-watch": "atlas",
   "pro-digest": "atlas",
+  "competitor-alerts": "hamilton",
+  "briefing-refresh": "hamilton",
   "content-fee-depth": "hamilton",
   "content-market-spread": "hamilton",
   "marketing-score": "hamilton",
@@ -412,6 +434,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
   "registry-enforcement": "magellan",
+  "registry-state-enforcement": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

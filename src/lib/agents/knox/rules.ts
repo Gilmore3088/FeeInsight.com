@@ -1,5 +1,6 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
+import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
 /**
@@ -34,6 +35,8 @@ export interface ExtractedFeeCandidate {
   waivable: boolean;
   /** The specialist that found it, set when the free team's finds are merged. */
   strategy?: string;
+  /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
+  lineup?: AccountLineup | null;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
@@ -151,7 +154,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b/i,
   },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
@@ -192,19 +195,19 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
-    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwire\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b|\b(international|foreign|intl)\b.{0,10}\bwires?\b.{0,30}\b(out|outgoing)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(outgoing|send|sent).{0,40}\bwires?\b|\b(outgoing|send|sent).{0,40}\b(international|foreign).{0,40}\bwires?\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(outgoing|out|sent|send)\b|\bwires?\b.{0,30}\b(outgoing|out)\b.{0,20}\b(international|foreign|intl)\b|\b(outgoing|send|sent)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b|\b(international|foreign|intl)\b.{0,10}\bwires?\b.{0,30}\b(out|outgoing)\b/i,
   },
   {
     key: "wire_intl_incoming",
-    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwire\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwire\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwires?\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwires?\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
   },
   {
     key: "wire_domestic_outgoing",
-    pattern: /\b(domestic)?\s*(outgoing|send|sent).{0,40}\bwire\b|\bwires?\b.{0,30}\b(outgoing|sent|out)\b/i,
+    pattern: /\b(domestic)?\s*(outgoing|send|sent).{0,40}\bwires?\b|\bwires?\b.{0,30}\b(outgoing|sent|out)\b/i,
   },
   {
     key: "wire_domestic_incoming",
-    pattern: /\b(domestic)?\s*(incoming|receive|received).{0,40}\bwire\b|\bwires?\b.{0,30}\b(incoming|received)\b/i,
+    pattern: /\b(domestic)?\s*(incoming|receive|received).{0,40}\bwires?\b|\bwires?\b.{0,30}\b(incoming|received)\b/i,
   },
   { key: "stop_payment", pattern: /\bstop payments?\b/i },
   { key: "money_order", pattern: /\bmoney orders?\b/i },
@@ -302,6 +305,14 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern:
       /\b(?:minimum|mininum|minumum) balance\b.{0,30}\b(?:fee|charge)\b|\blow[- ]balance\b.{0,30}\b(?:fee|charge)\b|\bbelow (?:the )?minimum(?: daily| average)? balance\b|\b(?:average|avg\.?|minimum|min\.?) (?:daily |monthly |ledger |collected )?balance\s*\(?\s*(?:falls? |drops? |is )?(?:below|under|less than)\b|\bless than (?:an? )?(?:avg\.?|average|minimum) (?:daily |monthly )?balance\b|\b(?:fee|charge) charged if (?:balance )?falls? below\b/i,
   },
+  // v32: an account named with the balance it must keep ("Money Market Savings Account
+  // (below $2,500) | $15/mo.", "Interest Checking (below $1,500)") is that account's
+  // low-balance fee.
+  {
+    key: "minimum_balance",
+    pattern:
+      /\b(?:checking|savings|money market|share|account|club)\b[^|()]{0,30}\(\s*(?:(?:average|avg\.?|daily|minimum|min\.?)\s+)*(?:balances?\s+)?(?:below|under|less than)\b/i,
+  },
   ...FOLDED_PATTERNS,
 ];
 
@@ -398,7 +409,8 @@ export function classifyPatternKey(value: string): string | null {
   const text = value
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
-    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)\b/gi, "international")
+    // v32: "(Outside U.S.)" ends on a dot, where \b does not match.
+    .replace(/\boutside (?:of )?(?:the )?(?:USA|U\.S\.A?\.?|US|United States)(?!\w)/gi, "international")
     // v18: "Non-Domestic Wire" is an international wire; one price for "Domestic or
     // International" is the domestic one.
     .replace(/\bnon[-\s]?domestic\b/gi, "international")
@@ -630,6 +642,23 @@ export function maintenanceFromAccountRow(segment: string, firstAmount: AmountMa
     confidence: confidenceFor(segment),
     excerpt: segment,
     waivable: WAIVER_LANGUAGE.test(segment) || /\b(if|unless|avoid)\b/i.test(segment.slice(firstAmount.end)),
+    lineup: accountRowLineup(label, after),
+  };
+}
+
+/**
+ * v33: the row's own lineup facts. The label names the product; a balance-below clause in
+ * the price cell is the balance that avoids the fee, and the cell's condition ("if ...",
+ * "waived when ...") is the waiver. Knox grounds these against the text before writing them.
+ */
+function accountRowLineup(label: string, after: string): AccountLineup {
+  const cell = after.split(CELL_SEPARATOR.trim())[0].replace(/\s+/g, " ").trim();
+  const balance = cell.match(BALANCE_BELOW_CLAUSE)?.[0];
+  return {
+    productName: label.slice(0, 80),
+    minBalanceToAvoid: balance ? (amountsIn(balance)[0]?.value ?? null) : null,
+    minOpeningDeposit: null,
+    waiverText: cell.match(/\b(?:if|unless|waived?|avoid)\b.*$/i)?.[0] ?? null,
   };
 }
 
@@ -675,6 +704,59 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
     confidence: confidenceFor(segment),
     excerpt: segment,
     waivable: true,
+  };
+}
+
+/**
+ * v32: "You must maintain a daily balance ... of $2,500 each statement cycle to avoid a
+ * minimum balance fee of $3.95": the fee is the figure "to avoid a ... fee of" names, never
+ * the balance before it.
+ */
+const AVOID_FEE_OF = /\bto avoid (?:an?|the)\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
+
+export function avoidFeeFromProse(segment: string): ExtractedFeeCandidate | null {
+  const match = segment.match(AVOID_FEE_OF);
+  if (!match) return null;
+  const words = normalizeSegment(match[1]);
+  const hint = classifyFeeText(words);
+  if (hint !== "minimum_balance" && hint !== "monthly_maintenance") return null;
+  const amount = Number(match[2]);
+  const feeName = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  if (!(amount > 0) || !passesDarwinChecks(hint, feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment) ?? "monthly",
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
+  };
+}
+
+/**
+ * v32: "Deposits/Withdrawals $2 Per transaction, when performed at an ATM we do not own or
+ * operate": the clause after the price says which fee it is, so it stays in the name.
+ */
+const WHERE_CLAUSE = /^\s*(?:(?:per|each)\s+[a-z]+\s*,?\s*)?(?:when|if)\s+(?:it is\s+|they are\s+)?(?:performed|used|made|conducted|done)\s+(at\s+[^.;|]{3,60})/i;
+
+export function qualifiedByClause(segment: string, firstAmount: AmountMatch, name: string): ExtractedFeeCandidate | null {
+  const clause = segment.slice(firstAmount.end).match(WHERE_CLAUSE)?.[1]?.trim();
+  if (!clause || !usableName(name)) return null;
+  const hint = classifyFeeText(clause);
+  if (hint !== "atm_non_network") return null;
+  const feeName = `${name} ${clause}`.slice(0, 120);
+  // The category guard has the last word (it refuses "Deposits/Withdrawals ..." as an ATM
+  // fee today); a refused name is not sent on to be refused again.
+  if (!passesDarwinChecks(hint, feeName, firstAmount.value)) return null;
+  return {
+    feeName,
+    amount: firstAmount.value,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: WAIVER_LANGUAGE.test(segment),
   };
 }
 
@@ -823,7 +905,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (!hint) {
     const maintenance =
       sentenceFee(segment, firstAmount) ??
-      maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount) ?? lowBalanceFeeFromProse(segment);
+      maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount) ?? lowBalanceFeeFromProse(segment) ??
+      avoidFeeFromProse(segment) ?? qualifiedByClause(segment, firstAmount, nameFrom(prefix));
     if (maintenance) {
       result.candidates.push(maintenance);
       return result;
@@ -868,6 +951,14 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // v32: two fees' names in one row before one price ("Returned Check | Verification of
+  // Deposit | $20", a two-column page): the price is the nearest name's, and so is the name.
+  if (cells && hint && feeAmounts[0] === firstAmount) {
+    const nearest = nearestFeeText(prefix);
+    const earlier = prefix.slice(0, Math.max(0, prefix.lastIndexOf(nearest.split(CELL_SEPARATOR)[0]))).replace(/[\s|]+$/, "");
+    const earlierHint = earlier && nearest !== prefix.trim() ? classifyFeeText(earlier) : null;
+    if (earlierHint && earlierHint !== hint && usableName(nameFrom(nearest))) feeName = nameFrom(nearest);
+  }
   // A tiered label keeps its figures, so "$25 or less" and "$50.01 and more" stay apart,
   // and the whole label names the fee when the words before its first figure do not.
   if (cells && amounts.some(inLabel) && usableName(normalizeSegment(cells[0]))) {

@@ -3,6 +3,7 @@ import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   BEIGE_BOOK_DISTRICTS,
   beigeBookPageUrl,
+  BLS_SERIES_TITLES,
   blsSeriesRequest,
   fetchText,
   FOMC_CALENDAR_URL,
@@ -10,6 +11,7 @@ import {
   fredCsvUrl,
   isBlsSeries,
   isFredNativeSeries,
+  parseBlsCatalogTitle,
   parseBlsSeries,
   parseBeigeBookPage,
   parseFomcMinutesDates,
@@ -160,13 +162,15 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
   if (options.dryRun) return result;
 
   const blsKey = process.env.BLS_API_KEY || null;
+  const blsCatalogTitles: Record<string, string> = {};
   await mapWithConcurrency(series, FED_CONCURRENCY, async (meta) => {
     let observations: FredObservation[];
     if (isBlsSeries(meta.series_id)) {
       const request = blsSeriesRequest(meta.series_id, blsKey);
-      observations = parseBlsSeries(
-        await registryFetchJson<unknown>(request.url, options.fetchOptions, { json: request.json }),
-      );
+      const body = await registryFetchJson<unknown>(request.url, options.fetchOptions, { json: request.json });
+      observations = parseBlsSeries(body);
+      const catalogTitle = parseBlsCatalogTitle(body);
+      if (catalogTitle) blsCatalogTitles[meta.series_id] = catalogTitle;
     } else {
       const csv = await fetchText(fredCsvUrl(meta.series_id), options.fetchOptions);
       observations = csv ? parseFredCsv(csv) : [];
@@ -175,15 +179,17 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
       result.missingSeries.push(meta.series_id);
       return;
     }
+    const title = BLS_SERIES_TITLES[meta.series_id] ?? meta.series_title;
     for (const group of chunk(observations, 2_000)) {
       const payload = JSON.stringify(group);
       await db`
         INSERT INTO fed_economic_indicators (series_id, series_title, fed_district, observation_date, value, units, frequency, fetched_at)
-        SELECT ${meta.series_id}, ${meta.series_title}, ${meta.fed_district}, r.observation_date, r.value,
+        SELECT ${meta.series_id}, ${title}, ${meta.fed_district}, r.observation_date, r.value,
                ${meta.units}, ${meta.frequency}, NOW()
           FROM jsonb_to_recordset(${payload}::jsonb) AS r(observation_date text, value double precision)
         ON CONFLICT (series_id, observation_date) DO UPDATE SET
           value = EXCLUDED.value,
+          series_title = EXCLUDED.series_title,
           fetched_at = NOW()
       `;
     }
@@ -202,7 +208,7 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
     sourceUrl: "https://fred.stlouisfed.org/graph/fredgraph.csv",
     runId: options.runId ?? null,
     nextAttemptAfterHours: FRED_REFRESH_HOURS,
-    detail: { missing_series: result.missingSeries.slice(0, 50) },
+    detail: { missing_series: result.missingSeries.slice(0, 50), bls_catalog_titles: blsCatalogTitles },
   });
   return result;
 }

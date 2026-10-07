@@ -1004,7 +1004,8 @@ export async function getIntegrityChecks(): Promise<IntegrityCheck[]> {
     const [row] = await sql`
       SELECT COUNT(*) as cnt
       FROM institution_sources ct
-      LEFT JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
+      LEFT JOIN institution_financial_records ifin
+        ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
       WHERE ifin.id IS NULL
     `;
     const cnt = Number(row.cnt);

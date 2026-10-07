@@ -10,7 +10,8 @@ type SqlTag = typeof sql;
  */
 
 export interface AttemptRecord extends AttemptFacts {
-  institutionId: number;
+  /** Null only for an attempt about many institutions (Darwin's verdict scores), never folded. */
+  institutionId: number | null;
   sourceDocumentId?: number | null;
   durationMs?: number | null;
   runId?: number | null;
@@ -39,7 +40,7 @@ export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise
       ${attempt.runId ?? null}, ${attempt.stepId ?? null}, ${JSON.stringify(attempt.detail ?? {})}::jsonb
     )
   `;
-  if (attempt.foldIntoPlaybook === false) return;
+  if (attempt.foldIntoPlaybook === false || attempt.institutionId == null) return;
   const playbook = await loadPlaybook(db, attempt.institutionId);
   await persistPlaybook(db, attempt.institutionId, applyAttempt(playbook, attempt));
 }

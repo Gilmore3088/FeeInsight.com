@@ -40,6 +40,119 @@ export function isErrorPageLink(url: string | null | undefined): boolean {
   }
 }
 
+/** Folders where banks post articles, blog posts and news, not their fee schedule. */
+const ARTICLE_PATH = /\/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)\//i;
+/**
+ * A path segment that names a fee document even inside such a folder
+ * ("/articles/schedule-of-fees/", "/education-center/service-fees"), with at most one
+ * word before it ("consumer-fee-schedule"), or a PDF. A headline that merely ends in
+ * "overdraft-service-fees" is not one.
+ */
+const FEE_DOCUMENT_NAME =
+  /((^|\/)([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\.pdf($|\?))/i;
+/** The same tests for SQL, on the lowercased link. */
+export const ARTICLE_LINK_SQL = "/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)/";
+export const FEE_DOCUMENT_NAME_SQL =
+  "(/([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\\.pdf($|\\?))";
+
+/**
+ * True when the address is an article, blog post, news item or press release: a page
+ * about fees in general ("common checking account fees to avoid", Space Coast CU; a 2021
+ * Chase press release), whose amounts are national figures or old news, never the bank's
+ * own schedule. A fee document filed in such a folder ("/articles/schedule-of-fees/",
+ * MTC Federal CU) is not one.
+ */
+export function isArticleLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const path = decodeURIComponent(parsed.pathname + parsed.search);
+    return ARTICLE_PATH.test(path) && !FEE_DOCUMENT_NAME.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/** A deposit product with its own disclosure: CDs, share certificates, time deposits. */
+const SINGLE_PRODUCT = /(^|[/_.\s-])(cds?|certificates?(-of-deposit)?|share-?certificates?|time-?deposits?)([/_.?#\s-]|$)/i;
+/** The disclosure such a product comes with. */
+const PRODUCT_DISCLOSURE = /(truth[-_\s]?in[-_\s]?savings|(^|[/_.\s-])tisa?([/_.?#\s-]|$)|disclosure)/i;
+/** A name that says the document is the bank's fee schedule after all. */
+const FEE_SCHEDULE_NAME = /(fee-?schedule|feeschedule|schedule-?of-?(fees|charges|service-charges)|fees-?and-?charges|service-?charges)/i;
+/** The same tests for SQL, on the lowercased link. */
+export const SINGLE_PRODUCT_SQL = "(^|[/_. -])(cds?|certificates?(-of-deposit)?|share-?certificates?|time-?deposits?)([/_.?# -]|$)";
+export const PRODUCT_DISCLOSURE_SQL = "(truth[-_ ]?in[-_ ]?savings|(^|[/_. -])tisa?([/_.?# -]|$)|disclosure)";
+export const FEE_SCHEDULE_NAME_SQL = "(fee-?schedule|feeschedule|schedule-?of-?(fees|charges|service-charges)|fees-?and-?charges|service-?charges)";
+
+/**
+ * True when the address is the disclosure for one deposit product: a CD, share
+ * certificate or time deposit truth-in-savings sheet ("truth-in-savings-12-month-time-
+ * deposit-disclosure", Five Rivers; "TIS-CD-5.1.2025.pdf", RBFCU). Those state a rate
+ * and an early-withdrawal penalty, never the bank's account fee schedule. A link whose
+ * name also says fee schedule ("/certificates-of-deposit/schedule-of-fees.html") is
+ * not one.
+ */
+export function isSingleProductDisclosureLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const path = decodeURIComponent(parsed.pathname + parsed.search);
+    return SINGLE_PRODUCT.test(path) && PRODUCT_DISCLOSURE.test(path) && !FEE_SCHEDULE_NAME.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Country domains of places whose banks share US banks' names (SouthEast Bank's link led
+ * to southeastbank.com.bd, 7 Oct 2026). US territories (.pr, .gu, .vi, .as, .mp) and
+ * .us are not on the list. A link on the bank's own website's host is never foreign
+ * (Natbank, N.A. publishes from nbc.ca).
+ */
+const FOREIGN_TLD = /\.(bd|in|pk|lk|np|ca|uk|au|nz|ie|sg|hk|cn|tw|jp|kr|ph|my|id|th|vn|ng|ke|gh|za|ae|sa|qa|kw|bh|om|eg|mx|br|ar|cl|pe|co\.[a-z]{2}|de|fr|es|it|nl|be|ch|at|se|no|dk|fi|pl|pt|gr|tr|ru)$/;
+
+function hostOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+/** True when the link sits on another country's domain that is not the bank's own website. */
+export function isForeignHostLink(url: string | null | undefined, websiteUrl?: string | null): boolean {
+  const host = hostOf(url);
+  if (!host || !FOREIGN_TLD.test(host)) return false;
+  const own = hostOf(websiteUrl);
+  return !(own && (host === own || host.endsWith(`.${own}`) || own.endsWith(`.${host}`)));
+}
+
+/** Amounts in another country's money ("Tk 500", "BDT 1,000", "Rs. 250", "£5", "€10"). */
+const FOREIGN_CURRENCY = /(?:\b(?:bdt|tk|taka|inr|rs|rupees?|pkr|lkr|npr|gbp|eur|cad|aud|nzd|sgd|hkd|php|ngn|naira|kes|ghs|zar|aed|sar|mxn|cny|rmb|yuan|jpy|yen)\b\.?\s?[\d,]+|[£€¥₹৳₱₦]\s?[\d,]+|\b[\d,]+(?:\.\d+)?\s?(?:bdt|tk|taka|inr|rupees?|pkr|gbp|eur|cad|aud)\b)/gi;
+/** A country's central bank or regulator, named only on that country's schedules. */
+const FOREIGN_REGULATOR = /\b(bangladesh bank|reserve bank of india|state bank of pakistan|central bank of sri lanka|nepal rastra bank|bank of canada|financial conduct authority|prudential regulation authority|monetary authority of singapore|hong kong monetary authority|bangko sentral|central bank of nigeria|reserve bank of australia|vat|value added tax|excise duty)\b/i;
+const US_DOLLAR = /\$\s?\d/g;
+
+/**
+ * True when a page's text reads as another country's fee schedule: its amounts are mostly
+ * in another currency, or it names a foreign central bank or VAT alongside foreign
+ * amounts. Citi's link on 7 Oct 2026 was Citi Bangladesh's schedule on citigroup.com, so
+ * the address alone does not catch every case.
+ */
+export function looksForeignSchedule(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const foreign = text.match(FOREIGN_CURRENCY)?.length ?? 0;
+  if (foreign === 0) return false;
+  const dollars = text.match(US_DOLLAR)?.length ?? 0;
+  if (foreign >= 3 && foreign > dollars) return true;
+  return foreign >= 2 && FOREIGN_REGULATOR.test(text) && foreign * 2 > dollars;
+}
+
+/** `urlNamesFeePage` (learning/fee-page.ts) for SQL, on the lowercased link. */
+export const FEE_PAGE_NAME_SQL =
+  "(fee-?schedule|schedule-of-(fees|charges)|fee-?disclosure|service-charges|pricing|(^|[/_-])fees?([/_.-]|$))";
+
 /** True when the link's address names a business-only schedule or page. */
 export function isBusinessOnlyLink(url: string): boolean {
   let path: string;
