@@ -28,6 +28,18 @@ to call such an action active.
 **Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
 match, count how many rows it covers on prod and read a sample of them.
 
+## 2026-10-07: Saved peer groups filtered asset size by codes no institution has
+**What happened:** the Settings peer group form saved asset sizes as `a` to `f`, and the
+resolver filtered `institution_sources.asset_size_tier` by them. That column holds
+`community_small` to `super_regional` (`assetSizeTier` in `src/lib/regulatory/fdic.ts`), so any
+saved group with an asset size matched no institution and Hamilton fell back to national. How
+many saved rows carry `a`-`f` codes: none; prod `saved_peer_sets` had 0 rows (read-only, 07:20 UTC Oct 7).
+**Cause:** the form's tier list was written separately from the registry's tier vocabulary.
+**Fix:** the custom peer groups PR: the form and `PeerSetSchema` use the registry's tiers, and
+Settings shows each group's real institution count. No rows needed fixing.
+**Lesson:** a filter's values come from the column it filters; show the count a filter
+resolves to, so a group that matches nothing is visible.
+
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
 queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read

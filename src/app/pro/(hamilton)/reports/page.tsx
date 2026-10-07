@@ -17,6 +17,7 @@ import { ReportWorkspace } from "@/components/hamilton/reports/ReportWorkspace";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { getHamiltonContextSourceLabel } from "@/lib/hamilton/context-source";
 import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import {
   resolveArtifactContextInstitutionId,
   shouldPersistUrlInstitutionSelection,
@@ -87,10 +88,9 @@ export default async function ReportsPage({
 
   const params = await searchParams;
   const initialReportId = params.report_id ?? params.report ?? null;
-  const [publishedReports, savedReports, savedPeerSets, savedScenario, initialReport] = await Promise.all([
+  const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
     getPublishedReports(),
     getRecentHamiltonReports(user.id).catch(() => []),
-    getSavedPeerSets(String(user.id)).catch(() => []),
     params.scenario_id
       ? getHamiltonScenarioById(params.scenario_id, user.id).catch(() => null)
       : null,
@@ -114,6 +114,12 @@ export default async function ReportsPage({
     transientSource: isArtifactContext ? "artifact" : undefined,
   });
 
+  // The workspace's peer groups, and the one set to "Use for all charts" as the default baseline.
+  const [savedPeerSets, activePeerSet] = await Promise.all([
+    getSavedPeerSets(String(user.id), selectedInstitution?.id ?? null).catch(() => []),
+    getActivePeerSet({ userId: user.id, institutionId: selectedInstitution?.id ?? null }).catch(() => null),
+  ]);
+
   // Pull the user's real institution name (audit H-4 round 2) so the report
   // setup names it instead of a hardcoded "Your institution".
   const institutionName =
@@ -133,7 +139,7 @@ export default async function ReportsPage({
       initialScenarioId={params.scenario_id ?? null}
       selectedInstitution={selectedInstitution}
       initialIntent={params.intent ?? null}
-      initialPeerSetId={params.peerSetId ?? null}
+      initialPeerSetId={params.peerSetId ?? (activePeerSet ? String(activePeerSet.id) : null)}
       savedPeerSets={savedPeerSets}
       selectedSource={selectedSource}
       selectedSourceLabel={getHamiltonContextSourceLabel(selectedSource)}

@@ -7,7 +7,19 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PeerSetManager } from "./PeerSetManager";
-import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
+import {
+  getPeerInstitutionNames,
+  getPeerSetWorkspace,
+  getSavedPeerSets,
+  type SavedPeerSet,
+} from "@/lib/data-store/saved-peers";
+import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
+import {
+  buildInstitutionPeerFilterCandidates,
+  describePeerFilters,
+  parseSavedPeerSetFilters,
+} from "@/lib/hamilton/peer-index";
+import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
   getIntelligenceSnapshot,
   getWorkspaceInstitutionClaimState,
@@ -66,10 +78,35 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [peerSets, snapshot] = await Promise.all([
-    getSavedPeerSets(String(user.id)).catch(() => []),
+  const [peerSetWorkspace, snapshot] = await Promise.all([
+    getPeerSetWorkspace(String(user.id)).catch(() => null),
     getIntelligenceSnapshot(),
   ]);
+  const peerSets: SavedPeerSet[] = await getSavedPeerSets(
+    String(user.id),
+    peerSetWorkspace?.institutionId ?? null,
+  ).catch(() => []);
+  // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
+  const [peerSetCounts, peerInstitutionNames] = await Promise.all([
+    getPeerGroupCounts(
+      peerSets.map((set) => parseSavedPeerSetFilters(set)),
+      peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null,
+    ).catch((): PeerGroupCount[] => []),
+    getPeerInstitutionNames(peerSets.flatMap((set) => set.institution_ids ?? [])).catch(
+      () => new Map<number, string>(),
+    ),
+  ]);
+  // Where a set is too thin for a fee, charts fall back to the bank's own default group.
+  const firstDefaultGroup = selectedInstitution
+    ? buildInstitutionPeerFilterCandidates({
+        institution_name: selectedInstitution.name,
+        state_code: selectedInstitution.stateCode,
+        charter_type: selectedInstitution.charterType,
+        asset_size_tier: selectedInstitution.assetTier,
+        fed_district: selectedInstitution.fedDistrict,
+      })[0]
+    : undefined;
+  const widerGroupLabel = firstDefaultGroup ? describePeerFilters(firstDefaultGroup) : "the national index";
   const [selectedClaim, selectedMembership, workspaceMembers, workspaceInvitations] = selectedInstitution
     ? await Promise.all([
         getWorkspaceInstitutionClaimState(selectedInstitution.id),
@@ -178,7 +215,24 @@ export default async function SettingsPage({
         note="Who your fees are compared with."
       >
         <div className={`${panel} scroll-mt-24`}>
-          <PeerSetManager initialPeerSets={peerSets} />
+          <PeerSetManager
+            initialPeerSets={peerSets}
+            initialCounts={Object.fromEntries(
+              peerSets.flatMap((set, i) => (peerSetCounts[i] ? [[set.id, peerSetCounts[i]]] : [])),
+            )}
+            initialInstitutionNames={Object.fromEntries(peerInstitutionNames)}
+            workspaceName={
+              peerSetWorkspace && selectedInstitution?.id === peerSetWorkspace.institutionId
+                ? selectedInstitution.name
+                : peerSetWorkspace
+                  ? "your team"
+                  : null
+            }
+            canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
+            currentUserId={String(user.id)}
+            minPeers={MIN_PEERS_FOR_POSITION}
+            widerGroupLabel={widerGroupLabel}
+          />
         </div>
       </MemoSection>
 
