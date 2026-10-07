@@ -475,6 +475,24 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText(name)).toBeNull();
   });
 
+  it.each([
+    "Collection Fee for Charged-Off Accounts",
+    "Phone Call Collection Fee",
+    "Funds transfer fee (phone/fax request) per transfer",
+    "Credit Report Fee to Open Account",
+  ])("v28 does not fold %s (wrong homes found on prod's first v26 pass)", (name) => {
+    expect(foldedCategory(name)).toBeNull();
+  });
+
+  it.each([
+    ["Payoff fax fee", "account_research"],
+    ["Clean Collection Fee (per item)", "check_cashing"],
+    ["Collection Items for Deposit", "check_cashing"],
+    ["Credit Report Fee", "loan_origination"],
+  ])("v28 still folds %s into %s", (name, key) => {
+    expect(foldedCategory(name)).toBe(key);
+  });
+
   it("v14 reads a checking account's own monthly price", () => {
     expect(extractFromSegment("Opportunity Checking | $10 per month").candidates).toMatchObject([
       { canonicalHint: "monthly_maintenance", amount: 10, frequency: "monthly" },
